@@ -52,7 +52,8 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITI64Type;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITRowType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITScalarType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
@@ -359,21 +360,21 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
     /////////////////////////// Code generation
 
     @Override
-    public boolean preorder(DBSPExpression expression) {
+    public VisitDecision preorder(DBSPExpression expression) {
         throw new Unimplemented(expression);
     }
 
     @Override
-    public boolean preorder(DBSPSomeExpression expression) {
+    public VisitDecision preorder(DBSPSomeExpression expression) {
         JITInstructionPair source = this.accept(expression.expression);
         JITInstructionRef False = this.constantBool(false);
         JITInstructionPair result = new JITInstructionPair(source.value, False);
         this.map(expression, result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPApplyExpression expression) {
+    public VisitDecision preorder(DBSPApplyExpression expression) {
         DBSPPathExpression path = expression.function.as(DBSPPathExpression.class);
         if (path != null) {
             String jitFunction = null;
@@ -432,14 +433,14 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             }
             if (jitFunction != null) {
                 this.createFunctionCall(jitFunction, expression, expression.arguments);
-                return false;
+                return VisitDecision.STOP;
             }
         }
         throw new Unimplemented(expression);
     }
 
     @Override
-    public boolean preorder(DBSPLiteral expression) {
+    public VisitDecision preorder(DBSPLiteral expression) {
         JITScalarType type = convertScalarType(expression);
         JITLiteral literal = new JITLiteral(expression, type);
         boolean mayBeNull = expression.getNonVoidType().mayBeNull;
@@ -453,17 +454,17 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
         }
         JITInstructionPair pair = new JITInstructionPair(value.getInstructionReference(), isNull);
         this.map(expression, pair);
-        return false;
+        return VisitDecision.STOP;
     }
 
-    public boolean preorder(DBSPBorrowExpression expression) {
+    public VisitDecision preorder(DBSPBorrowExpression expression) {
         JITInstructionPair sourceId = this.accept(expression.expression);
         Utilities.putNew(this.expressionToValues, expression, sourceId);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPCastExpression expression) {
+    public VisitDecision preorder(DBSPCastExpression expression) {
         JITInstructionPair sourceId = this.accept(expression.source);
         JITScalarType sourceType = convertScalarType(expression.source);
         JITScalarType destinationType = convertScalarType(expression);
@@ -483,7 +484,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             // else nothing to do for null field
         }
         this.map(expression, new JITInstructionPair(cast, isNull));
-        return false;
+        return VisitDecision.STOP;
     }
 
     static final Map<DBSPOpcode, JITBinaryInstruction.Operation> opNames = new HashMap<>();
@@ -592,11 +593,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
     }
 
     @Override
-    public boolean preorder(DBSPBinaryExpression expression) {
+    public VisitDecision preorder(DBSPBinaryExpression expression) {
         if (expression.operation.equals(DBSPOpcode.CONCAT)) {
             this.createFunctionCall("dbsp.str.concat", expression,
                     expression.left, expression.right);
-            return false;
+            return VisitDecision.STOP;
         }
         if (expression.operation.equals(DBSPOpcode.DIV) &&
                 expression.left.getNonVoidType().is(DBSPTypeInteger.class)) {
@@ -654,7 +655,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             JITInstructionRef value = this.addParameter(next, type);
             JITInstructionPair result = new JITInstructionPair(value, resultIsNull);
             this.map(expression, result);
-            return false;
+            return VisitDecision.STOP;
         }
 
         JITInstructionPair leftId = this.accept(expression.left);
@@ -732,7 +733,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                         expression.is_null().toString());
                 this.map(expression, new JITInstructionPair(value, isNull));
             }
-            return false;
+            return VisitDecision.STOP;
         } else if (expression.operation.isAggregate) {
             JITBinaryInstruction.Operation op = Utilities.getExists(opNames, expression.operation);
             // If either operand is null, the result is the other operand.
@@ -823,7 +824,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                     this.map(expression, new JITInstructionPair(value));
                 }
             }
-            return false;
+            return VisitDecision.STOP;
         } else if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
             throw new RuntimeException("Should have been removed");
         }
@@ -836,11 +837,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             // The result is null if either operand is null.
             isNull = this.eitherNull(leftId, rightId);
         this.map(expression, new JITInstructionPair(value, isNull));
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPUnaryExpression expression) {
+    public VisitDecision preorder(DBSPUnaryExpression expression) {
         JITInstructionPair source = this.accept(expression.source);
         boolean isWrapBool = expression.operation.equals(DBSPOpcode.WRAP_BOOL);
         JITInstructionRef False = JITInstructionRef.INVALID;
@@ -859,7 +860,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 JITInstructionRef value = this.insertMux(
                         source.isNull, False, source.value, expression.toString());
                 this.map(expression, new JITInstructionPair(value));
-                return false;
+                return VisitDecision.STOP;
             }
             case IS_FALSE: {
                 if (source.hasNull()) {
@@ -870,7 +871,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                     // result
                     JITInstructionRef value = this.insertMux(source.isNull, False, ni, expression.toString());
                     this.map(expression, new JITInstructionPair(value));
-                    return false;
+                    return VisitDecision.STOP;
                 } else {
                     kind = JITUnaryInstruction.Operation.NOT;
                 }
@@ -886,7 +887,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 } else {
                     this.map(expression, new JITInstructionPair(source.value));
                 }
-                return false;
+                return VisitDecision.STOP;
             }
             case IS_NOT_TRUE: {
                 if (source.hasNull()) {
@@ -898,7 +899,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                     // result
                     JITInstructionRef value = this.insertMux(source.isNull, True, ni, expression.toString());
                     this.map(expression, new JITInstructionPair(value));
-                    return false;
+                    return VisitDecision.STOP;
                 } else {
                     kind = JITUnaryInstruction.Operation.NOT;
                 }
@@ -915,7 +916,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 } else {
                     this.map(expression, new JITInstructionPair(source.value));
                 }
-                return false;
+                return VisitDecision.STOP;
             }
             case INDICATOR: {
                 if (!source.hasNull())
@@ -923,7 +924,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 JITInstructionRef value = this.insertCast(
                     source.isNull, JITBoolType.INSTANCE, JITI64Type.INSTANCE, "");
                 this.map(expression, new JITInstructionPair(value));
-                return false;
+                return VisitDecision.STOP;
             }
             default:
                 throw new Unimplemented(expression);
@@ -933,20 +934,20 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
         if (source.hasNull())
             isNull = source.isNull;
         this.map(expression, new JITInstructionPair(value, isNull));
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPVariablePath expression) {
+    public VisitDecision preorder(DBSPVariablePath expression) {
         JITInstructionPair pair = this.resolve(expression.variable);
         this.expressionToValues.put(expression, pair);
         // may already be there, but this may be a new variable with the same name,
         // and then we overwrite with the new definition.
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPClosureExpression closure) {
+    public VisitDecision preorder(DBSPClosureExpression closure) {
         for (JITParameter param: this.mapping.parameters) {
             this.declare(param.originalName, param.mayBeNull);
             if (param.direction != JITParameter.Direction.IN) {
@@ -961,11 +962,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             if (param.direction != JITParameter.Direction.IN)
                 Utilities.removeLast(this.variableAssigned);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPLetStatement statement) {
+    public VisitDecision preorder(DBSPLetStatement statement) {
         boolean isTuple = statement.type.is(DBSPTypeTuple.class);
         this.variableAssigned.add(statement.variable);
         if (isTuple) {
@@ -982,11 +983,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             }
         }
         Utilities.removeLast(this.variableAssigned);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPFieldExpression expression) {
+    public VisitDecision preorder(DBSPFieldExpression expression) {
         JITInstruction isNull = null;
         JITInstructionPair sourceId = this.accept(expression.expression);
         JITRowType sourceType = this.typeCatalog.convertTupleType(
@@ -999,22 +1000,22 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 sourceType, expression.fieldNo));
         }
         this.map(expression, new JITInstructionPair(load, isNull));
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPIsNullExpression expression) {
+    public VisitDecision preorder(DBSPIsNullExpression expression) {
         JITInstructionPair sourceId = this.accept(expression.expression);
         this.map(expression, new JITInstructionPair(sourceId.isNull));
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPCloneExpression expression) {
+    public VisitDecision preorder(DBSPCloneExpression expression) {
         JITInstructionPair source = this.accept(expression.expression);
         if (expression.getNonVoidType().hasCopy()) {
             this.map(expression, source);
-            return false;
+            return VisitDecision.STOP;
         }
 
         JITType type = this.convertType(expression.getNonVoidType());
@@ -1023,7 +1024,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             if (!needsNull(expression)) {
                 JITInstruction copy = this.add(new JITCopyInstruction(this.nextInstructionId(), source.value, scalarType));
                 this.map(expression, new JITInstructionPair(copy));
-                return false;
+                return VisitDecision.STOP;
             } else {
                 JITBlock isNull = this.newBlock();
                 JITBlock isNotNull = this.newBlock();
@@ -1055,11 +1056,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
         } else {
             throw new Unimplemented("Clone with non-scalar type ", expression);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPIfExpression expression) {
+    public VisitDecision preorder(DBSPIfExpression expression) {
         JITInstructionPair cond = this.accept(expression.condition);
         JITBlock ifTrue = this.newBlock();
         JITBlock ifFalse = this.newBlock();
@@ -1098,11 +1099,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
         }
         this.setCurrentBlock(next);
         this.map(expression, new JITInstructionPair(paramValue, isNull));
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPRawTupleExpression expression) {
+    public VisitDecision preorder(DBSPRawTupleExpression expression) {
         // Each field is assigned to a different variable.
         // Remove the last n variables
         List<String> tail = new ArrayList<>();
@@ -1116,11 +1117,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
                 field = new DBSPTupleExpression(field.to(DBSPRawTupleExpression.class).fields);
             field.accept(this);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPTupleExpression expression) {
+    public VisitDecision preorder(DBSPTupleExpression expression) {
         // Compile this as an assignment to the currently assigned variable
         String variableAssigned = this.variableAssigned.get(this.variableAssigned.size() - 1);
         JITInstructionPair retValId = this.resolve(variableAssigned);
@@ -1140,7 +1141,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             index++;
         }
         this.map(expression, retValId);
-        return false;
+        return VisitDecision.STOP;
     }
 
     JITBlock newBlock() {
@@ -1155,7 +1156,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
     }
 
     @Override
-    public boolean preorder(DBSPBlockExpression expression) {
+    public VisitDecision preorder(DBSPBlockExpression expression) {
         this.newContext();
         JITBlock saveBlock = this.currentBlock;
         JITBlock newBlock = this.newBlock();
@@ -1195,7 +1196,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
             this.getCurrentBlock().terminate(terminator);
             this.setCurrentBlock(newBlock);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     /**

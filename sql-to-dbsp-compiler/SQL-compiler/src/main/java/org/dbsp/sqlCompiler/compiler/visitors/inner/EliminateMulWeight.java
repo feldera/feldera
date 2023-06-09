@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -15,7 +16,7 @@ public class EliminateMulWeight extends InnerRewriteVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPBinaryExpression expression) {
+    public VisitDecision preorder(DBSPBinaryExpression expression) {
         if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
             DBSPExpression left = this.transform(expression.left);
             DBSPExpression right = this.transform(expression.right);
@@ -23,7 +24,7 @@ public class EliminateMulWeight extends InnerRewriteVisitor {
                     expression.getNode(), expression.getNonVoidType(), DBSPOpcode.MUL,
                     left, right.cast(left.getNonVoidType()));
             this.map(expression, result);
-            return false;
+            return VisitDecision.STOP;
         }
         return super.preorder(expression);
     }

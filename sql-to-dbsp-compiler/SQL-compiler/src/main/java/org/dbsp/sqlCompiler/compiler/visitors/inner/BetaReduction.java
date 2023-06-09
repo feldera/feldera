@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
@@ -46,7 +47,7 @@ public class BetaReduction extends InnerRewriteVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPApplyExpression expression) {
+    public VisitDecision preorder(DBSPApplyExpression expression) {
         if (expression.function.is(DBSPClosureExpression.class)) {
             DBSPClosureExpression closure = expression.function.to(DBSPClosureExpression.class);
             this.context.newContext();
@@ -63,32 +64,32 @@ public class BetaReduction extends InnerRewriteVisitor {
             DBSPExpression newBody = this.transform(closure.body);
             this.map(expression, newBody);
             this.context.popContext();
-            return false;
+            return VisitDecision.STOP;
         }
         super.preorder(expression);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPVariablePath variable) {
+    public VisitDecision preorder(DBSPVariablePath variable) {
         DBSPExpression replacement = this.context.lookup(variable);
         this.map(variable, replacement);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPBlockExpression block) {
+    public VisitDecision preorder(DBSPBlockExpression block) {
         this.context.newContext();
         super.preorder(block);
         this.context.popContext();
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPLetStatement statement) {
+    public VisitDecision preorder(DBSPLetStatement statement) {
         this.context.substitute(statement.variable, null);
         super.preorder(statement);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override

@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -60,63 +61,63 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPUSizeLiteral node) {
+    public VisitDecision preorder(DBSPUSizeLiteral node) {
          this.constant("Usize", node);
-         return false;
+         return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPISizeLiteral node) {
+    public VisitDecision preorder(DBSPISizeLiteral node) {
         this.constant("Isize", node);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPI64Literal node) {
+    public VisitDecision preorder(DBSPI64Literal node) {
         this.constant("I64", node);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPI32Literal node) {
+    public VisitDecision preorder(DBSPI32Literal node) {
         this.constant("I32", node);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPFloatLiteral node) {
+    public VisitDecision preorder(DBSPFloatLiteral node) {
         this.constant("F32", node.raw());
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPDoubleLiteral node) {
+    public VisitDecision preorder(DBSPDoubleLiteral node) {
         this.constant("F64", node.raw());
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPBoolLiteral node) {
+    public VisitDecision preorder(DBSPBoolLiteral node) {
         this.constant("Bool", node);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPStringLiteral node) {
+    public VisitDecision preorder(DBSPStringLiteral node) {
         this.constant("String", node);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPTupleExpression node) {
+    public VisitDecision preorder(DBSPTupleExpression node) {
         DBSPExpression[] columns = Linq.map(node.fields, this::transform, DBSPExpression.class);
         DBSPExpression result = new DBSPVecLiteral(columns);
         this.map(node, result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPExpression expression) {
+    public VisitDecision preorder(DBSPExpression expression) {
         throw new Unimplemented(expression);
     }
 
@@ -130,7 +131,7 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPZSetLiteral expression) {
+    public VisitDecision preorder(DBSPZSetLiteral expression) {
         DBSPExpression[] rows = new DBSPExpression[expression.size()];
         int index = 0;
         for (Map.Entry<DBSPExpression, Long> entry : expression.data.data.entrySet()) {
@@ -148,6 +149,6 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
                 DBSPTypeAny.INSTANCE.path(new DBSPPath("Set")),
                 DBSPTypeAny.INSTANCE, vec);
         this.map(expression, result);
-        return false;
+        return VisitDecision.STOP;
     }
 }

@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
 /**
  * IR modes from the outer language: circuits and operators.

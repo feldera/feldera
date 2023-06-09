@@ -21,11 +21,16 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir;
+package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDelegateVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
@@ -93,593 +98,593 @@ public abstract class InnerVisitor {
     // preorder methods return 'true' when normal traversal is desired,
     // and 'false' when the traversal should stop right away at the current node.
     // base classes
-    public boolean preorder(IDBSPInnerNode ignored) {
-        return true;
+    public VisitDecision preorder(IDBSPInnerNode ignored) {
+        return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPAggregate node) {
+    public VisitDecision preorder(DBSPAggregate node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPAggregate.Implementation node) {
+    public VisitDecision preorder(DBSPAggregate.Implementation node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPExpression node) {
+    public VisitDecision preorder(DBSPExpression node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPStatement node) {
+    public VisitDecision preorder(DBSPStatement node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPItem node) {
+    public VisitDecision preorder(DBSPItem node) {
         if (this.visitSuper) return this.preorder((DBSPStatement) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeStruct.Field node) {
+    public VisitDecision preorder(DBSPTypeStruct.Field node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPType node) {
+    public VisitDecision preorder(DBSPType node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeBaseType node) {
+    public VisitDecision preorder(DBSPTypeBaseType node) {
         if (this.visitSuper) return this.preorder((DBSPType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeWeight node) {
+    public VisitDecision preorder(DBSPTypeWeight node) {
         if (this.visitSuper) return this.preorder((DBSPType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeDate node) {
+    public VisitDecision preorder(DBSPTypeDate node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeTime node) {
+    public VisitDecision preorder(DBSPTypeTime node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeMillisInterval node) {
+    public VisitDecision preorder(DBSPTypeMillisInterval node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeMonthsInterval node) {
+    public VisitDecision preorder(DBSPTypeMonthsInterval node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeGeo node) {
+    public VisitDecision preorder(DBSPTypeGeo node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeGeoPoint node) {
+    public VisitDecision preorder(DBSPTypeGeoPoint node) {
         if (this.visitSuper) return this.preorder((DBSPTypeGeo) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPFunction node) {
+    public VisitDecision preorder(DBSPFunction node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPPath node) {
+    public VisitDecision preorder(DBSPPath node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPPattern node) {
+    public VisitDecision preorder(DBSPPattern node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPParameter node) {
+    public VisitDecision preorder(DBSPParameter node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
     // Statements
     
-    public boolean preorder(DBSPExpressionStatement node) {
+    public VisitDecision preorder(DBSPExpressionStatement node) {
         if (this.visitSuper) return this.preorder((DBSPStatement) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPComment node) {
+    public VisitDecision preorder(DBSPComment node) {
         if (this.visitSuper) return this.preorder((DBSPStatement) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPLetStatement node) {
+    public VisitDecision preorder(DBSPLetStatement node) {
         if (this.visitSuper) return this.preorder((DBSPStatement) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPConstItem node) {
+    public VisitDecision preorder(DBSPConstItem node) {
         if (this.visitSuper) return this.preorder((DBSPItem) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
     // Various
     
-    public boolean preorder(DBSPMatchExpression.Case node) {
+    public VisitDecision preorder(DBSPMatchExpression.Case node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPPathSegment node) {
+    public VisitDecision preorder(DBSPPathSegment node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPSimplePathSegment node) {
+    public VisitDecision preorder(DBSPSimplePathSegment node) {
         if (this.visitSuper) return this.preorder((DBSPPathSegment) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
     // Types
     
-    public boolean preorder(DBSPTypeFP node) {
+    public VisitDecision preorder(DBSPTypeFP node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeFloat node) {
+    public VisitDecision preorder(DBSPTypeFloat node) {
         if (this.visitSuper) return this.preorder((DBSPTypeFP) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeDouble node) {
+    public VisitDecision preorder(DBSPTypeDouble node) {
         if (this.visitSuper) return this.preorder((DBSPTypeFP) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeISize node) {
+    public VisitDecision preorder(DBSPTypeISize node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeStruct node) {
+    public VisitDecision preorder(DBSPTypeStruct node) {
         if (this.visitSuper) return this.preorder((DBSPType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeString node) {
+    public VisitDecision preorder(DBSPTypeString node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
     
-    public boolean preorder(DBSPTypeUSize node) {
+    public VisitDecision preorder(DBSPTypeUSize node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeTupleBase node) {
+    public VisitDecision preorder(DBSPTypeTupleBase node) {
         if (this.visitSuper) return this.preorder((DBSPType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeRawTuple node) {
+    public VisitDecision preorder(DBSPTypeRawTuple node) {
         if (this.visitSuper) return this.preorder((DBSPTypeTupleBase) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeTuple node) {
+    public VisitDecision preorder(DBSPTypeTuple node) {
         if (this.visitSuper) return this.preorder((DBSPTypeTupleBase) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeStr node) {
+    public VisitDecision preorder(DBSPTypeStr node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeTimestamp node) {
+    public VisitDecision preorder(DBSPTypeTimestamp node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeInteger node) {
+    public VisitDecision preorder(DBSPTypeInteger node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeDecimal node) {
+    public VisitDecision preorder(DBSPTypeDecimal node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeNull node) {
+    public VisitDecision preorder(DBSPTypeNull node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeFunction node) {
+    public VisitDecision preorder(DBSPTypeFunction node) {
         if (this.visitSuper) return this.preorder((DBSPType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeBool node) {
+    public VisitDecision preorder(DBSPTypeBool node) {
         if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeStream node) {
+    public VisitDecision preorder(DBSPTypeStream node) {
         if (this.visitSuper) return this.preorder((DBSPType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
     
-    public boolean preorder(DBSPTypeUser node) {
+    public VisitDecision preorder(DBSPTypeUser node) {
         if (this.visitSuper) return this.preorder((DBSPType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeIndexedZSet node) {
+    public VisitDecision preorder(DBSPTypeIndexedZSet node) {
         if (this.visitSuper) return this.preorder((DBSPTypeUser) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeZSet node) {
+    public VisitDecision preorder(DBSPTypeZSet node) {
         if (this.visitSuper) return this.preorder((DBSPTypeUser) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeVec node) {
+    public VisitDecision preorder(DBSPTypeVec node) {
         if (this.visitSuper) return this.preorder((DBSPTypeUser) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeSemigroup node) {
+    public VisitDecision preorder(DBSPTypeSemigroup node) {
         if (this.visitSuper) return this.preorder((DBSPTypeUser) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTypeAny node) {
+    public VisitDecision preorder(DBSPTypeAny node) {
         if (this.visitSuper) return this.preorder((DBSPType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
     
-    public boolean preorder(DBSPTypeRef node) {
+    public VisitDecision preorder(DBSPTypeRef node) {
         if (this.visitSuper) return this.preorder((DBSPType) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
     // Patterns
-    public boolean preorder(DBSPTupleStructPattern node) {
+    public VisitDecision preorder(DBSPTupleStructPattern node) {
         if (this.visitSuper) return this.preorder((DBSPPattern) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTuplePattern node) {
+    public VisitDecision preorder(DBSPTuplePattern node) {
         if (this.visitSuper) return this.preorder((DBSPPattern) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPRefPattern node) {
+    public VisitDecision preorder(DBSPRefPattern node) {
         if (this.visitSuper) return this.preorder((DBSPPattern) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPWildcardPattern node) {
+    public VisitDecision preorder(DBSPWildcardPattern node) {
         if (this.visitSuper) return this.preorder((DBSPPattern) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPLiteralPattern node) {
+    public VisitDecision preorder(DBSPLiteralPattern node) {
         if (this.visitSuper) return this.preorder((DBSPPattern) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIdentifierPattern node) {
+    public VisitDecision preorder(DBSPIdentifierPattern node) {
         if (this.visitSuper) return this.preorder((DBSPPattern) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
     // Expressions
 
-    public boolean preorder(DBSPFlatmap node) {
+    public VisitDecision preorder(DBSPFlatmap node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPSortExpression node) {
+    public VisitDecision preorder(DBSPSortExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIndexExpression node) {
+    public VisitDecision preorder(DBSPIndexExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPComparatorExpression node) {
+    public VisitDecision preorder(DBSPComparatorExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPNoComparatorExpression node) {
+    public VisitDecision preorder(DBSPNoComparatorExpression node) {
         if (this.visitSuper) return this.preorder((DBSPComparatorExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPFieldComparatorExpression node) {
+    public VisitDecision preorder(DBSPFieldComparatorExpression node) {
         if (this.visitSuper) return this.preorder((DBSPComparatorExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPStructExpression node) {
+    public VisitDecision preorder(DBSPStructExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPBorrowExpression node) {
+    public VisitDecision preorder(DBSPBorrowExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPCastExpression node) {
+    public VisitDecision preorder(DBSPCastExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPCloneExpression node) {
+    public VisitDecision preorder(DBSPCloneExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPSomeExpression node) {
+    public VisitDecision preorder(DBSPSomeExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIsNullExpression node) {
+    public VisitDecision preorder(DBSPIsNullExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPClosureExpression node) {
+    public VisitDecision preorder(DBSPClosureExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPQualifyTypeExpression node) {
+    public VisitDecision preorder(DBSPQualifyTypeExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPMatchExpression node) {
+    public VisitDecision preorder(DBSPMatchExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPBinaryExpression node) {
+    public VisitDecision preorder(DBSPBinaryExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPEnumValue node) {
+    public VisitDecision preorder(DBSPEnumValue node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPDerefExpression node) {
+    public VisitDecision preorder(DBSPDerefExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPApplyMethodExpression node) {
+    public VisitDecision preorder(DBSPApplyMethodExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPPathExpression node) {
+    public VisitDecision preorder(DBSPPathExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPForExpression node) {
+    public VisitDecision preorder(DBSPForExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPUnaryExpression node) {
+    public VisitDecision preorder(DBSPUnaryExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTupleExpression node) {
+    public VisitDecision preorder(DBSPTupleExpression node) {
         if (this.visitSuper) return this.preorder((DBSPBaseTupleExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPRawTupleExpression node) {
+    public VisitDecision preorder(DBSPRawTupleExpression node) {
         if (this.visitSuper) return this.preorder((DBSPBaseTupleExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPFieldExpression node) {
+    public VisitDecision preorder(DBSPFieldExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIfExpression node) {
+    public VisitDecision preorder(DBSPIfExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPBlockExpression node) {
+    public VisitDecision preorder(DBSPBlockExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPApplyExpression node) {
+    public VisitDecision preorder(DBSPApplyExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPAssignmentExpression node) {
+    public VisitDecision preorder(DBSPAssignmentExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPAsExpression node) {
+    public VisitDecision preorder(DBSPAsExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPVariablePath node) {
+    public VisitDecision preorder(DBSPVariablePath node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPRangeExpression node) {
+    public VisitDecision preorder(DBSPRangeExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
     
     // Literals
-    public boolean preorder(DBSPLiteral node) {
+    public VisitDecision preorder(DBSPLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPNullLiteral node) {
+    public VisitDecision preorder(DBSPNullLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
     
-    public boolean preorder(DBSPVecLiteral node) {
+    public VisitDecision preorder(DBSPVecLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTimestampLiteral node) {
+    public VisitDecision preorder(DBSPTimestampLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPDateLiteral node) {
+    public VisitDecision preorder(DBSPDateLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPTimeLiteral node) {
+    public VisitDecision preorder(DBSPTimeLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIntervalMillisLiteral node) {
+    public VisitDecision preorder(DBSPIntervalMillisLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIntervalMonthsLiteral node) {
+    public VisitDecision preorder(DBSPIntervalMonthsLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPFPLiteral node) {
+    public VisitDecision preorder(DBSPFPLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPFloatLiteral node) {
+    public VisitDecision preorder(DBSPFloatLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPFPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPUSizeLiteral node) {
+    public VisitDecision preorder(DBSPUSizeLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPZSetLiteral node) {
+    public VisitDecision preorder(DBSPZSetLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIndexedZSetLiteral node) {
+    public VisitDecision preorder(DBSPIndexedZSetLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPStrLiteral node) {
+    public VisitDecision preorder(DBSPStrLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPDecimalLiteral node) {
+    public VisitDecision preorder(DBSPDecimalLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPStringLiteral node) {
+    public VisitDecision preorder(DBSPStringLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPI16Literal node) {
+    public VisitDecision preorder(DBSPI16Literal node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPI32Literal node) {
+    public VisitDecision preorder(DBSPI32Literal node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPU32Literal node) {
+    public VisitDecision preorder(DBSPU32Literal node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPI64Literal node) {
+    public VisitDecision preorder(DBSPI64Literal node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPU64Literal node) {
+    public VisitDecision preorder(DBSPU64Literal node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPBoolLiteral node) {
+    public VisitDecision preorder(DBSPBoolLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPDoubleLiteral node) {
+    public VisitDecision preorder(DBSPDoubleLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPFPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPKeywordLiteral node) {
+    public VisitDecision preorder(DBSPKeywordLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPISizeLiteral node) {
+    public VisitDecision preorder(DBSPISizeLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPGeoPointLiteral node) {
+    public VisitDecision preorder(DBSPGeoPointLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPLiteral) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
     /*************************** POSTORDER *****************************/

@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 import javax.annotation.Nullable;
 
@@ -43,7 +43,7 @@ public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         this.elementType.accept(visitor);
         this.weightType.accept(visitor);

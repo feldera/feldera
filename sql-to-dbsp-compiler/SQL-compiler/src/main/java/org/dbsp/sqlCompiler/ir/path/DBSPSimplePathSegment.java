@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.path;
 
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 public class DBSPSimplePathSegment extends DBSPPathSegment {
@@ -38,7 +38,7 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         for (DBSPType arg: this.genericArgs)
             arg.accept(visitor);

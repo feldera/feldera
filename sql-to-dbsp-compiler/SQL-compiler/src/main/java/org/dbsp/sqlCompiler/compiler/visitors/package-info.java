@@ -21,13 +21,16 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.circuit;
-
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-
 /**
- * IR modes from the inner language: expressions, types, etc.
+ * Package that doesn't allow null values as method parameters.
  */
-public interface IDBSPInnerNode extends IDBSPNode {
-    void accept(InnerVisitor visitor);
-}
+
+@ParametersAreNonnullByDefault
+@FieldsAreNonnullByDefault
+@MethodsAreNonnullByDefault
+package org.dbsp.sqlCompiler.compiler.visitors;
+
+import org.dbsp.util.FieldsAreNonnullByDefault;
+import org.dbsp.util.MethodsAreNonnullByDefault;
+
+import javax.annotation.ParametersAreNonnullByDefault;

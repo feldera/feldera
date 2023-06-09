@@ -21,7 +21,7 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir;
+package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.IdGen;
 
 import javax.annotation.Nullable;
@@ -87,7 +88,7 @@ public abstract class CircuitVisitor extends IdGen
     // preorder methods return 'true' when normal traversal is desired,
     // and 'false' when the traversal should stop right away at the current node.
     // base classes
-    public boolean preorder(DBSPOperator node) { return true; }
+    public VisitDecision preorder(DBSPOperator node) { return VisitDecision.CONTINUE; }
 
     public void setCircuit(DBSPCircuit circuit) {
         if (this.circuit != null)
@@ -95,134 +96,134 @@ public abstract class CircuitVisitor extends IdGen
         this.circuit = circuit;
     }
 
-    public boolean preorder(DBSPCircuit circuit) {
-        return true;
+    public VisitDecision preorder(DBSPCircuit circuit) {
+        return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPPartialCircuit circuit) {
-        return true;
+    public VisitDecision preorder(DBSPPartialCircuit circuit) {
+        return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(IDBSPOuterNode ignoredNode) { return true; }
+    public VisitDecision preorder(IDBSPOuterNode ignoredNode) { return VisitDecision.CONTINUE; }
 
-    public boolean preorder(IDBSPDeclaration node) {
+    public VisitDecision preorder(IDBSPDeclaration node) {
         if (this.visitSuper) return this.preorder((IDBSPOuterNode) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPUnaryOperator node) {
+    public VisitDecision preorder(DBSPUnaryOperator node) {
         if (this.visitSuper) return this.preorder((DBSPOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIndexOperator node) {
+    public VisitDecision preorder(DBSPIndexOperator node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPNoopOperator node) {
+    public VisitDecision preorder(DBSPNoopOperator node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPSubtractOperator node) {
+    public VisitDecision preorder(DBSPSubtractOperator node) {
         if (this.visitSuper) return this.preorder((DBSPOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPSumOperator node) {
+    public VisitDecision preorder(DBSPSumOperator node) {
         if (this.visitSuper) return this.preorder((DBSPOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPJoinOperator node) {
+    public VisitDecision preorder(DBSPJoinOperator node) {
         if (this.visitSuper) return this.preorder((DBSPOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPAggregateOperatorBase node) {
+    public VisitDecision preorder(DBSPAggregateOperatorBase node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPAggregateOperator node) {
+    public VisitDecision preorder(DBSPAggregateOperator node) {
         if (this.visitSuper) return this.preorder((DBSPAggregateOperatorBase) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIncrementalAggregateOperator node) {
+    public VisitDecision preorder(DBSPIncrementalAggregateOperator node) {
         if (this.visitSuper) return this.preorder((DBSPAggregateOperatorBase) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPWindowAggregateOperator node) {
+    public VisitDecision preorder(DBSPWindowAggregateOperator node) {
         if (this.visitSuper) return this.preorder((DBSPAggregateOperatorBase) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPConstantOperator node) {
+    public VisitDecision preorder(DBSPConstantOperator node) {
         if (this.visitSuper) return this.preorder((DBSPOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPMapOperator node) {
+    public VisitDecision preorder(DBSPMapOperator node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPMapIndexOperator node) {
+    public VisitDecision preorder(DBSPMapIndexOperator node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPDifferentialOperator node) {
+    public VisitDecision preorder(DBSPDifferentialOperator node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIntegralOperator node) {
+    public VisitDecision preorder(DBSPIntegralOperator node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPNegateOperator node) {
+    public VisitDecision preorder(DBSPNegateOperator node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPFlatMapOperator node) {
+    public VisitDecision preorder(DBSPFlatMapOperator node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPFilterOperator node) {
+    public VisitDecision preorder(DBSPFilterOperator node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPDistinctOperator node) {
+    public VisitDecision preorder(DBSPDistinctOperator node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIncrementalDistinctOperator node) {
+    public VisitDecision preorder(DBSPIncrementalDistinctOperator node) {
         if (this.visitSuper) return this.preorder((DBSPUnaryOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPSinkOperator node) {
+    public VisitDecision preorder(DBSPSinkOperator node) {
         if (this.visitSuper) return this.preorder((DBSPOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPSourceOperator node) {
+    public VisitDecision preorder(DBSPSourceOperator node) {
         if (this.visitSuper) return this.preorder((DBSPOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
-    public boolean preorder(DBSPIncrementalJoinOperator node) {
+    public VisitDecision preorder(DBSPIncrementalJoinOperator node) {
         if (this.visitSuper) return this.preorder((DBSPOperator) node);
-        else return true;
+        else return VisitDecision.CONTINUE;
     }
 
     ////////////////////////////////////

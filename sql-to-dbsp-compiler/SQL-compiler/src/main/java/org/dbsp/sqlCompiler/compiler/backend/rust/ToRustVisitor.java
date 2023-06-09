@@ -26,8 +26,9 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.circuit.*;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.util.*;
 
@@ -104,15 +105,15 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPCircuit circuit) {
+    public VisitDecision preorder(DBSPCircuit circuit) {
         this.builder.append("fn ")
                 .append(circuit.name);
         circuit.circuit.accept(this);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPPartialCircuit circuit) {
+    public VisitDecision preorder(DBSPPartialCircuit circuit) {
         // function prototype:
         // fn name() -> impl FnMut(T0, T1) -> (O0, O1) {
         boolean first = true;
@@ -165,11 +166,11 @@ public class ToRustVisitor extends CircuitVisitor {
                 .decrease()
                 .append("}")
                 .newline();
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPSourceOperator operator) {
+    public VisitDecision preorder(DBSPSourceOperator operator) {
         this.writeComments(operator)
                 .append("let ")
                 .append(operator.getName())
@@ -177,11 +178,11 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append("circuit.add_source(")
                 .append(operator.outputName)
                 .append(");");
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPIncrementalDistinctOperator operator) {
+    public VisitDecision preorder(DBSPIncrementalDistinctOperator operator) {
         DBSPType streamType = new DBSPTypeStream(operator.outputType);
         this.writeComments(operator)
                 .append("let ")
@@ -193,11 +194,11 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(".")
                 .append(operator.operation)
                 .append("();");
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPSinkOperator operator) {
+    public VisitDecision preorder(DBSPSinkOperator operator) {
         this.writeComments(operator.query);
         this.writeComments(operator)
                 .append(operator.input().getName())
@@ -207,11 +208,11 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.getName())
                 .append(".borrow_mut() = ")
                 .append("m.clone() });");
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPOperator operator) {
+    public VisitDecision preorder(DBSPOperator operator) {
         DBSPType streamType = new DBSPTypeStream(operator.outputType);
         this.writeComments(operator)
                 .append("let ")
@@ -236,11 +237,11 @@ public class ToRustVisitor extends CircuitVisitor {
             operator.function.accept(this.innerVisitor);
         }
         builder.append(");");
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPWindowAggregateOperator operator) {
+    public VisitDecision preorder(DBSPWindowAggregateOperator operator) {
         // We generate two DBSP operator calls: partitioned_rolling_aggregate
         // and map_index
         DBSPType streamType = new DBSPTypeStream(operator.outputType);
@@ -264,11 +265,11 @@ public class ToRustVisitor extends CircuitVisitor {
         builder.append(" = " )
                 .append(tmp)
                 .append(".map_index(|(key, (ts, agg))| { ((key.clone(), *ts), agg.unwrap_or_default())});");
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPIncrementalAggregateOperator operator) {
+    public VisitDecision preorder(DBSPIncrementalAggregateOperator operator) {
         DBSPType streamType = new DBSPTypeStream(operator.outputType);
         this.writeComments(operator)
                 .append("let ")
@@ -282,11 +283,11 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append("(");
         operator.getFunction().accept(this.innerVisitor);
         builder.append(");");
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPSumOperator operator) {
+    public VisitDecision preorder(DBSPSumOperator operator) {
         this.writeComments(operator)
                     .append("let ")
                     .append(operator.getName())
@@ -304,7 +305,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append("&").append(operator.inputs.get(i).getName());
         }
         this.builder.append("]);");
-        return false;
+        return VisitDecision.STOP;
     }
 
     IIndentStream writeComments(@Nullable String comment) {
@@ -321,7 +322,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPIncrementalJoinOperator operator) {
+    public VisitDecision preorder(DBSPIncrementalJoinOperator operator) {
         this.writeComments(operator)
                 .append("let ")
                 .append(operator.getName())
@@ -337,11 +338,11 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ");
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(");");
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPConstantOperator operator) {
+    public VisitDecision preorder(DBSPConstantOperator operator) {
         assert operator.function != null;
         builder.append("let ")
                 .append(operator.getName())
@@ -349,7 +350,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append("circuit.add_source(Generator::new(|| ");
         operator.function.accept(this.innerVisitor);
         this.builder.append("));");
-        return false;
+        return VisitDecision.STOP;
     }
 
     public static String toRustString(IErrorReporter reporter, IDBSPOuterNode node) {

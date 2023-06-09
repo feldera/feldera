@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.util.IModule;
@@ -41,7 +42,7 @@ public class BlockClosures
     }
 
     @Override
-    public boolean preorder(DBSPClosureExpression expression) {
+    public VisitDecision preorder(DBSPClosureExpression expression) {
         expression.body.accept(this);
         DBSPExpression newBody = this.getResultExpression();
         DBSPBlockExpression block ;
@@ -54,6 +55,6 @@ public class BlockClosures
             result = new DBSPClosureExpression(expression.getNode(),
                 block, expression.parameters);
         this.map(expression, result);
-        return false;
+        return VisitDecision.STOP;
     }
 }

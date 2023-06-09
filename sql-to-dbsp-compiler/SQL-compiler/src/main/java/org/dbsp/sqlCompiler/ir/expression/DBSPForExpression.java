@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 
@@ -42,7 +42,7 @@ public class DBSPForExpression extends DBSPExpression {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         this.pattern.accept(visitor);
         this.iterated.accept(visitor);

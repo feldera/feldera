@@ -30,7 +30,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IModule;
 import org.dbsp.util.IndentStream;
@@ -54,13 +55,13 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
     }
 
     @Override
-    public boolean preorder(DBSPSourceOperator node) {
+    public VisitDecision preorder(DBSPSourceOperator node) {
         this.stream.append(node.outputName)
                 .append(" [ shape=box,label=\"")
                 .append(node.outputName)
                 .append("\" ]")
                 .newline();
-        return false;
+        return VisitDecision.STOP;
     }
 
     void addInputs(DBSPOperator node) {
@@ -74,14 +75,14 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
     }
 
     @Override
-    public boolean preorder(DBSPSinkOperator node) {
+    public VisitDecision preorder(DBSPSinkOperator node) {
         this.stream.append(node.outputName)
                 .append(" [ shape=box,label=\"")
                 .append(node.outputName)
                 .append("\" ]")
                 .newline();
         this.addInputs(node);
-        return false;
+        return VisitDecision.STOP;
     }
 
     String getFunction(DBSPOperator node) {
@@ -92,7 +93,7 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
     }
 
     @Override
-    public boolean preorder(DBSPOperator node) {
+    public VisitDecision preorder(DBSPOperator node) {
         this.stream.append(node.outputName)
                 .append(" [ shape=box,label=\"")
                 .append(node.operation)
@@ -101,23 +102,23 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
                 .append(")\" ]")
                 .newline();
         this.addInputs(node);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPCircuit circuit) {
+    public VisitDecision preorder(DBSPCircuit circuit) {
         this.setCircuit(circuit);
         this.stream.append("digraph ")
                 .append(circuit.name);
         circuit.circuit.accept(this);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPPartialCircuit circuit) {
+    public VisitDecision preorder(DBSPPartialCircuit circuit) {
         this.stream.append("{")
                 .increase();
-        return true;
+        return VisitDecision.CONTINUE;
     }
 
     @Override

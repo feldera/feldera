@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.pattern;
 
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 public class DBSPTuplePattern extends DBSPPattern {
     public final DBSPPattern[] fields;
@@ -35,7 +35,7 @@ public class DBSPTuplePattern extends DBSPPattern {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         for (DBSPPattern pattern: this.fields)
             pattern.accept(visitor);

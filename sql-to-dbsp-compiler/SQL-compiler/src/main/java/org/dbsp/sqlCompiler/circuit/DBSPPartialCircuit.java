@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
@@ -102,7 +102,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IMod
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         for (IDBSPNode op: this.allOperators) {
             IDBSPOuterNode outer = op.as(IDBSPOuterNode.class);
             if (outer != null)

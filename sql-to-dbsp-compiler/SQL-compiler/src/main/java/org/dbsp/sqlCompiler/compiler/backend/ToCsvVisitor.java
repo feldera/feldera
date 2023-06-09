@@ -24,7 +24,8 @@
 package org.dbsp.sqlCompiler.compiler.backend;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -53,7 +54,7 @@ public class ToCsvVisitor extends InnerVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPI32Literal literal) {
+    public VisitDecision preorder(DBSPI32Literal literal) {
         try {
             if (literal.value != null)
                 this.appendable.append(Integer.toString(literal.value));
@@ -62,11 +63,11 @@ public class ToCsvVisitor extends InnerVisitor {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPI64Literal literal) {
+    public VisitDecision preorder(DBSPI64Literal literal) {
         try {
             if (literal.value != null)
                 this.appendable.append(Long.toString(literal.value));
@@ -75,11 +76,11 @@ public class ToCsvVisitor extends InnerVisitor {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPTimestampLiteral literal) {
+    public VisitDecision preorder(DBSPTimestampLiteral literal) {
         try {
             if (!literal.isNull)
                 this.appendable.append(Long.toString(Objects.requireNonNull(literal.value)));
@@ -88,11 +89,11 @@ public class ToCsvVisitor extends InnerVisitor {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPFloatLiteral literal) {
+    public VisitDecision preorder(DBSPFloatLiteral literal) {
         try {
             if (literal.value != null)
                 this.appendable.append(Float.toString(literal.value));
@@ -101,11 +102,11 @@ public class ToCsvVisitor extends InnerVisitor {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPDoubleLiteral literal) {
+    public VisitDecision preorder(DBSPDoubleLiteral literal) {
         try {
             if (literal.value != null)
                 this.appendable.append(Double.toString(literal.value));
@@ -114,11 +115,11 @@ public class ToCsvVisitor extends InnerVisitor {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPStringLiteral literal) {
+    public VisitDecision preorder(DBSPStringLiteral literal) {
         try {
             if (literal.value != null)
                 this.appendable.append(Utilities.doubleQuote(literal.value));
@@ -127,11 +128,11 @@ public class ToCsvVisitor extends InnerVisitor {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPBoolLiteral literal) {
+    public VisitDecision preorder(DBSPBoolLiteral literal) {
         try {
             if (literal.value != null)
                 this.appendable.append(Boolean.toString(literal.value));
@@ -140,11 +141,11 @@ public class ToCsvVisitor extends InnerVisitor {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPTupleExpression node) {
+    public VisitDecision preorder(DBSPTupleExpression node) {
         try {
             for (DBSPExpression expression : node.fields) {
                 expression.accept(this);
@@ -153,11 +154,11 @@ public class ToCsvVisitor extends InnerVisitor {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPZSetLiteral literal) {
+    public VisitDecision preorder(DBSPZSetLiteral literal) {
         try {
             for (Map.Entry<DBSPExpression, Long> entry: literal.data.data.entrySet()) {
                 DBSPExpression key = entry.getKey();
@@ -172,7 +173,7 @@ public class ToCsvVisitor extends InnerVisitor {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-        return false;
+        return VisitDecision.STOP;
     }
 
     /**

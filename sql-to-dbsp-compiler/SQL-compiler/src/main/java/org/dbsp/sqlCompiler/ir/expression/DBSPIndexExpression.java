@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
@@ -58,7 +58,7 @@ public class DBSPIndexExpression extends DBSPExpression {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         if (this.type != null)
             this.type.accept(visitor);

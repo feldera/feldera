@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 /**
  * Represents the type of a Rust Vec as a TypeUser.
@@ -40,7 +40,7 @@ public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         for (DBSPType type: this.typeArgs)
             type.accept(visitor);
