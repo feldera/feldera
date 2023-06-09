@@ -83,6 +83,10 @@ prepare-cache:
     # https://hackmd.io/@kobzol/S17NS71bh
     FROM +install-rust
 
+    # We can't just copy crates from source, the reasons seem to have to do with
+    # the way the hashes are computed for the cache: e.g., once
+    # https://github.com/earthly/earthly/issues/786 is fixed this can go away
+    # and crates can be copied instead:
     RUN mkdir -p .cargo
     RUN mkdir -p crates/dataflow-jit
     RUN mkdir -p crates/nexmark
@@ -170,6 +174,7 @@ build-cache:
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
+    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --features persistence --no-run
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_adapters
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --no-run
@@ -316,11 +321,28 @@ audit:
     FROM +build-cache
     RUN cargo audit || true
 
+CARGO_TEST:
+    COMMAND
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
+    ARG package
+    ARG features
+    ARG test_args
+    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package $package \
+        $(if [ -z $features ]; then printf -- --features $features; fi) \
+        -- -Z unstable-options --report-time $test_args
+
 test-dbsp:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
     FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    # Limit test execution to tests in trace::persistent::tests, because
+    # executing everything takes too long and (in theory) the proptests we have
+    # should ensure equivalence with the DRAM trace implementation:
+    DO +CARGO_TEST \
+        --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE \
+        --package=dbsp --features=persistence --test_args=trace::persistent::tests
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp
 
 test-nexmark:
