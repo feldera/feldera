@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.ir.path;
 
 import org.dbsp.sqlCompiler.circuit.DBSPNode;
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.Linq;
 
 public class DBSPPath extends DBSPNode implements IDBSPInnerNode {
@@ -42,7 +42,7 @@ public class DBSPPath extends DBSPNode implements IDBSPInnerNode {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         for (DBSPPathSegment path: this.components)
             path.accept(visitor);

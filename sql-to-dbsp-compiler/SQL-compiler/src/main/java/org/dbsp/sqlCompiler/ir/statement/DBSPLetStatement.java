@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.statement;
 
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -69,7 +69,7 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         this.type.accept(visitor);
         if (this.initializer != null)

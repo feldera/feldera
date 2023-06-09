@@ -4,6 +4,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.sql.SqlOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPNode;
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
@@ -56,7 +57,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         for (Implementation impl: this.components) {
             impl.accept(visitor);
@@ -226,7 +227,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
 
         @Override
         public void accept(InnerVisitor visitor) {
-            if (!visitor.preorder(this)) return;
+            if (visitor.preorder(this).stop()) return;
             visitor.push(this);
             this.semigroup.accept(visitor);
             this.zero.accept(visitor);

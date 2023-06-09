@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.circuit.DBSPNode;
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
@@ -47,7 +47,7 @@ public class DBSPMatchExpression extends DBSPExpression {
 
         @Override
         public void accept(InnerVisitor visitor) {
-            if (!visitor.preorder(this)) return;
+            if (visitor.preorder(this).stop()) return;
             visitor.push(this);
             this.against.accept(visitor);
             this.result.accept(visitor);
@@ -74,7 +74,7 @@ public class DBSPMatchExpression extends DBSPExpression {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         this.matched.accept(visitor);
         for (Case c: this.cases)

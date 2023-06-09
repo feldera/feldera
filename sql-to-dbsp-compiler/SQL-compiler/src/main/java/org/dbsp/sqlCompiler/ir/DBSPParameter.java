@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.sqlCompiler.circuit.DBSPNode;
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
@@ -76,7 +77,7 @@ public class DBSPParameter extends DBSPNode implements IHasType, IDBSPInnerNode 
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         this.type.accept(visitor);
         this.pattern.accept(visitor);

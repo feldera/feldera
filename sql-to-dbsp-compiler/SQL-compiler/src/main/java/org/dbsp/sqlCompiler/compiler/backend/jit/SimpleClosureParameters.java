@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.backend.jit;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SubstitutionContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -58,51 +59,51 @@ public class SimpleClosureParameters
     }
 
     @Override
-    public boolean preorder(DBSPType node) {
-        return false;
+    public VisitDecision preorder(DBSPType node) {
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPClosureExpression expression) {
+    public VisitDecision preorder(DBSPClosureExpression expression) {
         return super.preorder(expression);
     }
 
     @Override
-    public boolean preorder(DBSPFieldExpression field) {
+    public VisitDecision preorder(DBSPFieldExpression field) {
         DBSPVariablePath var = field.expression.as(DBSPVariablePath.class);
         if (var != null) {
             List<DBSPVariablePath> fields = this.context.get(var.variable);
             if (fields != null) {
                 DBSPExpression replacement = fields.get(field.fieldNo);
                 this.map(field, replacement);
-                return false;
+                return VisitDecision.STOP;
             }
         }
         return super.preorder(field);
     }
 
     @Override
-    public boolean preorder(DBSPVariablePath variable) {
+    public VisitDecision preorder(DBSPVariablePath variable) {
         if (this.context.containsSubstitution(variable.variable))
             // We cannot allow accesses to the original parameter.
             throw new RuntimeException("Could not substitute all uses of " + variable);
         this.map(variable, variable);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPBlockExpression block) {
+    public VisitDecision preorder(DBSPBlockExpression block) {
         this.context.newContext();
         super.preorder(block);
         this.context.popContext();
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPLetStatement statement) {
+    public VisitDecision preorder(DBSPLetStatement statement) {
         this.context.substitute(statement.variable, null);
         super.preorder(statement);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override

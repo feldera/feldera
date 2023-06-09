@@ -1,8 +1,8 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
     public final String comment;
@@ -14,7 +14,7 @@ public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
@@ -22,7 +22,7 @@ public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (!visitor.preorder(this)) return;
+        if (visitor.preorder(this).stop()) return;
         visitor.postorder(this);
     }
 }

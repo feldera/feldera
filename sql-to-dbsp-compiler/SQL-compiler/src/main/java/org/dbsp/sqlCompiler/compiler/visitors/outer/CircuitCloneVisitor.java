@@ -27,7 +27,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.ir.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.IModule;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -93,11 +93,11 @@ public class CircuitCloneVisitor extends CircuitVisitor
     }
 
     @Override
-    public boolean preorder(DBSPPartialCircuit circuit) {
+    public VisitDecision preorder(DBSPPartialCircuit circuit) {
         super.preorder(circuit);
         for (DBSPOperator node : circuit.getAllOperators())
             node.accept(this);
-        return false;
+        return VisitDecision.STOP;
     }
 
     public void replace(DBSPOperator operator) {

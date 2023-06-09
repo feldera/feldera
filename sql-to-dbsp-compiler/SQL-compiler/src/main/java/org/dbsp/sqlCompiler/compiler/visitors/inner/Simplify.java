@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -59,17 +60,17 @@ public class Simplify extends InnerRewriteVisitor {
     }
 
     @Override
-    public boolean preorder(DBSPIsNullExpression expression) {
+    public VisitDecision preorder(DBSPIsNullExpression expression) {
         DBSPExpression source = this.transform(expression.expression);
         DBSPExpression result = expression;
         if (!source.getNonVoidType().mayBeNull)
             result = DBSPBoolLiteral.FALSE;
         this.map(expression, result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPCastExpression expression) {
+    public VisitDecision preorder(DBSPCastExpression expression) {
         DBSPExpression source = this.transform(expression.source);
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
@@ -78,25 +79,25 @@ public class Simplify extends InnerRewriteVisitor {
                 // Convert it to a literal of the resulting type
                 DBSPExpression result = DBSPLiteral.none(expression.getNonVoidType());
                 this.map(expression, result);
-                return false;
+                return VisitDecision.STOP;
             }
         }
         this.map(expression, expression);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPFieldExpression expression) {
+    public VisitDecision preorder(DBSPFieldExpression expression) {
         DBSPExpression result = expression;
         if (expression.expression.is(DBSPBaseTupleExpression.class)) {
             result = expression.expression.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
         }
         this.map(expression, result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPIfExpression expression) {
+    public VisitDecision preorder(DBSPIfExpression expression) {
         DBSPExpression condition = this.transform(expression.condition);
         DBSPExpression negative = this.transform(expression.negative);
         DBSPExpression positive = this.transform(expression.positive);
@@ -116,11 +117,11 @@ public class Simplify extends InnerRewriteVisitor {
             result = new DBSPIfExpression(expression.getNode(), condition, positive, negative);
         }
         this.map(expression, result);
-        return false;
+        return VisitDecision.STOP;
     }
 
     @Override
-    public boolean preorder(DBSPBinaryExpression expression) {
+    public VisitDecision preorder(DBSPBinaryExpression expression) {
         DBSPExpression left = this.transform(expression.left);
         DBSPExpression right = this.transform(expression.right);
         DBSPType leftType = left.getNonVoidType();
@@ -216,6 +217,6 @@ public class Simplify extends InnerRewriteVisitor {
                     expression.operation, left, right, expression.primitive);
         }
         this.map(expression, result.cast(expression.getNonVoidType()));
-        return false;
+        return VisitDecision.STOP;
     }
 }
