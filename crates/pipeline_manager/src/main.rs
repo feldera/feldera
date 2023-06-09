@@ -27,6 +27,7 @@
 // * Support multi-node DBSP deployments.
 // * Proper UI.
 
+use actix_web::dev::Service;
 use actix_web::{
     delete,
     dev::{ServiceFactory, ServiceRequest},
@@ -36,8 +37,9 @@ use actix_web::{
         Method,
     },
     middleware::{Condition, Logger},
-    patch, post, rt, web,
+    patch, post, rt,
     web::Data as WebData,
+    web::{self, ReqData},
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
@@ -77,6 +79,8 @@ use db::{
     ProgramDescr, ProgramId, ProjectDB, Version,
 };
 use runner::{LocalRunner, Runner, RunnerError};
+
+use crate::auth::TenantId;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -154,6 +158,7 @@ observed by the user is outdated, so the request is rejected."
         dbsp_adapters::transport::KafkaOutputConfig,
         dbsp_adapters::format::CsvEncoderConfig,
         dbsp_adapters::format::CsvParserConfig,
+        TenantId,
         ProgramId,
         PipelineId,
         ConnectorId,
@@ -309,16 +314,15 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
 
         if use_auth {
             let server = HttpServer::new(move || {
-                let closure = |req, bearer_auth| {
-                    auth::auth_validator(auth::aws_auth_config(), req, bearer_auth)
-                };
-                let auth_middleware = HttpAuthentication::with_fn(closure);
+                let auth_middleware = HttpAuthentication::with_fn(auth::auth_validator);
+                let auth_configuration = auth::aws_auth_config();
+
                 let app = App::new()
                     .app_data(state.clone())
+                    .app_data(auth_configuration)
                     .wrap(Logger::default())
                     .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()))
                     .wrap(auth_middleware);
-
                 build_app(app, openapi.clone())
             });
             server.listen(listener)?.run().await?;
@@ -327,7 +331,11 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
                 let app = App::new()
                     .app_data(state.clone())
                     .wrap(Logger::default())
-                    .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()));
+                    .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()))
+                    .wrap_fn(|req, srv| {
+                        let req = auth::tag_with_default_tenant_id(req);
+                        srv.call(req)
+                    });
                 build_app(app, openapi.clone())
             });
             server.listen(listener)?.run().await?;
@@ -395,6 +403,8 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
             DBError::OutdatedProgramVersion(_) => HttpResponse::Conflict(),
             DBError::UnknownPipeline(_) => HttpResponse::NotFound(),
             DBError::UnknownConnector(_) => HttpResponse::NotFound(),
+            // TODO: should we report not found instead?
+            DBError::UnknownTenant(_) => HttpResponse::Unauthorized(),
             // This error should never bubble up till here
             DBError::DuplicateKey => HttpResponse::InternalServerError(),
             DBError::InvalidKey => HttpResponse::Unauthorized(),
@@ -468,12 +478,15 @@ fn parse_connector_name_param(req: &HttpRequest) -> Result<String, HttpResponse>
     tag = "Program"
 )]
 #[get("/v0/programs")]
-async fn list_programs(state: WebData<ServerState>) -> impl Responder {
+async fn list_programs(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .list_programs()
+        .list_programs(*tenant_id)
         .await
         .map(|programs| {
             HttpResponse::Ok()
@@ -511,7 +524,11 @@ struct ProgramCodeResponse {
     tag = "Program"
 )]
 #[get("/v0/program/{program_id}/code")]
-async fn program_code(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+async fn program_code(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> impl Responder {
     let program_id = match parse_program_id_param(&req) {
         Err(e) => {
             return e;
@@ -523,7 +540,7 @@ async fn program_code(state: WebData<ServerState>, req: HttpRequest) -> impl Res
         .db
         .lock()
         .await
-        .program_code(program_id)
+        .program_code(*tenant_id, program_id)
         .await
         .map(|(program, code)| {
             HttpResponse::Ok()
@@ -556,16 +573,26 @@ async fn program_code(state: WebData<ServerState>, req: HttpRequest) -> impl Res
 #[get("/v0/program")]
 async fn program_status(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     req: web::Query<IdOrNameQuery>,
 ) -> impl Responder {
     let resp = if let Some(id) = req.id {
-        state.db.lock().await.get_program_by_id(ProgramId(id)).await
+        state
+            .db
+            .lock()
+            .await
+            .get_program_by_id(*tenant_id, ProgramId(id))
+            .await
     } else if let Some(name) = req.name.clone() {
-        state.db.lock().await.get_program_by_name(&name).await
+        state
+            .db
+            .lock()
+            .await
+            .get_program_by_name(*tenant_id, &name)
+            .await
     } else {
         return HttpResponse::BadRequest().json(ErrorResponse::new("Set either `id` or `name`"));
     };
-
     resp.map(|descr| {
         HttpResponse::Ok()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -621,26 +648,28 @@ struct NewProgramResponse {
 #[post("/v0/programs")]
 async fn new_program(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     request: web::Json<NewProgramRequest>,
 ) -> impl Responder {
-    do_new_program(state, request)
+    do_new_program(state, tenant_id, request)
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 async fn do_new_program(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     request: web::Json<NewProgramRequest>,
 ) -> AnyResult<HttpResponse> {
     if request.overwrite_existing {
         let descr = {
             let db = state.db.lock().await;
-            let descr = db.lookup_program(&request.name).await?;
+            let descr = db.lookup_program(*tenant_id, &request.name).await?;
             drop(db);
             descr
         };
         if let Some(program_descr) = descr {
-            do_delete_program(state.clone(), program_descr.program_id).await?;
+            do_delete_program(state.clone(), *tenant_id, program_descr.program_id).await?;
         }
     }
 
@@ -649,6 +678,7 @@ async fn do_new_program(
         .lock()
         .await
         .new_program(
+            *tenant_id,
             Uuid::now_v7(),
             &request.name,
             &request.description,
@@ -712,6 +742,7 @@ struct UpdateProgramResponse {
 #[patch("/v0/programs")]
 async fn update_program(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     request: web::Json<UpdateProgramRequest>,
 ) -> impl Responder {
     state
@@ -719,6 +750,7 @@ async fn update_program(
         .lock()
         .await
         .update_program(
+            *tenant_id,
             request.program_id,
             &request.name,
             &request.description,
@@ -764,13 +796,14 @@ struct CompileProgramRequest {
 #[post("/v0/programs/compile")]
 async fn compile_program(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     request: web::Json<CompileProgramRequest>,
 ) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .set_program_pending(request.program_id, request.version)
+        .set_program_pending(*tenant_id, request.program_id, request.version)
         .await
         .map(|_| HttpResponse::Accepted().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
@@ -807,13 +840,14 @@ struct CancelProgramRequest {
 #[delete("/v0/programs/compile")]
 async fn cancel_program(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     request: web::Json<CancelProgramRequest>,
 ) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .cancel_program(request.program_id, request.version)
+        .cancel_program(*tenant_id, request.program_id, request.version)
         .await
         .map(|_| HttpResponse::Accepted().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
@@ -836,7 +870,11 @@ async fn cancel_program(
     tag = "Program"
 )]
 #[delete("/v0/programs/{program_id}")]
-async fn delete_program(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+async fn delete_program(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> impl Responder {
     let program_id = match parse_program_id_param(&req) {
         Err(e) => {
             return e;
@@ -844,17 +882,18 @@ async fn delete_program(state: WebData<ServerState>, req: HttpRequest) -> impl R
         Ok(program_id) => program_id,
     };
 
-    do_delete_program(state, program_id)
+    do_delete_program(state, *tenant_id, program_id)
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 async fn do_delete_program(
     state: WebData<ServerState>,
+    tenant_id: TenantId,
     program_id: ProgramId,
 ) -> AnyResult<HttpResponse> {
     let db = state.db.lock().await;
-    db.delete_program(program_id)
+    db.delete_program(tenant_id, program_id)
         .await
         .map(|_| HttpResponse::Ok().finish())
 }
@@ -898,6 +937,7 @@ struct NewPipelineResponse {
 #[post("/v0/pipelines")]
 async fn new_pipeline(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     request: web::Json<NewPipelineRequest>,
 ) -> impl Responder {
     state
@@ -905,6 +945,7 @@ async fn new_pipeline(
         .lock()
         .await
         .new_pipeline(
+            *tenant_id,
             Uuid::now_v7(),
             request.program_id,
             &request.name,
@@ -976,6 +1017,7 @@ struct UpdatePipelineResponse {
 #[patch("/v0/pipelines")]
 async fn update_pipeline(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     request: web::Json<UpdatePipelineRequest>,
 ) -> impl Responder {
     state
@@ -983,6 +1025,7 @@ async fn update_pipeline(
         .lock()
         .await
         .update_pipeline(
+            *tenant_id,
             request.pipeline_id,
             request.program_id,
             &request.name,
@@ -1007,12 +1050,15 @@ async fn update_pipeline(
     tag = "Pipeline"
 )]
 #[get("/v0/pipelines")]
-async fn list_pipelines(state: WebData<ServerState>) -> impl Responder {
+async fn list_pipelines(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .list_pipelines()
+        .list_pipelines(*tenant_id)
         .await
         .map(|pipelines| {
             HttpResponse::Ok()
@@ -1043,7 +1089,11 @@ async fn list_pipelines(state: WebData<ServerState>) -> impl Responder {
     tag = "Pipeline"
 )]
 #[get("/v0/pipelines/{pipeline_id}/stats")]
-async fn pipeline_stats(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+async fn pipeline_stats(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> impl Responder {
     let pipeline_id = match parse_pipeline_id_param(&req) {
         Err(e) => {
             return e;
@@ -1053,7 +1103,7 @@ async fn pipeline_stats(state: WebData<ServerState>, req: HttpRequest) -> impl R
 
     state
         .runner
-        .forward_to_pipeline(pipeline_id, Method::GET, "stats")
+        .forward_to_pipeline(*tenant_id, pipeline_id, Method::GET, "stats")
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
@@ -1080,6 +1130,7 @@ async fn pipeline_stats(state: WebData<ServerState>, req: HttpRequest) -> impl R
 #[get("/v0/pipeline")]
 async fn pipeline_status(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     req: web::Query<IdOrNameQuery>,
 ) -> impl Responder {
     let resp: Result<db::PipelineDescr, AnyError> = if let Some(id) = req.id {
@@ -1087,10 +1138,15 @@ async fn pipeline_status(
             .db
             .lock()
             .await
-            .get_pipeline_by_id(PipelineId(id))
+            .get_pipeline_by_id(*tenant_id, PipelineId(id))
             .await
     } else if let Some(name) = req.name.clone() {
-        state.db.lock().await.get_pipeline_by_name(name).await
+        state
+            .db
+            .lock()
+            .await
+            .get_pipeline_by_name(*tenant_id, name)
+            .await
     } else {
         return HttpResponse::BadRequest().json(ErrorResponse::new("Set either `id` or `name`"));
     };
@@ -1136,7 +1192,11 @@ async fn pipeline_status(
     tag = "Pipeline"
 )]
 #[post("/v0/pipelines/{pipeline_id}/{action}")]
-async fn pipeline_action(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+async fn pipeline_action(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> impl Responder {
     let pipeline_id = match parse_pipeline_id_param(&req) {
         Err(e) => {
             return e;
@@ -1151,10 +1211,15 @@ async fn pipeline_action(state: WebData<ServerState>, req: HttpRequest) -> impl 
     };
 
     match action {
-        "deploy" => state.runner.deploy_pipeline(pipeline_id).await,
-        "start" => state.runner.start_pipeline(pipeline_id).await,
-        "pause" => state.runner.pause_pipeline(pipeline_id).await,
-        "shutdown" => state.runner.shutdown_pipeline(pipeline_id).await,
+        "deploy" => state.runner.deploy_pipeline(*tenant_id, pipeline_id).await,
+        "start" => state.runner.start_pipeline(*tenant_id, pipeline_id).await,
+        "pause" => state.runner.pause_pipeline(*tenant_id, pipeline_id).await,
+        "shutdown" => {
+            state
+                .runner
+                .shutdown_pipeline(*tenant_id, pipeline_id)
+                .await
+        }
         _ => Ok(HttpResponse::BadRequest().body(format!("invalid action argument '{action}"))),
     }
     .unwrap_or_else(|e| http_resp_from_error(&e))
@@ -1186,7 +1251,11 @@ async fn pipeline_action(state: WebData<ServerState>, req: HttpRequest) -> impl 
     tag = "Pipeline"
 )]
 #[delete("/v0/pipelines/{pipeline_id}")]
-async fn pipeline_delete(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+async fn pipeline_delete(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> impl Responder {
     let pipeline_id = match parse_pipeline_id_param(&req) {
         Err(e) => {
             return e;
@@ -1198,7 +1267,7 @@ async fn pipeline_delete(state: WebData<ServerState>, req: HttpRequest) -> impl 
 
     state
         .runner
-        .delete_pipeline(&db, pipeline_id)
+        .delete_pipeline(*tenant_id, &db, pipeline_id)
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }
@@ -1222,12 +1291,15 @@ fn parse_connector_id_param(req: &HttpRequest) -> Result<ConnectorId, HttpRespon
     tag = "Connector"
 )]
 #[get("/v0/connectors")]
-async fn list_connectors(state: WebData<ServerState>) -> impl Responder {
+async fn list_connectors(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+) -> impl Responder {
     state
         .db
         .lock()
         .await
-        .list_connectors()
+        .list_connectors(*tenant_id)
         .await
         .map(|connectors| {
             HttpResponse::Ok()
@@ -1266,6 +1338,7 @@ struct NewConnectorResponse {
 #[post("/v0/connectors")]
 async fn new_connector(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     request: web::Json<NewConnectorRequest>,
 ) -> impl Responder {
     state
@@ -1273,6 +1346,7 @@ async fn new_connector(
         .lock()
         .await
         .new_connector(
+            *tenant_id,
             Uuid::now_v7(),
             &request.name,
             &request.description,
@@ -1322,6 +1396,7 @@ struct UpdateConnectorResponse {}
 #[patch("/v0/connectors")]
 async fn update_connector(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     request: web::Json<UpdateConnectorRequest>,
 ) -> impl Responder {
     state
@@ -1329,6 +1404,7 @@ async fn update_connector(
         .lock()
         .await
         .update_connector(
+            *tenant_id,
             request.connector_id,
             &request.name,
             &request.description,
@@ -1358,7 +1434,11 @@ async fn update_connector(
     tag = "Connector"
 )]
 #[delete("/v0/connectors/{connector_id}")]
-async fn delete_connector(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+async fn delete_connector(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> impl Responder {
     let connector_id = match parse_connector_id_param(&req) {
         Err(e) => {
             return e;
@@ -1370,7 +1450,7 @@ async fn delete_connector(state: WebData<ServerState>, req: HttpRequest) -> impl
         .db
         .lock()
         .await
-        .delete_connector(connector_id)
+        .delete_connector(*tenant_id, connector_id)
         .await
         .map(|_| HttpResponse::Ok().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
@@ -1404,6 +1484,7 @@ pub struct IdOrNameQuery {
 #[get("/v0/connector")]
 async fn connector_status(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     req: web::Query<IdOrNameQuery>,
 ) -> impl Responder {
     let resp: Result<db::ConnectorDescr, AnyError> = if let Some(id) = req.id {
@@ -1411,10 +1492,15 @@ async fn connector_status(
             .db
             .lock()
             .await
-            .get_connector_by_id(ConnectorId(id))
+            .get_connector_by_id(*tenant_id, ConnectorId(id))
             .await
     } else if let Some(name) = req.name.clone() {
-        state.db.lock().await.get_connector_by_name(name).await
+        state
+            .db
+            .lock()
+            .await
+            .get_connector_by_name(*tenant_id, name)
+            .await
     } else {
         return HttpResponse::BadRequest().json(ErrorResponse::new("Set either `id` or `name`"));
     };
@@ -1457,6 +1543,7 @@ async fn connector_status(
 #[get("/v0/pipelines/{pipeline_id}/connector/{connector_name}")]
 async fn http_input(
     state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
     req: HttpRequest,
     body: web::Payload,
 ) -> impl Responder {
@@ -1478,7 +1565,7 @@ async fn http_input(
 
     state
         .runner
-        .forward_to_pipeline_as_stream(pipeline_id, connector_name.as_str(), req, body)
+        .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, connector_name.as_str(), req, body)
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
 }

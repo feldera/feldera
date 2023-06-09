@@ -2,7 +2,7 @@ use super::{
     ApiPermission, AttachedConnector, ConnectorDescr, ConnectorId, DBError, PipelineDescr,
     PipelineId, PipelineStatus, ProgramDescr, ProgramId, Version,
 };
-use crate::ProgramStatus;
+use crate::{auth::TenantId, ProgramStatus};
 use anyhow::{anyhow, Result as AnyResult};
 use async_trait::async_trait;
 use uuid::Uuid;
@@ -15,14 +15,18 @@ use uuid::Uuid;
 pub(crate) trait Storage {
     async fn reset_program_status(&self) -> AnyResult<()>;
 
-    async fn list_programs(&self) -> AnyResult<Vec<ProgramDescr>>;
+    async fn list_programs(&self, tenant_id: TenantId) -> AnyResult<Vec<ProgramDescr>>;
 
     /// Retrieve program descriptor.
     ///
     /// Returns a `DBError:UnknownProgram` error if `program_id` is not found in
     /// the database.
-    async fn get_program_by_id(&self, program_id: ProgramId) -> AnyResult<ProgramDescr> {
-        self.get_program_if_exists(program_id)
+    async fn get_program_by_id(
+        &self,
+        tenant_id: TenantId,
+        program_id: ProgramId,
+    ) -> AnyResult<ProgramDescr> {
+        self.get_program_if_exists(tenant_id, program_id)
             .await?
             .ok_or_else(|| anyhow!(DBError::UnknownProgram(program_id)))
     }
@@ -31,8 +35,12 @@ pub(crate) trait Storage {
     ///
     /// Returns a `DBError:UnknownName` error if `name` is not found in
     /// the database.
-    async fn get_program_by_name(&self, name: &str) -> AnyResult<ProgramDescr> {
-        self.lookup_program(name)
+    async fn get_program_by_name(
+        &self,
+        tenant_id: TenantId,
+        name: &str,
+    ) -> AnyResult<ProgramDescr> {
+        self.lookup_program(tenant_id, name)
             .await?
             .ok_or_else(|| anyhow!(DBError::UnknownName(name.into())))
     }
@@ -44,10 +52,11 @@ pub(crate) trait Storage {
     /// program version differs from `expected_version`.
     async fn get_program_guarded(
         &self,
+        tenant_id: TenantId,
         program_id: ProgramId,
         expected_version: Version,
     ) -> AnyResult<ProgramDescr> {
-        let descr = self.get_program_by_id(program_id).await?;
+        let descr = self.get_program_by_id(tenant_id, program_id).await?;
         if descr.version != expected_version {
             return Err(anyhow!(DBError::OutdatedProgramVersion(expected_version)));
         }
@@ -61,11 +70,12 @@ pub(crate) trait Storage {
     /// Change program status to [`ProgramStatus::Pending`].
     async fn set_program_pending(
         &self,
+        tenant_id: TenantId,
         program_id: ProgramId,
         expected_version: Version,
     ) -> AnyResult<()> {
         let descr = self
-            .get_program_guarded(program_id, expected_version)
+            .get_program_guarded(tenant_id, program_id, expected_version)
             .await?;
 
         // Do nothing if the program is already pending (we don't want to bump its
@@ -75,7 +85,7 @@ pub(crate) trait Storage {
             return Ok(());
         }
 
-        self.set_program_status(program_id, ProgramStatus::Pending)
+        self.set_program_status(tenant_id, program_id, ProgramStatus::Pending)
             .await?;
 
         Ok(())
@@ -87,18 +97,19 @@ pub(crate) trait Storage {
     /// or already being compiled.
     async fn cancel_program(
         &self,
+        tenant_id: TenantId,
         program_id: ProgramId,
         expected_version: Version,
     ) -> AnyResult<()> {
         let descr = self
-            .get_program_guarded(program_id, expected_version)
+            .get_program_guarded(tenant_id, program_id, expected_version)
             .await?;
 
         if descr.status != ProgramStatus::Pending || !descr.status.is_compiling() {
             return Ok(());
         }
 
-        self.set_program_status(program_id, ProgramStatus::None)
+        self.set_program_status(tenant_id, program_id, ProgramStatus::None)
             .await?;
 
         Ok(())
@@ -106,11 +117,16 @@ pub(crate) trait Storage {
 
     /// Retrieve code of the specified program along with the program's
     /// meta-data.
-    async fn program_code(&self, program_id: ProgramId) -> AnyResult<(ProgramDescr, String)>;
+    async fn program_code(
+        &self,
+        tenant_id: TenantId,
+        program_id: ProgramId,
+    ) -> AnyResult<(ProgramDescr, String)>;
 
     /// Create a new program.
     async fn new_program(
         &self,
+        tenant_id: TenantId,
         id: Uuid,
         program_name: &str,
         program_description: &str,
@@ -121,6 +137,7 @@ pub(crate) trait Storage {
     /// XXX: Description should be optional too
     async fn update_program(
         &self,
+        tenant_id: TenantId,
         program_id: ProgramId,
         program_name: &str,
         program_description: &str,
@@ -130,11 +147,18 @@ pub(crate) trait Storage {
     /// Retrieve program descriptor.
     ///
     /// Returns `None` if `program_id` is not found in the database.
-    async fn get_program_if_exists(&self, program_id: ProgramId)
-        -> AnyResult<Option<ProgramDescr>>;
+    async fn get_program_if_exists(
+        &self,
+        tenant_id: TenantId,
+        program_id: ProgramId,
+    ) -> AnyResult<Option<ProgramDescr>>;
 
     /// Lookup program by name.
-    async fn lookup_program(&self, program_name: &str) -> AnyResult<Option<ProgramDescr>>;
+    async fn lookup_program(
+        &self,
+        tenant_id: TenantId,
+        program_name: &str,
+    ) -> AnyResult<Option<ProgramDescr>>;
 
     /// Update program status.
     ///
@@ -143,6 +167,7 @@ pub(crate) trait Storage {
     /// - Resets schema to null.
     async fn set_program_status(
         &self,
+        tenant_id: TenantId,
         program_id: ProgramId,
         status: ProgramStatus,
     ) -> AnyResult<()>;
@@ -159,6 +184,7 @@ pub(crate) trait Storage {
     /// the compiler just picks up and runs the next job.
     async fn set_program_status_guarded(
         &self,
+        tenant_id: TenantId,
         program_id: ProgramId,
         expected_version: Version,
         status: ProgramStatus,
@@ -169,22 +195,29 @@ pub(crate) trait Storage {
     /// # Note
     /// This should be called after the SQL compilation succeeded, e.g., in the
     /// same transaction that sets status to  [`ProgramStatus::CompilingRust`].
-    async fn set_program_schema(&self, program_id: ProgramId, schema: String) -> AnyResult<()>;
+    async fn set_program_schema(
+        &self,
+        tenant_id: TenantId,
+        program_id: ProgramId,
+        schema: String,
+    ) -> AnyResult<()>;
 
     /// Delete program from the database.
     ///
     /// This will delete all program configs and pipelines.
-    async fn delete_program(&self, program_id: ProgramId) -> AnyResult<()>;
+    async fn delete_program(&self, tenant_id: TenantId, program_id: ProgramId) -> AnyResult<()>;
 
     /// Retrieves the first pending program from the queue.
     ///
     /// Returns a pending program with the most recent `status_since` or `None`
     /// if there are no pending programs in the DB.
-    async fn next_job(&self) -> AnyResult<Option<(ProgramId, Version)>>;
+    async fn next_job(&self) -> AnyResult<Option<(TenantId, ProgramId, Version)>>;
 
     /// Create a new config.
+    #[allow(clippy::too_many_arguments)]
     async fn new_pipeline(
         &self,
+        tenant_id: TenantId,
         id: Uuid,
         program_id: Option<ProgramId>,
         pipline_name: &str,
@@ -196,8 +229,10 @@ pub(crate) trait Storage {
     /// Update existing config.
     ///
     /// Update config name and, optionally, YAML.
+    #[allow(clippy::too_many_arguments)]
     async fn update_pipeline(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_id: Option<ProgramId>,
         pipline_name: &str,
@@ -207,35 +242,55 @@ pub(crate) trait Storage {
     ) -> AnyResult<Version>;
 
     /// Delete config.
-    async fn delete_config(&self, pipeline_id: PipelineId) -> AnyResult<()>;
+    async fn delete_config(&self, tenant_id: TenantId, pipeline_id: PipelineId) -> AnyResult<()>;
 
     /// Get input/output status for an attached connector.
-    async fn attached_connector_is_input(&self, name: &str) -> AnyResult<bool>;
+    async fn attached_connector_is_input(&self, tenant_id: TenantId, name: &str)
+        -> AnyResult<bool>;
 
-    async fn set_pipeline_deployed(&self, pipeline_id: PipelineId, port: u16) -> AnyResult<()>;
+    async fn set_pipeline_deployed(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        port: u16,
+    ) -> AnyResult<()>;
 
     /// Set `shutdown` flag to `true`.
     async fn set_pipeline_status(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
         status: PipelineStatus,
     ) -> AnyResult<bool>;
 
     /// Delete `pipeline` from the DB.
-    async fn delete_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<bool>;
+    async fn delete_pipeline(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<bool>;
 
     /// Retrieve pipeline for a given id.
-    async fn get_pipeline_by_id(&self, pipeline_id: PipelineId) -> AnyResult<PipelineDescr>;
+    async fn get_pipeline_by_id(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<PipelineDescr>;
 
     /// Retrieve pipeline for a given name.
-    async fn get_pipeline_by_name(&self, name: String) -> AnyResult<PipelineDescr>;
+    async fn get_pipeline_by_name(
+        &self,
+        tenant_id: TenantId,
+        name: String,
+    ) -> AnyResult<PipelineDescr>;
 
     /// List pipelines associated with `program_id`.
-    async fn list_pipelines(&self) -> AnyResult<Vec<PipelineDescr>>;
+    async fn list_pipelines(&self, tenant_id: TenantId) -> AnyResult<Vec<PipelineDescr>>;
 
     /// Create a new connector.
     async fn new_connector(
         &self,
+        tenant_id: TenantId,
         id: Uuid,
         name: &str,
         description: &str,
@@ -243,19 +298,28 @@ pub(crate) trait Storage {
     ) -> AnyResult<ConnectorId>;
 
     /// Retrieve connectors list from the DB.
-    async fn list_connectors(&self) -> AnyResult<Vec<ConnectorDescr>>;
+    async fn list_connectors(&self, tenant_id: TenantId) -> AnyResult<Vec<ConnectorDescr>>;
 
     /// Retrieve connector descriptor for the given `connector_id`.
-    async fn get_connector_by_id(&self, connector_id: ConnectorId) -> AnyResult<ConnectorDescr>;
+    async fn get_connector_by_id(
+        &self,
+        tenant_id: TenantId,
+        connector_id: ConnectorId,
+    ) -> AnyResult<ConnectorDescr>;
 
     /// Retrieve connector descriptor for the given `name`.
-    async fn get_connector_by_name(&self, name: String) -> AnyResult<ConnectorDescr>;
+    async fn get_connector_by_name(
+        &self,
+        tenant_id: TenantId,
+        name: String,
+    ) -> AnyResult<ConnectorDescr>;
 
     /// Update existing connector config.
     ///
     /// Update connector name and, optionally, YAML.
     async fn update_connector(
         &self,
+        tenant_id: TenantId,
         connector_id: ConnectorId,
         connector_name: &str,
         description: &str,
@@ -265,15 +329,36 @@ pub(crate) trait Storage {
     /// Delete connector from the database.
     ///
     /// This will delete all connector configs and pipelines.
-    async fn delete_connector(&self, connector_id: ConnectorId) -> AnyResult<()>;
+    async fn delete_connector(
+        &self,
+        tenant_id: TenantId,
+        connector_id: ConnectorId,
+    ) -> AnyResult<()>;
 
     /// Persist a hash of API key in the database
     async fn store_api_key_hash(
         &self,
+        tenant_id: TenantId,
         key: String,
         permissions: Vec<ApiPermission>,
     ) -> AnyResult<()>;
 
     /// Validate an API key against the database
-    async fn validate_api_key(&self, key: String) -> AnyResult<Vec<ApiPermission>>;
+    async fn validate_api_key(&self, key: String) -> AnyResult<(TenantId, Vec<ApiPermission>)>;
+
+    /// Get the tenant ID from the database for a given tenant name and provider,
+    /// else create a new tenant ID
+    async fn get_or_create_tenant_id(
+        &self,
+        tenant_name: String,
+        provider: String,
+    ) -> AnyResult<TenantId>;
+
+    /// Create a new tenant ID for a given tenant name and provider
+    async fn create_tenant_if_not_exists(
+        &self,
+        tenant_id: Uuid,
+        tenant_name: String,
+        provider: String,
+    ) -> AnyResult<TenantId>;
 }
