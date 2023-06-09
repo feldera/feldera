@@ -3,10 +3,20 @@ use crate::{
     RuntimeError, SchedulerError,
 };
 use anyhow::Error as AnyError;
+use bincode::{Decode, Encode};
+use core::fmt;
 use crossbeam::channel::{bounded, Receiver, Sender, TryRecvError};
+use itertools::Either;
+use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashSet,
+    error::Error as StdError,
+    fmt::{Debug, Display, Error as FmtError, Formatter},
     fs,
     fs::create_dir_all,
+    iter::empty,
+    net::SocketAddr,
+    ops::Range,
     path::{Path, PathBuf},
     thread::Result as ThreadResult,
     time::Instant,
@@ -15,18 +25,213 @@ use std::{
 #[cfg(doc)]
 use crate::circuit::circuit_builder::Stream;
 
+/// A host for some workers in the [`Layout`] for a multi-host DBSP circuit.
+#[allow(clippy::manual_non_exhaustive)]
+#[derive(Clone, Decode, Encode, Serialize, Deserialize)]
+pub struct Host {
+    /// The IP address and TCP port on which the host listens and to which the
+    /// other hosts connect.
+    pub address: SocketAddr,
+
+    /// The worker thread IDs implemented on this host.  Worker thread IDs start
+    /// with 0 in the first host and increase sequentially from there.  A host
+    /// has `workers.len()` workers.
+    pub workers: Range<usize>,
+
+    /// Prevents `Host` and `Layout::Multihost` from being instantiated without
+    /// using the constructor (which checks the invariants).
+    _private: (),
+}
+
+impl Debug for Host {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Host")
+            .field("address", &self.address)
+            .field("workers", &self.workers)
+            .finish()
+    }
+}
+
+/// How a DBSP circuit is laid out across one or more machines.
+#[derive(Clone, Debug, Decode, Encode, Serialize, Deserialize)]
+pub enum Layout {
+    /// A layout whose workers run on a single host.
+    Solo {
+        /// The number of worker threads.
+        n_workers: usize,
+    },
+
+    /// A layout across multiple machines.
+    Multihost {
+        /// Each host in the layout.  There should be two or more, each with a
+        /// unique network address.
+        hosts: Vec<Host>,
+
+        /// The index within `hosts` of the current host.
+        local_host_idx: usize,
+    },
+}
+
+impl Layout {
+    /// Returns a new solo layout with `n_workers` worker threads.
+    pub fn new_solo(n_workers: usize) -> Layout {
+        assert_ne!(n_workers, 0);
+        Layout::Solo { n_workers }
+    }
+
+    /// Returns a new multihost layout with as many hosts as specified in
+    /// `params`.  Each tuple in `params` specifies a host's unique network
+    /// address and the number of workers to run on that host.  `local_address`
+    /// must be one of the addresses in `params`.
+    ///
+    /// To execute such a multihost circuit, one must create a `Runtime` for it
+    /// on every host in `params`, passing the same `params` in each case.  Each
+    /// host must pass its own `local_address`.  The `Runtime` on each host
+    /// listens on its own address and connects to all of the other addresses.
+    pub fn new_multihost(
+        params: &Vec<(SocketAddr, usize)>,
+        local_address: SocketAddr,
+    ) -> Result<Layout, LayoutError> {
+        // Check that the addresses are unique.
+        let mut uniq = HashSet::new();
+        if let Some((duplicate, _)) = params.iter().find(|(address, _)| !uniq.insert(address)) {
+            return Err(LayoutError::DuplicateAddress(*duplicate));
+        }
+
+        // Find `local_address` in `params`.
+        let local_host_idx = params
+            .iter()
+            .position(|(address, _)| *address == local_address)
+            .ok_or(LayoutError::NoSuchAddress(local_address))?;
+
+        if params.len() == 1 {
+            Ok(Self::new_solo(params[0].1))
+        } else {
+            let mut hosts = Vec::with_capacity(params.len());
+            let mut total_workers = 0;
+            for (address, n_workers) in params {
+                assert_ne!(*n_workers, 0);
+                hosts.push(Host {
+                    address: *address,
+                    workers: total_workers..total_workers + *n_workers,
+                    _private: (),
+                });
+                total_workers += *n_workers;
+            }
+            Ok(Layout::Multihost {
+                hosts,
+                local_host_idx,
+            })
+        }
+    }
+
+    /// Returns the range of IDs for the workers on the local machine.
+    pub fn local_workers(&self) -> Range<usize> {
+        match self {
+            Self::Solo { n_workers } => 0..*n_workers,
+            Self::Multihost {
+                hosts,
+                local_host_idx,
+                ..
+            } => hosts[*local_host_idx].workers.clone(),
+        }
+    }
+
+    /// Returns an iterator over `Host`s in this layout other than this one.  If
+    /// this is a single-host layout, this will be an empty iterator.
+    pub fn other_hosts(&self) -> impl Iterator<Item = &Host> {
+        match self {
+            Self::Solo { .. } => Either::Left(empty()),
+            Self::Multihost {
+                hosts,
+                local_host_idx,
+            } => Either::Right(
+                hosts
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, host)| (i != *local_host_idx).then_some(host)),
+            ),
+        }
+    }
+
+    /// Returns the network address for the current machine, or `None` if this
+    /// is a solo layout.
+    pub fn local_address(&self) -> Option<SocketAddr> {
+        match self {
+            Self::Solo { .. } => None,
+            Self::Multihost {
+                hosts,
+                local_host_idx,
+                ..
+            } => Some(hosts[*local_host_idx].address),
+        }
+    }
+
+    /// Returns the total number of worker threads in this layout.
+    pub fn n_workers(&self) -> usize {
+        match self {
+            Self::Solo { n_workers } => *n_workers,
+            Self::Multihost { hosts, .. } => hosts.iter().map(|host| host.workers.len()).sum(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LayoutError {
+    /// The socket address passed to `new_multihost()` isn't in the list of
+    /// hosts.
+    NoSuchAddress(SocketAddr),
+    /// The list of socket addresses passed to `new_multihost()` contains a
+    /// duplicate.
+    DuplicateAddress(SocketAddr),
+}
+
+impl Display for LayoutError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        match self {
+            Self::NoSuchAddress(address) => write!(f, "address {address} not in list of hosts"),
+            Self::DuplicateAddress(address) => {
+                write!(f, "duplicate address {address} in list of hosts")
+            }
+        }
+    }
+}
+
+impl StdError for LayoutError {}
+
+/// Convenience trait that allows specifying a [`Layout`] as a `usize` for a
+/// single-machine layout with the specified number of worker threads,
+pub trait IntoLayout {
+    fn into_layout(self) -> Layout;
+}
+
+impl IntoLayout for usize {
+    fn into_layout(self) -> Layout {
+        Layout::new_solo(self)
+    }
+}
+
+impl IntoLayout for Layout {
+    fn into_layout(self) -> Layout {
+        self
+    }
+}
+
 impl Runtime {
     /// Instantiate a circuit in a multithreaded runtime.
     ///
-    /// Creates a multithreaded runtime with `nworkers` worker threads and
-    /// instantiates an identical circuit in each worker, by calling
-    /// `constructor` once per worker.  `init_circuit` passes each call of
-    /// `constructor` a new [`RootCircuit`], in which it should create input
-    /// operators by calling [`RootCircuit::add_input_zset`] and related
-    /// methods.  Each of these calls returns an input handle and a `Stream`.
-    /// The `constructor` can call [`Stream`] methods to construct more
-    /// operators, each of which yields further `Stream`s.  It can also use
-    /// [`Stream::output`] to obtain an output handle.
+    /// Creates a multithreaded runtime with the given `layout`, instantiates
+    /// an identical circuit in each worker, by calling `constructor` once per
+    /// worker.  `init_circuit` passes each call of `constructor` a new
+    /// [`RootCircuit`], in which it should create input operators by calling
+    /// [`RootCircuit::add_input_zset`] and related methods.  Each of these
+    /// calls returns an input handle and a `Stream`.  The `constructor` can
+    /// call [`Stream`] methods to construct more operators, each of which
+    /// yields further `Stream`s.  It can also use [`Stream::output`] to obtain
+    /// an output handle.
+    ///
+    /// The `layout` may be specified as a number of worker threads or as a
+    /// [`Layout`].
     ///
     /// Returns a [`DBSPHandle`] that the caller can use to control the circuit
     /// and a user-defined value returned by the constructor.  The
@@ -46,11 +251,18 @@ impl Runtime {
     ///
     /// TODO: Document other requirements.  Not all operators are currently
     /// thread-safe.
-    pub fn init_circuit<F, T>(nworkers: usize, constructor: F) -> Result<(DBSPHandle, T), DBSPError>
+    pub fn init_circuit<F, T>(
+        layout: impl IntoLayout,
+        constructor: F,
+    ) -> Result<(DBSPHandle, T), DBSPError>
     where
         F: FnOnce(&mut RootCircuit) -> Result<T, AnyError> + Clone + Send + 'static,
         T: Send + 'static,
     {
+        let layout = layout.into_layout();
+        let nworkers = layout.local_workers().len();
+        let worker_ofs = layout.local_workers().start;
+
         // When a worker finishes building the circuit, it sends completion status back
         // to us via this channel.  The function returns after receiving a
         // notification from each worker.
@@ -65,8 +277,8 @@ impl Runtime {
         let (status_senders, status_receivers): (Vec<_>, Vec<_>) =
             (0..nworkers).map(|_| bounded(1)).unzip();
 
-        let runtime = Self::run(nworkers, move || {
-            let worker_index = Runtime::worker_index();
+        let runtime = Self::run(layout, move || {
+            let worker_index = Runtime::worker_index() - worker_ofs;
 
             // Drop all but one channels.  This makes sure that if one of the worker panics
             // or exits, its channel will become disconnected.
@@ -255,10 +467,6 @@ impl DBSPHandle {
         Ok(())
     }
 
-    pub fn num_workers(&self) -> usize {
-        self.status_receivers.len()
-    }
-
     /// Evaluate the circuit for one clock cycle.
     pub fn step(&mut self) -> Result<(), DBSPError> {
         self.broadcast_command(Command::Step, |_| {})
@@ -284,7 +492,7 @@ impl DBSPHandle {
     /// reported.
     pub fn dump_profile<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<PathBuf, DBSPError> {
         let elapsed = self.start_time.elapsed().as_micros();
-        let mut profiles = Vec::with_capacity(self.num_workers());
+        let mut profiles = Vec::with_capacity(self.status_receivers.len());
 
         let dir_path = dir_path.as_ref().join(elapsed.to_string());
         create_dir_all(&dir_path)?;

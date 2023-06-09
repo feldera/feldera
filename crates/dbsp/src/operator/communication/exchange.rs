@@ -9,20 +9,42 @@ use crate::{
     circuit::{
         metadata::OperatorLocation,
         operator_traits::{Operator, SinkOperator, SourceOperator},
-        OwnershipPreference, Runtime, Scope,
+        Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
     },
     circuit_cache_key,
 };
+use bincode::{decode_from_slice, Decode, Encode};
+
 use crossbeam_utils::CachePadded;
-use once_cell::sync::OnceCell;
+use futures::{future, prelude::*};
+use once_cell::sync::{Lazy, OnceCell};
 use std::{
     borrow::Cow,
+    collections::HashMap,
     marker::PhantomData,
+    net::SocketAddr,
+    ops::Range,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, RwLock,
     },
 };
+use tarpc::{
+    client, context,
+    serde_transport::tcp::{connect, listen},
+    server::{self, Channel},
+    tokio_serde::formats::Bincode,
+    tokio_util::sync::{CancellationToken, DropGuard},
+};
+use tokio::{
+    runtime::Runtime as TokioRuntime,
+    sync::{Notify, OnceCell as TokioOnceCell},
+    time::sleep,
+};
+use typedmap::TypedMapKey;
+
+// All circuits can share a single Tokio runtime.
+static TOKIO: Lazy<TokioRuntime> = Lazy::new(|| TokioRuntime::new().unwrap());
 
 // We use the `Runtime::local_store` mechanism to connect multiple workers
 // to an `Exchange` instance.  During circuit construction, each worker
@@ -31,7 +53,233 @@ use std::{
 // using the id as a key.  If there already is an `Exchange` with this id in
 // the store, created by another worker, a reference to that `Exchange` will
 // be used instead.
-circuit_cache_key!(local ExchangeId<T>(usize => Arc<Exchange<T>>));
+circuit_cache_key!(local ExchangeCacheId<T>(ExchangeId => Arc<Exchange<T>>));
+
+#[tarpc::service]
+trait ExchangeService {
+    /// Sends messages in `exchange_id` from all of the worker threads in
+    /// `senders` to all of the worker thread receivers in the server that
+    /// processes the message.  The Bincode-encoded message from `sender` to
+    /// `receiver` is `data[sender - senders.start][receiver -
+    /// receivers.start]`, where `receivers` is the `Range<usize>` of worker
+    /// thread IDs in the server that processes the message.
+    async fn exchange(exchange_id: usize, senders: Range<usize>, data: Vec<Vec<Vec<u8>>>);
+}
+
+type ExchangeId = usize;
+
+// Maps from an `exchange_id` to the `Inner` that implements the exchange.
+type ExchangeDirectory = Arc<RwLock<HashMap<ExchangeId, Arc<InnerExchange>>>>;
+
+#[derive(Clone)]
+struct ExchangeServer(ExchangeDirectory);
+
+#[tarpc::server]
+impl ExchangeService for ExchangeServer {
+    async fn exchange(
+        self,
+        _: context::Context,
+        exchange_id: ExchangeId,
+        senders: Range<usize>,
+        data: Vec<Vec<Vec<u8>>>,
+    ) {
+        let inner = self.0.read().unwrap().get(&exchange_id).unwrap().clone();
+        inner.received(senders, data).await;
+    }
+}
+
+// Maps from a range of worker IDs to the RPC client used to contact those
+// workers.  Only worker IDs for remote workers appear in the map.
+struct Clients(Vec<(Host, TokioOnceCell<ExchangeServiceClient>)>);
+
+impl Clients {
+    fn new(runtime: &Runtime) -> Clients {
+        Self(
+            runtime
+                .layout()
+                .other_hosts()
+                .map(|host| (host.clone(), TokioOnceCell::new()))
+                .collect(),
+        )
+    }
+
+    /// Returns a client for `worker`, which must be a remote worker ID, first
+    /// establishing a connection if there isn't one yet.
+    async fn connect(&self, worker: usize) -> &ExchangeServiceClient {
+        let (host, cell) = self
+            .0
+            .iter()
+            .find(|(host, _client)| host.workers.contains(&worker))
+            .unwrap();
+        cell.get_or_init(|| async {
+            let transport = loop {
+                let mut transport = connect(host.address, Bincode::default);
+                transport.config_mut().max_frame_length(usize::MAX);
+                match transport.await {
+                    Ok(transport) => break transport,
+                    Err(error) => println!(
+                        "connection to {} failed ({error}), waiting to retry",
+                        host.address
+                    ),
+                }
+                sleep(std::time::Duration::from_millis(1000)).await;
+            };
+            ExchangeServiceClient::new(client::Config::default(), transport).spawn()
+        })
+        .await
+    }
+}
+
+struct InnerExchange {
+    exchange_id: ExchangeId,
+    /// The number of communicating peers.
+    npeers: usize,
+    /// Range of worker IDs on the local host.
+    local_workers: Range<usize>,
+    /// Counts the number of messages yet to be received in the current round of
+    /// communication per receiver.  The receiver must wait until it has all
+    /// `npeers` messages before reading all of them from mailboxes in one
+    /// pass.
+    receiver_counters: Vec<AtomicUsize>,
+    /// Callback invoked when all `npeers` messages are ready for a receiver.
+    receiver_callbacks: Vec<OnceCell<Box<dyn Fn() + Send + Sync>>>,
+    /// Counts the number of empty mailboxes ready to accept new data per
+    /// sender. The sender waits until it has `npeers` available mailboxes
+    /// before writing all of them in one pass.
+    sender_counters: Vec<CachePadded<AtomicUsize>>,
+    /// Callback invoked when all `npeers` mailboxes are available.
+    sender_callbacks: Vec<OnceCell<Box<dyn Fn() + Send + Sync>>>,
+    /// The number of workers that have already sent their messages in the
+    /// current round.
+    sent: AtomicUsize,
+    /// The RPC clients to contact remote hosts.
+    clients: Arc<Clients>,
+    /// This allows the `exchange` RPC to wait until the receiver has taken its
+    /// data out of the mailbox.  There are `n_remote_workers * n_local_workers`
+    /// elements.
+    sender_notifies: Vec<Notify>,
+    /// A callback that takes the raw data exchanged over RPC and deserializes
+    /// and delivers it to the receiver's mailbox.
+    deliver: Box<dyn Fn(Vec<u8>, usize, usize) + Send + Sync + 'static>,
+}
+
+impl InnerExchange {
+    fn new(
+        exchange_id: ExchangeId,
+        deliver: impl Fn(Vec<u8>, usize, usize) + Send + Sync + 'static,
+        clients: Arc<Clients>,
+    ) -> InnerExchange {
+        let runtime = Runtime::runtime().unwrap();
+        let npeers = runtime.num_workers();
+        let local_workers = runtime.layout().local_workers();
+        let n_local_workers = local_workers.len();
+        let n_remote_workers = npeers - n_local_workers;
+        Self {
+            exchange_id,
+            npeers,
+            local_workers,
+            clients,
+            receiver_counters: (0..npeers).map(|_| AtomicUsize::new(0)).collect(),
+            receiver_callbacks: (0..npeers).map(|_| OnceCell::new()).collect(),
+            sender_notifies: (0..n_local_workers * n_remote_workers)
+                .map(|_| Notify::new())
+                .collect(),
+            sender_counters: (0..npeers)
+                .map(|_| CachePadded::new(AtomicUsize::new(npeers)))
+                .collect(),
+            sender_callbacks: (0..npeers).map(|_| OnceCell::new()).collect(),
+            deliver: Box::new(deliver),
+            sent: AtomicUsize::new(0),
+        }
+    }
+
+    /// Returns the `sender_notify` for a sender/receiver pair.  `receiver`
+    /// must be a local worker ID, and `sender` must be a remote worker ID.
+    fn sender_notify(&self, sender: usize, receiver: usize) -> &Notify {
+        debug_assert!(sender < self.npeers && !self.local_workers.contains(&sender));
+        debug_assert!(self.local_workers.contains(&receiver));
+        let n_local_workers = self.local_workers.len();
+        let sender_ofs = if sender >= self.local_workers.start {
+            sender - n_local_workers
+        } else {
+            sender
+        };
+        let receiver_ofs = receiver - self.local_workers.start;
+        &self.sender_notifies[sender_ofs * n_local_workers + receiver_ofs]
+    }
+
+    /// Receives messages sent from all of the worker threads in `senders` to
+    /// all of the local worker threads `receivers` in `self`.  The
+    /// Bincode-encoded `Vec<u8>` message from `sender` to `receiver` is
+    /// `data[sender - senders.start][receiver - receivers.start]`.
+    async fn received(self: &Arc<Self>, senders: Range<usize>, data: Vec<Vec<Vec<u8>>>) {
+        let receivers = &self.local_workers;
+
+        // Deliver all of the data into the exchange's mailboxes.
+        for (sender, data) in senders.clone().zip(data.into_iter()) {
+            assert_eq!(data.len(), receivers.len());
+            for (receiver, data) in receivers.clone().zip(data.into_iter()) {
+                (self.deliver)(data, sender, receiver);
+            }
+        }
+
+        // Increment the receiver counters and deliver callbacks if necessary.
+        for receiver in receivers.clone() {
+            let n = senders.len();
+            let old_counter = self.receiver_counters[receiver].fetch_add(n, Ordering::AcqRel);
+            if old_counter >= self.npeers - n {
+                if let Some(cb) = self.receiver_callbacks[receiver].get() {
+                    cb()
+                }
+            }
+        }
+
+        // Wait for the receivers to pick up their mail before returning.
+        for sender in senders {
+            for receiver in receivers.clone() {
+                self.sender_notify(sender, receiver).notified().await;
+            }
+        }
+    }
+
+    /// Returns an index for the sender/receiver pair.
+    fn mailbox_index(&self, sender: usize, receiver: usize) -> usize {
+        debug_assert!(sender < self.npeers);
+        debug_assert!(receiver < self.npeers);
+        sender * self.npeers + receiver
+    }
+
+    fn ready_to_send(&self, sender: usize) -> bool {
+        debug_assert!(self.local_workers.contains(&sender));
+        self.sender_counters[sender].load(Ordering::Acquire) == self.npeers
+    }
+
+    fn ready_to_receive(&self, receiver: usize) -> bool {
+        debug_assert!(receiver < self.npeers);
+        self.receiver_counters[receiver].load(Ordering::Acquire) == self.npeers
+    }
+
+    fn register_sender_callback<F>(&self, sender: usize, cb: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        debug_assert!(sender < self.npeers);
+        debug_assert!(self.sender_callbacks[sender].get().is_none());
+        let res = self.sender_callbacks[sender].set(Box::new(cb) as Box<dyn Fn() + Send + Sync>);
+        debug_assert!(res.is_ok());
+    }
+
+    fn register_receiver_callback<F>(&self, receiver: usize, cb: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        debug_assert!(receiver < self.npeers);
+        debug_assert!(self.receiver_callbacks[receiver].get().is_none());
+        let res =
+            self.receiver_callbacks[receiver].set(Box::new(cb) as Box<dyn Fn() + Send + Sync>);
+        debug_assert!(res.is_ok());
+    }
+}
 
 /// `Exchange` is an N-to-N communication primitive that partitions data across
 /// multiple concurrent threads.
@@ -42,64 +290,143 @@ circuit_cache_key!(local ExchangeId<T>(usize => Arc<Exchange<T>>));
 /// The send operation can only proceed when all peers have retrieved data
 /// produced at the previous round.  Likewise, the receive operation can proceed
 /// once all incoming values are ready for the current round.
+///
+/// Each worker has one ExchangeServiceClient and ExchangeServer for every
+/// worker (including itself), so N*N total.
+///
+/// In a round, each worker invokes exchange() once on each of its clients.
+/// Each server handles N calls to exchange(), once for each other worker and
+/// itself.
+///
+/// Each call to exchange populates a mailbox.  When all the mailboxes for a
+/// worker have been populated, it can read and clear them.
 pub(crate) struct Exchange<T> {
-    /// The number of communicating peers.
-    npeers: usize,
-    /// `npeers^2` mailboxes, one for each sender/receiver pair.  Note that each
-    /// mailbox is accessed by exactly two threads, so contention is low.
-    mailboxes: Vec<Mutex<Option<T>>>,
-    /// Counts the number of messages received in the current round of
-    /// communication per receiver.  The receiver must wait until it has all
-    /// `npeers` messages before reading all of them from mailboxes in one
-    /// pass.
-    receiver_counters: Vec<CachePadded<AtomicUsize>>,
-    /// Callback invoked when all `npeers` messages are ready for a receiver.
-    receiver_callbacks: Vec<OnceCell<Box<dyn Fn() + Send + Sync>>>,
-    /// Counts the number of empty mailboxes ready to accept new data per
-    /// sender. The sender waits until it has `npeers` available mailboxes
-    /// before writing all of them in one pass.
-    sender_counters: Vec<CachePadded<AtomicUsize>>,
-    /// Callback invoked when all `npeers` mailboxes are available.
-    sender_callbacks: Vec<OnceCell<Box<dyn Fn() + Send + Sync>>>,
+    inner: Arc<InnerExchange>,
+    /// `npeers^2` mailboxes, one for each sender/receiver pair.  Each mailbox
+    /// is accessed by exactly two threads, so contention is low.
+    ///
+    /// We only use the mailboxes where either the sender or the receiver is one
+    /// of our local workers. In the diagram below, L is mailboxes used for
+    /// local exchange, S mailboxes used for sending RPC exchange, and R
+    /// mailboxes used for receiving exchange via RPC:
+    ///
+    /// ```text
+    ///           <-------receivers------->
+    ///                  local
+    ///                 workers
+    /// ^         -------------------------
+    /// |         |     |RRRRR|     |     |
+    ///           |     |RRRRR|     |     |
+    /// s         |-----|-----|-----|-----|
+    /// e  local  |SSSSS|LLLLL|SSSSS|SSSSS|
+    /// n workers |SSSSS|LLLLL|SSSSS|SSSSS|
+    /// d         |-----|-----|-----|-----|
+    /// e         |     |RRRRR|     |     |
+    /// r         |     |RRRRR|     |     |
+    /// s         |-----|-----|-----|-----|
+    ///           |     |RRRRR|     |     |
+    /// |         |     |RRRRR|     |     |
+    /// v         |-----|-----|-----|-----|
+    /// ```
+    mailboxes: Arc<Vec<Mutex<Option<T>>>>,
+}
+
+struct ExchangeListener(DropGuard);
+
+impl ExchangeListener {
+    fn new(address: SocketAddr, directory: ExchangeDirectory) -> Self {
+        let token = CancellationToken::new();
+        let drop = token.clone().drop_guard();
+        TOKIO.spawn(async move {
+            println!("listening on {address}");
+            let mut listener = listen(address, Bincode::default).await.unwrap();
+            listener.config_mut().max_frame_length(usize::MAX);
+            let incoming = listener
+                .filter_map(|r| future::ready(r.ok()))
+                .map(server::BaseChannel::with_defaults)
+                .map(move |channel| {
+                    let server = ExchangeServer(directory.clone());
+                    channel.execute(server.serve())
+                })
+                .buffer_unordered(10)
+                .for_each(|_| async {});
+            tokio::select! {
+                _ = incoming => {}
+                _ = token.cancelled() => {}
+            }
+        });
+        Self(drop)
+    }
 }
 
 impl<T> Exchange<T>
 where
-    T: Send + 'static,
+    T: Clone + Send + Encode + Decode + 'static,
 {
     /// Create a new exchange operator for `npeers` communicating threads.
-    fn new(npeers: usize) -> Self {
-        Self {
-            npeers,
-            mailboxes: (0..npeers * npeers).map(|_| Mutex::new(None)).collect(),
-            receiver_counters: (0..npeers)
-                .map(|_| CachePadded::new(AtomicUsize::new(0)))
-                .collect(),
-            receiver_callbacks: (0..npeers).map(|_| OnceCell::new()).collect(),
-            sender_counters: (0..npeers)
-                .map(|_| CachePadded::new(AtomicUsize::new(npeers)))
-                .collect(),
-            sender_callbacks: (0..npeers).map(|_| OnceCell::new()).collect(),
-        }
+    fn new(exchange_id: ExchangeId, clients: Arc<Clients>, directory: ExchangeDirectory) -> Self {
+        let npeers = Runtime::runtime().unwrap().num_workers();
+        let mailboxes: Arc<Vec<Mutex<Option<T>>>> =
+            Arc::new((0..npeers * npeers).map(|_| Mutex::new(None)).collect());
+        let mailboxes2: Arc<Vec<Mutex<Option<T>>>> = mailboxes.clone();
+        let deliver = move |data: Vec<u8>, sender, receiver| {
+            let index: usize = sender * npeers + receiver;
+            let data = decode_from_slice(&data, bincode::config::standard())
+                .unwrap()
+                .0;
+            let mut mailbox = mailboxes2[index].lock().unwrap();
+            assert!((*mailbox).is_none());
+            *mailbox = Some(data);
+        };
+
+        let inner = Arc::new(InnerExchange::new(exchange_id, deliver, clients));
+        directory
+            .write()
+            .unwrap()
+            .entry(exchange_id)
+            .and_modify(|_| panic!())
+            .or_insert(inner.clone());
+        Self { inner, mailboxes }
+    }
+
+    /// Returns a reference to a mailbox for the sender/receiver pair.
+    fn mailbox(&self, sender: usize, receiver: usize) -> &Mutex<Option<T>> {
+        &self.mailboxes[self.inner.mailbox_index(sender, receiver)]
     }
 
     /// Create a new `Exchange` instance if an instance with the same id
     /// (created by another thread) does not yet exist within `runtime`.
     /// The number of peers will be set to `runtime.num_workers()`.
-    pub(crate) fn with_runtime(runtime: &Runtime, exchange_id: usize) -> Arc<Self> {
+    pub(crate) fn with_runtime(runtime: &Runtime, exchange_id: ExchangeId) -> Arc<Self> {
+        let directory = runtime
+            .local_store()
+            .entry(DirectoryId)
+            .or_insert_with(|| Arc::new(RwLock::new(HashMap::new())))
+            .clone();
+
+        runtime.local_store().entry(ListenerId).or_insert_with(|| {
+            // Create a listener for remote exchange to connect to us.
+            runtime
+                .layout()
+                .local_address()
+                .map(|address| ExchangeListener::new(address, directory.clone()))
+        });
+
+        let clients = runtime
+            .local_store()
+            .entry(ClientsId)
+            .or_insert_with(|| {
+                // Create clients for remote exchange.
+                Arc::new(Clients::new(runtime))
+            })
+            .clone();
+
         runtime
             .local_store()
-            .entry(ExchangeId::new(exchange_id))
-            .or_insert_with(|| Arc::new(Exchange::new(runtime.num_workers())))
+            .entry(ExchangeCacheId::new(exchange_id))
+            .or_insert_with(|| Arc::new(Exchange::new(exchange_id, clients.clone(), directory)))
             .value()
             .clone()
-    }
-
-    /// Returns a reference to a mailbox for the sender/receiver pair.
-    fn mailbox(&self, sender: usize, receiver: usize) -> &Mutex<Option<T>> {
-        debug_assert!(sender < self.npeers);
-        debug_assert!(receiver < self.npeers);
-        &self.mailboxes[sender * self.npeers + receiver]
     }
 
     /// True if all `sender`'s outgoing mailboxes are free and ready to accept
@@ -108,8 +435,7 @@ where
     /// Once this function returns true, a subsequent `try_send_all` operation
     /// is guaranteed to succeed for `sender`.
     fn ready_to_send(&self, sender: usize) -> bool {
-        debug_assert!(sender < self.npeers);
-        self.sender_counters[sender].load(Ordering::Acquire) == self.npeers
+        self.inner.ready_to_send(sender)
     }
 
     /// Write all outgoing messages for `sender` to mailboxes.
@@ -125,26 +451,102 @@ where
     /// # Panics
     ///
     /// Panics if `data` yields fewer than `self.npeers` items.
-    pub(crate) fn try_send_all<I>(&self, sender: usize, data: &mut I) -> bool
+    pub(crate) fn try_send_all<I>(self: &Arc<Self>, sender: usize, data: &mut I) -> bool
     where
-        I: Iterator<Item = T>,
+        I: Iterator<Item = T> + Send,
     {
-        if !self.ready_to_send(sender) {
+        let npeers = self.inner.npeers;
+        if self.inner.sender_counters[sender]
+            .compare_exchange(npeers, 0, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
             return false;
         }
 
-        for receiver in 0..self.npeers {
+        // Deliver all of the data to local mailboxes.
+        let local_workers = &self.inner.local_workers;
+        for receiver in 0..npeers {
             *self.mailbox(sender, receiver).lock().unwrap() = data.next();
-            self.sender_counters[sender].fetch_sub(1, Ordering::AcqRel);
-            let old_counter = self.receiver_counters[receiver].fetch_add(1, Ordering::AcqRel);
-            if old_counter >= self.npeers - 1 {
-                // This can be a spurious callback (see detailed comment in `try_receive_all`)
-                // below.
-                if let Some(cb) = self.receiver_callbacks[receiver].get() {
-                    cb()
+
+            if local_workers.contains(&receiver) {
+                let old_counter =
+                    self.inner.receiver_counters[receiver].fetch_add(1, Ordering::AcqRel);
+                if old_counter >= npeers - 1 {
+                    if let Some(cb) = self.inner.receiver_callbacks[receiver].get() {
+                        cb()
+                    }
                 }
             }
         }
+
+        // In a single-host layout, or if some of our local workers haven't yet
+        // sent in this round, we're all done for now.
+        if npeers == local_workers.len()
+            || self.inner.sent.fetch_add(1, Ordering::AcqRel) + 1 != local_workers.len()
+        {
+            return true;
+        }
+        self.inner.sent.store(0, Ordering::Release);
+
+        // All of the local workers have sent their data in this round.  Take
+        // all of their data and send it to the remote hosts.
+        let this = self.clone();
+        let runtime = Runtime::runtime().unwrap();
+        TOKIO.spawn(async move {
+            let mut futures = Vec::new();
+
+            // For each range of worker IDs `receivers` on a remote host,
+            // accumulate all of the data from our local `senders` to all
+            // of the `receivers` on that host.
+            let senders = &this.inner.local_workers;
+            for host in runtime.layout().other_hosts() {
+                let receivers = &host.workers;
+                let items: Vec<Vec<_>> = senders
+                    .clone()
+                    .map(|sender| {
+                        receivers
+                            .clone()
+                            .map(|receiver| {
+                                let item = this
+                                    .mailbox(sender, receiver)
+                                    .lock()
+                                    .unwrap()
+                                    .take()
+                                    .unwrap();
+                                bincode::encode_to_vec(item, bincode::config::standard()).unwrap()
+                            })
+                            .collect()
+                    })
+                    .collect();
+
+                let client = this.inner.clients.connect(receivers.start).await;
+
+                // Send it.
+                futures.push(client.exchange(
+                    context::current(),
+                    this.inner.exchange_id,
+                    senders.clone(),
+                    items,
+                ));
+            }
+
+            // Wait for each send to complete.
+            for future in futures {
+                future.await.unwrap();
+            }
+
+            // Record that the sends completed.
+            let n = npeers - senders.len();
+            for sender in senders.clone() {
+                let old_counter = this.inner.sender_counters[sender].fetch_add(n, Ordering::AcqRel);
+                if old_counter >= npeers - n {
+                    if let Some(cb) = this.inner.sender_callbacks[sender].get() {
+                        cb()
+                    }
+                }
+            }
+        });
+
         true
     }
 
@@ -153,8 +555,7 @@ where
     /// Once this function returns true, a subsequent `try_receive_all`
     /// operation is guaranteed for `receiver`.
     pub(crate) fn ready_to_receive(&self, receiver: usize) -> bool {
-        debug_assert!(receiver < self.npeers);
-        self.receiver_counters[receiver].load(Ordering::Acquire) == self.npeers
+        self.inner.ready_to_receive(receiver)
     }
 
     /// Read all incoming messages for `receiver`.
@@ -168,11 +569,15 @@ where
     where
         F: FnMut(T),
     {
-        if !self.ready_to_receive(receiver) {
+        let npeers = self.inner.npeers;
+        if self.inner.receiver_counters[receiver]
+            .compare_exchange(npeers, 0, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
             return false;
         }
 
-        for sender in 0..self.npeers {
+        for sender in 0..self.inner.npeers {
             let data = self
                 .mailbox(sender, receiver)
                 .lock()
@@ -180,22 +585,17 @@ where
                 .take()
                 .unwrap();
             cb(data);
-            self.receiver_counters[receiver].fetch_sub(1, Ordering::Release);
-            let old_counter = self.sender_counters[sender].fetch_add(1, Ordering::AcqRel);
-            if old_counter >= self.npeers - 1 {
-                // This can be a spurious callback if the following thread interleaving occurs:
-                // 1. Another receiver increments the sender's counter to `npeers`.
-                // 2. The sender starts transmitting messages, writing `receiver`'s mailbox
-                // first    (counter drops to `npeers-1`)
-                // 3. `receiver` is unblocked and retrieves its message, bumping the counter
-                //    back to `npeers` and generating a spurious sender callback in the
-                // following    line.
-                if let Some(cb) = self.sender_callbacks[sender].get() {
-                    cb()
+            if self.inner.local_workers.contains(&sender) {
+                let old_counter = self.inner.sender_counters[sender].fetch_add(1, Ordering::AcqRel);
+                if old_counter >= self.inner.npeers - 1 {
+                    if let Some(cb) = self.inner.sender_callbacks[sender].get() {
+                        cb()
+                    }
                 }
+            } else {
+                self.inner.sender_notify(sender, receiver).notify_one();
             }
         }
-
         true
     }
 
@@ -217,10 +617,7 @@ where
     where
         F: Fn() + Send + Sync + 'static,
     {
-        debug_assert!(sender < self.npeers);
-        debug_assert!(self.sender_callbacks[sender].get().is_none());
-        let res = self.sender_callbacks[sender].set(Box::new(cb) as Box<dyn Fn() + Send + Sync>);
-        debug_assert!(res.is_ok());
+        self.inner.register_sender_callback(sender, cb)
     }
 
     /// Register callback to be invoked whenever the `ready_to_receive`
@@ -242,11 +639,7 @@ where
     where
         F: Fn() + Send + Sync + 'static,
     {
-        debug_assert!(receiver < self.npeers);
-        debug_assert!(self.receiver_callbacks[receiver].get().is_none());
-        let res =
-            self.receiver_callbacks[receiver].set(Box::new(cb) as Box<dyn Fn() + Send + Sync>);
-        debug_assert!(res.is_ok());
+        self.inner.register_receiver_callback(receiver, cb)
     }
 }
 
@@ -374,7 +767,10 @@ where
 /// hruntime.join().unwrap();
 /// # }
 /// ```
-pub struct ExchangeSender<D, T, L> {
+pub struct ExchangeSender<D, T, L>
+where
+    T: Send + Encode + Decode + 'static + Clone,
+{
     worker_index: usize,
     location: OperatorLocation,
     partition: L,
@@ -385,13 +781,13 @@ pub struct ExchangeSender<D, T, L> {
 
 impl<D, T, L> ExchangeSender<D, T, L>
 where
-    T: Send + 'static,
+    T: Send + Encode + Decode + 'static + Clone,
 {
     fn new(
         runtime: &Runtime,
         worker_index: usize,
         location: OperatorLocation,
-        exchange_id: usize,
+        exchange_id: ExchangeId,
         partition: L,
     ) -> Self {
         debug_assert!(worker_index < runtime.num_workers());
@@ -409,7 +805,7 @@ where
 impl<D, T, L> Operator for ExchangeSender<D, T, L>
 where
     D: 'static,
-    T: Send + 'static,
+    T: Send + Encode + Decode + 'static + Clone,
     L: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -447,7 +843,7 @@ where
 impl<D, T, L> SinkOperator<D> for ExchangeSender<D, T, L>
 where
     D: Clone + 'static,
-    T: Clone + Send + 'static,
+    T: Clone + Send + Encode + Decode + 'static,
     L: FnMut(D, &mut Vec<T>) + 'static,
 {
     fn eval(&mut self, input: &D) {
@@ -480,7 +876,10 @@ where
 /// for this worker in the current clock cycle.  The scheduler should use
 /// [`ExchangeReceiver::register_ready_callback`] to get notified when the
 /// operator becomes schedulable.
-pub struct ExchangeReceiver<T, L> {
+pub struct ExchangeReceiver<T, L>
+where
+    T: Send + Encode + Decode + 'static + Clone,
+{
     worker_index: usize,
     location: OperatorLocation,
     combine: L,
@@ -489,13 +888,13 @@ pub struct ExchangeReceiver<T, L> {
 
 impl<T, L> ExchangeReceiver<T, L>
 where
-    T: Send + 'static,
+    T: Send + Encode + Decode + 'static + Clone,
 {
     fn new(
         runtime: &Runtime,
         worker_index: usize,
         location: OperatorLocation,
-        exchange_id: usize,
+        exchange_id: ExchangeId,
         combine: L,
     ) -> Self {
         debug_assert!(worker_index < runtime.num_workers());
@@ -511,7 +910,7 @@ where
 
 impl<T, L> Operator for ExchangeReceiver<T, L>
 where
-    T: Send + 'static,
+    T: Send + Encode + Decode + 'static + Clone,
     L: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -546,7 +945,7 @@ where
 impl<D, T, L> SourceOperator<D> for ExchangeReceiver<T, L>
 where
     D: Default + Clone,
-    T: Clone + Send + 'static,
+    T: Clone + Send + Encode + Decode + 'static,
     L: Fn(&mut D, T) + 'static,
 {
     fn eval(&mut self) -> D {
@@ -559,6 +958,27 @@ where
         debug_assert!(res);
         combined
     }
+}
+
+#[derive(Hash, PartialEq, Eq)]
+struct ClientsId;
+
+impl TypedMapKey<LocalStoreMarker> for ClientsId {
+    type Value = Arc<Clients>;
+}
+
+#[derive(Hash, PartialEq, Eq)]
+struct ListenerId;
+
+impl TypedMapKey<LocalStoreMarker> for ListenerId {
+    type Value = Option<ExchangeListener>;
+}
+
+#[derive(Hash, PartialEq, Eq)]
+struct DirectoryId;
+
+impl TypedMapKey<LocalStoreMarker> for DirectoryId {
+    type Value = ExchangeDirectory;
 }
 
 /// Create an [`ExchangeSender`]/[`ExchangeReceiver`] operator pair.
@@ -593,7 +1013,7 @@ pub fn new_exchange_operators<TI, TO, TE, PL, CL>(
 ) -> (ExchangeSender<TI, TE, PL>, ExchangeReceiver<TE, CL>)
 where
     TO: Default + Clone,
-    TE: Send + 'static,
+    TE: Send + Encode + Decode + 'static + Clone,
     PL: FnMut(TI, &mut Vec<TE>) + 'static,
     CL: Fn(&mut TO, TE) + 'static,
 {

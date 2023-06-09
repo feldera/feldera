@@ -555,7 +555,7 @@ some_polymorphic_function1!(extract_hour, Date, Date, i64);
 
 //////////////////////////// Time
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf, Encode, Decode)]
 pub struct Time {
     nanoseconds: u64,
 }

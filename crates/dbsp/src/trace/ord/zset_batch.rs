@@ -15,6 +15,7 @@ use crate::{
     },
     DBData, DBWeight, NumEntries,
 };
+use bincode::{Decode, Encode};
 use rand::Rng;
 use size_of::SizeOf;
 use std::{
@@ -25,8 +26,12 @@ use std::{
 };
 
 /// An immutable collection of `(key, weight)` pairs without timing information.
-#[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
-pub struct OrdZSet<K, R> {
+#[derive(Debug, Clone, Eq, PartialEq, Encode, Decode, SizeOf)]
+pub struct OrdZSet<K, R>
+where
+    K: 'static,
+    R: 'static,
+{
     #[doc(hidden)]
     pub layer: ColumnLayer<K, R>,
 }
@@ -515,7 +520,11 @@ where
 }
 
 #[derive(Debug, SizeOf)]
-pub struct OrdZSetConsumer<K, R> {
+pub struct OrdZSetConsumer<K, R>
+where
+    K: 'static,
+    R: 'static,
+{
     consumer: ColumnLayerConsumer<K, R>,
 }
 
@@ -546,7 +555,11 @@ impl<K, R> Consumer<K, (), R, ()> for OrdZSetConsumer<K, R> {
 }
 
 #[derive(Debug)]
-pub struct OrdZSetValueConsumer<'a, K, R> {
+pub struct OrdZSetValueConsumer<'a, K, R>
+where
+    K: 'static,
+    R: 'static,
+{
     values: ColumnLayerValues<'a, K, R>,
 }
 

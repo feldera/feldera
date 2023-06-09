@@ -16,6 +16,7 @@ use crate::{
     },
     DBData, DBWeight, NumEntries,
 };
+use bincode::{Decode, Encode};
 use rand::Rng;
 use size_of::SizeOf;
 use std::{
@@ -28,13 +29,13 @@ use std::{
 type Layers<K, V, R, O> = OrderedLayer<K, ColumnLayer<V, R>, O>;
 
 /// An immutable collection of update tuples.
-#[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
+#[derive(Debug, Clone, Eq, PartialEq, Encode, Decode, SizeOf)]
 pub struct OrdIndexedZSet<K, V, R, O = usize>
 where
-    K: Ord,
-    V: Ord,
-    R: Clone,
-    O: OrdOffset,
+    K: Ord + 'static,
+    V: Ord + 'static,
+    R: Clone + 'static,
+    O: OrdOffset + 'static,
 {
     /// Where all the data is.
     #[doc(hidden)]
@@ -394,8 +395,8 @@ where
 #[derive(Debug, SizeOf)]
 pub struct OrdIndexedZSetCursor<'s, K, V, R, O>
 where
-    K: Ord + Clone,
-    V: Ord + Clone,
+    K: Ord + Clone + 'static,
+    V: Ord + Clone + 'static,
     R: MonoidValue,
     O: OrdOffset + PartialEq,
 {
@@ -582,6 +583,9 @@ where
 
 pub struct OrdIndexedZSetConsumer<K, V, R, O>
 where
+    K: 'static,
+    V: 'static,
+    R: 'static,
     O: OrdOffset,
 {
     consumer: OrderedLayerConsumer<K, V, R, O>,
@@ -616,7 +620,11 @@ where
     }
 }
 
-pub struct OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
+pub struct OrdIndexedZSetValueConsumer<'a, K, V, R, O>
+where
+    V: 'static,
+    R: 'static,
+{
     consumer: OrderedLayerValues<'a, V, R>,
     __type: PhantomData<(K, O)>,
 }

@@ -33,7 +33,6 @@ use crate::{
     time::{AntichainRef, Timestamp},
     NumEntries,
 };
-#[cfg(feature = "persistence")]
 use bincode::{Decode, Encode};
 use rand::Rng;
 use size_of::SizeOf;
@@ -46,23 +45,15 @@ use std::{fmt::Debug, hash::Hash};
 /// must be generic over any relational data, it is sufficient to impose
 /// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
-#[cfg(feature = "persistence")]
 pub trait DBData:
     Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Decode + Encode + 'static
 {
 }
 
-#[cfg(not(feature = "persistence"))]
-pub trait DBData: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
-
-#[cfg(feature = "persistence")]
 impl<T> DBData for T where
     T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Decode + Encode + 'static
 {
 }
-
-#[cfg(not(feature = "persistence"))]
-impl<T> DBData for T where T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
 
 /// Trait for data types used as weights.
 ///
@@ -82,7 +73,7 @@ impl<T> DBData for T where T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 
 /// When writing code generic over any weight type, it is sufficient to impose
 /// `DBWeight` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::R: DBWeight`.
-pub trait DBWeight: DBData + MonoidValue {}
+pub trait DBWeight: DBData + MonoidValue + Encode + Decode {}
 impl<T> DBWeight for T where T: DBData + MonoidValue {}
 
 /// Trait for data types used as logical timestamps.
@@ -186,7 +177,7 @@ pub trait Trace: BatchReader {
 /// useful for views derived from other sources in ways that prevent the
 /// construction of batches from the type of data in the view (for example,
 /// filtered views, or views with extended time coordinates).
-pub trait BatchReader: NumEntries + SizeOf + 'static
+pub trait BatchReader: NumEntries + SizeOf + Encode + Decode + 'static
 where
     Self: Sized,
 {
@@ -280,7 +271,7 @@ where
 }
 
 /// An immutable collection of updates.
-pub trait Batch: BatchReader + Clone
+pub trait Batch: BatchReader + Encode + Decode + Clone
 where
     Self: Sized,
 {
