@@ -7,14 +7,29 @@ use serde::Deserialize;
 use size_of::SizeOf;
 use time::Date;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+#[derive(
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    SizeOf,
+    bincode::Decode,
+    bincode::Encode,
+)]
 struct Record {
     location: String,
+    #[bincode(with_serde)]
     date: Date,
     daily_vaccinations: Option<u64>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, bincode::Decode, bincode::Encode,
+)]
 struct VaxMonthly {
     count: u64,
     year: i32,
