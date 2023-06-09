@@ -3,13 +3,13 @@ use super::{
     PipelineStatus, ProgramDescr, ProgramId, ProgramStatus, ProjectDB, Version,
 };
 use super::{ApiPermission, PipelineDescr};
-use crate::auth;
+use crate::auth::{self, TenantId, TenantRecord};
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use openssl::sha::{self};
 use pretty_assertions::assert_eq;
-use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
+use proptest::{bool, prelude::*};
 use proptest_derive::Arbitrary;
 use std::collections::btree_map;
 use std::collections::BTreeMap;
@@ -153,12 +153,19 @@ pub(crate) async fn setup_pg() -> (ProjectDB, tokio_postgres::Config) {
 #[tokio::test]
 async fn program_creation() {
     let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
     let res = handle
         .db
-        .new_program(Uuid::now_v7(), "test1", "program desc", "ignored")
+        .new_program(
+            tenant_id,
+            Uuid::now_v7(),
+            "test1",
+            "program desc",
+            "ignored",
+        )
         .await
         .unwrap();
-    let rows = handle.db.list_programs().await.unwrap();
+    let rows = handle.db.list_programs(tenant_id).await.unwrap();
     assert_eq!(1, rows.len());
     let expected = ProgramDescr {
         program_id: res.0,
@@ -175,13 +182,26 @@ async fn program_creation() {
 #[tokio::test]
 async fn duplicate_program() {
     let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
     let _ = handle
         .db
-        .new_program(Uuid::now_v7(), "test1", "program desc", "ignored")
+        .new_program(
+            tenant_id,
+            Uuid::now_v7(),
+            "test1",
+            "program desc",
+            "ignored",
+        )
         .await;
     let res = handle
         .db
-        .new_program(Uuid::now_v7(), "test1", "program desc", "ignored")
+        .new_program(
+            tenant_id,
+            Uuid::now_v7(),
+            "test1",
+            "program desc",
+            "ignored",
+        )
         .await
         .expect_err("Expecting unique violation");
     let expected = anyhow::anyhow!(DBError::DuplicateName);
@@ -191,18 +211,31 @@ async fn duplicate_program() {
 #[tokio::test]
 async fn program_reset() {
     let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
     handle
         .db
-        .new_program(Uuid::now_v7(), "test1", "program desc", "ignored")
+        .new_program(
+            tenant_id,
+            Uuid::now_v7(),
+            "test1",
+            "program desc",
+            "ignored",
+        )
         .await
         .unwrap();
     handle
         .db
-        .new_program(Uuid::now_v7(), "test2", "program desc", "ignored")
+        .new_program(
+            tenant_id,
+            Uuid::now_v7(),
+            "test2",
+            "program desc",
+            "ignored",
+        )
         .await
         .unwrap();
     handle.db.reset_program_status().await.unwrap();
-    let results = handle.db.list_programs().await.unwrap();
+    let results = handle.db.list_programs(tenant_id).await.unwrap();
     for p in results {
         assert_eq!(ProgramStatus::None, p.status);
         assert_eq!(None, p.schema); //can't check for error fields directly
@@ -224,9 +257,11 @@ async fn program_reset() {
 #[tokio::test]
 async fn program_code() {
     let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
     let (program_id, _) = handle
         .db
         .new_program(
+            tenant_id,
             Uuid::now_v7(),
             "test1",
             "program desc",
@@ -234,7 +269,7 @@ async fn program_code() {
         )
         .await
         .unwrap();
-    let results = handle.db.program_code(program_id).await.unwrap();
+    let results = handle.db.program_code(tenant_id, program_id).await.unwrap();
     assert_eq!("test1", results.0.name);
     assert_eq!("program desc", results.0.description);
     assert_eq!("create table t1(c1 integer);".to_owned(), results.1);
@@ -243,9 +278,11 @@ async fn program_code() {
 #[tokio::test]
 async fn update_program() {
     let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
     let (program_id, _) = handle
         .db
         .new_program(
+            tenant_id,
             Uuid::now_v7(),
             "test1",
             "program desc",
@@ -256,22 +293,29 @@ async fn update_program() {
     let _ = handle
         .db
         .update_program(
+            tenant_id,
             program_id,
             "test2",
             "different desc",
             &Some("create table t2(c2 integer);".to_string()),
         )
         .await;
-    let (descr, code) = handle.db.program_code(program_id).await.unwrap();
+    let (descr, code) = handle.db.program_code(tenant_id, program_id).await.unwrap();
     assert_eq!("test2", descr.name);
     assert_eq!("different desc", descr.description);
     assert_eq!("create table t2(c2 integer);", code);
 
     let _ = handle
         .db
-        .update_program(program_id, "updated_test1", "some new description", &None)
+        .update_program(
+            tenant_id,
+            program_id,
+            "updated_test1",
+            "some new description",
+            &None,
+        )
         .await;
-    let results = handle.db.list_programs().await.unwrap();
+    let results = handle.db.list_programs(tenant_id).await.unwrap();
     assert_eq!(1, results.len());
     let row = results.get(0).unwrap();
     assert_eq!("updated_test1", row.name);
@@ -281,9 +325,11 @@ async fn update_program() {
 #[tokio::test]
 async fn program_queries() {
     let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
     let (program_id, _) = handle
         .db
         .new_program(
+            tenant_id,
             Uuid::now_v7(),
             "test1",
             "program desc",
@@ -293,23 +339,29 @@ async fn program_queries() {
         .unwrap();
     let desc = handle
         .db
-        .get_program_if_exists(program_id)
+        .get_program_if_exists(tenant_id, program_id)
         .await
         .unwrap()
         .unwrap();
     assert_eq!("test1", desc.name);
-    let desc = handle.db.lookup_program("test1").await.unwrap().unwrap();
+    let desc = handle
+        .db
+        .lookup_program(tenant_id, "test1")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!("test1", desc.name);
-    let desc = handle.db.lookup_program("test2").await.unwrap();
+    let desc = handle.db.lookup_program(tenant_id, "test2").await.unwrap();
     assert!(desc.is_none());
 }
 
 #[tokio::test]
 async fn program_config() {
     let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
     let connector_id = handle
         .db
-        .new_connector(Uuid::now_v7(), "a", "b", "c")
+        .new_connector(tenant_id, Uuid::now_v7(), "a", "b", "c")
         .await
         .unwrap();
     let ac = AttachedConnector {
@@ -320,10 +372,18 @@ async fn program_config() {
     };
     let _ = handle
         .db
-        .new_pipeline(Uuid::now_v7(), None, "1", "2", "3", &Some(vec![ac.clone()]))
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            None,
+            "1",
+            "2",
+            "3",
+            &Some(vec![ac.clone()]),
+        )
         .await
         .unwrap();
-    let res = handle.db.list_pipelines().await.unwrap();
+    let res = handle.db.list_pipelines(tenant_id).await.unwrap();
     assert_eq!(1, res.len());
     let config = res.get(0).unwrap();
     assert_eq!("1", config.name);
@@ -339,30 +399,43 @@ async fn program_config() {
 #[tokio::test]
 async fn project_pending() {
     let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
     let (uid1, _v) = handle
         .db
-        .new_program(Uuid::now_v7(), "test1", "project desc", "ignored")
+        .new_program(
+            tenant_id,
+            Uuid::now_v7(),
+            "test1",
+            "project desc",
+            "ignored",
+        )
         .await
         .unwrap();
     let (uid2, _v) = handle
         .db
-        .new_program(Uuid::now_v7(), "test2", "project desc", "ignored")
+        .new_program(
+            tenant_id,
+            Uuid::now_v7(),
+            "test2",
+            "project desc",
+            "ignored",
+        )
         .await
         .unwrap();
 
     handle
         .db
-        .set_program_status(uid2, ProgramStatus::Pending)
+        .set_program_status(tenant_id, uid2, ProgramStatus::Pending)
         .await
         .unwrap();
     handle
         .db
-        .set_program_status(uid1, ProgramStatus::Pending)
+        .set_program_status(tenant_id, uid1, ProgramStatus::Pending)
         .await
         .unwrap();
-    let (id, _version) = handle.db.next_job().await.unwrap().unwrap();
+    let (_, id, _version) = handle.db.next_job().await.unwrap().unwrap();
     assert_eq!(id, uid2);
-    let (id, _version) = handle.db.next_job().await.unwrap().unwrap();
+    let (_, id, _version) = handle.db.next_job().await.unwrap().unwrap();
     assert_eq!(id, uid2);
     // Maybe next job should set the status to something else
     // so it won't get picked up twice?
@@ -371,9 +444,11 @@ async fn project_pending() {
 #[tokio::test]
 async fn update_status() {
     let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
     let (program_id, _) = handle
         .db
         .new_program(
+            tenant_id,
             Uuid::now_v7(),
             "test1",
             "program desc",
@@ -383,19 +458,19 @@ async fn update_status() {
         .unwrap();
     let desc = handle
         .db
-        .get_program_if_exists(program_id)
+        .get_program_if_exists(tenant_id, program_id)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(ProgramStatus::None, desc.status);
     handle
         .db
-        .set_program_status(program_id, ProgramStatus::CompilingRust)
+        .set_program_status(tenant_id, program_id, ProgramStatus::CompilingRust)
         .await
         .unwrap();
     let desc = handle
         .db
-        .get_program_if_exists(program_id)
+        .get_program_if_exists(tenant_id, program_id)
         .await
         .unwrap()
         .unwrap();
@@ -405,9 +480,10 @@ async fn update_status() {
 #[tokio::test]
 async fn duplicate_attached_conn_name() {
     let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
     let connector_id = handle
         .db
-        .new_connector(Uuid::now_v7(), "a", "b", "c")
+        .new_connector(tenant_id, Uuid::now_v7(), "a", "b", "c")
         .await
         .unwrap();
     let ac = AttachedConnector {
@@ -424,7 +500,15 @@ async fn duplicate_attached_conn_name() {
     };
     let _ = handle
         .db
-        .new_pipeline(Uuid::now_v7(), None, "1", "2", "3", &Some(vec![ac, ac2]))
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            None,
+            "1",
+            "2",
+            "3",
+            &Some(vec![ac, ac2]),
+        )
         .await
         .expect_err("duplicate attached connector name");
 }
@@ -432,26 +516,58 @@ async fn duplicate_attached_conn_name() {
 #[tokio::test]
 async fn save_api_key() {
     let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
     // Attempt several key generations and validations
     for _ in 1..10 {
         let api_key = auth::generate_api_key();
         handle
             .db
             .store_api_key_hash(
+                tenant_id,
                 api_key.clone(),
                 vec![ApiPermission::Read, ApiPermission::Write],
             )
             .await
             .unwrap();
         let scopes = handle.db.validate_api_key(api_key.clone()).await.unwrap();
-        assert_eq!(&ApiPermission::Read, scopes.get(0).unwrap());
-        assert_eq!(&ApiPermission::Write, scopes.get(1).unwrap());
+        assert_eq!(tenant_id, scopes.0);
+        assert_eq!(&ApiPermission::Read, scopes.1.get(0).unwrap());
+        assert_eq!(&ApiPermission::Write, scopes.1.get(1).unwrap());
 
         let api_key_2 = auth::generate_api_key();
         let failure = handle.db.validate_api_key(api_key_2).await.unwrap_err();
         let err = failure.downcast_ref::<DBError>();
         assert!(matches!(err, Some(DBError::InvalidKey)));
     }
+}
+
+#[tokio::test]
+async fn create_tenant() {
+    let handle = test_setup().await;
+    let tenant_id_1 = handle
+        .db
+        .get_or_create_tenant_id("x".to_string(), "y".to_string())
+        .await
+        .unwrap();
+    let tenant_id_2 = handle
+        .db
+        .get_or_create_tenant_id("x".to_string(), "y".to_string())
+        .await
+        .unwrap();
+    // Concurrent attempts to create should also return the same tenant_id
+    let tenant_id_3 = handle
+        .db
+        .create_tenant_if_not_exists(Uuid::now_v7(), "x".to_string(), "y".to_string())
+        .await
+        .unwrap();
+    let tenant_id_4 = handle
+        .db
+        .get_or_create_tenant_id("x".to_string(), "y".to_string())
+        .await
+        .unwrap();
+    assert_eq!(tenant_id_1, tenant_id_2);
+    assert_eq!(tenant_id_2, tenant_id_3);
+    assert_eq!(tenant_id_3, tenant_id_4);
 }
 
 /// Generate uuids but limits the the randomess to the first 8 bytes.
@@ -480,24 +596,26 @@ pub(crate) fn limited_uuid() -> impl Strategy<Value = Uuid> {
 /// Actions we can do on the Storage trait.
 #[derive(Debug, Clone, Arbitrary)]
 enum StorageAction {
-    ResetProgramStatus,
-    ListPrograms,
-    ProgramCode(ProgramId),
+    ResetProgramStatus(TenantId),
+    ListPrograms(TenantId),
+    ProgramCode(TenantId, ProgramId),
     NewProgram(
+        TenantId,
         #[proptest(strategy = "limited_uuid()")] Uuid,
         String,
         String,
         String,
     ),
-    UpdateProgram(ProgramId, String, String, Option<String>),
-    GetProgramIfExists(ProgramId),
-    LookupProgram(String),
-    SetProgramStatus(ProgramId, ProgramStatus),
-    SetProgramStatusGuarded(ProgramId, Version, ProgramStatus),
-    SetProgramSchema(ProgramId, String),
-    DeleteProgram(ProgramId),
+    UpdateProgram(TenantId, ProgramId, String, String, Option<String>),
+    GetProgramIfExists(TenantId, ProgramId),
+    LookupProgram(TenantId, String),
+    SetProgramStatus(TenantId, ProgramId, ProgramStatus),
+    SetProgramStatusGuarded(TenantId, ProgramId, Version, ProgramStatus),
+    SetProgramSchema(TenantId, ProgramId, String),
+    DeleteProgram(TenantId, ProgramId),
     NextJob,
     NewPipeline(
+        TenantId,
         #[proptest(strategy = "limited_uuid()")] Uuid,
         Option<ProgramId>,
         String,
@@ -506,6 +624,7 @@ enum StorageAction {
         Option<Vec<AttachedConnector>>,
     ),
     UpdatePipeline(
+        TenantId,
         PipelineId,
         Option<ProgramId>,
         String,
@@ -513,25 +632,26 @@ enum StorageAction {
         Option<String>,
         Option<Vec<AttachedConnector>>,
     ),
-    PipelineSetDeployed(PipelineId, u16),
-    SetPipelineStatus(PipelineId, PipelineStatus),
-    DeletePipeline(PipelineId),
-    GetPipelineById(PipelineId),
-    GetPipelineByName(String),
-    ListPipelines,
+    PipelineSetDeployed(TenantId, PipelineId, u16),
+    SetPipelineStatus(TenantId, PipelineId, PipelineStatus),
+    DeletePipeline(TenantId, PipelineId),
+    GetPipelineById(TenantId, PipelineId),
+    GetPipelineByName(TenantId, String),
+    ListPipelines(TenantId),
     NewConnector(
+        TenantId,
         #[proptest(strategy = "limited_uuid()")] Uuid,
         String,
         String,
         String,
     ),
-    ListConnectors,
-    GetConnectorById(ConnectorId),
-    GetConnectorByName(String),
-    UpdateConnector(ConnectorId, String, String, Option<String>),
-    DeleteConnector(ConnectorId),
-    StoreApiKeyHash(String, Vec<ApiPermission>),
-    ValidateApiKey(String),
+    ListConnectors(TenantId),
+    GetConnectorById(TenantId, ConnectorId),
+    GetConnectorByName(TenantId, String),
+    UpdateConnector(TenantId, ConnectorId, String, String, Option<String>),
+    DeleteConnector(TenantId, ConnectorId),
+    StoreApiKeyHash(TenantId, String, Vec<ApiPermission>),
+    ValidateApiKey(TenantId, String),
 }
 
 fn check_responses<T: Debug + PartialEq>(step: usize, model: AnyResult<T>, impl_: AnyResult<T>) {
@@ -577,7 +697,7 @@ fn compare_pipeline(step: usize, model: AnyResult<PipelineDescr>, impl_: AnyResu
     }
 }
 
-/// Compare everything except tne `created` field which gets set inside the DB.
+/// Compare everything except the `created` field which gets set inside the DB.
 fn compare_pipelines(
     mut model_response: Vec<PipelineDescr>,
     mut impl_response: Vec<PipelineDescr>,
@@ -592,6 +712,34 @@ fn compare_pipelines(
             .map(|p| p.created = None)
             .collect::<Vec<_>>()
     );
+}
+
+async fn create_tenants_if_not_exists(
+    model: &Mutex<DbModel>,
+    handle: &DbHandle,
+    tenant_id: TenantId,
+) -> AnyResult<()> {
+    let mut m = model.lock().await;
+    if !m.tenants.contains_key(&tenant_id) {
+        let rec = TenantRecord {
+            id: tenant_id,
+            tenant: Uuid::now_v7().to_string(),
+            provider: Uuid::now_v7().to_string(),
+        };
+        m.tenants.insert(tenant_id, rec.clone());
+        handle
+            .db
+            .pool
+            .get()
+            .await
+            .unwrap()
+            .execute(
+                "INSERT INTO tenant VALUES ($1, $2, $3)",
+                &[&rec.id.0, &rec.tenant, &rec.provider],
+            )
+            .await?;
+    }
+    Ok(())
 }
 
 /// Compare the database storage implementation with our model using in-memory
@@ -636,78 +784,95 @@ fn db_impl_behaves_like_model() {
 
                     for (i, action) in actions.into_iter().enumerate() {
                         match action {
-                            StorageAction::ResetProgramStatus => {
+                            StorageAction::ResetProgramStatus(tenant_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.reset_program_status().await;
                                 let impl_response = handle.db.reset_program_status().await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::ListPrograms => {
-                                let model_response = model.list_programs().await.unwrap();
-                                let mut impl_response = handle.db.list_programs().await.unwrap();
-                                // Impl does not guarantee order of rows returned by SELECT
-                                impl_response.sort_by(|a, b| a.program_id.cmp(&b.program_id));
-                                assert_eq!(model_response, impl_response);
+                            StorageAction::ListPrograms(tenant_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.list_programs(tenant_id).await;
+                                let impl_response = handle.db.list_programs(tenant_id).await;
+                                if model_response.is_ok() && impl_response.is_ok() {
+                                    let m = model_response.unwrap();
+                                    let mut i = impl_response.unwrap();
+                                    // Impl does not guarantee order of rows returned by SELECT
+                                    i.sort_by(|a, b| a.program_id.cmp(&b.program_id));
+                                    assert_eq!(m, i);
+                                } else {
+                                    check_responses(i, model_response, impl_response);
+                                }
                             }
-                            StorageAction::ProgramCode(program_id) => {
-                                let model_response = model.program_code(program_id).await;
-                                let impl_response = handle.db.program_code(program_id).await;
+                            StorageAction::ProgramCode(tenant_id, program_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.program_code(tenant_id, program_id).await;
+                                let impl_response = handle.db.program_code(tenant_id, program_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::NewProgram(id, name, description, code) => {
+                            StorageAction::NewProgram(tenant_id, id, name, description, code) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.new_program(id, &name, &description, &code).await;
+                                    model.new_program(tenant_id, id, &name, &description, &code).await;
                                 let impl_response =
-                                    handle.db.new_program(id, &name, &description, &code).await;
+                                    handle.db.new_program(tenant_id, id, &name, &description, &code).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::UpdateProgram(program_id, name, description, code) => {
+                            StorageAction::UpdateProgram(tenant_id, program_id, name, description, code) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model
-                                    .update_program(program_id, &name, &description, &code)
+                                    .update_program(tenant_id, program_id, &name, &description, &code)
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .update_program(program_id, &name, &description, &code)
+                                    .update_program(tenant_id, program_id, &name, &description, &code)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::GetProgramIfExists(program_id) => {
-                                let model_response = model.get_program_if_exists(program_id).await;
+                            StorageAction::GetProgramIfExists(tenant_id,program_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_program_if_exists(tenant_id, program_id).await;
                                 let impl_response =
-                                    handle.db.get_program_if_exists(program_id).await;
+                                    handle.db.get_program_if_exists(tenant_id, program_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::LookupProgram(name) => {
-                                let model_response = model.lookup_program(&name).await;
-                                let impl_response = handle.db.lookup_program(&name).await;
+                            StorageAction::LookupProgram(tenant_id, name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.lookup_program(tenant_id, &name).await;
+                                let impl_response = handle.db.lookup_program(tenant_id, &name).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetProgramStatus(program_id, status) => {
+                            StorageAction::SetProgramStatus(tenant_id, program_id, status) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.set_program_status(program_id, status.clone()).await;
+                                    model.set_program_status(tenant_id, program_id, status.clone()).await;
                                 let impl_response =
-                                    handle.db.set_program_status(program_id, status.clone()).await;
+                                    handle.db.set_program_status(tenant_id, program_id, status.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetProgramStatusGuarded(program_id, version, status) => {
+                            StorageAction::SetProgramStatusGuarded(tenant_id, program_id, version, status) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model
-                                    .set_program_status_guarded(program_id, version, status.clone())
+                                    .set_program_status_guarded(tenant_id, program_id, version, status.clone())
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .set_program_status_guarded(program_id, version, status.clone())
+                                    .set_program_status_guarded(tenant_id, program_id, version, status.clone())
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetProgramSchema(program_id, schema) => {
+                            StorageAction::SetProgramSchema(tenant_id,program_id, schema) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.set_program_schema(program_id, schema.clone()).await;
+                                    model.set_program_schema(tenant_id, program_id, schema.clone()).await;
                                 let impl_response =
-                                    handle.db.set_program_schema(program_id, schema).await;
+                                    handle.db.set_program_schema(tenant_id, program_id, schema).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeleteProgram(program_id) => {
-                                let model_response = model.delete_program(program_id).await;
-                                let impl_response = handle.db.delete_program(program_id).await;
+                            StorageAction::DeleteProgram(tenant_id, program_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.delete_program(tenant_id, program_id).await;
+                                let impl_response = handle.db.delete_program(tenant_id, program_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::NextJob => {
@@ -715,97 +880,113 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.next_job().await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::GetPipelineById(pipeline_id) => {
-                                let model_response = model.get_pipeline_by_id(pipeline_id).await;
-                                let impl_response = handle.db.get_pipeline_by_id(pipeline_id).await;
+                            StorageAction::GetPipelineById(tenant_id, pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_by_id(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.get_pipeline_by_id(tenant_id, pipeline_id).await;
                                 compare_pipeline(i, model_response, impl_response);
                             }
-                            StorageAction::GetPipelineByName(name) => {
-                                let model_response = model.get_pipeline_by_name(name.clone()).await;
-                                let impl_response = handle.db.get_pipeline_by_name(name).await;
+                            StorageAction::GetPipelineByName(tenant_id, name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_by_name(tenant_id, name.clone()).await;
+                                let impl_response = handle.db.get_pipeline_by_name(tenant_id, name).await;
                                 compare_pipeline(i, model_response, impl_response);
                             }
-                            StorageAction::ListPipelines => {
-                                let model_response = model.list_pipelines().await.unwrap();
-                                let mut impl_response = handle.db.list_pipelines().await.unwrap();
+                            StorageAction::ListPipelines(tenant_id,) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.list_pipelines(tenant_id, ).await.unwrap();
+                                let mut impl_response = handle.db.list_pipelines(tenant_id, ).await.unwrap();
                                 // Impl does not guarantee order of rows returned by SELECT
                                 impl_response.sort_by(|a, b| a.pipeline_id.cmp(&b.pipeline_id));
                                 compare_pipelines(model_response, impl_response);
                             }
-                            StorageAction::NewPipeline(id, program_id, name, description, config, connectors) => {
+                            StorageAction::NewPipeline(tenant_id, id, program_id, name, description, config, connectors) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.new_pipeline(id, program_id, &name, &description, &config, &connectors.clone()).await;
+                                    model.new_pipeline(tenant_id, id, program_id, &name, &description, &config, &connectors.clone()).await;
                                 let impl_response =
-                                    handle.db.new_pipeline(id, program_id, &name, &description, &config, &connectors).await;
+                                    handle.db.new_pipeline(tenant_id, id, program_id, &name, &description, &config, &connectors).await;
                                     check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::UpdatePipeline(pipeline_id, program_id, name, description, config, connectors) => {
+                            StorageAction::UpdatePipeline(tenant_id,pipeline_id, program_id, name, description, config, connectors) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model
-                                    .update_pipeline(pipeline_id, program_id, &name, &description, &config, &connectors.clone())
+                                    .update_pipeline(tenant_id, pipeline_id, program_id, &name, &description, &config, &connectors.clone())
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .update_pipeline(pipeline_id, program_id, &name, &description, &config, &connectors)
+                                    .update_pipeline(tenant_id, pipeline_id, program_id, &name, &description, &config, &connectors)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::PipelineSetDeployed(pipeline_id, port) => {
-                                let model_response = model.set_pipeline_deployed(pipeline_id, port).await;
-                                let impl_response = handle.db.set_pipeline_deployed(pipeline_id, port).await;
+                            StorageAction::PipelineSetDeployed(tenant_id,pipeline_id, port) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.set_pipeline_deployed(tenant_id, pipeline_id, port).await;
+                                let impl_response = handle.db.set_pipeline_deployed(tenant_id, pipeline_id, port).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetPipelineStatus(pipeline_id, status) => {
-                                let model_response = model.set_pipeline_status(pipeline_id, status).await;
-                                let impl_response = handle.db.set_pipeline_status(pipeline_id, status).await;
+                            StorageAction::SetPipelineStatus(tenant_id,pipeline_id, status) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.set_pipeline_status(tenant_id, pipeline_id, status).await;
+                                let impl_response = handle.db.set_pipeline_status(tenant_id, pipeline_id, status).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeletePipeline(pipeline_id) => {
-                                let model_response = model.delete_pipeline(pipeline_id).await;
-                                let impl_response = handle.db.delete_pipeline(pipeline_id).await;
+                            StorageAction::DeletePipeline(tenant_id,pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.delete_pipeline(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.delete_pipeline(tenant_id, pipeline_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::ListConnectors => {
-                                let model_response = model.list_connectors().await.unwrap();
-                                let mut impl_response = handle.db.list_connectors().await.unwrap();
+                            StorageAction::ListConnectors(tenant_id,) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.list_connectors(tenant_id).await.unwrap();
+                                let mut impl_response = handle.db.list_connectors(tenant_id).await.unwrap();
                                 // Impl does not guarantee order of rows returned by SELECT
                                 impl_response.sort_by(|a, b| a.connector_id.cmp(&b.connector_id));
                                 assert_eq!(model_response, impl_response);
                             }
-                            StorageAction::NewConnector(id, name, description, config) => {
+                            StorageAction::NewConnector(tenant_id, id, name, description, config) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.new_connector(id, &name, &description, &config).await;
+                                    model.new_connector(tenant_id, id, &name, &description, &config).await;
                                 let impl_response =
-                                    handle.db.new_connector(id, &name, &description, &config).await;
+                                    handle.db.new_connector(tenant_id, id, &name, &description, &config).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::GetConnectorById(connector_id) => {
-                                let model_response = model.get_connector_by_id(connector_id).await;
-                                let impl_response = handle.db.get_connector_by_id(connector_id).await;
+                            StorageAction::GetConnectorById(tenant_id,connector_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_connector_by_id(tenant_id, connector_id).await;
+                                let impl_response = handle.db.get_connector_by_id(tenant_id, connector_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::GetConnectorByName(name) => {
-                                let model_response = model.get_connector_by_name(name.clone()).await;
-                                let impl_response = handle.db.get_connector_by_name(name).await;
+                            StorageAction::GetConnectorByName(tenant_id,name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_connector_by_name(tenant_id, name.clone()).await;
+                                let impl_response = handle.db.get_connector_by_name(tenant_id, name).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::UpdateConnector(connector_id, name, description, config) => {
+                            StorageAction::UpdateConnector(tenant_id,connector_id, name, description, config) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.update_connector(connector_id, &name, &description, &config).await;
+                                    model.update_connector(tenant_id, connector_id, &name, &description, &config).await;
                                 let impl_response =
-                                    handle.db.update_connector(connector_id, &name, &description, &config).await;
+                                    handle.db.update_connector(tenant_id, connector_id, &name, &description, &config).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeleteConnector(connector_id) => {
-                                let model_response = model.delete_connector(connector_id).await;
-                                let impl_response = handle.db.delete_connector(connector_id).await;
+                            StorageAction::DeleteConnector(tenant_id,connector_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.delete_connector(tenant_id, connector_id).await;
+                                let impl_response = handle.db.delete_connector(tenant_id, connector_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::StoreApiKeyHash(key, permissions) => {
-                                let model_response = model.store_api_key_hash(key.clone(), permissions.clone()).await;
-                                let impl_response = handle.db.store_api_key_hash(key.clone(), permissions.clone()).await;
+                            StorageAction::StoreApiKeyHash(tenant_id,key, permissions) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.store_api_key_hash(tenant_id, key.clone(), permissions.clone()).await;
+                                let impl_response = handle.db.store_api_key_hash(tenant_id, key.clone(), permissions.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             },
-                            StorageAction::ValidateApiKey(key) => {
+                            StorageAction::ValidateApiKey(tenant_id,key) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.validate_api_key(key.clone()).await;
                                 let impl_response = handle.db.validate_api_key(key.clone()).await;
                                 check_responses(i, model_response, impl_response);
@@ -826,10 +1007,11 @@ fn db_impl_behaves_like_model() {
 #[derive(Debug, Default)]
 struct DbModel {
     // `programs` Format is: (program, code, created)
-    pub programs: BTreeMap<ProgramId, (ProgramDescr, String, SystemTime)>,
-    pub pipelines: BTreeMap<PipelineId, PipelineDescr>,
-    pub api_keys: BTreeMap<String, Vec<ApiPermission>>,
-    pub connectors: BTreeMap<ConnectorId, ConnectorDescr>,
+    pub programs: BTreeMap<(TenantId, ProgramId), (ProgramDescr, String, SystemTime)>,
+    pub pipelines: BTreeMap<(TenantId, PipelineId), PipelineDescr>,
+    pub api_keys: BTreeMap<String, (TenantId, Vec<ApiPermission>)>,
+    pub connectors: BTreeMap<(TenantId, ConnectorId), ConnectorDescr>,
+    pub tenants: BTreeMap<TenantId, TenantRecord>,
 }
 
 #[async_trait]
@@ -847,40 +1029,45 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn list_programs(&self) -> anyhow::Result<Vec<ProgramDescr>> {
-        Ok(self
-            .lock()
-            .await
-            .programs
-            .values()
-            .map(|(p, _, _)| p.clone())
+    async fn list_programs(&self, tenant_id: TenantId) -> anyhow::Result<Vec<ProgramDescr>> {
+        let s = self.lock().await;
+        Ok(s.programs
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1 .0.clone())
             .collect())
     }
 
     async fn program_code(
         &self,
+        tenant_id: TenantId,
         program_id: super::ProgramId,
     ) -> anyhow::Result<(ProgramDescr, String)> {
-        self.lock()
-            .await
-            .programs
-            .get(&program_id)
+        let s = self.lock().await;
+        s.programs
+            .get(&(tenant_id, program_id))
             .map(|(p, c, _e)| (p.clone(), c.clone()))
             .ok_or(anyhow::anyhow!(DBError::UnknownProgram(program_id)))
     }
 
     async fn new_program(
         &self,
+        tenant_id: TenantId,
         id: Uuid,
         program_name: &str,
         program_description: &str,
         program_code: &str,
     ) -> anyhow::Result<(super::ProgramId, super::Version)> {
         let mut s = self.lock().await;
-        if s.programs.keys().any(|k| k.0 == id) {
+        if s.programs.keys().any(|k| k.1 == ProgramId(id)) {
             return Err(anyhow::anyhow!(DBError::UniqueKeyViolation("program_pkey")));
         }
-        if s.programs.values().any(|(p, _, _)| p.name == program_name) {
+        if s.programs
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1 .0.clone())
+            .any(|p| p.name == program_name)
+        {
             return Err(anyhow::anyhow!(DBError::DuplicateName));
         }
 
@@ -888,7 +1075,7 @@ impl Storage for Mutex<DbModel> {
         let version = Version(1);
 
         s.programs.insert(
-            program_id,
+            (tenant_id, program_id),
             (
                 ProgramDescr {
                     program_id,
@@ -908,25 +1095,28 @@ impl Storage for Mutex<DbModel> {
 
     async fn update_program(
         &self,
+        tenant_id: TenantId,
         program_id: super::ProgramId,
         program_name: &str,
         program_description: &str,
         program_code: &Option<String>,
     ) -> anyhow::Result<super::Version> {
         let mut s = self.lock().await;
-        if !s.programs.contains_key(&program_id) {
+        if !s.programs.contains_key(&(tenant_id, program_id)) {
             return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
         }
 
         if s.programs
-            .values()
-            .any(|(p, _, _)| p.name == program_name && p.program_id != program_id)
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1 .0.clone())
+            .any(|p| p.name == program_name && p.program_id != program_id)
         {
             return Err(anyhow::anyhow!(DBError::DuplicateName));
         }
 
         s.programs
-            .get_mut(&program_id)
+            .get_mut(&(tenant_id, program_id))
             .map(|(p, cur_code, _e)| {
                 p.name = program_name.to_owned();
                 p.description = program_description.to_owned();
@@ -945,36 +1135,42 @@ impl Storage for Mutex<DbModel> {
 
     async fn get_program_if_exists(
         &self,
+        tenant_id: TenantId,
         program_id: super::ProgramId,
     ) -> anyhow::Result<Option<ProgramDescr>> {
-        Ok(self
-            .lock()
-            .await
-            .programs
-            .get(&program_id)
+        let s = self.lock().await;
+        Ok(s.programs
+            .get(&(tenant_id, program_id))
             .map(|(p, _, _)| p.clone()))
     }
 
-    async fn lookup_program(&self, program_name: &str) -> anyhow::Result<Option<ProgramDescr>> {
-        Ok(self
-            .lock()
-            .await
-            .programs
-            .values()
-            .find(|(p, _, _)| p.name == program_name)
-            .map(|(p, _, _)| p.clone()))
+    async fn lookup_program(
+        &self,
+        tenant_id: TenantId,
+        program_name: &str,
+    ) -> anyhow::Result<Option<ProgramDescr>> {
+        let s = self.lock().await;
+        Ok(s.programs
+            .iter()
+            .filter(
+                |k: &(&(TenantId, ProgramId), &(ProgramDescr, String, SystemTime))| {
+                    k.0 .0 == tenant_id
+                },
+            )
+            .map(|k| k.1 .0.clone())
+            .find(|p| p.name == program_name))
     }
 
     async fn set_program_status(
         &self,
+        tenant_id: TenantId,
         program_id: super::ProgramId,
         status: ProgramStatus,
     ) -> anyhow::Result<()> {
-        let _r = self
-            .lock()
-            .await
+        let mut s = self.lock().await;
+        let _r = s
             .programs
-            .get_mut(&program_id)
+            .get_mut(&(tenant_id, program_id))
             .map(|(p, _, t)| {
                 p.status = status;
                 *t = SystemTime::now();
@@ -987,14 +1183,14 @@ impl Storage for Mutex<DbModel> {
 
     async fn set_program_status_guarded(
         &self,
+        tenant_id: TenantId,
         program_id: super::ProgramId,
         expected_version: super::Version,
         status: ProgramStatus,
     ) -> anyhow::Result<()> {
-        self.lock()
-            .await
-            .programs
-            .get_mut(&program_id)
+        let mut s = self.lock().await;
+        s.programs
+            .get_mut(&(tenant_id, program_id))
             .map(|(p, _, t)| {
                 if p.version == expected_version {
                     p.status = status;
@@ -1006,14 +1202,14 @@ impl Storage for Mutex<DbModel> {
 
     async fn set_program_schema(
         &self,
+        tenant_id: TenantId,
         program_id: super::ProgramId,
         schema: String,
     ) -> anyhow::Result<()> {
-        let _r = self
-            .lock()
-            .await
+        let mut s = self.lock().await;
+        let _r = s
             .programs
-            .get_mut(&program_id)
+            .get_mut(&(tenant_id, program_id))
             .map(|(p, _, _)| {
                 p.schema = Some(schema);
             });
@@ -1021,11 +1217,14 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn delete_program(&self, program_id: super::ProgramId) -> anyhow::Result<()> {
+    async fn delete_program(
+        &self,
+        tenant_id: TenantId,
+        program_id: super::ProgramId,
+    ) -> anyhow::Result<()> {
         let mut s = self.lock().await;
-
         s.programs
-            .remove(&program_id)
+            .remove(&(tenant_id, program_id))
             .map(|_| ())
             .ok_or(anyhow::anyhow!(DBError::UnknownProgram(program_id)))?;
         // Foreign key delete:
@@ -1034,20 +1233,24 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn next_job(&self) -> anyhow::Result<Option<(super::ProgramId, super::Version)>> {
+    async fn next_job(
+        &self,
+    ) -> anyhow::Result<Option<(super::TenantId, super::ProgramId, super::Version)>> {
         let s = self.lock().await;
-        let mut values = Vec::from_iter(s.programs.values());
-        values.sort_by(|(_, _, t1), (_, _, t2)| t1.cmp(t2));
+        let mut values: Vec<(&(TenantId, ProgramId), &(ProgramDescr, String, SystemTime))> =
+            Vec::from_iter(s.programs.iter());
+        values.sort_by(|(_, t1), (_, t2)| t1.2.cmp(&t2.2));
 
         values
             .iter()
-            .find(|(p, _, _)| p.status == ProgramStatus::Pending)
-            .map(|(p, _, _)| Ok(Some((p.program_id, p.version))))
+            .find(|(_, v)| v.0.status == ProgramStatus::Pending)
+            .map(|(k, v)| Ok(Some((k.0, v.0.program_id, v.0.version))))
             .unwrap_or(Ok(None))
     }
 
     async fn new_pipeline(
         &self,
+        tenant_id: TenantId,
         id: Uuid,
         program_id: Option<super::ProgramId>,
         pipline_name: &str,
@@ -1059,18 +1262,24 @@ impl Storage for Mutex<DbModel> {
         let mut s = self.lock().await;
         let db_connectors = s.connectors.clone();
 
-        if s.pipelines.keys().any(|k| k.0 == id) {
+        // UUIDs are global
+        if s.pipelines.keys().any(|k| k.1 == PipelineId(id)) {
             return Err(anyhow::anyhow!(DBError::UniqueKeyViolation(
                 "pipeline_pkey"
             )));
         }
         // UNIQUE constraint on name
-        if s.pipelines.values().any(|c| c.name == pipline_name) {
+        if s.pipelines
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1.clone())
+            .any(|c| c.name == pipline_name)
+        {
             return Err(DBError::DuplicateName.into());
         }
         // Model the foreign key constraint on `program_id`
         if let Some(program_id) = program_id {
-            if !s.programs.contains_key(&program_id) {
+            if !s.programs.contains_key(&(tenant_id, program_id)) {
                 return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
             }
         }
@@ -1096,7 +1305,7 @@ impl Storage for Mutex<DbModel> {
 
                 // Check that all attached connectors point to a valid
                 // connector_id
-                if !db_connectors.contains_key(&ac.connector_id) {
+                if !db_connectors.contains_key(&(tenant_id, ac.connector_id)) {
                     return Err(anyhow::anyhow!(DBError::UnknownConnector(ac.connector_id)));
                 }
 
@@ -1107,7 +1316,7 @@ impl Storage for Mutex<DbModel> {
         let pipeline_id = PipelineId(id);
         let version = Version(1);
         s.pipelines.insert(
-            pipeline_id,
+            (tenant_id, pipeline_id),
             PipelineDescr {
                 pipeline_id,
                 program_id,
@@ -1127,6 +1336,7 @@ impl Storage for Mutex<DbModel> {
 
     async fn update_pipeline(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_id: Option<ProgramId>,
         pipline_name: &str,
@@ -1140,14 +1350,15 @@ impl Storage for Mutex<DbModel> {
 
         // pipeline must exist
         s.pipelines
-            .get_mut(&pipeline_id)
+            .get_mut(&(tenant_id, pipeline_id))
             .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
         // UNIQUE constraint on name
         if let Some(c) = s
             .pipelines
-            .values()
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1)
             .find(|c| c.name == pipline_name)
-            .cloned()
         {
             if c.pipeline_id != pipeline_id {
                 return Err(DBError::DuplicateName.into());
@@ -1175,7 +1386,7 @@ impl Storage for Mutex<DbModel> {
 
                 // Check that all attached connectors point to a valid
                 // connector_id
-                if !db_connectors.contains_key(&ac.connector_id) {
+                if !db_connectors.contains_key(&(tenant_id, ac.connector_id)) {
                     return Err(anyhow::anyhow!(DBError::UnknownConnector(ac.connector_id)));
                 }
 
@@ -1184,19 +1395,19 @@ impl Storage for Mutex<DbModel> {
         }
         // Check program exists foreign key constraint
         if let Some(program_id) = program_id {
-            if !db_programs.contains_key(&program_id) {
+            if !db_programs.contains_key(&(tenant_id, program_id)) {
                 return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
             }
         }
 
         let c = s
             .pipelines
-            .get_mut(&pipeline_id)
+            .get_mut(&(tenant_id, pipeline_id))
             .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
 
         // Foreign key constraint on `program_id`
         if let Some(program_id) = program_id {
-            if db_programs.contains_key(&program_id) {
+            if db_programs.contains_key(&(tenant_id, program_id)) {
                 c.program_id = Some(program_id);
             } else {
                 return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
@@ -1216,29 +1427,37 @@ impl Storage for Mutex<DbModel> {
         Ok(c.version)
     }
 
-    async fn delete_config(&self, pipeline_id: super::PipelineId) -> anyhow::Result<()> {
-        self.lock()
-            .await
-            .pipelines
-            .remove(&pipeline_id)
+    async fn delete_config(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: super::PipelineId,
+    ) -> anyhow::Result<()> {
+        let mut s = self.lock().await;
+        s.pipelines
+            .remove(&(tenant_id, pipeline_id))
             .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
 
         Ok(())
     }
 
-    async fn attached_connector_is_input(&self, _name: &str) -> anyhow::Result<bool> {
+    async fn attached_connector_is_input(
+        &self,
+        _tenant_id: TenantId,
+        _name: &str,
+    ) -> anyhow::Result<bool> {
         todo!()
     }
 
     async fn set_pipeline_deployed(
         &self,
+        tenant_id: TenantId,
         pipeline_id: super::PipelineId,
         port: u16,
     ) -> anyhow::Result<()> {
         let mut s = self.lock().await;
         let p = s
             .pipelines
-            .get_mut(&pipeline_id)
+            .get_mut(&(tenant_id, pipeline_id))
             .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
 
         p.port = port;
@@ -1249,13 +1468,13 @@ impl Storage for Mutex<DbModel> {
 
     async fn set_pipeline_status(
         &self,
+        tenant_id: TenantId,
         pipeline_id: super::PipelineId,
         status: PipelineStatus,
     ) -> anyhow::Result<bool> {
         let mut s = self.lock().await;
-
         Ok(s.pipelines
-            .get_mut(&pipeline_id)
+            .get_mut(&(tenant_id, pipeline_id))
             .map(|p| {
                 p.status = status;
                 true
@@ -1263,63 +1482,86 @@ impl Storage for Mutex<DbModel> {
             .unwrap_or(false))
     }
 
-    async fn delete_pipeline(&self, pipeline_id: super::PipelineId) -> anyhow::Result<bool> {
+    async fn delete_pipeline(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: super::PipelineId,
+    ) -> anyhow::Result<bool> {
         let mut s = self.lock().await;
-
         // TODO: Our APIs sometimes are not consistent we return a bool here but
         // other calls fail silently on delete/lookups
         Ok(s.pipelines
-            .remove(&pipeline_id)
+            .remove(&(tenant_id, pipeline_id))
             .map(|_| true)
             .unwrap_or(false))
     }
 
     async fn get_pipeline_by_id(
         &self,
+        tenant_id: TenantId,
         pipeline_id: super::PipelineId,
     ) -> anyhow::Result<super::PipelineDescr> {
-        self.lock()
-            .await
-            .pipelines
-            .get(&pipeline_id)
+        let s = self.lock().await;
+        s.pipelines
+            .get(&(tenant_id, pipeline_id))
             .cloned()
             .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))
     }
 
-    async fn get_pipeline_by_name(&self, name: String) -> anyhow::Result<super::PipelineDescr> {
-        self.lock()
-            .await
-            .pipelines
-            .values()
+    async fn get_pipeline_by_name(
+        &self,
+        tenant_id: TenantId,
+        name: String,
+    ) -> anyhow::Result<super::PipelineDescr> {
+        let s = self.lock().await;
+        s.pipelines
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1.clone())
             .find(|p| p.name == name)
-            .cloned()
             .ok_or(anyhow::anyhow!(DBError::UnknownName(name)))
     }
 
-    async fn list_pipelines(&self) -> anyhow::Result<Vec<super::PipelineDescr>> {
-        Ok(self.lock().await.pipelines.values().cloned().collect())
+    async fn list_pipelines(
+        &self,
+        tenant_id: TenantId,
+    ) -> anyhow::Result<Vec<super::PipelineDescr>> {
+        Ok(self
+            .lock()
+            .await
+            .pipelines
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1.clone())
+            .collect())
     }
 
     async fn new_connector(
         &self,
+        tenant_id: TenantId,
         id: Uuid,
         name: &str,
         description: &str,
         config: &str,
     ) -> anyhow::Result<super::ConnectorId> {
         let mut s = self.lock().await;
-        if s.connectors.keys().any(|k| k.0 == id) {
+        if s.connectors.keys().any(|k| k.1 == ConnectorId(id)) {
             return Err(anyhow::anyhow!(DBError::UniqueKeyViolation(
                 "connector_pkey"
             )));
         }
-        if s.connectors.values().any(|c| c.name == name) {
+        if s.connectors
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1.clone())
+            .any(|c| c.name == name)
+        {
             return Err(DBError::DuplicateName.into());
         }
 
         let connector_id = super::ConnectorId(id);
         s.connectors.insert(
-            connector_id,
+            (tenant_id, connector_id),
             ConnectorDescr {
                 connector_id,
                 name: name.to_owned(),
@@ -1330,34 +1572,44 @@ impl Storage for Mutex<DbModel> {
         Ok(connector_id)
     }
 
-    async fn list_connectors(&self) -> anyhow::Result<Vec<ConnectorDescr>> {
-        Ok(self.lock().await.connectors.values().cloned().collect())
+    async fn list_connectors(&self, tenant_id: TenantId) -> anyhow::Result<Vec<ConnectorDescr>> {
+        let s = self.lock().await;
+        Ok(s.connectors
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1.clone())
+            .collect())
     }
 
     async fn get_connector_by_id(
         &self,
+        tenant_id: TenantId,
         connector_id: super::ConnectorId,
     ) -> anyhow::Result<ConnectorDescr> {
-        self.lock()
-            .await
-            .connectors
-            .get(&connector_id)
+        let s = self.lock().await;
+        s.connectors
+            .get(&(tenant_id, connector_id))
             .cloned()
             .ok_or(anyhow::anyhow!(DBError::UnknownConnector(connector_id)))
     }
 
-    async fn get_connector_by_name(&self, name: String) -> anyhow::Result<ConnectorDescr> {
-        self.lock()
-            .await
-            .connectors
-            .values()
+    async fn get_connector_by_name(
+        &self,
+        tenant_id: TenantId,
+        name: String,
+    ) -> anyhow::Result<ConnectorDescr> {
+        let s = self.lock().await;
+        s.connectors
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1.clone())
             .find(|c| c.name == name)
-            .cloned()
             .ok_or(anyhow::anyhow!(DBError::UnknownName(name)))
     }
 
     async fn update_connector(
         &self,
+        tenant_id: TenantId,
         connector_id: super::ConnectorId,
         connector_name: &str,
         description: &str,
@@ -1365,13 +1617,15 @@ impl Storage for Mutex<DbModel> {
     ) -> anyhow::Result<()> {
         let mut s = self.lock().await;
         // `connector_id` needs to exist
-        if s.connectors.get(&connector_id).is_none() {
+        if s.connectors.get(&(tenant_id, connector_id)).is_none() {
             return Err(DBError::UnknownConnector(connector_id).into());
         }
         // UNIQUE constraint on name
         if let Some(c) = s
             .connectors
-            .values()
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1)
             .find(|c| c.name == connector_name)
             .cloned()
         {
@@ -1382,7 +1636,7 @@ impl Storage for Mutex<DbModel> {
 
         let c = s
             .connectors
-            .get_mut(&connector_id)
+            .get_mut(&(tenant_id, connector_id))
             .ok_or(anyhow::anyhow!(DBError::UnknownConnector(connector_id)))?;
         c.name = connector_name.to_owned();
         c.description = description.to_owned();
@@ -1392,10 +1646,14 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn delete_connector(&self, connector_id: super::ConnectorId) -> anyhow::Result<()> {
+    async fn delete_connector(
+        &self,
+        tenant_id: TenantId,
+        connector_id: super::ConnectorId,
+    ) -> anyhow::Result<()> {
         let mut s = self.lock().await;
         s.connectors
-            .remove(&connector_id)
+            .remove(&(tenant_id, connector_id))
             .ok_or(anyhow::anyhow!(DBError::UnknownConnector(connector_id)))?;
         s.pipelines.values_mut().for_each(|c| {
             c.attached_connectors
@@ -1406,6 +1664,7 @@ impl Storage for Mutex<DbModel> {
 
     async fn store_api_key_hash(
         &self,
+        tenant_id: TenantId,
         key: String,
         permissions: Vec<ApiPermission>,
     ) -> AnyResult<()> {
@@ -1414,22 +1673,39 @@ impl Storage for Mutex<DbModel> {
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
         if let btree_map::Entry::Vacant(e) = s.api_keys.entry(hash) {
-            e.insert(permissions);
+            e.insert((tenant_id, permissions));
             Ok(())
         } else {
             Err(anyhow::anyhow!(DBError::DuplicateKey))
         }
     }
 
-    async fn validate_api_key(&self, key: String) -> AnyResult<Vec<ApiPermission>> {
+    async fn validate_api_key(&self, key: String) -> AnyResult<(TenantId, Vec<ApiPermission>)> {
         let s = self.lock().await;
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
         let record = s.api_keys.get(&hash);
         match record {
-            Some(record) => Ok(record.clone()),
+            Some(record) => Ok((record.0, record.1.clone())),
             None => Err(anyhow::anyhow!(DBError::InvalidKey)),
         }
+    }
+
+    async fn get_or_create_tenant_id(
+        &self,
+        _tenant_name: String,
+        _provider: String,
+    ) -> AnyResult<TenantId> {
+        todo!("For model-based tests, we generate the TenantID using proptest, as opposed to generating a claim that we then get or create an ID for");
+    }
+
+    async fn create_tenant_if_not_exists(
+        &self,
+        _tenant_id: Uuid,
+        _tenant_name: String,
+        _provider: String,
+    ) -> AnyResult<TenantId> {
+        todo!("For model-based tests, we generate the TenantID using proptest, as opposed to generating a claim that we then get or create an ID for");
     }
 }

@@ -1,4 +1,8 @@
-use crate::{config::ManagerConfig, ProgramStatus};
+use crate::{
+    auth::{TenantId, TenantRecord},
+    config::ManagerConfig,
+    ProgramStatus,
+};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -115,6 +119,7 @@ pub(crate) enum DBError {
     OutdatedProgramVersion(Version),
     UnknownPipeline(PipelineId),
     UnknownConnector(ConnectorId),
+    UnknownTenant(TenantId),
     UnknownName(String),
     DuplicateName,
     DuplicateKey,
@@ -135,6 +140,9 @@ impl Display for DBError {
             }
             DBError::UnknownConnector(connector_id) => {
                 write!(f, "Unknown connector id '{connector_id}'")
+            }
+            DBError::UnknownTenant(tenant_id) => {
+                write!(f, "Unknown tenant id '{tenant_id}'")
             }
             DBError::DuplicateName => {
                 write!(f, "An entity with this name already exists")
@@ -383,14 +391,14 @@ impl Storage for ProjectDB {
         Ok(())
     }
 
-    async fn list_programs(&self) -> AnyResult<Vec<ProgramDescr>> {
+    async fn list_programs(&self, tenant_id: TenantId) -> AnyResult<Vec<ProgramDescr>> {
         let rows = self
             .pool
             .get()
             .await?
             .query(
-                r#"SELECT id, name, description, version, status, error, schema FROM program"#,
-                &[],
+                r#"SELECT id, name, description, version, status, error, schema FROM program WHERE tenant_id = $1"#,
+                &[&tenant_id.0],
             )
             .await?;
 
@@ -414,9 +422,13 @@ impl Storage for ProjectDB {
         Ok(result)
     }
 
-    async fn program_code(&self, program_id: ProgramId) -> AnyResult<(ProgramDescr, String)> {
+    async fn program_code(
+        &self,
+        tenant_id: TenantId,
+        program_id: ProgramId,
+    ) -> AnyResult<(ProgramDescr, String)> {
         let row = self.pool.get().await?.query_opt(
-            "SELECT name, description, version, status, error, code, schema FROM program WHERE id = $1", &[&program_id.0]
+            "SELECT name, description, version, status, error, code, schema FROM program WHERE id = $1 AND tenant_id = $2", &[&program_id.0, &tenant_id.0]
         )
         .await?
         .ok_or(DBError::UnknownProgram(program_id))?;
@@ -430,7 +442,6 @@ impl Storage for ProjectDB {
         let schema: Option<String> = row.get(6);
 
         let status = ProgramStatus::from_columns(status.as_deref(), error)?;
-
         Ok((
             ProgramDescr {
                 program_id,
@@ -446,6 +457,7 @@ impl Storage for ProjectDB {
 
     async fn new_program(
         &self,
+        tenant_id: TenantId,
         id: Uuid,
         program_name: &str,
         program_description: &str,
@@ -453,12 +465,13 @@ impl Storage for ProjectDB {
     ) -> AnyResult<(ProgramId, Version)> {
         debug!("new_program {program_name} {program_description} {program_code}");
         self.pool.get().await?.execute(
-                    "INSERT INTO program (id, version, name, description, code, schema, status, error, status_since)
-                        VALUES($1, 1, $2, $3, $4, NULL, NULL, NULL, now());",
-                &[&id, &program_name, &program_description, &program_code]
+                    "INSERT INTO program (id, version, tenant_id, name, description, code, schema, status, error, status_since)
+                        VALUES($1, 1, $2, $3, $4, $5, NULL, NULL, NULL, now());",
+                &[&id, &tenant_id.0, &program_name, &program_description, &program_code]
             )
             .await
-            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))?;
+            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))
+            .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None))?;
 
         Ok((ProgramId(id), Version(1)))
     }
@@ -467,6 +480,7 @@ impl Storage for ProjectDB {
     /// XXX: Description should be optional too
     async fn update_program(
         &self,
+        tenant_id: TenantId,
         program_id: ProgramId,
         program_name: &str,
         program_description: &str,
@@ -487,7 +501,7 @@ impl Storage for ProjectDB {
                                 status = (CASE WHEN code = $3 THEN status ELSE NULL END),
                                 error = (CASE WHEN code = $3 THEN error ELSE NULL END),
                                 schema = (CASE WHEN code = $3 THEN schema ELSE NULL END)
-                        WHERE id = $4
+                        WHERE id = $4 AND tenant_id = $5
                         RETURNING version
                     ",
                         &[
@@ -495,6 +509,7 @@ impl Storage for ProjectDB {
                             &program_description,
                             &code,
                             &program_id.0,
+                            &tenant_id.0
                         ],
                     )
                     .await
@@ -503,8 +518,8 @@ impl Storage for ProjectDB {
             _ => {
                 self.pool.get().await?
                     .query_opt(
-                        "UPDATE program SET name = $1, description = $2 WHERE id = $3 RETURNING version",
-                        &[&program_name, &program_description, &program_id.0],
+                        "UPDATE program SET name = $1, description = $2 WHERE id = $3 AND tenant_id = $4 RETURNING version",
+                        &[&program_name, &program_description, &program_id.0, &tenant_id.0],
                     )
                     .await
                     .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))?
@@ -523,11 +538,12 @@ impl Storage for ProjectDB {
     /// Returns `None` if `program_id` is not found in the database.
     async fn get_program_if_exists(
         &self,
+        tenant_id: TenantId,
         program_id: ProgramId,
     ) -> AnyResult<Option<ProgramDescr>> {
         let row = self.pool.get().await?.query_opt(
-                "SELECT name, description, version, status, error, schema FROM program WHERE id = $1",
-                &[&program_id.0],
+                "SELECT name, description, version, status, error, schema FROM program WHERE id = $1 AND tenant_id = $2",
+                &[&program_id.0, &tenant_id.0],
             )
             .await?;
 
@@ -539,7 +555,6 @@ impl Storage for ProjectDB {
             let error: Option<String> = row.get(4);
             let schema: Option<String> = row.get(5);
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
-
             Ok(Some(ProgramDescr {
                 program_id,
                 name,
@@ -554,10 +569,14 @@ impl Storage for ProjectDB {
     }
 
     /// Lookup program by name.
-    async fn lookup_program(&self, program_name: &str) -> AnyResult<Option<ProgramDescr>> {
+    async fn lookup_program(
+        &self,
+        tenant_id: TenantId,
+        program_name: &str,
+    ) -> AnyResult<Option<ProgramDescr>> {
         let row = self.pool.get().await?.query_opt(
-                "SELECT id, description, version, status, error, schema FROM program WHERE name = $1",
-                &[&program_name],
+                "SELECT id, description, version, status, error, schema, tenant_id FROM program WHERE name = $1 AND tenant_id = $2",
+                &[&program_name, &tenant_id.0],
             )
             .await?;
 
@@ -569,7 +588,6 @@ impl Storage for ProjectDB {
             let error: Option<String> = row.get(4);
             let schema: Option<String> = row.get(5);
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
-
             Ok(Some(ProgramDescr {
                 program_id,
                 name: program_name.to_string(),
@@ -585,13 +603,14 @@ impl Storage for ProjectDB {
 
     async fn set_program_status(
         &self,
+        tenant_id: TenantId,
         program_id: ProgramId,
         status: ProgramStatus,
     ) -> AnyResult<()> {
         let (status, error) = status.to_columns();
         self.pool.get().await?.execute(
-                "UPDATE program SET status = $1, error = $2, schema = '', status_since = now() WHERE id = $3",
-            &[&status, &error, &program_id.0])
+                "UPDATE program SET status = $1, error = $2, schema = '', status_since = now() WHERE id = $3 AND tenant_id = $4",
+            &[&status, &error, &program_id.0, &tenant_id.0])
             .await?;
 
         Ok(())
@@ -599,6 +618,7 @@ impl Storage for ProjectDB {
 
     async fn set_program_status_guarded(
         &self,
+        tenant_id: TenantId,
         program_id: ProgramId,
         expected_version: Version,
         status: ProgramStatus,
@@ -617,8 +637,14 @@ impl Storage for ProjectDB {
                  error = (CASE WHEN version = $4 THEN $2 ELSE error END),
                  status_since = (CASE WHEN version = $4 THEN now()
                                  ELSE status_since END)
-                 WHERE id = $3 RETURNING id",
-                &[&status, &error, &program_id.0, &expected_version.0],
+                 WHERE id = $3 AND tenant_id = $5 RETURNING id",
+                &[
+                    &status,
+                    &error,
+                    &program_id.0,
+                    &expected_version.0,
+                    &tenant_id.0,
+                ],
             )
             .await?;
         if row.is_none() {
@@ -628,25 +654,33 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn set_program_schema(&self, program_id: ProgramId, schema: String) -> AnyResult<()> {
+    async fn set_program_schema(
+        &self,
+        tenant_id: TenantId,
+        program_id: ProgramId,
+        schema: String,
+    ) -> AnyResult<()> {
         self.pool
             .get()
             .await?
             .execute(
-                "UPDATE program SET schema = $1 WHERE id = $2",
-                &[&schema, &program_id.0],
+                "UPDATE program SET schema = $1 WHERE id = $2 AND tenant_id = $3",
+                &[&schema, &program_id.0, &tenant_id.0],
             )
             .await?;
 
         Ok(())
     }
 
-    async fn delete_program(&self, program_id: ProgramId) -> AnyResult<()> {
+    async fn delete_program(&self, tenant_id: TenantId, program_id: ProgramId) -> AnyResult<()> {
         let res = self
             .pool
             .get()
             .await?
-            .execute("DELETE FROM program WHERE id = $1", &[&program_id.0])
+            .execute(
+                "DELETE FROM program WHERE id = $1 AND tenant_id = $2",
+                &[&program_id.0, &tenant_id.0],
+            )
             .await?;
 
         if res > 0 {
@@ -656,21 +690,22 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn next_job(&self) -> AnyResult<Option<(ProgramId, Version)>> {
+    async fn next_job(&self) -> AnyResult<Option<(TenantId, ProgramId, Version)>> {
         // Find the oldest pending project.
-        let res = self.pool.get().await?.query("SELECT id, version FROM program WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM program WHERE status = 'pending')", &[])
+        let res = self.pool.get().await?.query("SELECT id, version, tenant_id FROM program WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM program WHERE status = 'pending')", &[])
             .await?;
 
         if let Some(row) = res.get(0) {
             let program_id: ProgramId = ProgramId(row.get(0));
             let version: Version = Version(row.get(1));
-            Ok(Some((program_id, version)))
+            let tenant_id: TenantId = TenantId(row.get(2));
+            Ok(Some((tenant_id, program_id, version)))
         } else {
             Ok(None)
         }
     }
 
-    async fn list_pipelines(&self) -> AnyResult<Vec<PipelineDescr>> {
+    async fn list_pipelines(&self, tenant_id: TenantId) -> AnyResult<Vec<PipelineDescr>> {
         let rows = self
             .pool
             .get()
@@ -688,8 +723,9 @@ impl Storage for ProjectDB {
 
                 FROM pipeline p
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                WHERE p.tenant_id = $1
                 GROUP BY p.id;",
-                &[],
+                &[&tenant_id.0],
             )
             .await?;
         let mut result = Vec::with_capacity(rows.len());
@@ -716,7 +752,11 @@ impl Storage for ProjectDB {
         Ok(result)
     }
 
-    async fn get_pipeline_by_id(&self, pipeline_id: PipelineId) -> AnyResult<PipelineDescr> {
+    async fn get_pipeline_by_id(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<PipelineDescr> {
         let row = self
             .pool
             .get()
@@ -732,10 +772,10 @@ impl Storage for ProjectDB {
                         '[]')
                 FROM pipeline p
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
-                WHERE p.id = $1
+                WHERE p.id = $1 AND p.tenant_id = $2
                 GROUP BY p.id
                 ",
-                &[&pipeline_id.0],
+                &[&pipeline_id.0, &tenant_id.0],
             )
             .await?;
 
@@ -762,7 +802,11 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn get_pipeline_by_name(&self, name: String) -> AnyResult<PipelineDescr> {
+    async fn get_pipeline_by_name(
+        &self,
+        tenant_id: TenantId,
+        name: String,
+    ) -> AnyResult<PipelineDescr> {
         let row = self
             .pool
             .get()
@@ -778,10 +822,10 @@ impl Storage for ProjectDB {
                         '[]')
                 FROM pipeline p
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
-                WHERE p.name = $1
+                WHERE p.name = $1 AND p.tenant_id = $2
                 GROUP BY p.id
                 ",
-                &[&name],
+                &[&name, &tenant_id.0],
             )
             .await?;
 
@@ -812,6 +856,7 @@ impl Storage for ProjectDB {
     // XXX: Multiple statements
     async fn new_pipeline(
         &self,
+        tenant_id: TenantId,
         id: Uuid,
         program_id: Option<ProgramId>,
         pipline_name: &str,
@@ -822,20 +867,23 @@ impl Storage for ProjectDB {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         txn.execute(
-            "INSERT INTO pipeline (id, program_id, version, name, description, config, status) VALUES($1, $2, 1, $3, $4, $5, 'shutdown')",
+            "INSERT INTO pipeline (id, program_id, version, name, description, config, status, tenant_id) VALUES($1, $2, 1, $3, $4, $5, 'shutdown', $6)",
             &[&id, &program_id.map(|id| id.0),
             &pipline_name,
             &pipeline_description,
-            &config])
+            &config,
+            &tenant_id.0])
             .await
             .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))
+            .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, program_id.map(|e| e.0)))
             .map_err(|e| ProjectDB::maybe_program_id_foreign_key_constraint_err(e, program_id))?;
         let pipeline_id = PipelineId(id);
 
         if let Some(connectors) = connectors {
             // Add the connectors.
             for ac in connectors {
-                self.attach_connector(&txn, pipeline_id, ac).await?;
+                self.attach_connector(tenant_id, &txn, pipeline_id, ac)
+                    .await?;
             }
         }
         txn.commit().await?;
@@ -846,6 +894,7 @@ impl Storage for ProjectDB {
     // XXX: Multiple statements
     async fn update_pipeline(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_id: Option<ProgramId>,
         pipline_name: &str,
@@ -866,6 +915,18 @@ impl Storage for ProjectDB {
         );
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
+
+        // First check whether the pipeline exists. Without this check, subsequent
+        // calls will fail correctly.
+        let row = txn
+            .query_opt(
+                "SELECT id FROM pipeline WHERE id = $1 AND tenant_id = $2",
+                &[&pipeline_id.0, &tenant_id.0],
+            )
+            .await?;
+        if row.is_none() {
+            return Err(anyhow!(DBError::UnknownPipeline(pipeline_id)));
+        }
         if let Some(connectors) = connectors {
             // Delete all existing attached connectors.
             txn.execute(
@@ -876,11 +937,12 @@ impl Storage for ProjectDB {
 
             // Rewrite the new set of connectors.
             for ac in connectors {
-                self.attach_connector(&txn, pipeline_id, ac).await?;
+                self.attach_connector(tenant_id, &txn, pipeline_id, ac)
+                    .await?;
             }
         }
-        let row = txn.query_opt("UPDATE pipeline SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), program_id = $4 WHERE id = $5 RETURNING version",
-            &[&pipline_name, &pipeline_description, &config, &program_id.map(|id| id.0), &pipeline_id.0])
+        let row = txn.query_opt("UPDATE pipeline SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), program_id = $4 WHERE id = $5 AND tenant_id = $6 RETURNING version",
+            &[&pipline_name, &pipeline_description, &config, &program_id.map(|id| id.0), &pipeline_id.0, &tenant_id.0])
             .await
             .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))
             .map_err(|e| ProjectDB::maybe_program_id_foreign_key_constraint_err(e, program_id))?;
@@ -891,12 +953,15 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn delete_config(&self, pipeline_id: PipelineId) -> AnyResult<()> {
+    async fn delete_config(&self, tenant_id: TenantId, pipeline_id: PipelineId) -> AnyResult<()> {
         let res = self
             .pool
             .get()
             .await?
-            .execute("DELETE FROM pipeline WHERE id = $1", &[&pipeline_id.0])
+            .execute(
+                "DELETE FROM pipeline WHERE id = $1 AND tenant_id = $2",
+                &[&pipeline_id.0, &tenant_id.0],
+            )
             .await?;
         if res > 0 {
             Ok(())
@@ -906,21 +971,30 @@ impl Storage for ProjectDB {
     }
 
     /// Returns true if the connector of a given name is an input connector.
-    async fn attached_connector_is_input(&self, name: &str) -> AnyResult<bool> {
+    async fn attached_connector_is_input(
+        &self,
+        tenant_id: TenantId,
+        name: &str,
+    ) -> AnyResult<bool> {
         let row = self
             .pool
             .get()
             .await?
             .query_one(
-                "SELECT is_input FROM attached_connector WHERE name = $1",
-                &[&name],
+                "SELECT is_input FROM attached_connector WHERE name = $1 AND tenant_id = $2",
+                &[&name, &tenant_id.0],
             )
             .await?;
 
         Ok(row.get(0))
     }
 
-    async fn set_pipeline_deployed(&self, pipeline_id: PipelineId, port: u16) -> AnyResult<()> {
+    async fn set_pipeline_deployed(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        port: u16,
+    ) -> AnyResult<()> {
         let status: &'static str = PipelineStatus::Deployed.into();
 
         let res = self
@@ -928,8 +1002,8 @@ impl Storage for ProjectDB {
             .get()
             .await?
             .execute(
-                "UPDATE pipeline SET status = $3, port = $1, created = extract(epoch from now()) where id = $2",
-                &[&(port as i16), &pipeline_id.0, &status],
+                "UPDATE pipeline SET status = $3, port = $1, created = extract(epoch from now()) WHERE id = $2 AND tenant_id = $4",
+                &[&(port as i16), &pipeline_id.0, &status, &tenant_id.0],
             )
             .await?;
 
@@ -942,6 +1016,7 @@ impl Storage for ProjectDB {
 
     async fn set_pipeline_status(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
         status: PipelineStatus,
     ) -> AnyResult<bool> {
@@ -952,25 +1027,33 @@ impl Storage for ProjectDB {
             .get()
             .await?
             .execute(
-                "UPDATE pipeline SET status=$2 WHERE id = $1",
-                &[&pipeline_id.0, &status],
+                "UPDATE pipeline SET status=$2 WHERE id = $1 AND tenant_id = $3",
+                &[&pipeline_id.0, &status, &tenant_id.0],
             )
             .await?;
         Ok(res > 0)
     }
 
-    async fn delete_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
+    async fn delete_pipeline(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<bool> {
         let res = self
             .pool
             .get()
             .await?
-            .execute("DELETE FROM pipeline WHERE id = $1", &[&pipeline_id.0])
+            .execute(
+                "DELETE FROM pipeline WHERE id = $1 AND tenant_id = $2",
+                &[&pipeline_id.0, &tenant_id.0],
+            )
             .await?;
         Ok(res > 0)
     }
 
     async fn new_connector(
         &self,
+        tenant_id: TenantId,
         id: Uuid,
         name: &str,
         description: &str,
@@ -981,20 +1064,24 @@ impl Storage for ProjectDB {
             .get()
             .await?
             .execute(
-                "INSERT INTO connector (id, name, description, config) VALUES($1, $2, $3, $4)",
-                &[&id, &name, &description, &config],
+                "INSERT INTO connector (id, name, description, config, tenant_id) VALUES($1, $2, $3, $4, $5)",
+                &[&id, &name, &description, &config, &tenant_id.0],
             )
             .await
-            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))?;
+            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))
+            .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None))?;
         Ok(ConnectorId(id))
     }
 
-    async fn list_connectors(&self) -> AnyResult<Vec<ConnectorDescr>> {
+    async fn list_connectors(&self, tenant_id: TenantId) -> AnyResult<Vec<ConnectorDescr>> {
         let rows = self
             .pool
             .get()
             .await?
-            .query("SELECT id, name, description, config FROM connector", &[])
+            .query(
+                "SELECT id, name, description, config FROM connector WHERE tenant_id = $1",
+                &[&tenant_id.0],
+            )
             .await?;
 
         let mut result = Vec::with_capacity(rows.len());
@@ -1011,14 +1098,18 @@ impl Storage for ProjectDB {
         Ok(result)
     }
 
-    async fn get_connector_by_name(&self, name: String) -> AnyResult<ConnectorDescr> {
+    async fn get_connector_by_name(
+        &self,
+        tenant_id: TenantId,
+        name: String,
+    ) -> AnyResult<ConnectorDescr> {
         let row = self
             .pool
             .get()
             .await?
             .query_opt(
-                "SELECT id, description, config FROM connector WHERE name = $1",
-                &[&name],
+                "SELECT id, description, config FROM connector WHERE name = $1 AND tenant_id = $2",
+                &[&name, &tenant_id.0],
             )
             .await?;
 
@@ -1038,14 +1129,18 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn get_connector_by_id(&self, connector_id: ConnectorId) -> AnyResult<ConnectorDescr> {
+    async fn get_connector_by_id(
+        &self,
+        tenant_id: TenantId,
+        connector_id: ConnectorId,
+    ) -> AnyResult<ConnectorDescr> {
         let row = self
             .pool
             .get()
             .await?
             .query_opt(
-                "SELECT name, description, config FROM connector WHERE id = $1",
-                &[&connector_id.0],
+                "SELECT name, description, config FROM connector WHERE id = $1 AND tenant_id = $2",
+                &[&connector_id.0, &tenant_id.0],
             )
             .await?;
 
@@ -1067,12 +1162,13 @@ impl Storage for ProjectDB {
 
     async fn update_connector(
         &self,
+        tenant_id: TenantId,
         connector_id: ConnectorId,
         connector_name: &str,
         description: &str,
         config: &Option<String>,
     ) -> AnyResult<()> {
-        let descr = self.get_connector_by_id(connector_id).await?;
+        let descr = self.get_connector_by_id(tenant_id, connector_id).await?;
         let config = config.clone().unwrap_or(descr.config);
 
         self.pool
@@ -1094,12 +1190,19 @@ impl Storage for ProjectDB {
         Ok(())
     }
 
-    async fn delete_connector(&self, connector_id: ConnectorId) -> AnyResult<()> {
+    async fn delete_connector(
+        &self,
+        tenant_id: TenantId,
+        connector_id: ConnectorId,
+    ) -> AnyResult<()> {
         let res = self
             .pool
             .get()
             .await?
-            .execute("DELETE FROM connector WHERE id = $1", &[&connector_id.0])
+            .execute(
+                "DELETE FROM connector WHERE id = $1 AND tenant_id = $2",
+                &[&connector_id.0, &tenant_id.0],
+            )
             .await?;
 
         if res > 0 {
@@ -1109,7 +1212,12 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn store_api_key_hash(&self, key: String, scopes: Vec<ApiPermission>) -> AnyResult<()> {
+    async fn store_api_key_hash(
+        &self,
+        tenant_id: TenantId,
+        key: String,
+        scopes: Vec<ApiPermission>,
+    ) -> AnyResult<()> {
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
@@ -1118,9 +1226,10 @@ impl Storage for ProjectDB {
             .get()
             .await?
             .execute(
-                "INSERT INTO api_key VALUES ($1, $2)",
+                "INSERT INTO api_key (hash, tenant_id, scopes) VALUES ($1, $2, $3)",
                 &[
                     &hash,
+                    &tenant_id.0,
                     &scopes
                         .iter()
                         .map(|scope| match scope {
@@ -1131,7 +1240,11 @@ impl Storage for ProjectDB {
                 ],
             )
             .await
-            .map_err(|_| anyhow!(DBError::DuplicateKey))?;
+            .map_err(EitherError::Tokio)
+            .map_err(Self::maybe_unique_violation)
+            .map_err(|e| {
+                ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None)
+            })?;
         if res > 0 {
             Ok(())
         } else {
@@ -1139,7 +1252,7 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn validate_api_key(&self, api_key: String) -> AnyResult<Vec<ApiPermission>> {
+    async fn validate_api_key(&self, api_key: String) -> AnyResult<(TenantId, Vec<ApiPermission>)> {
         let mut hasher = sha::Sha256::new();
         hasher.update(api_key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
@@ -1147,10 +1260,14 @@ impl Storage for ProjectDB {
             .pool
             .get()
             .await?
-            .query_one("SELECT scopes FROM api_key WHERE hash = $1", &[&hash])
+            .query_one(
+                "SELECT tenant_id, scopes FROM api_key WHERE hash = $1",
+                &[&hash],
+            )
             .await
             .map_err(|_| anyhow!(DBError::InvalidKey))?;
-        let vec: Vec<String> = res.get(0);
+        let tenant_id = TenantId(res.get(0));
+        let vec: Vec<String> = res.get(1);
         let vec = vec
             .iter()
             .map(|s| {
@@ -1161,7 +1278,48 @@ impl Storage for ProjectDB {
                 }
             })
             .collect();
-        Ok(vec)
+        Ok((tenant_id, vec))
+    }
+
+    async fn get_or_create_tenant_id(
+        &self,
+        tenant_name: String,
+        provider: String,
+    ) -> AnyResult<TenantId> {
+        let conn = self.pool.get().await?;
+        let res = conn
+            .query_opt(
+                "SELECT id FROM tenant WHERE tenant = $1 AND provider = $2",
+                &[&tenant_name, &provider],
+            )
+            .await?;
+        match res {
+            Some(row) => Ok(TenantId(row.get(0))),
+            None => {
+                self.create_tenant_if_not_exists(Uuid::now_v7(), tenant_name, provider)
+                    .await
+            }
+        }
+    }
+
+    async fn create_tenant_if_not_exists(
+        &self,
+        tenant_id: Uuid,
+        tenant_name: String,
+        provider: String,
+    ) -> AnyResult<TenantId> {
+        let conn = self.pool.get().await?;
+        // Unfortunately, doing a read-if-exists-else-insert is not very ergonomic. To
+        // do so in a single query requires us to do a redundant UPDATE on conflict,
+        // where we set the tenant and provider values to their existing values
+        // (excluded.{tenant, provider})
+        let res = conn
+                    .query_one(
+                        "INSERT INTO tenant (id, tenant, provider) VALUES ($1, $2, $3) ON CONFLICT (tenant, provider) DO UPDATE SET tenant = excluded.tenant, provider = excluded.provider RETURNING id",
+                        &[&tenant_id, &tenant_name, &provider],
+                    )
+                    .await?;
+        Ok(TenantId(res.get(0)))
     }
 }
 
@@ -1202,13 +1360,21 @@ impl ProjectDB {
         config: tokio_postgres::Config,
         initial_sql: &Option<String>,
     ) -> AnyResult<Self> {
-        ProjectDB::initialize(
+        let db = ProjectDB::initialize(
             config,
             initial_sql,
             #[cfg(feature = "pg-embed")]
             None,
         )
-        .await
+        .await?;
+        let default_tenant = TenantRecord::default();
+        db.create_tenant_if_not_exists(
+            default_tenant.id.0,
+            default_tenant.tenant,
+            default_tenant.provider,
+        )
+        .await?;
+        Ok(db)
     }
 
     /// Connect to the project database.
@@ -1227,13 +1393,26 @@ impl ProjectDB {
         let config = connection_str.parse::<tokio_postgres::Config>()?;
         debug!("Opening connection to {:?}", connection_str);
 
-        ProjectDB::initialize(
+        let db = ProjectDB::initialize(
             config,
             initial_sql,
             #[cfg(feature = "pg-embed")]
             pg_inst,
         )
-        .await
+        .await;
+        match db {
+            Ok(db) => {
+                let default_tenant = TenantRecord::default();
+                db.create_tenant_if_not_exists(
+                    default_tenant.id.0,
+                    default_tenant.tenant,
+                    default_tenant.provider,
+                )
+                .await?;
+                Ok(db)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     async fn initialize(
@@ -1269,19 +1448,35 @@ impl ProjectDB {
     /// - A valid pipeline for `pipeline_id` must exist.
     async fn attach_connector(
         &self,
+        tenant_id: TenantId,
         txn: &Transaction<'_>,
         pipeline_id: PipelineId,
         ac: &AttachedConnector,
     ) -> AnyResult<()> {
-        txn.execute(
-            "INSERT INTO attached_connector (name, pipeline_id, connector_id, is_input, config) VALUES($1, $2, $3, $4, $5)",
-            &[&ac.name, &pipeline_id.0, &ac.connector_id.0, &ac.is_input, &ac.config])
+        let rows = txn
+            .execute(
+                "INSERT INTO attached_connector (name, pipeline_id, connector_id, is_input, config)
+                 SELECT $2, $3, id, $5, $6
+                 FROM connector
+                 WHERE tenant_id = $1 AND id = $4",
+                &[
+                    &tenant_id.0,
+                    &ac.name,
+                    &pipeline_id.0,
+                    &ac.connector_id.0,
+                    &ac.is_input,
+                    &ac.config,
+                ],
+            )
             .map_err(EitherError::Tokio)
-            .map_err(|e| Self::maybe_connector_id_foreign_key_constraint_err(e, ac.connector_id))
             .map_err(|e| Self::maybe_pipeline_id_foreign_key_constraint_err(e, pipeline_id))
             .map_err(Self::maybe_unique_violation)
             .await?;
-        Ok(())
+        if rows == 0 {
+            Err(anyhow!(DBError::UnknownConnector(ac.connector_id)))
+        } else {
+            Ok(())
+        }
     }
 
     async fn json_to_attached_connectors(
@@ -1329,6 +1524,9 @@ impl ProjectDB {
                                 "pipeline_pkey"
                             )))
                         }
+                        Some("api_key_pkey") => {
+                            return EitherError::Any(anyhow!(DBError::DuplicateKey))
+                        }
                         Some(_constraint) => {
                             return EitherError::Any(anyhow!(DBError::DuplicateName));
                         }
@@ -1352,7 +1550,7 @@ impl ProjectDB {
             let db_err = e.as_db_error();
             if let Some(db_err) = db_err {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
-                    && db_err.constraint() == Some("pipeline_program_id_fkey")
+                    && db_err.constraint() == Some("pipeline_program_id_tenant_id_fkey")
                 {
                     if let Some(program_id) = program_id {
                         return EitherError::Any(anyhow!(DBError::UnknownProgram(program_id)));
@@ -1385,19 +1583,27 @@ impl ProjectDB {
         err
     }
 
-    /// Helper to convert connector_id foreign key constraint error into an
+    /// Helper to convert tenant_id foreign key constraint error into an
     /// user-friendly error message.
-    fn maybe_connector_id_foreign_key_constraint_err(
+    fn maybe_tenant_id_foreign_key_constraint_err(
         err: EitherError,
-        connector_id: ConnectorId,
+        tenant_id: TenantId,
+        missing_id: Option<Uuid>,
     ) -> EitherError {
         if let EitherError::Tokio(e) = &err {
             let db_err = e.as_db_error();
             if let Some(db_err) = db_err {
-                if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
-                    && db_err.constraint() == Some("attached_connector_connector_id_fkey")
-                {
-                    return EitherError::Any(anyhow!(DBError::UnknownConnector(connector_id)));
+                if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION {
+                    if let Some(constraint_name) = db_err.constraint() {
+                        if constraint_name.ends_with("pipeline_program_id_tenant_id_fkey") {
+                            return EitherError::Any(anyhow!(DBError::UnknownProgram(ProgramId(
+                                missing_id.unwrap()
+                            ))));
+                        }
+                        if constraint_name.ends_with("tenant_id_fkey") {
+                            return EitherError::Any(anyhow!(DBError::UnknownTenant(tenant_id)));
+                        }
+                    }
                 }
             }
         }
