@@ -41,6 +41,7 @@
 //! pipeline manager side, we store a hash of the API key in the database along
 //! with the permissions.
 
+use std::fmt::{self, Display};
 use std::{collections::HashMap, env};
 
 use actix_web::HttpMessage;
@@ -57,41 +58,76 @@ use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use static_assertions::assert_impl_any;
+use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::{
     db::{storage::Storage, ApiPermission, ProjectDB},
     ServerState,
 };
 
+// Used when no auth is configured, so we tag the request with the default user and passthrough
+pub(crate) fn tag_with_default_tenant_id(req: ServiceRequest) -> ServiceRequest {
+    req.extensions_mut().insert(DEFAULT_TENANT_ID);
+    req.extensions_mut()
+        .insert(vec![ApiPermission::Read, ApiPermission::Write]);
+    req
+}
+
 /// Authorization using a bearer token. This is strictly used for authorizing
 /// users, not machines.
 pub(crate) async fn auth_validator(
-    configuration: AuthConfiguration,
     req: ServiceRequest,
     credentials: Option<BearerAuth>,
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
     // First check if we have a bearer token. If not, we expect an API key.
     match credentials {
-        Some(credentials) => bearer_auth(configuration, req, credentials).await,
+        Some(credentials) => bearer_auth(req, credentials).await,
         None => api_key_auth(req).await,
     }
 }
 
 async fn bearer_auth(
-    configuration: AuthConfiguration,
     req: ServiceRequest,
     credentials: BearerAuth,
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
     // Validate bearer token
+    let configuration = req.app_data::<AuthConfiguration>().unwrap();
     let token = credentials.token();
     let token = match configuration.provider {
         Provider::AwsCognito(_) => decode_aws_cognito_token(token, &req, configuration).await,
     };
     match token {
-        Ok(_) => {
-            req.extensions_mut()
-                .insert(vec![ApiPermission::Read, ApiPermission::Write]);
-            Ok(req)
+        Ok(claim) => {
+            // TODO: Handle tenant deletions at some point
+            let tenant = {
+                let ad = req.app_data::<Data<ServerState>>();
+                let db = &ad.unwrap().db.lock().await;
+                db.get_or_create_tenant_id(claim.tenant_name(), claim.provider())
+                    .await
+            };
+
+            match tenant {
+                Ok(tenant_id) => {
+                    req.extensions_mut().insert(tenant_id);
+                    req.extensions_mut()
+                        .insert(vec![ApiPermission::Read, ApiPermission::Write]);
+                    Ok(req)
+                }
+                Err(e) => {
+                    error!(
+                        "Could not fetch tenant ID for claim {:?}, with error {}",
+                        claim, e
+                    );
+                    let config = req.app_data::<Config>().cloned().unwrap_or_default();
+                    Err((
+                        AuthenticationError::from(config)
+                            .with_error_description("descr")
+                            .into(),
+                        req,
+                    ))
+                }
+            }
         }
         Err(error) => {
             let descr = match error {
@@ -132,7 +168,8 @@ async fn api_key_auth(
                 validate_api_keys(db, api_key_str).await
             };
             match validate {
-                Ok(permissions) => {
+                Ok((tenant_id, permissions)) => {
+                    req.extensions_mut().insert(tenant_id);
                     req.extensions_mut().insert(permissions);
                     Ok(req)
                 }
@@ -159,9 +196,63 @@ async fn api_key_auth(
     }
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+/// Represents information about the tenant, extracted
+/// from an OAuth claim when using auth or
+/// a default user when not using auth
+pub(crate) struct TenantRecord {
+    /// This ID is for server-side use only. Do not propagate
+    /// this to the client.
+    pub id: TenantId,
+
+    /// Corresponds to the sub or subscriber from a claim
+    pub tenant: String,
+
+    /// Corresponds to the identity provider from a claim
+    pub provider: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub(crate) struct TenantId(
+    #[cfg_attr(test, proptest(strategy = "crate::db::test::limited_uuid()"))] pub Uuid,
+);
+impl Display for TenantId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+const DEFAULT_TENANT_ID: TenantId = TenantId(Uuid::nil());
+
+impl TenantRecord {
+    pub fn default() -> Self {
+        Self {
+            id: DEFAULT_TENANT_ID,
+            tenant: "default".to_string(),
+            provider: "default".to_string(),
+        }
+    }
+}
+
 #[derive(Debug)]
 enum Claim {
     AwsCognito(TokenData<AwsCognitoClaim>),
+}
+
+impl Claim {
+    fn tenant_name(&self) -> String {
+        match self {
+            Claim::AwsCognito(t) => t.claims.sub.clone(),
+        }
+    }
+
+    fn provider(&self) -> String {
+        match self {
+            Claim::AwsCognito(t) => t.claims.iss.clone(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -274,7 +365,7 @@ impl From<jsonwebtoken::errors::ErrorKind> for AuthError {
 async fn decode_aws_cognito_token(
     token: &str,
     req: &ServiceRequest,
-    configuration: AuthConfiguration,
+    configuration: &AuthConfiguration,
 ) -> Result<Claim, AuthError> {
     let header = decode_header(token);
     match header {
@@ -286,13 +377,14 @@ async fn decode_aws_cognito_token(
                 }
                 let state = req.app_data::<Data<ServerState>>().unwrap();
                 let cache = &mut state.jwk_cache.lock().await;
-                let jwk = cache.get(&header.kid.unwrap(), &configuration).await?;
+                let jwk = cache.get(&header.kid.unwrap(), configuration).await?;
                 let token_data = decode::<AwsCognitoClaim>(token, &jwk, &configuration.validation);
                 if let Ok(t) = &token_data {
                     // TODO: aud and client_id may not be the same when using a resource server
-                    if !&configuration
+                    if !configuration
                         .validation
                         .aud
+                        .as_ref()
                         .unwrap() // We create the validation object, so it's an error to not have aud set
                         .iter()
                         .any(|aud| *aud == t.claims.client_id)
@@ -445,7 +537,7 @@ fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
 async fn validate_api_keys(
     db: &ProjectDB,
     api_key: &str,
-) -> Result<Vec<ApiPermission>, anyhow::Error> {
+) -> Result<(TenantId, Vec<ApiPermission>), anyhow::Error> {
     db.validate_api_key(api_key.to_owned()).await
 }
 
@@ -547,9 +639,7 @@ mod test {
             provider: Provider::AwsCognito("some-url".to_string()),
             validation,
         };
-        let config_copy = config.clone();
-        let closure =
-            move |req, bearer_auth| auth::auth_validator(config_copy.clone(), req, bearer_auth);
+        let closure = move |req, bearer_auth| auth::auth_validator(req, bearer_auth);
         let auth_middleware = HttpAuthentication::with_fn(closure);
 
         let manager_config = ManagerConfig {
@@ -570,7 +660,12 @@ mod test {
         };
         let (conn, _temp) = crate::db::test::setup_pg().await;
         if api_key.is_some() {
+            let tenant_id = conn
+                .get_or_create_tenant_id("some-name".to_string(), "some-provider".to_string())
+                .await
+                .unwrap();
             conn.store_api_key_hash(
+                tenant_id,
                 api_key.unwrap(),
                 vec![ApiPermission::Read, ApiPermission::Write],
             )
@@ -587,20 +682,24 @@ mod test {
                 .cache
                 .cache_set("rsa01".to_owned(), decoding_key.unwrap());
         }
-        let app = App::new().app_data(state).wrap(auth_middleware).route(
-            "/",
-            web::get().to(|req: HttpRequest| async move {
-                {
-                    let ext = req.extensions();
-                    let permissions = ext.get::<Vec<ApiPermission>>().unwrap();
-                    assert_eq!(
-                        *permissions,
-                        vec![ApiPermission::Read, ApiPermission::Write]
-                    );
-                }
-                HttpResponse::build(StatusCode::OK)
-            }),
-        );
+        let app = App::new()
+            .app_data(state)
+            .app_data(config)
+            .wrap(auth_middleware)
+            .route(
+                "/",
+                web::get().to(|req: HttpRequest| async move {
+                    {
+                        let ext = req.extensions();
+                        let permissions = ext.get::<Vec<ApiPermission>>().unwrap();
+                        assert_eq!(
+                            *permissions,
+                            vec![ApiPermission::Read, ApiPermission::Write]
+                        );
+                    }
+                    HttpResponse::build(StatusCode::OK)
+                }),
+            );
         let app = test::init_service(app).await;
 
         test::call_service(&app, req).await

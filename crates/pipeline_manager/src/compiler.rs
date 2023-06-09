@@ -1,3 +1,4 @@
+use crate::auth::TenantId;
 use crate::db::storage::Storage;
 use crate::{ManagerConfig, ProgramId, ProjectDB, Version};
 use anyhow::{Error as AnyError, Result as AnyResult};
@@ -140,7 +141,7 @@ impl Compiler {
                     if let Some(job) = &job {
                         // Program was deleted, updated or the user changed its status
                         // to cancelled -- abort compilation.
-                        let descr = db.lock().await.get_program_if_exists(job.program_id).await?;
+                        let descr = db.lock().await.get_program_if_exists(job.tenant_id, job.program_id).await?;
                         if let Some(descr) = descr {
                             if descr.version != job.version || !descr.status.is_compiling() {
                                 cancel = true;
@@ -164,6 +165,7 @@ impl Compiler {
                         None
                     }
                 }, if job.is_some() => {
+                    let tenant_id = job.as_ref().unwrap().tenant_id;
                     let program_id = job.as_ref().unwrap().program_id;
                     let version = job.as_ref().unwrap().version;
                     let db = db.lock().await;
@@ -172,6 +174,7 @@ impl Compiler {
                         Ok(status) if status.success() && job.as_ref().unwrap().is_sql() => {
                             // SQL compiler succeeded -- start the Rust job.
                             db.set_program_status_guarded(
+                                tenant_id,
                                 program_id,
                                 version,
                                 ProgramStatus::CompilingRust,
@@ -185,14 +188,14 @@ impl Compiler {
                             // update in the same transaction as the program
                             // status above.
                             let schema_json = fs::read_to_string(config.schema_path(program_id)).await?;
-                            db.set_program_schema(program_id, schema_json).await?;
+                            db.set_program_schema(tenant_id, program_id, schema_json).await?;
 
                             debug!("Set ProgramStatus::CompilingRust '{program_id}', version '{version}'");
-                            job = Some(CompilationJob::rust(&config, program_id, version).await?);
+                            job = Some(CompilationJob::rust(tenant_id, &config, program_id, version).await?);
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
                             // Rust compiler succeeded -- declare victory.
-                            db.set_program_status_guarded(program_id, version, ProgramStatus::Success).await?;
+                            db.set_program_status_guarded(tenant_id, program_id, version, ProgramStatus::Success).await?;
                             debug!("Set ProgramStatus::Success '{program_id}', version '{version}'");
                             job = None;
                         }
@@ -211,7 +214,7 @@ impl Compiler {
                                     // and we return a system error:
                                     ProgramStatus::SystemError(format!("{output}\nexit code: {status}"))
                             };
-                            db.set_program_status_guarded(program_id, version, status).await?;
+                            db.set_program_status_guarded(tenant_id, program_id, version, status).await?;
                             job = None;
                         }
                         Err(e) => {
@@ -220,7 +223,7 @@ impl Compiler {
                             } else {
                                 ProgramStatus::SystemError(format!("I/O error with sql-to-dbsp: {e}"))
                             };
-                            db.set_program_status_guarded(program_id, version, status).await?;
+                            db.set_program_status_guarded(tenant_id, program_id, version, status).await?;
                             job = None;
                         }
                     }
@@ -230,20 +233,23 @@ impl Compiler {
             if job.is_none() {
                 let program = {
                     let db = db.lock().await;
-                    if let Some((program_id, version)) = db.next_job().await? {
+                    if let Some((tenant_id, program_id, version)) = db.next_job().await? {
                         trace!("Next program in the queue: '{program_id}', version '{version}'");
-                        let (_version, code) = db.program_code(program_id).await?;
-                        Some((program_id, version, code))
+                        let (_version, code) = db.program_code(tenant_id, program_id).await?;
+                        Some((tenant_id, program_id, version, code))
                     } else {
                         None
                     }
                 };
 
-                if let Some((program_id, version, code)) = program {
-                    job = Some(CompilationJob::sql(&config, &code, program_id, version).await?);
+                if let Some((tenant_id, program_id, version, code)) = program {
+                    job = Some(
+                        CompilationJob::sql(tenant_id, &config, &code, program_id, version).await?,
+                    );
                     db.lock()
                         .await
                         .set_program_status_guarded(
+                            tenant_id,
                             program_id,
                             version,
                             ProgramStatus::CompilingSql,
@@ -263,6 +269,7 @@ enum Stage {
 
 struct CompilationJob {
     stage: Stage,
+    tenant_id: TenantId,
     program_id: ProgramId,
     version: Version,
     compiler_process: Child,
@@ -279,6 +286,7 @@ impl CompilationJob {
 
     /// Run SQL-to-DBSP compiler.
     async fn sql(
+        tenant_id: TenantId,
         config: &ManagerConfig,
         code: &str,
         program_id: ProgramId,
@@ -338,6 +346,7 @@ impl CompilationJob {
             })?;
 
         Ok(Self {
+            tenant_id,
             stage: Stage::Sql,
             program_id,
             version,
@@ -347,6 +356,7 @@ impl CompilationJob {
 
     // Run `cargo` on the generated Rust workspace.
     async fn rust(
+        tenant_id: TenantId,
         config: &ManagerConfig,
         program_id: ProgramId,
         version: Version,
@@ -445,6 +455,7 @@ impl CompilationJob {
             .map_err(|e| AnyError::msg(format!("failed to start 'cargo': '{e}'")))?;
 
         Ok(Self {
+            tenant_id,
             stage: Stage::Rust,
             program_id,
             version,

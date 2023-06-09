@@ -1,6 +1,7 @@
 use crate::{
-    db::storage::Storage, db::AttachedConnector, db::PipelineDescr, db::PipelineStatus,
-    ErrorResponse, ManagerConfig, PipelineId, ProgramId, ProgramStatus, ProjectDB, Version,
+    auth::TenantId, db::storage::Storage, db::AttachedConnector, db::PipelineDescr,
+    db::PipelineStatus, ErrorResponse, ManagerConfig, PipelineId, ProgramId, ProgramStatus,
+    ProjectDB, Version,
 };
 use actix_web::{
     http::{Error, Method},
@@ -91,9 +92,13 @@ impl Runner {
     ///
     /// Starts the pipeline executable and waits for the pipeline to initialize,
     /// returning pipeline id and port number.
-    pub(crate) async fn deploy_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
+    pub(crate) async fn deploy_pipeline(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<HttpResponse> {
         match self {
-            Self::Local(local) => local.deploy_pipeline(pipeline_id).await,
+            Self::Local(local) => local.deploy_pipeline(tenant_id, pipeline_id).await,
         }
     }
 
@@ -107,10 +112,11 @@ impl Runner {
     /// all traces of the pipeline from the manager.
     pub(crate) async fn shutdown_pipeline(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> AnyResult<HttpResponse> {
         match self {
-            Self::Local(local) => local.shutdown_pipeline(pipeline_id).await,
+            Self::Local(local) => local.shutdown_pipeline(tenant_id, pipeline_id).await,
         }
     }
 
@@ -120,32 +126,42 @@ impl Runner {
     /// is invoked in contexts where the client already holds the lock.
     pub(crate) async fn delete_pipeline(
         &self,
+        tenant_id: TenantId,
         db: &ProjectDB,
         pipeline_id: PipelineId,
     ) -> AnyResult<HttpResponse> {
         match self {
-            Self::Local(local) => local.delete_pipeline(db, pipeline_id).await,
+            Self::Local(local) => local.delete_pipeline(tenant_id, db, pipeline_id).await,
         }
     }
 
-    pub(crate) async fn pause_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
+    pub(crate) async fn pause_pipeline(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<HttpResponse> {
         match self {
-            Self::Local(local) => local.pause_pipeline(pipeline_id).await?,
+            Self::Local(local) => local.pause_pipeline(tenant_id, pipeline_id).await?,
         };
-        self.forward_to_pipeline(pipeline_id, Method::GET, "pause")
+        self.forward_to_pipeline(tenant_id, pipeline_id, Method::GET, "pause")
             .await
     }
 
-    pub(crate) async fn start_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
+    pub(crate) async fn start_pipeline(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<HttpResponse> {
         match self {
-            Self::Local(local) => local.start_pipeline(pipeline_id).await?,
+            Self::Local(local) => local.start_pipeline(tenant_id, pipeline_id).await?,
         };
-        self.forward_to_pipeline(pipeline_id, Method::GET, "start")
+        self.forward_to_pipeline(tenant_id, pipeline_id, Method::GET, "start")
             .await
     }
 
     pub(crate) async fn forward_to_pipeline(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
         method: Method,
         endpoint: &str,
@@ -153,7 +169,7 @@ impl Runner {
         match self {
             Self::Local(local) => {
                 local
-                    .forward_to_pipeline(pipeline_id, method, endpoint)
+                    .forward_to_pipeline(tenant_id, pipeline_id, method, endpoint)
                     .await
             }
         }
@@ -161,6 +177,7 @@ impl Runner {
 
     pub(crate) async fn forward_to_pipeline_as_stream(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
         uuid: &str,
         req: HttpRequest,
@@ -168,7 +185,7 @@ impl Runner {
     ) -> AnyResult<HttpResponse> {
         match self {
             Self::Local(r) => {
-                r.forward_to_pipeline_as_stream(pipeline_id, uuid, req, body)
+                r.forward_to_pipeline_as_stream(tenant_id, pipeline_id, uuid, req, body)
                     .await
             }
         }
@@ -183,11 +200,15 @@ impl LocalRunner {
         })
     }
 
-    pub(crate) async fn deploy_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<HttpResponse> {
+    pub(crate) async fn deploy_pipeline(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<HttpResponse> {
         let db = self.db.lock().await;
 
         // Read and validate config.
-        let pipeline_descr = db.get_pipeline_by_id(pipeline_id).await?;
+        let pipeline_descr = db.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         if pipeline_descr.program_id.is_none() {
             return Ok(HttpResponse::BadRequest().body(format!(
                 "Pipeline '{}' does not have a program set",
@@ -197,13 +218,13 @@ impl LocalRunner {
         let program_version = pipeline_descr.program_id.unwrap();
 
         // Check: program exists, version = current version, compilation completed.
-        let program_descr = db.get_program_by_id(program_version).await?;
+        let program_descr = db.get_program_by_id(tenant_id, program_version).await?;
         if program_descr.status != ProgramStatus::Success {
             return Ok(HttpResponse::Conflict().body("Program hasn't been compiled yet"));
         };
 
         // Run the pipeline executable.
-        let mut pipeline_process = self.start(&db, &pipeline_descr).await?;
+        let mut pipeline_process = self.start(tenant_id, &db, &pipeline_descr).await?;
 
         // Unlock db -- the next part can be slow.
         drop(db);
@@ -215,7 +236,7 @@ impl LocalRunner {
                     .db
                     .lock()
                     .await
-                    .set_pipeline_deployed(pipeline_id, port)
+                    .set_pipeline_deployed(tenant_id, pipeline_id, port)
                     .await
                 {
                     let _ = pipeline_process.kill().await;
@@ -228,7 +249,7 @@ impl LocalRunner {
                 self.db
                     .lock()
                     .await
-                    .set_pipeline_status(pipeline_id, PipelineStatus::Shutdown)
+                    .set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Shutdown)
                     .await?;
                 Err(e)
             }
@@ -237,31 +258,43 @@ impl LocalRunner {
 
     pub(crate) async fn shutdown_pipeline(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> AnyResult<HttpResponse> {
         let db = self.db.lock().await;
-        self.do_shutdown_pipeline(&db, pipeline_id).await
+        self.do_shutdown_pipeline(tenant_id, &db, pipeline_id).await
     }
 
-    pub(crate) async fn pause_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
+    pub(crate) async fn pause_pipeline(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<bool> {
         let db = self.db.lock().await;
-        db.set_pipeline_status(pipeline_id, PipelineStatus::Paused)
+        db.set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Paused)
             .await
     }
 
-    pub(crate) async fn start_pipeline(&self, pipeline_id: PipelineId) -> AnyResult<bool> {
+    pub(crate) async fn start_pipeline(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<bool> {
         let db = self.db.lock().await;
-        db.set_pipeline_status(pipeline_id, PipelineStatus::Running)
+        db.set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Running)
             .await
     }
 
     pub(crate) async fn delete_pipeline(
         &self,
+        tenant_id: TenantId,
         db: &ProjectDB,
         pipeline_id: PipelineId,
     ) -> AnyResult<HttpResponse> {
         // Kill pipeline.
-        let response = self.do_shutdown_pipeline(db, pipeline_id).await?;
+        let response = self
+            .do_shutdown_pipeline(tenant_id, db, pipeline_id)
+            .await?;
         if !response.status().is_success() {
             return Ok(response);
         }
@@ -277,18 +310,24 @@ impl LocalRunner {
                 );
             }
         }
-        db.delete_pipeline(pipeline_id).await?;
+        db.delete_pipeline(tenant_id, pipeline_id).await?;
 
         Ok(HttpResponse::Ok().json("Pipeline successfully deleted."))
     }
 
     pub(crate) async fn forward_to_pipeline(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
         method: Method,
         endpoint: &str,
     ) -> AnyResult<HttpResponse> {
-        let pipeline_descr = self.db.lock().await.get_pipeline_by_id(pipeline_id).await?;
+        let pipeline_descr = self
+            .db
+            .lock()
+            .await
+            .get_pipeline_by_id(tenant_id, pipeline_id)
+            .await?;
 
         if pipeline_descr.status == PipelineStatus::Shutdown {
             return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
@@ -326,12 +365,18 @@ impl LocalRunner {
 
     pub(crate) async fn forward_to_pipeline_as_stream(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
         name: &str,
         req: HttpRequest,
         mut body: actix_web::web::Payload,
     ) -> AnyResult<HttpResponse> {
-        let pipeline_descr = self.db.lock().await.get_pipeline_by_id(pipeline_id).await?;
+        let pipeline_descr = self
+            .db
+            .lock()
+            .await
+            .get_pipeline_by_id(tenant_id, pipeline_id)
+            .await?;
         if pipeline_descr.status == PipelineStatus::Shutdown {
             return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
         }
@@ -345,7 +390,7 @@ impl LocalRunner {
             .db
             .lock()
             .await
-            .attached_connector_is_input(dbname)
+            .attached_connector_is_input(tenant_id, dbname)
             .await?;
 
         // TODO: it might be better to have ?name={}, otherwise we have to
@@ -384,7 +429,12 @@ impl LocalRunner {
         Ok(resp.streaming(rx))
     }
 
-    async fn start(&self, db: &ProjectDB, pipeline_descr: &PipelineDescr) -> AnyResult<Child> {
+    async fn start(
+        &self,
+        tenant_id: TenantId,
+        db: &ProjectDB,
+        pipeline_descr: &PipelineDescr,
+    ) -> AnyResult<Child> {
         assert!(
             pipeline_descr.program_id.is_some(),
             "pre-condition for start(): config.program_id is set"
@@ -394,6 +444,7 @@ impl LocalRunner {
 
         // Assemble the final config by including all attached connectors.
         async fn generate_attached_connector_config(
+            tenant_id: TenantId,
             db: &ProjectDB,
             config: &mut String,
             ac: &AttachedConnector,
@@ -402,7 +453,7 @@ impl LocalRunner {
             config.push_str(format!("{:ident$}{}:\n", "", ac.name.as_str()).as_str());
             let ident = 8;
             config.push_str(format!("{:ident$}stream: {}\n", "", ac.config.as_str()).as_str());
-            let connector = db.get_connector_by_id(ac.connector_id).await?;
+            let connector = db.get_connector_by_id(tenant_id, ac.connector_id).await?;
             for config_line in connector.config.lines() {
                 config.push_str(format!("{:ident$}{config_line}\n", "").as_str());
             }
@@ -428,7 +479,7 @@ impl LocalRunner {
             .iter()
             .filter(|ac| ac.is_input)
         {
-            generate_attached_connector_config(db, &mut config, ac).await?;
+            generate_attached_connector_config(tenant_id, db, &mut config, ac).await?;
         }
         config.push_str("outputs:\n");
         for ac in pipeline_descr
@@ -436,7 +487,7 @@ impl LocalRunner {
             .iter()
             .filter(|ac| !ac.is_input)
         {
-            generate_attached_connector_config(db, &mut config, ac).await?;
+            generate_attached_connector_config(tenant_id, db, &mut config, ac).await?;
             add_debug_websocket(&mut config, ac).await?;
         }
         log::debug!("Pipeline config is '{}'", config);
@@ -448,7 +499,7 @@ impl LocalRunner {
         let config_file_path = self.config.config_file_path(pipeline_id);
         fs::write(&config_file_path, config.as_str()).await?;
 
-        let (_version, code) = db.program_code(program_id).await?;
+        let (_version, code) = db.program_code(tenant_id, program_id).await?;
 
         let metadata = PipelineMetadata {
             program_id,
@@ -513,10 +564,11 @@ impl LocalRunner {
 
     async fn do_shutdown_pipeline(
         &self,
+        tenant_id: TenantId,
         db: &ProjectDB,
         pipeline_id: PipelineId,
     ) -> AnyResult<HttpResponse> {
-        let pipeline_descr = db.get_pipeline_by_id(pipeline_id).await?;
+        let pipeline_descr = db.get_pipeline_by_id(tenant_id, pipeline_id).await?;
 
         if pipeline_descr.status == PipelineStatus::Shutdown {
             return Ok(HttpResponse::Ok().json("Pipeline already shut down."));
@@ -526,7 +578,7 @@ impl LocalRunner {
         let response = match reqwest::get(&url).await {
             Ok(response) => response,
             Err(_) => {
-                db.set_pipeline_status(pipeline_id, PipelineStatus::Shutdown)
+                db.set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Shutdown)
                     .await?;
                 // We failed to reach the pipeline, which likely means
                 // that it crashed or was killed manually by the user.
@@ -537,7 +589,7 @@ impl LocalRunner {
         };
 
         if response.status().is_success() {
-            db.set_pipeline_status(pipeline_id, PipelineStatus::Shutdown)
+            db.set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Shutdown)
                 .await?;
             Ok(HttpResponse::Ok().json("Pipeline successfully terminated."))
         } else {
