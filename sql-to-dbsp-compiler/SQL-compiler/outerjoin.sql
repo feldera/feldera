@@ -1,8 +1,0 @@
-CREATE TABLE T (COL1 INT NOT NULL
-                , COL2 DOUBLE NOT NULL
-                , COL3 BOOLEAN NOT NULL
-                , COL4 VARCHAR NOT NULL
-                , COL5 INT
-                , COL6 DOUBLE
-                );
-CREATE VIEW V AS SELECT T1.COL3, T2.COL3 FROM T AS T1 FULL OUTER JOIN T AS T2 ON T1.COL1 = T2.COL5
