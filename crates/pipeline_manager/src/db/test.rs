@@ -1181,12 +1181,6 @@ impl Storage for Mutex<DbModel> {
 
                 new_acs.push(ac.clone());
             }
-
-            let mut c = s
-                .pipelines
-                .get_mut(&pipeline_id)
-                .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
-            c.attached_connectors = new_acs;
         }
         // Check program exists foreign key constraint
         if let Some(program_id) = program_id {
@@ -1211,6 +1205,7 @@ impl Storage for Mutex<DbModel> {
             c.program_id = None;
         }
 
+        c.attached_connectors = new_acs;
         c.name = pipline_name.to_owned();
         c.description = pipeline_description.to_owned();
         c.version = c.version.increment();
