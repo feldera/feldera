@@ -33,6 +33,11 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
         }
     }
 
+    @Override
+    public boolean hasFunction() {
+        return true;
+    }
+
     public DBSPAggregate getAggregate() {
         return Objects.requireNonNull(this.aggregate);
     }

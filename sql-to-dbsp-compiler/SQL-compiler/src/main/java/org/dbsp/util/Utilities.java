@@ -49,29 +49,34 @@ public class Utilities {
     }
 
     /**
+     * Escape special characters in a string.
+     */
+    public static String escape(String value) {
+        StringBuilder builder = new StringBuilder();
+        for (char c : value.toCharArray()) {
+            if (c == '\'')
+                builder.append("\\'");
+            else if (c == '\"' )
+                builder.append("\\\"");
+            else if (c == '\r' )
+                builder.append("\\r");
+            else if (c == '\n' )
+                builder.append("\\n");
+            else if (c == '\t' )
+                builder.append("\\t");
+            else if (c < 32 || c >= 127 )
+                builder.append( String.format( "\\u%04x", (int)c ) );
+            else
+                builder.append(c);
+        }
+        return builder.toString();
+    }
+
+    /**
      * Add double quotes around string and escape symbols that need it.
      */
     public static String doubleQuote(String value) {
-         StringBuilder builder = new StringBuilder();
-         builder.append("\"");
-         for (char c : value.toCharArray()) {
-             if (c == '\'')
-                 builder.append("\\'");
-             else if (c == '\"' )
-                 builder.append("\\\"");
-             else if (c == '\r' )
-                 builder.append("\\r");
-             else if (c == '\n' )
-                 builder.append("\\n");
-             else if (c == '\t' )
-                 builder.append("\\t");
-             else if (c < 32 || c >= 127 )
-                 builder.append( String.format( "\\u%04x", (int)c ) );
-             else
-                 builder.append(c);
-         }
-         builder.append("\"");
-         return builder.toString();
+         return "\"" + escape(value) + "\"";
      }
 
     /**

@@ -310,7 +310,7 @@ public class RustFileWriter implements ICompilerComponent {
             String str;
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {
-                str = ToRustInnerVisitor.toRustString(this.compiler, inner);
+                str = ToRustInnerVisitor.toRustString(this.compiler, inner, false);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
                 if (this.emitHandles)

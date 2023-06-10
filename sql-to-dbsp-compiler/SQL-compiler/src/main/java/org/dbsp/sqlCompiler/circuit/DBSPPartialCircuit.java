@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
@@ -78,9 +79,9 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IMod
                 .append(operator.toString())
                 .newline();
         if (this.operatorDeclarations.containsKey(operator.outputName)) {
-            this.errorReporter.reportError(operator.getSourcePosition(), false, "Duplicate definition",
-                    "View " + operator.outputName + " already defined");
             DBSPOperator previous = this.operatorDeclarations.get(operator.outputName);
+            this.errorReporter.reportError(operator.getSourcePosition(), false, "Duplicate definition",
+                    "Stream " + operator.outputName + " already defined");
             this.errorReporter.reportError(previous.getSourcePosition(), false, "Duplicate definition",
                     "This is the previous definition");
             return;
@@ -102,15 +103,16 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IMod
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        for (IDBSPNode op: this.allOperators) {
-            IDBSPOuterNode outer = op.as(IDBSPOuterNode.class);
-            if (outer != null)
-                outer.accept(visitor);
-        }
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
+        for (DBSPOperator op: this.allOperators)
+            op.accept(visitor);
         visitor.postorder(this);
     }
 
+    /**
+     * Return true if this circuit and other are identical (have the exact same operators).
+     */
     public boolean sameCircuit(DBSPPartialCircuit other) {
         if (this == other)
             return true;
@@ -131,5 +133,12 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IMod
     @Override
     public String toString() {
         return "PartialCircuit" + this.id;
+    }
+
+    /**
+     * Number of operators in the circuit.
+     */
+    public int size() {
+        return this.allOperators.size();
     }
 }

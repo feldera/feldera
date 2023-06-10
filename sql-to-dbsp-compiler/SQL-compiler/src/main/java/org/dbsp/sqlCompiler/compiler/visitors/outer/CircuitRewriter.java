@@ -48,7 +48,7 @@ import java.util.function.Function;
 
 /**
  * Applies a function (this.transform) to every function within an operator,
- * to every type within a node, and to every declaration in a circuit.
+ * and to every type within the operator.
  */
 public class CircuitRewriter extends CircuitCloneVisitor {
     private final Function<IDBSPInnerNode, IDBSPInnerNode> transform;

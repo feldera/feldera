@@ -32,12 +32,6 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.JITSinkOperator;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.JITSourceOperator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.DeadCodeVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.NoIntegralVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeIncrementalVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.PassesVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveOperatorsVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -99,6 +93,7 @@ public class BaseSQLTests {
     }
 
     protected static DBSPCircuit getCircuit(DBSPCompiler compiler) {
+        compiler.optimize();
         String name = "circuit" + testsToRun.size();
         return compiler.getFinalCircuit(name);
     }
@@ -329,22 +324,10 @@ public class BaseSQLTests {
         RustSqlRuntimeLibrary.INSTANCE.writeSqlLibrary( "../lib/genlib/src/lib.rs");
     }
 
-    CircuitVisitor getOptimizer(DBSPCompiler compiler) {
-        DeadCodeVisitor dead = new DeadCodeVisitor(compiler, true);
-        return new PassesVisitor(
-                compiler,
-                new OptimizeIncrementalVisitor(compiler),
-                dead,
-                new RemoveOperatorsVisitor(compiler, dead.toKeep),
-                new NoIntegralVisitor(compiler)
-        );
-    }
-
     void testQueryBase(String query, boolean incremental, boolean optimize, boolean jit, InputOutputPair... streams) {
         try {
             query = "CREATE VIEW V AS " + query;
             DBSPCompiler compiler = this.compileQuery(query, incremental, optimize, jit);
-            compiler.optimize();
             DBSPCircuit circuit = getCircuit(compiler);
             this.addRustTestCase(compiler, circuit, streams);
         } catch (Exception ex) {

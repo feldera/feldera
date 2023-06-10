@@ -172,7 +172,7 @@ public class OtherTests extends BaseSQLTests implements IModule {
         compiler.compileStatement(statement0);
         compiler.compileStatement(statement1);
         compiler.compileStatement(statement2);
-        DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
+        DBSPCircuit circuit = getCircuit(compiler);
         RustFileWriter writer = new RustFileWriter(compiler, testFilePath);
         writer.add(circuit);
         writer.writeAndClose();
@@ -316,7 +316,7 @@ public class OtherTests extends BaseSQLTests implements IModule {
     }
 
     @Test
-    public void projectTest() {
+    public void testProjectFiles() {
         // Compiles all the programs in the tests directory
         final String projectsDirectory = "../../demo/";
         File dir = new File(projectsDirectory);

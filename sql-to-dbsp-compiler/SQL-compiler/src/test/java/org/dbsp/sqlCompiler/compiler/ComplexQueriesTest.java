@@ -198,7 +198,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(statements);
         compiler.throwIfErrorsOccurred();
-        DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
+        DBSPCircuit circuit = getCircuit(compiler);
         RustFileWriter writer = new RustFileWriter(compiler, testFilePath);
         writer.emitCodeWithHandle(true);
         writer.add(circuit);
@@ -355,7 +355,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(statements);
         compiler.throwIfErrorsOccurred();
-        DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
+        DBSPCircuit circuit = getCircuit(compiler);
         RustFileWriter writer = new RustFileWriter(compiler, testFilePath);
         writer.emitCodeWithHandle(true);
         writer.add(circuit);

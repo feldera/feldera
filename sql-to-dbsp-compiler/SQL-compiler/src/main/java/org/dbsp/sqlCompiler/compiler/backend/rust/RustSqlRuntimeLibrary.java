@@ -352,7 +352,7 @@ public class RustSqlRuntimeLibrary {
         writer.append("use dbsp::algebra::{F32, F64};\n");
         writer.append("\n");
         for (IDBSPDeclaration declaration: this.declarations.values()) {
-            writer.append(ToRustInnerVisitor.toRustString(fakeCompiler, declaration));
+            writer.append(ToRustInnerVisitor.toRustString(fakeCompiler, declaration, false));
             writer.append("\n\n");
         }
         writer.close();

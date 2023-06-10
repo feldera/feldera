@@ -25,14 +25,18 @@ package org.dbsp.sqlCompiler.compiler.backend;
 
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.util.IModule;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Logger;
@@ -58,6 +62,8 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
     public VisitDecision preorder(DBSPSourceOperator node) {
         this.stream.append(node.outputName)
                 .append(" [ shape=box,label=\"")
+                .append(node.id)
+                .append(" ")
                 .append(node.outputName)
                 .append("\" ]")
                 .newline();
@@ -78,6 +84,8 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
     public VisitDecision preorder(DBSPSinkOperator node) {
         this.stream.append(node.outputName)
                 .append(" [ shape=box,label=\"")
+                .append(node.id)
+                .append(" ")
                 .append(node.outputName)
                 .append("\" ]")
                 .newline();
@@ -86,20 +94,36 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
     }
 
     String getFunction(DBSPOperator node) {
-        if (node.function == null)
-            return "";
         DBSPExpression expression = node.function;
-        return ToRustInnerVisitor.toRustString(this.errorReporter, expression);
+        if (node.is(DBSPAggregateOperatorBase.class)) {
+            DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
+            if (aggregate.aggregate != null)
+                expression = LowerCircuitVisitor.createAggregator(
+                        this.errorReporter, aggregate.aggregate, true);
+        }
+        if (expression == null)
+            return "";
+        // Do some manually some lowering.
+        if (node.is(DBSPFlatMapOperator.class)) {
+            expression = LowerCircuitVisitor.rewriteFlatmap(expression.to(DBSPFlatmap.class));
+        }
+        String function = ToRustInnerVisitor.toRustString(this.errorReporter, expression, true);
+        // Graphviz left-justify using \l.
+        String result = function.replace("\n", "\\l");
+        return Utilities.escape(result);
     }
 
     @Override
     public VisitDecision preorder(DBSPOperator node) {
         this.stream.append(node.outputName)
                 .append(" [ shape=box,label=\"")
+                .append(node.id)
+                .append(" ")
                 .append(node.operation)
                 .append("(")
                 .append(this.getFunction(node))
-                .append(")\" ]")
+                // For some reason there needs to be one \\l at the very end.
+                .append(")\\l\" ]")
                 .newline();
         this.addInputs(node);
         return VisitDecision.STOP;
@@ -136,6 +160,7 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
                     .append(fileName)
                     .newline();
             File tmp = File.createTempFile("tmp", ".dot");
+            tmp.deleteOnExit();
             PrintWriter writer = new PrintWriter(tmp.getAbsolutePath());
             IndentStream stream = new IndentStream(writer);
             circuit.accept(new ToDotVisitor(reporter, stream));
@@ -143,9 +168,6 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
             if (outputFormat != null)
                 Utilities.runProcess(".", "dot", "-T", outputFormat,
                         "-o", fileName, tmp.getAbsolutePath());
-            else
-                //noinspection ResultOfMethodCallIgnored
-                tmp.delete();
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }

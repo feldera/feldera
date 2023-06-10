@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 
@@ -53,23 +54,22 @@ public class CircuitOptimizer implements ICompilerComponent {
         }
 
         List<CircuitVisitor> passes = new ArrayList<>();
-        passes.add(new PropagateEmptySources(this.getCompiler()));
-        DeadCodeVisitor dead = new DeadCodeVisitor(this.getCompiler(), true);
-        passes.add(dead);
-        passes.add(new RemoveOperatorsVisitor(this.getCompiler(), dead.toKeep));
-        passes.add(new MergeProjectionVisitor(this.getCompiler()));
-        passes.add(new OptimizeDistinctVisitor(this.getCompiler()));
+
+        IErrorReporter reporter = this.getCompiler();
+        passes.add(new MergeSums(reporter));
+        passes.add(new PropagateEmptySources(reporter));
+        passes.add(new DeadCode(reporter, true));
+        passes.add(new OptimizeProjections(reporter));
+        passes.add(new OptimizeDistinctVisitor(reporter));
         if (this.getCompiler().options.optimizerOptions.incrementalize) {
-            passes.add(new IncrementalizeVisitor(this.getCompiler()));
-            passes.add(new OptimizeIncrementalVisitor(this.getCompiler()));
+            passes.add(new IncrementalizeVisitor(reporter));
+            passes.add(new OptimizeIncrementalVisitor(reporter));
         }
-        dead = new DeadCodeVisitor(this.getCompiler(), false);
-        passes.add(dead);
-        passes.add(new RemoveOperatorsVisitor(this.getCompiler(), dead.toKeep));
+        passes.add(new DeadCode(reporter, false));
         if (this.getCompiler().options.optimizerOptions.incrementalize)
-            passes.add(new NoIntegralVisitor(this.getCompiler()));
-        passes.add(new Simplify(this.getCompiler()).circuitRewriter());
-        return new PassesVisitor(this.getCompiler(), passes);
+            passes.add(new NoIntegralVisitor(reporter));
+        passes.add(new Simplify(reporter).circuitRewriter());
+        return new PassesVisitor(reporter, passes);
     }
 
     public DBSPCircuit optimize(DBSPCircuit input) {

@@ -28,7 +28,6 @@ import org.dbsp.sqlCompiler.compiler.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -39,7 +38,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -78,7 +76,7 @@ public class PostgresDateTests extends BaseSQLTests {
     //INSERT INTO DATE_TBL VALUES ('2040-04-10');
     //INSERT INTO DATE_TBL VALUES ('2040-04-10 BC');
 
-    public DBSPCompiler compileQuery(String query, boolean optimize) {
+    public DBSPCompiler compileQuery(String query, int optimizationLevel) {
         String data = "CREATE TABLE DATE_TBL (f1 date);\n" +
                 "INSERT INTO DATE_TBL VALUES ('1957-04-09');\n" +
                 "INSERT INTO DATE_TBL VALUES ('1957-06-13');\n" +
@@ -100,7 +98,7 @@ public class PostgresDateTests extends BaseSQLTests {
                 // Calcite does not seem to support dates BC
                 //"INSERT INTO DATE_TBL VALUES ('2040-04-10 BC');";
         CompilerOptions options = new CompilerOptions();
-        options.optimizerOptions.optimizationLevel = optimize ? 2 : 1;
+        options.optimizerOptions.optimizationLevel = optimizationLevel;
         options.optimizerOptions.generateInputForEveryTable = true;
         DBSPCompiler compiler = new DBSPCompiler(options);
         compiler.compileStatements(data);
@@ -110,7 +108,7 @@ public class PostgresDateTests extends BaseSQLTests {
 
     void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput, boolean optimize) {
         query = "CREATE VIEW V AS " + query;
-        DBSPCompiler compiler = this.compileQuery(query, optimize);
+        DBSPCompiler compiler = this.compileQuery(query, optimize ? 2 : 0);
         compiler.throwIfErrorsOccurred();
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPZSetLiteral.Contents input = compiler.getTableContents().getTableContents("DATE_TBL");
@@ -1445,7 +1443,6 @@ public class PostgresDateTests extends BaseSQLTests {
     @Test @Ignore("There are two bugs in Calcite; " +
             "now waiting for https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-5760")
     public void testDateTrunc() {
-        Logger.INSTANCE.setDebugLevel(CalciteCompiler.class, 4);
         // In the BigQuery library there is a DATE_TRUNC, but arguments are swapped
         String query = "SELECT DATE_TRUNC(DATE '1970-03-20', MILLENNIUM)";
         DBSPZSetLiteral.Contents zset = new DBSPZSetLiteral.Contents(

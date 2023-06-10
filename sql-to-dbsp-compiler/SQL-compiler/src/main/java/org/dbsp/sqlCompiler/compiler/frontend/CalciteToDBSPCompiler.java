@@ -252,10 +252,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<Integer> allFields = IntStream.range(0, leftElementType.size())
                 .boxed()
                 .collect(Collectors.toList());
+        allFields.add(DBSPFlatmap.ITERATED_ELEMENT);
         DBSPType indexType = null;
         if (uncollect.withOrdinality) {
             // Index field is always last
             indexType = type.getFieldType(type.size() - 1);
+            allFields.add(DBSPFlatmap.COLLECTION_INDEX);
         }
         DBSPFlatmap flatmap = new DBSPFlatmap(correlate, leftElementType, arrayFieldIndex,
                 allFields, indexType);
@@ -273,12 +275,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // We expect this to be a single-element tuple whose type is a vector.
         DBSPOperator opInput = this.getInputAs(input, true);
         DBSPType indexType = null;
+        List<Integer> indexes = new ArrayList<>();
+        indexes.add(DBSPFlatmap.ITERATED_ELEMENT);
         if (uncollect.withOrdinality) {
             DBSPTypeTuple pair = type.to(DBSPTypeTuple.class);
             indexType = pair.getFieldType(1);
+            indexes.add(DBSPFlatmap.COLLECTION_INDEX);
         }
         DBSPExpression function = new DBSPFlatmap(uncollect, inputRowType, 0,
-                Linq.list(), indexType);
+                indexes, indexType);
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(uncollect, function,
                 TypeCompiler.makeZSet(type, DBSPTypeWeight.INSTANCE), opInput);
         this.assignOperator(uncollect, flatMap);
@@ -312,7 +317,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             DBSPTupleExpression.flatten(t)).closure(
                     t.asParameter());
             DBSPIndexOperator index = new DBSPIndexOperator(
-                    aggregate, this.declare("index", groupKeys),
+                    aggregate, groupKeys,
                     keyExpression.getNonVoidType(), inputRowType, DBSPTypeWeight.INSTANCE, false, opInput);
             this.circuit.addOperator(index);
             DBSPType groupType = keyExpression.getNonVoidType();
@@ -338,7 +343,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression mapper = new DBSPTupleExpression(flattenFields).closure(kv.asParameter());
             this.circuit.addOperator(agg);
             DBSPMapOperator map = new DBSPMapOperator(aggregate,
-                    this.declare("flatten", mapper), tuple, DBSPTypeWeight.INSTANCE, agg);
+                    mapper, tuple, DBSPTypeWeight.INSTANCE, agg);
             if (aggregate.getGroupCount() == 0) {
                 // This almost works, but we have a problem with empty input collections
                 // for aggregates without grouping.
@@ -449,8 +454,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
         DBSPExpression exp = new DBSPTupleExpression(project, resultColumns);
-        DBSPExpression closure = new DBSPClosureExpression(project, exp, row.asParameter());
-        DBSPExpression mapFunc = this.declare("map", closure);
+        DBSPExpression mapFunc = new DBSPClosureExpression(project, exp, row.asParameter());
         DBSPMapOperator op = new DBSPMapOperator(
                 project, mapFunc, outputType, DBSPTypeWeight.INSTANCE, opInput);
         // No distinct needed - in SQL project may produce a multiset.
@@ -513,12 +517,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
-    public DBSPExpression declare(String prefix, DBSPExpression closure) {
-        // return this.circuit.declareLocal(prefix, closure).getVarReference();
-        return closure;
-    }
-
-    public void visitFilter(LogicalFilter filter) {
+   public void visitFilter(LogicalFilter filter) {
         DBSPType type = this.convertType(filter.getRowType());
         DBSPVariablePath t = type.ref().var("t");
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(t, this.compiler);
@@ -527,7 +526,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         condition = new DBSPClosureExpression(filter.getCondition(), condition, t.asParameter());
         DBSPOperator input = this.getOperator(filter.getInput());
         DBSPFilterOperator fop = new DBSPFilterOperator(
-                filter, this.declare("cond", condition), input);
+                filter, condition, input);
         this.assignOperator(filter, fop);
     }
 
@@ -556,8 +555,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         Objects.requireNonNull(condition);
         condition = new DBSPUnaryExpression(join, condition.getNonVoidType(), DBSPOpcode.NOT, condition);
         DBSPClosureExpression filterFunc = condition.closure(var.asParameter());
-        DBSPExpression ff = this.declare("filter", filterFunc);
-        DBSPFilterOperator filter = new DBSPFilterOperator(join, ff, input);
+        DBSPFilterOperator filter = new DBSPFilterOperator(join, filterFunc, input);
         this.circuit.addOperator(filter);
         return filter;
     }
@@ -616,21 +614,20 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 condition = ExpressionCompiler.wrapBoolIfNeeded(condition);
             originalCondition = condition;
             condition = new DBSPClosureExpression(join.getCondition(), condition, t.asParameter());
-            condition = this.declare("cond", condition);
         }
         DBSPVariablePath k = leftKey.getNonVoidType().var("k");
 
         DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(leftKey, DBSPTupleExpression.flatten(l))
                 .closure(l.asParameter());
         DBSPIndexOperator leftIndex = new DBSPIndexOperator(
-                join, this.declare("index", toLeftKey),
+                join, toLeftKey,
                 leftKey.getNonVoidType(), leftElementType, DBSPTypeWeight.INSTANCE, false, filteredLeft);
         this.circuit.addOperator(leftIndex);
 
         DBSPClosureExpression toRightKey = new DBSPRawTupleExpression(rightKey, DBSPTupleExpression.flatten(r))
                 .closure(r.asParameter());
         DBSPIndexOperator rIndex = new DBSPIndexOperator(
-                join, this.declare("index", toRightKey),
+                join, toRightKey,
                 rightKey.getNonVoidType(), rightElementType, DBSPTypeWeight.INSTANCE, false, filteredRight);
         this.circuit.addOperator(rIndex);
 
@@ -638,8 +635,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTupleExpression allFields = lr.pointwiseCast(resultType);
         DBSPClosureExpression makeTuple = allFields.closure(k.asRefParameter(), l.asParameter(), r.asParameter());
         DBSPJoinOperator joinResult = new DBSPJoinOperator(join, resultType, DBSPTypeWeight.INSTANCE,
-                this.declare("pair", makeTuple),
-                left.isMultiset || right.isMultiset, leftIndex, rIndex);
+                makeTuple, left.isMultiset || right.isMultiset, leftIndex, rIndex);
 
         DBSPOperator inner = joinResult;
         if (originalCondition != null) {
@@ -667,7 +663,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             .slice(0, leftColumns)
                             .pointwiseCast(leftResultType).closure(joinVar.asRefParameter());
             DBSPOperator joinLeftColumns = new DBSPMapOperator(
-                    join, this.declare("proj", toLeftColumns),
+                    join, toLeftColumns,
                     leftResultType, DBSPTypeWeight.INSTANCE, inner);
             this.circuit.addOperator(joinLeftColumns);
             DBSPOperator distJoin = new DBSPDistinctOperator(join, joinLeftColumns);
@@ -694,7 +690,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPClosureExpression leftRow = DBSPTupleExpression.flatten(lCasted, rEmpty).closure(
                     lCasted.asRefParameter());
             DBSPOperator expand = new DBSPMapOperator(join,
-                    this.declare("expand", leftRow), resultType, DBSPTypeWeight.INSTANCE, dist);
+                    leftRow, resultType, DBSPTypeWeight.INSTANCE, dist);
             this.circuit.addOperator(expand);
             result = new DBSPSumOperator(join, result, expand);
         }
@@ -709,7 +705,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             .pointwiseCast(rightResultType).closure(
                     joinVar.asRefParameter());
             DBSPOperator joinRightColumns = new DBSPMapOperator(
-                    join, this.declare("proj", toRightColumns),
+                    join, toRightColumns,
                     rightResultType, DBSPTypeWeight.INSTANCE, inner);
             this.circuit.addOperator(joinRightColumns);
             DBSPOperator distJoin = new DBSPDistinctOperator(join, joinRightColumns);
@@ -737,7 +733,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     DBSPTupleExpression.flatten(lEmpty, rCasted).closure(
                     rCasted.asRefParameter());
             DBSPOperator expand = new DBSPMapOperator(join,
-                    this.declare("expand", rightRow), resultType, DBSPTypeWeight.INSTANCE, dist);
+                    rightRow, resultType, DBSPTypeWeight.INSTANCE, dist);
             this.circuit.addOperator(expand);
             result = new DBSPSumOperator(join, result, expand);
         }
@@ -831,15 +827,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 k.asParameter(), l.asParameter(), r.asParameter());
         for (int i = 1; i < inputs.size(); i++) {
             DBSPOperator previousIndex = new DBSPIndexOperator(
-                    intersect,
-                    this.declare("index", entireKey),
+                    intersect, entireKey,
                     inputRowType, new DBSPTypeRawTuple(), DBSPTypeWeight.INSTANCE,
                     previous.isMultiset, previous);
             this.circuit.addOperator(previousIndex);
             DBSPOperator inputI = this.getInputAs(intersect.getInput(i), false);
             DBSPOperator index = new DBSPIndexOperator(
-                    intersect,
-                    this.declare("index", entireKey),
+                    intersect, entireKey,
                     inputRowType, new DBSPTypeRawTuple(), DBSPTypeWeight.INSTANCE,
                     inputI.isMultiset, inputI);
             this.circuit.addOperator(index);
@@ -906,7 +900,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     DBSPTypeAny.INSTANCE.path(
                             new DBSPPath("RelRange", "new")),
                     DBSPTypeAny.INSTANCE, lb, ub);
-            DBSPExpression windowExprVar = this.declare("window", windowExpr);
 
             // Map each row to an expression of the form: |t| (partition, (order, t.clone()))
             List<Integer> partitionKeys = group.keys.toList();
@@ -915,8 +908,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression orderAndRow = new DBSPRawTupleExpression(orderField, inputRowRefVar.applyClone());
             DBSPExpression mapExpr = new DBSPRawTupleExpression(partition, orderAndRow);
             DBSPClosureExpression mapClo = mapExpr.closure(inputRowRefVar.asParameter());
-            DBSPExpression mapCloVar = this.declare("map", mapClo);
-            DBSPOperator mapIndex = new DBSPMapIndexOperator(window, mapCloVar,
+            DBSPOperator mapIndex = new DBSPMapIndexOperator(window, mapClo,
                     partition.getNonVoidType(), orderAndRow.getNonVoidType(), DBSPTypeWeight.INSTANCE, input);
             this.circuit.addOperator(mapIndex);
 
@@ -933,7 +925,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             this.circuit.addOperator(diff);
             DBSPWindowAggregateOperator windowAgg = new DBSPWindowAggregateOperator(
                     group, null, fd,
-                    windowExprVar, partition.getNonVoidType(), sortType,
+                    windowExpr, partition.getNonVoidType(), sortType,
                     aggResultType, DBSPTypeWeight.INSTANCE, diff);
             this.circuit.addOperator(windowAgg);
             DBSPIntegralOperator integral = new DBSPIntegralOperator(window, windowAgg);
@@ -944,8 +936,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression partAndOrder = new DBSPRawTupleExpression(partition, orderField);
             DBSPExpression indexedInput = new DBSPRawTupleExpression(partAndOrder, previousRowRefVar.applyClone());
             DBSPExpression partAndOrderClo = indexedInput.closure(previousRowRefVar.asParameter());
-            DBSPOperator indexInput = new DBSPIndexOperator(window,
-                    this.declare("index", partAndOrderClo),
+            DBSPOperator indexInput = new DBSPIndexOperator(window, partAndOrderClo,
                     partAndOrder.getNonVoidType(), previousRowRefVar.getNonVoidType().deref(),
                     DBSPTypeWeight.INSTANCE, lastOperator.isMultiset, lastOperator);
             this.circuit.addOperator(indexInput);
@@ -969,7 +960,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPClosureExpression addExtraField =
                     addExtraFieldBody.closure(key.asRefParameter(), left.asRefParameter(), right.asParameter());
             lastOperator = new DBSPJoinOperator(window, addExtraFieldBody.getNonVoidType(),
-                    DBSPTypeWeight.INSTANCE, this.declare("join", addExtraField),
+                    DBSPTypeWeight.INSTANCE, addExtraField,
                     indexInput.isMultiset || windowAgg.isMultiset, indexInput, integral);
             currentTupleType = addExtraFieldBody.getNonVoidType().to(DBSPTypeTuple.class);
             previousRowRefVar = currentTupleType.ref().var("t");
@@ -990,7 +981,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         new DBSPRawTupleExpression(),
                         DBSPTupleExpression.flatten(t)).closure(t.asRefParameter());
         DBSPIndexOperator index = new DBSPIndexOperator(
-                sort, this.declare("index", emptyGroupKeys),
+                sort, emptyGroupKeys,
                 new DBSPTypeRawTuple(), inputRowType, DBSPTypeWeight.INSTANCE,
                 opInput.isMultiset, opInput);
         this.circuit.addOperator(index);
@@ -1019,8 +1010,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression folder = constructor.call(zero, push);
         DBSPAggregateOperator agg = new DBSPAggregateOperator(sort,
                 new DBSPTypeRawTuple(), new DBSPTypeVec(inputRowType), DBSPTypeWeight.INSTANCE,
-                this.declare("toVec", folder), null,
-                index);
+                folder, null, index);
         this.circuit.addOperator(agg);
 
         // Generate comparison function for sorting the vector
@@ -1045,8 +1035,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             comparator = new DBSPFieldComparatorExpression(sort, comparator, field, ascending);
         }
         DBSPSortExpression sorter = new DBSPSortExpression(sort, inputRowType, comparator);
-        DBSPOperator sortElement = new DBSPMapOperator(sort,
-                this.declare("sort", sorter), vecType, DBSPTypeWeight.INSTANCE, agg);
+        DBSPOperator sortElement = new DBSPMapOperator(
+                sort, sorter, vecType, DBSPTypeWeight.INSTANCE, agg);
         this.assignOperator(sort, sortElement);
     }
 

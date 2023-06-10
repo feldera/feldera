@@ -537,7 +537,7 @@ public abstract class InnerRewriteVisitor
         if (!inputElementType.sameType(expression.inputElementType) ||
                 !DBSPType.sameType(indexType, expression.indexType))
             result = new DBSPFlatmap(expression.getNode(), inputElementType,
-                    expression.collectionFieldIndex, expression.outputFields,
+                    expression.collectionFieldIndex, expression.outputFieldIndexes,
                     indexType);
         this.map(expression, result);
         return VisitDecision.STOP;

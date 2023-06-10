@@ -60,7 +60,19 @@ public class DBSPSumOperator extends DBSPOperator {
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+        boolean different = force;
+        if (newInputs.size() != this.inputs.size())
+            // Sum can have any number of inputs
+            different = true;
+        if (!different) {
+            for (boolean b : Linq.zip(this.inputs, newInputs, (l, r) -> l != r)) {
+                if (b) {
+                    different = true;
+                    break;
+                }
+            }
+        }
+        if (different)
             return new DBSPSumOperator(this.getNode(), newInputs);
         return this;
     }
