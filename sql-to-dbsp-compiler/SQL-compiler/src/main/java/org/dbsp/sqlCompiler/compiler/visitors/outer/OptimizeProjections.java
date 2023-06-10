@@ -2,6 +2,9 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 
+/**
+ * Optimizes projections in a circuit until covergence is achieved.
+ */
 public class OptimizeProjections extends RepeatVisitor {
     static CircuitVisitor createOnePass(IErrorReporter reporter) {
         PassesVisitor result = new PassesVisitor(reporter);

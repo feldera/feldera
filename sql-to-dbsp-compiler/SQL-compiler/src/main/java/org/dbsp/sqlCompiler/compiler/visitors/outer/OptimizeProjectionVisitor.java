@@ -20,9 +20,12 @@ import java.util.function.Function;
 
 /**
  * Optimizes patterns containing projections.
+ * You probably don't want to use this visitor directly, consider using
+ * OptimizeProjections, which packages this nicely and iterates until convergence.
  * Projections are map operations that have a function with a very simple
  * structure.  The function is analyzed using the 'Projection' inner visitor.
  * - Merge Projection operations into the previous operation if possible.
+ *   Done for joins, constants, flatmaps, and some maps.
  * - Swap projection with operations such as Distinct, Integral, Differential, Sum, etc.
  */
 public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
