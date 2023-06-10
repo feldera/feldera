@@ -33,6 +33,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.junit.Assert;
 import org.junit.Test;
 
+import static org.dbsp.sqlCompiler.compiler.BaseSQLTests.getCircuit;
+
 /**
  * Tests that invoke the CalciteToDBSPCompiler.
  */
@@ -84,7 +86,7 @@ public class DBSPCompilerTests {
                 "FROM bid;";
         DBSPCompiler compiler = new DBSPCompiler(options);
         compiler.compileStatements(ddl);
-        DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
+        DBSPCircuit circuit = getCircuit(compiler);
         ToJitVisitor.validateJson(compiler, circuit, false);
     }
 

@@ -63,15 +63,14 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
     public void postorder(DBSPFilterOperator filter) {
         DBSPOperator input = this.mapped(filter.input());
         if (input.is(DBSPDistinctOperator.class)) {
-            DBSPDistinctOperator distinct = input.to(DBSPDistinctOperator.class);
             // swap distinct after filter
             DBSPOperator newFilter = filter.withInputs(input.inputs, false);
             this.addOperator(newFilter);
-            DBSPOperator result = distinct.withInputs(Linq.list(newFilter), false);
+            DBSPOperator result = input.withInputs(Linq.list(newFilter), false);
             this.map(filter, result);
-            return;
+        } else {
+            super.postorder(filter);
         }
-        super.postorder(filter);
     }
 
     public void postorder(DBSPJoinOperator join) {

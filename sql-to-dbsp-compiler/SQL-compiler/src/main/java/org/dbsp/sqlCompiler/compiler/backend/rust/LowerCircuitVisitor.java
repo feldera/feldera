@@ -33,7 +33,9 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     /**
      * Creates a DBSP Fold object from an Aggregate.
      */
-    DBSPExpression createAggregator(DBSPAggregate aggregate) {
+    public static DBSPExpression createAggregator(
+            IErrorReporter reporter, DBSPAggregate aggregate,
+            boolean compact) {
         // Example for a pair of count+sum aggregations:
         // let zero_count: isize = 0;
         // let inc_count = |acc: isize, v: &usize, w: isize| -> isize { acc + 1 * w };
@@ -83,7 +85,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPVariablePath accumulator = accumulatorType.ref(true).var("a");
         DBSPVariablePath postAccumulator = accumulatorType.var("a");
 
-        BetaReduction reducer = new BetaReduction(this.errorReporter);
+        BetaReduction reducer = new BetaReduction(reporter);
         DBSPVariablePath weightVar = new DBSPVariablePath("w", Objects.requireNonNull(weightType));
         for (int i = 0; i < parts; i++) {
             DBSPExpression accumulatorField = accumulator.field(i);
@@ -100,20 +102,30 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 accumulator.asParameter(), aggregate.rowVar.asParameter(),
                 weightVar.asParameter());
         DBSPClosureExpression postClosure = new DBSPTupleExpression(posts).closure(postAccumulator.asParameter());
+        DBSPType[] typeArgs;
+        if (compact) {
+            typeArgs = new DBSPType[0];
+        } else {
+            typeArgs = new DBSPType[4];
+            typeArgs[0] = DBSPTypeAny.INSTANCE;
+            typeArgs[1] = new DBSPTypeSemigroup(semigroups, accumulatorTypes);
+            typeArgs[2] = DBSPTypeAny.INSTANCE;
+            typeArgs[3] = DBSPTypeAny.INSTANCE;
+        }
         DBSPExpression constructor = DBSPTypeAny.INSTANCE.path(
                 new DBSPPath(
-                        new DBSPSimplePathSegment("Fold",
-                                DBSPTypeAny.INSTANCE,
-                                new DBSPTypeSemigroup(semigroups, accumulatorTypes),
-                                DBSPTypeAny.INSTANCE,
-                                DBSPTypeAny.INSTANCE),
+                        new DBSPSimplePathSegment("Fold", typeArgs),
                         new DBSPSimplePathSegment("with_output")));
         return constructor.call(
                 new DBSPRawTupleExpression(zeros),
-                accumFunction, postClosure); //.getVarReference();
+                accumFunction, postClosure);
     }
 
-    DBSPExpression rewriteFlatmap(DBSPFlatmap flatmap) {
+    /**
+     * Rewrite a flatmap operation into a Rust method call.
+     * @param flatmap  Flatmap operation to rewrite.
+     */
+    public static DBSPExpression rewriteFlatmap(DBSPFlatmap flatmap) {
         //   move |x: &Tuple2<Vec<i32>, Option<i32>>, | -> _ {
         //     let xA: Vec<i32> = x.0.clone();
         //     let xB: x.1.clone();
@@ -129,26 +141,32 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPVariablePath elem = new DBSPVariablePath("e", eType);
         List<DBSPStatement> clones = new ArrayList<>();
         List<DBSPExpression> resultColumns = new ArrayList<>();
-        int fieldsSkipped = 1; // last field is the unnested field
-        if (flatmap.indexType != null)
-            fieldsSkipped = 2; // skip the index field too
-        for (int i = 0; i < flatmap.outputElementType.size() - fieldsSkipped; i++) {
-            // let xA: Vec<i32> = x.0.clone();
-            // let xB: x.1.clone();
-            DBSPExpression field = rowVar.field(i).applyCloneIfNeeded();
-            DBSPVariablePath fieldClone = new DBSPVariablePath("x" + i, field.getNonVoidType());
-            DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
-            clones.add(stat);
-            resultColumns.add(fieldClone.applyClone());
-        }
-        if (flatmap.indexType != null) {
-            resultColumns.add(elem.field(1));
-            resultColumns.add(new DBSPBinaryExpression(null,
-                    DBSPTypeUSize.INSTANCE, DBSPOpcode.ADD,
-                    elem.field(0),
-                    new DBSPUSizeLiteral(1)).cast(flatmap.indexType));
-        } else {
-            resultColumns.add(elem);
+        for (int i = 0; i < flatmap.outputFieldIndexes.size(); i++) {
+            int index = flatmap.outputFieldIndexes.get(i);
+            if (index == DBSPFlatmap.ITERATED_ELEMENT) {
+                if (flatmap.indexType != null) {
+                    // e.1, as produced by the iterator
+                    resultColumns.add(elem.field(1));
+                } else {
+                    // e
+                    resultColumns.add(elem);
+                }
+            } else if (index == DBSPFlatmap.COLLECTION_INDEX) {
+                // The INDEX field produced WITH ORDINALITY
+                Objects.requireNonNull(flatmap.indexType);
+                resultColumns.add(new DBSPBinaryExpression(null,
+                        DBSPTypeUSize.INSTANCE, DBSPOpcode.ADD,
+                        elem.field(0),
+                        new DBSPUSizeLiteral(1)).cast(flatmap.indexType));
+            } else {
+                // let xA: Vec<i32> = x.0.clone();
+                // let xB: x.1.clone();
+                DBSPExpression field = rowVar.field(index).applyCloneIfNeeded();
+                DBSPVariablePath fieldClone = new DBSPVariablePath("x" + index, field.getNonVoidType());
+                DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
+                clones.add(stat);
+                resultColumns.add(fieldClone.applyClone());
+            }
         }
         // move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
         //   Tuple3::new(xA.clone(), xB.clone(), e)
@@ -172,7 +190,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPOperator result;
         if (node.getFunction().is(DBSPFlatmap.class)) {
             List<DBSPOperator> sources = Linq.map(node.inputs, this::mapped);
-            DBSPExpression function = this.rewriteFlatmap(node.getFunction().to(DBSPFlatmap.class));
+            DBSPExpression function = rewriteFlatmap(node.getFunction().to(DBSPFlatmap.class));
             result = node.withFunction(function, node.outputType).withInputs(sources, this.force);
             this.map(node, result);
         } else {
@@ -187,7 +205,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression function = this.createAggregator(node.getAggregate());
+        DBSPExpression function = createAggregator(this.errorReporter, node.getAggregate(), false);
         DBSPOperator result = new DBSPAggregateOperator(node.getNode(), node.keyType, node.outputElementType,
                 node.weightType, function, null, this.mapped(node.input()));
         this.map(node, result);
@@ -200,7 +218,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression function = this.createAggregator(node.getAggregate());
+        DBSPExpression function = createAggregator(this.errorReporter, node.getAggregate(), false);
         DBSPOperator result = new DBSPIncrementalAggregateOperator(node.getNode(), node.keyType, node.outputElementType,
                 DBSPTypeWeight.INSTANCE, function, null, this.mapped(node.input()));
         this.map(node, result);
@@ -212,7 +230,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression function = this.createAggregator(node.getAggregate());
+        DBSPExpression function = createAggregator(this.errorReporter, node.getAggregate(), false);
         DBSPOperator result = new DBSPWindowAggregateOperator(node.getNode(),
                 function, null, node.window,
                 node.partitionKeyType, node.timestampType, node.aggregateType,

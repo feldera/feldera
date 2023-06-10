@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -38,11 +39,11 @@ import java.util.*;
 import java.util.function.Function;
 
 /**
- * This visitor clones a circuit into an equivalent one.
- * Each operator is cloned in one of two cases:
+ * This visitor rewrites a circuit by replacing each operator
+ * recursively with an equivalent one.
+ * Each operator is replaced in one of two cases:
  * - any of its inputs has changed
  * - the 'force' flag is 'true'.
- * The declarations in the circuit are left unchanged.
  */
 public class CircuitCloneVisitor extends CircuitVisitor
         implements Function<DBSPCircuit, DBSPCircuit>, IModule {
@@ -66,14 +67,24 @@ public class CircuitCloneVisitor extends CircuitVisitor
         return Utilities.getExists(this.remap, original);
     }
 
+    /**
+     * The output that used to be computed by 'old' is now
+     * computed by 'newOp',
+     * @param old    Operator in the previous circuit.
+     * @param newOp  Operator replacing it in the new circuit.
+     * @param add    If true add the operator to the new circuit.
+     *               This may not be necessary if the operator has already been added.
+     */
     protected void map(DBSPOperator old, DBSPOperator newOp, boolean add) {
-        Logger.INSTANCE.from(this, 1)
-                .append(this.toString())
-                .append(":")
-                .append(old.toString())
-                .append(" -> ")
-                .append(newOp.toString())
-                .newline();
+        if (old != newOp) {
+            Logger.INSTANCE.from(this, 1)
+                    .append(this.toString())
+                    .append(":")
+                    .append(old.toString())
+                    .append(" -> ")
+                    .append(newOp.toString())
+                    .newline();
+        }
         Utilities.putNew(this.remap, old, newOp);
         if (add)
             this.addOperator(newOp);
@@ -83,8 +94,12 @@ public class CircuitCloneVisitor extends CircuitVisitor
         this.map(old, newOp, true);
     }
 
+    /**
+     * Add an operator to the produced circuit.
+     * @param operator  Operator to add.
+     */
     protected void addOperator(DBSPOperator operator) {
-        Logger.INSTANCE.from(this, 1)
+        Logger.INSTANCE.from(this, 2)
                 .append(this.toString())
                 .append(" adding ")
                 .append(operator.toString())
@@ -100,24 +115,31 @@ public class CircuitCloneVisitor extends CircuitVisitor
         return VisitDecision.STOP;
     }
 
+    /**
+     * Replace the specified operator with an equivalent one
+     * by replacing all the inputs with their replacements from the 'mapped' map.
+     * @param operator  Operator to replace.
+     */
     public void replace(DBSPOperator operator) {
         if (this.visited.contains(operator))
             // Graph can be a DAG
             return;
         this.visited.add(operator);
         List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
-        Logger.INSTANCE.from(this, 1)
-                .append(this.toString())
-                .append(" replacing inputs of ")
-                .increase()
-                .append(operator.toString())
-                .append(":")
-                .join(", ", Linq.map(operator.inputs, DBSPOperator::toString))
-                .newline()
-                .append("with:")
-                .join(", ", Linq.map(sources, DBSPOperator::toString))
-                .newline()
-                .decrease();
+        if (!Linq.same(sources, operator.inputs)) {
+            Logger.INSTANCE.from(this, 1)
+                    .append(this.toString())
+                    .append(" replacing inputs of ")
+                    .increase()
+                    .append(operator.toString())
+                    .append(":")
+                    .join(", ", Linq.map(operator.inputs, DBSPOperator::toString))
+                    .newline()
+                    .append("with:")
+                    .join(", ", Linq.map(sources, DBSPOperator::toString))
+                    .newline()
+                    .decrease();
+        }
         DBSPOperator result = operator.withInputs(sources, this.force);
         this.map(operator, result);
     }
@@ -226,6 +248,13 @@ public class CircuitCloneVisitor extends CircuitVisitor
 
     public DBSPPartialCircuit getResult() {
         return Objects.requireNonNull(this.result);
+    }
+
+    @Override
+    public void startVisit(IDBSPOuterNode circuit) {
+        this.visited.clear();
+        this.remap.clear();
+        super.startVisit(circuit);
     }
 
     @Override

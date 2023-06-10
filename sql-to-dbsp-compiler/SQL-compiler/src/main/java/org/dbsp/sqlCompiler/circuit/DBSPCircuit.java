@@ -29,7 +29,13 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 
+/**
+ * Core representation of a dataflow graph (aka a query plan).
+ */
 public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
+    /**
+     * All the operators are in fact in the partial circuit.
+     */
     public final DBSPPartialCircuit circuit;
     public final String name;
 
@@ -52,19 +58,49 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
         visitor.postorder(this);
     }
 
+    /**
+     * @return The number of outputs of the circuit (SinkOperators).
+     */
     public int getOutputCount() {
         return this.circuit.getOutputCount();
     }
 
+    /**
+     * The output type of the i-th output.
+     * Outputs are the views, numbered in the order of creation in the
+     * input SQL program.
+     * @param i Output number.
+     */
     public DBSPType getOutputType(int i) {
         return this.circuit.getOutputType(i);
     }
 
+    /**
+     * The list of all input tables of the circuit.
+     */
     public List<String> getInputTables() {
         return this.circuit.getInputTables();
     }
 
+    /**
+     * Create an identical circuit to this one but with a different name.
+     * @param name Name of the new circuit.
+     */
     public DBSPCircuit rename(String name) {
         return new DBSPCircuit(this.circuit, name);
+    }
+
+    /**
+     * Return true if this circuit and other are identical (have the exact same operators).
+     */
+    public boolean sameCircuit(DBSPCircuit other) {
+        return this.circuit.sameCircuit(other.circuit);
+    }
+
+    /**
+     * Number of operators in the circuit.
+     */
+    public int size() {
+        return this.circuit.size();
     }
 }

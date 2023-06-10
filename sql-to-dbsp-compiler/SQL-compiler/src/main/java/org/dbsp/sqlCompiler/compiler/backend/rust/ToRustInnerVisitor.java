@@ -53,10 +53,15 @@ import java.util.Objects;
  */
 public class ToRustInnerVisitor extends InnerVisitor {
     private final IndentStream builder;
+    /**
+     * If set use a more compact display, which is not necessarily compilable.
+     */
+    protected final boolean compact;
 
-    public ToRustInnerVisitor(IErrorReporter reporter, IndentStream builder) {
+    public ToRustInnerVisitor(IErrorReporter reporter, IndentStream builder, boolean compact) {
         super(reporter, true);
         this.builder = builder;
+        this.compact = compact;
     }
 
     @SuppressWarnings("SameReturnValue")
@@ -688,8 +693,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPParameter parameter) {
         parameter.pattern.accept(this);
-        this.builder.append(": ");
-        parameter.type.accept(this);
+        if (!this.compact) {
+            this.builder.append(": ");
+            parameter.type.accept(this);
+        }
         return VisitDecision.STOP;
     }
 
@@ -701,11 +708,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(", ");
         }
         this.builder.append("| ");
-        DBSPType resultType = expression.getResultType();
-        if (resultType != null) {
-            this.builder.append("-> ").newline();
-            resultType.accept(this);
-            this.builder.append(" ");
+        if (!this.compact) {
+            DBSPType resultType = expression.getResultType();
+            if (resultType != null) {
+                this.builder.append("-> ").newline();
+                resultType.accept(this);
+                this.builder.append(" ");
+            }
         }
         if (expression.body.is(DBSPBlockExpression.class)) {
             expression.body.accept(this);
@@ -832,10 +841,17 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPRawTupleExpression expression) {
         this.builder.append("(");
+        boolean newlines = this.compact && expression.fields.length > 2;
+        if (newlines)
+            this.builder.increase();
         for (DBSPExpression field: expression.fields) {
             field.accept(this);
             this.builder.append(", ");
+            if (newlines)
+                this.builder.newline();
         }
+        if (newlines)
+            this.builder.decrease();
         this.builder.append(")");
         return VisitDecision.STOP;
     }
@@ -847,16 +863,24 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (expression.size() == 0) {
             this.builder.append("()");
         } else {
+            boolean newlines = this.compact && expression.fields.length > 2;
             this.builder.append("Tuple")
                     .append(expression.size())
                     .append("::new(");
+            if (newlines)
+                this.builder.increase();
             boolean first = true;
             for (DBSPExpression field: expression.fields) {
-                if (!first)
+                if (!first) {
                     this.builder.append(", ");
+                    if (newlines)
+                        this.builder.newline();
+                }
                 first = false;
                 field.accept(this);
             }
+            if (newlines)
+                this.builder.decrease();
             this.builder.append(")");
         }
         return VisitDecision.STOP;
@@ -1204,10 +1228,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
         return VisitDecision.STOP;
     }
 
-    public static String toRustString(IErrorReporter reporter, IDBSPInnerNode node) {
+    public static String toRustString(IErrorReporter reporter, IDBSPInnerNode node, boolean compact) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustInnerVisitor visitor = new ToRustInnerVisitor(reporter, stream);
+        ToRustInnerVisitor visitor = new ToRustInnerVisitor(reporter, stream, compact);
         node.accept(visitor);
         return builder.toString();
     }

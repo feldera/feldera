@@ -58,7 +58,7 @@ public abstract class DBSPNode
         // what the actual compiler options are.
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
         if (this.is(IDBSPInnerNode.class))
-            return ToRustInnerVisitor.toRustString(compiler, this.to(IDBSPInnerNode.class));
+            return ToRustInnerVisitor.toRustString(compiler, this.to(IDBSPInnerNode.class), false);
         return ToRustVisitor.toRustString(compiler, this.to(IDBSPOuterNode.class));
     }
 }
