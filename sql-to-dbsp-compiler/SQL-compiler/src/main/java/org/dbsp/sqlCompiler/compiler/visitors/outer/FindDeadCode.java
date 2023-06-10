@@ -40,7 +40,7 @@ import java.util.*;
  * operators that are 'used' by other operators (inputs, outputs,
  * and sources).
  */
-public class DeadCodeVisitor extends CircuitVisitor implements IModule {
+public class FindDeadCode extends CircuitVisitor implements IModule {
     public final Set<DBSPOperator> reachable = new HashSet<>();
     // Includes reachable plus all inputs
     public final Set<DBSPOperator> toKeep = new HashSet<>();
@@ -51,7 +51,7 @@ public class DeadCodeVisitor extends CircuitVisitor implements IModule {
      * @param reporter  Report errors here.
      * @param warn      If set warn about unused tables.
      */
-    public DeadCodeVisitor(IErrorReporter reporter, boolean warn) {
+    public FindDeadCode(IErrorReporter reporter, boolean warn) {
         super(reporter, true);
         this.warn = warn;
     }
