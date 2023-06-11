@@ -43,3 +43,6 @@ manager.pid
 config.yaml
 cargo_workspace
 openapi.json
+
+# python
+python/dbsp-api-client/

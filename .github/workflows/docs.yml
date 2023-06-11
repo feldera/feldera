@@ -2,7 +2,15 @@
 
 name: Publish documentation
 
-on: [push, pull_request]
+on:
+  pull_request:
+    paths:
+      - docs/**
+      - .github/docs.yml
+  push:
+    paths:
+      - docs/**
+      - .github/docs.yml
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -60,15 +68,17 @@ jobs:
         run: earthly --version
 
       - name: Run CI
-        run: earthly -P +build-sql-docs
+        run: earthly -P +build-docs
 
       - name: Upload docs
         uses: actions/upload-pages-artifact@v1
         with:
-          path: sql-docs
+          path: docs/out
 
   # Deployment job
   deploy_docs:
+    # Only on main
+    if: ${{ github.ref == 'refs/heads/main' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
