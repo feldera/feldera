@@ -281,12 +281,19 @@ build-sql:
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn -DskipTests package
     SAVE ARTIFACT sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies.jar
 
-build-sql-docs:
-    FROM +install-python-deps
-    COPY sql-to-dbsp-compiler/doc/ sql-to-dbsp-compiler/doc/
-    RUN doc8 --ignore-path _build --max-line-length 120 .
-    RUN cd sql-to-dbsp-compiler/doc/ && sphinx-build -M html "." "_build"
-    SAVE ARTIFACT sql-to-dbsp-compiler/doc/_build/html AS LOCAL sql-docs
+install-docs-deps:
+    FROM +install-deps
+    COPY docs/package.json ./docs/package.json
+    COPY docs/yarn.lock ./docs/yarn.lock
+    RUN cd docs && yarn install
+
+build-docs:
+    FROM +install-docs-deps
+    COPY docs/ docs/
+    COPY ( +build-manager/dbsp_pipeline_manager ) ./docs/dbsp_pipeline_manager
+    RUN cd docs && ./dbsp_pipeline_manager --dump-openapi
+    RUN cd docs && yarn build --no-minify
+    SAVE ARTIFACT docs/out AS LOCAL docs/out
 
 build-dataflow-jit:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
