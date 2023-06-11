@@ -1,5 +1,10 @@
-# Ignore target and other large directories.
+# Ignore build and other large directories.
 **/target
 **/pipeline_data
 **/ldbc-graphalytics-data
 **/.vscode
+**/node_modules
+**/.docusaurus
+**/openapi.json
+web-ui/.next
+**/out
