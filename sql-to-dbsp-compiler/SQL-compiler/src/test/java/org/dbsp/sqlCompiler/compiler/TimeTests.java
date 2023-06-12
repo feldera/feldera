@@ -50,7 +50,7 @@ public class TimeTests extends BaseSQLTests {
         // ToJitVisitor.validateJson(circuit);
         DBSPZSetLiteral.Contents expectedOutput = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(fields));
         InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
-        this.addRustTestCase(compiler, circuit, streams);
+        this.addRustTestCase(query, compiler, circuit, streams);
     }
 
     @Override

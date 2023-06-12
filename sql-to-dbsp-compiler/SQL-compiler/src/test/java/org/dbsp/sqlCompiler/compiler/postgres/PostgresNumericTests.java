@@ -553,7 +553,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                     new DBSPTypeDecimal(null, width, 10, false))
                 )}
         );
-        this.addRustTestCase(compiler, circuit, streams);
+        this.addRustTestCase(last, compiler, circuit, streams);
     }
 
     @Test
@@ -754,7 +754,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 new DBSPZSetLiteral.Contents[0],
                 new DBSPZSetLiteral.Contents[] { result }
         );
-        this.addRustTestCase(compiler, circuit, streams);
+        this.addRustTestCase(query, compiler, circuit, streams);
     }
 
     @Test

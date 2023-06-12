@@ -52,7 +52,7 @@ public class ArrayTests extends BaseSQLTests {
         if (compiler.hasErrors())
             compiler.showErrors(System.err);
         DBSPCircuit circuit = getCircuit(compiler);
-        this.addRustTestCase(compiler, circuit);
+        this.addRustTestCase(query, compiler, circuit);
     }
 
     @Test
@@ -73,7 +73,7 @@ public class ArrayTests extends BaseSQLTests {
                 Objects.requireNonNull(result).add(tuple);
         }
 
-        this.addRustTestCase(compiler, circuit, new InputOutputPair(
+        this.addRustTestCase(query, compiler, circuit, new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
     }
 
@@ -95,7 +95,7 @@ public class ArrayTests extends BaseSQLTests {
                 Objects.requireNonNull(result).add(tuple);
         }
 
-        this.addRustTestCase(compiler, circuit, new InputOutputPair(
+        this.addRustTestCase(query, compiler, circuit, new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
     }
 
@@ -118,7 +118,7 @@ public class ArrayTests extends BaseSQLTests {
         }
         result.add(new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32)));
 
-        this.addRustTestCase(compiler, circuit, new InputOutputPair(
+        this.addRustTestCase(query, compiler, circuit, new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
     }
 
@@ -142,7 +142,7 @@ public class ArrayTests extends BaseSQLTests {
                 Objects.requireNonNull(result).add(tuple);
         }
 
-        this.addRustTestCase(compiler, circuit, new InputOutputPair(
+        this.addRustTestCase(query, compiler, circuit, new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
     }
 
@@ -169,7 +169,7 @@ public class ArrayTests extends BaseSQLTests {
                 DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32),
                 new DBSPI32Literal(6)));
 
-        this.addRustTestCase(compiler, circuit, new InputOutputPair(
+        this.addRustTestCase(query, compiler, circuit, new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
     }
 
@@ -193,7 +193,7 @@ public class ArrayTests extends BaseSQLTests {
                 Objects.requireNonNull(result).add(tuple);
         }
 
-        this.addRustTestCase(compiler, circuit, new InputOutputPair(
+        this.addRustTestCase(query, compiler, circuit, new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
     }
 
@@ -232,7 +232,7 @@ public class ArrayTests extends BaseSQLTests {
                 new DBSPTupleExpression(new DBSPI32Literal(2), new DBSPI32Literal(7)),
                 new DBSPTupleExpression(new DBSPI32Literal(3), new DBSPI32Literal(7))
         );
-        this.addRustTestCase(compiler, circuit, new InputOutputPair(input, result));
+        this.addRustTestCase(query, compiler, circuit, new InputOutputPair(input, result));
     }
 
     @Test
@@ -284,7 +284,7 @@ public class ArrayTests extends BaseSQLTests {
                 DBSPExpression tuple = new DBSPTupleExpression(new DBSPI32Literal(i), new DBSPI32Literal(j), new DBSPI32Literal(14));
                 result.add(tuple);
             }
-        this.addRustTestCase(compiler, circuit, new InputOutputPair(input, result));
+        this.addRustTestCase(query, compiler, circuit, new InputOutputPair(input, result));
     }
 
     @Test @Ignore("TODO: handle nested arrays")
@@ -298,6 +298,6 @@ public class ArrayTests extends BaseSQLTests {
         if (compiler.hasErrors())
             compiler.showErrors(System.err);
         DBSPCircuit circuit = getCircuit(compiler);
-        this.addRustTestCase(compiler, circuit);
+        this.addRustTestCase(query, compiler, circuit);
     }
 }

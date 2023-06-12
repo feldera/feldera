@@ -162,7 +162,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPZSetLiteral.Contents input = compiler.getTableContents().getTableContents("TIMESTAMP_TBL");
         InputOutputPair streams = new InputOutputPair(input, expectedOutput);
-        this.addRustTestCase(compiler, circuit, streams);
+        this.addRustTestCase(query, compiler, circuit, streams);
     }
 
     static final SimpleDateFormat[] inputFormats = {

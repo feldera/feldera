@@ -32,7 +32,7 @@ public class PostgresBoolTests extends BaseSQLTests {
         InputOutputPair streams = new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0],
                 new DBSPZSetLiteral.Contents[] { expectedOutput });
-        this.addRustTestCase(compiler, circuit, streams);
+        this.addRustTestCase(query, compiler, circuit, streams);
     }
 
     @Test
