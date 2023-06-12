@@ -99,11 +99,13 @@ public class BaseSQLTests {
     }
 
     private static class TestCase {
+        public final String name;
         public final DBSPCompiler compiler;
         public final DBSPCircuit circuit;
         public final InputOutputPair[] data;
 
-        TestCase(DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... data) {
+        TestCase(String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... data) {
+            this.name = name;
             this.circuit = circuit;
             this.data = data;
             this.compiler = compiler;
@@ -130,7 +132,8 @@ public class BaseSQLTests {
                             new DBSPApplyExpression("assert!", null,
                                     new DBSPApplyExpression("must_equal", DBSPTypeBool.INSTANCE,
                                             new DBSPFieldExpression(null, out.getVarReference(), i).borrow(),
-                                            outputs[i].borrow())));
+                                            outputs[i].borrow()),
+                                    new DBSPStrLiteral(this.name)));
                     list.add(compare);
                 }
             }
@@ -329,14 +332,14 @@ public class BaseSQLTests {
             query = "CREATE VIEW V AS " + query;
             DBSPCompiler compiler = this.compileQuery(query, incremental, optimize, jit);
             DBSPCircuit circuit = getCircuit(compiler);
-            this.addRustTestCase(compiler, circuit, streams);
+            this.addRustTestCase(query, compiler, circuit, streams);
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    protected void addRustTestCase(DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {
-        TestCase test = new TestCase(compiler, circuit, streams);
+    protected void addRustTestCase(String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {
+        TestCase test = new TestCase(name, compiler, circuit, streams);
         testsToRun.add(test);
     }
 

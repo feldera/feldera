@@ -62,7 +62,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         compiler.compileStatement(ddl);
         compiler.compileStatement(query);
         Assert.assertFalse(compiler.hasErrors());
-        this.addRustTestCase(compiler, getCircuit(compiler));
+        this.addRustTestCase("ComplexQueriesTest.smallTaxiTest", compiler, getCircuit(compiler));
     }
 
     @Test
@@ -465,7 +465,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         };
         DBSPZSetLiteral.Contents[] outputs = new DBSPZSetLiteral.Contents[] {};
         InputOutputPair ip = new InputOutputPair(inputs, outputs);
-        this.addRustTestCase(compiler, getCircuit(compiler), ip);
+        this.addRustTestCase("ComplexQueriesTest.demographicsTest", compiler, getCircuit(compiler), ip);
     }
 
     @Test
@@ -503,7 +503,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         query = "CREATE VIEW V AS (" + query + ")";
         compiler.compileStatement(ddl);
         compiler.compileStatement(query);
-        this.addRustTestCase(compiler, getCircuit(compiler));
+        this.addRustTestCase("ComplexQueriesTest.taxiTest", compiler, getCircuit(compiler));
     }
 
     @Test
@@ -579,6 +579,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         compiler.compileStatement(ddl0);
         compiler.compileStatement(ddl1);
         compiler.compileStatement(query);
-        this.addRustTestCase(compiler, getCircuit(compiler));
+        this.addRustTestCase("ComplexQueriesTest.fraudDetectionTest", compiler, getCircuit(compiler));
+
     }
 }

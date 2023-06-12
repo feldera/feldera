@@ -70,7 +70,7 @@ public class MultiViewTests extends BaseSQLTests {
                                 new DBSPTupleExpression(new DBSPDoubleLiteral(1.0)))
                 }
         );
-        addRustTestCase(compiler, circuit, stream);
+        addRustTestCase("MultiViewTest.twoViewTest", compiler, circuit, stream);
     }
 
     /**
@@ -98,7 +98,7 @@ public class MultiViewTests extends BaseSQLTests {
                                 new DBSPTupleExpression(DBSPBoolLiteral.FALSE))
                 }
         );
-        this.addRustTestCase(compiler, circuit, stream);
+        this.addRustTestCase("MultiViewTest.nestedViewTest", compiler, circuit, stream);
     }
 
     /**
@@ -125,6 +125,6 @@ public class MultiViewTests extends BaseSQLTests {
                                 new DBSPTupleExpression(new DBSPI32Literal(10)))
                 }
         );
-        this.addRustTestCase(compiler, circuit, stream);
+        this.addRustTestCase("MultiViewTests.multiViewTest", compiler, circuit, stream);
     }
 }

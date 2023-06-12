@@ -67,7 +67,7 @@ public class CastTests extends BaseSQLTests {
             DBSPCompiler compiler = this.compileQuery(query, false, true, false);
             DBSPCircuit circuit = getCircuit(compiler);
             InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
-            this.addRustTestCase(compiler, circuit, streams);
+            this.addRustTestCase(query, compiler, circuit, streams);
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
