@@ -1,5 +1,6 @@
 # Ignore target and other large directories.
 target
+**/target
 **/deploy
 **/Dockerfile
 **/pipeline_data
