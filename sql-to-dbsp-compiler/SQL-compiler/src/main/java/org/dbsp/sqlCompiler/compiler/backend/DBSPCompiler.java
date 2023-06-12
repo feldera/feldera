@@ -48,7 +48,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Unimplemented;
 
@@ -70,7 +70,7 @@ import java.io.PrintStream;
  * execution and keeping track of the contents of each table.
  * The contents after insertions can be obtained using getTableContents().
  */
-public class DBSPCompiler implements IModule, ICompilerComponent, IErrorReporter {
+public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorReporter {
     enum InputSource {
         /**
          * No data source set yet.
@@ -208,7 +208,7 @@ public class DBSPCompiler implements IModule, ICompilerComponent, IErrorReporter
                 }
             } else {
                 SqlNode node = this.frontend.parse(statements);
-                Logger.INSTANCE.from(this, 2)
+                Logger.INSTANCE.belowLevel(this, 2)
                         .append("Parsing result")
                         .newline()
                         .append(node.toString())

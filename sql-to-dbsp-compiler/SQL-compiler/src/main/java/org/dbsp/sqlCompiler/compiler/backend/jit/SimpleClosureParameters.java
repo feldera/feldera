@@ -33,7 +33,7 @@ import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 import org.dbsp.util.NameGen;
 
@@ -48,7 +48,7 @@ import java.util.List;
  */
 public class SimpleClosureParameters
         extends InnerRewriteVisitor
-        implements IModule {
+        implements IWritesLogs {
     final SubstitutionContext<List<DBSPVariablePath>> context;
     final NameGen generator;
 
@@ -145,7 +145,7 @@ public class SimpleClosureParameters
         }
         this.endVisit();
         if (result != closure)
-            Logger.INSTANCE.from(this, 2)
+            Logger.INSTANCE.belowLevel(this, 2)
                     .append("SimpleClosureParameters replaces")
                     .newline()
                     .append(closure.toString())

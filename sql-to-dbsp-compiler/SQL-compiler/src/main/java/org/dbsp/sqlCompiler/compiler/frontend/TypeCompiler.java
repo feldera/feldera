@@ -73,7 +73,7 @@ public class TypeCompiler implements ICompilerComponent {
                 case DECIMAL: {
                     int precision = dt.getPrecision();
                     int scale = dt.getScale();
-                    if (precision >= DBSPTypeDecimal.MAX_PRECISION) {
+                    if (precision > DBSPTypeDecimal.MAX_PRECISION) {
                         // This would sure benefit from source position information, but we don't have any!
                         compiler.reportError(SourcePositionRange.INVALID, true, "Out of bounds",
                                 "DECIMAL value precision " + precision +

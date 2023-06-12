@@ -67,7 +67,7 @@ import java.util.*;
 /**
  * Generates an encoding of the circuit as a JITProgram representation.
  */
-public class ToJitVisitor extends CircuitVisitor implements IModule {
+public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
     final JITProgram program;
 
     public ToJitVisitor(IErrorReporter reporter) {
@@ -110,7 +110,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
     }
 
     JITFunction convertFunction(DBSPClosureExpression function, boolean simpleParameters) {
-        Logger.INSTANCE.from(this, 4)
+        Logger.INSTANCE.belowLevel(this, 4)
                 .append("Canonicalizing")
                 .newline()
                 .append(function.toString())
@@ -120,7 +120,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
         function = normalizer.apply(function).to(DBSPClosureExpression.class);
         function = this.tupleEachParameter(function);
 
-        Logger.INSTANCE.from(this, 4)
+        Logger.INSTANCE.belowLevel(this, 4)
                 .append("Converting to JIT")
                 .newline()
                 .append(function.toString())
@@ -138,7 +138,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
         List<JITBlock> blocks = ToJitInnerVisitor.convertClosure(
                 this.errorReporter, this, mapping, function, this.getTypeCatalog());
         JITFunction result = new JITFunction(mapping.parameters, blocks, returnType);
-        Logger.INSTANCE.from(this, 4)
+        Logger.INSTANCE.belowLevel(this, 4)
                 .append(result.toAssembly())
                 .newline();
         return result;
@@ -151,7 +151,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
      * which cannot be deduced from the signature we use for the function.
      */
     JITFunction convertStepFunction(DBSPClosureExpression function) {
-        Logger.INSTANCE.from(this, 4)
+        Logger.INSTANCE.belowLevel(this, 4)
                 .append("Canonicalizing")
                 .newline()
                 .append(function.toString())
@@ -161,7 +161,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
         function = normalizer.apply(function).to(DBSPClosureExpression.class);
         function = this.tupleEachParameter(function);
 
-        Logger.INSTANCE.from(this, 4)
+        Logger.INSTANCE.belowLevel(this, 4)
                 .append("Converting to JIT")
                 .newline()
                 .append(function.toString())
@@ -181,7 +181,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
         List<JITBlock> blocks = ToJitInnerVisitor.convertClosure(
                 this.errorReporter, this, mapping, function, this.getTypeCatalog());
         JITFunction result = new JITFunction(mapping.parameters, blocks, JITUnitType.INSTANCE);
-        Logger.INSTANCE.from(this, 4)
+        Logger.INSTANCE.belowLevel(this, 4)
                 .append(result.toAssembly())
                 .newline();
         return result;
@@ -471,7 +471,7 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
         rewriter.add(new Simplify(compiler).circuitRewriter());
 
         circuit = rewriter.apply(circuit);
-        Logger.INSTANCE.from("ToJitVisitor", 2)
+        Logger.INSTANCE.belowLevel("ToJitVisitor", 2)
                 .append("Converting to JIT")
                 .newline()
                 .append(circuit.toString());
@@ -489,11 +489,11 @@ public class ToJitVisitor extends CircuitVisitor implements IModule {
     public static void validateJson(DBSPCompiler compiler, DBSPCircuit circuit, boolean compile) {
         try {
             JITProgram program = ToJitVisitor.circuitToJIT(compiler, circuit);
-            Logger.INSTANCE.from("ToJitVisitor", 2)
+            Logger.INSTANCE.belowLevel("ToJitVisitor", 2)
                     .append(program.toAssembly())
                     .newline();
             String json = program.asJson().toPrettyString();
-            Logger.INSTANCE.from("ToJitVisitor", 2)
+            Logger.INSTANCE.belowLevel("ToJitVisitor", 2)
                     .append(json);
             ObjectMapper mapper = new ObjectMapper();
             JsonNode root = mapper.readTree(json);
