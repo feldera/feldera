@@ -33,11 +33,13 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.backend.*;
+import org.dbsp.util.Logger;
 
 import javax.annotation.Nullable;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -50,6 +52,13 @@ public class CompilerMain {
         this.options = new CompilerOptions();
     }
 
+    void usage(JCommander commander) {
+        // JCommander mistakenly prints this as default value
+        // if it manages to parse it partially.
+        this.options.ioOptions.loggingLevel.clear();
+        commander.usage();
+    }
+
     void parseOptions(String[] argv) {
         JCommander commander = JCommander.newBuilder()
                 .addObject(this.options)
@@ -58,12 +67,22 @@ public class CompilerMain {
         try {
             commander.parse(argv);
         } catch (ParameterException ex) {
-            commander.usage();
+            System.err.println(ex.getMessage());
             System.exit(1);
         }
         if (this.options.help) {
-            commander.usage();
+            this.usage(commander);
             System.exit(1);
+        }
+
+        for (Map.Entry<String, String> entry: options.ioOptions.loggingLevel.entrySet()) {
+            try {
+                int level = Integer.parseInt(entry.getValue());
+                Logger.INSTANCE.setLoggingLevel(entry.getKey(), level);
+            } catch (NumberFormatException ex) {
+                System.err.println("-T option must be followed by 'class=number'; could not parse " + entry);
+                System.exit(1);
+            }
         }
     }
 

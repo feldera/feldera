@@ -29,7 +29,7 @@ import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -46,7 +46,7 @@ import java.util.function.Function;
  * - the 'force' flag is 'true'.
  */
 public class CircuitCloneVisitor extends CircuitVisitor
-        implements Function<DBSPCircuit, DBSPCircuit>, IModule {
+        implements Function<DBSPCircuit, DBSPCircuit>, IWritesLogs {
     @Nullable
     protected DBSPPartialCircuit result;
     /**
@@ -77,7 +77,7 @@ public class CircuitCloneVisitor extends CircuitVisitor
      */
     protected void map(DBSPOperator old, DBSPOperator newOp, boolean add) {
         if (old != newOp) {
-            Logger.INSTANCE.from(this, 1)
+            Logger.INSTANCE.belowLevel(this, 1)
                     .append(this.toString())
                     .append(":")
                     .append(old.toString())
@@ -99,7 +99,7 @@ public class CircuitCloneVisitor extends CircuitVisitor
      * @param operator  Operator to add.
      */
     protected void addOperator(DBSPOperator operator) {
-        Logger.INSTANCE.from(this, 2)
+        Logger.INSTANCE.belowLevel(this, 2)
                 .append(this.toString())
                 .append(" adding ")
                 .append(operator.toString())
@@ -127,7 +127,7 @@ public class CircuitCloneVisitor extends CircuitVisitor
         this.visited.add(operator);
         List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
         if (!Linq.same(sources, operator.inputs)) {
-            Logger.INSTANCE.from(this, 1)
+            Logger.INSTANCE.belowLevel(this, 1)
                     .append(this.toString())
                     .append(" replacing inputs of ")
                     .increase()

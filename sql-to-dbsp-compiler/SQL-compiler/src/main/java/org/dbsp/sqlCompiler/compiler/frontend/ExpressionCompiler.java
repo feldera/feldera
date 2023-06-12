@@ -44,7 +44,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 
-public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implements IModule, ICompilerComponent {
+public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implements IWritesLogs, ICompilerComponent {
     private final TypeCompiler typeCompiler;
     @Nullable
     public final DBSPVariablePath inputRow;
@@ -289,7 +289,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
     @Override
     public DBSPExpression visitCall(RexCall call) {
-        Logger.INSTANCE.from(this, 2)
+        Logger.INSTANCE.belowLevel(this, 2)
                 .append(call.toString())
                 .append(" ")
                 .append(call.getType().toString());
@@ -563,7 +563,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     }
 
     DBSPExpression compile(RexNode expression) {
-        Logger.INSTANCE.from(this, 3)
+        Logger.INSTANCE.belowLevel(this, 3)
                 .append("Compiling ")
                 .append(expression.toString())
                 .newline();

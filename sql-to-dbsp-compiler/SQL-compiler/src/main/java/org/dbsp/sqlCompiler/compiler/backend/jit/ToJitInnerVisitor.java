@@ -62,7 +62,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Unimplemented;
 import org.dbsp.util.Utilities;
@@ -74,7 +74,7 @@ import java.util.*;
  * Generate code for the JIT compiler.
  * Handles InnerNodes - i.e., expressions, closures, statements.
  */
-public class ToJitInnerVisitor extends InnerVisitor implements IModule {
+public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     /**
      * Contexts keep track of variables defined.
      * Variable names can be redefined, as in Rust, and a context
@@ -201,7 +201,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IModule {
     }
 
     void map(DBSPExpression expression, JITInstructionPair pair) {
-        Logger.INSTANCE.from(this, 2)
+        Logger.INSTANCE.belowLevel(this, 2)
                 .append("Compiled ")
                 .append(expression.toString())
                 .append(" to ")

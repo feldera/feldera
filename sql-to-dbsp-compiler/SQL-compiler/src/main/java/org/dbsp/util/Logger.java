@@ -31,8 +31,8 @@ import java.util.Map;
  * The logger extends IndentStream, and thus provides the capability
  * to output nicely indented hierarchical visualizations.
  */
-public class Logger implements IDebuggable {
-    private final Map<String, Integer> debugLevel = new HashMap<>();
+public class Logger {
+    private final Map<String, Integer> loggingLevel = new HashMap<>();
     private final IndentStream debugStream;
     private final IIndentStream noStream;
 
@@ -46,49 +46,57 @@ public class Logger implements IDebuggable {
         this.noStream = new NullIndentStream();
     }
 
-    public IIndentStream from(String module, int level) {
-        int debugLevel = this.getDebugLevel(module);
+    /**
+     * Get the logging stream for messages below this logging level.
+     * @param clazz   Class which does the logging.
+     * @param level   Level of message that is being logged.
+     * @return        A stream where the message can be appended.
+     */
+    public IIndentStream belowLevel(String clazz, int level) {
+        int debugLevel = this.getLoggingLevel(clazz);
         if (debugLevel >= level)
             return this.debugStream;
         return this.noStream;
     }
 
     /**
-     * Get the logging stream.
+     * Get the logging stream for messages below this logging level.
      * @param module  Module which does the logging.
      * @param level   Level of message that is being logged.
      * @return        A stream where the message can be appended.
      */
-    public IIndentStream from(IModule module, int level) {
-        return this.from(module.getModule(), level);
+    public IIndentStream belowLevel(IWritesLogs module, int level) {
+        return this.belowLevel(module.getClassName(), level);
     }
 
     /**
      * Debug level is controlled per module and can be changed dynamically.
-     * @param module  Module name.
+     * @param clazz   Class name.
      * @param level   Debugging level.
      */
-    @Override
-    public void setDebugLevel(String module, int level) {
-        this.debugLevel.put(module, level);
+    public void setLoggingLevel(String clazz, int level) {
+        this.loggingLevel.put(clazz, level);
     }
 
     /**
-     * The current debug level for the specified module.
+     * The current debug level for the specified class.
      */
-    public int getDebugLevel(String module) {
-        return this.debugLevel.getOrDefault(module, 0);
+    public int getLoggingLevel(String clazz) {
+        return this.loggingLevel.getOrDefault(clazz, 0);
     }
 
-    public <T> int getDebugLevel(Class<T> clazz) {
-        return this.debugLevel.getOrDefault(clazz.getSimpleName(), 0);
+    public <T> int getLoggingLevel(Class<T> clazz) {
+        return this.loggingLevel.getOrDefault(clazz.getSimpleName(), 0);
+    }
+
+    public <T> void setLoggingLevel(Class<T> clazz, int level) {
+        this.setLoggingLevel(clazz.getSimpleName(), level);
     }
 
     /**
      * Where logging should be redirected.
      * Notice that the indentation is *not* reset when the stream is changed.
      */
-    @Override
     public Appendable setDebugStream(Appendable writer) {
         return this.debugStream.setOutputStream(writer);
     }

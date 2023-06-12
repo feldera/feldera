@@ -27,13 +27,13 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 
 import java.util.List;
 
-public class PassesVisitor extends CircuitVisitor implements IModule {
+public class PassesVisitor extends CircuitVisitor implements IWritesLogs {
     public final List<CircuitVisitor> passes;
 
     public PassesVisitor(IErrorReporter reporter, CircuitVisitor... passes) {
@@ -58,21 +58,21 @@ public class PassesVisitor extends CircuitVisitor implements IModule {
     public DBSPCircuit apply(DBSPCircuit circuit) {
         int count = 0;
         if (this.getDebugLevel() >= 3) {
-            Logger.INSTANCE.from(this, 3)
+            Logger.INSTANCE.belowLevel(this, 3)
                     .append("Writing circuit to before.png")
                     .newline();
             ToDotVisitor.toDot(this.errorReporter, "0before.png", "png", circuit);
         }
         ++count;
         for (CircuitVisitor pass: this.passes) {
-            Logger.INSTANCE.from(this, 1)
+            Logger.INSTANCE.belowLevel(this, 1)
                     .append("Executing ")
                     .append(pass.toString())
                     .newline();
             circuit = pass.apply(circuit);
             if (this.getDebugLevel() >= 3) {
                 String name = count + pass.toString().replace(" ", "_") + ".png";
-                Logger.INSTANCE.from(this, 3)
+                Logger.INSTANCE.belowLevel(this, 3)
                         .append("Writing circuit to ")
                         .append(name)
                         .newline();

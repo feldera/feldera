@@ -37,7 +37,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -50,7 +50,7 @@ import java.io.PrintWriter;
  * This visitor dumps the circuit to a dot file, so it can be visualized.
  * A utility method can create a jpg or png or other format supported by dot.
  */
-public class ToDotVisitor extends CircuitVisitor implements IModule {
+public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     private final IndentStream stream;
 
     public ToDotVisitor(IErrorReporter reporter, IndentStream stream) {
@@ -155,7 +155,7 @@ public class ToDotVisitor extends CircuitVisitor implements IModule {
     public static void toDot(IErrorReporter reporter, String fileName,
                              @Nullable String outputFormat, DBSPCircuit circuit) {
         try {
-            Logger.INSTANCE.from("ToDotVisitor", 1)
+            Logger.INSTANCE.belowLevel("ToDotVisitor", 1)
                     .append("Writing circuit to ")
                     .append(fileName)
                     .newline();

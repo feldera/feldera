@@ -29,7 +29,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
@@ -40,7 +40,7 @@ import java.util.*;
  * operators that are 'used' by other operators (inputs, outputs,
  * and sources).
  */
-public class FindDeadCode extends CircuitVisitor implements IModule {
+public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     public final Set<DBSPOperator> reachable = new HashSet<>();
     // Includes reachable plus all inputs
     public final Set<DBSPOperator> toKeep = new HashSet<>();
@@ -57,7 +57,7 @@ public class FindDeadCode extends CircuitVisitor implements IModule {
     }
 
     public void keep(DBSPOperator operator) {
-        Logger.INSTANCE.from(this, 1)
+        Logger.INSTANCE.belowLevel(this, 1)
                 .append(operator.toString())
                 .append(" reachable")
                 .newline();

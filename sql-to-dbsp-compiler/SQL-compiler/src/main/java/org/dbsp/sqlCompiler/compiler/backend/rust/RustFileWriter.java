@@ -323,7 +323,7 @@ public class RustFileWriter implements ICompilerComponent {
     }
 
     public void writeAndClose() {
-        Logger.INSTANCE.setDebugLevel(FindResources.class, 3);
+        Logger.INSTANCE.setLoggingLevel(FindResources.class, 3);
         this.write();
         this.outputStream.close();
     }

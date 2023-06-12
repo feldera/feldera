@@ -49,7 +49,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 
@@ -70,7 +70,7 @@ import java.util.function.Supplier;
  */
 public abstract class InnerRewriteVisitor
         extends InnerVisitor
-        implements Function<IDBSPInnerNode, IDBSPInnerNode>, IModule {
+        implements IWritesLogs {
     protected InnerRewriteVisitor(IErrorReporter reporter) {
         super(reporter,true);
     }
@@ -99,7 +99,7 @@ public abstract class InnerRewriteVisitor
      */
     protected void map(IDBSPInnerNode old, IDBSPInnerNode newOp) {
         if (old != newOp)
-            Logger.INSTANCE.from(this, 1)
+            Logger.INSTANCE.belowLevel(this, 1)
                     .append(this.toString())
                     .append(":")
                     .append((Supplier<String>) old::toString)
