@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.apache.calcite.rex.*;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
 import javax.annotation.Nullable;
@@ -33,7 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IModule {
+public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWritesLogs {
     private final int leftTableColumnCount;
     private final ConditionDecomposition result;
     private final TypeCompiler typeCompiler;
@@ -188,7 +188,7 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IModu
     }
 
     JoinConditionAnalyzer.ConditionDecomposition analyze(RexNode expression) {
-        Logger.INSTANCE.from(this, 1)
+        Logger.INSTANCE.belowLevel(this, 1)
                 .append("Analyzing ")
                 .append(expression.toString())
                 .newline();

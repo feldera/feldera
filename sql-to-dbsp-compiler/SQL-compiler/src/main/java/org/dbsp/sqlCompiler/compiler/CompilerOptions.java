@@ -23,12 +23,15 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
+import com.beust.jcommander.DynamicParameter;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParametersDelegate;
 import org.apache.calcite.config.Lex;
 import org.dbsp.util.SqlLexicalRulesConverter;
 
 import javax.annotation.Nullable;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Packages options for a compiler from SQL to Rust.
@@ -78,6 +81,9 @@ public class CompilerOptions {
      */
     @SuppressWarnings("CanBeFinal")
     public static class IO {
+        @DynamicParameter(names = "-T",
+                description = "Specify logging level for a class (can be repeated)")
+        public Map<String, String> loggingLevel = new HashMap<>();
         @Parameter(names="-o", description = "Output file; stdout if null")
         @Nullable
         public String outputFile = null;

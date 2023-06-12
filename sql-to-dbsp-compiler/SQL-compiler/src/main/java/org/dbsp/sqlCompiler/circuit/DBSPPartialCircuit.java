@@ -41,7 +41,7 @@ import java.util.*;
  * A partial circuit is a circuit under construction.
  * A complete circuit can be obtained by calling the "seal" method.
  */
-public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IModule {
+public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs {
     public final List<DBSPSourceOperator> inputOperators = new ArrayList<>();
     public final List<DBSPSinkOperator> outputOperators = new ArrayList<>();
     public final List<DBSPOperator> allOperators = new ArrayList<>();
@@ -74,7 +74,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IMod
     }
 
     public void addOperator(DBSPOperator operator) {
-        Logger.INSTANCE.from(this, 1)
+        Logger.INSTANCE.belowLevel(this, 1)
                 .append("Adding ")
                 .append(operator.toString())
                 .newline();

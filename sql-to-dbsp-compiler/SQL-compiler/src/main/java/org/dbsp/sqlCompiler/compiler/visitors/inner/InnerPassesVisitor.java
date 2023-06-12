@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 
@@ -12,7 +12,7 @@ import java.util.function.Supplier;
 /**
  * Applies multiple other inner visitors in sequence.
  */
-public class InnerPassesVisitor extends InnerRewriteVisitor implements IModule {
+public class InnerPassesVisitor extends InnerRewriteVisitor implements IWritesLogs {
     public final List<InnerRewriteVisitor> passes;
 
     public InnerPassesVisitor(IErrorReporter reporter, InnerRewriteVisitor... passes) {
@@ -31,12 +31,12 @@ public class InnerPassesVisitor extends InnerRewriteVisitor implements IModule {
     @Override
     public IDBSPInnerNode apply(IDBSPInnerNode node) {
         for (InnerRewriteVisitor pass: this.passes) {
-            Logger.INSTANCE.from(this, 1)
+            Logger.INSTANCE.belowLevel(this, 1)
                     .append("Executing ")
                     .append(pass.toString())
                     .newline();
             node = pass.apply(node);
-            Logger.INSTANCE.from(this, 3)
+            Logger.INSTANCE.belowLevel(this, 3)
                     .append("After ")
                     .append(pass.toString())
                     .newline()

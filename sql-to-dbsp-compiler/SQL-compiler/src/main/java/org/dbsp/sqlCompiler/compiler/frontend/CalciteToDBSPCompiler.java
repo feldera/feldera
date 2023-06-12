@@ -71,7 +71,7 @@ import java.util.stream.IntStream;
  * some views from generating outputs.
  */
 public class CalciteToDBSPCompiler extends RelVisitor
-        implements IModule, ICompilerComponent {
+        implements IWritesLogs, ICompilerComponent {
     /**
      * Number of first day of the week.
      * This should be selected by the SQL dialect, but it seems
@@ -141,7 +141,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     <T> boolean visitIfMatches(RelNode node, Class<T> clazz, Consumer<T> method) {
         T value = ICastable.as(node, clazz);
         if (value != null) {
-            Logger.INSTANCE.from(this, 4)
+            Logger.INSTANCE.belowLevel(this, 4)
                     .append("Processing ")
                     .append(node.toString())
                     .newline();
@@ -1044,7 +1044,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     public void visit(
             RelNode node, int ordinal,
             @Nullable RelNode parent) {
-        Logger.INSTANCE.from(this, 3)
+        Logger.INSTANCE.belowLevel(this, 3)
                 .append("Visiting ")
                 .append(node.toString())
                 .newline();
@@ -1083,7 +1083,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (statement.is(CreateViewStatement.class)) {
             CreateViewStatement view = statement.to(CreateViewStatement.class);
             RelNode rel = view.getRelNode();
-            Logger.INSTANCE.from(this, 2)
+            Logger.INSTANCE.belowLevel(this, 2)
                     .append(CalciteCompiler.getPlan(rel))
                     .newline();
             this.go(rel);

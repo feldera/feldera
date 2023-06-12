@@ -49,12 +49,13 @@ import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * Depth-first traversal of an DBSPInnerNode hierarchy.
  */
 @SuppressWarnings("SameReturnValue, EmptyMethod")
-public abstract class InnerVisitor {
+public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInnerNode> {
     /// If true each visit call will visit by default the superclass.
     final boolean visitSuper;
     protected final IErrorReporter errorReporter;
@@ -1150,6 +1151,9 @@ public abstract class InnerVisitor {
     public String toString() {
         return this.getClass().getSimpleName();
     }
+
+    @Override
+    public IDBSPInnerNode apply(IDBSPInnerNode node) { return node; }
 
     public CircuitVisitor getCircuitVisitor() {
         return new CircuitDelegateVisitor(this.errorReporter, this);

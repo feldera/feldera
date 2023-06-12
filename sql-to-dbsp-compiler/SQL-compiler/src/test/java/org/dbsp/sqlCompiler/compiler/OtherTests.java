@@ -42,6 +42,8 @@ import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.CollectIdentifiers;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.PassesVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -52,7 +54,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.FreshName;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.StringPrintStream;
@@ -74,7 +76,7 @@ import java.util.Objects;
 import java.util.Set;
 
 
-public class OtherTests extends BaseSQLTests implements IModule {
+public class OtherTests extends BaseSQLTests implements IWritesLogs {
     static CompilerOptions getOptions() {
         CompilerOptions options = new CompilerOptions();
         options.optimizerOptions.throwOnError = true;
@@ -119,18 +121,44 @@ public class OtherTests extends BaseSQLTests implements IModule {
     public void loggerTest() {
         StringBuilder builder = new StringBuilder();
         Appendable save = Logger.INSTANCE.setDebugStream(builder);
-        Logger.INSTANCE.setDebugLevel(this.getModule(), 1);
-        Assert.assertEquals("OtherTests", this.getModule());
-        Logger.INSTANCE.from(this, 1)
+        Logger.INSTANCE.setLoggingLevel(this.getClassName(), 1);
+        Assert.assertEquals("OtherTests", this.getClassName());
+        Logger.INSTANCE.belowLevel(this, 1)
                 .append("Logging one statement")
                 .newline();
-        Logger.INSTANCE.setDebugLevel(this.getModule(), 0);
-        Logger.INSTANCE.from(this, 1)
+        Logger.INSTANCE.setLoggingLevel(this.getClassName(), 0);
+        Logger.INSTANCE.belowLevel(this, 1)
                 .append("This one is not logged")
                 .newline();
         Logger.INSTANCE.setDebugStream(save);
         Assert.assertEquals("Logging one statement\n", builder.toString());
-        Logger.INSTANCE.setDebugLevel(this.getModule(), 0);
+        Logger.INSTANCE.setLoggingLevel(this.getClassName(), 0);
+    }
+
+    // Test the -T command-line parameter
+    @Test
+    public void loggingParameter() throws IOException, InterruptedException {
+        StringBuilder builder = new StringBuilder();
+        Appendable save = Logger.INSTANCE.setDebugStream(builder);
+        String[] statements = new String[]{
+                "CREATE TABLE T (\n" +
+                        "COL1 INT NOT NULL" +
+                        ", COL2 DOUBLE NOT NULL" +
+                        ")",
+                "CREATE VIEW V AS SELECT COL1 FROM T"
+        };
+        File file = this.createInputScript(statements);
+        CompilerMain.execute("-TCalciteCompiler=2", "-TPassesVisitor=2",
+                "-o", BaseSQLTests.testFilePath, file.getPath());
+        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+        boolean success = file.delete();
+        Assert.assertTrue(success);
+        Logger.INSTANCE.setDebugStream(save);
+        String messages = builder.toString();
+        Assert.assertTrue(messages.contains("After optimizer"));
+        Assert.assertTrue(messages.contains("CircuitRewriter:Simplify"));
+        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 0);
+        Logger.INSTANCE.setLoggingLevel(PassesVisitor.class, 0);
     }
 
     @Test
@@ -443,6 +471,7 @@ public class OtherTests extends BaseSQLTests implements IModule {
         };
         File file = this.createInputScript(statements);
         File png = File.createTempFile("out", ".png", new File("."));
+        png.deleteOnExit();
         CompilerMessages message = CompilerMain.execute("-png", "-o", png.getPath(), file.getPath());
         Assert.assertEquals(message.exitCode, 0);
         Assert.assertTrue(file.exists());
@@ -452,8 +481,6 @@ public class OtherTests extends BaseSQLTests implements IModule {
             throw new RuntimeException(e);
         }
         boolean success = file.delete();
-        Assert.assertTrue(success);
-        success = png.delete();
         Assert.assertTrue(success);
     }
 

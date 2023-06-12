@@ -27,7 +27,7 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
-import org.dbsp.util.IModule;
+import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 
 /**
@@ -35,7 +35,7 @@ import org.dbsp.util.Linq;
  */
 public class BlockClosures
         extends InnerRewriteVisitor
-        implements IModule {
+        implements IWritesLogs {
 
     public BlockClosures(IErrorReporter reporter) {
         super(reporter);

@@ -23,23 +23,23 @@
 
 package org.dbsp.util;
 
-public interface IDebuggable {
+/**
+ * Interface that controls logging per class.
+ * A class that implements this interface cal call getDebugLevel() to
+ * figure out whether it should emit log messages.
+ */
+public interface IWritesLogs {
     /**
-     * Higher levels -> more debugging information.
+     * Gets the name of the current class.
      */
-    void setDebugLevel(String module, int level);
-
-    default <T> void setDebugLevel(Class<T> clazz, int level) {
-        this.setDebugLevel(clazz.getSimpleName(), level);
+    default String getClassName() {
+        return this.getClass().getSimpleName();
     }
 
     /**
-     * The current debug level.
+     * Get the debugging level of the current module.
      */
-    int getDebugLevel(String module);
-
-    /**
-     * Stream that debugging information goes to.
-     */
-    Appendable setDebugStream(Appendable writer);
+    default int getDebugLevel() {
+        return Logger.INSTANCE.getLoggingLevel(this.getClassName());
+    }
 }
