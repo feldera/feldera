@@ -191,7 +191,7 @@ const CIRCUIT: &str = r#"{
                 [
                   8,
                   {
-                    "Column": "String"
+                    "Scalar": "String"
                   }
                 ]
               ]

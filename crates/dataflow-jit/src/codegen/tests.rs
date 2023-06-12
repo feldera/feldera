@@ -799,7 +799,7 @@ fn unwrap_optional_bool() {
         let is_null = builder.is_null(input, 0);
         let bool = builder.load(input, 0);
         let false_val = builder.constant(Constant::Bool(false));
-        let unwrapped = builder.select(is_null, false_val, bool);
+        let unwrapped = builder.select(is_null, false_val, bool, ColumnType::Bool);
         builder.store(output, 0, unwrapped);
         builder.ret_unit();
 

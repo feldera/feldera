@@ -3,6 +3,7 @@ use crate::ir::{
     layout_cache::RowLayoutCache,
     literal::RowLiteral,
     nodes::{DataflowNode, StreamLayout},
+    pretty::{DocAllocator, DocBuilder, Pretty},
     ColumnType, InputFlags, LayoutId, NodeId, RowLayoutBuilder,
 };
 use dbsp::operator::time_series::RelRange;
@@ -68,6 +69,21 @@ impl DataflowNode for Min {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &Min
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("min")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Max {
     input: NodeId,
@@ -124,6 +140,21 @@ impl DataflowNode for Max {
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.layout.remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Max
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("max")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
     }
 }
 
@@ -290,6 +321,45 @@ impl DataflowNode for Fold {
         self.output_layout = mappings[&self.output_layout];
         self.step_fn.remap_layouts(mappings);
         self.finish_fn.remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Fold
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("fold")
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(self.output_layout.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text("step_fn:"))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(self.step_fn.pretty(alloc, cache).indent(2))
+                    .append(alloc.hardline())
+                    .braces(),
+            )
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text("finish_fn:"))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(self.finish_fn.pretty(alloc, cache).indent(2))
+                    .append(alloc.hardline())
+                    .braces(),
+            )
     }
 }
 
@@ -595,5 +665,44 @@ impl JsonSchema for PartitionedRollingFold {
             .insert("output_layout".to_owned());
 
         schemars::schema::Schema::Object(schema_object)
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &PartitionedRollingFold
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("partitioned_rolling_fold")
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(self.output_layout.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text("step_fn:"))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(self.step_fn.pretty(alloc, cache).indent(2))
+                    .append(alloc.hardline())
+                    .braces(),
+            )
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text("finish_fn:"))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(self.finish_fn.pretty(alloc, cache).indent(2))
+                    .append(alloc.hardline())
+                    .braces(),
+            )
     }
 }

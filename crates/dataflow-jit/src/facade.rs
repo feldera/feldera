@@ -4,6 +4,7 @@ use crate::{
     ir::{
         literal::{NullableConstant, RowLiteral, StreamCollection},
         nodes::StreamLayout,
+        pretty::{Arena, Pretty, DEFAULT_WIDTH},
         ColumnType, Constant, Graph, GraphExt, LayoutId, NodeId, RowLayout, Validator,
     },
     row::{row_from_literal, Row, UninitRow},
@@ -66,6 +67,14 @@ impl DbspCircuit {
         config: CodegenConfig,
         demands: Demands,
     ) -> Self {
+        if tracing::enabled!(tracing::Level::TRACE) {
+            let arena = Arena::<()>::new();
+            tracing::trace!(
+                "created circuit from graph:\n{}",
+                Pretty::pretty(&graph, &arena, graph.layout_cache()).pretty(DEFAULT_WIDTH),
+            );
+        }
+
         let sources = graph.source_nodes();
         let sinks = graph.sink_nodes();
 
@@ -82,6 +91,14 @@ impl DbspCircuit {
                 validator
                     .validate_graph(&graph)
                     .expect("failed to validate graph after optimization");
+
+                if tracing::enabled!(tracing::Level::TRACE) {
+                    let arena = Arena::<()>::new();
+                    tracing::trace!(
+                        "optimized graph:\n{}",
+                        Pretty::pretty(&graph, &arena, graph.layout_cache()).pretty(DEFAULT_WIDTH),
+                    );
+                }
             }
         }
 

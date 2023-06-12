@@ -2249,13 +2249,16 @@ impl<'a> CodegenCtx<'a> {
 
     fn drop_expr(&mut self, drop: &Drop, builder: &mut FunctionBuilder<'_>) {
         // Only do anything if the value actually needs dropping
-        if !drop.ty().needs_drop(self.layout_cache.row_layout_cache()) {
+        if !drop
+            .value_type()
+            .needs_drop(self.layout_cache.row_layout_cache())
+        {
             return;
         }
 
         let value = self.value(drop.value());
 
-        let drop_inst = match drop.ty() {
+        let drop_inst = match drop.value_type() {
             RowOrScalar::Row(layout) => {
                 debug_assert!(!self.is_readonly(drop.value()));
 
@@ -2330,7 +2333,8 @@ impl<'a> CodegenCtx<'a> {
         });
     }
 
-    // Drops a scalar value, returns the first instruction in the drop sequence (if the type requires dropping)
+    // Drops a scalar value, returns the first instruction in the drop sequence (if
+    // the type requires dropping)
     fn drop_scalar(
         &mut self,
         value: Value,

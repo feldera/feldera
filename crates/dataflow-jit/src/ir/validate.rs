@@ -1456,7 +1456,7 @@ impl FunctionValidator {
         }
 
         let ty = self.expr_types[&drop.value()];
-        match (ty, drop.ty()) {
+        match (ty, drop.value_type()) {
             (Ok(ty), RowOrScalar::Scalar(drop_ty)) => {
                 assert_eq!(ty, drop_ty);
                 // TODO: Error
@@ -1470,7 +1470,7 @@ impl FunctionValidator {
             _ => todo!(
                 "drop {expr_id} got value {} with type {ty:?} but expected {:?}",
                 drop.value(),
-                drop.ty()
+                drop.value_type(),
             ),
         }
 

@@ -1,4 +1,9 @@
-use crate::ir::{nodes::StreamLayout, Constant};
+use crate::ir::{
+    exprs::Constant,
+    nodes::StreamLayout,
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    RowLayoutCache,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -156,10 +161,40 @@ impl StreamCollection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
-pub enum NullableConstant {
-    NonNull(Constant),
-    Nullable(Option<Constant>),
+impl<'a, D, A> Pretty<'a, D, A> for &StreamCollection
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        match self {
+            StreamCollection::Set(set) => alloc.intersperse(
+                set.iter().map(|(key, weight)| {
+                    key.pretty(alloc, cache)
+                        .append(alloc.text(","))
+                        .append(alloc.space())
+                        .append(alloc.text(format!("{weight:+}")))
+                        .parens()
+                }),
+                alloc.text(",").append(alloc.line()),
+            ),
+            StreamCollection::Map(map) => alloc.intersperse(
+                map.iter().map(|(key, value, weight)| {
+                    key.pretty(alloc, cache)
+                        .append(alloc.text(","))
+                        .append(alloc.space())
+                        .append(value.pretty(alloc, cache))
+                        .append(alloc.text(","))
+                        .append(alloc.space())
+                        .append(alloc.text(format!("{weight:+}")))
+                        .parens()
+                }),
+                alloc.text(",").append(alloc.line()),
+            ),
+        }
+        .braces()
+    }
 }
 
 impl NullableConstant {
@@ -188,5 +223,44 @@ impl RowLiteral {
 
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &RowLiteral
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .intersperse(
+                self.rows.iter().map(|column| column.pretty(alloc, cache)),
+                alloc.text(",").append(alloc.space()),
+            )
+            .braces()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
+pub enum NullableConstant {
+    NonNull(Constant),
+    Nullable(Option<Constant>),
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &NullableConstant
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        match self {
+            NullableConstant::NonNull(value) => value.pretty(alloc, cache),
+            NullableConstant::Nullable(Some(value)) => {
+                alloc.text("?").append(value.pretty(alloc, cache))
+            }
+            NullableConstant::Nullable(None) => alloc.text("null"),
+        }
     }
 }

@@ -200,8 +200,8 @@ fn bfs() {
     let (_recursive, distances) = graph.subgraph(|subgraph| {
         let nodes = subgraph.delayed_feedback(u64x2);
 
-        let roots = subgraph.delta0(roots);
-        let edges = subgraph.delta0(edges);
+        let roots = subgraph.delta0(roots, u64x2);
+        let edges = subgraph.delta0(edges, (u64x1, u64x1));
 
         let nodes_index = subgraph.index_with(nodes, u64x1, u64x1, {
             let mut func = FunctionBuilder::new(subgraph.layout_cache().clone());
@@ -322,7 +322,11 @@ fn bfs() {
         },
         u64x1,
     ));
-    let unreachable_nodes = graph.add_node(Minus::new(vertices, reachable_nodes));
+    let unreachable_nodes = graph.add_node(Minus::new(
+        vertices,
+        reachable_nodes,
+        StreamLayout::Set(u64x1),
+    ));
     let unreachable_nodes = graph.map(
         unreachable_nodes,
         StreamLayout::Set(u64x1),

@@ -424,13 +424,13 @@ const CIRCUIT: &str = r#"{
                 [
                   13,
                   {
-                    "Column": "F64"
+                    "Scalar": "F64"
                   }
                 ],
                 [
                   14,
                   {
-                    "Column": "Bool"
+                    "Scalar": "Bool"
                   }
                 ]
               ]

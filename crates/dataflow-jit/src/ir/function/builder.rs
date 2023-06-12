@@ -336,8 +336,17 @@ impl FunctionBuilder {
         expr
     }
 
-    pub fn select(&mut self, cond: ExprId, if_true: ExprId, if_false: ExprId) -> ExprId {
-        let expr = self.add_expr(Select::new(cond, if_true, if_false));
+    pub fn select<V>(
+        &mut self,
+        cond: ExprId,
+        if_true: ExprId,
+        if_false: ExprId,
+        value_type: V,
+    ) -> ExprId
+    where
+        V: Into<RowOrScalar>,
+    {
+        let expr = self.add_expr(Select::new(cond, if_true, if_false, value_type.into()));
         self.set_expr_type(expr, self.expr_types[&if_true]);
         expr
     }

@@ -533,13 +533,13 @@ const CIRCUIT: &str = r#"{
                                 [
                                     12,
                                     {
-                                        "Column": "I32"
+                                        "Scalar": "I32"
                                     }
                                 ],
                                 [
                                     13,
                                     {
-                                        "Column": "Bool"
+                                        "Scalar": "Bool"
                                     }
                                 ]
                             ]
@@ -685,13 +685,13 @@ const CIRCUIT: &str = r#"{
                                 [
                                     21,
                                     {
-                                        "Column": "I32"
+                                        "Scalar": "I32"
                                     }
                                 ],
                                 [
                                     22,
                                     {
-                                        "Column": "Bool"
+                                        "Scalar": "Bool"
                                     }
                                 ]
                             ]
@@ -1137,13 +1137,13 @@ const CIRCUIT: &str = r#"{
                                 [
                                     10,
                                     {
-                                        "Column": "Bool"
+                                        "Scalar": "Bool"
                                     }
                                 ],
                                 [
                                     11,
                                     {
-                                        "Column": "I32"
+                                        "Scalar": "I32"
                                     }
                                 ]
                             ]
@@ -1247,13 +1247,13 @@ const CIRCUIT: &str = r#"{
                                 [
                                     21,
                                     {
-                                        "Column": "Bool"
+                                        "Scalar": "Bool"
                                     }
                                 ],
                                 [
                                     22,
                                     {
-                                        "Column": "I32"
+                                        "Scalar": "I32"
                                     }
                                 ]
                             ]

@@ -4,15 +4,17 @@
 // simplify rerouting edges and removing nodes
 
 use crate::ir::{
+    function::{Function, FunctionBuilder},
     layout_cache::RowLayoutCache,
-    nodes::{ConstantStream, Distinct, Integrate, Node, StreamLayout, Subgraph as SubgraphNode},
     nodes::{
-        DataflowNode, Differentiate, ExportedNode, Filter, IndexWith, JoinCore, Map, Sink, Source,
-        SourceMap, StreamKind,
+        ConstantStream, DataflowNode, Differentiate, Distinct, ExportedNode, Filter, IndexWith,
+        Integrate, JoinCore, Map, Node, Sink, Source, SourceMap, StreamKind, StreamLayout,
+        Subgraph as SubgraphNode,
     },
     optimize,
+    pretty::{DocAllocator, DocBuilder, Pretty},
     visit::{MutNodeVisitor, NodeVisitor},
-    Function, FunctionBuilder, LayoutId, NodeId, NodeIdGen,
+    LayoutId, NodeId, NodeIdGen,
 };
 use petgraph::prelude::DiGraphMap;
 use schemars::JsonSchema;
@@ -293,6 +295,27 @@ impl GraphExt for Graph {
 impl Default for Graph {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Graph
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc.intersperse(
+            self.nodes().iter().map(|(node_id, node)| {
+                node_id
+                    .pretty(alloc, cache)
+                    .append(alloc.space())
+                    .append(alloc.text("="))
+                    .append(alloc.space())
+                    .append(node.pretty(alloc, cache))
+            }),
+            alloc.hardline().append(alloc.hardline()),
+        )
     }
 }
 

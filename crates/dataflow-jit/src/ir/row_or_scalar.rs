@@ -6,8 +6,21 @@ use derive_more::Unwrap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// The type of a function argument
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Unwrap, JsonSchema)]
+/// A [LayoutId] or a [ColumnType]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Deserialize,
+    Serialize,
+    Unwrap,
+    JsonSchema,
+)]
 pub enum RowOrScalar {
     /// A row type
     Row(LayoutId),
@@ -54,8 +67,8 @@ impl RowOrScalar {
 
     #[track_caller]
     pub fn expect_row(self, message: &str) -> LayoutId {
-        if let Self::Row(row) = self {
-            row
+        if let Self::Row(layout) = self {
+            layout
         } else {
             panic!("called .expect_row() on a scalar type: {message}")
         }
@@ -70,10 +83,30 @@ impl RowOrScalar {
         }
     }
 
+    /// Returns `true` if the current layout or column type needs dropping
+    ///
+    /// Calls [`RowLayout::needs_drop()`] or [`ColumnType::needs_drop()`]
+    /// depending on what's inside of `self`
     pub fn needs_drop(self, cache: &RowLayoutCache) -> bool {
         match self {
             Self::Row(layout) => cache.get(layout).needs_drop(),
             Self::Scalar(scalar) => scalar.needs_drop(),
+        }
+    }
+
+    pub const fn try_into_row(self) -> Result<LayoutId, Self> {
+        if let Self::Row(layout) = self {
+            Ok(layout)
+        } else {
+            Err(self)
+        }
+    }
+
+    pub const fn try_into_scalar(self) -> Result<ColumnType, Self> {
+        if let Self::Scalar(scalar) = self {
+            Ok(scalar)
+        } else {
+            Err(self)
         }
     }
 }

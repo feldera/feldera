@@ -21,7 +21,12 @@ pub use join::{Antijoin, JoinCore, MonotonicJoin};
 pub use subgraph::Subgraph;
 pub use sum::{Minus, Sum};
 
-use crate::ir::{function::Function, layout_cache::RowLayoutCache, LayoutId};
+use crate::ir::{
+    function::Function,
+    layout_cache::RowLayoutCache,
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    LayoutId,
+};
 use derive_more::{IsVariant, Unwrap};
 use enum_dispatch::enum_dispatch;
 use schemars::JsonSchema;
@@ -85,6 +90,48 @@ impl Node {
             Some(sink)
         } else {
             None
+        }
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Node
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        match self {
+            Node::Map(map) => map.pretty(alloc, cache),
+            Node::Min(min) => min.pretty(alloc, cache),
+            Node::Max(max) => max.pretty(alloc, cache),
+            Node::Neg(neg) => neg.pretty(alloc, cache),
+            Node::Sum(sum) => sum.pretty(alloc, cache),
+            Node::Fold(fold) => fold.pretty(alloc, cache),
+            Node::Sink(sink) => sink.pretty(alloc, cache),
+            Node::Minus(minus) => minus.pretty(alloc, cache),
+            Node::Filter(filter) => filter.pretty(alloc, cache),
+            Node::FilterMap(filter_map) => filter_map.pretty(alloc, cache),
+            Node::Source(source) => source.pretty(alloc, cache),
+            Node::SourceMap(source_map) => source_map.pretty(alloc, cache),
+            Node::IndexWith(index_with) => index_with.pretty(alloc, cache),
+            Node::Differentiate(differentiate) => differentiate.pretty(alloc, cache),
+            Node::Integrate(integrate) => integrate.pretty(alloc, cache),
+            Node::Delta0(delta0) => delta0.pretty(alloc, cache),
+            Node::DelayedFeedback(delayed_feedback) => delayed_feedback.pretty(alloc, cache),
+            Node::Distinct(distinct) => distinct.pretty(alloc, cache),
+            Node::JoinCore(join_core) => join_core.pretty(alloc, cache),
+            // Node::Subgraph(subgraph) => subgraph.pretty(alloc, cache),
+            // Node::Export(export) => export.pretty(alloc, cache),
+            // Node::ExportedNode(exported_node) => exported_node.pretty(alloc, cache),
+            Node::MonotonicJoin(monotonic_join) => monotonic_join.pretty(alloc, cache),
+            Node::ConstantStream(constant) => constant.pretty(alloc, cache),
+            Node::PartitionedRollingFold(rolling_fold) => rolling_fold.pretty(alloc, cache),
+            Node::FlatMap(flat_map) => flat_map.pretty(alloc, cache),
+            Node::Antijoin(antijoin) => antijoin.pretty(alloc, cache),
+            Node::IndexByColumn(index_by_column) => index_by_column.pretty(alloc, cache),
+            Node::UnitMapToSet(unit_map_to_set) => unit_map_to_set.pretty(alloc, cache),
+            _ => alloc.nil(),
         }
     }
 }
@@ -190,6 +237,42 @@ impl StreamLayout {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for StreamLayout
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc.text(match self {
+            Self::Set(key) => format!("set[{}]", cache.get(key)),
+            Self::Map(key, value) => {
+                format!("map[{}, {}]", cache.get(key), cache.get(value))
+            }
+        })
+    }
+}
+
+impl From<LayoutId> for StreamLayout {
+    #[inline]
+    fn from(key: LayoutId) -> Self {
+        Self::Set(key)
+    }
+}
+
+impl From<(LayoutId, LayoutId)> for StreamLayout {
+    #[inline]
+    fn from((key, value): (LayoutId, LayoutId)) -> Self {
+        Self::Map(key, value)
+    }
+}
+
+impl From<[LayoutId; 2]> for StreamLayout {
+    #[inline]
+    fn from([key, value]: [LayoutId; 2]) -> Self {
+        Self::Map(key, value)
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -267,6 +350,21 @@ impl DataflowNode for Distinct {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &Distinct
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("distinct")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+    }
+}
+
 // FIXME: DelayedFeedback with maps
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct DelayedFeedback {
@@ -316,18 +414,36 @@ impl DataflowNode for DelayedFeedback {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &DelayedFeedback
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("delayed_feedback")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Delta0 {
     input: NodeId,
+    layout: StreamLayout,
 }
 
 impl Delta0 {
-    pub const fn new(input: NodeId) -> Self {
-        Self { input }
+    pub const fn new(input: NodeId, layout: StreamLayout) -> Self {
+        Self { input, layout }
     }
 
     pub const fn input(&self) -> NodeId {
         self.input
+    }
+
+    pub const fn layout(&self) -> StreamLayout {
+        self.layout
     }
 }
 
@@ -346,21 +462,42 @@ impl DataflowNode for Delta0 {
         map(&mut self.input);
     }
 
-    fn output_stream(&self, inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(inputs[0])
+    fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
+        Some(self.layout)
     }
 
-    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
+    fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0], self.layout);
+    }
 
     fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
-    fn map_layouts<F>(&self, _map: &mut F)
+    fn map_layouts<F>(&self, map: &mut F)
     where
         F: FnMut(LayoutId) + ?Sized,
     {
+        self.layout.map_layouts(map);
     }
 
-    fn remap_layouts(&mut self, _mappings: &BTreeMap<LayoutId, LayoutId>) {}
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.layout.remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Delta0
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("delta0")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -415,5 +552,20 @@ impl DataflowNode for Neg {
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.layout.remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Neg
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("neg")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
     }
 }
