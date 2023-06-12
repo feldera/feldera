@@ -1,8 +1,9 @@
 use crate::ir::{
-    function::Function,
+    function::{Function, InputFlags},
     layout_cache::RowLayoutCache,
     nodes::{DataflowNode, StreamLayout},
-    InputFlags, LayoutId, NodeId,
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    LayoutId, NodeId,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -163,6 +164,33 @@ impl DataflowNode for Map {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &Map
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("map")
+            .append(alloc.space())
+            .append(self.input_layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text("map_fn:"))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(self.map_fn.pretty(alloc, cache).indent(2))
+                    .append(alloc.hardline())
+                    .braces(),
+            )
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Filter {
     input: NodeId,
@@ -230,6 +258,31 @@ impl DataflowNode for Filter {
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.filter_fn.remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Filter
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("filter")
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text("filter_fn:"))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(self.filter_fn.pretty(alloc, cache).indent(2))
+                    .append(alloc.hardline())
+                    .braces(),
+            )
     }
 }
 
@@ -311,5 +364,32 @@ impl DataflowNode for FilterMap {
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.layout = mappings[&self.layout];
         self.filter_map.remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &FilterMap
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("filter_map")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text("filter_map:"))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(self.filter_map.pretty(alloc, cache).indent(2))
+                    .append(alloc.hardline())
+                    .braces(),
+            )
     }
 }

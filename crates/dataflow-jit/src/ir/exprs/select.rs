@@ -1,6 +1,6 @@
 use crate::ir::{
     pretty::{DocAllocator, DocBuilder, Pretty},
-    ExprId, RowLayoutCache,
+    ExprId, RowLayoutCache, RowOrScalar,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -22,15 +22,17 @@ pub struct Select {
     cond: ExprId,
     if_true: ExprId,
     if_false: ExprId,
+    value_type: RowOrScalar,
 }
 
 impl Select {
     /// Creates a new select instruction
-    pub fn new(cond: ExprId, if_true: ExprId, if_false: ExprId) -> Self {
+    pub fn new(cond: ExprId, if_true: ExprId, if_false: ExprId, value_type: RowOrScalar) -> Self {
         Self {
             cond,
             if_true,
             if_false,
+            value_type,
         }
     }
 
@@ -57,6 +59,14 @@ impl Select {
     pub fn if_false_mut(&mut self) -> &mut ExprId {
         &mut self.if_false
     }
+
+    pub const fn value_type(&self) -> RowOrScalar {
+        self.value_type
+    }
+
+    pub fn value_type_mut(&mut self) -> &mut RowOrScalar {
+        &mut self.value_type
+    }
 }
 
 impl<'a, D, A> Pretty<'a, D, A> for &Select
@@ -71,12 +81,13 @@ where
             .append(alloc.text("bool"))
             .append(alloc.space())
             .append(self.cond.pretty(alloc, cache))
+            .append(alloc.text(","))
             .append(alloc.space())
-            .append(alloc.text("["))
+            .append(self.value_type.pretty(alloc, cache))
+            .append(alloc.space())
             .append(self.if_true.pretty(alloc, cache))
             .append(alloc.text(","))
             .append(alloc.space())
             .append(self.if_false.pretty(alloc, cache))
-            .append(alloc.text("]"))
     }
 }

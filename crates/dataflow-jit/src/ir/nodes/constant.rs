@@ -2,6 +2,7 @@ use crate::ir::{
     layout_cache::RowLayoutCache,
     literal::StreamLiteral,
     nodes::{DataflowNode, StreamLayout},
+    pretty::{DocAllocator, DocBuilder, Pretty},
     LayoutId, NodeId,
 };
 use schemars::JsonSchema;
@@ -100,5 +101,21 @@ impl DataflowNode for ConstantStream {
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.layout.remap_layouts(mappings);
         self.value.layout_mut().remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &ConstantStream
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("constant")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.value.value().pretty(alloc, cache))
     }
 }

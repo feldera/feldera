@@ -2,6 +2,7 @@ use crate::ir::{
     function::Function,
     layout_cache::RowLayoutCache,
     nodes::{DataflowNode, StreamKind, StreamLayout},
+    pretty::{DocAllocator, DocBuilder, Pretty},
     LayoutId, NodeId,
 };
 use schemars::JsonSchema;
@@ -125,6 +126,36 @@ impl DataflowNode for JoinCore {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &JoinCore
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("join_core")
+            .append(alloc.space())
+            .append(self.output_layout().pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.lhs.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(self.rhs.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text("join_fn:"))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(self.join_fn.pretty(alloc, cache).indent(2))
+                    .append(alloc.hardline())
+                    .braces(),
+            )
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct MonotonicJoin {
     lhs: NodeId,
@@ -210,6 +241,34 @@ impl DataflowNode for MonotonicJoin {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &MonotonicJoin
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("monotonic_join")
+            .append(alloc.space())
+            .append(self.lhs.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(self.rhs.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text("join_fn:"))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(self.join_fn.pretty(alloc, cache).indent(2))
+                    .append(alloc.hardline())
+                    .braces(),
+            )
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Antijoin {
     lhs: NodeId,
@@ -273,5 +332,23 @@ impl DataflowNode for Antijoin {
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.layout.remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Antijoin
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("integrate")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.lhs.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(self.rhs.pretty(alloc, cache))
     }
 }

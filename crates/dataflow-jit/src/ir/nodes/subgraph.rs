@@ -41,8 +41,11 @@ impl Subgraph {
         &mut self.subgraph
     }
 
-    pub fn delta0(&mut self, import: NodeId) -> NodeId {
-        let delta0 = self.add_node(Delta0::new(import));
+    pub fn delta0<L>(&mut self, import: NodeId, layout: L) -> NodeId
+    where
+        L: Into<StreamLayout>,
+    {
+        let delta0 = self.add_node(Delta0::new(import, layout.into()));
         self.inputs.insert(import, delta0);
         delta0
     }

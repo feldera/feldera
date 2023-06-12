@@ -2,10 +2,9 @@ mod unit_ops;
 
 use crate::ir::{
     exprs::{visit::MapExprIds, Call, Nop, RowOrScalar},
-    function::FuncArg,
     layout_cache::RowLayoutCache,
-    pretty::{Arena, Pretty},
-    ColumnType, Constant, Expr, ExprId, Function, Jump, LayoutId, RValue, Terminator,
+    pretty::{Arena, Pretty, DEFAULT_WIDTH},
+    ColumnType, Constant, Expr, ExprId, Function, Jump, RValue, Terminator,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -25,7 +24,7 @@ impl Function {
         let arena = Arena::<()>::new();
         tracing::trace!(
             "Pre-opt:\n{}",
-            Pretty::pretty(&*self, &arena, layout_cache).pretty(80),
+            Pretty::pretty(&*self, &arena, layout_cache).pretty(DEFAULT_WIDTH),
         );
 
         self.warn_string_load_store_sequences();
@@ -40,7 +39,7 @@ impl Function {
 
         tracing::trace!(
             "Post-opt:\n{}",
-            Pretty::pretty(&*self, &arena, layout_cache).pretty(80),
+            Pretty::pretty(&*self, &arena, layout_cache).pretty(DEFAULT_WIDTH),
         );
     }
 
@@ -124,6 +123,44 @@ impl Function {
             }
         });
         self.apply_mut(&mut remap_ids);
+
+        let remap = |expr_id: &mut ExprId| {
+            if let Some(&new) = replacements.get(expr_id) {
+                *expr_id = new;
+            }
+        };
+
+        for block in self.blocks.values_mut() {
+            match block.terminator_mut() {
+                Terminator::Jump(jump) => {
+                    for param in jump.params_mut() {
+                        remap(param);
+                    }
+                }
+
+                Terminator::Branch(branch) => {
+                    if let RValue::Expr(cond) = branch.cond_mut() {
+                        remap(cond);
+                    }
+
+                    for param in branch.true_params_mut() {
+                        remap(param);
+                    }
+
+                    for param in branch.false_params_mut() {
+                        remap(param);
+                    }
+                }
+
+                Terminator::Return(ret) => {
+                    if let RValue::Expr(value) = ret.value_mut() {
+                        remap(value);
+                    }
+                }
+
+                Terminator::Unreachable => {}
+            }
+        }
     }
 
     // Turn all `@dbsp.str.truncate(string, 0)` calls into `@dbsp.str.clear(string)`
@@ -263,7 +300,8 @@ impl Function {
                             used.extend(call.args());
                         }
 
-                        // TODO: Should drop *really* count as a productive use, if all something does is get dropped we don't want to retain it
+                        // TODO: Should drop *really* count as a productive use, if all something
+                        // does is get dropped we don't want to retain it
                         Expr::Drop(drop) => {
                             used.insert(drop.value());
                         }
@@ -397,40 +435,39 @@ impl Function {
                     | Expr::Nop(_) => {}
                 }
             }
+
+            match block.terminator_mut() {
+                Terminator::Jump(jump) => {
+                    for param in jump.params_mut() {
+                        remap(param);
+                    }
+                }
+
+                Terminator::Branch(branch) => {
+                    if let RValue::Expr(cond) = branch.cond_mut() {
+                        remap(cond);
+                    }
+
+                    for param in branch.true_params_mut() {
+                        remap(param);
+                    }
+
+                    for param in branch.false_params_mut() {
+                        remap(param);
+                    }
+                }
+
+                Terminator::Return(ret) => {
+                    if let RValue::Expr(value) = ret.value_mut() {
+                        remap(value);
+                    }
+                }
+
+                Terminator::Unreachable => {}
+            }
         }
 
         // Depends on DCE to eliminate unused loads
-    }
-
-    pub fn map_layouts<F>(&self, mut map: F)
-    where
-        F: FnMut(LayoutId),
-    {
-        for FuncArg { layout, .. } in &self.args {
-            map(*layout);
-        }
-
-        for block in self.blocks.values() {
-            for (_, expr) in block.body() {
-                expr.map_layouts(&mut map);
-            }
-
-            // Terminators don't contain layout ids
-        }
-    }
-
-    pub fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
-        for FuncArg { layout, .. } in &mut self.args {
-            *layout = mappings[layout];
-        }
-
-        for block in self.blocks.values_mut() {
-            for (_, expr) in block.body_mut() {
-                expr.remap_layouts(mappings);
-            }
-
-            // Terminators don't contain layout ids
-        }
     }
 
     fn simplify_branches(&mut self) {
@@ -438,16 +475,36 @@ impl Function {
         // constant conditions into unconditional ones
         // TODO: Simplify `select` calls
 
+        let mut constant_booleans = BTreeMap::new();
+
         // Replace any branches that have identical true/false targets with an
         // unconditional jump
         for block in self.blocks.values_mut() {
-            if let Some((target, params)) =
-                block.terminator_mut().as_branch_mut().and_then(|branch| {
-                    branch
-                        .targets_are_identical()
-                        .then(|| (branch.truthy(), take(branch.true_params_mut())))
+            for (expr_id, expr) in block.body_mut() {
+                if let Expr::Constant(Constant::Bool(value)) = *expr {
+                    constant_booleans.insert(*expr_id, value);
+                }
+            }
+
+            let jump_rewrite = block.terminator_mut().as_branch_mut().and_then(|branch| {
+                let branch_cond = if branch.targets_are_identical() {
+                    true
+                } else {
+                    match branch.cond() {
+                        RValue::Expr(expr) => constant_booleans.get(expr).copied()?,
+                        RValue::Imm(Constant::Bool(value)) => *value,
+                        RValue::Imm(_) => return None,
+                    }
+                };
+
+                Some(if branch_cond {
+                    (branch.truthy(), take(branch.true_params_mut()))
+                } else {
+                    (branch.falsy(), take(branch.false_params_mut()))
                 })
-            {
+            });
+
+            if let Some((target, params)) = jump_rewrite {
                 *block.terminator_mut() = Terminator::Jump(Jump::new(target, params));
             }
         }

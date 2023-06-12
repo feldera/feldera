@@ -1,6 +1,7 @@
 use crate::ir::{
     layout_cache::RowLayoutCache,
     nodes::{DataflowNode, StreamLayout},
+    pretty::{DocAllocator, DocBuilder, Pretty},
     LayoutId, NodeId,
 };
 use schemars::JsonSchema;
@@ -65,6 +66,21 @@ impl DataflowNode for Differentiate {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &Differentiate
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("differentiate")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Integrate {
     input: NodeId,
@@ -120,5 +136,20 @@ impl DataflowNode for Integrate {
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.layout.remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Integrate
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("integrate")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
     }
 }

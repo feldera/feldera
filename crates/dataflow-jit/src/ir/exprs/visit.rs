@@ -147,6 +147,24 @@ where
             }
         }
     }
+
+    fn visit_uninit(&mut self, uninit: &Uninit) {
+        if let RowOrScalar::Row(layout) = uninit.value() {
+            (self.map_layout)(layout);
+        }
+    }
+
+    fn visit_select(&mut self, select: &Select) {
+        if let RowOrScalar::Row(layout) = select.value_type() {
+            (self.map_layout)(layout);
+        }
+    }
+
+    fn visit_drop(&mut self, drop: &Drop) {
+        if let RowOrScalar::Row(layout) = drop.value_type() {
+            (self.map_layout)(layout);
+        }
+    }
 }
 
 impl<F> MutExprVisitor for MapLayouts<F>
@@ -191,6 +209,18 @@ where
 
     fn visit_uninit(&mut self, uninit: &mut Uninit) {
         if let RowOrScalar::Row(layout) = uninit.value_mut() {
+            (self.map_layout)(layout);
+        }
+    }
+
+    fn visit_select(&mut self, select: &mut Select) {
+        if let RowOrScalar::Row(layout) = select.value_type_mut() {
+            (self.map_layout)(layout);
+        }
+    }
+
+    fn visit_drop(&mut self, drop: &mut Drop) {
+        if let RowOrScalar::Row(layout) = drop.value_type_mut() {
             (self.map_layout)(layout);
         }
     }
@@ -266,5 +296,9 @@ where
     fn visit_copy_row_to(&mut self, copy_row_to: &mut CopyRowTo) {
         (self.map_expr)(copy_row_to.src_mut());
         (self.map_expr)(copy_row_to.dest_mut());
+    }
+
+    fn visit_drop(&mut self, drop: &mut Drop) {
+        (self.map_expr)(drop.value_mut());
     }
 }

@@ -5,7 +5,7 @@ use crate::{
     facade::Demands,
     ir::{
         literal::{NullableConstant, RowLiteral, StreamCollection},
-        Constant, GraphExt, NodeId,
+        Constant, NodeId,
     },
     sql_graph::SqlGraph,
     tests::must_equal_sc,
@@ -403,13 +403,13 @@ const CIRCUIT: &str = r#"{
                 [
                   11,
                   {
-                    "Column": "I32"
+                    "Scalar": "I32"
                   }
                 ],
                 [
                   12,
                   {
-                    "Column": "Bool"
+                    "Scalar": "Bool"
                   }
                 ]
               ]
@@ -769,7 +769,6 @@ fn issue_141() {
     let graph = serde_json::from_str::<SqlGraph>(CIRCUIT)
         .unwrap()
         .rematerialize();
-    dbg!(&graph, graph.layout_cache());
 
     let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
 

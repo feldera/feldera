@@ -11,8 +11,11 @@
 //   the proper vtable pointer before pushing the row value to the vec
 
 use crate::ir::{
+    function::Function,
+    layout_cache::RowLayoutCache,
     nodes::{DataflowNode, StreamLayout},
-    Function, LayoutId, NodeId, RowLayoutCache,
+    pretty::{DocAllocator, DocBuilder, Pretty},
+    LayoutId, NodeId,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -124,5 +127,33 @@ impl DataflowNode for FlatMap {
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.output_layout.remap_layouts(mappings);
         self.flat_map.remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &FlatMap
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("flat_map")
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(self.output_layout.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text("flat_map:"))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(self.flat_map.pretty(alloc, cache).indent(2))
+                    .append(alloc.hardline())
+                    .braces(),
+            )
     }
 }

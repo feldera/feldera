@@ -9,7 +9,7 @@ use crate::ir::{
     block::Block,
     exprs::visit::MutExprVisitor,
     pretty::{DocAllocator, DocBuilder, Pretty},
-    BlockId, ColumnType, ExprId, LayoutId, RowLayoutCache, Signature,
+    BlockId, ColumnType, ExprId, LayoutId, RowLayoutCache, RowOrScalar, Signature,
 };
 use petgraph::{
     algo::dominators::{self, Dominators},
@@ -76,6 +76,49 @@ impl Function {
             for (_expr_id, expr) in block.body_mut() {
                 expr.apply_mut(visitor);
             }
+        }
+    }
+
+    pub fn map_layouts<F>(&self, mut map: F)
+    where
+        F: FnMut(LayoutId),
+    {
+        for FuncArg { layout, .. } in &self.args {
+            map(*layout);
+        }
+
+        for block in self.blocks.values() {
+            for &(_, param) in block.params() {
+                if let RowOrScalar::Row(layout) = param {
+                    map(layout);
+                }
+            }
+
+            for (_, expr) in block.body() {
+                expr.map_layouts(&mut map);
+            }
+
+            // Terminators don't contain layout ids
+        }
+    }
+
+    pub fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        for FuncArg { layout, .. } in &mut self.args {
+            *layout = mappings[layout];
+        }
+
+        for block in self.blocks.values_mut() {
+            for (_, param) in block.params_mut() {
+                if let RowOrScalar::Row(layout) = param {
+                    *layout = mappings[layout];
+                }
+            }
+
+            for (_, expr) in block.body_mut() {
+                expr.remap_layouts(mappings);
+            }
+
+            // Terminators don't contain layout ids
         }
     }
 }

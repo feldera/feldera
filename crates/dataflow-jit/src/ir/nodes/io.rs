@@ -1,6 +1,7 @@
 use crate::ir::{
     layout_cache::RowLayoutCache,
     nodes::{DataflowNode, StreamLayout},
+    pretty::{DocAllocator, DocBuilder, Pretty},
     LayoutId, NodeId,
 };
 use schemars::JsonSchema;
@@ -182,6 +183,19 @@ impl DataflowNode for Source {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &Source
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("source")
+            .append(alloc.space())
+            .append(StreamLayout::Set(self.layout).pretty(alloc, cache))
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct SourceMap {
     key_layout: LayoutId,
@@ -246,6 +260,19 @@ impl DataflowNode for SourceMap {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &SourceMap
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("source_map")
+            .append(alloc.space())
+            .append(StreamLayout::Map(self.key_layout, self.value_layout).pretty(alloc, cache))
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Sink {
     input: NodeId,
@@ -304,5 +331,20 @@ impl DataflowNode for Sink {
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.input_layout.remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Sink
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("sink")
+            .append(alloc.space())
+            .append(self.input_layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
     }
 }

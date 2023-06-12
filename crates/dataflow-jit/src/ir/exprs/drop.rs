@@ -13,13 +13,13 @@ use serde::{Deserialize, Serialize};
 #[allow(dead_code)]
 pub struct Drop {
     value: ExprId,
-    ty: RowOrScalar,
+    value_type: RowOrScalar,
 }
 
 impl Drop {
     /// Create a new drop
-    pub fn new(value: ExprId, ty: RowOrScalar) -> Self {
-        Self { value, ty }
+    pub fn new(value: ExprId, value_type: RowOrScalar) -> Self {
+        Self { value, value_type }
     }
 
     pub const fn value(&self) -> ExprId {
@@ -30,28 +30,28 @@ impl Drop {
         &mut self.value
     }
 
-    pub const fn ty(&self) -> RowOrScalar {
-        self.ty
+    pub const fn value_type(&self) -> RowOrScalar {
+        self.value_type
     }
 
-    pub fn ty_mut(&mut self) -> &mut RowOrScalar {
-        &mut self.ty
+    pub fn value_type_mut(&mut self) -> &mut RowOrScalar {
+        &mut self.value_type
     }
 
     pub const fn is_scalar(&self) -> bool {
-        self.ty.is_scalar()
+        self.value_type.is_scalar()
     }
 
     pub const fn is_row(&self) -> bool {
-        self.ty.is_row()
+        self.value_type.is_row()
     }
 
     pub const fn as_scalar(&self) -> Option<ColumnType> {
-        self.ty.as_scalar()
+        self.value_type.as_scalar()
     }
 
     pub const fn as_row(&self) -> Option<LayoutId> {
-        self.ty.as_row()
+        self.value_type.as_row()
     }
 }
 
@@ -64,7 +64,7 @@ where
         alloc
             .text("drop")
             .append(alloc.space())
-            .append(self.ty.pretty(alloc, cache))
+            .append(self.value_type.pretty(alloc, cache))
             .append(alloc.space())
             .append(self.value.pretty(alloc, cache))
     }

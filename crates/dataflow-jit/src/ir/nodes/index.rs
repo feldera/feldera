@@ -2,6 +2,7 @@ use crate::ir::{
     function::Function,
     layout_cache::RowLayoutCache,
     nodes::{DataflowNode, StreamLayout},
+    pretty::{DocAllocator, DocBuilder, Pretty},
     LayoutId, NodeId,
 };
 use schemars::JsonSchema;
@@ -105,6 +106,33 @@ impl DataflowNode for IndexWith {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &IndexWith
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("index_with")
+            .append(alloc.space())
+            .append(self.output_layout().pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text("index_fn:"))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .hardline()
+                    .append(self.index_fn.pretty(alloc, cache).indent(2))
+                    .append(alloc.hardline())
+                    .braces(),
+            )
+    }
+}
+
 /// Creates an index from an input set, using the `key_column`th column of the
 /// input as the index's key and discarding all columns within
 /// `discarded_values` in the values field (with the implicit addition of
@@ -163,6 +191,10 @@ impl IndexByColumn {
     pub const fn value_layout(&self) -> LayoutId {
         self.value_layout
     }
+
+    pub const fn output_layout(&self) -> StreamLayout {
+        StreamLayout::Map(self.key_layout, self.value_layout)
+    }
 }
 
 impl DataflowNode for IndexByColumn {
@@ -181,7 +213,7 @@ impl DataflowNode for IndexByColumn {
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(StreamLayout::Map(self.key_layout, self.value_layout))
+        Some(self.output_layout())
     }
 
     fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
@@ -211,6 +243,40 @@ impl DataflowNode for IndexByColumn {
     }
 }
 
+impl<'a, D, A> Pretty<'a, D, A> for &IndexByColumn
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized + 'a,
+    DocBuilder<'a, D, A>: Clone,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("index_by_column")
+            .append(alloc.space())
+            .append(self.input_layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(alloc.text(format!("{}", self.key_column)))
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(
+                alloc
+                    .intersperse(
+                        self.discarded_values
+                            .iter()
+                            .map(|column| alloc.text(format!("{column}"))),
+                        alloc.text(",").append(alloc.space()),
+                    )
+                    .brackets(),
+            )
+            .append(alloc.text(","))
+            .append(alloc.space())
+            .append(self.output_layout().pretty(alloc, cache))
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct UnitMapToSet {
     input: NodeId,
@@ -221,7 +287,6 @@ impl UnitMapToSet {
     pub const fn new(input: NodeId, value_layout: LayoutId) -> Self {
         Self {
             input,
-
             value_layout,
         }
     }
@@ -277,5 +342,20 @@ impl DataflowNode for UnitMapToSet {
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.value_layout = mappings[&self.value_layout];
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &UnitMapToSet
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("unit_map_to_set")
+            .append(alloc.space())
+            .append(self.value_layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
     }
 }
