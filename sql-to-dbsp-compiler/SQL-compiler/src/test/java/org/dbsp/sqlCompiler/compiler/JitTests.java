@@ -30,17 +30,6 @@ public class JitTests extends EndToEndTests {
 
     // All the @Ignore-ed tests below should eventually pass.
 
-    @Test @Override @Ignore("Runtime memory allocation error https://github.com/feldera/dbsp/issues/145")
-    public void fullOuterJoinTest() {
-        String query = "SELECT T1.COL3, T2.COL3 FROM T AS T1 FULL OUTER JOIN T AS T2 ON T1.COL1 = T2.COL5";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(DBSPBoolLiteral.NULLABLE_FALSE, DBSPBoolLiteral.NONE),
-                new DBSPTupleExpression(DBSPBoolLiteral.NULLABLE_TRUE, DBSPBoolLiteral.NONE),
-                new DBSPTupleExpression(DBSPBoolLiteral.NONE, DBSPBoolLiteral.NULLABLE_FALSE),
-                new DBSPTupleExpression(DBSPBoolLiteral.NONE, DBSPBoolLiteral.NULLABLE_TRUE)
-        ));
-    }
-
     @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
     public void divZero() {
         String query = "SELECT 'Infinity' / 0";

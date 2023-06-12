@@ -113,7 +113,7 @@ public class PostgresDateTests extends BaseSQLTests {
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPZSetLiteral.Contents input = compiler.getTableContents().getTableContents("DATE_TBL");
         InputOutputPair streams = new InputOutputPair(input, expectedOutput);
-        this.addRustTestCase(compiler, circuit, streams);
+        this.addRustTestCase(query, compiler, circuit, streams);
     }
 
     void testQueryTwice(String query, long expectedValue) {
