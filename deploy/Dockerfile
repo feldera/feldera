@@ -68,33 +68,52 @@ COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql
 
 CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor
 
+##### The stages below are used to build the demo container
+
+# Prepare SecOps simulator recipe
+FROM chef as demo-planner
+COPY ./demo/project_demo04-SecOps/simulator/ .
+RUN /root/.cargo/bin/cargo chef prepare --recipe-path recipe.json
+
+# Use the recipe.json file to build dependencies first and cache that
+# layer for faster incremental builds of source-code only changes
+FROM chef AS demo-builder
+COPY --from=demo-planner /app/recipe.json recipe.json
+RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json
+COPY ./demo/project_demo04-SecOps/simulator/ .
+RUN /root/.cargo/bin/cargo build --release
+
 # The dev target adds an rpk client and demo projects
 FROM ubuntu:22.04 AS client
 ENV DEBIAN_FRONTEND noninteractive
-RUN apt update && apt install build-essential pkg-config \
-     # cmake is needed by rdkafka
-     cmake \
-     python3-pip python3-plumbum \
-     curl unzip -y
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 ENV PATH="$PATH:/root/.cargo/bin"
-RUN arch=`dpkg --print-architecture`; \
-   curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
-   && unzip rpk-linux-$arch.zip -d /bin/ \
-   && rpk version \
-   && rm rpk-linux-$arch.zip
 COPY --from=builder /app/target/release/dbsp_pipeline_manager dbsp_pipeline_manager
 COPY demo demo
+# Remove the simulator cargo project and the corresponding build artifacts
+RUN rm -rf ./demo/project_demo04-SecOps/simulator/*
+COPY --from=demo-builder /app/target/release/secops_simulator demo/project_demo04-SecOps/simulator/
 COPY python python
-RUN ./dbsp_pipeline_manager --dump-openapi
-RUN rm dbsp_pipeline_manager
-RUN pip3 install openapi-python-client websockets
-RUN cd python &&  \
-    openapi-python-client generate --path ../openapi.json && \
-    pip3 install ./dbsp-api-client && \
-    pip3 install .
-# TODO: only required for running the fraud detection demo. Remove when we clean that up.
-RUN pip3 install gdown
+RUN apt update && apt install pkg-config \
+                              python3-pip python3-plumbum \
+                              curl unzip -y --no-install-recommends \
+    # Install RPK
+    && arch=`dpkg --print-architecture`; \
+      curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
+      && unzip rpk-linux-$arch.zip -d /bin/ \
+      && rpk version \
+      && rm rpk-linux-$arch.zip \
+    # Install DBSP python library and dependencies
+    && ./dbsp_pipeline_manager --dump-openapi \
+      && rm dbsp_pipeline_manager \
+      && pip3 install openapi-python-client websockets \
+      && cd python \
+      && openapi-python-client generate --path ../openapi.json \
+      && pip3 install ./dbsp-api-client \
+      && pip3 install . \
+   # TODO: only required for running the fraud detection demo. Remove when we clean that up.
+   && pip3 install gdown \
+   # cleanup packages we don't need anymore
+   && apt remove python3-pip unzip pkg-config -y && apt autoremove -y
 CMD bash
 
 # By default, only build the release version
