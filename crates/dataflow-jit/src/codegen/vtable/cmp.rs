@@ -23,7 +23,7 @@ impl Codegen {
 
         // fn(*const u8, *const u8) -> bool
         let ptr_ty = self.module.isa().pointer_type();
-        let func_id = self.new_vtable_fn([ptr_ty; 2], Some(types::I8));
+        let func_id = self.create_function([ptr_ty; 2], Some(types::I8));
         let mut imports = self.intrinsics.import(self.comment_writer.clone());
 
         self.set_comment_writer(
@@ -274,7 +274,7 @@ impl Codegen {
         tracing::info!("creating lt vtable function for {layout_id}");
 
         // fn(*const u8, *const u8) -> bool
-        let func_id = self.new_vtable_fn([self.module.isa().pointer_type(); 2], Some(types::I8));
+        let func_id = self.create_function([self.module.isa().pointer_type(); 2], Some(types::I8));
         let mut imports = self.intrinsics.import(self.comment_writer.clone());
 
         self.set_comment_writer(
@@ -516,7 +516,7 @@ impl Codegen {
 
         // fn(*const u8, *const u8) -> Ordering
         // Ordering is represented as an i8 where -1 = Less, 0 = Equal and 1 = Greater
-        let func_id = self.new_vtable_fn([self.module.isa().pointer_type(); 2], Some(types::I8));
+        let func_id = self.create_function([self.module.isa().pointer_type(); 2], Some(types::I8));
         let mut imports = self.intrinsics.import(self.comment_writer.clone());
 
         self.set_comment_writer(

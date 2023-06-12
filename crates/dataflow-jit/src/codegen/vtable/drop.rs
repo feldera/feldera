@@ -16,7 +16,7 @@ impl Codegen {
         tracing::info!("creating drop_in_place vtable function for {layout_id}");
 
         // fn(*mut u8)
-        let func_id = self.new_vtable_fn([self.module.isa().pointer_type()], None);
+        let func_id = self.create_function([self.module.isa().pointer_type()], None);
         let mut imports = self.intrinsics.import(self.comment_writer.clone());
 
         self.set_comment_writer(
@@ -61,7 +61,7 @@ impl Codegen {
 
         // fn(*mut u8, usize)
         let ptr_ty = self.module.isa().pointer_type();
-        let func_id = self.new_vtable_fn([ptr_ty; 2], None);
+        let func_id = self.create_function([ptr_ty; 2], None);
         let mut imports = self.intrinsics.import(self.comment_writer.clone());
 
         self.set_comment_writer(

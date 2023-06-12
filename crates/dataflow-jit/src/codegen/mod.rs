@@ -435,6 +435,30 @@ impl Codegen {
         sig
     }
 
+    fn create_function<P>(&mut self, params: P, ret: Option<Type>) -> FuncId
+    where
+        P: IntoIterator<Item = Type>,
+    {
+        // Create the function's signature
+        let mut signature = self.module.make_signature();
+        signature
+            .params
+            .extend(params.into_iter().map(AbiParam::new));
+        if let Some(ret) = ret {
+            signature.returns.push(AbiParam::new(ret));
+        }
+
+        // Declare the function
+        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
+        let func_name = UserFuncName::user(0, func_id.as_u32());
+
+        // Set the current context to operate over that function
+        self.module_ctx.func.signature = signature;
+        self.module_ctx.func.name = func_name;
+
+        func_id
+    }
+
     #[track_caller]
     fn finalize_function(&mut self, func_id: FuncId) {
         tracing::debug!(

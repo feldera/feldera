@@ -29,7 +29,7 @@ impl Codegen {
 
         // fn(*mut u8, *const StringRecord)
         let ptr_ty = self.module.isa().pointer_type();
-        let func_id = self.new_vtable_fn([ptr_ty; 2], None);
+        let func_id = self.create_function([ptr_ty; 2], None);
 
         self.set_comment_writer(
             &format!("{layout_id}_vtable_from_csv"),

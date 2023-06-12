@@ -1938,6 +1938,7 @@ dependencies = [
  "dbsp",
  "derive_more",
  "enum_dispatch",
+ "is-terminal",
  "jsonschema",
  "lexical",
  "libm",
@@ -4077,6 +4078,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "563c9d701c3a31dfffaaf9ce23507ba09cbe0b9125ba176d15e629b0235e9acc"
 dependencies = [
  "arrayvec 0.5.2",
+ "termcolor",
  "typed-arena",
  "unicode-segmentation",
 ]
