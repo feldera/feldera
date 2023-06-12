@@ -13,7 +13,7 @@ impl Codegen {
         tracing::info!("creating default vtable function for {layout_id}");
 
         // fn(*mut u8)
-        let func_id = self.new_vtable_fn([self.module.isa().pointer_type()], None);
+        let func_id = self.create_function([self.module.isa().pointer_type()], None);
 
         self.set_comment_writer(
             &format!("{layout_id}_vtable_default"),

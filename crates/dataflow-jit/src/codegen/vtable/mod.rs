@@ -11,10 +11,7 @@ use crate::{
     codegen::{utils::column_non_null, Codegen, CodegenCtx, NativeType},
     ir::{ColumnType, LayoutId},
 };
-use cranelift::{
-    codegen::ir::UserFuncName,
-    prelude::{AbiParam, FunctionBuilder, InstBuilder, MemFlags, Type as ClifType},
-};
+use cranelift::prelude::{FunctionBuilder, InstBuilder, MemFlags};
 use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
 use dbsp::trace::layers::erased::ErasedVTable;
@@ -179,37 +176,13 @@ vtable! {
 
 // TODO: Move these functions onto `CodegenCtx`
 impl Codegen {
-    fn new_vtable_fn<P>(&mut self, params: P, ret: Option<ClifType>) -> FuncId
-    where
-        P: IntoIterator<Item = ClifType>,
-    {
-        // Create the function's signature
-        let mut signature = self.module.make_signature();
-        signature
-            .params
-            .extend(params.into_iter().map(AbiParam::new));
-        if let Some(ret) = ret {
-            signature.returns.push(AbiParam::new(ret));
-        }
-
-        // Declare the function
-        let func_id = self.module.declare_anonymous_function(&signature).unwrap();
-        let func_name = UserFuncName::user(0, func_id.as_u32());
-
-        // Set the current context to operate over that function
-        self.module_ctx.func.signature = signature;
-        self.module_ctx.func.name = func_name;
-
-        func_id
-    }
-
     #[tracing::instrument(skip(self))]
     fn codegen_layout_type_name(&mut self, layout_id: LayoutId) -> FuncId {
         tracing::info!("creating type_name vtable function for {layout_id}");
 
         // fn(*mut usize) -> *const u8
         let ptr_ty = self.module.isa().pointer_type();
-        let func_id = self.new_vtable_fn([ptr_ty], Some(ptr_ty));
+        let func_id = self.create_function([ptr_ty], Some(ptr_ty));
 
         self.set_comment_writer(
             &format!("{layout_id}_vtable_type_name"),
@@ -268,7 +241,7 @@ impl Codegen {
         tracing::info!("creating size_of_children vtable function for {layout_id}");
 
         // fn(*const u8, *mut Context)
-        let func_id = self.new_vtable_fn([self.module.isa().pointer_type(); 2], None);
+        let func_id = self.create_function([self.module.isa().pointer_type(); 2], None);
 
         self.set_comment_writer(
             &format!("{layout_id}_vtable_size_of_children"),

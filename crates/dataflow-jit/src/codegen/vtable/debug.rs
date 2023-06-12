@@ -16,7 +16,7 @@ impl Codegen {
 
         // fn(*const u8, *mut fmt::Formatter) -> bool
         let ptr_ty = self.module.isa().pointer_type();
-        let func_id = self.new_vtable_fn([ptr_ty; 2], Some(types::I8));
+        let func_id = self.create_function([ptr_ty; 2], Some(types::I8));
 
         self.set_comment_writer(
             &format!("{layout_id}_vtable_debug"),
