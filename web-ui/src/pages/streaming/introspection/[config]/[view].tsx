@@ -10,7 +10,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/router'
 import { useEffect, useRef, useState } from 'react'
 import PageHeader from 'src/layouts/components/page-header'
-import { PipelineDescr, PipelineId, ProgramDescr, PipelineStatus } from 'src/types/manager'
+import { PipelineDescr, PipelineId, ProgramDescr, PipelineStatus, OpenAPI } from 'src/types/manager'
 import { parse } from 'csv-parse'
 import { parseProjectSchema } from 'src/types/program'
 
@@ -75,9 +75,10 @@ const IntrospectInputOutput = () => {
       apiRef.current
     ) {
       const endpoint = configDescr.attached_connectors.find(ac => ac.config == view)
-      const direction = endpoint?.is_input ? '/input_endpoint/' : '/output_endpoint/'
-      const socket = new WebSocket('ws://localhost:' + configDescr.port + direction + 'debug-' + endpoint?.name)
 
+      const host = OpenAPI.BASE.replace('https', 'ws').replace('http', 'ws')
+      const url = host + '/v0/pipelines/' + pipelineId + '/connector/debug-' + endpoint?.name
+      const socket = new WebSocket(url)
       socket.onopen = () => {
         console.log('opened')
       }
