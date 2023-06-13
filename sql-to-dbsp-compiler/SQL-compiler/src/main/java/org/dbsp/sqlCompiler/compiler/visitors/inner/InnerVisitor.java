@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -76,6 +77,13 @@ public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInne
         if (node != last)
             throw new RuntimeException("Corrupted visitor context: popping " + node
                     + " instead of " + last);
+    }
+
+    @Nullable
+    public IDBSPInnerNode getParent() {
+        if (this.context.isEmpty())
+            return null;
+        return Utilities.last(this.context);
     }
 
     /**
@@ -381,11 +389,6 @@ public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInne
     }
 
     public VisitDecision preorder(DBSPWildcardPattern node) {
-        if (this.visitSuper) return this.preorder((DBSPPattern) node);
-        else return VisitDecision.CONTINUE;
-    }
-
-    public VisitDecision preorder(DBSPLiteralPattern node) {
         if (this.visitSuper) return this.preorder((DBSPPattern) node);
         else return VisitDecision.CONTINUE;
     }
@@ -908,10 +911,6 @@ public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInne
         if (this.visitSuper) this.postorder((DBSPPattern) node);
     }
 
-    public void postorder(DBSPLiteralPattern node) {
-        if (this.visitSuper) this.postorder((DBSPPattern) node);
-    }
-
     public void postorder(DBSPIdentifierPattern node) {
         if (this.visitSuper) this.postorder((DBSPPattern) node);
     }
@@ -1153,7 +1152,12 @@ public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInne
     }
 
     @Override
-    public IDBSPInnerNode apply(IDBSPInnerNode node) { return node; }
+    public IDBSPInnerNode apply(IDBSPInnerNode node) {
+        this.startVisit();
+        node.accept(this);
+        this.endVisit();
+        return node;
+    }
 
     public CircuitVisitor getCircuitVisitor() {
         return new CircuitDelegateVisitor(this.errorReporter, this);

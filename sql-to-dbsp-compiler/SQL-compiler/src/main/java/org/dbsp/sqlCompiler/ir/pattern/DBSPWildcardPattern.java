@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.ir.pattern;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 public class DBSPWildcardPattern extends DBSPPattern {
-    public static final DBSPWildcardPattern INSTANCE =new DBSPWildcardPattern();
+    public static final DBSPWildcardPattern INSTANCE = new DBSPWildcardPattern();
 
     private DBSPWildcardPattern() {
         super(null);

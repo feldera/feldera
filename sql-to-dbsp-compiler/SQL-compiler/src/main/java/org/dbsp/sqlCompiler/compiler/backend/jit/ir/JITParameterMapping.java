@@ -105,8 +105,7 @@ public class JITParameterMapping {
         DBSPType paramType = param.getNonVoidType();
         boolean mayBeNull = paramType.mayBeNull;
         JITRowType t = this.typeCatalog.convertTupleType(paramType, jitVisitor);
-        JITParameter p = new JITParameter(this.parameterIndex, param.pattern.to(DBSPIdentifierPattern.class).identifier,
-                direction, t, mayBeNull);
+        JITParameter p = new JITParameter(this.parameterIndex, param.name, direction, t, mayBeNull);
         this.parameters.add(p);
         this.parameterIndex++;
     }

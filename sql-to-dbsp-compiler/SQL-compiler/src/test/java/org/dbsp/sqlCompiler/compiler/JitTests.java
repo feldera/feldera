@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler;
 
+import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -13,6 +14,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -22,6 +24,24 @@ import java.math.BigDecimal;
  * Runs tests using the JIT compiler backend and runtime.
  */
 public class JitTests extends EndToEndTests {
+    @Test @Override @Ignore("Average not yet implemented")
+    public void averageTest() {
+        Logger.INSTANCE.setLoggingLevel(ToJitVisitor.class, 4);
+        String query = "SELECT AVG(T.COL1) FROM T";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(10, true))));
+    }
+
+    @Test @Override @Ignore("Average not yet implemented")
+    public void constAggregateExpression2() {
+        Logger.INSTANCE.setLoggingLevel(ToJitVisitor.class, 4);
+        String query = "SELECT 34 / AVG (1) FROM T GROUP BY COL1";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(34, true))));
+    }
+
     @Override
     void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
         DBSPZSetLiteral.Contents input = this.createInput();
@@ -91,22 +111,6 @@ public class JitTests extends EndToEndTests {
                 "SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING), " +
                 "COUNT(*) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(t, t));
-    }
-
-    @Test @Override @Ignore("Average not yet implemented")
-    public void averageTest() {
-        String query = "SELECT AVG(T.COL1) FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(10, true))));
-    }
-
-    @Test @Override @Ignore("Average not yet implemented")
-    public void constAggregateExpression2() {
-        String query = "SELECT 34 / AVG (1) FROM T GROUP BY COL1";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(34, true))));
     }
 
     @Test @Override @Ignore("WINDOWS not yet implemented")

@@ -51,6 +51,7 @@ public interface IIndentStream {
     IIndentStream intercalate(String separator, String[] data);
     IIndentStream intercalateS(String separator, Collection<String> data);
     <T extends ToIndentableString> IIndentStream intercalateI(String separator, Collection<T> data);
+    <T extends ToIndentableString> IIndentStream intercalateI(String separator, T[] data);
     IIndentStream newline();
     /**
      * Increase indentation and emit a newline.

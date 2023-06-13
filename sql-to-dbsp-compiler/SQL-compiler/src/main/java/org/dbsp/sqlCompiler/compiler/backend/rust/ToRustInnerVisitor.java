@@ -692,7 +692,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPParameter parameter) {
-        parameter.pattern.accept(this);
+        if (parameter.mutable)
+            this.builder.append("mut ");
+        this.builder.append(parameter.name);
         if (!this.compact) {
             this.builder.append(": ");
             parameter.type.accept(this);
@@ -936,12 +938,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPIdentifierPattern pattern) {
         this.builder.append(pattern.mutable ? "mut " : "")
                 .append(pattern.identifier);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPLiteralPattern pattern) {
-        pattern.literal.accept(this);
         return VisitDecision.STOP;
     }
 

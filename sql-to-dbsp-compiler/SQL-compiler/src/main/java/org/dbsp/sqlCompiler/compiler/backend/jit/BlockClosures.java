@@ -43,9 +43,10 @@ public class BlockClosures
 
     @Override
     public VisitDecision preorder(DBSPClosureExpression expression) {
-        expression.body.accept(this);
-        DBSPExpression newBody = this.getResultExpression();
-        DBSPBlockExpression block ;
+        this.push(expression);
+        DBSPExpression newBody = this.transform(expression.body);
+        this.pop(expression);
+        DBSPBlockExpression block;
         if (!newBody.is(DBSPBlockExpression.class))
             block = new DBSPBlockExpression(Linq.list(), newBody);
         else

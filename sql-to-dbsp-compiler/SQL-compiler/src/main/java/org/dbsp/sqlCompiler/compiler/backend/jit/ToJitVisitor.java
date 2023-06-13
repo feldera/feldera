@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.backend.jit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
@@ -42,6 +43,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateMulWeight;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandClone;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveWeightType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPassesVisitor;
@@ -158,8 +160,21 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                 .newline();
 
         InnerRewriteVisitor normalizer = this.normalizer(false);
-        function = normalizer.apply(function).to(DBSPClosureExpression.class);
-        function = this.tupleEachParameter(function);
+        IDBSPInnerNode func = normalizer.apply(function);
+        ResolveReferences resolver = new ResolveReferences(this.errorReporter);
+        func = resolver.apply(func);
+        Logger.INSTANCE.belowLevel(this, 2)
+                .append("Before parameter flattening")
+                .newline()
+                .append(func.toString())
+                .newline();
+        func = new FlattenParameter(this.errorReporter, resolver.reference).apply(func);
+        Logger.INSTANCE.belowLevel(this, 2)
+                .append("After parameter flattening")
+                .newline()
+                .append(func.toString())
+                .newline();
+        function = this.tupleEachParameter(func.to(DBSPClosureExpression.class));
 
         Logger.INSTANCE.belowLevel(this, 4)
                 .append("Converting to JIT")
@@ -375,7 +390,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
         int index = 0;
         for (DBSPParameter param: closure.parameters) {
             if (isScalarType(param.type)) {
-                DBSPParameter tuple = new DBSPParameter(param.pattern, new DBSPTypeTuple(param.type));
+                DBSPParameter tuple = new DBSPParameter(param.name, new DBSPTypeTuple(param.type));
                 statements.add(new DBSPLetStatement(
                         tuple.asVariableReference().variable,
                         tuple.asVariableReference().field(0)));
@@ -395,6 +410,20 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
         return newBlock.closure(newParams);
     }
 
+    /**
+     * Take a tuple expression and 'flatmap' all tuples inside.
+     */
+    void flatten(DBSPExpression expression, List<DBSPExpression> fields) {
+        DBSPBaseTupleExpression source = expression.as(DBSPBaseTupleExpression.class);
+        if (source == null) {
+            fields.add(expression);
+            return;
+        }
+        for (DBSPExpression field: source.fields) {
+            this.flatten(field, fields);
+        }
+    }
+
     @Override
     public VisitDecision preorder(DBSPAggregateOperator operator) {
         if (operator.function != null)
@@ -406,8 +435,10 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
 
         DBSPAggregate aggregate = operator.getAggregate();
         DBSPExpression initial = aggregate.getZero();
-        DBSPTupleExpression elementValue = initial.to(DBSPTupleExpression.class);
-        JITTupleLiteral init = new JITTupleLiteral(elementValue, this);
+        List<DBSPExpression> fields = new ArrayList<>();
+        flatten(initial, fields);
+        DBSPTupleExpression zeroValue = new DBSPTupleExpression(initial.getNode(), fields);
+        JITTupleLiteral init = new JITTupleLiteral(zeroValue, this);
 
         DBSPClosureExpression closure = aggregate.getIncrement();
         JITFunction stepFn = this.convertStepFunction(closure);

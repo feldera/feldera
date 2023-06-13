@@ -129,6 +129,11 @@ public class NullIndentStream implements IIndentStream {
     }
 
     @Override
+    public <T extends ToIndentableString> IIndentStream intercalateI(String separator, T[] data) {
+        return this;
+    }
+
+    @Override
     public IIndentStream newline() {
         return this;
     }

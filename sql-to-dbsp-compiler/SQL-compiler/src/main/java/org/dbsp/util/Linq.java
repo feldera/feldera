@@ -256,4 +256,12 @@ public class Linq {
                 return true;
         return false;
     }
+
+    static public <T> T reduce(T[] data, T zero, BiFunction<T, T, T> reducer) {
+        T result = zero;
+        for (T d: data) {
+            result = reducer.apply(result, d);
+        }
+        return result;
+    }
 }

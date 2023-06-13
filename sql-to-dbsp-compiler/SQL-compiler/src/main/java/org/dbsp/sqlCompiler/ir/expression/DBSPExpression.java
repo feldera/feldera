@@ -38,7 +38,7 @@ public abstract class DBSPExpression
         implements IHasType, IDBSPInnerNode {
     // Null for an expression that evaluates to void.
     @Nullable
-    protected final DBSPType type;
+    public final DBSPType type;
 
     protected DBSPExpression(@Nullable Object node, @Nullable DBSPType type) {
         super(node);

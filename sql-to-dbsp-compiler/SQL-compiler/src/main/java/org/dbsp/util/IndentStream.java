@@ -235,6 +235,15 @@ public class IndentStream implements IIndentStream {
     }
 
     @Override
+    public <T extends ToIndentableString> IIndentStream intercalateI(String separator, T[] data) {
+        for (T d: data) {
+            this.append(d);
+            this.append(separator);
+        }
+        return this;
+    }
+
+    @Override
     public IIndentStream newline() {
         return this.append("\n");
     }
