@@ -336,11 +336,16 @@ impl LocalRunner {
             return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
         }
         let port = pipeline_descr.port;
+        // We remove the 'debug-' prefix if it's in the name because we want to
+        // lookup the input / output of the actual connector (debug connectors
+        // are not in the DB). (TODO: this hack will go away once we have HTTP
+        // connectors by default)
+        let dbname = name.strip_prefix("debug-").unwrap_or(name);
         let is_input = self
             .db
             .lock()
             .await
-            .attached_connector_is_input(name)
+            .attached_connector_is_input(dbname)
             .await?;
 
         // TODO: it might be better to have ?name={}, otherwise we have to
