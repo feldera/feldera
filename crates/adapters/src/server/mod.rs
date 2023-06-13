@@ -15,7 +15,7 @@ use clap::Parser;
 use colored::Colorize;
 use dbsp::DBSPHandle;
 use env_logger::Env;
-use log::{error, info};
+use log::{error, info, warn};
 use serde::Serialize;
 use std::io::Write;
 use std::{net::TcpListener, sync::Mutex};
@@ -160,9 +160,6 @@ where
         create_server(circuit_factory, config, meta, default_port)
             .map_err(|e| AnyError::msg(format!("Failed to create pipeline: {e}")))?;
 
-    std::fs::write(SERVER_PORT_FILE, format!("{}\n", port))?;
-    info!("Started HTTP server on port {port}");
-
     rt::System::new().block_on(async {
         // Spawn a task that will shutdown the server on `/kill`.
         let server_handle = server.handle();
@@ -171,6 +168,8 @@ where
             server_handle.stop(true).await
         });
 
+        info!("Started HTTP server on port {port}");
+        tokio::fs::write(SERVER_PORT_FILE, format!("{}\n", port)).await?;
         server.await
     })?;
     Ok(())
@@ -341,6 +340,9 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
             Ok(()) => {
                 if let Some(sender) = &state.terminate_sender {
                     let _ = sender.send(()).await;
+                }
+                if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
+                    warn!("Failed to remove server port file: {e}");
                 }
                 HttpResponse::Ok().json("Pipeline terminated")
             }
