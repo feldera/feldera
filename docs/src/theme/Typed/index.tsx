@@ -1,26 +1,26 @@
-import React, { useRef, useEffect } from "react";
-import Typed, { type TypedOptions } from "typed.js";
+import React, { useRef, useEffect } from 'react'
+import Typed, { type TypedOptions } from 'typed.js'
 
 const ReactTyped = (props: TypedOptions) => {
-  const typeTarget = useRef<HTMLSpanElement>(null);
-  const { strings, typeSpeed } = props;
+  const typeTarget = useRef<HTMLSpanElement>(null)
+  const { strings, typeSpeed } = props
 
   useEffect(() => {
     if (!typeTarget.current) {
-      return;
+      return
     }
 
     const typed = new Typed(typeTarget.current, {
       strings: strings,
-      typeSpeed: typeSpeed ?? 40,
-    });
+      typeSpeed: typeSpeed ?? 40
+    })
 
     return () => {
-      typed.destroy();
-    };
-  }, []);
+      typed.destroy()
+    }
+  }, [strings, typeSpeed])
 
-  return <span ref={typeTarget} />;
-};
+  return <span ref={typeTarget} />
+}
 
-export default ReactTyped;
+export default ReactTyped
