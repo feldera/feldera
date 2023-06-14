@@ -36,7 +36,7 @@ public class DBSPBorrowExpression extends DBSPExpression {
     public final boolean mut;
 
     DBSPBorrowExpression(DBSPExpression expression, boolean mutable) {
-        super(null, expression.getNonVoidType().ref());
+        super(null, expression.getType().ref());
         this.expression = expression;
         this.mut = mutable;
     }
@@ -49,8 +49,7 @@ public class DBSPBorrowExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         this.expression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

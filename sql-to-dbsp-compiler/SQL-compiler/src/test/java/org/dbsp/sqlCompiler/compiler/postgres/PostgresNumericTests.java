@@ -48,7 +48,7 @@ import java.math.BigDecimal;
  * Tests manually adapted from
  * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/numeric.out
  */
-@SuppressWarnings("JavadocLinkAsPlainText")
+@SuppressWarnings("ALL")
 public class PostgresNumericTests extends BaseSQLTests {
     final int width = 25;
     DBSPCompiler create() {

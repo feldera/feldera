@@ -321,6 +321,11 @@ public abstract class InnerVisitor implements IRTransform {
         else return VisitDecision.CONTINUE;
     }
 
+    public VisitDecision preorder(DBSPTypeVoid node) {
+        if (this.visitSuper) return this.preorder((DBSPTypeBaseType) node);
+        else return VisitDecision.CONTINUE;
+    }
+
     public VisitDecision preorder(DBSPTypeFunction node) {
         if (this.visitSuper) return this.preorder((DBSPType) node);
         else return VisitDecision.CONTINUE;
@@ -840,6 +845,10 @@ public abstract class InnerVisitor implements IRTransform {
     }
 
     public void postorder(DBSPTypeNull node) {
+        if (this.visitSuper) this.postorder((DBSPTypeBaseType) node);
+    }
+
+    public void postorder(DBSPTypeVoid node) {
         if (this.visitSuper) this.postorder((DBSPTypeBaseType) node);
     }
 

@@ -43,7 +43,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
     }
 
     public DBSPTypeTuple defaultZeroType() {
-        return this.defaultZero().getNonVoidType().to(DBSPTypeTuple.class);
+        return this.defaultZero().getType().to(DBSPTypeTuple.class);
     }
 
     public DBSPExpression defaultZero() {
@@ -81,7 +81,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
      * Else return the expression itself.
      */
     List<DBSPExpression> flatten(DBSPExpression expression) {
-        DBSPTypeTupleBase tuple = expression.getNonVoidType().as(DBSPTypeTupleBase.class);
+        DBSPTypeTupleBase tuple = expression.getType().as(DBSPTypeTupleBase.class);
         if (tuple == null)
             return Linq.list(expression);
         List<DBSPExpression> fields = new ArrayList<>();
@@ -122,7 +122,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             if (expr.parameters.length != 3)
                 throw new RuntimeException("Expected exactly 3 parameters for increment closure" + expr);
         }
-        DBSPType[] accumTypes = Linq.map(closures, c -> c.parameters[0].getNonVoidType(), DBSPType.class);
+        DBSPType[] accumTypes = Linq.map(closures, c -> c.parameters[0].getType(), DBSPType.class);
         List<DBSPType> flatAccumTypes = Linq.flatMap(accumTypes, this::flatten);
         DBSPVariablePath accumParam = new DBSPTypeTuple(flatAccumTypes).var("a");
         DBSPParameter accumulator = accumParam.asParameter();
@@ -136,20 +136,20 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             DBSPClosureExpression closure = closures[i];
             String tmp = "tmp" + i;
             // Must package together several accumulator fields if the original type was a tuple
-            DBSPType accumType = accumTypes[i];
-            DBSPTypeTupleBase tuple = accumType.as(DBSPTypeTupleBase.class);
+            DBSPType accumulatorType = accumTypes[i];
+            DBSPTypeTupleBase tuple = accumulatorType.as(DBSPTypeTupleBase.class);
             DBSPExpression accumArg = accumParam.field(i + start);
             if (tuple != null) {
-                DBSPExpression[] accumArgfields = new DBSPExpression[tuple.size()];
+                DBSPExpression[] accumArgFields = new DBSPExpression[tuple.size()];
                 for (int j = 0; j < tuple.size(); j++, start++) {
-                    accumArgfields[j] = accumParam.field(start);
+                    accumArgFields[j] = accumParam.field(start);
                 }
-                accumArg = new DBSPRawTupleExpression(accumArgfields);
+                accumArg = new DBSPRawTupleExpression(accumArgFields);
             }
             DBSPExpression init = closure.call(
                     accumArg, row.asVariableReference(), weight.asVariableReference());
             DBSPLetStatement stat = new DBSPLetStatement(tmp, init);
-            DBSPVariablePath tmpI = new DBSPVariablePath(tmp, init.getNonVoidType());
+            DBSPVariablePath tmpI = new DBSPVariablePath(tmp, init.getType());
             tmps.addAll(this.flatten(tmpI));
             body.add(stat);
         }
@@ -203,7 +203,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             DBSPExpression[] args = new DBSPExpression[closure.parameters.length];
             for (int j = 0; j < args.length; j++) {
                 int start = 0;
-                DBSPType paramType = closure.parameters[j].getNonVoidType();
+                DBSPType paramType = closure.parameters[j].getType();
                 if (paramType.is(DBSPTypeRef.class))
                     paramType = paramType.to(DBSPTypeRef.class).type;
                 if (paramType.is(DBSPTypeTupleBase.class)) {
@@ -220,7 +220,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             }
             DBSPExpression init = closure.call(args);
             DBSPLetStatement stat = new DBSPLetStatement(tmp, init);
-            tmps.add(new DBSPVariablePath(tmp, init.getNonVoidType()));
+            tmps.add(new DBSPVariablePath(tmp, init.getType()));
             body.add(stat);
         }
 
@@ -297,13 +297,13 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             // These validation rules actually don't apply for window-based aggregates.
             // TODO: check them for standard aggregates.
             if (this.postProcess != null) {
-                if (!this.emptySetResult.getNonVoidType().sameType(this.postProcess.getResultType()))
+                if (!this.emptySetResult.getType().sameType(this.postProcess.getResultType()))
                     throw new RuntimeException("Post-process result type " + this.postProcess.getResultType() +
-                            " different from empty set type " + this.emptySetResult.getNonVoidType());
+                            " different from empty set type " + this.emptySetResult.getType());
             } else {
-                if (!this.emptySetResult.getNonVoidType().sameType(this.increment.getResultType())) {
+                if (!this.emptySetResult.getType().sameType(this.increment.getResultType())) {
                     throw new RuntimeException("Increment result type " + this.increment.getResultType() +
-                            " different from empty set type " + this.emptySetResult.getNonVoidType());
+                            " different from empty set type " + this.emptySetResult.getType());
                 }
             }
         }

@@ -17,7 +17,7 @@ public class DBSPNullLiteral extends DBSPLiteral {
         super(node,  type, true);
         if (value != null)
             throw new RuntimeException("Value must be null");
-        if (!this.getNonVoidType().sameType(DBSPTypeNull.INSTANCE))
+        if (!this.getType().sameType(DBSPTypeNull.INSTANCE))
             throw new RuntimeException("Type must be NULL");
     }
 

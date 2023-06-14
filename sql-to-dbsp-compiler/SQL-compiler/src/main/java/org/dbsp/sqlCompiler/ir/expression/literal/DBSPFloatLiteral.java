@@ -59,7 +59,7 @@ public class DBSPFloatLiteral extends DBSPFPLiteral {
     }
 
     public DBSPFloatLiteral raw() {
-        return new DBSPFloatLiteral(this.value, this.getNonVoidType().mayBeNull, true);
+        return new DBSPFloatLiteral(this.value, this.getType().mayBeNull, true);
     }
 
     @Override

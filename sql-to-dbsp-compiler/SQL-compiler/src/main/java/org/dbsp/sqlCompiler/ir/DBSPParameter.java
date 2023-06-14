@@ -28,8 +28,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 
-import javax.annotation.Nullable;
-
 /**
  * Rust supports parameters with patterns, but we don't.
  * We only use simple parameters, with a single name.
@@ -58,7 +56,6 @@ public class DBSPParameter extends DBSPNode implements
         return new DBSPVariablePath(this.name, this.type);
     }
 
-    @Nullable
     @Override
     public DBSPType getType() {
         return this.type;

@@ -35,7 +35,7 @@ public class DBSPConstantOperator extends DBSPOperator {
     public DBSPConstantOperator(@Nullable Object node, DBSPExpression value, boolean isMultiset) {
         // Notice that we use the 'this.function' field to represent
         // the constant value.  Constants are not ClosureExpressions.
-        super(node, "", value, value.getNonVoidType(), isMultiset);
+        super(node, "", value, value.getType(), isMultiset);
     }
 
     @Override

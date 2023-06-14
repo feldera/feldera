@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 /**
@@ -57,10 +56,9 @@ public class DBSPTypeRef extends DBSPType {
         return Objects.hash(super.hashCode(), type.hashCode(), mutable);
     }
 
-    public boolean sameType(@Nullable DBSPType other) {
+    public boolean sameType(DBSPType other) {
         if (!super.sameNullability(other))
             return false;
-        assert other != null;
         DBSPTypeRef oRef = other.as(DBSPTypeRef.class);
         if (oRef == null)
             return false;

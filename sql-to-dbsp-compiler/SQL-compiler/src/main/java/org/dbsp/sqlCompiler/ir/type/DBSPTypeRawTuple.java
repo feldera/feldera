@@ -68,10 +68,9 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     }
 
     @Override
-    public boolean sameType(@Nullable DBSPType type) {
+    public boolean sameType(DBSPType type) {
         if (!super.sameNullability(type))
             return false;
-        assert type != null;
         if (!type.is(DBSPTypeRawTuple.class))
             return false;
         DBSPTypeRawTuple other = type.to(DBSPTypeRawTuple.class);

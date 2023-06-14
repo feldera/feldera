@@ -66,7 +66,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @SuppressWarnings("SameReturnValue")
     VisitDecision doNullExpression(DBSPExpression expression) {
         this.builder.append("None::<");
-        expression.getNonVoidType().setMayBeNull(false).accept(this);
+        expression.getType().setMayBeNull(false).accept(this);
         this.builder.append(">");
         return VisitDecision.STOP;
     }
@@ -392,7 +392,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPDecimalLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);
-        DBSPTypeDecimal type = literal.getNonVoidType().to(DBSPTypeDecimal.class);
+        DBSPTypeDecimal type = literal.getType().to(DBSPTypeDecimal.class);
         if (type.mayBeNull)
             this.builder.append("Some(");
         String value = Objects.requireNonNull(literal.value).toPlainString();
@@ -412,10 +412,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
          * For example, to cast source which is an Option[i16] to a bool
          * the function called will be cast_to_b_i16N.
          */
-        DBSPTypeBaseType baseDest = expression.getNonVoidType().as(DBSPTypeBaseType.class);
+        DBSPTypeBaseType baseDest = expression.getType().as(DBSPTypeBaseType.class);
         if (baseDest == null)
             throw new UnsupportedException(this);
-        DBSPType sourceType = expression.source.getNonVoidType();
+        DBSPType sourceType = expression.source.getType();
         DBSPTypeBaseType baseSource = sourceType.as(DBSPTypeBaseType.class);
         if (baseSource == null)
             throw new UnsupportedException(sourceType);
@@ -440,7 +440,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
         if (expression.primitive) {
-            if (expression.left.getNonVoidType().mayBeNull) {
+            if (expression.left.getType().mayBeNull) {
                 this.builder.append("(")
                         .append("match (");
                 expression.left.accept(this);
@@ -473,9 +473,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
             RustSqlRuntimeLibrary.FunctionDescription function = RustSqlRuntimeLibrary.INSTANCE.getImplementation(
                     expression.operation,
-                    expression.getNonVoidType(),
-                    expression.left.getNonVoidType(),
-                    expression.right.getNonVoidType());
+                    expression.getType(),
+                    expression.left.getType(),
+                    expression.right.getType());
             this.builder.append(function.function).append("(");
             expression.left.accept(this);
             this.builder.append(", ");
@@ -487,7 +487,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIsNullExpression expression) {
-        if (!expression.expression.getNonVoidType().mayBeNull) {
+        if (!expression.expression.getType().mayBeNull) {
             this.builder.append("false");
         } else {
             expression.expression.accept(this);
@@ -515,13 +515,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
         } else if (expression.operation.toString().startsWith("is_")) {
             this.builder.append(expression.operation.toString())
                     .append("_")
-                    .append(expression.source.getNonVoidType().baseTypeWithSuffix())
+                    .append(expression.source.getType().baseTypeWithSuffix())
                     .append("_(");
             expression.source.accept(this);
             this.builder.append(")");
             return VisitDecision.STOP;
         }
-        if (expression.source.getNonVoidType().mayBeNull) {
+        if (expression.source.getType().mayBeNull) {
             this.builder.append("(")
                     .append("match ");
             expression.source.accept(this);
@@ -600,7 +600,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             param.accept(this);
         }
         this.builder.append(") ");
-        if (function.returnType != null) {
+        if (!function.returnType.is(DBSPTypeVoid.class)) {
             builder.append("-> ");
             function.returnType.accept(this);
         }
@@ -652,7 +652,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("(");
         expression.source.accept(this);
         this.builder.append(" as ");
-        expression.getNonVoidType().accept(this);
+        expression.getType().accept(this);
         this.builder.append(")");
         return VisitDecision.STOP;
     }
@@ -711,7 +711,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("| ");
         if (!this.compact) {
             DBSPType resultType = expression.getResultType();
-            if (resultType != null) {
+            if (!resultType.is(DBSPTypeVoid.class)) {
                 this.builder.append("-> ").newline();
                 resultType.accept(this);
                 this.builder.append(" ");

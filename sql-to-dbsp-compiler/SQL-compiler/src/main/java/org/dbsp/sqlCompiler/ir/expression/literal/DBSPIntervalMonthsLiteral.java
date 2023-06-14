@@ -69,6 +69,6 @@ public class DBSPIntervalMonthsLiteral extends DBSPLiteral {
     @Override
     public DBSPLiteral getNonNullable() {
         return new DBSPIntervalMonthsLiteral(this.getNode(),
-                this.getNonVoidType().setMayBeNull(false), Objects.requireNonNull(this.value));
+                this.getType().setMayBeNull(false), Objects.requireNonNull(this.value));
     }
 }

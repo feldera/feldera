@@ -47,7 +47,7 @@ public abstract class CircuitVisitor
 
     public CircuitVisitor(IErrorReporter errorReporter, boolean visitSuper) {
         assert visitSuper;
-        this.visitSuper = visitSuper;
+        this.visitSuper = true;
         this.errorReporter = errorReporter;
     }
 

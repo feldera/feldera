@@ -53,7 +53,7 @@ public class JITLiteral extends JITValue {
     }
 
     public boolean mayBeNull() {
-        return this.literal.getNonVoidType().mayBeNull;
+        return this.literal.getType().mayBeNull;
     }
 
     @Override

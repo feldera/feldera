@@ -111,7 +111,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
     }
 
     public String wrapSome(String value) {
-        if (this.getNonVoidType().mayBeNull)
+        if (this.getType().mayBeNull)
             return "Some(" + value + ")";
         return value;
     }
@@ -122,7 +122,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
     public abstract boolean sameValue(@Nullable DBSPLiteral other);
 
     public boolean mayBeNull() {
-        return this.getNonVoidType().mayBeNull;
+        return this.getType().mayBeNull;
     }
 
     @Override
@@ -139,7 +139,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
     }
 
     boolean hasSameType(DBSPLiteral other) {
-        return this.getNonVoidType().sameType(other.getNonVoidType());
+        return this.getType().sameType(other.getType());
     }
 
     /**

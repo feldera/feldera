@@ -71,7 +71,7 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
     public static DBSPTupleExpression flatten(DBSPExpression... expressions) {
         List<DBSPExpression> fields = new ArrayList<>();
         for (DBSPExpression expression: expressions) {
-            DBSPTypeTuple type = expression.getNonVoidType().toRef(DBSPTypeTuple.class);
+            DBSPTypeTuple type = expression.getType().toRef(DBSPTypeTuple.class);
             for (int i = 0; i < type.size(); i++) {
                 DBSPType fieldType = type.tupFields[i];
                 DBSPExpression field = new DBSPFieldExpression(expression, i, fieldType)
@@ -105,8 +105,7 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         for (DBSPExpression expression: this.fields)
             expression.accept(visitor);
         visitor.pop(this);

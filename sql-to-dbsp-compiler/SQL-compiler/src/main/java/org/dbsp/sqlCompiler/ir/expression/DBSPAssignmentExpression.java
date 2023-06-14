@@ -25,13 +25,14 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 
 public class DBSPAssignmentExpression extends DBSPExpression {
     public final DBSPExpression left;
     public final DBSPExpression right;
 
     public DBSPAssignmentExpression(DBSPExpression left, DBSPExpression right) {
-        super(null, null);
+        super(null, DBSPTypeVoid.INSTANCE);
         this.left = left;
         this.right = right;
     }
@@ -40,8 +41,7 @@ public class DBSPAssignmentExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         this.left.accept(visitor);
         this.right.accept(visitor);
         visitor.pop(this);

@@ -147,7 +147,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     String fileName = (rustDirectory + tables[i].tableName) + ".csv";
                     ToCsvVisitor.toCsv(compiler, fileName, tables[i].contents);
                     fields[i] = new DBSPApplyExpression("read_csv",
-                            tables[i].contents.getNonVoidType(),
+                            tables[i].contents.getType(),
                             new DBSPStrLiteral(fileName));
                 }
             } else {
@@ -226,7 +226,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 DBSPExpression map = new DBSPApplyMethodExpression(
                         "map", DBSPTypeAny.INSTANCE, iter, lambda);
                 DBSPExpression expr = new DBSPApplyMethodExpression(
-                        "extend", null, vec, map);
+                        "extend", DBSPTypeVoid.INSTANCE, vec, map);
                 DBSPStatement statement = new DBSPExpressionStatement(expr);
                 statements.add(statement);
             }
@@ -234,13 +234,13 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 // This case will cause no invocation of the circuit, but we need
                 // at least one.
                 DBSPExpression expr = new DBSPApplyMethodExpression(
-                        "push", null, vec, new DBSPRawTupleExpression());
+                        "push", DBSPTypeVoid.INSTANCE, vec, new DBSPRawTupleExpression());
                 DBSPStatement statement = new DBSPExpressionStatement(expr);
                 statements.add(statement);
             }
         } else {
             DBSPExpression expr = new DBSPApplyMethodExpression(
-                    "push", null, vec, input.getVarReference());
+                    "push", DBSPTypeVoid.INSTANCE, vec, input.getVarReference());
             DBSPStatement statement = new DBSPExpressionStatement(expr);
             statements.add(statement);
         }
@@ -361,7 +361,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     field = new DBSPBoolLiteral(Integer.parseInt(s) != 0);
                 else
                     throw new RuntimeException("Unexpected type " + colType);
-                if (!colType.sameType(field.getNonVoidType()))
+                if (!colType.sameType(field.getType()))
                     field = field.cast(colType);
                 fields.add(field);
                 col++;
@@ -507,7 +507,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         list.add(circ);
         DBSPType circuitOutputType = circuit.getOutputType(0);
         // the following may not be the same, since SqlLogicTest sometimes lies about the output type
-        DBSPTypeRawTuple outputType = new DBSPTypeRawTuple(output != null ? output.getNonVoidType() : circuitOutputType);
+        DBSPTypeRawTuple outputType = new DBSPTypeRawTuple(output != null ? output.getType() : circuitOutputType);
         DBSPExpression[] arguments = new DBSPExpression[circuit.getInputTables().size()];
         // True if the output is a zset of vectors (generated for orderby queries)
         boolean isVector = circuitOutputType.to(DBSPTypeZSet.class).elementType.is(DBSPTypeVec.class);
@@ -554,7 +554,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                         output0);
             }
             list.add(new DBSPExpressionStatement(
-                    new DBSPApplyExpression("assert_eq!", null,
+                    new DBSPApplyExpression("assert_eq!", DBSPTypeVoid.INSTANCE,
                             new DBSPAsExpression(count, DBSPTypeWeight.INSTANCE), new DBSPAsExpression(
                                     new DBSPI32Literal(description.getExpectedOutputSize()),
                             DBSPTypeWeight.INSTANCE))));
@@ -562,7 +562,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         if (output != null) {
             if (description.columnTypes != null) {
                 DBSPExpression columnTypes = new DBSPStringLiteral(description.columnTypes);
-                DBSPTypeZSet oType = output.getNonVoidType().to(DBSPTypeZSet.class);
+                DBSPTypeZSet oType = output.getType().to(DBSPTypeZSet.class);
                 String functionProducingStrings;
                 DBSPType elementType;
                 if (isVector) {
@@ -578,7 +578,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                         oType.weightType
                 );
                 list.add(new DBSPExpressionStatement(
-                        new DBSPApplyExpression("assert_eq!", null,
+                        new DBSPApplyExpression("assert_eq!", DBSPTypeVoid.INSTANCE,
                                 new DBSPApplyExpression(functionProducingStrings, DBSPTypeAny.INSTANCE,
                                         output0.borrow(),
                                         columnTypes,
@@ -589,7 +589,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                                         sort))));
             } else {
                 list.add(new DBSPExpressionStatement(new DBSPApplyExpression(
-                        "assert_eq!", null, output0, output)));
+                        "assert_eq!", DBSPTypeVoid.INSTANCE, output0, output)));
             }
         } else {
             if (description.columnTypes == null)
@@ -605,12 +605,12 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                             sort)));
             list.add(
                     new DBSPExpressionStatement(
-                            new DBSPApplyExpression("assert_eq!", null,
+                            new DBSPApplyExpression("assert_eq!", DBSPTypeVoid.INSTANCE,
                                     DBSPTypeString.INSTANCE.var("_hash"),
                                     new DBSPStringLiteral(description.hash))));
         }
         DBSPExpression body = new DBSPBlockExpression(list, null);
-        return new DBSPFunction(name, new ArrayList<>(), null, body, Linq.list("#[test]"));
+        return new DBSPFunction(name, new ArrayList<>(), DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
     }
 
     public boolean statement(SltSqlStatement statement) throws SQLException {

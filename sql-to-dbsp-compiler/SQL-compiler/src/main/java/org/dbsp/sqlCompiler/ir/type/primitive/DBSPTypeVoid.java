@@ -5,15 +5,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Unimplemented;
 
-/**
- * This type stands for the weights of an element in a collection.
- * The compiler decides how this is implemented.
- */
-public class DBSPTypeWeight extends DBSPTypeBaseType {
-    public final String name = "Weight";
-    public static final DBSPTypeWeight INSTANCE = new DBSPTypeWeight();
+public class DBSPTypeVoid extends DBSPTypeBaseType {
+    public static final DBSPTypeVoid INSTANCE = new DBSPTypeVoid();
 
-    protected DBSPTypeWeight() {
+    protected DBSPTypeVoid() {
         super(null, false);
     }
 
@@ -27,19 +22,19 @@ public class DBSPTypeWeight extends DBSPTypeBaseType {
 
     @Override
     public boolean sameType(DBSPType other) {
-        return other.is(DBSPTypeWeight.class);
+        return other.is(DBSPTypeVoid.class);
     }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull)
-            throw new UnsupportedOperationException();
+            throw new Unimplemented();
         return this;
     }
 
     @Override
     public String shortName() {
-        return "Weight";
+        return "void";
     }
 
     @Override

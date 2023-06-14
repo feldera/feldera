@@ -41,7 +41,7 @@ public class DBSPVariablePath extends DBSPExpression {
     }
 
     public DBSPParameter asParameter(boolean mutable) {
-        return new DBSPParameter(this.variable, this.getNonVoidType(), mutable);
+        return new DBSPParameter(this.variable, this.getType(), mutable);
     }
 
     public DBSPParameter asParameter() {
@@ -51,7 +51,7 @@ public class DBSPVariablePath extends DBSPExpression {
     public DBSPParameter asRefParameter(boolean mutable) {
         return new DBSPParameter(
                 this.variable,
-                this.getNonVoidType().ref(mutable));
+                this.getType().ref(mutable));
     }
 
     public DBSPParameter asRefParameter() {
@@ -62,8 +62,7 @@ public class DBSPVariablePath extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }

@@ -56,10 +56,9 @@ public class DBSPTypeBool extends DBSPTypeBaseType {
         return this.mayBeNull ? DBSPBoolLiteral.NULLABLE_FALSE : DBSPBoolLiteral.FALSE;
     }
 
-    public boolean sameType(@Nullable DBSPType type) {
+    public boolean sameType(DBSPType type) {
         if (!super.sameNullability(type))
             return false;
-        assert type != null;
         return type.is(DBSPTypeBool.class);
     }
 

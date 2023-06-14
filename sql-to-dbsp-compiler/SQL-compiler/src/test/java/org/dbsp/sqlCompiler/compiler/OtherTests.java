@@ -52,6 +52,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.FreshName;
 import org.dbsp.util.IWritesLogs;
@@ -231,15 +232,15 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         List<DBSPStatement> list = new ArrayList<>();
         // let src = csv_source::<Tuple3<bool, Option<String>, Option<u32>>, isize>("src/test.csv");
         DBSPLetStatement src = new DBSPLetStatement("src",
-                new DBSPApplyExpression("read_csv", data.getNonVoidType(),
+                new DBSPApplyExpression("read_csv", data.getType(),
                         new DBSPStrLiteral(fileName)));
         list.add(src);
         list.add(new DBSPExpressionStatement(new DBSPApplyExpression(
-                "assert_eq!", null, src.getVarReference(),
+                "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
                 data)));
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
-                null, body, Linq.list("#[test]"));
+                DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         RustFileWriter writer = new RustFileWriter(compiler, BaseSQLTests.testFilePath);
         writer.add(tester);
@@ -276,24 +277,24 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         for (int i = 0; i < fields.length; i++) {
             DBSPApplyMethodExpression rowGet =
                     new DBSPApplyMethodExpression("get",
-                            fields[i].getNonVoidType(),
+                            fields[i].getType(),
                             rowVariable, new DBSPUSizeLiteral(i));
             rowGets.add(rowGet);
         }
         DBSPTupleExpression tuple = new DBSPTupleExpression(rowGets, false);
         DBSPClosureExpression mapClosure = new DBSPClosureExpression(null, tuple,
                rowVariable.asRefParameter());
-        DBSPApplyExpression readDb = new DBSPApplyExpression("read_db", data.getNonVoidType(),
+        DBSPApplyExpression readDb = new DBSPApplyExpression("read_db", data.getType(),
                 new DBSPStrLiteral(connectionString), new DBSPStrLiteral("t1"), mapClosure);
 
         DBSPLetStatement src = new DBSPLetStatement("src", readDb);
         list.add(src);
         list.add(new DBSPExpressionStatement(new DBSPApplyExpression(
-                "assert_eq!", null, src.getVarReference(),
+                "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
                 data)));
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
-                null, body, Linq.list("#[test]"));
+                DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         RustFileWriter writer = new RustFileWriter(compiler, BaseSQLTests.testFilePath);
         writer.add(tester);
@@ -316,15 +317,15 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         File file = ToCsvVisitor.toCsv(compiler, fileName, data);
         List<DBSPStatement> list = new ArrayList<>();
         DBSPLetStatement src = new DBSPLetStatement("src",
-                new DBSPApplyExpression("read_csv", data.getNonVoidType(),
+                new DBSPApplyExpression("read_csv", data.getType(),
                         new DBSPStrLiteral(fileName)));
         list.add(src);
         list.add(new DBSPExpressionStatement(new DBSPApplyExpression(
-                "assert_eq!", null, src.getVarReference(),
+                "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
                 data)));
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
-                null, body, Linq.list("#[test]"));
+                DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
 
         PrintStream outputStream = new PrintStream(BaseSQLTests.testFilePath, "UTF-8");
         RustFileWriter writer = new RustFileWriter(compiler, outputStream);

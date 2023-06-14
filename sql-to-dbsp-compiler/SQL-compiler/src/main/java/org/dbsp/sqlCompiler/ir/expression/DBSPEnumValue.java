@@ -44,8 +44,7 @@ public class DBSPEnumValue extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+       this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }

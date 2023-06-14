@@ -56,7 +56,7 @@ public class DBSPDecimalLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getNonNullable() {
-        return new DBSPDecimalLiteral(this.getNode(), this.getNonVoidType().setMayBeNull(false),
+        return new DBSPDecimalLiteral(this.getNode(), this.getType().setMayBeNull(false),
                 Objects.requireNonNull(this.value));
     }
 
@@ -65,6 +65,6 @@ public class DBSPDecimalLiteral extends DBSPLiteral {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DBSPDecimalLiteral that = (DBSPDecimalLiteral) o;
-        return this.getNonVoidType().sameType(that.type) && Objects.equals(value, that.value);
+        return this.getType().sameType(that.type) && Objects.equals(value, that.value);
     }
 }

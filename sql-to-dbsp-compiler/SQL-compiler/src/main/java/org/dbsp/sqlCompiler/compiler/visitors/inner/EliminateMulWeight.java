@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -23,8 +22,8 @@ public class EliminateMulWeight extends InnerRewriteVisitor {
             DBSPExpression right = this.transform(expression.right);
             this.pop(expression);
             DBSPExpression result = new DBSPBinaryExpression(
-                    expression.getNode(), expression.getNonVoidType(), DBSPOpcode.MUL,
-                    left, right.cast(left.getNonVoidType()));
+                    expression.getNode(), expression.getType(), DBSPOpcode.MUL,
+                    left, right.cast(left.getType()));
             this.map(expression, result);
             return VisitDecision.STOP;
         }

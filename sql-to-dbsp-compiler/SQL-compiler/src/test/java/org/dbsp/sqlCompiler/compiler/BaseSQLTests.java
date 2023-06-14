@@ -129,7 +129,7 @@ public class BaseSQLTests {
                 list.add(out);
                 for (int i = 0; i < pairs.outputs.length; i++) {
                     DBSPStatement compare = new DBSPExpressionStatement(
-                            new DBSPApplyExpression("assert!", null,
+                            new DBSPApplyExpression("assert!", DBSPTypeVoid.INSTANCE,
                                     new DBSPApplyExpression("must_equal", DBSPTypeBool.INSTANCE,
                                             new DBSPFieldExpression(null, out.getVarReference(), i).borrow(),
                                             outputs[i].borrow()),
@@ -139,7 +139,7 @@ public class BaseSQLTests {
             }
             DBSPExpression body = new DBSPBlockExpression(list, null);
             return new DBSPFunction("test" + testNumber, new ArrayList<>(),
-                    null, body, Linq.list("#[test]"));
+                    DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
         }
 
         /**
@@ -267,7 +267,7 @@ public class BaseSQLTests {
                      */
                     DBSPExpression contents = converter.apply(output).to(DBSPExpression.class);
                     DBSPStatement compare = new DBSPExpressionStatement(
-                            new DBSPApplyExpression("assert!", null,
+                            new DBSPApplyExpression("assert!", DBSPTypeVoid.INSTANCE,
                                     new DBSPApplyExpression("must_equal_sc", DBSPTypeBool.INSTANCE,
                                             getOutput.getVarReference().borrow(), contents.borrow())));
                     list.add(compare);
@@ -281,7 +281,7 @@ public class BaseSQLTests {
 
             DBSPExpression body = new DBSPBlockExpression(list, null);
             return new DBSPFunction("test" + testNumber, new ArrayList<>(),
-                    null, body, Linq.list("#[test]"));
+                    DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
         }
     }
 

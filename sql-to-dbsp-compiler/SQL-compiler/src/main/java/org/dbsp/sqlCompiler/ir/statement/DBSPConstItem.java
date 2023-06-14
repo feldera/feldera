@@ -41,7 +41,6 @@ public class DBSPConstItem extends DBSPItem implements IHasType {
         return new DBSPVariablePath(this.name, this.type);
     }
 
-    @Nullable
     @Override
     public DBSPType getType() {
         return this.type;
