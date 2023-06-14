@@ -23,8 +23,12 @@
 
 package org.dbsp.sqlCompiler.ir.pattern;
 
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
+import org.dbsp.util.Linq;
 
+@NonCoreIR
 public class DBSPTuplePattern extends DBSPPattern {
     public final DBSPPattern[] fields;
 
@@ -41,5 +45,13 @@ public class DBSPTuplePattern extends DBSPPattern {
             pattern.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPTuplePattern o = other.as(DBSPTuplePattern.class);
+        if (o == null)
+            return false;
+        return Linq.same(this.fields, o.fields);
     }
 }

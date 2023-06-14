@@ -23,8 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
@@ -32,7 +33,6 @@ import org.dbsp.util.IndentStream;
 import org.dbsp.util.Unimplemented;
 
 import javax.annotation.Nullable;
-import java.util.List;
 import java.util.Objects;
 
 public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
@@ -72,10 +72,20 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     /**
      * This is like 'equals', but it always takes a DBSPType.
      */
-    public boolean sameType(@Nullable DBSPType other) {
+    public abstract boolean sameType(@Nullable DBSPType other);
+
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
+    public boolean sameNullability(@Nullable DBSPType other) {
         if (other == null)
             return false;
         return this.mayBeNull == other.mayBeNull;
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        if (!other.is(DBSPType.class))
+            return false;
+        return this.sameType(other.to(DBSPType.class));
     }
 
     public static boolean sameTypes(DBSPType[] left, DBSPType[] right) {
@@ -83,16 +93,6 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
             return false;
         for (int i = 0; i < left.length; i++) {
             if (!DBSPType.sameType(left[i], right[i]))
-                return false;
-        }
-        return true;
-    }
-
-    public static boolean sameTypes(List<DBSPType> left, List<DBSPType> right) {
-        if (left.size() != right.size())
-            return false;
-        for (int i = 0; i < left.size(); i++) {
-            if (!DBSPType.sameType(left.get(i), right.get(i)))
                 return false;
         }
         return true;
@@ -156,7 +156,6 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
      * True if this type has a Rust 'copy' method.
      */
     public boolean hasCopy() {
-        // Perhaps this shouldn't be here, but in a visitor.
         return true;
     }
 

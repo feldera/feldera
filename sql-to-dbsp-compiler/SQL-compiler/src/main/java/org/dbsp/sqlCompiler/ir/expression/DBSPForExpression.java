@@ -23,17 +23,19 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 
+@NonCoreIR
 public class DBSPForExpression extends DBSPExpression {
     public final DBSPPattern pattern;
     public final DBSPExpression iterated;
     public final DBSPBlockExpression block;
 
     public DBSPForExpression(DBSPPattern pattern, DBSPExpression iterated, DBSPBlockExpression block) {
-        // TODO: is the type always ()?
         super(null, DBSPTypeRawTuple.EMPTY_TUPLE_TYPE);
         this.pattern = pattern;
         this.iterated = iterated;
@@ -49,5 +51,16 @@ public class DBSPForExpression extends DBSPExpression {
         this.block.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPForExpression o = other.as(DBSPForExpression.class);
+        if (o == null)
+            return false;
+        return this.pattern == o.pattern &&
+                this.iterated == o.iterated &&
+                this.block == o.block &&
+                this.hasSameType(o);
     }
 }

@@ -24,7 +24,8 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
@@ -44,17 +45,15 @@ import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import java.util.function.Function;
 
 /**
  * Applies a function (this.transform) to every function within an operator,
  * and to every type within the operator.
  */
 public class CircuitRewriter extends CircuitCloneVisitor {
-    private final Function<IDBSPInnerNode, IDBSPInnerNode> transform;
+    private final IRTransform transform;
 
-    public CircuitRewriter(IErrorReporter reporter,
-                           Function<IDBSPInnerNode, IDBSPInnerNode> transform) {
+    public CircuitRewriter(IErrorReporter reporter, IRTransform transform) {
         super(reporter, false);
         this.transform = transform;
     }

@@ -25,7 +25,9 @@ package org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions;
 
 import com.fasterxml.jackson.databind.node.BaseJsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITRowType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
+import org.dbsp.util.IIndentStream;
 
 public class JitUninitInstruction extends JITInstruction {
     public final JITType type;
@@ -36,13 +38,20 @@ public class JitUninitInstruction extends JITInstruction {
     }
 
     @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return super.toString(builder)
+                .append(" ")
+                .append(type);
+    }
+
+    @Override
     protected BaseJsonNode instructionAsJson() {
         ObjectNode result = jsonFactory().createObjectNode();
         ObjectNode valueNode = result.putObject("value");
         if (this.type.isScalarType()) {
             valueNode.put("Scalar", this.type.toString());
         } else {
-            valueNode.put("Row", this.type.toString());
+            valueNode.put("Row", this.type.to(JITRowType.class).getId());
         }
         return result;
     }

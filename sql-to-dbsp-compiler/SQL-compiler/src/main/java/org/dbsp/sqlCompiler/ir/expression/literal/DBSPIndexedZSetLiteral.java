@@ -36,6 +36,7 @@ public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContaine
         return this;
     }
 
+    @SuppressWarnings("SameReturnValue")
     public int size() {
         return 0;
     }
@@ -49,8 +50,7 @@ public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContaine
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DBSPIndexedZSetLiteral that = (DBSPIndexedZSetLiteral) o;
-        if (!this.indexedZSetType.sameType(that.indexedZSetType)) return false;
-        return true;
+        return this.indexedZSetType.sameType(that.indexedZSetType);
     }
 
     @Override

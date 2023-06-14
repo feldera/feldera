@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
@@ -34,13 +35,10 @@ import javax.annotation.Nullable;
  */
 public class DBSPCastExpression extends DBSPExpression {
     public final DBSPExpression source;
-    // Duplicate type here because the expression 'type' field is not serialized as JSON.
-    public final DBSPType destinationType;
 
     public DBSPCastExpression(@Nullable Object node, DBSPExpression source, DBSPType to) {
         super(node, to);
         this.source = source;
-        this.destinationType = to;
     }
 
     @Override
@@ -51,5 +49,14 @@ public class DBSPCastExpression extends DBSPExpression {
         this.getNonVoidType().accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPCastExpression o = other.as(DBSPCastExpression.class);
+        if (o == null)
+            return false;
+        return this.source == o.source &&
+                this.hasSameType(o);
     }
 }

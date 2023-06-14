@@ -71,7 +71,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
 
     @Override
     public boolean sameType(@Nullable DBSPType type) {
-        if (!super.sameType(type))
+        if (!super.sameNullability(type))
             return false;
         assert type != null;
         if (!type.is(DBSPTypeTuple.class))
@@ -115,5 +115,10 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     @Override
     public boolean hasCopy() {
         return false;
+    }
+
+    @Override
+    public DBSPExpression makeTuple(DBSPExpression... expressions) {
+        return new DBSPTupleExpression(expressions);
     }
 }

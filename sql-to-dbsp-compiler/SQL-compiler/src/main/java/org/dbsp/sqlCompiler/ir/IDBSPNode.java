@@ -21,8 +21,34 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.circuit;
+package org.dbsp.sqlCompiler.ir;
 
-public interface IDBSPDeclaration extends IDBSPInnerNode {
-    String getName();
+import org.dbsp.util.ICastable;
+import org.dbsp.util.IHasId;
+import org.dbsp.util.TranslationException;
+
+import javax.annotation.Nullable;
+
+/**
+ * An IR node that is used to represent DBSP circuits.
+ */
+@SuppressWarnings("unused")
+public interface IDBSPNode extends ICastable, IHasId {
+    default <T> T checkNull(@Nullable T value) {
+        if (value == null)
+            this.error("Null pointer");
+        if (value == null)
+            throw new RuntimeException("Did not expect a null value");
+        return value;
+    }
+
+    default void error(String message) {
+        throw new TranslationException(message, this.getNode());
+    }
+
+    /**
+     * @return the SQL IR node that was compiled to produce this IR node.
+     */
+    @Nullable
+    Object getNode();
 }

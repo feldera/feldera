@@ -23,10 +23,10 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDelegateVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -47,22 +47,22 @@ import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Function;
 
 /**
  * Depth-first traversal of an DBSPInnerNode hierarchy.
  */
-@SuppressWarnings("SameReturnValue, EmptyMethod")
-public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInnerNode> {
+@SuppressWarnings({"SameReturnValue, EmptyMethod", "unused"})
+public abstract class InnerVisitor implements IRTransform {
     /// If true each visit call will visit by default the superclass.
-    final boolean visitSuper;
+    // TODO: should this be removed?
+    protected final boolean visitSuper = true;
     protected final IErrorReporter errorReporter;
     protected final List<IDBSPInnerNode> context;
 
-    public InnerVisitor(IErrorReporter reporter, boolean visitSuper) {
-        this.visitSuper = visitSuper;
+    public InnerVisitor(IErrorReporter reporter) {
         this.errorReporter = reporter;
         this.context = new ArrayList<>();
     }
@@ -76,6 +76,13 @@ public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInne
         if (node != last)
             throw new RuntimeException("Corrupted visitor context: popping " + node
                     + " instead of " + last);
+    }
+
+    @Nullable
+    public IDBSPInnerNode getParent() {
+        if (this.context.isEmpty())
+            return null;
+        return Utilities.last(this.context);
     }
 
     /**
@@ -375,17 +382,7 @@ public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInne
         else return VisitDecision.CONTINUE;
     }
 
-    public VisitDecision preorder(DBSPRefPattern node) {
-        if (this.visitSuper) return this.preorder((DBSPPattern) node);
-        else return VisitDecision.CONTINUE;
-    }
-
     public VisitDecision preorder(DBSPWildcardPattern node) {
-        if (this.visitSuper) return this.preorder((DBSPPattern) node);
-        else return VisitDecision.CONTINUE;
-    }
-
-    public VisitDecision preorder(DBSPLiteralPattern node) {
         if (this.visitSuper) return this.preorder((DBSPPattern) node);
         else return VisitDecision.CONTINUE;
     }
@@ -552,11 +549,6 @@ public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInne
         else return VisitDecision.CONTINUE;
     }
 
-    public VisitDecision preorder(DBSPRangeExpression node) {
-        if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return VisitDecision.CONTINUE;
-    }
-    
     // Literals
     public VisitDecision preorder(DBSPLiteral node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
@@ -900,15 +892,7 @@ public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInne
         if (this.visitSuper) this.postorder((DBSPPattern) node);
     }
 
-    public void postorder(DBSPRefPattern node) {
-        if (this.visitSuper) this.postorder((DBSPPattern) node);
-    }
-
     public void postorder(DBSPWildcardPattern node) {
-        if (this.visitSuper) this.postorder((DBSPPattern) node);
-    }
-
-    public void postorder(DBSPLiteralPattern node) {
         if (this.visitSuper) this.postorder((DBSPPattern) node);
     }
 
@@ -1042,10 +1026,6 @@ public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInne
         if (this.visitSuper) this.postorder((DBSPExpression) node);
     }
 
-    public void postorder(DBSPRangeExpression node) {
-        if (this.visitSuper) this.postorder((DBSPExpression) node);
-    }
-
     // Literals
     public void postorder(DBSPLiteral node) {
         if (this.visitSuper) this.postorder((DBSPExpression) node);
@@ -1153,9 +1133,14 @@ public abstract class InnerVisitor implements Function<IDBSPInnerNode, IDBSPInne
     }
 
     @Override
-    public IDBSPInnerNode apply(IDBSPInnerNode node) { return node; }
+    public IDBSPInnerNode apply(IDBSPInnerNode node) {
+        this.startVisit();
+        node.accept(this);
+        this.endVisit();
+        return node;
+    }
 
     public CircuitVisitor getCircuitVisitor() {
-        return new CircuitDelegateVisitor(this.errorReporter, this);
+        return new CircuitRewriter(this.errorReporter, this);
     }
 }

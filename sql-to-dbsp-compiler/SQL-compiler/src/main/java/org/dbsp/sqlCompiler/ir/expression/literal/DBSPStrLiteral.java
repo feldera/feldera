@@ -41,10 +41,6 @@ public class DBSPStrLiteral extends DBSPLiteral {
         this.raw = raw;
     }
 
-    public DBSPStrLiteral() {
-        this(null, true, false);
-    }
-
     public DBSPStrLiteral(String value) {
         this(value, false, false);
     }

@@ -21,13 +21,12 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.circuit;
+package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
-import org.dbsp.util.IdGen;
 
 import javax.annotation.Nullable;
 
@@ -35,8 +34,10 @@ import javax.annotation.Nullable;
  * Base interface for all DBSP nodes.
  */
 public abstract class DBSPNode
-        extends IdGen
         implements IDBSPNode {
+    static long crtId = 0;
+
+    public final long id;
 
     /**
      * Original query Sql node that produced this node.
@@ -46,10 +47,16 @@ public abstract class DBSPNode
 
     protected DBSPNode(@Nullable Object node) {
         this.node = node;
+        this.id = crtId++;
     }
 
     @Nullable
     public Object getNode() { return this.node; }
+
+    @Override
+    public long getId() {
+        return this.id;
+    }
 
     @Override
     public String toString() {

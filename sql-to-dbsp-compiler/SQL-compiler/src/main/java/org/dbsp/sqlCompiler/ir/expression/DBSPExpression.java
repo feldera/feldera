@@ -23,8 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
@@ -38,7 +38,7 @@ public abstract class DBSPExpression
         implements IHasType, IDBSPInnerNode {
     // Null for an expression that evaluates to void.
     @Nullable
-    protected final DBSPType type;
+    public final DBSPType type;
 
     protected DBSPExpression(@Nullable Object node, @Nullable DBSPType type) {
         super(node);
@@ -117,5 +117,9 @@ public abstract class DBSPExpression
         if (this.getNonVoidType().hasCopy())
             return this;
         return this.applyClone();
+    }
+
+    public boolean hasSameType(DBSPExpression other) {
+        return this.type == other.type;
     }
 }

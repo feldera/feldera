@@ -61,7 +61,7 @@ public class DBSPTypeGeoPoint extends DBSPTypeGeo {
 
     @Override
     public boolean sameType(@Nullable DBSPType type) {
-        if (!super.sameType(type))
+        if (!super.sameNullability(type))
             return false;
         assert type != null;
         return type.is(DBSPTypeGeoPoint.class);

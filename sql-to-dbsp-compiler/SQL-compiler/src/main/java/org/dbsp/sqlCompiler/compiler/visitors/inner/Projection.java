@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -58,10 +58,10 @@ public class Projection extends InnerVisitor {
      */
     public final Set<String> parameters;
 
-    Description description;
+    final Description description;
 
     public Projection(IErrorReporter reporter) {
-        super(reporter, true);
+        super(reporter);
         this.parameters = new HashSet<>();
         this.isProjection = true;
         this.isSimple = true;

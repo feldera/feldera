@@ -23,10 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
-import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 /**
@@ -41,16 +40,8 @@ public class DBSPVariablePath extends DBSPExpression {
         this.variable = variable;
     }
 
-    public DBSPPattern asPattern(boolean mutable) {
-        return new DBSPIdentifierPattern(this.variable, mutable);
-    }
-
-    public DBSPPattern asPattern() {
-        return this.asPattern(false);
-    }
-
     public DBSPParameter asParameter(boolean mutable) {
-        return new DBSPParameter(this.asPattern(mutable), this.getNonVoidType());
+        return new DBSPParameter(this.variable, this.getNonVoidType(), mutable);
     }
 
     public DBSPParameter asParameter() {
@@ -59,7 +50,7 @@ public class DBSPVariablePath extends DBSPExpression {
 
     public DBSPParameter asRefParameter(boolean mutable) {
         return new DBSPParameter(
-                this.asPattern(),
+                this.variable,
                 this.getNonVoidType().ref(mutable));
     }
 
@@ -75,5 +66,15 @@ public class DBSPVariablePath extends DBSPExpression {
             this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPVariablePath o = other.as(DBSPVariablePath.class);
+        if (o == null)
+            return false;
+        return this.variable.equals(o.variable) &&
+                this.hasSameType(o);
     }
 }

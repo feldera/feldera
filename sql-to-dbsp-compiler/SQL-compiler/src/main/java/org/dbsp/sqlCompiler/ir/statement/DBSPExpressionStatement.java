@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.statement;
 
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 
@@ -41,5 +42,13 @@ public class DBSPExpressionStatement extends DBSPStatement {
         this.expression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPExpressionStatement o = other.as(DBSPExpressionStatement.class);
+        if (o == null)
+            return false;
+        return this.expression == o.expression;
     }
 }

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -44,5 +45,14 @@ public class DBSPPathExpression extends DBSPExpression {
         this.path.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPPathExpression o = other.as(DBSPPathExpression.class);
+        if (o == null)
+            return false;
+        return this.path == o.path &&
+                this.hasSameType(o);
     }
 }

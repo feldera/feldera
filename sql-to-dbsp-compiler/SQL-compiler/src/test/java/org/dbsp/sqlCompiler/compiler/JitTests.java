@@ -1,8 +1,8 @@
 package org.dbsp.sqlCompiler.compiler;
 
+import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -30,6 +31,24 @@ public class JitTests extends EndToEndTests {
 
     // All the @Ignore-ed tests below should eventually pass.
 
+    @Test @Override @Ignore("Average not yet implemented")
+    public void averageTest() {
+        Logger.INSTANCE.setLoggingLevel(ToJitVisitor.class, 4);
+        String query = "SELECT AVG(T.COL1) FROM T";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(10, true))));
+    }
+
+    @Test @Override @Ignore("Average not yet implemented")
+    public void constAggregateExpression2() {
+        Logger.INSTANCE.setLoggingLevel(ToJitVisitor.class, 4);
+        String query = "SELECT 34 / AVG (1) FROM T GROUP BY COL1";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(34, true))));
+    }
+
     @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
     public void divZero() {
         String query = "SELECT 'Infinity' / 0";
@@ -46,7 +65,7 @@ public class JitTests extends EndToEndTests {
                 "0.5 * (SELECT Sum(r1.COL5) FROM T r1) =\n" +
                 "(SELECT Sum(r2.COL5) FROM T r2 WHERE r2.COL1 = r.COL1)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))));
+                DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
     }
 
     @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
@@ -91,22 +110,6 @@ public class JitTests extends EndToEndTests {
                 "SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING), " +
                 "COUNT(*) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(t, t));
-    }
-
-    @Test @Override @Ignore("Average not yet implemented")
-    public void averageTest() {
-        String query = "SELECT AVG(T.COL1) FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(10, true))));
-    }
-
-    @Test @Override @Ignore("Average not yet implemented")
-    public void constAggregateExpression2() {
-        String query = "SELECT 34 / AVG (1) FROM T GROUP BY COL1";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(34, true))));
     }
 
     @Test @Override @Ignore("WINDOWS not yet implemented")

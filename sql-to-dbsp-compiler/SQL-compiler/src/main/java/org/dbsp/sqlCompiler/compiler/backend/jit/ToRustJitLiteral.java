@@ -109,10 +109,12 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPTupleExpression node) {
-        DBSPExpression[] columns = Linq.map(node.fields, this::transform, DBSPExpression.class);
+    public VisitDecision preorder(DBSPTupleExpression expression) {
+        this.push(expression);
+        DBSPExpression[] columns = Linq.map(expression.fields, this::transform, DBSPExpression.class);
+        this.pop(expression);
         DBSPExpression result = new DBSPVecLiteral(columns);
-        this.map(node, result);
+        this.map(expression, result);
         return VisitDecision.STOP;
     }
 
@@ -132,12 +134,14 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
 
     @Override
     public VisitDecision preorder(DBSPZSetLiteral expression) {
+        this.push(expression);
         DBSPExpression[] rows = new DBSPExpression[expression.size()];
         int index = 0;
         for (Map.Entry<DBSPExpression, Long> entry : expression.data.data.entrySet()) {
             DBSPExpression row = this.convertRow(entry);
             rows[index++] = row;
         }
+        this.pop(expression);
 
         DBSPVecLiteral vec;
         if (rows.length == 0) {

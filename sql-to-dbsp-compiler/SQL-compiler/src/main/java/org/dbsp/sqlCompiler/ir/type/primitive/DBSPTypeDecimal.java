@@ -116,7 +116,7 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
 
     @Override
     public boolean sameType(@Nullable DBSPType type) {
-        if (!super.sameType(type))
+        if (!super.sameNullability(type))
             return false;
         assert type != null;
         if (!type.is(DBSPTypeDecimal.class))

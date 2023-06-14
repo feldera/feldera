@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+
 import javax.annotation.Nullable;
 
 public abstract class DBSPTypeTupleBase extends DBSPType {
@@ -31,11 +33,20 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
     protected DBSPTypeTupleBase(@Nullable Object node, boolean mayBeNull, DBSPType... tupFields) {
         super(node, mayBeNull);
         this.tupFields = tupFields;
+        for (DBSPType type: this.tupFields)
+            if (type == null)
+                throw new NullPointerException();
     }
 
     public DBSPType getFieldType(int index) {
         return this.tupFields[index];
     }
+
+    public boolean hasCopy() {
+        return true;
+    }
+
+    public abstract DBSPExpression makeTuple(DBSPExpression... expressions);
 
     public int size() {
         return this.tupFields.length;

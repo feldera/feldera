@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
-import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -36,7 +36,6 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.*;
-import java.util.function.Function;
 
 /**
  * This visitor rewrites a circuit by replacing each operator
@@ -45,8 +44,7 @@ import java.util.function.Function;
  * - any of its inputs has changed
  * - the 'force' flag is 'true'.
  */
-public class CircuitCloneVisitor extends CircuitVisitor
-        implements Function<DBSPCircuit, DBSPCircuit>, IWritesLogs {
+public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     @Nullable
     protected DBSPPartialCircuit result;
     /**

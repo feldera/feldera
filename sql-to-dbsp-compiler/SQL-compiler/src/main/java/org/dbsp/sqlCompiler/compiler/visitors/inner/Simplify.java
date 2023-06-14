@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -61,7 +60,9 @@ public class Simplify extends InnerRewriteVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIsNullExpression expression) {
+        this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
+        this.pop(expression);
         DBSPExpression result = expression;
         if (!source.getNonVoidType().mayBeNull)
             result = DBSPBoolLiteral.FALSE;
@@ -71,26 +72,31 @@ public class Simplify extends InnerRewriteVisitor {
 
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
+        this.push(expression);
         DBSPExpression source = this.transform(expression.source);
+        DBSPType type = this.transform(expression.getNonVoidType());
+        DBSPExpression result = source.cast(type);
+        this.pop(expression);
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
             if (lit.getNonVoidType().is(DBSPTypeNull.class)) {
                 // This is a literal with type "NULL".
                 // Convert it to a literal of the resulting type
-                DBSPExpression result = DBSPLiteral.none(expression.getNonVoidType());
-                this.map(expression, result);
-                return VisitDecision.STOP;
+                result = DBSPLiteral.none(expression.getNonVoidType());
             }
         }
-        this.map(expression, expression);
+        this.map(expression, result);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPFieldExpression expression) {
-        DBSPExpression result = expression;
-        if (expression.expression.is(DBSPBaseTupleExpression.class)) {
-            result = expression.expression.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.expression);
+        this.pop(expression);
+        DBSPExpression result = source.field(expression.fieldNo);
+        if (source.is(DBSPBaseTupleExpression.class)) {
+            result = source.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
         }
         this.map(expression, result);
         return VisitDecision.STOP;
@@ -98,10 +104,12 @@ public class Simplify extends InnerRewriteVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIfExpression expression) {
+        this.push(expression);
         DBSPExpression condition = this.transform(expression.condition);
         DBSPExpression negative = this.transform(expression.negative);
         DBSPExpression positive = this.transform(expression.positive);
-        DBSPExpression result = expression;
+        this.pop(expression);
+        DBSPExpression result = new DBSPIfExpression(expression.getNode(), condition, positive, negative);
         if (condition.is(DBSPBoolLiteral.class)) {
             DBSPBoolLiteral cond = condition.to(DBSPBoolLiteral.class);
             if (!cond.isNull) {
@@ -122,51 +130,55 @@ public class Simplify extends InnerRewriteVisitor {
 
     @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
+        this.push(expression);
         DBSPExpression left = this.transform(expression.left);
         DBSPExpression right = this.transform(expression.right);
+        DBSPType type = this.transform(expression.getNonVoidType());
+        this.pop(expression);
         DBSPType leftType = left.getNonVoidType();
         DBSPType rightType = right.getNonVoidType();
         boolean leftMayBeNull = leftType.mayBeNull;
         boolean rightMayBeNull = rightType.mayBeNull;
-        DBSPExpression result = expression;
+        DBSPExpression result = new DBSPBinaryExpression(
+                expression.getNode(), type, expression.operation, left, right, expression.primitive);
         if (expression.operation.equals(DBSPOpcode.AND)) {
             if (left.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
-                if (bLeft.isNull) {
-                    result = bLeft;
-                } else if (Objects.requireNonNull(bLeft.value)) {
-                    result = right;
-                } else {
-                    result = left;
+                if (!bLeft.isNull) {
+                    if (Objects.requireNonNull(bLeft.value)) {
+                        result = right;
+                    } else {
+                        result = left;
+                    }
                 }
             } else if (right.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
-                if (bRight.isNull) {
-                    result = left;
-                } else if (Objects.requireNonNull(bRight.value)) {
-                    result = left;
-                } else {
-                    result = right;
+                if (!bRight.isNull) {
+                    if (Objects.requireNonNull(bRight.value)) {
+                        result = left;
+                    } else {
+                        result = right;
+                    }
                 }
             }
         } else if (expression.operation.equals(DBSPOpcode.OR)) {
             if (left.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
-                if (bLeft.isNull) {
-                    result = bLeft;
-                } else if (Objects.requireNonNull(bLeft.value)) {
-                    result = left;
-                } else {
-                    result = right;
+                if (!bLeft.isNull) {
+                    if (Objects.requireNonNull(bLeft.value)) {
+                        result = left;
+                    } else {
+                        result = right;
+                    }
                 }
             } else if (right.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
-                if (bRight.isNull) {
-                    result = left;
-                } else if (Objects.requireNonNull(bRight.value)) {
-                    result = right;
-                } else {
-                    result = left;
+                if (!bRight.isNull) {
+                    if (Objects.requireNonNull(bRight.value)) {
+                        result = right;
+                    } else {
+                        result = left;
+                    }
                 }
             }
         } else if (expression.operation.equals(DBSPOpcode.ADD)) {
@@ -212,9 +224,6 @@ public class Simplify extends InnerRewriteVisitor {
                     result = right;
                 }
             }
-        } else if (left != expression.left || right != expression.right) {
-            result = new DBSPBinaryExpression(expression.getNode(), expression.getNonVoidType(),
-                    expression.operation, left, right, expression.primitive);
         }
         this.map(expression, result.cast(expression.getNonVoidType()));
         return VisitDecision.STOP;

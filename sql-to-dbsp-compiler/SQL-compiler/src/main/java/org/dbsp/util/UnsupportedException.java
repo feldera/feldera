@@ -41,10 +41,6 @@ public class UnsupportedException extends RuntimeException {
         super("Not supported: " + toString(obj));
     }
 
-    public UnsupportedException(String msg, boolean ignored) {
-        super("Not supported: " + msg);
-    }
-
     public UnsupportedException(String msg, @Nullable Object obj) {
         super("Not supported: " + msg + " " + toString(obj));
     }
