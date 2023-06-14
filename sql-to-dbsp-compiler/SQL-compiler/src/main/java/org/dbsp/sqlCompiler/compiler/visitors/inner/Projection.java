@@ -13,11 +13,15 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -172,12 +176,26 @@ public class Projection extends InnerVisitor {
      * @param before Constant expression.
      * @return A new constant expression.
      */
-    public DBSPExpression applyAfter(DBSPExpression before) {
+    public DBSPExpression applyAfter(DBSPZSetLiteral before) {
         Objects.requireNonNull(this.expression);
-        DBSPExpression apply = new DBSPApplyExpression(this.expression, before);
-        Simplify simplify = new Simplify(this.errorReporter);
-        IDBSPInnerNode simplified = simplify.apply(apply);
-        return simplified.to(DBSPClosureExpression.class);
+
+        Map<DBSPExpression, Long> result = new HashMap<>();
+        InnerPasses inner = new InnerPasses(
+                new BetaReduction(this.errorReporter),
+                new Simplify(this.errorReporter)
+        );
+
+        DBSPType elementType = null;
+        for (Map.Entry<DBSPExpression, Long> entry: before.data.data.entrySet()) {
+            DBSPExpression row = entry.getKey();
+            DBSPExpression apply = new DBSPApplyExpression(this.expression, row);
+            DBSPExpression simplified = inner.apply(apply).to(DBSPExpression.class);
+            if (elementType == null)
+                elementType = simplified.getNonVoidType();
+            result.put(simplified, entry.getValue());
+        }
+        return new DBSPZSetLiteral(before.zsetType.weightType,
+                new DBSPZSetLiteral.Contents(result, Objects.requireNonNull(elementType)));
     }
 }
 
