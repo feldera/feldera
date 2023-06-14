@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
@@ -55,7 +56,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
                 return;
             } else if (source.is(DBSPConstantOperator.class)) {
                 DBSPExpression newConstant = projection.applyAfter(
-                        source.to(DBSPConstantOperator.class).getFunction());
+                        source.to(DBSPConstantOperator.class).getFunction().to(DBSPZSetLiteral.class));
                 DBSPOperator result = source.withFunction(newConstant, operator.outputType);
                 this.map(operator, result);
                 return;
