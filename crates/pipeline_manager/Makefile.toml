@@ -20,7 +20,7 @@ script = '''
 pip3 install openapi-python-client
 cd ../../python
 rm -rf dbsp-api-client
-openapi-python-client generate --path ../openapi.json
+openapi-python-client generate --path ../openapi.json --fail-on-warning
 pip3 install ./dbsp-api-client
 pip3 install .
 pip3 install websockets
