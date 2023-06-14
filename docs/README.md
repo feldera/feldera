@@ -25,6 +25,13 @@ yarn dev
 This command starts a local development server and opens up a browser window.
 Most changes are reflected live without having to restart the server.
 
+Format the code & linting:
+
+```bash
+yarn format
+yarn lint
+```
+
 ### Build
 
 ```bash

@@ -1,16 +1,16 @@
-import React, { useRef, useState } from "react";
+import React, { useRef } from 'react'
 
-import * as THREE from "three";
-import { Canvas, useFrame, ThreeElements } from "@react-three/fiber";
+import * as THREE from 'three'
+import { Canvas, useFrame, ThreeElements } from '@react-three/fiber'
 
-function FlowingLinesShader(props: ThreeElements["mesh"]) {
-  const ref = useRef<THREE.Mesh>(null!);
-  var tuniform = {
-    iTime: { type: "f", value: 0.0 },
-    iResolution: { type: "v2", value: new THREE.Vector2(1, 1) },
-  };
+function FlowingLinesShader(props: ThreeElements['mesh']) {
+  const ref = useRef<THREE.Mesh>(null!)
+  const tuniform = {
+    iTime: { type: 'f', value: 0.0 },
+    iResolution: { type: 'v2', value: new THREE.Vector2(1, 1) }
+  }
 
-  useFrame((state, delta) => (tuniform.iTime.value += delta));
+  useFrame((state, delta) => (tuniform.iTime.value += delta))
 
   const vshader = `
   varying vec2 vUv;
@@ -19,7 +19,7 @@ function FlowingLinesShader(props: ThreeElements["mesh"]) {
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mvPosition;
   }
-  `;
+  `
 
   const fshader = `
 varying vec2 vUv;
@@ -131,22 +131,13 @@ void main() {
 
 	gl_FragColor = vec4(color);
 }
-`;
+`
 
   return (
-    <mesh
-      geometry={new THREE.PlaneGeometry(window.outerWidth, 394, 1, 1)}
-      {...props}
-      ref={ref}
-    >
-      <shaderMaterial
-        vertexShader={vshader}
-        fragmentShader={fshader}
-        uniforms={tuniform}
-        side={THREE.DoubleSide}
-      />
+    <mesh geometry={new THREE.PlaneGeometry(window.outerWidth, 394, 1, 1)} {...props} ref={ref}>
+      <shaderMaterial vertexShader={vshader} fragmentShader={fshader} uniforms={tuniform} side={THREE.DoubleSide} />
     </mesh>
-  );
+  )
 }
 
 export function FlowingLines() {
@@ -157,13 +148,13 @@ export function FlowingLines() {
     -1, // bottom
     -1, // near,
     1 // far
-  );
-  camera.lookAt(0, 0, 0);
+  )
+  camera.lookAt(0, 0, 0)
 
   return (
     <Canvas camera={camera}>
       <pointLight position={[10, 10, 10]} />
       <FlowingLinesShader position={[0, -0, 0]} />
     </Canvas>
-  );
+  )
 }
