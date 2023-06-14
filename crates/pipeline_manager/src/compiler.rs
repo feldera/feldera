@@ -1,7 +1,7 @@
 use crate::auth::TenantId;
 use crate::db::storage::Storage;
 use crate::{ManagerConfig, ProgramId, ProjectDB, Version};
-use anyhow::{Error as AnyError, Result as AnyResult};
+use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use log::{debug, error, trace};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -19,6 +19,7 @@ use tokio::{
     time::{sleep, Duration},
 };
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 /// The frequency with which the compiler polls the project database
 /// for new compilation requests.
@@ -106,6 +107,12 @@ fn main() {
 
 impl Compiler {
     pub(crate) async fn new(config: &ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<Self> {
+        Self::create_working_directory(config).await?;
+        let compiler_task = spawn(Self::compiler_task(config.clone(), db));
+        Ok(Self { compiler_task })
+    }
+
+    async fn create_working_directory(config: &ManagerConfig) -> AnyResult<()> {
         fs::create_dir_all(&config.workspace_dir())
             .await
             .map_err(|e| {
@@ -113,10 +120,142 @@ impl Compiler {
                     "failed to create Rust workspace directory '{}': {e}",
                     config.workspace_dir().display()
                 ))
+            })
+    }
+
+    /// Download and compile all crates needed by the Rust code generated
+    /// by the SQL compiler.
+    ///
+    /// This is useful to prepare the working directory, so that the first
+    /// compilation job completes quickly.  Also creates the `Cargo.lock`
+    /// file, making sure that subsequent `cargo` runs do not access the
+    /// network.
+    pub(crate) async fn precompile_dependencies(config: &ManagerConfig) -> AnyResult<()> {
+        let program_id = ProgramId(Uuid::nil());
+
+        Self::create_working_directory(config).await?;
+
+        // Create workspace-level Cargo.toml
+        Compiler::write_workspace_toml(config, program_id).await?;
+
+        // Create dummy package.
+        let rust_file_path = config.rust_program_path(program_id);
+        fs::create_dir_all(rust_file_path.parent().unwrap()).await?;
+
+        Compiler::write_project_toml(config, program_id).await?;
+
+        fs::write(&rust_file_path, "fn main() {}")
+            .await
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to write '{}': '{e}'",
+                    rust_file_path.display()
+                ))
             })?;
 
-        let compiler_task = spawn(Self::compiler_task(config.clone(), db));
-        Ok(Self { compiler_task })
+        // `cargo build`.
+        let mut cargo_process = Compiler::run_cargo_build(config, program_id).await?;
+        let exit_status = cargo_process.wait().await?;
+
+        if !exit_status.success() {
+            let stdout = fs::read_to_string(config.compiler_stdout_path(program_id)).await?;
+            let stderr = fs::read_to_string(config.compiler_stderr_path(program_id)).await?;
+            bail!("Failed to precompile Rust dependencies\nstdout:\n{stdout}\nstderr:\n{stderr}");
+        }
+
+        Ok(())
+    }
+
+    async fn run_cargo_build(config: &ManagerConfig, program_id: ProgramId) -> AnyResult<Child> {
+        let err_file = File::create(&config.compiler_stderr_path(program_id))
+            .await
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to create '{}': '{e}'",
+                    config.compiler_stderr_path(program_id).display()
+                ))
+            })?;
+        let out_file = File::create(&config.compiler_stdout_path(program_id))
+            .await
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to create '{}': '{e}'",
+                    config.compiler_stdout_path(program_id).display()
+                ))
+            })?;
+
+        let mut command = Command::new("cargo");
+
+        command
+            .current_dir(&config.workspace_dir())
+            .arg("build")
+            .arg("--workspace")
+            .stdin(Stdio::null())
+            .stderr(Stdio::from(err_file.into_std().await))
+            .stdout(Stdio::from(out_file.into_std().await));
+
+        if !config.debug {
+            command.arg("--release");
+        }
+
+        command
+            .spawn()
+            .map_err(|e| AnyError::msg(format!("failed to start 'cargo': '{e}'")))
+    }
+
+    /// Generate workspace-level `Cargo.toml`.
+    async fn write_workspace_toml(config: &ManagerConfig, program_id: ProgramId) -> AnyResult<()> {
+        let workspace_toml_code = format!(
+            "[workspace]\nmembers = [ \"{}\" ]\n",
+            ManagerConfig::crate_name(program_id),
+        );
+        fs::write(&config.workspace_toml_path(), workspace_toml_code)
+            .await
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to write '{}': '{e}'",
+                    config.workspace_toml_path().display()
+                ))
+            })?;
+
+        Ok(())
+    }
+
+    /// Generate project-level `Cargo.toml`.
+    async fn write_project_toml(config: &ManagerConfig, program_id: ProgramId) -> AnyResult<()> {
+        let template_toml = fs::read_to_string(&config.project_toml_template_path())
+            .await
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to read template '{}': '{e}'",
+                    config.project_toml_template_path().display()
+                ))
+            })?;
+        let program_name = format!("name = \"{}\"", ManagerConfig::crate_name(program_id));
+        let mut project_toml_code = template_toml
+            .replace("name = \"temp\"", &program_name)
+            .replace(", default-features = false", "")
+            .replace(
+                "[lib]\npath = \"src/lib.rs\"",
+                &format!("\n\n[[bin]]\n{program_name}\npath = \"src/main.rs\""),
+            );
+        if let Some(p) = &config.dbsp_override_path {
+            project_toml_code = project_toml_code
+                .replace("../../crates", &format!("{p}/crates"))
+                .replace("../lib", &format!("{}", config.sql_lib_path().display()));
+        };
+        debug!("TOML:\n{project_toml_code}");
+
+        fs::write(&config.project_toml_path(program_id), project_toml_code)
+            .await
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to write '{}': '{e}'",
+                    config.project_toml_path(program_id).display()
+                ))
+            })?;
+
+        Ok(())
     }
 
     async fn compiler_task(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<()> {
@@ -371,88 +510,14 @@ impl CompilationJob {
         drop(main_rs);
 
         // Write `project/Cargo.toml`.
-        let template_toml = fs::read_to_string(&config.project_toml_template_path())
-            .await
-            .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to read template '{}': '{e}'",
-                    config.project_toml_template_path().display()
-                ))
-            })?;
-        let program_name = format!("name = \"{}\"", ManagerConfig::crate_name(program_id));
-        let mut project_toml_code = template_toml
-            .replace("name = \"temp\"", &program_name)
-            .replace(", default-features = false", "")
-            .replace(
-                "[lib]\npath = \"src/lib.rs\"",
-                &format!("\n\n[[bin]]\n{program_name}\npath = \"src/main.rs\""),
-            );
-        if let Some(p) = &config.dbsp_override_path {
-            project_toml_code = project_toml_code
-                .replace("../../crates", &format!("{p}/crates"))
-                .replace("../lib", &format!("{}", config.sql_lib_path().display()));
-        };
-        debug!("TOML:\n{project_toml_code}");
-
-        fs::write(&config.project_toml_path(program_id), project_toml_code)
-            .await
-            .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to write '{}': '{e}'",
-                    config.project_toml_path(program_id).display()
-                ))
-            })?;
+        Compiler::write_project_toml(config, program_id).await?;
 
         // Write workspace `Cargo.toml`.  The workspace contains SQL libs and the
         // generated project crate.
-        let workspace_toml_code = format!(
-            "[workspace]\nmembers = [ \"{}\" ]\n",
-            ManagerConfig::crate_name(program_id),
-        );
-        fs::write(&config.workspace_toml_path(), workspace_toml_code)
-            .await
-            .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to write '{}': '{e}'",
-                    config.workspace_toml_path().display()
-                ))
-            })?;
-
-        let err_file = File::create(&config.compiler_stderr_path(program_id))
-            .await
-            .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to create '{}': '{e}'",
-                    config.compiler_stderr_path(program_id).display()
-                ))
-            })?;
-        let out_file = File::create(&config.compiler_stdout_path(program_id))
-            .await
-            .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to create '{}': '{e}'",
-                    config.compiler_stdout_path(program_id).display()
-                ))
-            })?;
+        Compiler::write_workspace_toml(config, program_id).await?;
 
         // Run cargo, direct stdout and stderr to the same file.
-        let mut command = Command::new("cargo");
-
-        command
-            .current_dir(&config.workspace_dir())
-            .arg("build")
-            .arg("--workspace")
-            .stdin(Stdio::null())
-            .stderr(Stdio::from(err_file.into_std().await))
-            .stdout(Stdio::from(out_file.into_std().await));
-
-        if !config.debug {
-            command.arg("--release");
-        }
-
-        let compiler_process = command
-            .spawn()
-            .map_err(|e| AnyError::msg(format!("failed to start 'cargo': '{e}'")))?;
+        let compiler_process = Compiler::run_cargo_build(config, program_id).await?;
 
         Ok(Self {
             tenant_id,
