@@ -23,11 +23,13 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 
@@ -82,5 +84,15 @@ public class DBSPApplyExpression extends DBSPExpression {
             arg.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPApplyExpression o = other.as(DBSPApplyExpression.class);
+        if (o == null)
+            return false;
+        return this.function == o.function &&
+                Linq.same(this.arguments, o.arguments) &&
+                this.hasSameType(o);
     }
 }

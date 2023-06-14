@@ -672,7 +672,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
         };
 
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(d == null ? DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true)) :
+                new DBSPTupleExpression(d == null ? DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32) :
                         new DBSPI32Literal(-intervalToSeconds(d) / 60, true)), DBSPExpression.class);
         String query = "SELECT TIMESTAMPDIFF(MINUTE, d1, timestamp '1997-01-02') AS diff\n" +
                 "   FROM TIMESTAMP_TBL WHERE d1 BETWEEN '1902-01-01' AND '2038-01-01'";
@@ -785,7 +785,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
             "1460 days 17 hours 32 mins 1 sec"
         };
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(d == null ? DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true)) :
+                new DBSPTupleExpression(d == null ? DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32) :
                         new DBSPI32Literal(-intervalToSeconds(d), true)), DBSPExpression.class);
         this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
     }

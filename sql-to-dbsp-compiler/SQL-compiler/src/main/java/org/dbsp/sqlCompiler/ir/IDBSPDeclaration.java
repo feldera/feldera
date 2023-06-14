@@ -21,25 +21,8 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir.pattern;
+package org.dbsp.sqlCompiler.ir;
 
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-
-public class DBSPLiteralPattern extends DBSPPattern {
-    public final DBSPLiteral literal;
-
-    public DBSPLiteralPattern(DBSPLiteral literal) {
-        super(literal.getNode());
-        this.literal = literal;
-    }
-
-    @Override
-    public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.push(this);
-        this.literal.accept(visitor);
-        visitor.pop(this);
-        visitor.postorder(this);
-    }
+public interface IDBSPDeclaration extends IDBSPInnerNode {
+    String getName();
 }

@@ -18,8 +18,10 @@ public class EliminateMulWeight extends InnerRewriteVisitor {
     @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
         if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
+            this.push(expression);
             DBSPExpression left = this.transform(expression.left);
             DBSPExpression right = this.transform(expression.right);
+            this.pop(expression);
             DBSPExpression result = new DBSPBinaryExpression(
                     expression.getNode(), expression.getNonVoidType(), DBSPOpcode.MUL,
                     left, right.cast(left.getNonVoidType()));

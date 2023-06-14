@@ -89,4 +89,13 @@ public class SubstitutionContext<T> {
         }
         return false;
     }
+
+    void clear() {
+        this.stack.clear();
+    }
+
+    @Override
+    public String toString() {
+        return this.stack.toString();
+    }
 }

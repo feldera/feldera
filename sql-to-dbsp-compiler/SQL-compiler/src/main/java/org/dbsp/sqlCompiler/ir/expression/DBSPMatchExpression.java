@@ -23,17 +23,21 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Linq;
 
 import java.util.List;
 
 /**
  * A (Rust) match expression.
  */
+@NonCoreIR
 public class DBSPMatchExpression extends DBSPExpression {
     public static class Case extends DBSPNode implements IDBSPInnerNode {
         public final DBSPPattern against;
@@ -53,6 +57,15 @@ public class DBSPMatchExpression extends DBSPExpression {
             this.result.accept(visitor);
             visitor.pop(this);
             visitor.postorder(this);
+        }
+
+        @Override
+        public boolean sameFields(IDBSPNode other) {
+            Case o = other.as(Case.class);
+            if (o == null)
+                return false;
+            return this.against == o.against &&
+                    this.result == o.result;
         }
     }
 
@@ -81,5 +94,15 @@ public class DBSPMatchExpression extends DBSPExpression {
             c.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPMatchExpression o = other.as(DBSPMatchExpression.class);
+        if (o == null)
+            return false;
+        return this.matched == o.matched &&
+                Linq.same(this.cases, o.cases) &&
+                this.hasSameType(o);
     }
 }

@@ -64,7 +64,6 @@ class ModifyTableTranslation implements ICompilerComponent {
     private HashMap<Integer, Integer> columnPermutation;
     @Nullable
     DBSPTypeTuple resultType;
-    final TableModifyStatement statement;
     final DBSPCompiler compiler;
 
     public ModifyTableTranslation(TableModifyStatement statement,
@@ -74,7 +73,6 @@ class ModifyTableTranslation implements ICompilerComponent {
         this.valuesTranslation = null;
         this.compiler = compiler;
         this.columnPermutation = null;
-        this.statement = statement;
         DBSPTypeTuple sourceType = tableDefinition.getRowType(this.compiler.getTypeCompiler());
         if (columnList != null) {
             // The column list specifies an order for the columns that are assigned,

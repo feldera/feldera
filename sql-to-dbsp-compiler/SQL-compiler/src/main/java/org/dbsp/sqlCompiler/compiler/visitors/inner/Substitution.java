@@ -36,7 +36,7 @@ import java.util.Set;
  */
 public class Substitution<T> {
     /**
-     * Maps parameter names to values.
+     * Maps names to values.
      */
     final Map<String, T> replacement;
     /**
@@ -58,8 +58,8 @@ public class Substitution<T> {
     }
 
     /**
-     * Returns null if there is tombstone with this name.
-     * Returns an expression otherwise.
+     * Returns null if there is a tombstone with this name.
+     * Returns the substitution otherwise.
      * Throws if there is no such substitution.
      */
     @Nullable
@@ -72,5 +72,16 @@ public class Substitution<T> {
     public boolean contains(String name) {
         return this.tombstone.contains(name) ||
                 this.replacement.containsKey(name);
+    }
+
+    public void clear() {
+        this.replacement.clear();
+        this.tombstone.clear();
+    }
+
+    @Override
+    public String toString() {
+        return this.replacement +
+            System.lineSeparator() + "HIDDEN: " + this.tombstone;
     }
 }

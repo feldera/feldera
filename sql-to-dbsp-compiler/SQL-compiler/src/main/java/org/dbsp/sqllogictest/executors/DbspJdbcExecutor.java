@@ -127,7 +127,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                     if (type.is(DBSPTypeInteger.class)) {
                         int value = rs.getInt(i + 1);
                         if (rs.wasNull())
-                            exp = DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true));
+                            exp = DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32);
                         else
                             exp = new DBSPI32Literal(value, type.mayBeNull);
                     } else if (type.is(DBSPTypeDouble.class)) {

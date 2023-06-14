@@ -122,6 +122,18 @@ public class Utilities {
     public static <K, V> V getExists(Map<K, V> map, K key) {
         V result = map.get(key);
         if (result == null)
+            throw new RuntimeException("Key '" + key + "' does not exist in map");
+        return result;
+    }
+
+    /**
+     * Remove a value that must exist in a map.
+     * @param map  Map to look for.
+     * @param key  Key the value is indexed with.
+     */
+    public static <K, V> V removeExists(Map<K, V> map, K key) {
+        V result = map.remove(key);
+        if (result == null)
             throw new RuntimeException("Key " + key + " does not exist in map");
         return result;
     }
@@ -193,14 +205,14 @@ public class Utilities {
         return r.toString();
     }
 
-    public static List<String> toList(@Nullable String comment) {
-        if (comment == null)
-            return Linq.list();
-        return Linq.list(comment.split("\n"));
-    }
-
     public static void compileAndTestJit(String directory, File jsonFile) throws IOException, InterruptedException {
         runProcess(directory, "cargo", "run", "-p", "dataflow-jit",
                 "--bin", "dataflow-jit", "--features", "binary", "--", "validate", jsonFile.getAbsolutePath());
+    }
+
+    public static <T> T last(List<T> data) {
+        if (data.isEmpty())
+            throw new RuntimeException("Data is empty");
+        return data.get(data.size() - 1);
     }
 }

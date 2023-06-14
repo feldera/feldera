@@ -99,7 +99,7 @@ public class IndentStream implements IIndentStream {
     }
 
     @Override
-    public IIndentStream append(Supplier<String> supplier) {
+    public IIndentStream appendSupplier(Supplier<String> supplier) {
         return this.append(supplier.get());
     }
 
@@ -227,6 +227,15 @@ public class IndentStream implements IIndentStream {
     @Override
     public <T extends ToIndentableString>
     IIndentStream intercalateI(String separator, Collection<T> data) {
+        for (T d: data) {
+            this.append(d);
+            this.append(separator);
+        }
+        return this;
+    }
+
+    @Override
+    public <T extends ToIndentableString> IIndentStream intercalateI(String separator, T[] data) {
         for (T d: data) {
             this.append(d);
             this.append(separator);

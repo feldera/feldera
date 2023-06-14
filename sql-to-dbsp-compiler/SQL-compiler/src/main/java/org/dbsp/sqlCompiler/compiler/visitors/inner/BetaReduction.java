@@ -27,7 +27,6 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.*;
-import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 
 /**
@@ -54,14 +53,16 @@ public class BetaReduction extends InnerRewriteVisitor {
             if (closure.parameters.length != expression.arguments.length)
                 throw new RuntimeException("Closure with " + closure.parameters.length +
                         " parameters called with " + expression.arguments.length + " arguments");
+            this.push(expression);
             for (int i = 0; i < closure.parameters.length; i++) {
                 DBSPParameter param = closure.parameters[i];
-                DBSPIdentifierPattern paramPattern = param.pattern.to(DBSPIdentifierPattern.class);
                 DBSPExpression arg = this.transform(expression.arguments[i]);
-                this.context.substitute(paramPattern.identifier, arg);
+                this.context.substitute(param.name, arg);
             }
 
             DBSPExpression newBody = this.transform(closure.body);
+            this.pop(expression);
+
             this.map(expression, newBody);
             this.context.popContext();
             return VisitDecision.STOP;

@@ -43,7 +43,7 @@ import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.CollectIdentifiers;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.PassesVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -148,7 +148,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "CREATE VIEW V AS SELECT COL1 FROM T"
         };
         File file = this.createInputScript(statements);
-        CompilerMain.execute("-TCalciteCompiler=2", "-TPassesVisitor=2",
+        CompilerMain.execute("-TCalciteCompiler=2", "-TPasses=2",
                 "-o", BaseSQLTests.testFilePath, file.getPath());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
         boolean success = file.delete();
@@ -158,7 +158,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertTrue(messages.contains("After optimizer"));
         Assert.assertTrue(messages.contains("CircuitRewriter:Simplify"));
         Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 0);
-        Logger.INSTANCE.setLoggingLevel(PassesVisitor.class, 0);
+        Logger.INSTANCE.setLoggingLevel(Passes.class, 0);
     }
 
     @Test
@@ -310,7 +310,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 DBSPTypeWeight.INSTANCE,
                 new DBSPTupleExpression(new DBSPI32Literal(1, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(2, true)),
-                new DBSPTupleExpression(DBSPI32Literal.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))
+                new DBSPTupleExpression(DBSPI32Literal.none(DBSPTypeInteger.NULLABLE_SIGNED_32))
         );
         String fileName = BaseSQLTests.rustDirectory + "/" + "test.csv";
         File file = ToCsvVisitor.toCsv(compiler, fileName, data);

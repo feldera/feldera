@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 
@@ -45,12 +47,6 @@ public class DBSPApplyMethodExpression extends DBSPExpression {
         this.function = DBSPTypeAny.INSTANCE.path(new DBSPPath(function));
         this.self = self;
         this.arguments = arguments;
-    }
-
-    public DBSPApplyMethodExpression(
-            DBSPExpression function,
-            DBSPExpression self, DBSPExpression... arguments) {
-        this(function, DBSPApplyExpression.getReturnType(function.getNonVoidType()), self, arguments);
     }
 
     public DBSPApplyMethodExpression(
@@ -74,5 +70,16 @@ public class DBSPApplyMethodExpression extends DBSPExpression {
             arg.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPApplyMethodExpression o = other.as(DBSPApplyMethodExpression.class);
+        if (o == null)
+            return false;
+        return this.function == o.function &&
+                this.self == o.self &&
+                Linq.same(this.arguments, o.arguments) &&
+                this.hasSameType(o);
     }
 }

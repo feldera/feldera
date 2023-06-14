@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
+import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -155,7 +155,7 @@ public class RustSqlRuntimeLibrary {
         public final String function;
         public final DBSPType returnType;
 
-        public FunctionDescription(String function, DBSPOpcode opcode, DBSPType returnType) {
+        public FunctionDescription(String function, DBSPType returnType) {
             this.function = function;
             this.returnType = returnType;
         }
@@ -223,7 +223,6 @@ public class RustSqlRuntimeLibrary {
             if (opcode.equals(inMap)) {
                 return new FunctionDescription(
                         k + "_" + tsuffixl + suffixl + "_" + tsuffixr + suffixr + suffixReturn,
-                        opcode,
                         returnType);
             }
         }

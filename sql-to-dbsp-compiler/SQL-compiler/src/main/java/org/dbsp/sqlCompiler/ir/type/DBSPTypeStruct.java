@@ -23,8 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 import javax.annotation.Nullable;
@@ -73,6 +74,15 @@ public class DBSPTypeStruct extends DBSPType {
             visitor.pop(this);
             visitor.postorder(this);
         }
+
+        @Override
+        public boolean sameFields(IDBSPNode other) {
+            Field o = other.as(Field.class);
+            if (o == null)
+                return false;
+            return this.name.equals(o.name) &&
+                    this.type == o.type;
+        }
     }
 
     public final String name;
@@ -109,7 +119,7 @@ public class DBSPTypeStruct extends DBSPType {
 
     @Override
     public boolean sameType(@Nullable DBSPType type) {
-        if (!super.sameType(type))
+        if (!super.sameNullability(type))
             return false;
         assert type != null;
         if (!type.is(DBSPTypeStruct.class))

@@ -86,7 +86,14 @@ public class Linq {
     }
 
     public static <T, S> List<S> flatMap(List<T> data, Function<T, List<S>> function) {
-        List<S> result = new ArrayList<>(data.size());
+        List<S> result = new ArrayList<>();
+        for (T aData : data)
+            result.addAll(function.apply(aData));
+        return result;
+    }
+
+    public static <T, S> List<S> flatMap(T[] data, Function<T, List<S>> function) {
+        List<S> result = new ArrayList<>();
         for (T aData : data)
             result.addAll(function.apply(aData));
         return result;
@@ -138,6 +145,12 @@ public class Linq {
         if (left.size() != right.size())
             return false;
         return Linq.all(Linq.zipSameLength(left, right, (l, r) -> l == r));
+    }
+
+    public static boolean sameStrings(List<String> left, List<String> right) {
+        if (left.size() != right.size())
+            return false;
+        return Linq.all(Linq.zipSameLength(left, right, String::equals));
     }
 
     public static <T, S, R> List<R> zip(List<T> left, List<S> right, BiFunction<T, S, R> function) {
@@ -255,5 +268,13 @@ public class Linq {
             if (left[i] != right[i])
                 return true;
         return false;
+    }
+
+    static public <T> T reduce(T[] data, T zero, BiFunction<T, T, T> reducer) {
+        T result = zero;
+        for (T d: data) {
+            result = reducer.apply(result, d);
+        }
+        return result;
     }
 }

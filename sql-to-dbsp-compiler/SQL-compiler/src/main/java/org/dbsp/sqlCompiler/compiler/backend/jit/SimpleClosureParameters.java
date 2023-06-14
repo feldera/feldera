@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SubstitutionContext;
@@ -33,7 +33,6 @@ import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
-import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 import org.dbsp.util.NameGen;
 
@@ -47,8 +46,7 @@ import java.util.List;
  * accesses, e.g., p.1.
  */
 public class SimpleClosureParameters
-        extends InnerRewriteVisitor
-        implements IWritesLogs {
+        extends InnerRewriteVisitor {
     final SubstitutionContext<List<DBSPVariablePath>> context;
     final NameGen generator;
 
@@ -101,8 +99,8 @@ public class SimpleClosureParameters
 
     @Override
     public VisitDecision preorder(DBSPLetStatement statement) {
-        this.context.substitute(statement.variable, null);
         super.preorder(statement);
+        this.context.substitute(statement.variable, null);
         return VisitDecision.STOP;
     }
 

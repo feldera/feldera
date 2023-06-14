@@ -399,7 +399,7 @@ public class BaseSQLTests {
             new DBSPI32Literal(10),
             DBSPBoolLiteral.TRUE,
             new DBSPStringLiteral("Hi"),
-            DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true))
+            DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32)
     );
     public static final DBSPTupleExpression e1NoDouble = new DBSPTupleExpression(
             new DBSPI32Literal(10),

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 
@@ -47,5 +48,14 @@ public class DBSPEnumValue extends DBSPExpression {
             this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPEnumValue o = other.as(DBSPEnumValue.class);
+        if (o == null)
+            return false;
+        return this.enumName.equals(o.enumName) &&
+                this.constructor.equals(o.constructor);
     }
 }

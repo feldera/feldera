@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
@@ -24,5 +25,13 @@ public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
     public void accept(CircuitVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPComment o = other.as(DBSPComment.class);
+        if (o == null)
+            return false;
+        return this.comment.equals(o.comment);
     }
 }

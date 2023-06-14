@@ -115,15 +115,17 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT DIVISION(1, 0)";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))));
+                        DBSPTypeInteger.NULLABLE_SIGNED_32))));
     }
 
     @Test @Override
     public void inTest() {
         String query = "SELECT 3 in (SELECT COL5 FROM T)";
         this.testAggregate(query,
-                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeBool.NULLABLE_INSTANCE))),
-                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPBoolLiteral(false, true)))
+                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
+                        DBSPLiteral.none(DBSPTypeBool.NULLABLE_INSTANCE))),
+                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
+                        new DBSPBoolLiteral(false, true)))
         );
     }
 
@@ -134,8 +136,10 @@ public class NaiveIncrementalTests extends EndToEndTests {
                 "0.5 * (SELECT Sum(r1.COL5) FROM T r1) =\n" +
                 "(SELECT Sum(r2.COL5) FROM T r2 WHERE r2.COL1 = r.COL1)";
         this.testAggregate(query,
-                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))),
-                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))));
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))),
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
     }
 
     @Test @Override
@@ -143,7 +147,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT 1 / 0";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))));
+                        DBSPTypeInteger.NULLABLE_SIGNED_32))));
     }
 
     @Test
@@ -179,7 +183,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT 2 / (1 / 0)";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))));
+                        DBSPTypeInteger.NULLABLE_SIGNED_32))));
     }
 
     @Test @Override
@@ -212,7 +216,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT SUM(T.COL1) FROM T WHERE FALSE";
         DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true))));
+                DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32)));
         this.testConstantOutput(query, result);
     }
 
@@ -235,13 +239,24 @@ public class NaiveIncrementalTests extends EndToEndTests {
     }
 
     @Test @Override
+    public void aggregateTwiceTest() {
+        String query = "SELECT COUNT(T.COL1), SUM(T.COL1) FROM T";
+        this.testAggregate(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI64Literal(2), new DBSPI32Literal(20, true))),
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(new DBSPI64Literal(0),
+                                DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
+    }
+
+    @Test @Override
     public void maxConst() {
         String query = "SELECT MAX(6) FROM T";
         this.testAggregate(query,
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(new DBSPI32Literal(6, true))),
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))));
+                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
     }
 
     @Test @Override
@@ -251,7 +266,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(new DBSPI32Literal(10, true))),
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))));
+                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
     }
 
     @Test @Override
@@ -261,7 +276,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
                 new DBSPTupleExpression(
                 new DBSPI32Literal(10, true)));
         this.testAggregate(query, output, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))));
+                new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
     }
 
     @Test @Override
@@ -311,21 +326,24 @@ public class NaiveIncrementalTests extends EndToEndTests {
     @Test
     public void testArray() {
         String query = "SELECT ELEMENT(ARRAY [2])";
-        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPI32Literal(2)));
+        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(new DBSPI32Literal(2)));
         this.testConstantOutput(query, result);
     }
 
     @Test
     public void testArrayIndex() {
         String query = "SELECT (ARRAY [2])[1]";
-        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPI32Literal(2, true)));
+        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(new DBSPI32Literal(2, true)));
         this.testConstantOutput(query, result);
     }
 
     @Test
     public void testArrayIndexOutOfBounds() {
         String query = "SELECT (ARRAY [2])[3]";
-        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32)));
+        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32)));
         this.testConstantOutput(query, result);
     }
 }

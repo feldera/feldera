@@ -23,50 +23,39 @@
 
 package org.dbsp.sqlCompiler.ir;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
-import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
-import org.dbsp.sqlCompiler.ir.pattern.DBSPTuplePattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
-import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 
-public class DBSPParameter extends DBSPNode implements IHasType, IDBSPInnerNode {
-    public final DBSPPattern pattern;
+/**
+ * Rust supports parameters with patterns, but we don't.
+ * We only use simple parameters, with a single name.
+ */
+public class DBSPParameter extends DBSPNode implements
+        IHasType, IDBSPInnerNode, IDBSPDeclaration {
+    public final String name;
     public final DBSPType type;
+    public final boolean mutable;
 
-    public DBSPParameter(DBSPPattern pattern, DBSPType type) {
+    public DBSPParameter(String name, DBSPType type, boolean mutable) {
         super(null);
-        this.pattern = pattern;
+        this.name = name;
         this.type = type;
+        this.mutable = mutable;
     }
 
     public DBSPParameter(String name, DBSPType type) {
-        super(null);
-        this.pattern = new DBSPIdentifierPattern(name);
-        this.type = type;
-    }
-
-    public DBSPParameter(DBSPVariablePath... variables) {
-        super(null);
-        this.pattern = new DBSPTuplePattern(Linq.map(variables, DBSPVariablePath::asPattern, DBSPPattern.class));
-        this.type = new DBSPTypeRawTuple(Linq.map(variables, DBSPExpression::getType, DBSPType.class));
+        this(name, type, false);
     }
 
     /**
-     * This is only defined for parameters that have an IdentifierPattern.
      * Return a variable that refers to the parameter.
      */
     public DBSPVariablePath asVariableReference() {
-        DBSPIdentifierPattern id = this.pattern.to(DBSPIdentifierPattern.class);
-        return new DBSPVariablePath(id.identifier, this.type);
+        return new DBSPVariablePath(this.name, this.type);
     }
 
     @Nullable
@@ -80,8 +69,22 @@ public class DBSPParameter extends DBSPNode implements IHasType, IDBSPInnerNode 
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         this.type.accept(visitor);
-        this.pattern.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public String getName() {
+        return this.name;
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPParameter o = other.as(DBSPParameter.class);
+        if (o == null)
+            return false;
+        return this.name.equals(o.name) &&
+                this.type == o.type &&
+                this.mutable == o.mutable;
     }
 }

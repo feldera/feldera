@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -76,5 +77,15 @@ public class DBSPClosureExpression extends DBSPExpression {
         this.body.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPClosureExpression o = other.as(DBSPClosureExpression.class);
+        if (o == null)
+            return false;
+        return this.body == o.body &&
+                this.hasSameType(o) &&
+                Linq.same(this.parameters, o.parameters);
     }
 }

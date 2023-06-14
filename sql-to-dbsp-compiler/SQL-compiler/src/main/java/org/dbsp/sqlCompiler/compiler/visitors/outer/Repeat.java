@@ -6,17 +6,16 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
-import java.util.function.Supplier;
-
 /**
- * Applies a visitor until the circuit stops changing.
+ * Applies a CircuitTransform until the circuit stops changing.
  */
-public class RepeatVisitor extends CircuitVisitor implements IWritesLogs {
-    public CircuitVisitor visitor;
+public class Repeat implements IWritesLogs, CircuitTransform {
+    final IErrorReporter errorReporter;
+    public final CircuitTransform transform;
 
-    public RepeatVisitor(IErrorReporter reporter, CircuitVisitor visitor) {
-        super(reporter, false);
-        this.visitor = visitor;
+    public Repeat(IErrorReporter reporter, CircuitTransform visitor) {
+        this.errorReporter = reporter;
+        this.transform = visitor;
     }
 
     @Override
@@ -24,12 +23,12 @@ public class RepeatVisitor extends CircuitVisitor implements IWritesLogs {
         int maxRepeats = circuit.size();
         int repeats = 0;
         while (true) {
-            DBSPCircuit result = this.visitor.apply(circuit);
+            DBSPCircuit result = this.transform.apply(circuit);
             Logger.INSTANCE.belowLevel(this, 3)
                     .append("After ")
-                    .append(this.visitor.toString())
+                    .append(this.transform.toString())
                     .newline()
-                    .append((Supplier<String>) result::toString)
+                    .appendSupplier(result::toString)
                     .newline();
             if (result.sameCircuit(circuit))
                 return circuit;
@@ -38,7 +37,7 @@ public class RepeatVisitor extends CircuitVisitor implements IWritesLogs {
             if (repeats == maxRepeats) {
                 this.errorReporter.reportError(SourcePositionRange.INVALID, true,
                         "InfiniteLoop",
-                        "Repeated optimization " + this.visitor + " " +
+                        "Repeated optimization " + this.transform + " " +
                         repeats + " times without convergence");
                 return result;
             }
@@ -47,6 +46,6 @@ public class RepeatVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public String toString() {
-        return "Repeat " + this.visitor;
+        return "Repeat " + this.transform;
     }
 }

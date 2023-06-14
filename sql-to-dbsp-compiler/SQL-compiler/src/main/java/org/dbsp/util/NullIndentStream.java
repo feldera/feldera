@@ -62,7 +62,7 @@ public class NullIndentStream implements IIndentStream {
     }
 
     @Override
-    public IIndentStream append(Supplier<String> supplier) {
+    public IIndentStream appendSupplier(Supplier<String> supplier) {
         return this;
     }
 
@@ -125,6 +125,11 @@ public class NullIndentStream implements IIndentStream {
     @Override
     public <T extends ToIndentableString>
     IIndentStream intercalateI(String separator, Collection<T> data) {
+        return this;
+    }
+
+    @Override
+    public <T extends ToIndentableString> IIndentStream intercalateI(String separator, T[] data) {
         return this;
     }
 

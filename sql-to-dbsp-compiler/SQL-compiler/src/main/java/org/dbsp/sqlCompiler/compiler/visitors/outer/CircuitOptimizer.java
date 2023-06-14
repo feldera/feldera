@@ -43,17 +43,17 @@ public class CircuitOptimizer implements ICompilerComponent {
         this.compiler = compiler;
     }
 
-    CircuitVisitor getOptimizer() {
+    CircuitTransform getOptimizer() {
         if (this.compiler.options.optimizerOptions.optimizationLevel < 2) {
             if (this.compiler.options.optimizerOptions.incrementalize) {
                 return new IncrementalizeVisitor(this.getCompiler());
             } else {
                 // Nothing.
-                return new PassesVisitor(this.getCompiler());
+                return new Passes(this.getCompiler());
             }
         }
 
-        List<CircuitVisitor> passes = new ArrayList<>();
+        List<CircuitTransform> passes = new ArrayList<>();
 
         IErrorReporter reporter = this.getCompiler();
         passes.add(new MergeSums(reporter));
@@ -69,7 +69,7 @@ public class CircuitOptimizer implements ICompilerComponent {
         if (this.getCompiler().options.optimizerOptions.incrementalize)
             passes.add(new NoIntegralVisitor(reporter));
         passes.add(new Simplify(reporter).circuitRewriter());
-        return new PassesVisitor(reporter, passes);
+        return new Passes(reporter, passes);
     }
 
     public DBSPCircuit optimize(DBSPCircuit input) {

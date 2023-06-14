@@ -45,5 +45,4 @@ public class SltSqlStatementList {
         this.statements.add(statement);
     }
     public void clear() { this.statements.clear(); }
-    public boolean contains(SltSqlStatement statement) { return this.statements.contains(statement); }
 }

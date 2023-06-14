@@ -60,6 +60,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.util.IWritesLogs;
@@ -166,7 +167,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     public ToJitInnerVisitor(IErrorReporter reporter, List<JITBlock> blocks,
                              TypeCatalog typeCatalog, ToJitVisitor parent,
                              JITParameterMapping mapping) {
-        super(reporter, true);
+        super(reporter);
         this.blocks = blocks;
         this.jitVisitor = parent;
         this.typeCatalog = typeCatalog;
@@ -967,7 +968,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPLetStatement statement) {
-        boolean isTuple = statement.type.is(DBSPTypeTuple.class);
+        boolean isTuple = statement.type.is(DBSPTypeTupleBase.class);
         this.variableAssigned.add(statement.variable);
         if (isTuple) {
             JITInstructionPair ids = this.declare(statement.variable, needsNull(statement.type));
