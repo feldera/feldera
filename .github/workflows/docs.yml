@@ -26,25 +26,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  pre_job:
-    runs-on: ubuntu-latest
-    outputs:
-      should_skip: ${{ steps.skip_check.outputs.should_skip }}
-    steps:
-      - id: skip_check
-        uses: fkirc/skip-duplicate-actions@master
-        with:
-          concurrent_skipping: "same_content_newer"
-          cancel_others: "true"
-          skip_after_successful_duplicate: "true"
-          do_not_skip: '["workflow_dispatch", "schedule"]'
   build:
     permissions:
       contents: read
       packages: write
     runs-on: [self-hosted, skylake40]
-    needs: [pre_job]
-    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -77,7 +63,7 @@ jobs:
 
   # Deployment job
   deploy_docs:
-    # Only on main
+    # Only deploy on main
     if: ${{ github.ref == 'refs/heads/main' }}
     environment:
       name: github-pages
