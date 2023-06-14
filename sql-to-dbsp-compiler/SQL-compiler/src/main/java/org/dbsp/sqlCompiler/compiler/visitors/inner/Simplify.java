@@ -74,18 +74,18 @@ public class Simplify extends InnerRewriteVisitor {
     public VisitDecision preorder(DBSPCastExpression expression) {
         this.push(expression);
         DBSPExpression source = this.transform(expression.source);
+        DBSPType type = this.transform(expression.getNonVoidType());
+        DBSPExpression result = source.cast(type);
         this.pop(expression);
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
             if (lit.getNonVoidType().is(DBSPTypeNull.class)) {
                 // This is a literal with type "NULL".
                 // Convert it to a literal of the resulting type
-                DBSPExpression result = DBSPLiteral.none(expression.getNonVoidType());
-                this.map(expression, result);
-                return VisitDecision.STOP;
+                result = DBSPLiteral.none(expression.getNonVoidType());
             }
         }
-        this.map(expression, expression);
+        this.map(expression, result);
         return VisitDecision.STOP;
     }
 
@@ -144,41 +144,41 @@ public class Simplify extends InnerRewriteVisitor {
         if (expression.operation.equals(DBSPOpcode.AND)) {
             if (left.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
-                if (bLeft.isNull) {
-                    result = bLeft;
-                } else if (Objects.requireNonNull(bLeft.value)) {
-                    result = right;
-                } else {
-                    result = left;
+                if (!bLeft.isNull) {
+                    if (Objects.requireNonNull(bLeft.value)) {
+                        result = right;
+                    } else {
+                        result = left;
+                    }
                 }
             } else if (right.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
-                if (bRight.isNull) {
-                    result = left;
-                } else if (Objects.requireNonNull(bRight.value)) {
-                    result = left;
-                } else {
-                    result = right;
+                if (!bRight.isNull) {
+                    if (Objects.requireNonNull(bRight.value)) {
+                        result = left;
+                    } else {
+                        result = right;
+                    }
                 }
             }
         } else if (expression.operation.equals(DBSPOpcode.OR)) {
             if (left.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
-                if (bLeft.isNull) {
-                    result = bLeft;
-                } else if (Objects.requireNonNull(bLeft.value)) {
-                    result = left;
-                } else {
-                    result = right;
+                if (!bLeft.isNull) {
+                    if (Objects.requireNonNull(bLeft.value)) {
+                        result = left;
+                    } else {
+                        result = right;
+                    }
                 }
             } else if (right.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
-                if (bRight.isNull) {
-                    result = left;
-                } else if (Objects.requireNonNull(bRight.value)) {
-                    result = right;
-                } else {
-                    result = left;
+                if (!bRight.isNull) {
+                    if (Objects.requireNonNull(bRight.value)) {
+                        result = right;
+                    } else {
+                        result = left;
+                    }
                 }
             }
         } else if (expression.operation.equals(DBSPOpcode.ADD)) {
@@ -224,9 +224,6 @@ public class Simplify extends InnerRewriteVisitor {
                     result = right;
                 }
             }
-        } else if (left != expression.left || right != expression.right) {
-            result = new DBSPBinaryExpression(expression.getNode(), expression.getNonVoidType(),
-                    expression.operation, left, right, expression.primitive);
         }
         this.map(expression, result.cast(expression.getNonVoidType()));
         return VisitDecision.STOP;

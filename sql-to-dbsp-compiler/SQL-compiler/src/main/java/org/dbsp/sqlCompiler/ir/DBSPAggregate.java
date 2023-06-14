@@ -2,12 +2,8 @@ package org.dbsp.sqlCompiler.ir;
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.sql.SqlOperator;
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
-import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;

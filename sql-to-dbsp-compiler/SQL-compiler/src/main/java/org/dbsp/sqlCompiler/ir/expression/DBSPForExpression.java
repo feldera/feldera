@@ -23,11 +23,13 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 
+@NonCoreIR
 public class DBSPForExpression extends DBSPExpression {
     public final DBSPPattern pattern;
     public final DBSPExpression iterated;

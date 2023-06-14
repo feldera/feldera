@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -11,16 +10,14 @@ import java.util.List;
 /**
  * Applies multiple other inner visitors in sequence.
  */
-public class InnerPassesVisitor implements IWritesLogs, IRTransform {
-    final IErrorReporter errorReporter;
+public class InnerPasses implements IWritesLogs, IRTransform {
     public final List<IRTransform> passes;
 
-    public InnerPassesVisitor(IErrorReporter reporter, IRTransform... passes) {
-        this(reporter, Linq.list(passes));
+    public InnerPasses(IRTransform... passes) {
+        this(Linq.list(passes));
     }
 
-    public InnerPassesVisitor(IErrorReporter reporter, List<IRTransform> passes) {
-        this.errorReporter = reporter;
+    public InnerPasses(List<IRTransform> passes) {
         this.passes = passes;
     }
 

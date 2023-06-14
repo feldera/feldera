@@ -167,7 +167,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     public ToJitInnerVisitor(IErrorReporter reporter, List<JITBlock> blocks,
                              TypeCatalog typeCatalog, ToJitVisitor parent,
                              JITParameterMapping mapping) {
-        super(reporter, true);
+        super(reporter);
         this.blocks = blocks;
         this.jitVisitor = parent;
         this.typeCatalog = typeCatalog;

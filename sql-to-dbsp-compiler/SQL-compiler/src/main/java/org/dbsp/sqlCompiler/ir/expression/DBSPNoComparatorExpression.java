@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;

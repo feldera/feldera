@@ -48,7 +48,7 @@ public class ToCsvVisitor extends InnerVisitor {
     public final Supplier<String> nullRepresentation;
 
     public ToCsvVisitor(IErrorReporter reporter, Appendable destination, Supplier<String> nullRepresentation) {
-        super(reporter, false);
+        super(reporter);
         this.appendable = destination;
         this.nullRepresentation = nullRepresentation;
     }

@@ -99,7 +99,7 @@ public class IndentStream implements IIndentStream {
     }
 
     @Override
-    public IIndentStream append(Supplier<String> supplier) {
+    public IIndentStream appendSupplier(Supplier<String> supplier) {
         return this.append(supplier.get());
     }
 

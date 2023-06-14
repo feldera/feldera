@@ -23,14 +23,13 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import java.util.Objects;
 
 public class DBSPBlockExpression extends DBSPExpression {
     public final List<DBSPStatement> contents;

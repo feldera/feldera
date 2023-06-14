@@ -72,10 +72,6 @@ public class DBSPTimestampLiteral extends DBSPLiteral {
         this(null, DBSPTypeTimestamp.INSTANCE.setMayBeNull(mayBeNull), createTimestampString(string));
     }
 
-    public DBSPTimestampLiteral(long value, boolean mayBeNull) {
-        this(null, DBSPTypeTimestamp.INSTANCE.setMayBeNull(mayBeNull), value);
-    }
-
     @Override
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;

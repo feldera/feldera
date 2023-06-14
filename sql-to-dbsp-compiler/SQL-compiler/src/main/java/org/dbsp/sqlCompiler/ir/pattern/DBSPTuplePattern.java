@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.ir.pattern;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.util.Linq;
 
+@NonCoreIR
 public class DBSPTuplePattern extends DBSPPattern {
     public final DBSPPattern[] fields;
 

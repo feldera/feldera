@@ -43,10 +43,10 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
     public void postorder(DBSPMapOperator operator) {
         DBSPOperator source = this.mapped(operator.input());
         Projection projection = new Projection(this.errorReporter);
-        projection.traverse(operator.getFunction());;
+        projection.traverse(operator.getFunction());
         if (projection.isProjection) {
             if ((source.is(DBSPJoinOperator.class) || source.is(DBSPIncrementalJoinOperator.class)) &&
-                    // We have to lookup the original operator input, not source
+                    // We have to look up the original operator input, not source
                     this.canOptimize.apply(operator.input())) {
                 DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
                 DBSPClosureExpression newFunction = projection.applyAfter(expression);

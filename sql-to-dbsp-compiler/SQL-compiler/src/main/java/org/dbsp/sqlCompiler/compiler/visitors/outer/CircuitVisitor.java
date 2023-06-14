@@ -24,24 +24,21 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
-import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.util.IdGen;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
-import java.util.function.Function;
 
 /**
  * Depth-first traversal of an DBSPNode hierarchy.
  */
 @SuppressWarnings({"SameReturnValue", "BooleanMethodIsAlwaysInverted"})
-public abstract class CircuitVisitor extends IdGen
-        implements Function<DBSPCircuit, DBSPCircuit> {
+public abstract class CircuitVisitor
+        implements CircuitTransform {
     /// If true each visit call will visit by default the superclass.
     final boolean visitSuper;
     @Nullable
@@ -49,6 +46,7 @@ public abstract class CircuitVisitor extends IdGen
     public final IErrorReporter errorReporter;
 
     public CircuitVisitor(IErrorReporter errorReporter, boolean visitSuper) {
+        assert visitSuper;
         this.visitSuper = visitSuper;
         this.errorReporter = errorReporter;
     }
@@ -105,11 +103,6 @@ public abstract class CircuitVisitor extends IdGen
     }
 
     public VisitDecision preorder(IDBSPOuterNode ignoredNode) { return VisitDecision.CONTINUE; }
-
-    public VisitDecision preorder(IDBSPDeclaration node) {
-        if (this.visitSuper) return this.preorder((IDBSPOuterNode) node);
-        else return VisitDecision.CONTINUE;
-    }
 
     public VisitDecision preorder(DBSPUnaryOperator node) {
         if (this.visitSuper) return this.preorder((DBSPOperator) node);
@@ -237,8 +230,6 @@ public abstract class CircuitVisitor extends IdGen
 
     @SuppressWarnings("EmptyMethod")
     public void postorder(IDBSPOuterNode ignored) {}
-
-    public void postorder(IDBSPDeclaration node) { if (this.visitSuper) this.postorder((IDBSPOuterNode)node); }
 
     public void postorder(DBSPUnaryOperator node) {
         if (this.visitSuper) this.postorder((DBSPOperator) node);

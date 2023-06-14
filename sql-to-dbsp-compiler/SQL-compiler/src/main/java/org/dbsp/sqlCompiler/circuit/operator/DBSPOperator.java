@@ -23,8 +23,8 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;

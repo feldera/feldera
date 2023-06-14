@@ -26,7 +26,8 @@ package org.dbsp.sqlCompiler.compiler.backend.jit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
@@ -45,9 +46,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateMulWeight;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandClone;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveWeightType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPassesVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.PassesVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPasses;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -100,9 +100,8 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
         public JITFunction getFunction() { return Objects.requireNonNull(this.function); }
     }
 
-    public InnerRewriteVisitor normalizer(boolean simpleParameters) {
-        InnerPassesVisitor passes = new
-                InnerPassesVisitor(this.errorReporter);
+    public IRTransform normalizer(boolean simpleParameters) {
+        InnerPasses passes = new InnerPasses();
         passes.add(new ExpandClone(this.errorReporter));
         passes.add(new BetaReduction(this.errorReporter));
         passes.add(new Simplify(this.errorReporter));
@@ -118,7 +117,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(function.toString())
                 .newline();
 
-        InnerRewriteVisitor normalizer = this.normalizer(simpleParameters);
+        IRTransform normalizer = this.normalizer(simpleParameters);
         function = normalizer.apply(function).to(DBSPClosureExpression.class);
         function = this.tupleEachParameter(function);
 
@@ -156,32 +155,17 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
         Logger.INSTANCE.belowLevel(this, 4)
                 .append("Canonicalizing")
                 .newline()
-                .append(function.toString())
+                .appendSupplier(function::toString)
                 .newline();
 
-        InnerRewriteVisitor normalizer = this.normalizer(false);
+        IRTransform normalizer = this.normalizer(false);
         IDBSPInnerNode func = normalizer.apply(function);
-        /*
-        ResolveReferences resolver = new ResolveReferences(this.errorReporter);
-        func = resolver.apply(func);
-        Logger.INSTANCE.belowLevel(this, 2)
-                .append("Before parameter flattening")
-                .newline()
-                .append(func.toString())
-                .newline();
-        func = new FlattenParameter(this.errorReporter, resolver.reference).apply(func);
-        Logger.INSTANCE.belowLevel(this, 2)
-                .append("After parameter flattening")
-                .newline()
-                .append(func.toString())
-                .newline();
-         */
         function = this.tupleEachParameter(func.to(DBSPClosureExpression.class));
 
         Logger.INSTANCE.belowLevel(this, 4)
                 .append("Converting step function to JIT")
                 .newline()
-                .append(function.toString())
+                .appendSupplier(function::toString)
                 .newline();
         JITParameterMapping mapping = new JITParameterMapping(this.getTypeCatalog());
         int index = 0;
@@ -497,7 +481,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     public static JITProgram circuitToJIT(DBSPCompiler compiler, DBSPCircuit circuit) {
-        PassesVisitor rewriter = new PassesVisitor(compiler);
+        Passes rewriter = new Passes(compiler);
         rewriter.add(new BlockClosures(compiler));
         rewriter.add(new ResolveWeightType(compiler, compiler.getWeightTypeImplementation()).circuitRewriter());
         rewriter.add(new EliminateMulWeight(compiler).circuitRewriter());
@@ -507,7 +491,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
         Logger.INSTANCE.belowLevel("ToJitVisitor", 2)
                 .append("Converting circuit to JIT")
                 .newline()
-                .append(circuit.toString());
+                .appendSupplier(circuit::toString);
         ToJitVisitor visitor = new ToJitVisitor(compiler);
         visitor.apply(circuit);
         return visitor.program;

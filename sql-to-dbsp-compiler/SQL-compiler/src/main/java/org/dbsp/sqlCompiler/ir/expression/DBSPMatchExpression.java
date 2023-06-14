@@ -23,10 +23,11 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
@@ -36,6 +37,7 @@ import java.util.List;
 /**
  * A (Rust) match expression.
  */
+@NonCoreIR
 public class DBSPMatchExpression extends DBSPExpression {
     public static class Case extends DBSPNode implements IDBSPInnerNode {
         public final DBSPPattern against;

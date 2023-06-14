@@ -30,7 +30,6 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITRowType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITScalarType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITUnitType;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
-import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;

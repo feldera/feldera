@@ -38,7 +38,7 @@ public interface IIndentStream {
     /**
      * For lazy evaluation of the argument.
      */
-    IIndentStream append(Supplier<String> supplier);
+    IIndentStream appendSupplier(Supplier<String> supplier);
     IIndentStream joinS(String separator, Collection<String> data);
     <T extends ToIndentableString> IIndentStream joinI(String separator, Collection<T> data);
     IIndentStream join(String separator, String[] data);

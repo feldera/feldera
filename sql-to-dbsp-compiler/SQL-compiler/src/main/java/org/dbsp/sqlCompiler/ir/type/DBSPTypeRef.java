@@ -58,7 +58,7 @@ public class DBSPTypeRef extends DBSPType {
     }
 
     public boolean sameType(@Nullable DBSPType other) {
-        if (!super.sameType(other))
+        if (!super.sameNullability(other))
             return false;
         assert other != null;
         DBSPTypeRef oRef = other.as(DBSPTypeRef.class);

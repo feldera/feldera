@@ -23,8 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;

@@ -12,8 +12,6 @@ import javax.annotation.Nullable;
  */
 public class DBSPNullLiteral extends DBSPLiteral {
     public static final DBSPNullLiteral INSTANCE = new DBSPNullLiteral();
-    @Nullable
-    public final Object value = null;
 
     public DBSPNullLiteral(@Nullable Object node, DBSPType type, @Nullable Object value) {
         super(node,  type, true);

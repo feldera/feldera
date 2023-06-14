@@ -21,7 +21,7 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.circuit;
+package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.util.ICastable;
 import org.dbsp.util.IHasId;

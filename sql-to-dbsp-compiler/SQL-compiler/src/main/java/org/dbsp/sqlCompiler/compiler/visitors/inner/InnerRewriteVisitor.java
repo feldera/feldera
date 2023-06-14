@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
@@ -58,7 +58,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Supplier;
 
 /**
  * Base class for Inner visitors which rewrite expressions, types, and statements.
@@ -71,7 +70,7 @@ public abstract class InnerRewriteVisitor
         extends InnerVisitor
         implements IWritesLogs {
     protected InnerRewriteVisitor(IErrorReporter reporter) {
-        super(reporter,true);
+        super(reporter);
     }
 
     /**
@@ -106,9 +105,9 @@ public abstract class InnerRewriteVisitor
         Logger.INSTANCE.belowLevel(this, 1)
                 .append(this.toString())
                 .append(":")
-                .append((Supplier<String>) old::toString)
+                .appendSupplier(old::toString)
                 .append(" -> ")
-                .append((Supplier<String>) newOp::toString)
+                .appendSupplier(newOp::toString)
                 .newline();
         this.lastResult = newOp;
     }
@@ -783,19 +782,6 @@ public abstract class InnerRewriteVisitor
         DBSPType[] types = this.transform(expression.types);
         this.pop(expression);
         DBSPExpression result = new DBSPQualifyTypeExpression(source, types);
-        this.map(expression, result);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPRangeExpression expression) {
-        this.push(expression);
-        @Nullable DBSPExpression left = this.transformN(expression.left);
-        @Nullable DBSPExpression right = this.transformN(expression.right);
-        DBSPType type = this.transform(expression.getNonVoidType());
-        this.pop(expression);
-        DBSPExpression result = new DBSPRangeExpression(left, right,
-                    expression.endInclusive, type);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

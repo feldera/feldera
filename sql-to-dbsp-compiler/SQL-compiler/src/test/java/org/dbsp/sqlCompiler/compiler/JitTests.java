@@ -23,13 +23,13 @@ import java.math.BigDecimal;
  * Runs tests using the JIT compiler backend and runtime.
  */
 public class JitTests extends EndToEndTests {
-    @Test
-    public void aggregateTwiceTest() {
-        String query = "SELECT COUNT(T.COL1), SUM(T.COL1) FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI64Literal(2), new DBSPI32Literal(20, true))));
+    @Override
+    void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
+        DBSPZSetLiteral.Contents input = this.createInput();
+        super.testQueryBase(query, false, true, true, new InputOutputPair(input, expectedOutput));
     }
+
+    // All the @Ignore-ed tests below should eventually pass.
 
     @Test @Override @Ignore("Average not yet implemented")
     public void averageTest() {
@@ -49,14 +49,6 @@ public class JitTests extends EndToEndTests {
                         new DBSPI32Literal(34, true))));
     }
 
-    @Override
-    void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
-        DBSPZSetLiteral.Contents input = this.createInput();
-        super.testQueryBase(query, false, true, true, new InputOutputPair(input, expectedOutput));
-    }
-
-    // All the @Ignore-ed tests below should eventually pass.
-
     @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
     public void divZero() {
         String query = "SELECT 'Infinity' / 0";
@@ -73,7 +65,7 @@ public class JitTests extends EndToEndTests {
                 "0.5 * (SELECT Sum(r1.COL5) FROM T r1) =\n" +
                 "(SELECT Sum(r2.COL5) FROM T r2 WHERE r2.COL1 = r.COL1)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                DBSPLiteral.none(DBSPTypeInteger.SIGNED_32.setMayBeNull(true)))));
+                DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
     }
 
     @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")

@@ -33,16 +33,16 @@ import org.dbsp.util.Logger;
 
 import java.util.List;
 
-public class PassesVisitor implements IWritesLogs, CircuitTransform {
+public class Passes implements IWritesLogs, CircuitTransform {
     final IErrorReporter errorReporter;
     public final List<CircuitTransform> passes;
 
-    public PassesVisitor(IErrorReporter reporter, CircuitTransform... passes) {
+    public Passes(IErrorReporter reporter, CircuitTransform... passes) {
         this.errorReporter = reporter;
         this.passes = Linq.list(passes);
     }
 
-    public PassesVisitor(IErrorReporter reporter, List<CircuitTransform> passes) {
+    public Passes(IErrorReporter reporter, List<CircuitTransform> passes) {
         this.errorReporter = reporter;
         this.passes = passes;
     }

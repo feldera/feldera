@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
@@ -9,7 +8,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.util.Unimplemented;
 
 import javax.annotation.Nullable;
-import java.util.Objects;
 
 /**
  * Represents a (constant) IndexedZSet described by its elements.
@@ -38,6 +36,7 @@ public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContaine
         return this;
     }
 
+    @SuppressWarnings("SameReturnValue")
     public int size() {
         return 0;
     }
@@ -51,8 +50,7 @@ public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContaine
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DBSPIndexedZSetLiteral that = (DBSPIndexedZSetLiteral) o;
-        if (!this.indexedZSetType.sameType(that.indexedZSetType)) return false;
-        return true;
+        return this.indexedZSetType.sameType(that.indexedZSetType);
     }
 
     @Override

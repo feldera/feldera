@@ -364,8 +364,26 @@ public class ComplexQueriesTest extends BaseSQLTests {
     }
 
     @Test
+    public void testProducts() {
+        String script = "-- create a table\n" +
+                "CREATE TABLE Products (\n" +
+                "    ProductName VARCHAR NOT NULL,\n" +
+                "    Price INT NOT NULL);\n" +
+                "-- statements separated by semicolons\n" +
+                "-- create a view\n" +
+                "CREATE VIEW \"Products Above Average Price\" AS\n" +
+                "SELECT ProductName, Price\n" +
+                "FROM Products\n" +
+                "WHERE Price > (SELECT AVG(Price) FROM Products)\n" +
+                "-- no semicolon at end ";
+        DBSPCompiler compiler = testCompiler();
+        compiler.compileStatements(script);
+    }
+
+    @Test
     public void demographicsTest() {
-        String query =
+        // TODO: LAG is disabled
+        String script =
                 "CREATE TABLE demographics (\n" +
                 "    cc_num FLOAT64 NOT NULL,\n" +
                 "    first STRING,\n" +
@@ -433,7 +451,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "        LEFT JOIN  demographics AS t2\n" +
                 "        ON t1.cc_num = t2.cc_num);";
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(query);
+        compiler.compileStatements(script);
         DBSPZSetLiteral.Contents[] inputs = new DBSPZSetLiteral.Contents[] {
                 new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
                         new DBSPDoubleLiteral(0.0),
@@ -506,8 +524,9 @@ public class ComplexQueriesTest extends BaseSQLTests {
         this.addRustTestCase("ComplexQueriesTest.taxiTest", compiler, getCircuit(compiler));
     }
 
+
+
     @Test
-    // Not yet supported because of LAG
     public void fraudDetectionTest() {
         // fraudDetection-352718.cc_data.demo_
         String ddl0 = "CREATE TABLE demographics (\n" +
@@ -580,6 +599,5 @@ public class ComplexQueriesTest extends BaseSQLTests {
         compiler.compileStatement(ddl1);
         compiler.compileStatement(query);
         this.addRustTestCase("ComplexQueriesTest.fraudDetectionTest", compiler, getCircuit(compiler));
-
     }
 }

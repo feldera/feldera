@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
+import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.util.Utilities;
 

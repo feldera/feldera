@@ -1,17 +1,16 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
 /**
  * Repeats another IRTransform until no changes happen anymore.
  */
-public class InnerRepeatVisitor implements IWritesLogs, IRTransform {
+public class InnerRepeat implements IWritesLogs, IRTransform {
     protected final IRTransform visitor;
 
-    public InnerRepeatVisitor(IRTransform visitor) {
+    public InnerRepeat(IRTransform visitor) {
         this.visitor = visitor;
     }
 

@@ -9,11 +9,11 @@ import org.dbsp.util.Logger;
 /**
  * Applies a CircuitTransform until the circuit stops changing.
  */
-public class RepeatVisitor implements IWritesLogs, CircuitTransform {
+public class Repeat implements IWritesLogs, CircuitTransform {
     final IErrorReporter errorReporter;
     public final CircuitTransform transform;
 
-    public RepeatVisitor(IErrorReporter reporter, CircuitTransform visitor) {
+    public Repeat(IErrorReporter reporter, CircuitTransform visitor) {
         this.errorReporter = reporter;
         this.transform = visitor;
     }

@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;

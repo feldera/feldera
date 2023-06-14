@@ -23,13 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
@@ -41,6 +37,7 @@ import java.util.List;
 /**
  * A (Rust) function.
  */
+@NonCoreIR
 public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration {
     public final String name;
     public final List<DBSPParameter> parameters;

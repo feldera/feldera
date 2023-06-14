@@ -5,9 +5,9 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 /**
  * Optimizes projections in a circuit until covergence is achieved.
  */
-public class OptimizeProjections extends RepeatVisitor {
-    static CircuitVisitor createOnePass(IErrorReporter reporter) {
-        PassesVisitor result = new PassesVisitor(reporter);
+public class OptimizeProjections extends Repeat {
+    static CircuitTransform createOnePass(IErrorReporter reporter) {
+        Passes result = new Passes(reporter);
         FanoutVisitor fanout = new FanoutVisitor(reporter);
         result.add(fanout);
         result.add(new OptimizeProjectionVisitor(reporter,
@@ -15,7 +15,7 @@ public class OptimizeProjections extends RepeatVisitor {
                 op -> fanout.getFanout(op) == 1));
         result.add(new DeadCode(reporter, false));
         return result;
-    };
+    }
 
     public OptimizeProjections(IErrorReporter reporter) {
         super(reporter, createOnePass(reporter));

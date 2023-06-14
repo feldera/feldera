@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 /**
  * Removes operators whose output is not used.
  */
-public class DeadCode extends PassesVisitor {
+public class DeadCode extends Passes {
     /**
      * Create a circuit visitor which removes unused operators.
      * @param reporter  Used to report errors.

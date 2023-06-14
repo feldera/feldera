@@ -23,10 +23,11 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir;
 
+import org.dbsp.util.IHasId;
+
 /**
  * Interface implemented by JIT objects that have a numeric id.
  */
-public interface IJITId {
-    long getId();
+public interface IJITId extends IHasId {
     JITReference getReference();
 }

@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SubstitutionContext;

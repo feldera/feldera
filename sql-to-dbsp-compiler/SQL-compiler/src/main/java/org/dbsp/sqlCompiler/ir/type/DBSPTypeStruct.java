@@ -23,11 +23,10 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 
 import javax.annotation.Nullable;
 import java.util.HashSet;
@@ -120,7 +119,7 @@ public class DBSPTypeStruct extends DBSPType {
 
     @Override
     public boolean sameType(@Nullable DBSPType type) {
-        if (!super.sameType(type))
+        if (!super.sameNullability(type))
             return false;
         assert type != null;
         if (!type.is(DBSPTypeStruct.class))

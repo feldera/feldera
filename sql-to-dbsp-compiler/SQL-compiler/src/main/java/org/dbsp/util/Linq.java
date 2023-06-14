@@ -150,7 +150,7 @@ public class Linq {
     public static boolean sameStrings(List<String> left, List<String> right) {
         if (left.size() != right.size())
             return false;
-        return Linq.all(Linq.zipSameLength(left, right, (l, r) -> l.equals(r)));
+        return Linq.all(Linq.zipSameLength(left, right, String::equals));
     }
 
     public static <T, S, R> List<R> zip(List<T> left, List<S> right, BiFunction<T, S, R> function) {

@@ -23,21 +23,10 @@
 
 package org.dbsp.sqlCompiler.ir;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
-import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
-import org.dbsp.sqlCompiler.ir.pattern.DBSPTuplePattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
-import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 

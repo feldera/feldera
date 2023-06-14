@@ -23,8 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir.path;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 
 import javax.annotation.Nullable;
 

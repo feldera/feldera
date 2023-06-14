@@ -23,11 +23,10 @@
 
 package org.dbsp.sqlCompiler.ir.path;
 
-import org.dbsp.sqlCompiler.circuit.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.util.Linq;
 
 public class DBSPPath extends DBSPNode implements IDBSPInnerNode {

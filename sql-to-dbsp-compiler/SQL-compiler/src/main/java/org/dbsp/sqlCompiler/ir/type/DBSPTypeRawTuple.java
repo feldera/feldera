@@ -27,7 +27,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.Arrays;
@@ -52,11 +51,6 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     }
 
     @Override
-    public DBSPType fromFields(DBSPType... fields) {
-        return new DBSPTypeRawTuple(fields);
-    }
-
-    @Override
     public DBSPExpression makeTuple(DBSPExpression... expressions) {
         return new DBSPRawTupleExpression(expressions);
     }
@@ -68,11 +62,6 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
         return new DBSPTypeRawTuple(this.getNode(), mayBeNull, this.tupFields);
     }
 
-    public DBSPTypeRawTuple concat(DBSPTypeRawTuple with) {
-        DBSPType[] args = Linq.concat(this.tupFields, with.tupFields);
-        return new DBSPTypeRawTuple(args);
-    }
-
     @Override
     public int hashCode() {
         return Arrays.hashCode(tupFields);
@@ -80,7 +69,7 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
 
     @Override
     public boolean sameType(@Nullable DBSPType type) {
-        if (!super.sameType(type))
+        if (!super.sameNullability(type))
             return false;
         assert type != null;
         if (!type.is(DBSPTypeRawTuple.class))

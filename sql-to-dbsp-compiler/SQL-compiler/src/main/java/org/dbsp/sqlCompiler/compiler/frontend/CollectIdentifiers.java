@@ -25,7 +25,8 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDelegateVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -49,7 +50,7 @@ public class CollectIdentifiers extends InnerVisitor {
      * @param used  Deposit the identifiers in this set.
      */
     public CollectIdentifiers(IErrorReporter reporter, Set<String> used) {
-        super(reporter, true);
+        super(reporter);
         this.used = used;
     }
 
@@ -89,7 +90,7 @@ public class CollectIdentifiers extends InnerVisitor {
         this.used.add(type.name);
     }
 
-    static class OuterCollectIdentifiers extends CircuitDelegateVisitor {
+    static class OuterCollectIdentifiers extends CircuitRewriter {
         final Set<String> identifiers;
 
         OuterCollectIdentifiers(IErrorReporter reporter, Set<String> used, InnerVisitor visitor) {
@@ -98,8 +99,9 @@ public class CollectIdentifiers extends InnerVisitor {
         }
 
         @Override
-        public void postorder(DBSPOperator operator) {
+        public VisitDecision preorder(DBSPOperator operator) {
             this.identifiers.add(operator.outputName);
+            return VisitDecision.STOP;
         }
     }
 

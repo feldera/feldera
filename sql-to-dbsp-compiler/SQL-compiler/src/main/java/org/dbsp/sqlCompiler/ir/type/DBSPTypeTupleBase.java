@@ -46,8 +46,6 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         return true;
     }
 
-    public abstract DBSPType fromFields(DBSPType... fields);
-
     public abstract DBSPExpression makeTuple(DBSPExpression... expressions);
 
     public int size() {

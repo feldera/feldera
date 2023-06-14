@@ -21,7 +21,7 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.circuit;
+package org.dbsp.sqlCompiler.ir;
 
 public interface IDBSPDeclaration extends IDBSPInnerNode {
     String getName();

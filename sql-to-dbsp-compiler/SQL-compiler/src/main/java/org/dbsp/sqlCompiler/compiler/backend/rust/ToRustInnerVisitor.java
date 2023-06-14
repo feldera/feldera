@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -59,7 +58,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     protected final boolean compact;
 
     public ToRustInnerVisitor(IErrorReporter reporter, IndentStream builder, boolean compact) {
-        super(reporter, true);
+        super(reporter);
         this.builder = builder;
         this.compact = compact;
     }
@@ -829,18 +828,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPRangeExpression expression) {
-        if (expression.left != null)
-            expression.left.accept(this);
-        this.builder.append("..");
-        if (expression.endInclusive)
-            this.builder.append("=");
-        if (expression.right != null)
-            expression.right.accept(this);
-        return VisitDecision.STOP;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPRawTupleExpression expression) {
         this.builder.append("(");
         boolean newlines = this.compact && expression.fields.length > 2;
@@ -938,14 +925,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPIdentifierPattern pattern) {
         this.builder.append(pattern.mutable ? "mut " : "")
                 .append(pattern.identifier);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPRefPattern pattern) {
-        this.builder.append("&")
-                .append(pattern.mutable ? "mut " : "");
-        pattern.pattern.accept(this);
         return VisitDecision.STOP;
     }
 

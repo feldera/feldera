@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
+import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -14,11 +14,11 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
  * to its declaration.
  */
 public class ResolveReferences extends InnerVisitor {
-    protected SubstitutionContext<IDBSPDeclaration> substitutionContext;
-    public ReferenceMap reference;
+    protected final SubstitutionContext<IDBSPDeclaration> substitutionContext;
+    public final ReferenceMap reference;
 
     public ResolveReferences(IErrorReporter reporter) {
-        super(reporter, true);
+        super(reporter);
         this.substitutionContext = new SubstitutionContext<>();
         this.reference = new ReferenceMap();
     }

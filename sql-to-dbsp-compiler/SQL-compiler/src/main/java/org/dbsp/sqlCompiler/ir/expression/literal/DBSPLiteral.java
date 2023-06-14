@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
-import org.dbsp.sqlCompiler.circuit.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -139,7 +139,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
     }
 
     boolean hasSameType(DBSPLiteral other) {
-        return this.type.sameType(other.getNonVoidType());
+        return this.getNonVoidType().sameType(other.getNonVoidType());
     }
 
     /**
