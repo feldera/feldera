@@ -654,6 +654,7 @@ mod test {
             use_auth: true,
             db_connection_string: "postgres-embed".to_owned(),
             dump_openapi: false,
+            precompile: false,
             config_file: None,
             initial_sql: None,
             dev_mode: false,

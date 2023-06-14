@@ -218,6 +218,11 @@ fn main() -> AnyResult<()> {
         return Ok(());
     }
 
+    if config.precompile {
+        rt::System::new().block_on(Compiler::precompile_dependencies(&config))?;
+        return Ok(());
+    }
+
     if let Some(config_file) = &config.config_file {
         let config_yaml = read(config_file).map_err(|e| {
             AnyError::msg(format!("error reading config file '{config_file}': {e}"))
