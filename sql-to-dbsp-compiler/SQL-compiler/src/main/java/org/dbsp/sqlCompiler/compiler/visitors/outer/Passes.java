@@ -33,20 +33,21 @@ import org.dbsp.util.Logger;
 
 import java.util.List;
 
-public class PassesVisitor extends CircuitVisitor implements IWritesLogs {
-    public final List<CircuitVisitor> passes;
+public class PassesVisitor implements IWritesLogs, CircuitTransform {
+    final IErrorReporter errorReporter;
+    public final List<CircuitTransform> passes;
 
-    public PassesVisitor(IErrorReporter reporter, CircuitVisitor... passes) {
-        super(reporter,false);
+    public PassesVisitor(IErrorReporter reporter, CircuitTransform... passes) {
+        this.errorReporter = reporter;
         this.passes = Linq.list(passes);
     }
 
-    public PassesVisitor(IErrorReporter reporter, List<CircuitVisitor> passes) {
-        super(reporter, false);
+    public PassesVisitor(IErrorReporter reporter, List<CircuitTransform> passes) {
+        this.errorReporter = reporter;
         this.passes = passes;
     }
 
-    public void add(CircuitVisitor pass) {
+    public void add(CircuitTransform pass) {
         this.passes.add(pass);
     }
 
@@ -64,7 +65,7 @@ public class PassesVisitor extends CircuitVisitor implements IWritesLogs {
             ToDotVisitor.toDot(this.errorReporter, "0before.png", "png", circuit);
         }
         ++count;
-        for (CircuitVisitor pass: this.passes) {
+        for (CircuitTransform pass: this.passes) {
             Logger.INSTANCE.belowLevel(this, 1)
                     .append("Executing ")
                     .append(pass.toString())
