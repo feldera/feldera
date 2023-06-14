@@ -88,8 +88,7 @@ public class DBSPFlatmap extends DBSPExpression {
         if (this.indexType != null)
             this.indexType.accept(visitor);
         this.collectionElementType.accept(visitor);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }

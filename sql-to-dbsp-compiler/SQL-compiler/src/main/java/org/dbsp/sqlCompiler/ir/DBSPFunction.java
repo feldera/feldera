@@ -31,7 +31,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.Linq;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 /**
@@ -41,15 +40,13 @@ import java.util.List;
 public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration {
     public final String name;
     public final List<DBSPParameter> parameters;
-    // Null if function returns void.
-    @Nullable
     public final DBSPType returnType;
     public final DBSPExpression body;
     public final List<String> annotations;
     public final DBSPTypeFunction type;
 
     public DBSPFunction(String name, List<DBSPParameter> parameters,
-                        @Nullable DBSPType returnType, DBSPExpression body,
+                        DBSPType returnType, DBSPExpression body,
                         List<String> annotations) {
         super(null);
         this.name = name;
@@ -59,7 +56,7 @@ public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration
         this.annotations = annotations;
         DBSPType[] argTypes = new DBSPType[parameters.size()];
         for (int i = 0; i < argTypes.length; i++)
-            argTypes[i] = parameters.get(i).getNonVoidType();
+            argTypes[i] = parameters.get(i).getType();
         this.type = new DBSPTypeFunction(returnType, argTypes);
     }
 
@@ -68,7 +65,6 @@ public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration
         return this.name;
     }
 
-    @Nullable
     @Override
     public DBSPType getType() {
         return this.type;
@@ -78,8 +74,7 @@ public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.returnType != null)
-            this.returnType.accept(visitor);
+        this.returnType.accept(visitor);
         for (DBSPParameter argument: this.parameters)
             argument.accept(visitor);
         this.body.accept(visitor);

@@ -64,7 +64,7 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
         DBSPExpression result = expression;
-        if (!source.getNonVoidType().mayBeNull)
+        if (!source.getType().mayBeNull)
             result = DBSPBoolLiteral.FALSE;
         this.map(expression, result);
         return VisitDecision.STOP;
@@ -74,15 +74,15 @@ public class Simplify extends InnerRewriteVisitor {
     public VisitDecision preorder(DBSPCastExpression expression) {
         this.push(expression);
         DBSPExpression source = this.transform(expression.source);
-        DBSPType type = this.transform(expression.getNonVoidType());
+        DBSPType type = this.transform(expression.getType());
         DBSPExpression result = source.cast(type);
         this.pop(expression);
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
-            if (lit.getNonVoidType().is(DBSPTypeNull.class)) {
+            if (lit.getType().is(DBSPTypeNull.class)) {
                 // This is a literal with type "NULL".
                 // Convert it to a literal of the resulting type
-                result = DBSPLiteral.none(expression.getNonVoidType());
+                result = DBSPLiteral.none(expression.getType());
             }
         }
         this.map(expression, result);
@@ -133,10 +133,10 @@ public class Simplify extends InnerRewriteVisitor {
         this.push(expression);
         DBSPExpression left = this.transform(expression.left);
         DBSPExpression right = this.transform(expression.right);
-        DBSPType type = this.transform(expression.getNonVoidType());
+        DBSPType type = this.transform(expression.getType());
         this.pop(expression);
-        DBSPType leftType = left.getNonVoidType();
-        DBSPType rightType = right.getNonVoidType();
+        DBSPType leftType = left.getType();
+        DBSPType rightType = right.getType();
         boolean leftMayBeNull = leftType.mayBeNull;
         boolean rightMayBeNull = rightType.mayBeNull;
         DBSPExpression result = new DBSPBinaryExpression(
@@ -205,7 +205,7 @@ public class Simplify extends InnerRewriteVisitor {
                 IsNumericType iLeftType = leftType.to(IsNumericType.class);
                 if (iLeftType.isOne(leftLit)) {
                     // This works even for null
-                    result = right.cast(expression.getNonVoidType());
+                    result = right.cast(expression.getType());
                 } else if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
                     // This is not true for null values
                     result = left;
@@ -225,7 +225,7 @@ public class Simplify extends InnerRewriteVisitor {
                 }
             }
         }
-        this.map(expression, result.cast(expression.getNonVoidType()));
+        this.map(expression, result.cast(expression.getType()));
         return VisitDecision.STOP;
     }
 }

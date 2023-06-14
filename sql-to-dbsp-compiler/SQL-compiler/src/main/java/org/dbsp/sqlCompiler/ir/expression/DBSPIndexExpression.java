@@ -51,7 +51,7 @@ public class DBSPIndexExpression extends DBSPExpression {
     }
 
     public DBSPIndexExpression(@Nullable Object node, DBSPExpression array, DBSPExpression index, boolean startsAtOne) {
-        super(node, getVecElementType(array.getNonVoidType()));
+        super(node, getVecElementType(array.getType()));
         this.array = array;
         this.index = index;
         this.startsAtOne = startsAtOne;
@@ -61,8 +61,7 @@ public class DBSPIndexExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         this.array.accept(visitor);
         this.index.accept(visitor);
         visitor.pop(this);

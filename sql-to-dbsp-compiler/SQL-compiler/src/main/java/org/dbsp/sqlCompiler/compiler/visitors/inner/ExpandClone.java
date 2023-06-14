@@ -22,7 +22,7 @@ public class ExpandClone extends InnerRewriteVisitor {
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPType type = source.getNonVoidType();
+        DBSPType type = source.getType();
         boolean isRef = type.is(DBSPTypeRef.class);
         if (isRef) {
             type = type.to(DBSPTypeRef.class).type;

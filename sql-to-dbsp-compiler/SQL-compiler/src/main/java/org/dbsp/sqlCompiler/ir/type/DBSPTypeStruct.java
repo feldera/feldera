@@ -49,7 +49,7 @@ public class DBSPTypeStruct extends DBSPType {
         }
 
         public DBSPType getType() {
-            return type;
+            return this.type;
         }
 
         @Override
@@ -118,10 +118,9 @@ public class DBSPTypeStruct extends DBSPType {
     public List<Field> getFields() { return this.args; }
 
     @Override
-    public boolean sameType(@Nullable DBSPType type) {
+    public boolean sameType(DBSPType type) {
         if (!super.sameNullability(type))
             return false;
-        assert type != null;
         if (!type.is(DBSPTypeStruct.class))
             return false;
         DBSPTypeStruct other = type.to(DBSPTypeStruct.class);
@@ -143,7 +142,7 @@ public class DBSPTypeStruct extends DBSPType {
     public DBSPType getFieldType(String col) {
         for (Field f : this.getFields()) {
             if (f.getName().equals(col))
-                return f.getNonVoidType();
+                return f.getType();
         }
         this.error("Field " + col + " not present in struct " + this.name);
         throw new RuntimeException("unreachable");

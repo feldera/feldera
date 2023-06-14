@@ -56,7 +56,7 @@ public class DBSPFieldExpression extends DBSPExpression {
     }
 
     public DBSPFieldExpression(@Nullable Object node, DBSPExpression expression, int fieldNo) {
-        this(node, expression, fieldNo, getFieldType(expression.getNonVoidType(), fieldNo));
+        this(node, expression, fieldNo, getFieldType(expression.getType(), fieldNo));
     }
 
     DBSPFieldExpression(DBSPExpression expression, int fieldNo) {
@@ -74,8 +74,7 @@ public class DBSPFieldExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         this.expression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

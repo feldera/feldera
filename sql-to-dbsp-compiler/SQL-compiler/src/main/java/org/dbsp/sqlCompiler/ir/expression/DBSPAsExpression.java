@@ -40,8 +40,7 @@ public class DBSPAsExpression extends DBSPExpression {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         this.source.accept(visitor);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }

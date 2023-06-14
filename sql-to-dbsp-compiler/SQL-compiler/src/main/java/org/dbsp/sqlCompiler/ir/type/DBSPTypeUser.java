@@ -58,10 +58,9 @@ public class DBSPTypeUser extends DBSPType {
     }
 
     @Override
-    public boolean sameType(@Nullable DBSPType type) {
+    public boolean sameType(DBSPType type) {
         if (!super.sameNullability(type))
             return false;
-        assert type != null;
         if (!type.is(DBSPTypeUser.class))
             return false;
         DBSPTypeUser other = type.to(DBSPTypeUser.class);

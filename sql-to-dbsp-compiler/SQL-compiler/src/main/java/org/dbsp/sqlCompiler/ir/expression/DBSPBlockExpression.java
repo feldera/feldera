@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
@@ -37,7 +38,7 @@ public class DBSPBlockExpression extends DBSPExpression {
     public final DBSPExpression lastExpression;
 
     public DBSPBlockExpression(List<DBSPStatement> contents, @Nullable DBSPExpression last) {
-        super(null, last != null ? last.getType() : null);
+        super(null, last != null ? last.getType() : DBSPTypeVoid.INSTANCE);
         this.contents = contents;
         this.lastExpression = last;
     }
@@ -46,8 +47,7 @@ public class DBSPBlockExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         for (DBSPStatement stat: this.contents)
             stat.accept(visitor);
         if (this.lastExpression != null)

@@ -45,22 +45,22 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     public DBSPVecLiteral(DBSPType elementType) {
         super(null, new DBSPTypeVec(elementType), false);
         this.data = new ArrayList<>();
-        this.vecType = this.getNonVoidType().to(DBSPTypeVec.class);
+        this.vecType = this.getType().to(DBSPTypeVec.class);
     }
 
     public DBSPVecLiteral(DBSPType elementType, boolean isNull) {
         super(null, new DBSPTypeVec(elementType), isNull);
         this.data = null;
-        this.vecType = this.getNonVoidType().to(DBSPTypeVec.class);
+        this.vecType = this.getType().to(DBSPTypeVec.class);
     }
 
     public DBSPVecLiteral(@Nullable Object node, DBSPType type, @Nullable List<DBSPExpression> data) {
         super(node, type, false);
-        this.vecType = this.getNonVoidType().to(DBSPTypeVec.class);
+        this.vecType = this.getType().to(DBSPTypeVec.class);
         this.data = data;
         if (data != null) {
             for (DBSPExpression e : data) {
-                if (!e.getNonVoidType().sameType(data.get(0).getNonVoidType()))
+                if (!e.getType().sameType(data.get(0).getType()))
                     throw new RuntimeException("Not all values of set have the same type:" +
                             e.getType() + " vs " + data.get(0).getType());
                 this.add(e);
@@ -69,11 +69,11 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     }
 
     public DBSPVecLiteral(DBSPExpression... data) {
-        super(null, new DBSPTypeVec(data[0].getNonVoidType()), false);
-        this.vecType = this.getNonVoidType().to(DBSPTypeVec.class);
+        super(null, new DBSPTypeVec(data[0].getType()), false);
+        this.vecType = this.getType().to(DBSPTypeVec.class);
         this.data = new ArrayList<>();
         for (DBSPExpression e: data) {
-            if (!e.getNonVoidType().sameType(data[0].getNonVoidType()))
+            if (!e.getType().sameType(data[0].getType()))
                 throw new RuntimeException("Not all values of set have the same type:" +
                     e.getType() + " vs " + data[0].getType());
             this.add(e);
@@ -86,14 +86,14 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
 
     public void add(DBSPExpression expression) {
         // We expect the expression to be a constant value (a literal)
-        if (!expression.getNonVoidType().sameType(this.getElementType()))
+        if (!expression.getType().sameType(this.getElementType()))
             throw new RuntimeException("Added element " + expression + " type " +
                     expression.getType() + " does not match vector type " + this.getElementType());
         Objects.requireNonNull(this.data).add(expression);
     }
 
     public void add(DBSPVecLiteral other) {
-        if (!this.getNonVoidType().sameType(other.getNonVoidType()))
+        if (!this.getType().sameType(other.getType()))
             throw new RuntimeException("Added vectors do not have the same type " +
                     this.getElementType() + " vs " + other.getElementType());
         Objects.requireNonNull(other.data).forEach(this::add);

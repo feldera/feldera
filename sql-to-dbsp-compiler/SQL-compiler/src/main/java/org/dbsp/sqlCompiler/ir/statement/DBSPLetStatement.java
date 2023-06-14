@@ -43,7 +43,7 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
         super(null);
         this.variable = variable;
         this.initializer = initializer;
-        this.type = initializer.getNonVoidType();
+        this.type = initializer.getType();
         this.mutable = mutable;
     }
 

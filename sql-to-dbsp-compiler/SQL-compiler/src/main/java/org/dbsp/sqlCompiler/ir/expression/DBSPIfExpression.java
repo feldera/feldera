@@ -37,16 +37,16 @@ public class DBSPIfExpression extends DBSPExpression {
     public final DBSPExpression negative;
 
     public DBSPIfExpression(@Nullable Object node, DBSPExpression condition, DBSPExpression positive, DBSPExpression negative) {
-        super(node, positive.getNonVoidType());
+        super(node, positive.getType());
         this.condition = condition;
         this.positive = positive;
         this.negative = negative;
-        if (!this.condition.getNonVoidType().is(DBSPTypeBool.class))
+        if (!this.condition.getType().is(DBSPTypeBool.class))
             throw new RuntimeException("Expected a boolean condition type " + condition + " got " +
-                    this.condition.getNonVoidType());
-        if (this.condition.getNonVoidType().mayBeNull)
+                    this.condition.getType());
+        if (this.condition.getType().mayBeNull)
             throw new RuntimeException("Nullable condition in if expression " + condition);
-        if (!this.positive.getNonVoidType().sameType(this.negative.getNonVoidType()))
+        if (!this.positive.getType().sameType(this.negative.getType()))
             throw new RuntimeException("Mismatched types in conditional expression " + this.positive +
                     "/" + this.positive.getType() + " vs" + this.negative + "/" + this.negative.getType());
     }
@@ -55,8 +55,7 @@ public class DBSPIfExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         this.condition.accept(visitor);
         this.positive.accept(visitor);
         this.negative.accept(visitor);

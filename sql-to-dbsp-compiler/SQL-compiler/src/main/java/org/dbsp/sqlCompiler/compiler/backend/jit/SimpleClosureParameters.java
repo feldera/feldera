@@ -118,7 +118,7 @@ public class SimpleClosureParameters
         this.startVisit();
         List<DBSPParameter> parameters = new ArrayList<>();
         for (DBSPParameter parameter: closure.parameters) {
-            DBSPType type = parameter.getNonVoidType();
+            DBSPType type = parameter.getType();
             DBSPTypeTupleBase tuple = type.as(DBSPTypeTupleBase.class);
             if (tuple == null) {
                 parameters.add(parameter);

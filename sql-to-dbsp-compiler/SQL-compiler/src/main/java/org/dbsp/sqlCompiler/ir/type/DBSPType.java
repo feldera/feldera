@@ -60,24 +60,13 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         builder.append(type);
     }
 
-    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
-    public static boolean sameType(@Nullable DBSPType left, @Nullable DBSPType right) {
-        if (left == null)
-            return right == null;
-        if (right == null)
-            return false;
-        return left.sameType(right);
-    }
-
     /**
      * This is like 'equals', but it always takes a DBSPType.
      */
-    public abstract boolean sameType(@Nullable DBSPType other);
+    public abstract boolean sameType(DBSPType other);
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
-    public boolean sameNullability(@Nullable DBSPType other) {
-        if (other == null)
-            return false;
+    public boolean sameNullability(DBSPType other) {
         return this.mayBeNull == other.mayBeNull;
     }
 
@@ -92,7 +81,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         if (left.length != right.length)
             return false;
         for (int i = 0; i < left.length; i++) {
-            if (!DBSPType.sameType(left[i], right[i]))
+            if (!left[i].sameType(right[i]))
                 return false;
         }
         return true;

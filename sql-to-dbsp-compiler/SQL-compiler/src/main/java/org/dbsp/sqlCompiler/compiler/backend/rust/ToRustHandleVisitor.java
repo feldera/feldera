@@ -69,7 +69,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 .append(", handle")
                 .append(this.inputHandleIndex++)
                 .append(") = circuit.add_input_zset::<");
-        DBSPTypeZSet type = operator.getNonVoidType().to(DBSPTypeZSet.class);
+        DBSPTypeZSet type = operator.getType().to(DBSPTypeZSet.class);
         type.elementType.accept(this.innerVisitor);
         this.builder.append(", ");
         type.weightType.accept(this.innerVisitor);

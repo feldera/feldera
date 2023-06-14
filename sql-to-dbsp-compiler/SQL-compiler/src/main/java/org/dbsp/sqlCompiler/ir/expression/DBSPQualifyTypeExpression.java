@@ -45,8 +45,7 @@ public class DBSPQualifyTypeExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         this.expression.accept(visitor);
         for (DBSPType type: this.types)
             type.accept(visitor);

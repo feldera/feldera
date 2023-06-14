@@ -36,11 +36,9 @@ import javax.annotation.Nullable;
 public abstract class DBSPExpression
         extends DBSPNode
         implements IHasType, IDBSPInnerNode {
-    // Null for an expression that evaluates to void.
-    @Nullable
     public final DBSPType type;
 
-    protected DBSPExpression(@Nullable Object node, @Nullable DBSPType type) {
+    protected DBSPExpression(@Nullable Object node, DBSPType type) {
         super(node);
         this.type = type;
     }
@@ -53,7 +51,6 @@ public abstract class DBSPExpression
     }
 
     @Override
-    @Nullable
     public DBSPType getType() {
         return this.type;
     }
@@ -90,7 +87,7 @@ public abstract class DBSPExpression
     }
 
     public DBSPExpression is_null() {
-        if (!this.getNonVoidType().mayBeNull)
+        if (!this.getType().mayBeNull)
             return DBSPBoolLiteral.FALSE;
         return new DBSPIsNullExpression(this.getNode(), this);
     }
@@ -106,7 +103,7 @@ public abstract class DBSPExpression
     }
 
     public DBSPExpression cast(DBSPType to) {
-        DBSPType fromType = this.getNonVoidType();
+        DBSPType fromType = this.getType();
         if (fromType.sameType(to)) {
             return this;
         }
@@ -114,7 +111,7 @@ public abstract class DBSPExpression
     }
 
     public DBSPExpression applyCloneIfNeeded() {
-        if (this.getNonVoidType().hasCopy())
+        if (this.getType().hasCopy())
             return this;
         return this.applyClone();
     }

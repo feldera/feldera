@@ -228,7 +228,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     }
 
     public JITScalarType convertScalarType(DBSPExpression expression) {
-        return this.jitVisitor.scalarType(expression.getNonVoidType());
+        return this.jitVisitor.scalarType(expression.getType());
     }
 
     JITInstruction add(JITInstruction instruction) {
@@ -263,7 +263,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     }
 
     static boolean needsNull(DBSPExpression expression) {
-        return needsNull(expression.getNonVoidType());
+        return needsNull(expression.getType());
     }
 
     public JITType convertType(DBSPType type) {
@@ -288,7 +288,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         List<JITInstructionRef> args = new ArrayList<>();
         for (DBSPExpression arg: arguments) {
             JITInstructionPair argValues = this.accept(arg);
-            DBSPType argType = arg.getNonVoidType();
+            DBSPType argType = arg.getType();
             args.add(argValues.value);
             argumentTypes.add(this.convertType(argType));
             if (argValues.hasNull())
@@ -341,7 +341,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
 
             next = nextBlock.createDestination();
             this.setCurrentBlock(onNullBlock);
-            DBSPLiteral defaultValue = expression.getNonVoidType()
+            DBSPLiteral defaultValue = expression.getType()
                     .setMayBeNull(false)
                     .to(DBSPTypeBaseType.class)
                     .defaultValue();
@@ -444,7 +444,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     public VisitDecision preorder(DBSPLiteral expression) {
         JITScalarType type = convertScalarType(expression);
         JITLiteral literal = new JITLiteral(expression, type);
-        boolean mayBeNull = expression.getNonVoidType().mayBeNull;
+        boolean mayBeNull = expression.getType().mayBeNull;
         JITConstantInstruction value = new JITConstantInstruction(
                 this.nextInstructionId(), type, literal, true);
         this.add(value);
@@ -601,13 +601,13 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             return VisitDecision.STOP;
         }
         if (expression.operation.equals(DBSPOpcode.DIV) &&
-                expression.left.getNonVoidType().is(DBSPTypeInteger.class)) {
+                expression.left.getType().is(DBSPTypeInteger.class)) {
             // left / right
             JITInstructionPair left = this.accept(expression.left);
             JITInstructionPair right = this.accept(expression.right);
 
             // division by 0 returns null.
-            IsNumericType numeric = expression.left.getNonVoidType().to(IsNumericType.class);
+            IsNumericType numeric = expression.left.getType().to(IsNumericType.class);
             JITScalarType type = convertScalarType(expression.left);
             // TODO: replace with uninit
             DBSPLiteral numericZero = numeric.getZero();
@@ -992,7 +992,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         JITInstruction isNull = null;
         JITInstructionPair sourceId = this.accept(expression.expression);
         JITRowType sourceType = this.typeCatalog.convertTupleType(
-                expression.expression.getNonVoidType(), this.jitVisitor);
+                expression.expression.getType(), this.jitVisitor);
         JITInstruction load = this.add(new JITLoadInstruction(
                 this.nextInstructionId(), sourceId.value, sourceType,
                 expression.fieldNo, convertScalarType(expression), expression.toString()));
@@ -1014,12 +1014,12 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     @Override
     public VisitDecision preorder(DBSPCloneExpression expression) {
         JITInstructionPair source = this.accept(expression.expression);
-        if (expression.getNonVoidType().hasCopy()) {
+        if (expression.getType().hasCopy()) {
             this.map(expression, source);
             return VisitDecision.STOP;
         }
 
-        JITType type = this.convertType(expression.getNonVoidType());
+        JITType type = this.convertType(expression.getType());
         if (type.isScalarType()) {
             JITScalarType scalarType = type.to(JITScalarType.class);
             if (!needsNull(expression)) {
@@ -1091,7 +1091,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         this.getCurrentBlock().terminate(jump);
 
         this.setCurrentBlock(next);
-        JITType type = this.convertType(expression.getNonVoidType());
+        JITType type = this.convertType(expression.getType());
         JITInstructionRef paramValue = new JITInstructionRef(this.nextInstructionId());
         JITInstructionRef isNull = JITInstructionRef.INVALID;
         this.addParameter(next, type);
@@ -1126,14 +1126,14 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         // Compile this as an assignment to the currently assigned variable
         String variableAssigned = this.variableAssigned.get(this.variableAssigned.size() - 1);
         JITInstructionPair retValId = this.resolve(variableAssigned);
-        JITRowType tupleTypeId = this.typeCatalog.convertTupleType(expression.getNonVoidType(), this.jitVisitor);
+        JITRowType tupleTypeId = this.typeCatalog.convertTupleType(expression.getType(), this.jitVisitor);
         int index = 0;
         for (DBSPExpression field: expression.fields) {
             // Generates 1 or 2 instructions for each field (depending on nullability)
             JITInstructionPair fieldId = this.accept(field);
             this.add(new JITStoreInstruction(this.nextInstructionId(),
                     retValId.value, tupleTypeId, index, fieldId.value,
-                    this.jitVisitor.scalarType(field.getNonVoidType()),
+                    this.jitVisitor.scalarType(field.getType()),
                     "into " + expression + "." + index));
             if (fieldId.hasNull()) {
                 this.add(new JITSetNullInstruction(this.nextInstructionId(),

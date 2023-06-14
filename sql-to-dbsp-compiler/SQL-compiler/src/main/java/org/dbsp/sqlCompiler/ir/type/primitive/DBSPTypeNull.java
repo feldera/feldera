@@ -73,10 +73,7 @@ public class DBSPTypeNull extends DBSPTypeBaseType {
     }
 
     @Override
-    public boolean sameType(@Nullable DBSPType other) {
-        if (!super.sameNullability(other))
-            return false;
-        assert other != null;
+    public boolean sameType(DBSPType other) {
         return other.is(DBSPTypeNull.class);
     }
 }

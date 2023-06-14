@@ -437,7 +437,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
 
         JITRowType accLayout = this.getTypeCatalog().convertTupleType(aggregate.defaultZeroType(), this);
         JITRowType stepLayout = this.getTypeCatalog().convertTupleType(
-                aggregate.getIncrement().parameters[1].getNonVoidType(), this);
+                aggregate.getIncrement().parameters[1].getType(), this);
         JITOperator result = new JITAggregateOperator(
                 operator.id, accLayout, stepLayout, outputType,
                 inputs, init, stepFn, finishFn);

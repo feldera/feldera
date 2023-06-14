@@ -56,7 +56,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("let ")
                 .append(op.getName())
                 .append(" = Rc::new(RefCell::<");
-        op.getNonVoidType().accept(this.innerVisitor);
+        op.getType().accept(this.innerVisitor);
         this.builder.append(">::new(Default::default()));")
                 .newline();
         this.builder.append("let ")
@@ -125,10 +125,10 @@ public class ToRustVisitor extends CircuitVisitor {
             if (!first)
                 this.builder.append(",");
             first = false;
-            i.getNonVoidType().accept(this.innerVisitor);
+            i.getType().accept(this.innerVisitor);
         }
         this.builder.append(") -> ");
-        DBSPTypeRawTuple tuple = new DBSPTypeRawTuple(null, Linq.map(circuit.outputOperators, DBSPOperator::getNonVoidType));
+        DBSPTypeRawTuple tuple = new DBSPTypeRawTuple(null, Linq.map(circuit.outputOperators, DBSPOperator::getType));
         tuple.accept(this.innerVisitor);
         this.builder.append(" {").increase();
         // For each input and output operator a corresponding Rc cell
