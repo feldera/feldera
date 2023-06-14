@@ -6,11 +6,11 @@ on:
   pull_request:
     paths:
       - docs/**
-      - .github/docs.yml
+      - .github/workflows/docs.yml
   push:
     paths:
       - docs/**
-      - .github/docs.yml
+      - .github/workflows/docs.yml
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
