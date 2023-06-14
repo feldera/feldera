@@ -40,17 +40,15 @@ public class DBSPClosureExpression extends DBSPExpression {
     public final DBSPParameter[] parameters;
 
     public DBSPTypeFunction getFunctionType() {
-        return this.getNonVoidType().to(DBSPTypeFunction.class);
+        return this.getType().to(DBSPTypeFunction.class);
     }
 
-    @Nullable
     public DBSPType getResultType() {
         return this.getFunctionType().resultType;
     }
 
-    @SuppressWarnings("GrazieInspection")
     public DBSPClosureExpression(@Nullable Object node, DBSPExpression body, DBSPParameter... variables) {
-        // In Rust in general we can't write the type of a closure.
+        // In Rust in general we can't write the type of the closure.
         super(node, new DBSPTypeFunction(body.getType(), Linq.map(variables, DBSPParameter::getType, DBSPType.class)));
         this.body = body;
         this.parameters = variables;
@@ -70,8 +68,7 @@ public class DBSPClosureExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         for (DBSPParameter param: this.parameters)
             param.accept(visitor);
         this.body.accept(visitor);

@@ -33,7 +33,7 @@ public class DBSPDerefExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPDerefExpression(DBSPExpression expression) {
-        super(null, expression.getNonVoidType().deref());
+        super(null, expression.getType().deref());
         this.expression = expression;
     }
 
@@ -41,8 +41,7 @@ public class DBSPDerefExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         this.expression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

@@ -20,7 +20,7 @@ public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContaine
 
     public DBSPIndexedZSetLiteral(@Nullable Object node, DBSPType type) {
         super(node, type, false);
-        this.indexedZSetType = this.getNonVoidType().to(DBSPTypeIndexedZSet.class);
+        this.indexedZSetType = this.getType().to(DBSPTypeIndexedZSet.class);
     }
 
     @Override

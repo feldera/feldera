@@ -76,7 +76,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         this.compiler = compiler;
         this.typeCompiler = compiler.getTypeCompiler();
         if (inputRow != null &&
-                !inputRow.getNonVoidType().is(DBSPTypeRef.class))
+                !inputRow.getType().is(DBSPTypeRef.class))
             throw new TranslationException("Expected a reference type for row", inputRow.getNode());
     }
 
@@ -90,7 +90,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         if (this.inputRow == null)
             throw new RuntimeException("Row referenced without a row context");
         // Unfortunately it looks like we can't trust the type coming from Calcite.
-        DBSPTypeTuple type = this.inputRow.getNonVoidType().deref().to(DBSPTypeTuple.class);
+        DBSPTypeTuple type = this.inputRow.getType().deref().to(DBSPTypeTuple.class);
         int index = inputRef.getIndex();
         if (index < type.size()) {
             return new DBSPFieldExpression(
@@ -206,8 +206,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     public static DBSPExpression aggregateOperation(
             SqlOperator node, DBSPOpcode op,
             DBSPType type, DBSPExpression left, DBSPExpression right) {
-        DBSPType leftType = left.getNonVoidType();
-        DBSPType rightType = right.getNonVoidType();
+        DBSPType leftType = left.getType();
+        DBSPType rightType = right.getType();
         DBSPType commonBase = reduceType(leftType, rightType);
         if (commonBase.is(DBSPTypeNull.class)) {
             return DBSPLiteral.none(type);
@@ -241,8 +241,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         DBSPExpression right = operands.get(1);
         if (left == null || right == null)
             throw new Unimplemented(node);
-        DBSPType leftType = left.getNonVoidType();
-        DBSPType rightType = right.getNonVoidType();
+        DBSPType leftType = left.getType();
+        DBSPType rightType = right.getType();
 
         if (needCommonType(type, leftType, rightType)) {
             DBSPType commonBase = reduceType(leftType, rightType);
@@ -257,7 +257,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         }
         // TODO: we don't need the whole function here, just the result type.
         RustSqlRuntimeLibrary.FunctionDescription function = RustSqlRuntimeLibrary.INSTANCE.getImplementation(
-                opcode, type, left.getNonVoidType(), right.getNonVoidType());
+                opcode, type, left.getType(), right.getType());
         DBSPExpression call = new DBSPBinaryExpression(node, function.returnType, opcode, left, right);
         return call.cast(type);
     }
@@ -269,7 +269,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         DBSPExpression operand = operands.get(0);
         if (operand == null)
             throw new Unimplemented("Found unimplemented expression in " + node);
-        DBSPType resultType = operand.getNonVoidType();
+        DBSPType resultType = operand.getType();
         if (op.toString().startsWith("is_"))
             // these do not produce nullable results
             resultType = resultType.setMayBeNull(false);
@@ -278,7 +278,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     }
 
     public static DBSPExpression wrapBoolIfNeeded(DBSPExpression expression) {
-        DBSPType type = expression.getNonVoidType();
+        DBSPType type = expression.getType();
         if (type.mayBeNull) {
             return new DBSPUnaryExpression(
                     expression.getNode(), type.setMayBeNull(false),
@@ -299,7 +299,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             call = (RexCall)RexUtil.expandSearch(this.rexBuilder, null, call);
         }
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));
-        boolean anyNull = Linq.any(ops, o -> o.getNonVoidType().mayBeNull);
+        boolean anyNull = Linq.any(ops, o -> o.getType().mayBeNull);
         DBSPType type = this.typeCompiler.convertType(call.getType());
         switch (call.op.kind) {
             case TIMES:
@@ -364,7 +364,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 if (!type.sameType(DBSPTypeBool.INSTANCE))
                     throw new TranslationException("Expected expression to produce a boolean result", call);
                 DBSPExpression arg = ops.get(0);
-                DBSPType argType = arg.getNonVoidType();
+                DBSPType argType = arg.getType();
                 if (argType.mayBeNull) {
                     if (call.op.kind == SqlKind.IS_NULL)
                         return ops.get(0).is_null();
@@ -389,16 +389,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 if (ops.size() % 2 == 0) {
                     DBSPExpression value = ops.get(0);
                     // Compute casts if needed.
-                    DBSPType finalType = result.getNonVoidType();
+                    DBSPType finalType = result.getType();
                     for (int i = 1; i < ops.size() - 1; i += 2) {
-                        if (ops.get(i + 1).getNonVoidType().mayBeNull)
+                        if (ops.get(i + 1).getType().mayBeNull)
                             finalType = finalType.setMayBeNull(true);
                     }
-                    if (!result.getNonVoidType().sameType(finalType))
+                    if (!result.getType().sameType(finalType))
                         result = result.cast(finalType);
                     for (int i = 1; i < ops.size() - 1; i += 2) {
                         DBSPExpression alt = ops.get(i + 1);
-                        if (!alt.getNonVoidType().sameType(finalType))
+                        if (!alt.getType().sameType(finalType))
                             alt = alt.cast(finalType);
                         DBSPExpression comp = makeBinaryExpression(
                                 call, DBSPTypeBool.INSTANCE, DBSPOpcode.EQ,
@@ -409,19 +409,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 } else {
                     // Compute casts if needed.
                     // Build this backwards
-                    DBSPType finalType = result.getNonVoidType();
+                    DBSPType finalType = result.getType();
                     for (int i = 0; i < ops.size() - 1; i += 2) {
                         int index = ops.size() - i - 2;
-                        if (ops.get(index).getNonVoidType().mayBeNull)
+                        if (ops.get(index).getType().mayBeNull)
                             finalType = finalType.setMayBeNull(true);
                     }
 
-                    if (!result.getNonVoidType().sameType(finalType))
+                    if (!result.getType().sameType(finalType))
                         result = result.cast(finalType);
                     for (int i = 0; i < ops.size() - 1; i += 2) {
                         int index = ops.size() - i - 2;
                         DBSPExpression alt = ops.get(index);
-                        if (!alt.getNonVoidType().sameType(finalType))
+                        if (!alt.getType().sameType(finalType))
                             alt = alt.cast(finalType);
                         DBSPExpression condition = wrapBoolIfNeeded(ops.get(index - 1));
                         result = new DBSPIfExpression(call, condition, alt, result);
@@ -435,8 +435,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 DBSPExpression left = ops.get(0);
                 DBSPExpression right = ops.get(1);
                 String functionName = "make_geopoint" + type.nullableSuffix() +
-                        "_d" + left.getNonVoidType().nullableSuffix() +
-                        "_d" + right.getNonVoidType().nullableSuffix();
+                        "_d" + left.getType().nullableSuffix() +
+                        "_d" + right.getType().nullableSuffix();
                 return new DBSPApplyExpression(functionName, type, left, right);
             }
             case OTHER_FUNCTION: {
@@ -452,8 +452,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                             right = new DBSPI32Literal(0);
                         else
                             right = ops.get(1);
-                        DBSPType leftType = left.getNonVoidType();
-                        DBSPType rightType = right.getNonVoidType();
+                        DBSPType leftType = left.getType();
+                        DBSPType rightType = right.getType();
                         if (!rightType.is(DBSPTypeInteger.class))
                             throw new Unimplemented("ROUND expects a constant second argument", call);
                         String function = opName + "_" +
@@ -468,7 +468,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         if (call.operands.size() != 1)
                             throw new Unimplemented(call);
                         DBSPExpression arg = ops.get(0);
-                        DBSPType argType = arg.getNonVoidType();
+                        DBSPType argType = arg.getType();
                         String function = opName + "_" + argType.baseTypeWithSuffix();
                         return new DBSPApplyExpression(function, type, arg);
                     }
@@ -477,8 +477,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                             throw new Unimplemented(call);
                         DBSPExpression left = ops.get(0);
                         DBSPExpression right = ops.get(1);
-                        String function = "st_distance_" + left.getNonVoidType().nullableSuffix() +
-                                "_" + right.getNonVoidType().nullableSuffix();
+                        String function = "st_distance_" + left.getType().nullableSuffix() +
+                                "_" + right.getType().nullableSuffix();
                         return new DBSPApplyExpression(function, DBSPTypeDouble.INSTANCE.setMayBeNull(anyNull), left, right);
                     }
                     case "division":
@@ -493,7 +493,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "element": {
                         type = type.setMayBeNull(true);  // Why isn't this always nullable?
                         DBSPExpression arg = ops.get(0);
-                        DBSPTypeVec arrayType = arg.getNonVoidType().to(DBSPTypeVec.class);
+                        DBSPTypeVec arrayType = arg.getType().to(DBSPTypeVec.class);
                         String method = "element";
                         if (arrayType.getElementType().mayBeNull)
                             method += "N";
@@ -502,8 +502,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "power": {
                         if (call.operands.size() != 2)
                             throw new Unimplemented(call);
-                        DBSPType leftType = ops.get(0).getNonVoidType();
-                        DBSPType rightType = ops.get(1).getNonVoidType();
+                        DBSPType leftType = ops.get(0).getType();
+                        DBSPType rightType = ops.get(1).getType();
                         String functionName = "power_" + leftType.baseTypeWithSuffix() +
                                 "_" + rightType.baseTypeWithSuffix();
                         return new DBSPApplyExpression(functionName, type, ops.get(0), ops.get(1));
@@ -525,7 +525,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 if (call.operands.size() != 2)
                     throw new Unimplemented(call);
                 DBSPKeywordLiteral keyword = ops.get(0).to(DBSPKeywordLiteral.class);
-                DBSPType type1 = ops.get(1).getNonVoidType();
+                DBSPType type1 = ops.get(1).getType();
                 String functionName = "extract_" + type1.to(IsNumericType.class).getRustString() +
                         "_" + keyword + type1.nullableSuffix();
                 return new DBSPApplyExpression(functionName, type, ops.get(1));

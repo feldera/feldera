@@ -46,7 +46,7 @@ public class DBSPCastExpression extends DBSPExpression {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
         this.source.accept(visitor);
-        this.getNonVoidType().accept(visitor);
+        this.getType().accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }

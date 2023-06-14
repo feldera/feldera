@@ -67,7 +67,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             if (implementation.increment.parameters.length != 3)
                 throw new RuntimeException("Expected increment function to have 3 parameters: "
                         + implementation.increment);
-            DBSPType lastParamType = implementation.increment.parameters[2].getNonVoidType();
+            DBSPType lastParamType = implementation.increment.parameters[2].getType();
             // Extract weight type from increment function signature.
             // It may not be "Weight" anymore.
             if (weightType == null)
@@ -162,7 +162,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 // let xA: Vec<i32> = x.0.clone();
                 // let xB: x.1.clone();
                 DBSPExpression field = rowVar.field(index).applyCloneIfNeeded();
-                DBSPVariablePath fieldClone = new DBSPVariablePath("x" + index, field.getNonVoidType());
+                DBSPVariablePath fieldClone = new DBSPVariablePath("x" + index, field.getType());
                 DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
                 clones.add(stat);
                 resultColumns.add(fieldClone.applyClone());

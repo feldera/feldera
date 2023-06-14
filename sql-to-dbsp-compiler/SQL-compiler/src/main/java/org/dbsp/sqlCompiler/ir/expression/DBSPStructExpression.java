@@ -45,8 +45,7 @@ public class DBSPStructExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         this.function.accept(visitor);
         for (DBSPExpression arg : this.arguments)
             arg.accept(visitor);

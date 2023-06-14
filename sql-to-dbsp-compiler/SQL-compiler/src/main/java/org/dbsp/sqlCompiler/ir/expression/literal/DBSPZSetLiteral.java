@@ -56,10 +56,10 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
          */
         public Contents(DBSPExpression... data) {
             // value 0 is not used
-            this.elementType = data[0].getNonVoidType();
+            this.elementType = data[0].getType();
             this.data = new HashMap<>();
             for (DBSPExpression e: data) {
-                if (!e.getNonVoidType().sameType(data[0].getNonVoidType()))
+                if (!e.getType().sameType(data[0].getType()))
                     throw new RuntimeException("Cannot add value " + e +
                             "\nNot all values of set have the same type:" +
                             e.getType() + " vs " + data[0].getType());
@@ -102,7 +102,7 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
 
         public void add(DBSPExpression expression, long weight) {
             // We expect the expression to be a constant value (a literal)
-            if (!expression.getNonVoidType().sameType(this.getElementType()))
+            if (!expression.getType().sameType(this.getElementType()))
                 throw new RuntimeException("Added element type " +
                         expression.getType() + " does not match zset type " + this.getElementType());
             if (this.data.containsKey(expression)) {
@@ -174,7 +174,7 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
     public DBSPZSetLiteral(@Nullable Object node, DBSPType type, Contents contents) {
         super(node, type, false);
         this.data = contents;
-        this.zsetType = this.getNonVoidType().to(DBSPTypeZSet.class);
+        this.zsetType = this.getType().to(DBSPTypeZSet.class);
     }
 
     public DBSPZSetLiteral(DBSPType zsetType) {
@@ -186,7 +186,7 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
     }
 
     public DBSPZSetLiteral(DBSPType weightType, DBSPExpression... data) {
-        this(null, TypeCompiler.makeZSet(data[0].getNonVoidType(), weightType), new Contents(data));
+        this(null, TypeCompiler.makeZSet(data[0].getType(), weightType), new Contents(data));
     }
 
     public DBSPZSetLiteral(DBSPType elementType, DBSPType weightType) {

@@ -42,7 +42,7 @@ public class JITTupleLiteral extends JITValue {
     public JITTupleLiteral(DBSPTupleExpression expression, ToJitVisitor jitVisitor) {
         this.fields = new ArrayList<>(expression.size());
         for (DBSPExpression e: expression.fields) {
-            JITScalarType type = jitVisitor.scalarType(e.getNonVoidType());
+            JITScalarType type = jitVisitor.scalarType(e.getType());
             JITLiteral literal = new JITLiteral(e.to(DBSPLiteral.class), type);
             this.fields.add(literal);
         }

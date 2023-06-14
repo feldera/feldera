@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 /**
@@ -59,10 +58,9 @@ public class DBSPTypeStream extends DBSPType {
     }
 
     @Override
-    public boolean sameType(@Nullable DBSPType other) {
+    public boolean sameType(DBSPType other) {
         if (!super.sameNullability(other))
             return false;
-        assert other != null;
         DBSPTypeStream oRef = other.as(DBSPTypeStream.class);
         if (oRef == null)
             return false;

@@ -12,7 +12,7 @@ public class DBSPSomeExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPSomeExpression(@Nullable Object object, DBSPExpression expression) {
-        super(object, expression.getNonVoidType().setMayBeNull(true));
+        super(object, expression.getType().setMayBeNull(true));
         this.expression = expression;
     }
 

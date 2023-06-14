@@ -65,6 +65,6 @@ public class DBSPIntervalMillisLiteral extends DBSPLiteral {
     @Override
     public DBSPLiteral getNonNullable() {
         return new DBSPIntervalMillisLiteral(this.getNode(),
-                this.getNonVoidType().setMayBeNull(false), Objects.requireNonNull(this.value));
+                this.getType().setMayBeNull(false), Objects.requireNonNull(this.value));
     }
 }

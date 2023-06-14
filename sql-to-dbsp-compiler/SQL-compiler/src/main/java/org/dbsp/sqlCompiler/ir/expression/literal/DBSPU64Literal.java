@@ -62,7 +62,6 @@ public class DBSPU64Literal extends DBSPLiteral {
     }
 
     public DBSPTypeInteger getIntegerType() {
-        assert this.type != null;
         return this.type.to(DBSPTypeInteger.class);
     }
 

@@ -25,16 +25,14 @@ package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
-import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Objects;
 
 public class DBSPTypeFunction extends DBSPType {
-    @Nullable
     public final DBSPType resultType;
     public final DBSPType[] argumentTypes;
 
-    public DBSPTypeFunction(@Nullable DBSPType resultType, DBSPType... argumentTypes) {
+    public DBSPTypeFunction(DBSPType resultType, DBSPType... argumentTypes) {
         super(false);
         this.resultType = resultType;
         this.argumentTypes = argumentTypes;
@@ -49,8 +47,7 @@ public class DBSPTypeFunction extends DBSPType {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.resultType != null)
-            this.resultType.accept(visitor);
+        this.resultType.accept(visitor);
         for (DBSPType arg: this.argumentTypes)
             arg.accept(visitor);
         visitor.pop(this);
@@ -65,14 +62,13 @@ public class DBSPTypeFunction extends DBSPType {
     }
 
     @Override
-    public boolean sameType(@Nullable DBSPType type) {
+    public boolean sameType(DBSPType type) {
         if (!super.sameNullability(type))
             return false;
-        assert type != null;
         if (!type.is(DBSPTypeFunction.class))
             return false;
         DBSPTypeFunction other = type.to(DBSPTypeFunction.class);
-        if (!DBSPType.sameType(this.resultType, other.resultType))
+        if (this.resultType.sameType(other.resultType))
             return false;
         return DBSPType.sameTypes(this.argumentTypes, other.argumentTypes);
     }

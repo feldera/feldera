@@ -62,7 +62,6 @@ public class DBSPI32Literal extends DBSPLiteral {
     }
 
     public DBSPTypeInteger getIntegerType() {
-        assert this.type != null;
         return this.type.to(DBSPTypeInteger.class);
     }
 

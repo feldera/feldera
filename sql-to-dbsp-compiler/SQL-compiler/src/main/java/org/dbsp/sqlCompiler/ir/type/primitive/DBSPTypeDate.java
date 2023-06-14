@@ -89,10 +89,9 @@ public class DBSPTypeDate extends DBSPTypeBaseType implements IsNumericType, IsD
     }
 
     @Override
-    public boolean sameType(@Nullable DBSPType other) {
+    public boolean sameType(DBSPType other) {
         if (!super.sameNullability(other))
             return false;
-        assert other != null;
         return other.is(DBSPTypeDate.class);
     }
 

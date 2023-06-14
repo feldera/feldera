@@ -93,9 +93,9 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
      * @param expected  Type expected to be returned by the function.
      */
     public void checkResultType(DBSPExpression function, DBSPType expected) {
-        if (function.getNonVoidType().is(DBSPTypeAny.class))
+        if (function.getType().is(DBSPTypeAny.class))
             return;
-        DBSPType type = function.getNonVoidType().to(DBSPTypeFunction.class).resultType;
+        DBSPType type = function.getType().to(DBSPTypeFunction.class).resultType;
         if (!expected.sameType(type))
             throw new RuntimeException(this + ": Expected function to return " + expected +
                     " but it returns " + type);
@@ -131,7 +131,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
      */
     protected void checkArgumentFunctionType(DBSPExpression function,
                                              @SuppressWarnings("SameParameterValue") int arg, DBSPOperator source) {
-        if (function.getNonVoidType().is(DBSPTypeAny.class))
+        if (function.getType().is(DBSPTypeAny.class))
             return;
         DBSPType sourceElementType;
         DBSPTypeZSet zSet = source.outputType.as(DBSPTypeZSet.class);
@@ -146,7 +146,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
             throw new RuntimeException("Source " + source + " does not produce an (Indexed)ZSet, but "
                     + source.outputType);
         }
-        DBSPTypeFunction funcType = function.getNonVoidType().to(DBSPTypeFunction.class);
+        DBSPTypeFunction funcType = function.getType().to(DBSPTypeFunction.class);
         DBSPType argType = funcType.argumentTypes[arg];
         if (argType.is(DBSPTypeAny.class))
             return;

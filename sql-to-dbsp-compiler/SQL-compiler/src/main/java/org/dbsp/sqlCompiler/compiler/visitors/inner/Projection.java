@@ -191,7 +191,7 @@ public class Projection extends InnerVisitor {
             DBSPExpression apply = new DBSPApplyExpression(this.expression, row);
             DBSPExpression simplified = inner.apply(apply).to(DBSPExpression.class);
             if (elementType == null)
-                elementType = simplified.getNonVoidType();
+                elementType = simplified.getType();
             result.put(simplified, entry.getValue());
         }
         return new DBSPZSetLiteral(before.zsetType.weightType,

@@ -28,7 +28,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.UnsupportedException;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 /**
@@ -69,10 +68,9 @@ public class DBSPTypeKeyword extends DBSPTypeBaseType {
     }
 
     @Override
-    public boolean sameType(@Nullable DBSPType other) {
+    public boolean sameType(DBSPType other) {
         if (!super.sameNullability(other))
             return false;
-        assert other != null;
         return other.is(DBSPTypeKeyword.class);
     }
 }

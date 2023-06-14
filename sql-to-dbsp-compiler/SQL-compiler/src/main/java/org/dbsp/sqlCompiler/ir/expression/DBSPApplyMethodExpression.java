@@ -30,8 +30,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.util.Linq;
 
-import javax.annotation.Nullable;
-
 /**
  * Function application expression.
  */
@@ -41,7 +39,7 @@ public class DBSPApplyMethodExpression extends DBSPExpression {
     public final DBSPExpression[] arguments;
 
     public DBSPApplyMethodExpression(
-            String function, @Nullable DBSPType returnType,
+            String function, DBSPType returnType,
             DBSPExpression self, DBSPExpression... arguments) {
         super(null, returnType);
         this.function = DBSPTypeAny.INSTANCE.path(new DBSPPath(function));
@@ -50,7 +48,7 @@ public class DBSPApplyMethodExpression extends DBSPExpression {
     }
 
     public DBSPApplyMethodExpression(
-            DBSPExpression function, @Nullable DBSPType returnType,
+            DBSPExpression function, DBSPType returnType,
             DBSPExpression self, DBSPExpression... arguments) {
         super(null, returnType);
         this.function = function;
@@ -62,8 +60,7 @@ public class DBSPApplyMethodExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         this.self.accept(visitor);
         this.function.accept(visitor);
         for (DBSPExpression arg: this.arguments)

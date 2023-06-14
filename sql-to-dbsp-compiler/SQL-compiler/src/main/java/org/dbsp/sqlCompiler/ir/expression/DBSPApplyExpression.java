@@ -31,8 +31,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.util.Linq;
 
-import javax.annotation.Nullable;
-
 /**
  * Function application expression.
  * Note: the type of the expression is the type of the result returned by the function.
@@ -47,14 +45,13 @@ public class DBSPApplyExpression extends DBSPExpression {
                 throw new RuntimeException("Null arg");
     }
 
-    public DBSPApplyExpression(String function, @Nullable DBSPType returnType, DBSPExpression... arguments) {
+    public DBSPApplyExpression(String function, DBSPType returnType, DBSPExpression... arguments) {
         super(null, returnType);
         this.function = new DBSPPathExpression(DBSPTypeAny.INSTANCE, new DBSPPath(function));
         this.arguments = arguments;
         this.checkArgs();
     }
 
-    @Nullable
     public static DBSPType getReturnType(DBSPType type) {
         if (type.is(DBSPTypeAny.class))
             return type;
@@ -63,10 +60,10 @@ public class DBSPApplyExpression extends DBSPExpression {
     }
 
     public DBSPApplyExpression(DBSPExpression function, DBSPExpression... arguments) {
-        this(function, DBSPApplyExpression.getReturnType(function.getNonVoidType()), arguments);
+        this(function, DBSPApplyExpression.getReturnType(function.getType()), arguments);
     }
 
-    public DBSPApplyExpression(DBSPExpression function, @Nullable DBSPType returnType, DBSPExpression... arguments) {
+    public DBSPApplyExpression(DBSPExpression function, DBSPType returnType, DBSPExpression... arguments) {
         super(null, returnType);
         this.function = function;
         this.arguments = arguments;
@@ -77,8 +74,7 @@ public class DBSPApplyExpression extends DBSPExpression {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        if (this.type != null)
-            this.type.accept(visitor);
+        this.type.accept(visitor);
         this.function.accept(visitor);
         for (DBSPExpression arg: this.arguments)
             arg.accept(visitor);

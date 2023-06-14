@@ -58,7 +58,7 @@ public class DBSPDoubleLiteral extends DBSPFPLiteral {
     }
 
     public DBSPDoubleLiteral raw() {
-        return new DBSPDoubleLiteral(this.value, this.getNonVoidType().mayBeNull, true);
+        return new DBSPDoubleLiteral(this.value, this.getType().mayBeNull, true);
     }
 
     @Override

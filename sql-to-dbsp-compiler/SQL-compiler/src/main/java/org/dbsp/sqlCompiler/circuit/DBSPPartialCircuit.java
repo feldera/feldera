@@ -68,11 +68,11 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
     }
 
     public DBSPType getOutputType(int outputNo) {
-        return this.outputOperators.get(outputNo).getNonVoidType();
+        return this.outputOperators.get(outputNo).getType();
     }
 
     public DBSPTypeRawTuple getOutputType() {
-        return new DBSPTypeRawTuple(null, Linq.map(this.outputOperators, IHasType::getNonVoidType));
+        return new DBSPTypeRawTuple(null, Linq.map(this.outputOperators, IHasType::getType));
     }
 
     public void addOperator(DBSPOperator operator) {
