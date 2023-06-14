@@ -23,11 +23,14 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.Objects;
 
 public class DBSPBlockExpression extends DBSPExpression {
     public final List<DBSPStatement> contents;
@@ -52,5 +55,15 @@ public class DBSPBlockExpression extends DBSPExpression {
             this.lastExpression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPBlockExpression o = other.as(DBSPBlockExpression.class);
+        if (o == null)
+            return false;
+        return Linq.same(this.contents, o.contents) &&
+                this.lastExpression == o.lastExpression &&
+                this.hasSameType(o);
     }
 }

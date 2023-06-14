@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
@@ -66,5 +67,16 @@ public class DBSPIndexExpression extends DBSPExpression {
         this.index.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPIndexExpression o = other.as(DBSPIndexExpression.class);
+        if (o == null)
+            return false;
+        return this.array == o.array &&
+                this.index == o.index &&
+                this.startsAtOne == o.startsAtOne &&
+                this.hasSameType(o);
     }
 }

@@ -118,4 +118,8 @@ public abstract class DBSPExpression
             return this;
         return this.applyClone();
     }
+
+    public boolean hasSameType(DBSPExpression other) {
+        return this.type == other.type;
+    }
 }

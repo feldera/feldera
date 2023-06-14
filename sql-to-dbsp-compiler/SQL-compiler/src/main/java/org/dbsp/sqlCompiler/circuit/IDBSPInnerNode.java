@@ -30,4 +30,11 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
  */
 public interface IDBSPInnerNode extends IDBSPNode {
     void accept(InnerVisitor visitor);
+
+    /**
+     * True if this node and the other node have the same type
+     * and exactly the same fields (defined using object equality).
+     * A shallow "equals" function.
+     */
+    boolean sameFields(IDBSPNode other);
 }

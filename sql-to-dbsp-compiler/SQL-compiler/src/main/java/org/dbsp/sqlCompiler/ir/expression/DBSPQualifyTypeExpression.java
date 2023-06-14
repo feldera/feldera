@@ -23,8 +23,10 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Linq;
 
 /**
  * An expression qualified with a type.
@@ -50,5 +52,15 @@ public class DBSPQualifyTypeExpression extends DBSPExpression {
             type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPQualifyTypeExpression o = other.as(DBSPQualifyTypeExpression.class);
+        if (o == null)
+            return false;
+        return this.expression == o.expression &&
+                Linq.same(this.types, o.types) &&
+                this.hasSameType(o);
     }
 }

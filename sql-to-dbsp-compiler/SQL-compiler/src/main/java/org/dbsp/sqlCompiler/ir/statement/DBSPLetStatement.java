@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.statement;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -76,5 +77,16 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
             this.initializer.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPLetStatement o = other.as(DBSPLetStatement.class);
+        if (o == null)
+            return false;
+        return this.variable.equals(o.variable) &&
+                this.initializer == o.initializer &&
+                this.type == o.type &&
+                this.mutable == o.mutable;
     }
 }

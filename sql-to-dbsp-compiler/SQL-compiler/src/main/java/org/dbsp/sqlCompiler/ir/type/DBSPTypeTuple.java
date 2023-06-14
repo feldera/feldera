@@ -116,4 +116,14 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     public boolean hasCopy() {
         return false;
     }
+
+    @Override
+    public DBSPType fromFields(DBSPType... fields) {
+        return new DBSPTypeTuple(fields);
+    }
+
+    @Override
+    public DBSPExpression makeTuple(DBSPExpression... expressions) {
+        return new DBSPTupleExpression(expressions);
+    }
 }

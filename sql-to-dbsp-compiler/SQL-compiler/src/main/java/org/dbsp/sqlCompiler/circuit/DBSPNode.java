@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
+import org.dbsp.util.IHasId;
 import org.dbsp.util.IdGen;
 
 import javax.annotation.Nullable;
@@ -50,6 +51,11 @@ public abstract class DBSPNode
 
     @Nullable
     public Object getNode() { return this.node; }
+
+    @Override
+    public long getId() {
+        return this.id;
+    }
 
     @Override
     public String toString() {

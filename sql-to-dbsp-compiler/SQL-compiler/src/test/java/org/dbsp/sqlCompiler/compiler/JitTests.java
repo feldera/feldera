@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.compiler;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
@@ -24,6 +23,14 @@ import java.math.BigDecimal;
  * Runs tests using the JIT compiler backend and runtime.
  */
 public class JitTests extends EndToEndTests {
+    @Test
+    public void aggregateTwiceTest() {
+        String query = "SELECT COUNT(T.COL1), SUM(T.COL1) FROM T";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI64Literal(2), new DBSPI32Literal(20, true))));
+    }
+
     @Test @Override @Ignore("Average not yet implemented")
     public void averageTest() {
         Logger.INSTANCE.setLoggingLevel(ToJitVisitor.class, 4);

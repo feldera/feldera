@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 import javax.annotation.Nullable;
@@ -45,5 +46,14 @@ public class DBSPCloneExpression extends DBSPExpression {
         this.expression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPCloneExpression o = other.as(DBSPCloneExpression.class);
+        if (o == null)
+            return false;
+        return this.expression == o.expression &&
+                this.hasSameType(o);
     }
 }

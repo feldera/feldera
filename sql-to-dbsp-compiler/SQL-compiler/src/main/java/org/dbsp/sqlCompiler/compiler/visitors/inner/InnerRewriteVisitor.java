@@ -93,18 +93,23 @@ public abstract class InnerRewriteVisitor
     }
 
     /**
-     * Replace the 'old' IR node with the 'newOp' IR node.
-     * @param old     only used for debugging.
+     * Replace the 'old' IR node with the 'newOp' IR node if
+     * any of its fields differs.
      */
     protected void map(IDBSPInnerNode old, IDBSPInnerNode newOp) {
-        if (old != newOp)
-            Logger.INSTANCE.belowLevel(this, 1)
-                    .append(this.toString())
-                    .append(":")
-                    .append((Supplier<String>) old::toString)
-                    .append(" -> ")
-                    .append((Supplier<String>) newOp::toString)
-                    .newline();
+        if (old == newOp || old.sameFields(newOp)) {
+            // Ignore new op.
+            this.lastResult = old;
+            return;
+        }
+
+        Logger.INSTANCE.belowLevel(this, 1)
+                .append(this.toString())
+                .append(":")
+                .append((Supplier<String>) old::toString)
+                .append(" -> ")
+                .append((Supplier<String>) newOp::toString)
+                .newline();
         this.lastResult = newOp;
     }
 
@@ -177,10 +182,7 @@ public abstract class InnerRewriteVisitor
         DBSPType resultType = this.transformN(type.resultType);
         DBSPType[] argTypes = this.transform(type.argumentTypes);
         this.pop(type);
-        DBSPType result = type;
-        if (!DBSPType.sameType(type.resultType, resultType) ||
-                !DBSPType.sameTypes(type.argumentTypes, argTypes))
-            result = new DBSPTypeFunction(resultType, argTypes);
+        DBSPType result = new DBSPTypeFunction(resultType, argTypes);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -192,11 +194,7 @@ public abstract class InnerRewriteVisitor
         DBSPType elementType = this.transform(type.elementType);
         DBSPType weightType = this.transform(type.weightType);
         this.pop(type);
-        DBSPType result = type;
-        if (!type.keyType.sameType(keyType)
-                || !type.elementType.sameType(elementType)
-                || !type.weightType.sameType(weightType))
-            result = new DBSPTypeIndexedZSet(type.getNode(), keyType, elementType, weightType);
+        DBSPType result = new DBSPTypeIndexedZSet(type.getNode(), keyType, elementType, weightType);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -206,9 +204,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType[] elements = this.transform(type.tupFields);
         this.pop(type);
-        DBSPType result = type;
-        if (!DBSPType.sameTypes(type.tupFields, elements))
-            result = new DBSPTypeRawTuple(elements);
+        DBSPType result = new DBSPTypeRawTuple(elements);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -218,9 +214,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType[] elements = this.transform(type.tupFields);
         this.pop(type);
-        DBSPType result = type;
-        if (!DBSPType.sameTypes(type.tupFields, elements))
-            result = new DBSPTypeTuple(elements);
+        DBSPType result = new DBSPTypeTuple(elements);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -230,9 +224,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType field = this.transform(type.type);
         this.pop(type);
-        DBSPType result = type;
-        if (!DBSPType.sameType(type.type, field))
-            result = new DBSPTypeRef(field, type.mutable);
+        DBSPType result = new DBSPTypeRef(field, type.mutable);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -242,9 +234,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType[] args = this.transform(type.typeArgs);
         this.pop(type);
-        DBSPType result = type;
-        if (!DBSPType.sameTypes(type.typeArgs, args))
-            result = new DBSPTypeUser(type.getNode(), type.name, type.mayBeNull, args);
+        DBSPType result = new DBSPTypeUser(type.getNode(), type.name, type.mayBeNull, args);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -254,9 +244,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType elementType = this.transform(type.elementType);
         this.pop(type);
-        DBSPType result = type;
-        if (!DBSPType.sameType(type.elementType, elementType))
-            result = new DBSPTypeStream(elementType);
+        DBSPType result = new DBSPTypeStream(elementType);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -267,9 +255,7 @@ public abstract class InnerRewriteVisitor
         List<DBSPTypeStruct.Field> fields = Linq.map(
                 type.args, f -> new DBSPTypeStruct.Field(f.getNode(), f.name, this.transform(f.type)));
         this.pop(type);
-        DBSPType result = type;
-        if (Linq.different(type.args, fields))
-            result = new DBSPTypeStruct(type.getNode(), type.name, fields);
+        DBSPType result = new DBSPTypeStruct(type.getNode(), type.name, fields);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -279,9 +265,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType elementType = this.transform(type.getElementType());
         this.pop(type);
-        DBSPType result = type;
-        if (!DBSPType.sameType(type.getElementType(), elementType))
-            result = new DBSPTypeVec(elementType);
+        DBSPType result = new DBSPTypeVec(elementType);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -292,10 +276,7 @@ public abstract class InnerRewriteVisitor
         DBSPType elementType = this.transform(type.elementType);
         DBSPType weightType = this.transform(type.weightType);
         this.pop(type);
-        DBSPType result = type;
-        if (!elementType.sameType(type.elementType) ||
-            !weightType.sameType(type.weightType))
-            result = new DBSPTypeZSet(type.getNode(), elementType, weightType);
+        DBSPType result = new DBSPTypeZSet(type.getNode(), elementType, weightType);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -307,9 +288,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType())
-            result = new DBSPBoolLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPBoolLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -319,9 +298,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType())
-            result = new DBSPDateLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPDateLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -331,9 +308,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType())
-            result = new DBSPDecimalLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPDecimalLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -343,9 +318,8 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType())
-            result = new DBSPDoubleLiteral(expression.getNode(), type, expression.value, expression.raw);
+        DBSPExpression result = new DBSPDoubleLiteral(
+                expression.getNode(), type, expression.value, expression.raw);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -355,9 +329,8 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType())
-            result = new DBSPFloatLiteral(expression.getNode(), type, expression.value, expression.raw);
+        DBSPExpression result = new DBSPFloatLiteral(
+                expression.getNode(), type, expression.value, expression.raw);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -368,11 +341,7 @@ public abstract class InnerRewriteVisitor
         @Nullable DBSPExpression left = this.transformN(expression.left);
         @Nullable DBSPExpression right = this.transformN(expression.right);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!DBSPExpression.same(expression.left, left) ||
-            !DBSPExpression.same(expression.right, right)) {
-            result = new DBSPGeoPointLiteral(expression.getNode(), left, right);
-        }
+        DBSPExpression result = new DBSPGeoPointLiteral(expression.getNode(), left, right);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -382,9 +351,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType())
-            result = new DBSPI16Literal(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPI16Literal(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -394,9 +361,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType())
-            result = new DBSPI32Literal(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPI32Literal(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -406,9 +371,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType())
-            result = new DBSPI64Literal(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPI64Literal(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -418,9 +381,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType())
-            result = new DBSPIntervalMillisLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPIntervalMillisLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -430,9 +391,7 @@ public abstract class InnerRewriteVisitor
         this.pop(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType())
-            result = new DBSPIntervalMonthsLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPIntervalMonthsLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -442,9 +401,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType())
-            result = new DBSPISizeLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPISizeLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -460,9 +417,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!type.sameType(expression.getNonVoidType()))
-            result = new DBSPNullLiteral(expression.getNode(), type, null);
+        DBSPExpression result = new DBSPNullLiteral(expression.getNode(), type, null);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -472,9 +427,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!type.sameType(expression.getNonVoidType()))
-            result = new DBSPStringLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPStringLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -484,9 +437,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!type.sameType(expression.getNonVoidType()))
-            result = new DBSPStrLiteral(expression.getNode(), type, expression.value, expression.raw);
+        DBSPExpression result = new DBSPStrLiteral(expression.getNode(), type, expression.value, expression.raw);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -496,9 +447,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!type.sameType(expression.getNonVoidType()))
-            result = new DBSPTimeLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPTimeLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -508,9 +457,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!type.sameType(expression.getNonVoidType()))
-            result = new DBSPTimestampLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPTimestampLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -520,9 +467,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!type.sameType(expression.getNonVoidType()))
-            result = new DBSPU32Literal(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPU32Literal(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -532,9 +477,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!type.sameType(expression.getNonVoidType()))
-            result = new DBSPU64Literal(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPU64Literal(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -544,9 +487,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!type.sameType(expression.getNonVoidType()))
-            result = new DBSPUSizeLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPUSizeLiteral(expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -559,10 +500,7 @@ public abstract class InnerRewriteVisitor
         if (expression.data != null)
             data = Linq.map(expression.data, this::transform);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!type.sameType(expression.getNonVoidType()) ||
-            Linq.different(data, expression.data))
-            result = new DBSPVecLiteral(expression.getNode(), type, data);
+        DBSPExpression result = new DBSPVecLiteral(expression.getNode(), type, data);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -572,22 +510,15 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         Map<DBSPExpression, Long> newData = new HashMap<>();
-        boolean changed = false;
         for (Map.Entry<DBSPExpression, Long> entry: expression.data.data.entrySet()) {
             DBSPExpression row = this.transform(entry.getKey());
-            changed = changed || (row != entry.getKey());
             newData.put(row, entry.getValue());
         }
         DBSPType elementType = this.transform(expression.data.elementType);
         this.pop(expression);
 
-        DBSPExpression result = expression;
-        if (type != expression.getNonVoidType() ||
-                elementType != expression.data.elementType ||
-                changed) {
-            DBSPZSetLiteral.Contents newContents = new DBSPZSetLiteral.Contents(newData, elementType);
-            result = new DBSPZSetLiteral(expression.getNode(), type, newContents);
-        }
+        DBSPZSetLiteral.Contents newContents = new DBSPZSetLiteral.Contents(newData, elementType);
+        DBSPExpression result = new DBSPZSetLiteral(expression.getNode(), type, newContents);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -598,10 +529,7 @@ public abstract class InnerRewriteVisitor
         DBSPTypeTuple inputElementType = this.transform(expression.inputElementType).to(DBSPTypeTuple.class);
         @Nullable DBSPType indexType = this.transformN(expression.indexType);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!inputElementType.sameType(expression.inputElementType) ||
-                !DBSPType.sameType(indexType, expression.indexType))
-            result = new DBSPFlatmap(expression.getNode(), inputElementType,
+        DBSPExpression result = new DBSPFlatmap(expression.getNode(), inputElementType,
                     expression.collectionFieldIndex, expression.outputFieldIndexes,
                     indexType);
         this.map(expression, result);
@@ -614,10 +542,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.source);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (source != expression.source || !type.sameType(expression.getNonVoidType())) {
-            result = new DBSPAsExpression(source, type);
-        }
+        DBSPExpression result = new DBSPAsExpression(source, type);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -629,10 +554,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression function = this.transform(expression.function);
         @Nullable DBSPType type = this.transformN(expression.getType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (function != expression.function || Linq.different(arguments, expression.arguments)
-            || !DBSPType.sameType(type, expression.getType()))
-            result = new DBSPApplyExpression(function, type, arguments);
+        DBSPExpression result = new DBSPApplyExpression(function, type, arguments);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -645,12 +567,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression self = this.transform(expression.self);
         @Nullable DBSPType type = this.transformN(expression.getType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (function != expression.function
-                || self != expression.self
-                || !DBSPType.sameType(type, expression.getType())
-                || Linq.different(arguments, expression.arguments))
-            result = new DBSPApplyMethodExpression(function, type, self, arguments);
+        DBSPExpression result = new DBSPApplyMethodExpression(function, type, self, arguments);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -661,9 +578,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression left = this.transform(expression.left);
         DBSPExpression right = this.transform(expression.right);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (left != expression.left || right != expression.right)
-            result = new DBSPAssignmentExpression(left, right);
+        DBSPExpression result = new DBSPAssignmentExpression(left, right);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -675,10 +590,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression right = this.transform(expression.right);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (left != expression.left || right != expression.right
-                || !type.sameType(expression.getNonVoidType()))
-            result = new DBSPBinaryExpression(expression.getNode(), type,
+        DBSPExpression result = new DBSPBinaryExpression(expression.getNode(), type,
                     expression.operation, left, right, expression.primitive);
         this.map(expression, result);
         return VisitDecision.STOP;
@@ -690,10 +602,7 @@ public abstract class InnerRewriteVisitor
         List<DBSPStatement> body = Linq.map(expression.contents, this::transform);
         DBSPExpression last = this.transformN(expression.lastExpression);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (Linq.different(body, expression.contents) || last != expression.lastExpression) {
-            result = new DBSPBlockExpression(body, last);
-        }
+        DBSPExpression result = new DBSPBlockExpression(body, last);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -703,10 +612,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (source != expression.expression) {
-            result = source.borrow(expression.mut);
-        }
+        DBSPExpression result = source.borrow(expression.mut);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -716,10 +622,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (source != expression.expression) {
-            result = new DBSPSomeExpression(expression.getNode(), source);
-        }
+        DBSPExpression result = new DBSPSomeExpression(expression.getNode(), source);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -729,12 +632,9 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPCastExpression expression) {
         this.push(expression);
         DBSPExpression source = this.transform(expression.source);
-        DBSPType type = this.transform(expression.destinationType);
+        DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (source != expression.source || !type.sameType(expression.destinationType)) {
-            result = source.cast(type);
-        }
+        DBSPExpression result = source.cast(type);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -744,10 +644,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (source != expression.expression) {
-            result = source.is_null();
-        }
+        DBSPExpression result = source.is_null();
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -762,9 +659,7 @@ public abstract class InnerRewriteVisitor
                     return this.getResult().to(DBSPParameter.class);
                 }, DBSPParameter.class);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (body != expression.body || Linq.different(parameters, expression.parameters))
-            result = body.closure(parameters);
+        DBSPExpression result = body.closure(parameters);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -775,9 +670,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression array = this.transform(expression.array);
         DBSPExpression index = this.transform(expression.index);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (array != expression.array || index != expression.index)
-            result = new DBSPIndexExpression(expression.getNode(), array, index, expression.startsAtOne);
+        DBSPExpression result = new DBSPIndexExpression(expression.getNode(), array, index, expression.startsAtOne);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -787,9 +680,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression source = this.transform(expression.source);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (source != expression.source)
-            result = new DBSPFieldComparatorExpression(
+        DBSPExpression result = new DBSPFieldComparatorExpression(
                     expression.getNode(), source.to(DBSPComparatorExpression.class),
                     expression.fieldNo, expression.ascending);
         this.map(expression, result);
@@ -801,9 +692,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.tupleType);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (type != expression.tupleType)
-            result = new DBSPNoComparatorExpression(expression.getNode(), type);
+        DBSPExpression result = new DBSPNoComparatorExpression(expression.getNode(), type);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -813,9 +702,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (source != expression.expression)
-            result = new DBSPDerefExpression(source);
+        DBSPExpression result = new DBSPDerefExpression(source);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -831,9 +718,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (source != expression.expression)
-            result = source.field(expression.fieldNo);
+        DBSPExpression result = source.field(expression.fieldNo);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -849,11 +734,7 @@ public abstract class InnerRewriteVisitor
         else
             block = new DBSPBlockExpression(Linq.list(), body);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (iterated != expression.iterated ||
-                block != expression.block) {
-            result = new DBSPForExpression(expression.pattern, iterated, block);
-        }
+        DBSPExpression result = new DBSPForExpression(expression.pattern, iterated, block);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -865,10 +746,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression positive = this.transform(expression.positive);
         DBSPExpression negative = this.transform(expression.negative);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (cond != expression.condition || positive != expression.positive || negative != expression.negative) {
-            result = new DBSPIfExpression(expression.getNode(), cond, positive, negative);
-        }
+        DBSPExpression result = new DBSPIfExpression(expression.getNode(), cond, positive, negative);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -881,13 +759,9 @@ public abstract class InnerRewriteVisitor
         DBSPExpression matched = this.transform(expression.matched);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!type.sameType(expression.getNonVoidType()) || matched != expression.matched ||
-                Linq.different(caseExpressions, Linq.map(expression.cases, c -> c.result))) {
-            List<DBSPMatchExpression.Case> newCases = Linq.zipSameLength(expression.cases, caseExpressions,
-                    (c0, e) -> new DBSPMatchExpression.Case(c0.against, e));
-            result = new DBSPMatchExpression(matched, newCases, type);
-        }
+        List<DBSPMatchExpression.Case> newCases = Linq.zipSameLength(expression.cases, caseExpressions,
+                (c0, e) -> new DBSPMatchExpression.Case(c0.against, e));
+        DBSPExpression result = new DBSPMatchExpression(matched, newCases, type);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -897,9 +771,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!expression.getNonVoidType().sameType(type))
-            result = new DBSPPathExpression(type, expression.path);
+        DBSPExpression result = new DBSPPathExpression(type, expression.path);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -910,10 +782,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.expression);
         DBSPType[] types = this.transform(expression.types);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (source != expression.expression || DBSPType.sameTypes(types, expression.types)) {
-            result = new DBSPQualifyTypeExpression(source, types);
-        }
+        DBSPExpression result = new DBSPQualifyTypeExpression(source, types);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -925,10 +794,7 @@ public abstract class InnerRewriteVisitor
         @Nullable DBSPExpression right = this.transformN(expression.right);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (left != expression.left || right != expression.right
-                || !type.sameType(expression.getNonVoidType()))
-            result = new DBSPRangeExpression(left, right,
+        DBSPExpression result = new DBSPRangeExpression(left, right,
                     expression.endInclusive, type);
         this.map(expression, result);
         return VisitDecision.STOP;
@@ -939,10 +805,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression[] fields = this.transform(expression.fields);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (Linq.different(fields, expression.fields)) {
-            result = new DBSPRawTupleExpression(fields);
-        }
+        DBSPExpression result = new DBSPRawTupleExpression(fields);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -953,9 +816,8 @@ public abstract class InnerRewriteVisitor
         DBSPExpression comparator = this.transform(expression.comparator);
         DBSPType elementType = this.transform(expression.elementType);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (comparator != expression.comparator || !elementType.sameType(expression.elementType))
-            result = new DBSPSortExpression(expression.getNode(), elementType, comparator.to(DBSPComparatorExpression.class));
+        DBSPExpression result = new DBSPSortExpression(
+                expression.getNode(), elementType, comparator.to(DBSPComparatorExpression.class));
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -967,10 +829,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression[] arguments = this.transform(expression.arguments);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (Linq.different(arguments, expression.arguments) || !type.sameType(expression.getNonVoidType())) {
-            result = new DBSPStructExpression(function, type, arguments);
-        }
+        DBSPExpression result = new DBSPStructExpression(function, type, arguments);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -980,10 +839,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression[] fields = this.transform(expression.fields);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (Linq.different(fields, expression.fields)) {
-            result = new DBSPTupleExpression(fields);
-        }
+        DBSPExpression result = new DBSPTupleExpression(fields);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -994,11 +850,8 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.source);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (source != expression.source || !type.sameType(expression.getNonVoidType())) {
-            result = new DBSPUnaryExpression(expression.getNode(), type,
+        DBSPExpression result = new DBSPUnaryExpression(expression.getNode(), type,
                     expression.operation, source);
-        }
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -1008,10 +861,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (source != expression.expression) {
-            result = new DBSPCloneExpression(expression.getNode(), source);
-        }
+        DBSPExpression result = new DBSPCloneExpression(expression.getNode(), source);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -1021,10 +871,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
-        DBSPExpression result = expression;
-        if (!type.sameType(expression.getType())) {
-            result = new DBSPVariablePath(expression.variable, type);
-        }
+        DBSPExpression result = new DBSPVariablePath(expression.variable, type);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -1036,9 +883,7 @@ public abstract class InnerRewriteVisitor
         this.push(statement);
         DBSPExpression expression = this.transform(statement.expression);
         this.pop(statement);
-        DBSPStatement result = statement;
-        if (expression != statement.expression)
-            result = new DBSPExpressionStatement(expression);
+        DBSPStatement result = new DBSPExpressionStatement(expression);
         this.map(statement, result);
         return VisitDecision.STOP;
     }
@@ -1048,13 +893,11 @@ public abstract class InnerRewriteVisitor
         DBSPExpression init = this.transformN(statement.initializer);
         DBSPType type = this.transform(statement.type);
         this.pop(statement);
-        DBSPStatement result = statement;
-        if (init != statement.initializer || !type.sameType(statement.type)) {
-            if (init != null)
-                result = new DBSPLetStatement(statement.variable, init);
-            else
-                result = new DBSPLetStatement(statement.variable, type, statement.mutable);
-        }
+        DBSPStatement result;
+        if (init != null)
+            result = new DBSPLetStatement(statement.variable, init);
+        else
+            result = new DBSPLetStatement(statement.variable, type, statement.mutable);
         this.map(statement, result);
         return VisitDecision.STOP;
     }
@@ -1071,9 +914,7 @@ public abstract class InnerRewriteVisitor
         DBSPType type = this.transform(item.type);
         @Nullable DBSPExpression expression = this.transformN(item.expression);
         this.pop(item);
-        DBSPConstItem result = item;
-        if (!type.sameType(item.type) || expression != item.expression)
-            result = new DBSPConstItem(item.name, type, expression);
+        DBSPConstItem result = new DBSPConstItem(item.name, type, expression);
         this.map(item, result);
         return VisitDecision.STOP;
     }
@@ -1085,9 +926,7 @@ public abstract class InnerRewriteVisitor
         this.push(parameter);
         DBSPType type = this.transform(parameter.type);
         this.pop(parameter);
-        DBSPParameter result = parameter;
-        if (type != parameter.type)
-            result = new DBSPParameter(parameter.name, type);
+        DBSPParameter result = new DBSPParameter(parameter.name, type);
         this.map(parameter, result);
         return VisitDecision.STOP;
     }
@@ -1100,11 +939,8 @@ public abstract class InnerRewriteVisitor
         List<DBSPParameter> parameters =
                 Linq.map(function.parameters, p -> this.apply(p).to(DBSPParameter.class));
         this.pop(function);
-        DBSPFunction result = function;
-        if (!DBSPType.sameType(returnType, function.returnType) ||
-            body != function.body || Linq.different(parameters, function.parameters)) {
-            result = new DBSPFunction(function.name, parameters, returnType, body, function.annotations);
-        }
+        DBSPFunction result = new DBSPFunction(
+                function.name, parameters, returnType, body, function.annotations);
         this.map(function, result);
         return VisitDecision.STOP;
     }
@@ -1119,17 +955,10 @@ public abstract class InnerRewriteVisitor
         DBSPType semiGroup = this.transform(implementation.semigroup);
         this.pop(implementation);
 
-        DBSPAggregate.Implementation result = implementation;
-        if (zero != implementation.zero
-                || increment != implementation.increment
-                || postProcess != implementation.postProcess
-                || emptySetResult != implementation.emptySetResult
-                || semiGroup != implementation.semigroup) {
-            result = new DBSPAggregate.Implementation(implementation.operator, zero,
+        DBSPAggregate.Implementation result = new DBSPAggregate.Implementation(implementation.operator, zero,
                     increment.to(DBSPClosureExpression.class),
                     postProcess != null ? postProcess.to(DBSPClosureExpression.class) : null,
                     emptySetResult, semiGroup);
-        }
         this.map(implementation, result);
         return VisitDecision.STOP;
     }
@@ -1145,11 +974,8 @@ public abstract class InnerRewriteVisitor
                         },
                         DBSPAggregate.Implementation.class);
         this.pop(aggregate);
-        DBSPAggregate result = aggregate;
-        if (rowVar != aggregate.rowVar ||
-            Linq.different(implementations, aggregate.components)) {
-            result = new DBSPAggregate(aggregate.getNode(), rowVar.to(DBSPVariablePath.class), implementations);
-        }
+        DBSPAggregate result = new DBSPAggregate(
+                aggregate.getNode(), rowVar.to(DBSPVariablePath.class), implementations);
         this.map(aggregate, result);
         return VisitDecision.STOP;
     }

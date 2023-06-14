@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
@@ -41,5 +42,13 @@ public class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     @Override
     public DBSPType tupleType() {
         return this.tupleType;
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPNoComparatorExpression o = other.as(DBSPNoComparatorExpression.class);
+        if (o == null)
+            return false;
+        return this.tupleType == o.tupleType;
     }
 }

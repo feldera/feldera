@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
@@ -52,5 +53,14 @@ public class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
             expression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPRawTupleExpression o = other.as(DBSPRawTupleExpression.class);
+        if (o == null)
+            return false;
+        return Linq.same(this.fields, o.fields) &&
+                this.hasSameType(o);
     }
 }

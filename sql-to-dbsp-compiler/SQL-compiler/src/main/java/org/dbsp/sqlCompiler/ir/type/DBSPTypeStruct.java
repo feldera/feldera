@@ -25,7 +25,9 @@ package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.circuit.DBSPNode;
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 
 import javax.annotation.Nullable;
 import java.util.HashSet;
@@ -72,6 +74,15 @@ public class DBSPTypeStruct extends DBSPType {
             this.type.accept(visitor);
             visitor.pop(this);
             visitor.postorder(this);
+        }
+
+        @Override
+        public boolean sameFields(IDBSPNode other) {
+            Field o = other.as(Field.class);
+            if (o == null)
+                return false;
+            return this.name.equals(o.name) &&
+                    this.type == o.type;
         }
     }
 

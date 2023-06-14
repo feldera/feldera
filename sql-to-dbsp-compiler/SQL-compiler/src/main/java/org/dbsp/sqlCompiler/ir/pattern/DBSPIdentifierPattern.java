@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.pattern;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 
 public class DBSPIdentifierPattern extends DBSPPattern {
     public final String identifier;
@@ -45,5 +47,13 @@ public class DBSPIdentifierPattern extends DBSPPattern {
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPIdentifierPattern o = other.as(DBSPIdentifierPattern.class);
+        if (o == null)
+            return false;
+        return this.identifier.equals(o.identifier) && this.mutable == o.mutable;
     }
 }

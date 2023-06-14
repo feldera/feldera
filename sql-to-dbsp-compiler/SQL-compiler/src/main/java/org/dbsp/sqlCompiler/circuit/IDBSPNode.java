@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.util.ICastable;
+import org.dbsp.util.IHasId;
 import org.dbsp.util.TranslationException;
 
 import javax.annotation.Nullable;
@@ -32,7 +33,7 @@ import javax.annotation.Nullable;
  * An IR node that is used to represent DBSP circuits.
  */
 @SuppressWarnings("unused")
-public interface IDBSPNode extends ICastable {
+public interface IDBSPNode extends ICastable, IHasId {
     default <T> T checkNull(@Nullable T value) {
         if (value == null)
             this.error("Null pointer");

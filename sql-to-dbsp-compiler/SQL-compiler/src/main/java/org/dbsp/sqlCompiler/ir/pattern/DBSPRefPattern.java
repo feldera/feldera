@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.pattern;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 
 public class DBSPRefPattern extends DBSPPattern {
     public final DBSPPattern pattern;
@@ -35,10 +37,6 @@ public class DBSPRefPattern extends DBSPPattern {
         this.mutable = mutable;
     }
 
-    public DBSPRefPattern(DBSPPattern pattern) {
-        this(pattern, false);
-    }
-
     @Override
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
@@ -46,5 +44,14 @@ public class DBSPRefPattern extends DBSPPattern {
         this.pattern.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPRefPattern o = other.as(DBSPRefPattern.class);
+        if (o == null)
+            return false;
+        return this.pattern == o.pattern &&
+                this.mutable == o.mutable;
     }
 }

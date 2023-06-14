@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
@@ -56,5 +57,16 @@ public class DBSPFieldComparatorExpression extends DBSPComparatorExpression {
 
     public DBSPType tupleType() {
         return source.tupleType();
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPFieldComparatorExpression o = other.as(DBSPFieldComparatorExpression.class);
+        if (o == null)
+            return false;
+        return this.source == o.source &&
+                this.ascending == o.ascending &&
+                this.fieldNo == o.fieldNo &&
+                this.hasSameType(o);
     }
 }

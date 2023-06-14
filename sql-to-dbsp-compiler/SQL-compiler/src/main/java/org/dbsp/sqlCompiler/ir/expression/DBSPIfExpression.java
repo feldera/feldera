@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 
@@ -59,5 +60,16 @@ public class DBSPIfExpression extends DBSPExpression {
         this.negative.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPIfExpression o = other.as(DBSPIfExpression.class);
+        if (o == null)
+            return false;
+        return this.condition == o.condition &&
+                this.positive == o.positive &&
+                this.negative == o.negative &&
+                this.hasSameType(o);
     }
 }

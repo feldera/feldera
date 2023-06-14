@@ -26,7 +26,9 @@ package org.dbsp.sqlCompiler.ir;
 import org.dbsp.sqlCompiler.circuit.DBSPNode;
 import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
@@ -85,5 +87,15 @@ public class DBSPParameter extends DBSPNode implements
     @Override
     public String getName() {
         return this.name;
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPParameter o = other.as(DBSPParameter.class);
+        if (o == null)
+            return false;
+        return this.name.equals(o.name) &&
+                this.type == o.type &&
+                this.mutable == o.mutable;
     }
 }

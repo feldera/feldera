@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
@@ -8,6 +9,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.util.Unimplemented;
 
 import javax.annotation.Nullable;
+import java.util.Objects;
 
 /**
  * Represents a (constant) IndexedZSet described by its elements.

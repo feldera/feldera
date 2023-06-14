@@ -4,9 +4,9 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 
 /**
  * Expand t.clone() for t a tuple type into
@@ -23,7 +23,11 @@ public class ExpandClone extends InnerRewriteVisitor {
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
         DBSPType type = source.getNonVoidType();
-        DBSPTypeTuple tuple = type.as(DBSPTypeTuple.class);
+        boolean isRef = type.is(DBSPTypeRef.class);
+        if (isRef) {
+            type = type.to(DBSPTypeRef.class).type;
+        }
+        DBSPTypeTupleBase tuple = type.as(DBSPTypeTupleBase.class);
         if (tuple == null) {
             this.map(expression, source.applyCloneIfNeeded());
             return VisitDecision.STOP;
@@ -32,7 +36,7 @@ public class ExpandClone extends InnerRewriteVisitor {
         for (int i = 0; i < fields.length; i++) {
             fields[i] = source.field(i).applyCloneIfNeeded();
         }
-        DBSPExpression result = new DBSPTupleExpression(fields);
+        DBSPExpression result = tuple.makeTuple(fields);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

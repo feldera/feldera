@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.ir.pattern;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 
 public class DBSPWildcardPattern extends DBSPPattern {
     public static final DBSPWildcardPattern INSTANCE = new DBSPWildcardPattern();
@@ -38,5 +40,11 @@ public class DBSPWildcardPattern extends DBSPPattern {
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPWildcardPattern o = other.as(DBSPWildcardPattern.class);
+        return o != null;
     }
 }

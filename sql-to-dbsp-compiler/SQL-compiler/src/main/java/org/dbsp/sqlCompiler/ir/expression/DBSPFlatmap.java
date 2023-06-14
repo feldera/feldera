@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.backend.rust.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -7,6 +8,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -106,5 +108,18 @@ public class DBSPFlatmap extends DBSPExpression {
     public String toString() {
         DBSPExpression converted = LowerCircuitVisitor.rewriteFlatmap(this);
         return converted.toString();
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPFlatmap o = other.as(DBSPFlatmap.class);
+        if (o == null)
+            return false;
+        return this.inputElementType == o.inputElementType &&
+                this.collectionFieldIndex == o.collectionFieldIndex &&
+                Linq.same(this.outputFieldIndexes, o.outputFieldIndexes) &&
+                this.indexType == o.indexType &&
+                this.collectionElementType == o.collectionElementType &&
+                this.hasSameType(o);
     }
 }

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -137,8 +138,20 @@ public abstract class DBSPLiteral extends DBSPExpression {
             throw new RuntimeException("Expected a non-null literal, got " + this);
     }
 
+    boolean hasSameType(DBSPLiteral other) {
+        return this.type.sameType(other.getNonVoidType());
+    }
+
     /**
      * The same literal but with a non-nullable type.
      */
     public abstract DBSPLiteral getNonNullable();
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPLiteral o = other.as(DBSPLiteral.class);
+        if (o == null)
+            return false;
+        return this.sameValue(o) && this.hasSameType(o);
+    }
 }

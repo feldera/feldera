@@ -177,9 +177,7 @@ public class FlattenParameter extends InnerRewriteVisitor {
             }
         }
         if (parameter == null) {
-            DBSPExpression result = field;
-            if (source != field.expression)
-                result = source.field(field.fieldNo);
+            DBSPExpression result = source.field(field.fieldNo);
             this.map(field, result);
             return VisitDecision.STOP;
         }
@@ -193,8 +191,7 @@ public class FlattenParameter extends InnerRewriteVisitor {
         DBSPParameter newParameter = Utilities.getExists(this.parameterMap, parameter);
         int newIndex = tree.newIndex(indexes);
         source = newParameter.asVariableReference();
-        if (source != field.expression || newIndex != field.fieldNo)
-            result = source.field(newIndex);
+        result = source.field(newIndex);
         this.map(field, result);
         return VisitDecision.STOP;
     }
@@ -211,7 +208,6 @@ public class FlattenParameter extends InnerRewriteVisitor {
     public VisitDecision preorder(DBSPClosureExpression closure) {
         this.push(closure);
         DBSPParameter[] newParameters = new DBSPParameter[closure.parameters.length];
-        boolean changes = false;
         int index = 0;
         for (DBSPParameter parameter: closure.parameters) {
             DBSPType type = parameter.getNonVoidType();
@@ -227,28 +223,24 @@ public class FlattenParameter extends InnerRewriteVisitor {
                 if (isRef)
                     newType = newType.ref();
                 newParameter = new DBSPParameter(parameter.name, newType);
-                changes = true;
             }
             newParameters[index] = newParameter;
             Utilities.putNew(this.parameterMap, parameter, newParameter);
             index++;
         }
-        if (changes) {
-            DBSPExpression newBody = this.transform(closure.body);
-            DBSPClosureExpression result = new DBSPClosureExpression(newBody, newParameters);
-            this.map(closure, result);
-            Logger.INSTANCE.belowLevel(this, 2)
-                    .append("FlattenParameter replaces")
-                    .newline()
-                    .append((Supplier<String>) closure::toString)
-                    .newline()
-                    .append("with")
-                    .newline()
-                    .append((Supplier<String>) result::toString);
-        } else {
-            super.preorder(closure);
-        }
+        DBSPExpression newBody = this.transform(closure.body);
         this.pop(closure);
+
+        DBSPClosureExpression result = new DBSPClosureExpression(newBody, newParameters);
+        this.map(closure, result);
+        Logger.INSTANCE.belowLevel(this, 2)
+                .append("FlattenParameter replaces")
+                .newline()
+                .append((Supplier<String>) closure::toString)
+                .newline()
+                .append("with")
+                .newline()
+                .append((Supplier<String>) result::toString);
 
         for (DBSPParameter parameter: closure.parameters) {
             Utilities.removeExists(this.parameterRepresentation, parameter);

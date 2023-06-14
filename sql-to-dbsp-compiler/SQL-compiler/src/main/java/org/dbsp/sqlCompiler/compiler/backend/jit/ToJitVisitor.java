@@ -43,7 +43,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateMulWeight;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandClone;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveWeightType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPassesVisitor;
@@ -106,6 +105,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                 InnerPassesVisitor(this.errorReporter);
         passes.add(new ExpandClone(this.errorReporter));
         passes.add(new BetaReduction(this.errorReporter));
+        passes.add(new Simplify(this.errorReporter));
         if (simpleParameters)
             passes.add(new SimpleClosureParameters(this.errorReporter));
         return passes;
@@ -123,7 +123,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
         function = this.tupleEachParameter(function);
 
         Logger.INSTANCE.belowLevel(this, 4)
-                .append("Converting to JIT")
+                .append("Converting function to JIT")
                 .newline()
                 .append(function.toString())
                 .newline();
@@ -161,6 +161,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
 
         InnerRewriteVisitor normalizer = this.normalizer(false);
         IDBSPInnerNode func = normalizer.apply(function);
+        /*
         ResolveReferences resolver = new ResolveReferences(this.errorReporter);
         func = resolver.apply(func);
         Logger.INSTANCE.belowLevel(this, 2)
@@ -174,10 +175,11 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                 .newline()
                 .append(func.toString())
                 .newline();
+         */
         function = this.tupleEachParameter(func.to(DBSPClosureExpression.class));
 
         Logger.INSTANCE.belowLevel(this, 4)
-                .append("Converting to JIT")
+                .append("Converting step function to JIT")
                 .newline()
                 .append(function.toString())
                 .newline();
@@ -503,7 +505,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
 
         circuit = rewriter.apply(circuit);
         Logger.INSTANCE.belowLevel("ToJitVisitor", 2)
-                .append("Converting to JIT")
+                .append("Converting circuit to JIT")
                 .newline()
                 .append(circuit.toString());
         ToJitVisitor visitor = new ToJitVisitor(compiler);

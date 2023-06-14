@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -42,5 +44,15 @@ public class DBSPConstItem extends DBSPItem implements IHasType {
     @Override
     public DBSPType getType() {
         return this.type;
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPConstItem o = other.as(DBSPConstItem.class);
+        if (o == null)
+            return false;
+        return this.name.equals(o.name) &&
+                this.type == o.type &&
+                this.expression == o.expression;
     }
 }

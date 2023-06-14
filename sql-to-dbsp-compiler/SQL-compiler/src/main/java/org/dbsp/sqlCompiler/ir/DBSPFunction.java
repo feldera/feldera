@@ -25,12 +25,15 @@ package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.sqlCompiler.circuit.DBSPNode;
 import org.dbsp.sqlCompiler.circuit.IDBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -93,5 +96,18 @@ public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration
 
     public DBSPExpression call(DBSPExpression... arguments) {
         return new DBSPApplyExpression(this.getReference(), arguments);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPFunction o = other.as(DBSPFunction.class);
+        if (o == null)
+            return false;
+        return this.name.equals(o.name) &&
+            Linq.same(this.parameters, o.parameters) &&
+            this.returnType == o.returnType &&
+            this.body == o.body &&
+            Linq.sameStrings(this.annotations, o.annotations) &&
+                this.type == o.type;
     }
 }

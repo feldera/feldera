@@ -23,8 +23,10 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Linq;
 
 /**
  * Invocation of a Rust constructor with some arguments.
@@ -50,5 +52,16 @@ public class DBSPStructExpression extends DBSPExpression {
             arg.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPStructExpression o = other.as(DBSPStructExpression.class);
+        if (o == null)
+            return false;
+        return this.function == o.function &&
+                Linq.same(this.arguments, o.arguments) &&
+                this.hasSameType(o);
     }
 }

@@ -52,6 +52,16 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     }
 
     @Override
+    public DBSPType fromFields(DBSPType... fields) {
+        return new DBSPTypeRawTuple(fields);
+    }
+
+    @Override
+    public DBSPExpression makeTuple(DBSPExpression... expressions) {
+        return new DBSPRawTupleExpression(expressions);
+    }
+
+    @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;

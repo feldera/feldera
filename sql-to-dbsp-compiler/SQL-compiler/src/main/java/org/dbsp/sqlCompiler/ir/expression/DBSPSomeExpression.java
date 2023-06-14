@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 import javax.annotation.Nullable;
@@ -22,5 +23,15 @@ public class DBSPSomeExpression extends DBSPExpression {
         this.expression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPSomeExpression o = other.as(DBSPSomeExpression.class);
+        if (o == null)
+            return false;
+        return this.expression == o.expression &&
+                this.hasSameType(o);
     }
 }

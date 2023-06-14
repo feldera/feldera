@@ -542,6 +542,14 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void aggregateTwiceTest() {
+        String query = "SELECT COUNT(T.COL1), SUM(T.COL1) FROM T";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI64Literal(2), new DBSPI32Literal(20, true))));
+    }
+
+    @Test
     public void maxTest() {
         String query = "SELECT MAX(T.COL1) FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(

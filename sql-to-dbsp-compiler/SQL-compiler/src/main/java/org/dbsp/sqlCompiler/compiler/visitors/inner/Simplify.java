@@ -94,7 +94,7 @@ public class Simplify extends InnerRewriteVisitor {
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = expression;
+        DBSPExpression result = source.field(expression.fieldNo);
         if (source.is(DBSPBaseTupleExpression.class)) {
             result = source.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
         }
@@ -109,7 +109,7 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPExpression negative = this.transform(expression.negative);
         DBSPExpression positive = this.transform(expression.positive);
         this.pop(expression);
-        DBSPExpression result = expression;
+        DBSPExpression result = new DBSPIfExpression(expression.getNode(), condition, positive, negative);
         if (condition.is(DBSPBoolLiteral.class)) {
             DBSPBoolLiteral cond = condition.to(DBSPBoolLiteral.class);
             if (!cond.isNull) {
@@ -133,12 +133,14 @@ public class Simplify extends InnerRewriteVisitor {
         this.push(expression);
         DBSPExpression left = this.transform(expression.left);
         DBSPExpression right = this.transform(expression.right);
+        DBSPType type = this.transform(expression.getNonVoidType());
         this.pop(expression);
         DBSPType leftType = left.getNonVoidType();
         DBSPType rightType = right.getNonVoidType();
         boolean leftMayBeNull = leftType.mayBeNull;
         boolean rightMayBeNull = rightType.mayBeNull;
-        DBSPExpression result = expression;
+        DBSPExpression result = new DBSPBinaryExpression(
+                expression.getNode(), type, expression.operation, left, right, expression.primitive);
         if (expression.operation.equals(DBSPOpcode.AND)) {
             if (left.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);

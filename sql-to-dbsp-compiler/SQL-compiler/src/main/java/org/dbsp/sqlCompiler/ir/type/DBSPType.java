@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.circuit.DBSPNode;
 import org.dbsp.sqlCompiler.circuit.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.circuit.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
@@ -76,6 +77,13 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         if (other == null)
             return false;
         return this.mayBeNull == other.mayBeNull;
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        if (!other.is(DBSPType.class))
+            return false;
+        return this.sameType(other.to(DBSPType.class));
     }
 
     public static boolean sameTypes(DBSPType[] left, DBSPType[] right) {
@@ -156,7 +164,6 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
      * True if this type has a Rust 'copy' method.
      */
     public boolean hasCopy() {
-        // Perhaps this shouldn't be here, but in a visitor.
         return true;
     }
 
