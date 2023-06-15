@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -119,5 +120,14 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     @Override
     public DBSPExpression makeTuple(DBSPExpression... expressions) {
         return new DBSPTupleExpression(expressions);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("Tuple")
+                .append(this.tupFields.length)
+                .append("<")
+                .join(", ", this.tupFields)
+                .append(">");
     }
 }

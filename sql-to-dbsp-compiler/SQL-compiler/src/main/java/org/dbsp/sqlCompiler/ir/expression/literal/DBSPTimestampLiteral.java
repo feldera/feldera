@@ -27,6 +27,7 @@ import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -83,5 +84,16 @@ public class DBSPTimestampLiteral extends DBSPLiteral {
     @Override
     public DBSPLiteral getNonNullable() {
         return new DBSPTimestampLiteral(this.getNode(), this.getType().setMayBeNull(false), this.value);
+    }
+
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        if (this.value == null)
+            return builder.append("(")
+                    .append(this.type)
+                    .append(")null");
+        else
+            return builder.append(TimestampString.fromMillisSinceEpoch(this.value).toString());
     }
 }

@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
+import org.dbsp.util.IIndentStream;
 
 /**
  * Rust supports parameters with patterns, but we don't.
@@ -83,5 +84,13 @@ public class DBSPParameter extends DBSPNode implements
         return this.name.equals(o.name) &&
                 this.type == o.type &&
                 this.mutable == o.mutable;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.mutable ? "mut " : "")
+                .append(this.name)
+                .append(": ")
+                .append(this.type);
     }
 }

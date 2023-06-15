@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -104,5 +105,16 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
      */
     public int size() {
         return this.circuit.size();
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("Circuit ")
+                .append(this.name)
+                .append(" {")
+                .increase()
+                .append(this.circuit)
+                .decrease()
+                .append("}");
     }
 }

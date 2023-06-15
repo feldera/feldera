@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
@@ -68,5 +69,15 @@ public class DBSPFieldComparatorExpression extends DBSPComparatorExpression {
                 this.ascending == o.ascending &&
                 this.fieldNo == o.fieldNo &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.source)
+                .append(".then_")
+                .append(this.ascending ? "asc" : "desc")
+                .append("(|t| t.")
+                .append(this.fieldNo)
+                .append(")");
     }
 }

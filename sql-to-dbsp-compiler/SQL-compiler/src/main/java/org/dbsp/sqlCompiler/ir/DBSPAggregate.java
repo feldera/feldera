@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
@@ -341,6 +342,26 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                 this.emptySetResult == o.emptySetResult &&
                 this.semigroup == o.semigroup;
         }
+
+        @Override
+        public IIndentStream toString(IIndentStream builder) {
+            builder.append("zero=")
+                    .append(this.zero)
+                    .newline()
+                    .append("increment=")
+                    .append(this.increment);
+            if (this.postProcess != null) {
+                builder.newline()
+                        .append("postProcess=")
+                        .append(this.postProcess);
+            }
+            return builder.newline()
+                    .append("emptySetResult=")
+                    .append(this.emptySetResult)
+                    .newline()
+                    .append("semigroup=")
+                    .append(this.semigroup);
+        }
     }
 
     @Override
@@ -350,5 +371,13 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             return false;
         return this.rowVar == o.rowVar &&
                 Linq.same(this.components, o.components);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        builder.append("Aggregate:").increase();
+        for (DBSPAggregate.Implementation impl : this.components)
+            builder.append(impl);
+        return builder.decrease();
     }
 }

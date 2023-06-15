@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.HashSet;
@@ -82,6 +83,14 @@ public class DBSPTypeStruct extends DBSPType {
                 return false;
             return this.name.equals(o.name) &&
                     this.type == o.type;
+        }
+
+        @Override
+        public IIndentStream toString(IIndentStream builder) {
+            return builder
+                    .append(this.name)
+                    .append(": ")
+                    .append(this.type);
         }
     }
 
@@ -156,5 +165,16 @@ public class DBSPTypeStruct extends DBSPType {
             f.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("struct ")
+                .append(this.name)
+                .append(" {")
+                .increase()
+                .intercalate(System.lineSeparator(), this.fields)
+                .decrease()
+                .append("}");
     }
 }

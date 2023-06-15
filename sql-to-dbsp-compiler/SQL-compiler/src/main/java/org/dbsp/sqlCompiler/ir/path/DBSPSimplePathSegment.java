@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.path;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 public class DBSPSimplePathSegment extends DBSPPathSegment {
@@ -55,5 +56,15 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
             return false;
         return this.identifier.equals(o.identifier) &&
                 Linq.same(this.genericArgs, o.genericArgs);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        builder.append(this.identifier);
+        if (this.genericArgs.length > 0)
+            builder.append("<")
+                .join(", ", this.genericArgs)
+                .append(">");
+        return builder;
     }
 }

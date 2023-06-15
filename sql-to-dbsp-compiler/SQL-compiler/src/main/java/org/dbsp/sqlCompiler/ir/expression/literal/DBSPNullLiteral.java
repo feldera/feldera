@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.UnsupportedException;
 
 import javax.annotation.Nullable;
@@ -42,5 +43,10 @@ public class DBSPNullLiteral extends DBSPLiteral {
     @Override
     public DBSPLiteral getNonNullable() {
         throw new UnsupportedException(this);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("null");
     }
 }

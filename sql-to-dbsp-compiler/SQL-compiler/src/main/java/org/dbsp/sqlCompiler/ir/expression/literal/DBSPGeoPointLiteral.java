@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -71,5 +72,20 @@ public class DBSPGeoPointLiteral extends DBSPLiteral {
         DBSPGeoPointLiteral that = (DBSPGeoPointLiteral) o;
         if (!Objects.equals(left, that.left)) return false;
         return Objects.equals(right, that.right);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        builder.append(this.type)
+                .append("(");
+        if (this.left != null)
+            builder.append(this.left);
+        else
+            builder.append("null");
+        if (this.right != null)
+            builder.append(this.right);
+        else
+            builder.append("null");
+        return builder.append(")");
     }
 }

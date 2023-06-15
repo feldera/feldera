@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.util.IHasName;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.NameGen;
 
@@ -211,5 +212,47 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
 
     public SourcePositionRange getSourcePosition() {
         return CompilerMessages.getPositionRange(this.getNode());
+    }
+
+    IIndentStream writeComments(IIndentStream builder, @Nullable String comment) {
+        if (comment == null)
+            return builder;
+        String[] parts = comment.split("\n");
+        parts = Linq.map(parts, p -> "// " + p, String.class);
+        return builder.intercalate("\n", parts);
+    }
+    
+    IIndentStream writeComments(IIndentStream builder) {
+        return this.writeComments(builder, 
+                this.getClass().getSimpleName() + " " + this.id +
+                (this.comment != null ? "\n" + this.comment : ""));
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        DBSPType streamType = new DBSPTypeStream(this.outputType);
+        this.writeComments(builder)
+                .append("let ")
+                .append(this.getName())
+                .append(": ")
+                .append(streamType)
+                .append(" = ");
+        if (!this.inputs.isEmpty())
+            builder.append(this.inputs.get(0).getName())
+                    .append(".");
+        builder.append(this.operation)
+                .append("(");
+        for (int i = 1; i < this.inputs.size(); i++) {
+            if (i > 1)
+                builder.append(",");
+            builder.append("&")
+                    .append(this.inputs.get(i).getName());
+        }
+        if (this.function != null) {
+            if (this.inputs.size() > 1)
+                builder.append(", ");
+            builder.append(this.function);
+        }
+        return builder.append(");");
     }
 }

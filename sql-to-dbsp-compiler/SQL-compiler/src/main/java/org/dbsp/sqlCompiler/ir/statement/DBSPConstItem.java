@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
@@ -54,5 +55,17 @@ public class DBSPConstItem extends DBSPItem implements IHasType {
         return this.name.equals(o.name) &&
                 this.type == o.type &&
                 this.expression == o.expression;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        builder.append("const ")
+                .append(this.name)
+                .append(": ")
+                .append(this.type);
+        if (this.expression != null)
+            builder.append(" = ")
+                    .append(this.expression);
+        return builder;
     }
 }

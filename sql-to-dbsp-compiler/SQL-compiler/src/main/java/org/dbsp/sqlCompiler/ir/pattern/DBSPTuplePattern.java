@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.pattern;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 @NonCoreIR
@@ -53,5 +54,12 @@ public class DBSPTuplePattern extends DBSPPattern {
         if (o == null)
             return false;
         return Linq.same(this.fields, o.fields);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("(")
+                .join(", ", this.fields)
+                .append(")");
     }
 }

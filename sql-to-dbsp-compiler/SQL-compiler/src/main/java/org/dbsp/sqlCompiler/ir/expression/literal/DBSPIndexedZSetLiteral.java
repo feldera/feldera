@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Unimplemented;
 
 import javax.annotation.Nullable;
@@ -56,5 +57,10 @@ public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContaine
     @Override
     public void add(DBSPExpression expression) {
         throw new Unimplemented();
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("indexed_zset!()");
     }
 }

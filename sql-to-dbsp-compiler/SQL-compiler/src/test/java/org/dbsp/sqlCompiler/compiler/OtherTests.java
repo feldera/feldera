@@ -45,6 +45,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.CollectIdentifiers;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
@@ -58,6 +59,7 @@ import org.dbsp.util.FreshName;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.NameGen;
 import org.dbsp.util.StringPrintStream;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -99,25 +101,43 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         return compiler;
     }
 
-    private void testQuery(String query) {
-        try {
-            query = "CREATE VIEW V AS " + query;
-            DBSPCompiler compiler = this.compileDef();
-            compiler.compileStatement(query);
-            DBSPCircuit circuit = getCircuit(compiler);
-            String rust = ToRustVisitor.toRustString(compiler, circuit);
-            Assert.assertNotNull(rust);
-        } catch (Exception ex) {
-            throw new RuntimeException(ex);
-        }
-    }
-
     @Test
     public void toRustTest() {
         String query = "SELECT T.COL3 FROM T";
-        this.testQuery(query);
+        query = "CREATE VIEW V AS " + query;
+        DBSPCompiler compiler = this.compileDef();
+        compiler.compileStatement(query);
+        DBSPCircuit circuit = getCircuit(compiler);
+        String rust = ToRustVisitor.toRustString(compiler, circuit);
+        Assert.assertNotNull(rust);
     }
 
+    @Test
+    // This is also testing the deterministic node numbering
+    // The numbering of the nodes will change when the optimizations are changed.
+    public void toStringTest() {
+        NameGen.reset();
+        DBSPNode.reset();
+        String query = "CREATE VIEW V AS SELECT T.COL3 FROM T";
+        DBSPCompiler compiler = this.compileDef();
+        compiler.compileStatement(query);
+        DBSPCircuit circuit = getCircuit(compiler);
+        String str = circuit.toString();
+        String expected = "Circuit circuit0 {\n" +
+                "    // DBSPSourceOperator 13\n" +
+                "    // CREATE TABLE T (\n" +
+                "    // COL1 INT NOT NULL, COL2 DOUBLE NOT NULL, COL3 BOOLEAN NOT NULL, COL4 VARCHAR NOT NULL, COL5 INT, COL6 DOUBLE)\n" +
+                "    let T = T();\n" +
+                "    // DBSPMapOperator 60\n" +
+                "    let stream1: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2))));\n" +
+                "    // CREATE VIEW V AS SELECT T.COL3 FROM T\n" +
+                "    // DBSPSinkOperator 64\n" +
+                "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream1;\n" +
+                "}";
+        Assert.assertEquals(expected, str);
+    }
+
+    // Test the ability to redirect logging streams.
     @Test
     public void loggerTest() {
         StringBuilder builder = new StringBuilder();

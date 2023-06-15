@@ -23,9 +23,12 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -62,5 +65,19 @@ public class DBSPSinkOperator extends DBSPOperator {
             return new DBSPSinkOperator(
                     this.getNode(), this.outputName, this.query, this.comment, newInputs.get(0));
         return this;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        DBSPType streamType = new DBSPTypeStream(this.outputType);
+        this.writeComments(builder, this.query);
+        return this.writeComments(builder)
+                .append("let ")
+                .append(this.getName())
+                .append(": ")
+                .append(streamType)
+                .append(" = ")
+                .append(this.input().getName())
+                .append(";");
     }
 }

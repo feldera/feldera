@@ -29,6 +29,8 @@ import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 
@@ -88,5 +90,18 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
                 this.initializer == o.initializer &&
                 this.type == o.type &&
                 this.mutable == o.mutable;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        builder.append("let ")
+                .append(this.mutable ? "mut " : "")
+                .append(this.variable)
+                .append(": ")
+                .append(this.type);
+        if (this.initializer != null)
+            builder.append(" = ")
+                    .append(this.initializer);
+        return builder;
     }
 }

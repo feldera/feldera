@@ -25,12 +25,15 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
+import org.dbsp.util.IIndentStream;
 
 /**
  * An expression of the form &expression.
  * Should not appear in the generated code from SQL, only in the
  * tools for test generation.
  */
+@NonCoreIR
 public class DBSPBorrowExpression extends DBSPExpression {
     public final DBSPExpression expression;
     public final boolean mut;
@@ -63,5 +66,12 @@ public class DBSPBorrowExpression extends DBSPExpression {
         return this.expression == o.expression &&
                 this.mut == o.mut &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("&")
+                .append(this.mut ? "mut " : "")
+                .append(this.expression);
     }
 }

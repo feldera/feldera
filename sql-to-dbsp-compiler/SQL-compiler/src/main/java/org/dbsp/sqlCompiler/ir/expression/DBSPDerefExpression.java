@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.util.IIndentStream;
 
 /**
  * An expression of the form *expression.
@@ -54,5 +55,12 @@ public class DBSPDerefExpression extends DBSPExpression {
             return false;
         return this.expression == o.expression &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("(*")
+                .append(this.expression)
+                .append(")");
     }
 }

@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
@@ -66,4 +67,10 @@ public abstract class DBSPTypeBaseType extends DBSPType {
      * Default value for this type.
      */
     public abstract DBSPLiteral defaultValue();
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.shortName())
+                .append(this.mayBeNull ? "?" : "");
+    }
 }
