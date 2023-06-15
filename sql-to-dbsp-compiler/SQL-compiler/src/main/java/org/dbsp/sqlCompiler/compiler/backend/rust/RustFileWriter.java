@@ -86,8 +86,8 @@ public class RustFileWriter implements ICompilerComponent {
             "#![allow(unused_imports)]\n" +
             "#![allow(unused_parens)]\n" +
             "#![allow(unused_variables)]\n" +
-            "#![allow(unused_mut)]\n" +
-            "#[cfg(test)]\n\n" +
+            "#![allow(unused_mut)]\n\n" +
+            "#[cfg(test)]\n" +
             "use hashing::*;\n";  // comparison functions
 
     /**

@@ -1,5 +1,5 @@
 /// Adapted from calcite-ddl and calcite-BABEL
-/// https://github.com/apache/calcite/blob/main/babel/src/main/codegen/config.fmpp
+/// https://github.com/apache/calcite/tree/main/server/src/main/codegen
 
 boolean IfNotExistsOpt() :
 {
@@ -174,5 +174,27 @@ SqlCreate SqlCreateView(Span s, boolean replace) :
     <AS> query = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY) {
         return SqlDdlNodes.createView(s.end(this), replace, id, columnList,
             query);
+    }
+}
+
+SqlDrop SqlDropTable(Span s, boolean replace) :
+{
+    final boolean ifExists;
+    final SqlIdentifier id;
+}
+{
+    <TABLE> ifExists = IfExistsOpt() id = CompoundIdentifier() {
+        return SqlDdlNodes.dropTable(s.end(this), ifExists, id);
+    }
+}
+
+SqlDrop SqlDropView(Span s, boolean replace) :
+{
+    final boolean ifExists;
+    final SqlIdentifier id;
+}
+{
+    <VIEW> ifExists = IfExistsOpt() id = CompoundIdentifier() {
+        return SqlDdlNodes.dropView(s.end(this), ifExists, id);
     }
 }

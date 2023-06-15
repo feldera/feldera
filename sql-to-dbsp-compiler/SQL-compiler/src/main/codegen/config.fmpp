@@ -79,6 +79,8 @@ data: {
     # List of methods for parsing extensions to "DROP" calls.
     # Each must accept arguments "(SqlParserPos pos)".
     dropStatementParserMethods: [
+      "SqlDropTable"
+      "SqlDropView"
     ]
 
     # Binary operators tokens.
