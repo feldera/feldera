@@ -46,10 +46,21 @@ install-rust:
 
 install-python-deps:
     FROM +install-deps
-    COPY sql-to-dbsp-compiler/doc/requirements.txt requirements-sql-doc.txt
-    RUN pip3 install -r requirements-sql-doc.txt
-    COPY demo/demo_notebooks/requirements.txt requirements-dbsp-demo.txt
-    RUN pip3 install -r requirements-dbsp-demo.txt
+    RUN pip install wheel
+    COPY demo/demo_notebooks/requirements.txt requirements.txt
+    RUN pip wheel -r requirements.txt --wheel-dir=wheels
+    SAVE ARTIFACT wheels /wheels
+
+install-python:
+    FROM +install-deps
+    COPY +install-python-deps/wheels wheels
+    COPY demo/demo_notebooks/requirements.txt requirements.txt
+    RUN pip install --user -v --no-index --find-links=wheels -r requirements.txt
+    COPY python python
+    RUN cd python && pip3 install --user -v ./dbsp-api-client
+    RUN cd python && pip3 install --user -v .
+    SAVE ARTIFACT /root/.local/lib/python3.10
+    SAVE ARTIFACT /root/.local/bin
 
 build-webui-deps:
     FROM +install-deps
@@ -99,6 +110,7 @@ prepare-cache:
     RUN mkdir -p sql-to-dbsp-compiler/lib/sqllib
     RUN mkdir -p sql-to-dbsp-compiler/lib/sqlvalue
     RUN mkdir -p sql-to-dbsp-compiler/lib/tuple
+    RUN mkdir -p sql-to-dbsp-compiler/temp
     #RUN mkdir -p crates/webui-tester
 
     COPY --keep-ts .cargo/config .cargo/config
@@ -109,13 +121,14 @@ prepare-cache:
     COPY --keep-ts crates/dbsp/Cargo.toml crates/dbsp/
     COPY --keep-ts crates/adapters/Cargo.toml crates/adapters/
     COPY --keep-ts crates/pipeline_manager/Cargo.toml crates/pipeline_manager/
+    #COPY --keep-ts crates/webui-tester/Cargo.toml crates/webui-tester/
     COPY --keep-ts sql-to-dbsp-compiler/lib/genlib/Cargo.toml sql-to-dbsp-compiler/lib/genlib/
     COPY --keep-ts sql-to-dbsp-compiler/lib/hashing/Cargo.toml sql-to-dbsp-compiler/lib/hashing/
     COPY --keep-ts sql-to-dbsp-compiler/lib/readers/Cargo.toml sql-to-dbsp-compiler/lib/readers/
     COPY --keep-ts sql-to-dbsp-compiler/lib/sqllib/Cargo.toml sql-to-dbsp-compiler/lib/sqllib/
     COPY --keep-ts sql-to-dbsp-compiler/lib/sqlvalue/Cargo.toml sql-to-dbsp-compiler/lib/sqlvalue/
     COPY --keep-ts sql-to-dbsp-compiler/lib/tuple/Cargo.toml sql-to-dbsp-compiler/lib/tuple/
-    #COPY --keep-ts crates/webui-tester/Cargo.toml crates/webui-tester/
+    COPY --keep-ts sql-to-dbsp-compiler/temp/Cargo.toml sql-to-dbsp-compiler/temp/
 
     RUN mkdir -p crates/dataflow-jit/src && touch crates/dataflow-jit/src/lib.rs
     RUN mkdir -p crates/nexmark/src && touch crates/nexmark/src/lib.rs
@@ -142,6 +155,7 @@ prepare-cache:
     RUN mkdir -p sql-to-dbsp-compiler/lib/sqllib/src && touch sql-to-dbsp-compiler/lib/sqllib/src/lib.rs
     RUN mkdir -p sql-to-dbsp-compiler/lib/sqlvalue/src && touch sql-to-dbsp-compiler/lib/sqlvalue/src/lib.rs
     RUN mkdir -p sql-to-dbsp-compiler/lib/tuple/src && touch sql-to-dbsp-compiler/lib/tuple/src/lib.rs
+    RUN mkdir -p sql-to-dbsp-compiler/temp/src && touch sql-to-dbsp-compiler/temp/src/lib.rs
 
     ENV RUST_LOG=info
     RUN cargo chef prepare
@@ -201,8 +215,8 @@ build-cache:
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package tuple
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package tuple --no-run
 
-    SAVE ARTIFACT --keep-ts --keep-own $CARGO_HOME
-    SAVE ARTIFACT --keep-ts --keep-own ./target
+    SAVE ARTIFACT --keep-ts $CARGO_HOME
+    SAVE ARTIFACT --keep-ts ./target
 
 build-dbsp:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -220,10 +234,10 @@ build-dbsp:
     RUN cd crates/dbsp && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
-    # Update target folder for future tasks, the whole --keep-ts, --keep-own
+    # Update target folder for future tasks, the whole --keep-ts,
     # args were an attempt in fixing the dependency problem (see build-cache)
     # but it doesn't seem to make a difference.
-    SAVE ARTIFACT --keep-ts --keep-own ./target/* ./target
+    SAVE ARTIFACT --keep-ts ./target/* ./target
 
 build-adapters:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -238,48 +252,67 @@ build-adapters:
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_adapters -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --no-run
 
-    SAVE ARTIFACT --keep-ts --keep-own ./target/* ./target
+    SAVE ARTIFACT --keep-ts ./target/* ./target
+
+build-dataflow-jit:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
+
+    FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+
+    RUN rm -rf crates/dataflow-jit
+    COPY --keep-ts --dir crates/dataflow-jit crates/dataflow-jit
+
+    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dataflow-jit
+    RUN cd crates/dataflow-jit && cargo +$RUST_TOOLCHAIN machete
+    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dataflow-jit --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dataflow-jit -- -D warnings
+    SAVE ARTIFACT --keep-ts ./target/* ./target
 
 build-manager:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
-    FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     # For some reason if this ENV before the FROM line it gets invalidated
     ENV WEBUI_BUILD_DIR=/dbsp/web-ui/out
     COPY ( +build-webui/out ) ./web-ui/out
 
     RUN rm -rf crates/pipeline_manager
     COPY --keep-ts --dir crates/pipeline_manager crates/pipeline_manager
-    COPY --keep-ts python python
 
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_pipeline_manager
     RUN cd crates/pipeline_manager && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_pipeline_manager -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager --no-run
-    RUN cargo make -e RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE --cwd crates/pipeline_manager/ openapi_python
+
     IF [ -f ./target/debug/dbsp_pipeline_manager ]
-        SAVE ARTIFACT --keep-ts --keep-own ./target/debug/dbsp_pipeline_manager dbsp_pipeline_manager
+        SAVE ARTIFACT --keep-ts ./target/debug/dbsp_pipeline_manager dbsp_pipeline_manager
     END
     IF [ -f ./target/release/dbsp_pipeline_manager ]
-        SAVE ARTIFACT --keep-ts --keep-own ./target/release/dbsp_pipeline_manager dbsp_pipeline_manager
+        SAVE ARTIFACT --keep-ts ./target/release/dbsp_pipeline_manager dbsp_pipeline_manager
     END
-    SAVE ARTIFACT --keep-ts --keep-own ./python python
 
-build-sql:
+test-sql:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
-    # TODO: does not need to depend on build-manager, instead save and copy
-    # build artefacts in downstream targets
-    FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     COPY --keep-ts sql-to-dbsp-compiler sql-to-dbsp-compiler
-    COPY --keep-ts crates crates
+
+    COPY demo/hello-world/combiner.sql demo/hello-world/combiner.sql
+    COPY demo/project_demo00-SimpleSelect/project.sql demo/project_demo00-SimpleSelect/project.sql
+    COPY demo/project_demo01-TimeSeriesEnrich/project.sql demo/project_demo01-TimeSeriesEnrich/project.sql
+    COPY demo/project_demo02-FraudDetection/project.sql demo/project_demo02-FraudDetection/project.sql
+    COPY demo/project_demo03-GreenTrip/project.sql demo/project_demo03-GreenTrip/project.sql
+    COPY demo/project_demo04-SecOps/project.sql demo/project_demo04-SecOps/project.sql
 
     CACHE /root/.m2
+
     COPY sql-to-dbsp-compiler sql-to-dbsp-compiler
-    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn -DskipTests package
+    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package
     SAVE ARTIFACT sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies.jar
+    SAVE ARTIFACT sql-to-dbsp-compiler
 
 install-docs-deps:
     FROM +install-deps
@@ -292,23 +325,10 @@ build-docs:
     COPY docs/ docs/
     COPY ( +build-manager/dbsp_pipeline_manager ) ./docs/dbsp_pipeline_manager
     RUN cd docs && ./dbsp_pipeline_manager --dump-openapi
+    RUN cd docs && yarn format:check
+    RUN cd docs && yarn lint
     RUN cd docs && yarn build --no-minify
     SAVE ARTIFACT docs/out AS LOCAL docs/out
-
-build-dataflow-jit:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-
-    RUN rm -rf crates/dataflow-jit
-    COPY --keep-ts --dir crates/dataflow-jit crates/dataflow-jit
-
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dataflow-jit
-    RUN cd crates/dataflow-jit && cargo +$RUST_TOOLCHAIN machete
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dataflow-jit --no-run
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dataflow-jit -- -D warnings
-    SAVE ARTIFACT --keep-ts --keep-own ./target/* ./target
 
 build-nexmark:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -391,7 +411,7 @@ test-manager:
     ENV RUST_LOG=error
     WITH DOCKER --pull postgres
         # We just put the PGDATA in /dev/shm because the docker fs seems very slow (test time goes to 2min vs. shm 40s)
-        RUN docker run --shm-size=256MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
+        RUN docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
@@ -402,20 +422,34 @@ test-python:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
-    FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    COPY --keep-ts scripts scripts
-    COPY --keep-ts demo/demo_notebooks demo/demo_notebooks
+    FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    COPY +build-manager/dbsp_pipeline_manager .
+    RUN mkdir -p /root/.local/lib/python3.10
+    RUN mkdir -p /root/.local/bin
+
+    COPY +install-python/python3.10 /root/.local/lib/python3.10
+    COPY +install-python/bin /root/.local/bin
+
+    COPY +build-manager/dbsp_pipeline_manager .
+    COPY +test-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
+
+    COPY demo/demo_notebooks demo/demo_notebooks
+    COPY python/test.py python/test.py
+
     ENV PGHOST=localhost
     ENV PGUSER=postgres
     ENV PGCLIENTENCODING=UTF8
     ENV PGPORT=5432
     ENV RUST_LOG=error
     ENV WITH_POSTGRES=1
+    ENV IN_CI=1
     WITH DOCKER --pull postgres
-        # We just put the PGDATA in /dev/shm because the docker fs seems very slow (test time goes to 2min vs. shm 40s)
-        RUN docker run --shm-size=256MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
+        RUN docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
             sleep 3 && \
-            cargo make -e RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE --cwd crates/pipeline_manager/ python_test
+            ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --unix-daemon && \
+            sleep 1 && \
+            python3 python/test.py && \
+            cd demo/demo_notebooks && jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
     END
 
 test-rust:
@@ -428,18 +462,6 @@ test-rust:
     BUILD +test-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     BUILD +test-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
 
-test-sql:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-    FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    COPY demo/hello-world/combiner.sql demo/hello-world/combiner.sql
-    COPY demo/project_demo00-SimpleSelect/project.sql demo/project_demo00-SimpleSelect/project.sql
-    COPY demo/project_demo01-TimeSeriesEnrich/project.sql demo/project_demo01-TimeSeriesEnrich/project.sql
-    COPY demo/project_demo02-FraudDetection/project.sql demo/project_demo02-FraudDetection/project.sql
-    COPY demo/project_demo03-GreenTrip/project.sql demo/project_demo03-GreenTrip/project.sql
-    COPY demo/project_demo04-SecOps/project.sql demo/project_demo04-SecOps/project.sql
-    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn test
-
 # TODO: the following two container tasks duplicate work that we otherwise do in the Dockerfile,
 # but by mostly repeating ourselves, we can reuse earlier Earthly stages to speed up the CI.
 build-dbsp-manager-container:
@@ -449,7 +471,7 @@ build-dbsp-manager-container:
     # First, copy over the artifacts built from previous stages
     RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
     COPY +build-manager/dbsp_pipeline_manager .
-    COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
+    COPY +test-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
 
     # Then copy over the crates needed by the sql compiler
     COPY crates/dbsp database-stream-processor/crates/dbsp
@@ -474,14 +496,8 @@ build-demo-container:
             && unzip rpk-linux-$arch.zip -d /bin/ \
             && rpk version \
             && rm rpk-linux-$arch.zip
-    COPY +build-manager/dbsp_pipeline_manager .
-    RUN ./dbsp_pipeline_manager --dump-openapi
-    RUN pip3 install openapi-python-client websockets
-    COPY python python
-    RUN cd python &&  \
-        openapi-python-client generate --path ../openapi.json && \
-        pip3 install ./dbsp-api-client && \
-        pip3 install .
+    COPY +install-python/python3.10 /root/.local/lib/python3.10
+    COPY +install-python/bin /root/.local/bin
     COPY demo demo
     CMD bash
     SAVE IMAGE ghcr.io/feldera/demo-container

@@ -6,5 +6,6 @@
 **/node_modules
 **/.docusaurus
 **/openapi.json
-web-ui/.next
+**/.next
 **/out
+**/__pycache__

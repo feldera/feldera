@@ -5,3 +5,5 @@ geopy==2.3.0
 pandas==1.5.3
 scikit_learn==1.2.1
 xgboost==1.7.3
+# This is used by python/test.py and can go away once we remove websockets
+websockets==11.0.3
