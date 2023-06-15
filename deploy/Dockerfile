@@ -65,7 +65,8 @@ RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
 COPY sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
 COPY sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/temp
 COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
-
+# Run the precompile phase to speed up Rust compilations during deployment
+RUN ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
 CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor
 
 ##### The stages below are used to build the demo container
@@ -107,7 +108,8 @@ RUN apt update && apt install pkg-config \
       && rm dbsp_pipeline_manager \
       && pip3 install openapi-python-client websockets \
       && cd python \
-      && openapi-python-client generate --path ../openapi.json \
+      && rm -rf dbsp-api-client \
+      && openapi-python-client generate --path ../openapi.json --fail-on-warning \
       && pip3 install ./dbsp-api-client \
       && pip3 install . \
    # TODO: only required for running the fraud detection demo. Remove when we clean that up.
