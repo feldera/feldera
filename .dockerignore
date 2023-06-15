@@ -7,3 +7,4 @@ target
 **/ldbc-graphalytics-data
 **/fraud_data
 **/.vscode
+**/__pycache__
