@@ -5,13 +5,10 @@ edition = "2021"
 
 [dependencies]
 dbsp = { path = "../../../crates/dbsp" }
-sqlx = { version = "0.6.2", features = [ "runtime-async-std-native-tls", "sqlite", "postgres", "any" ] }
 rust_decimal = { version = "1.29", features = ["maths"] }
-rust_decimal_macros = { version = "1.29" } 
 geo = { version = "0.23" }
 geo-types = { version = "0.7" }
 size-of = { version = "0.1.5", features = ["rust_decimal"] }
 serde = { version = "1.0", features = ["derive"] }
 num = { version = "0.4.0" }
 chrono = { version = "0.4.23" }
-

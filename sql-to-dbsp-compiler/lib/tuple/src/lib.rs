@@ -19,6 +19,7 @@ macro_rules! declare_tuples {
                 }
             }
 
+	    #[cfg(test)]
             impl<$($element),*> ToSqlRow for $tuple_name<$($element,)*>
             where
                 $(SqlValue: From<$element>,)*
