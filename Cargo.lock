@@ -1378,12 +1378,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "compare"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "120133d4db2ec47efe2e26502ee984747630c67f51974fca0b6c1340cf2368d3"
-
-[[package]]
 name = "concurrent-queue"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4641,16 +4635,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust_decimal_macros"
-version = "1.29.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e773fd3da1ed42472fdf3cfdb4972948a555bc3d73f5e0bdb99d17e7b54c687"
-dependencies = [
- "quote 1.0.28",
- "rust_decimal",
-]
-
-[[package]]
 name = "rustc-demangle"
 version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5133,10 +5117,8 @@ dependencies = [
  "geo-types",
  "num",
  "rust_decimal",
- "rust_decimal_macros",
  "serde",
  "size-of",
- "sqlx",
 ]
 
 [[package]]
@@ -5349,29 +5331,6 @@ name = "target-lexicon"
 version = "0.12.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd1ba337640d60c3e96bc6f0638a939b9c9a7f2c316a1598c279828b3d1dc8c5"
-
-[[package]]
-name = "temp"
-version = "0.1.0"
-dependencies = [
- "compare",
- "dataflow-jit",
- "dbsp",
- "dbsp_adapters",
- "genlib",
- "geo",
- "geo-types",
- "hashing",
- "readers",
- "rust_decimal",
- "serde",
- "serde_json",
- "size-of",
- "sqllib",
- "sqlvalue",
- "sqlx",
- "tuple",
-]
 
 [[package]]
 name = "tempfile"
@@ -5737,10 +5696,6 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 [[package]]
 name = "tuple"
 version = "0.1.0"
-dependencies = [
- "serde",
- "sqlvalue",
-]
 
 [[package]]
 name = "typedmap"

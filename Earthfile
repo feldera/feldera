@@ -155,7 +155,6 @@ prepare-cache:
     RUN mkdir -p sql-to-dbsp-compiler/lib/sqllib/src && touch sql-to-dbsp-compiler/lib/sqllib/src/lib.rs
     RUN mkdir -p sql-to-dbsp-compiler/lib/sqlvalue/src && touch sql-to-dbsp-compiler/lib/sqlvalue/src/lib.rs
     RUN mkdir -p sql-to-dbsp-compiler/lib/tuple/src && touch sql-to-dbsp-compiler/lib/tuple/src/lib.rs
-    RUN mkdir -p sql-to-dbsp-compiler/temp/src && touch sql-to-dbsp-compiler/temp/src/lib.rs
 
     ENV RUST_LOG=info
     RUN cargo chef prepare
@@ -214,6 +213,13 @@ build-cache:
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package sqlvalue --no-run
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package tuple
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package tuple --no-run
+
+    # If we make this a workspace crate we can use the chef/cook commands but
+    # it breaks `cargo build` in non-CI builds (because there is no
+    # lib.rs and we don't want to check that in as it gets overwritten)
+    COPY --dir sql-to-dbsp-compiler/temp sql-to-dbsp-compiler/temp
+    RUN rm -f sql-to-dbsp-compiler/temp/src/lib.rs && touch sql-to-dbsp-compiler/temp/src/lib.rs
+    RUN cd sql-to-dbsp-compiler/temp && cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --no-run
 
     SAVE ARTIFACT --keep-ts $CARGO_HOME
     SAVE ARTIFACT --keep-ts ./target
