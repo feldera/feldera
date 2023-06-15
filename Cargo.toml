@@ -1,5 +1,6 @@
 [workspace]
-members = ["crates/*", "sql-to-dbsp-compiler/lib/*", "sql-to-dbsp-compiler/temp"]
+members = ["crates/*", "sql-to-dbsp-compiler/lib/*"]
+exclude = ["sql-to-dbsp-compiler/temp"]
 
 [profile.bench]
 debug = true
