@@ -70,89 +70,101 @@ public class RustFileWriter implements ICompilerComponent {
 
     /**
      * If this is called with 'true' the emitted Rust code will use handles
-     * instead of explicitly typed ZSets.
+     * instead of explicitly-typed ZSets.
      */
     public void emitCodeWithHandle(boolean emit) {
         this.emitHandles = emit;
     }
 
+    /**
+     * Preamble used for all compilations.
+     */
+    static final String commonPreamble =
+            "// Automatically-generated file\n" +
+            "#![allow(dead_code)]\n" +
+            "#![allow(non_snake_case)]\n" +
+            "#![allow(unused_imports)]\n" +
+            "#![allow(unused_parens)]\n" +
+            "#![allow(unused_variables)]\n" +
+            "#![allow(unused_mut)]\n" +
+            "#[cfg(test)]\n\n" +
+            "use hashing::*;\n";  // comparison functions
+
+    /**
+     * Preamble used when generating Rust code.
+     */
     @SuppressWarnings("SpellCheckingInspection")
     static final String rustPreamble =
-            "// Automatically-generated file\n" +
-                    "#![allow(dead_code)]\n" +
-                    "#![allow(non_snake_case)]\n" +
-                    "#![allow(unused_imports)]\n" +
-                    "#![allow(unused_parens)]\n" +
-                    "#![allow(unused_variables)]\n" +
-                    "#![allow(unused_mut)]\n" +
-                    "\n" +
-                    "use dbsp::{\n" +
-                    "    algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue,\n" +
-                    "    UnimplementedSemigroup, DefaultSemigroup},\n" +
-                    "    circuit::{Circuit, Stream},\n" +
-                    "    operator::{\n" +
-                    "        Generator,\n" +
-                    "        FilterMap,\n" +
-                    "        Fold,\n" +
-                    "        time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},\n" +
-                    "        MaxSemigroup,\n" +
-                    "        MinSemigroup,\n" +
-                    "    },\n" +
-                    "    trace::ord::{OrdIndexedZSet, OrdZSet},\n" +
-                    "    zset,\n" +
-                    "    indexed_zset,\n" +
-                    "    DBWeight,\n" +
-                    "    DBData,\n" +
-                    "    DBSPHandle,\n" +
-                    "    Runtime,\n" +
-                    "};\n" +
-                    "use dbsp_adapters::Catalog;\n" +
-                    "use genlib::*;\n" +
-                    "use size_of::*;\n" +
-                    "use ::serde::{Deserialize,Serialize};\n" +
-                    "use compare::{Compare, Extract};\n" +
-                    "use std::{\n" +
-                    "    convert::identity,\n" +
-                    "    fmt::{Debug, Formatter, Result as FmtResult},\n" +
-                    "    cell::RefCell,\n" +
-                    "    path::Path,\n" +
-                    "    rc::Rc,\n" +
-                    "    marker::PhantomData,\n" +
-                    "    str::FromStr,\n" +
-                    "};\n" +
-                    "#[cfg(feature = \"jit\")]\n" +
-                    "use dataflow_jit::{\n" +
-                    "    sql_graph::SqlGraph,\n" +
-                    "    ir::{\n" +
-                    "        GraphExt,\n" +
-                    "        NodeId,\n" +
-                    "        Constant,\n" +
-                    "        literal::{\n" +
-                    "            StreamCollection::Set,\n" +
-                    "            NullableConstant,\n" +
-                    "            RowLiteral,\n" +
-                    "            NullableConstant::{Nullable, NonNull},\n" +
-                    "        },\n" +
-                    "    },\n" +
-                    "    facade::{DbspCircuit,Demands},\n" +
-                    "    codegen::CodegenConfig,\n" +
-                    "};\n" +
-                    "use rust_decimal::Decimal;\n" +
-                    "use tuple::declare_tuples;\n" +
-                    "use sqllib::{\n" +
-                    "    casts::*,\n" +
-                    "    geopoint::*,\n" +
-                    "    timestamp::*,\n" +
-                    "    interval::*,\n" +
-                    "};\n" +
-                    "use sqllib::*;\n" +
-                    "use sqlvalue::*;\n" +
-                    "#[cfg(test)]\n" +
-                    "use hashing::*;\n" +
-                    "#[cfg(test)]\n" +
-                    "use readers::*;\n" +
-                    "#[cfg(test)]\n" +
-                    "use sqlx::{AnyConnection, any::AnyRow, Row};\n";
+            "use dbsp::{\n" +
+            "    algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue,\n" +
+            "    UnimplementedSemigroup, DefaultSemigroup},\n" +
+            "    circuit::{Circuit, Stream},\n" +
+            "    operator::{\n" +
+            "        Generator,\n" +
+            "        FilterMap,\n" +
+            "        Fold,\n" +
+            "        time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},\n" +
+            "        MaxSemigroup,\n" +
+            "        MinSemigroup,\n" +
+            "    },\n" +
+            "    trace::ord::{OrdIndexedZSet, OrdZSet},\n" +
+            "    zset,\n" +
+            "    indexed_zset,\n" +
+            "    DBWeight,\n" +
+            "    DBData,\n" +
+            "    DBSPHandle,\n" +
+            "    Runtime,\n" +
+            "};\n" +
+            "use dbsp_adapters::Catalog;\n" +
+            "use genlib::*;\n" +
+            "use size_of::*;\n" +
+            "use ::serde::{Deserialize,Serialize};\n" +
+            "use compare::{Compare, Extract};\n" +
+            "use std::{\n" +
+            "    convert::identity,\n" +
+            "    fmt::{Debug, Formatter, Result as FmtResult},\n" +
+            "    cell::RefCell,\n" +
+            "    path::Path,\n" +
+            "    rc::Rc,\n" +
+            "    marker::PhantomData,\n" +
+            "    str::FromStr,\n" +
+            "};\n" +
+            "use rust_decimal::Decimal;\n" +
+            "use tuple::declare_tuples;\n" +
+            "use sqllib::{\n" +
+            "    *,\n" +
+            "    casts::*,\n" +
+            "    geopoint::*,\n" +
+            "    timestamp::*,\n" +
+            "    interval::*,\n" +
+            "};\n" +
+            "#[cfg(test)]\n" +
+            "use sqlvalue::*;\n" +
+            "#[cfg(test)]\n" +
+            "use readers::*;\n" +
+            "#[cfg(test)]\n" +
+            "use sqlx::{AnyConnection, any::AnyRow, Row};\n";
+
+    /**
+     * Preamble used when generating jit code.
+     */
+    static final String jitPreamble = "#[cfg(feature = \"jit\")]\n" +
+            "use dataflow_jit::{\n" +
+            "    sql_graph::SqlGraph,\n" +
+            "    ir::{\n" +
+            "        GraphExt,\n" +
+            "        NodeId,\n" +
+            "        Constant,\n" +
+            "        literal::{\n" +
+            "            StreamCollection::Set,\n" +
+            "            NullableConstant,\n" +
+            "            RowLiteral,\n" +
+            "            NullableConstant::{Nullable, NonNull},\n" +
+            "        },\n" +
+            "    },\n" +
+            "    facade::{DbspCircuit,Demands},\n" +
+            "    codegen::CodegenConfig,\n" +
+            "};\n";
 
     final DBSPCompiler compiler;
 
@@ -269,15 +281,20 @@ public class RustFileWriter implements ICompilerComponent {
 
     public String generatePreamble(StructuresUsed used) {
         IndentStream stream = new IndentStream(new StringBuilder());
-        stream.append(rustPreamble)
-                .newline();
-        stream.append("type ")
-                .append(DBSPTypeWeight.INSTANCE.name)
-                .append(" = ")
-                .append(this.getCompiler().getWeightTypeImplementation().toString())
-                .append(";")
-                .newline();
-        generateStructures(used, stream);
+        stream.append(commonPreamble);
+        if (this.compiler.options.ioOptions.jit) {
+            stream.append(jitPreamble);
+        } else {
+            stream.append(rustPreamble)
+                    .newline();
+            stream.append("type ")
+                    .append(DBSPTypeWeight.INSTANCE.name)
+                    .append(" = ")
+                    .append(this.getCompiler().getWeightTypeImplementation().toString())
+                    .append(";")
+                    .newline();
+            generateStructures(used, stream);
+        }
         return stream.toString();
     }
 
