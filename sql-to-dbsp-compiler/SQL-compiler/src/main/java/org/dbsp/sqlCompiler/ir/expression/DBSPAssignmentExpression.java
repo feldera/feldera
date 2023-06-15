@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.util.IIndentStream;
 
 public class DBSPAssignmentExpression extends DBSPExpression {
     public final DBSPExpression left;
@@ -56,5 +57,12 @@ public class DBSPAssignmentExpression extends DBSPExpression {
         return this.left == o.left &&
                 this.right == o.right &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.left)
+                .append(" = ")
+                .append(this.right);
     }
 }

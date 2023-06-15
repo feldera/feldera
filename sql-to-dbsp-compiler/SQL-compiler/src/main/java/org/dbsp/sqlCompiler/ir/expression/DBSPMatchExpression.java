@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 import java.util.List;
@@ -39,6 +40,7 @@ import java.util.List;
  */
 @NonCoreIR
 public class DBSPMatchExpression extends DBSPExpression {
+    @NonCoreIR
     public static class Case extends DBSPNode implements IDBSPInnerNode {
         public final DBSPPattern against;
         public final DBSPExpression result;
@@ -66,6 +68,13 @@ public class DBSPMatchExpression extends DBSPExpression {
                 return false;
             return this.against == o.against &&
                     this.result == o.result;
+        }
+
+        @Override
+        public IIndentStream toString(IIndentStream builder) {
+            return builder.append(this.against)
+                    .append(" => ")
+                    .append(this.result);
         }
     }
 
@@ -104,5 +113,16 @@ public class DBSPMatchExpression extends DBSPExpression {
         return this.matched == o.matched &&
                 Linq.same(this.cases, o.cases) &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("match ")
+                .append(this.matched)
+                .append(" {")
+                .increase()
+                .intercalateI("," + System.lineSeparator(), this.cases)
+                .decrease()
+                .append("}");
     }
 }

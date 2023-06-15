@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
@@ -66,5 +67,15 @@ public class DBSPDecimalLiteral extends DBSPLiteral {
         if (o == null || getClass() != o.getClass()) return false;
         DBSPDecimalLiteral that = (DBSPDecimalLiteral) o;
         return this.getType().sameType(that.type) && Objects.equals(value, that.value);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        if (this.value == null)
+            return builder.append("(")
+                    .append(this.type)
+                    .append(")null");
+        else
+            return builder.append(this.value.toString());
     }
 }

@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 
 /**
  * A special case of a PathExpression in Rust which refers to a variable by name.
@@ -75,5 +76,10 @@ public class DBSPVariablePath extends DBSPExpression {
             return false;
         return this.variable.equals(o.variable) &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.variable);
     }
 }

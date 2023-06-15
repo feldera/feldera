@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.UnsupportedException;
 
 import javax.annotation.Nullable;
@@ -77,5 +78,13 @@ public class DBSPIndexExpression extends DBSPExpression {
                 this.index == o.index &&
                 this.startsAtOne == o.startsAtOne &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.array)
+                .append("[")
+                .append(this.index)
+                .append("]");
     }
 }

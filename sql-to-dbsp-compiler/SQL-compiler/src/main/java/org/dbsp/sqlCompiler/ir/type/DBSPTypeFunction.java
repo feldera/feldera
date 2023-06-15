@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.util.IIndentStream;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -71,5 +72,10 @@ public class DBSPTypeFunction extends DBSPType {
         if (this.resultType.sameType(other.resultType))
             return false;
         return DBSPType.sameTypes(this.argumentTypes, other.argumentTypes);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("_");
     }
 }

@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.util.IIndentStream;
 
 @NonCoreIR
 public class DBSPForExpression extends DBSPExpression {
@@ -62,5 +63,15 @@ public class DBSPForExpression extends DBSPExpression {
                 this.iterated == o.iterated &&
                 this.block == o.block &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("for ")
+                .append(this.pattern)
+                .append(" in ")
+                .append(this.iterated)
+                .append(" ")
+                .append(this.block);
     }
 }

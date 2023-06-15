@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.util.IIndentStream;
 
 import java.util.Objects;
 
@@ -60,5 +61,10 @@ public class DBSPTypeAny extends DBSPType {
         if (!super.sameNullability(other))
             return false;
         return other.is(DBSPTypeAny.class);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("_");
     }
 }

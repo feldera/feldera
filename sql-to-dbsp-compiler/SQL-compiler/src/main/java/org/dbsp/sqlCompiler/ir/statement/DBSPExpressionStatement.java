@@ -26,6 +26,8 @@ package org.dbsp.sqlCompiler.ir.statement;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Linq;
 
 public class DBSPExpressionStatement extends DBSPStatement {
     public final DBSPExpression expression;
@@ -50,5 +52,10 @@ public class DBSPExpressionStatement extends DBSPStatement {
         if (o == null)
             return false;
         return this.expression == o.expression;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.expression);
     }
 }

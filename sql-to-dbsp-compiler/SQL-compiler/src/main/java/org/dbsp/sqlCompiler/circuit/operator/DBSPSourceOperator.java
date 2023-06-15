@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -52,5 +53,15 @@ public class DBSPSourceOperator extends DBSPOperator {
             return new DBSPSourceOperator(
                     this.getNode(), this.outputType, this.comment, this.outputName);
         return this;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return this.writeComments(builder)
+                .append("let ")
+                .append(this.getName())
+                .append(" = ")
+                .append(this.outputName)
+                .append("();");
     }
 }

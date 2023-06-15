@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -119,5 +120,14 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
             return false;
         return Linq.same(this.fields, o.fields) &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("Tuple")
+                .append(this.fields.length)
+                .append("::new(")
+                .join(", ", this.fields)
+                .append(")");
     }
 }

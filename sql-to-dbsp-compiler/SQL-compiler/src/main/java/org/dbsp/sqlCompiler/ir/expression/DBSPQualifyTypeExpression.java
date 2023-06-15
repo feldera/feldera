@@ -25,12 +25,15 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 /**
  * An expression qualified with a type.
  */
+@NonCoreIR
 public class DBSPQualifyTypeExpression extends DBSPExpression {
     public final DBSPExpression expression;
     public final DBSPType[] types;
@@ -61,5 +64,11 @@ public class DBSPQualifyTypeExpression extends DBSPExpression {
         return this.expression == o.expression &&
                 Linq.same(this.types, o.types) &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.expression)
+                .intercalateI("::", this.types);
     }
 }

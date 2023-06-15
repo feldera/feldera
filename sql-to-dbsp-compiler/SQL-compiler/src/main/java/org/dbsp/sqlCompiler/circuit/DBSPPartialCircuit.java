@@ -143,4 +143,9 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
     public int size() {
         return this.allOperators.size();
     }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.intercalateI(System.lineSeparator(), this.allOperators);
+    }
 }

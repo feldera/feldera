@@ -27,6 +27,7 @@ import org.apache.calcite.util.DateString;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -77,5 +78,15 @@ public class DBSPDateLiteral extends DBSPLiteral {
         if (o == null || getClass() != o.getClass()) return false;
         DBSPDateLiteral that = (DBSPDateLiteral) o;
         return Objects.equals(value, that.value);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        if (this.value == null)
+            return builder.append("(")
+                    .append(this.type)
+                    .append(")null");
+        else
+            return builder.append(DateString.fromDaysSinceEpoch(this.value).toString());
     }
 }

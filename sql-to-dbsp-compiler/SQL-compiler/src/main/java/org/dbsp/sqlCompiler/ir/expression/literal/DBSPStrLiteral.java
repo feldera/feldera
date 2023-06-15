@@ -26,17 +26,18 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeStr;
+import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
 
 public class DBSPStrLiteral extends DBSPLiteral {
-    @Nullable
     public final String value;
     public final boolean raw;
 
-    public DBSPStrLiteral(@Nullable Object node, DBSPType type, @Nullable String value, boolean raw) {
-        super(node, type, value == null);
+    public DBSPStrLiteral(@Nullable Object node, DBSPType type, String value, boolean raw) {
+        super(node, type, false);
         this.value = value;
         this.raw = raw;
     }
@@ -45,10 +46,8 @@ public class DBSPStrLiteral extends DBSPLiteral {
         this(value, false, false);
     }
 
-    public DBSPStrLiteral(@Nullable String value, boolean nullable, boolean raw) {
+    public DBSPStrLiteral(String value, boolean nullable, boolean raw) {
         this(null, DBSPTypeStr.INSTANCE.setMayBeNull(nullable), value, raw);
-        if (value == null && !nullable)
-            throw new RuntimeException("Null value with non-nullable type");
     }
 
     @Override
@@ -70,6 +69,11 @@ public class DBSPStrLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getNonNullable() {
-        return new DBSPStrLiteral(Objects.requireNonNull(this.value), false, this.raw);
+        return this;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(Utilities.doubleQuote(this.value));
     }
 }

@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
@@ -120,5 +121,36 @@ public class DBSPFlatmap extends DBSPExpression {
                 this.indexType == o.indexType &&
                 this.collectionElementType == o.collectionElementType &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        // |data| { data.field0.map(|e| { Tuple::new(data.field1, data.field2, ..., e )} ) }
+        // or
+        // |data| { data.field0.enumerate().map(|e| { Tuple::new(data.field1, data.field2, ..., e.1, cast(e.0+1) )} ) }
+        builder.append("|data| { data.")
+                .append(this.collectionFieldIndex);
+        if (this.indexType != null)
+            builder.append(".enumerate()");
+        builder.append("map(|e| { Tuple")
+                .append(this.outputFieldIndexes.size())
+                .append("::new(");
+        boolean first = true;
+        for (int index: this.outputFieldIndexes) {
+            if (!first)
+                builder.append(", ");
+            first = false;
+            if (index >= 0)
+                builder.append("data.")
+                        .append(index);
+            else if (index == ITERATED_ELEMENT) {
+                builder.append("e");
+                if (this.indexType != null)
+                    builder.append(".1");
+            }
+            else if (index == COLLECTION_INDEX)
+                builder.append("(e.0 + 1)");
+        }
+        return builder.append(")} )}");
     }
 }

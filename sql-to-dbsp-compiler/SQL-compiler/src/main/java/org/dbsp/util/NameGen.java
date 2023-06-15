@@ -62,4 +62,12 @@ public class NameGen {
         nextId.put(this.prefix, id+1);
         return this.prefix + id;
     }
+
+    /**
+     * Do not use this method.
+     * It is for testing only.
+     */
+    public static void reset() {
+        nextId.clear();
+    }
 }

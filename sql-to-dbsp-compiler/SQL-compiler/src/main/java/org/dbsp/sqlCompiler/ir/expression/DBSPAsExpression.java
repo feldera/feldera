@@ -25,8 +25,11 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 
+@NonCoreIR
 public class DBSPAsExpression extends DBSPExpression {
     public final DBSPExpression source;
 
@@ -52,5 +55,14 @@ public class DBSPAsExpression extends DBSPExpression {
             return false;
         return this.source == o.source &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("((")
+                .append(this.type)
+                .append(")")
+                .append(this.source)
+                .append(")");
     }
 }

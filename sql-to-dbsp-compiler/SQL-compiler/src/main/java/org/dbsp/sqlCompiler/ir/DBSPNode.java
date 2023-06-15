@@ -23,10 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir;
 
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
-import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
+import org.dbsp.util.IndentStream;
 
 import javax.annotation.Nullable;
 
@@ -50,6 +47,14 @@ public abstract class DBSPNode
         this.id = crtId++;
     }
 
+    /**
+     * Do not call this method!
+     * It is only used for testing.
+     */
+    public static void reset() {
+        crtId = 0;
+    }
+
     @Nullable
     public Object getNode() { return this.node; }
 
@@ -60,12 +65,9 @@ public abstract class DBSPNode
 
     @Override
     public String toString() {
-        // This should only be used for debugging.
-        // Otherwise, the compiler options used to generate this string may not match
-        // what the actual compiler options are.
-        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        if (this.is(IDBSPInnerNode.class))
-            return ToRustInnerVisitor.toRustString(compiler, this.to(IDBSPInnerNode.class), false);
-        return ToRustVisitor.toRustString(compiler, this.to(IDBSPOuterNode.class));
+        StringBuilder builder = new StringBuilder();
+        IndentStream stream = new IndentStream(builder);
+        this.toString(stream);
+        return builder.toString();
     }
 }

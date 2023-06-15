@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 import java.util.List;
@@ -101,5 +102,17 @@ public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration
             this.body == o.body &&
             Linq.sameStrings(this.annotations, o.annotations) &&
                 this.type == o.type;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("fn ")
+                .append(this.name)
+                .append("(")
+                .joinI(", ", this.parameters)
+                .append(") -> ")
+                .append(this.returnType)
+                .append(" ")
+                .append(this.body);
     }
 }

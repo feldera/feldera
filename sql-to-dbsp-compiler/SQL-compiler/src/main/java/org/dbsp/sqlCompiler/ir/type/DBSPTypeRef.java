@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.util.IIndentStream;
 
 import java.util.Objects;
 
@@ -72,5 +73,13 @@ public class DBSPTypeRef extends DBSPType {
         this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder
+                .append("&")
+                .append(this.mutable ? "mut " : "")
+                .append(this.type);
     }
 }
