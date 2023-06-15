@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
@@ -64,5 +65,17 @@ public class DBSPBlockExpression extends DBSPExpression {
         return Linq.same(this.contents, o.contents) &&
                 this.lastExpression == o.lastExpression &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        builder.append("{")
+                .increase()
+                .joinI(System.lineSeparator(), this.contents);
+        if (this.lastExpression != null)
+            builder.newline()
+                    .append(this.lastExpression);
+        return builder.decrease()
+                .append("}");
     }
 }

@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 /**
@@ -90,5 +91,13 @@ public class DBSPApplyExpression extends DBSPExpression {
         return this.function == o.function &&
                 Linq.same(this.arguments, o.arguments) &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.function)
+                .append("(")
+                .join(", ", this.arguments)
+                .append(")");
     }
 }

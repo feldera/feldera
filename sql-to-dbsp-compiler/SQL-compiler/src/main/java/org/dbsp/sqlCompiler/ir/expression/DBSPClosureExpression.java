@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
@@ -47,11 +48,11 @@ public class DBSPClosureExpression extends DBSPExpression {
         return this.getFunctionType().resultType;
     }
 
-    public DBSPClosureExpression(@Nullable Object node, DBSPExpression body, DBSPParameter... variables) {
+    public DBSPClosureExpression(@Nullable Object node, DBSPExpression body, DBSPParameter... parameters) {
         // In Rust in general we can't write the type of the closure.
-        super(node, new DBSPTypeFunction(body.getType(), Linq.map(variables, DBSPParameter::getType, DBSPType.class)));
+        super(node, new DBSPTypeFunction(body.getType(), Linq.map(parameters, DBSPParameter::getType, DBSPType.class)));
         this.body = body;
-        this.parameters = variables;
+        this.parameters = parameters;
     }
 
     public DBSPClosureExpression(DBSPExpression body, DBSPParameter... variables) {
@@ -84,5 +85,14 @@ public class DBSPClosureExpression extends DBSPExpression {
         return this.body == o.body &&
                 this.hasSameType(o) &&
                 Linq.same(this.parameters, o.parameters);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("(|")
+                .join(",", this.parameters)
+                .append("| ")
+                .append(this.body)
+                .append(")");
     }
 }

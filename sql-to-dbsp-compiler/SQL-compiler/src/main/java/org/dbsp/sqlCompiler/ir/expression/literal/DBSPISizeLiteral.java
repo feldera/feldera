@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import javax.annotation.Nullable;
 import java.util.Objects;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 
 public class DBSPISizeLiteral extends DBSPLiteral {
     @Nullable
@@ -73,5 +74,15 @@ public class DBSPISizeLiteral extends DBSPLiteral {
         if (o == null || getClass() != o.getClass()) return false;
         DBSPISizeLiteral that = (DBSPISizeLiteral) o;
         return Objects.equals(value, that.value);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        if (this.value == null)
+            return builder.append("(")
+                    .append(this.type)
+                    .append(")null");
+        else
+            return builder.append(this.value.toString());
     }
 }

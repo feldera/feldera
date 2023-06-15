@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Unimplemented;
 
 import javax.annotation.Nullable;
@@ -79,5 +80,10 @@ public class DBSPKeywordLiteral extends DBSPLiteral {
     @Override
     public DBSPLiteral getNonNullable() {
         return this;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.keyword);
     }
 }

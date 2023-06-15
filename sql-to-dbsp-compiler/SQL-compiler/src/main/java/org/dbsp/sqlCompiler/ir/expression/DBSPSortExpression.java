@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
@@ -73,5 +74,12 @@ public class DBSPSortExpression extends DBSPExpression {
             return false;
         return this.comparator == o.comparator &&
                 this.elementType == o.elementType;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("(|k, v| k.")
+                .append(this.comparator)
+                .append(")");
     }
 }

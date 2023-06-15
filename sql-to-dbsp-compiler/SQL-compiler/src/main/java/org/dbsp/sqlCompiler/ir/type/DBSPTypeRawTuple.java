@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Arrays;
@@ -101,5 +102,12 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
             casts[i] = casts[i].call(var.field(i));
         }
         return new DBSPRawTupleExpression(casts).closure(var.asRefParameter());
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("(")
+                .join(", ", this.tupFields)
+                .append(")");
     }
 }

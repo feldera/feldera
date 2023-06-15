@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -125,5 +126,18 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
         DBSPVecLiteral that = (DBSPVecLiteral) o;
         if (!Objects.equals(data, that.data)) return false;
         return vecType.equals(that.vecType);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        if (this.data == null)
+            return builder.append("(")
+                    .append(this.type)
+                    .append(")")
+                    .append("null");
+        return builder.append("vec!(")
+                .increase()
+                .intercalateI(System.lineSeparator(), this.data)
+                .append(")");
     }
 }

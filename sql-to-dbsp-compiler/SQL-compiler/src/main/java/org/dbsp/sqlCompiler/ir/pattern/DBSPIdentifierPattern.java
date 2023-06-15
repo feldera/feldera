@@ -25,7 +25,10 @@ package org.dbsp.sqlCompiler.ir.pattern;
 
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
+import org.dbsp.util.IIndentStream;
 
+@NonCoreIR
 public class DBSPIdentifierPattern extends DBSPPattern {
     public final String identifier;
     public final boolean mutable;
@@ -54,5 +57,11 @@ public class DBSPIdentifierPattern extends DBSPPattern {
         if (o == null)
             return false;
         return this.identifier.equals(o.identifier) && this.mutable == o.mutable;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.mutable ? "mut " : "")
+                .append(this.identifier);
     }
 }

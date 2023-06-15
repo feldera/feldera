@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Arrays;
@@ -84,5 +85,16 @@ public class DBSPTypeUser extends DBSPType {
             type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        builder.append(this.name);
+        if (this.typeArgs.length > 0) {
+            builder.append("<")
+                    .join(", ", this.typeArgs)
+                    .append(">");
+        }
+        return builder;
     }
 }

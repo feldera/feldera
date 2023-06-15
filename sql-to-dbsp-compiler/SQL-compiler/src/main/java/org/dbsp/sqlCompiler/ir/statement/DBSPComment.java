@@ -4,6 +4,8 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Linq;
 
 public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
     public final String comment;
@@ -33,5 +35,12 @@ public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
         if (o == null)
             return false;
         return this.comment.equals(o.comment);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        String[] parts = this.comment.split("\n");
+        parts = Linq.map(parts, p -> "// " + p, String.class);
+        return builder.intercalate("\n", parts);
     }
 }

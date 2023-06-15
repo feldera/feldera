@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -70,5 +71,15 @@ public class DBSPUSizeLiteral extends DBSPLiteral {
     @Override
     public DBSPLiteral getNonNullable() {
         return new DBSPUSizeLiteral(Objects.requireNonNull(this.value));
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        if (this.value == null)
+            return builder.append("(")
+                    .append(this.type)
+                    .append(")null");
+        else
+            return builder.append(this.value.toString());
     }
 }

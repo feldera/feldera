@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
@@ -50,5 +51,11 @@ public class DBSPNoComparatorExpression extends DBSPComparatorExpression {
         if (o == null)
             return false;
         return this.tupleType == o.tupleType;
+    }
+
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("compare");
     }
 }

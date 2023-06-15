@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 @NonCoreIR
@@ -64,5 +65,13 @@ public class DBSPTupleStructPattern extends DBSPPattern {
         if (o == null)
             return false;
         return this.path == o.path && Linq.same(this.arguments, o.arguments);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.path)
+                .append("(")
+                .join(", ", this.arguments)
+                .append(")");
     }
 }

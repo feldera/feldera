@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 public class DBSPPath extends DBSPNode implements IDBSPInnerNode {
@@ -57,5 +58,10 @@ public class DBSPPath extends DBSPNode implements IDBSPInnerNode {
         if (o == null)
             return false;
         return Linq.same(this.components, o.components);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.join("::", this.components);
     }
 }

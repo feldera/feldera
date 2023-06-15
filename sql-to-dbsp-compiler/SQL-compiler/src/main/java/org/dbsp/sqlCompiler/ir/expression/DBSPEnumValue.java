@@ -25,11 +25,14 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
+import org.dbsp.util.IIndentStream;
 
 /**
  * For now only support simple enums, with no additional arguments.
  */
+@NonCoreIR
 public class DBSPEnumValue extends DBSPExpression {
     public final String enumName;
     public final String constructor;
@@ -56,5 +59,12 @@ public class DBSPEnumValue extends DBSPExpression {
             return false;
         return this.enumName.equals(o.enumName) &&
                 this.constructor.equals(o.constructor);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append(this.enumName)
+                .append("::")
+                .append(this.constructor);
     }
 }

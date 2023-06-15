@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.pattern;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
+import org.dbsp.util.IIndentStream;
 
 @NonCoreIR
 public class DBSPWildcardPattern extends DBSPPattern {
@@ -47,5 +48,10 @@ public class DBSPWildcardPattern extends DBSPPattern {
     public boolean sameFields(IDBSPNode other) {
         DBSPWildcardPattern o = other.as(DBSPWildcardPattern.class);
         return o != null;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("_");
     }
 }

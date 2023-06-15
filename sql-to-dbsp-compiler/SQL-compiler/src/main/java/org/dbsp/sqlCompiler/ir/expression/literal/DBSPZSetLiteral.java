@@ -29,6 +29,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
+import org.dbsp.util.IIndentStream;
+import org.dbsp.util.ToIndentableString;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -44,7 +46,7 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
     /**
      * The contents of a ZSet - everything except the Weight type.
      */
-    public static class Contents {
+    public static class Contents implements ToIndentableString {
         public final Map<DBSPExpression, Long> data;
         public final DBSPType elementType;
         /**
@@ -166,6 +168,18 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
         public boolean sameValue(DBSPZSetLiteral.Contents other) {
             return this.minus(other).size() == 0;
         }
+
+        @Override
+        public IIndentStream toString(IIndentStream builder) {
+            for (Map.Entry<DBSPExpression, Long> e: this.data.entrySet()) {
+                builder.append(e.getKey());
+                builder.append(" => ")
+                        .append(e.getValue())
+                        .append(",")
+                        .newline();
+            }
+            return builder;
+        }
     }
 
     public final DBSPTypeZSet zsetType;
@@ -236,5 +250,12 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
         DBSPZSetLiteral that = (DBSPZSetLiteral) o;
         if (!this.zsetType.sameType(that.zsetType)) return false;
         return this.data.sameValue(that.data);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("zset!(")
+                .append(this.data)
+                .append(")");
     }
 }

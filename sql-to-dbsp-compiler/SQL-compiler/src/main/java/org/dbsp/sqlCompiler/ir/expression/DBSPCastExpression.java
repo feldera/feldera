@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
@@ -58,5 +59,14 @@ public class DBSPCastExpression extends DBSPExpression {
             return false;
         return this.source == o.source &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("((")
+                .append(this.type)
+                .append(")")
+                .append(this.source)
+                .append(")");
     }
 }

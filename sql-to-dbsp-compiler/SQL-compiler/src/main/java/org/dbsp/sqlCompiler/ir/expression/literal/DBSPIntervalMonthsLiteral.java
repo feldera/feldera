@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -70,5 +71,15 @@ public class DBSPIntervalMonthsLiteral extends DBSPLiteral {
     public DBSPLiteral getNonNullable() {
         return new DBSPIntervalMonthsLiteral(this.getNode(),
                 this.getType().setMayBeNull(false), Objects.requireNonNull(this.value));
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        builder.append("(")
+                .append(this.type)
+                .append(")");
+        if (this.value != null)
+            return builder.append(this.value.toString());
+        return builder.append("null");
     }
 }

@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
@@ -72,5 +73,30 @@ public class DBSPIfExpression extends DBSPExpression {
                 this.positive == o.positive &&
                 this.negative == o.negative &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        builder.append("if ")
+                .append(this.condition);
+        if (this.positive.is(DBSPBlockExpression.class))
+            builder.append(this.positive);
+        else {
+            builder.append("{")
+                    .increase()
+                    .append(this.positive)
+                    .decrease()
+                    .append("}");
+        }
+        if (this.negative.is(DBSPBlockExpression.class))
+            builder.append(this.negative);
+        else {
+            builder.append("{")
+                    .increase()
+                    .append(this.negative)
+                    .decrease()
+                    .append("}");
+        }
+        return builder;
     }
 }
