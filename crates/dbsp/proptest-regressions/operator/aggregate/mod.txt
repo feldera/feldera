@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc fd9ba445c53f568f48591859db85366571629186b37e9e72642217fa6f9b328e # shrinks to inputs = [[OrdZSet { layer: ColumnLayer { keys: [(0, 0)], diffs: [1], lower_bound: 0 } }]]
