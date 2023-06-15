@@ -390,7 +390,7 @@ impl LocalRunner {
             .db
             .lock()
             .await
-            .attached_connector_is_input(pipeline_id, attached_connector_name)
+            .attached_connector_is_input(tenant_id, pipeline_id, attached_connector_name)
             .await?;
 
         // TODO: it might be better to have ?name={}, otherwise we have to

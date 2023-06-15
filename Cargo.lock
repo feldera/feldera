@@ -4641,16 +4641,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust_decimal_macros"
-version = "1.29.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e773fd3da1ed42472fdf3cfdb4972948a555bc3d73f5e0bdb99d17e7b54c687"
-dependencies = [
- "quote 1.0.28",
- "rust_decimal",
-]
-
-[[package]]
 name = "rustc-demangle"
 version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5133,10 +5123,8 @@ dependencies = [
  "geo-types",
  "num",
  "rust_decimal",
- "rust_decimal_macros",
  "serde",
  "size-of",
- "sqlx",
 ]
 
 [[package]]
@@ -5737,10 +5725,6 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 [[package]]
 name = "tuple"
 version = "0.1.0"
-dependencies = [
- "serde",
- "sqlvalue",
-]
 
 [[package]]
 name = "typedmap"
