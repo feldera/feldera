@@ -77,7 +77,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     }
 
     static final String rustDirectory = "../temp/src/";
-    static final String testFileName = "test";
+    static final String testFileName = "lib";
     private final boolean execute;
     public final CompilerOptions compilerOptions;
 
@@ -279,9 +279,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             }
 
             // Write the code to Rust files on the filesystem.
-            String fileGenerated = this.writeCodeToFile(compiler,
+            this.writeCodeToFile(compiler,
                     Linq.list(inputFunction, streamInputFunction), codeGenerated);
-            Utilities.writeRustLib(rustDirectory + "/lib.rs", Linq.list(fileGenerated));
             this.startTest();
             if (this.execute) {
                 Utilities.compileAndTestRust(rustDirectory, true);
@@ -421,7 +420,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         if (name.startsWith("select5"))
             batchSize = 5;
         // Used for debugging
-        int toSkip = 0;
+        int toSkip = 0; // file.getTestCount() - 10;
 
         TestStatistics result = new TestStatistics(options.stopAtFirstError);
         boolean seenQueries = false;
