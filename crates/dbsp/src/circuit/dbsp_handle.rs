@@ -49,7 +49,7 @@ impl Runtime {
     pub fn init_circuit<F, T>(nworkers: usize, constructor: F) -> Result<(DBSPHandle, T), DBSPError>
     where
         F: FnOnce(&mut RootCircuit) -> Result<T, AnyError> + Clone + Send + 'static,
-        T: Clone + Send + 'static,
+        T: Send + 'static,
     {
         // When a worker finishes building the circuit, it sends completion status back
         // to us via this channel.  The function returns after receiving a
@@ -142,19 +142,22 @@ impl Runtime {
 
         for (worker, receiver) in init_receivers.iter().enumerate() {
             match receiver.recv() {
-                Ok(Err(error)) => init_status.push(Err(error)),
-                Ok(Ok(ret)) => init_status.push(Ok(ret)),
-                Err(_) => {
-                    init_status.push(Err(DBSPError::Runtime(RuntimeError::WorkerPanic(worker))))
-                }
+                Ok(Err(error)) => init_status.push(Some(Err(error))),
+                Ok(Ok(ret)) => init_status.push(Some(Ok(ret))),
+                Err(_) => init_status.push(Some(Err(DBSPError::Runtime(
+                    RuntimeError::WorkerPanic(worker),
+                )))),
             }
         }
 
         // On error, kill the runtime.
-        if init_status.iter().any(Result::is_err) {
+        if init_status
+            .iter()
+            .any(|status| status.as_ref().unwrap().is_err())
+        {
             let error = init_status
                 .into_iter()
-                .find_map(|status| status.err())
+                .find_map(|status| status.unwrap().err())
                 .unwrap();
             let _ = runtime.kill();
             return Err(error);
@@ -162,9 +165,11 @@ impl Runtime {
 
         let dbsp = DBSPHandle::new(runtime, command_senders, status_receivers);
 
+        let result = init_status[0].take();
+
         // `constructor` should return identical results in all workers.  Use
         // worker 0 output.
-        Ok((dbsp, init_status[0].as_ref().unwrap().clone()))
+        Ok((dbsp, result.unwrap().unwrap()))
     }
 }
 
