@@ -385,12 +385,12 @@ impl LocalRunner {
         // lookup the input / output of the actual connector (debug connectors
         // are not in the DB). (TODO: this hack will go away once we have HTTP
         // connectors by default)
-        let dbname = name.strip_prefix("debug-").unwrap_or(name);
+        let attached_connector_name = name.strip_prefix("debug-").unwrap_or(name);
         let is_input = self
             .db
             .lock()
             .await
-            .attached_connector_is_input(tenant_id, dbname)
+            .attached_connector_is_input(pipeline_id, attached_connector_name)
             .await?;
 
         // TODO: it might be better to have ?name={}, otherwise we have to
