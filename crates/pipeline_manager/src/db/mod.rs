@@ -973,7 +973,7 @@ impl Storage for ProjectDB {
     /// Returns true if the connector of a given name is an input connector.
     async fn attached_connector_is_input(
         &self,
-        tenant_id: TenantId,
+        pipeline_id: PipelineId,
         name: &str,
     ) -> AnyResult<bool> {
         let row = self
@@ -981,8 +981,8 @@ impl Storage for ProjectDB {
             .get()
             .await?
             .query_one(
-                "SELECT is_input FROM attached_connector WHERE name = $1 AND tenant_id = $2",
-                &[&name, &tenant_id.0],
+                "SELECT is_input FROM attached_connector WHERE name = $1 and pipeline_id = $2",
+                &[&name, &pipeline_id.0],
             )
             .await?;
 
