@@ -245,8 +245,11 @@ pub(crate) trait Storage {
     async fn delete_config(&self, tenant_id: TenantId, pipeline_id: PipelineId) -> AnyResult<()>;
 
     /// Get input/output status for an attached connector.
-    async fn attached_connector_is_input(&self, tenant_id: TenantId, name: &str)
-        -> AnyResult<bool>;
+    async fn attached_connector_is_input(
+        &self,
+        pipeline_id: PipelineId,
+        name: &str,
+    ) -> AnyResult<bool>;
 
     async fn set_pipeline_deployed(
         &self,
