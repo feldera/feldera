@@ -44,12 +44,14 @@ CREATE TABLE IF NOT EXISTS connector (
 CREATE TABLE IF NOT EXISTS attached_connector (
             pipeline_id uuid NOT NULL,
             connector_id uuid NOT NULL,
+            tenant_id uuid NOT NULL,
             name varchar,
             config varchar,
             is_input bool NOT NULL,
             PRIMARY KEY (pipeline_id, name),
             FOREIGN KEY (pipeline_id) REFERENCES pipeline(id) ON DELETE CASCADE,
-            FOREIGN KEY (connector_id) REFERENCES connector(id) ON DELETE CASCADE);
+            FOREIGN KEY (connector_id) REFERENCES connector(id) ON DELETE CASCADE,
+            FOREIGN KEY (tenant_id) REFERENCES tenant(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS api_key (
             hash varchar PRIMARY KEY,
             tenant_id uuid NOT NULL,
