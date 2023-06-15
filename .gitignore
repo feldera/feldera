@@ -45,4 +45,4 @@ cargo_workspace
 openapi.json
 
 # python
-python/dbsp-api-client/
+__pycache__
