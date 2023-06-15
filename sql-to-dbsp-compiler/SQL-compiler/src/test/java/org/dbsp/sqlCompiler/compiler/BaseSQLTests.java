@@ -303,6 +303,7 @@ public class BaseSQLTests {
         DBSPCompiler firstCompiler = testsToRun.get(0).compiler;
         RustFileWriter writer = new RustFileWriter(firstCompiler, outputStream);
         int testNumber = 0;
+        String[] extraArgs = new String[0];
         for (TestCase test: testsToRun) {
             if (!test.compiler.options.same(firstCompiler.options))
                 throw new RuntimeException("Tests are not compiled with the same options: "
@@ -310,6 +311,11 @@ public class BaseSQLTests {
             if (test.compiler.options.ioOptions.jit) {
                 DBSPFunction tester = test.createJITTesterCode(testNumber);
                 writer.add(tester);
+                if (extraArgs.length == 0) {
+                    extraArgs = new String[2];
+                    extraArgs[0] = "--features";
+                    extraArgs[1] = "jit";
+                }
             } else {
                 // Standard test
                 writer.add(test.circuit);
@@ -319,7 +325,7 @@ public class BaseSQLTests {
             testNumber++;
         }
         writer.writeAndClose();
-        Utilities.compileAndTestRust(rustDirectory, false);
+        Utilities.compileAndTestRust(rustDirectory, false, extraArgs);
         testsToRun.clear();
     }
 

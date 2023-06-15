@@ -1,8 +1,8 @@
-//! SqlValue is a dynamically-typed object that holds a value that at
-//! runtime can appear in a SQL program.  These values are not used
-//! during computations, but they are used to display values.  The
+//! SqlValue is a dynamically-typed object that can represent a subset
+//! of the Tuple* values in a SQL program.  This is used by SQL Logic Test,
+//! which has a particular way of formatting tuples.  The
 //! Tuple* types are used for computations, and they are converted
-//! to SqlRow objects when they need to be displayed.
+//! to SqlRow objects when they need to be serialized as strings.
 
 use dbsp::algebra::{F32, F64};
 use rust_decimal::Decimal;

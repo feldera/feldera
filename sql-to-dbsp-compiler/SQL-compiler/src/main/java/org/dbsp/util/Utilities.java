@@ -25,7 +25,6 @@
 
 package org.dbsp.util;
 
-import javax.annotation.Nullable;
 import java.io.*;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -138,14 +137,6 @@ public class Utilities {
         return result;
     }
 
-    @Nullable
-    public static String getFileExtension(String filename) {
-        int i = filename.lastIndexOf('.');
-        if (i > 0)
-            return filename.substring(i+1);
-        return null;
-    }
-
     public static <T> T removeLast(List<T> data) {
         if (data.isEmpty())
             throw new RuntimeException("Removing from empty list");
@@ -173,23 +164,31 @@ public class Utilities {
             throw new RuntimeException("Process failed with exit code " + exitCode);
     }
 
+    static void compile(String directory, boolean quiet, String... extraArgs) throws IOException, InterruptedException {
+        List<String> args = new ArrayList<>();
+        args.add("cargo");
+        args.add("test");
+        args.addAll(Arrays.asList(extraArgs));
+        if (quiet) {
+            args.add("-q");
+        } else {
+            args.add("--");
+            args.add("--show-output");
+        }
+        runProcess(directory, args.toArray(new String[0]));
+    }
+
     static final boolean retry = false;
-    public static void compileAndTestRust(String directory, boolean quiet)
+    public static void compileAndTestRust(String directory, boolean quiet, String... extraArgs)
             throws IOException, InterruptedException {
         try {
-            if (quiet)
-                runProcess(directory, "cargo", "test", "-q");
-            else
-                runProcess(directory, "cargo", "test", "--", "--show-output");
+           compile(directory, quiet, extraArgs);
         } catch (RuntimeException ex) {
             if (!retry)
                 throw ex;
             // Sometimes the rust compiler crashes; retry.
             runProcess(directory, "cargo", "clean");
-            if (quiet)
-                runProcess(directory, "cargo", "test", "-q");
-            else
-                runProcess(directory, "cargo", "test", "--", "--show-output");
+            compile(directory, quiet, extraArgs);
         }
     }
 
