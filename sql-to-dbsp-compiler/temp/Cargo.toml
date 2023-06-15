@@ -3,24 +3,29 @@ name = "temp"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+jit = [ "dep:dataflow-jit" ]
+
 [dependencies]
 dbsp = { path = "../../crates/dbsp", features = ["with-serde"], default-features = false }
 dbsp_adapters = { path = "../../crates/adapters", default-features = false }
-dataflow-jit = { path = "../../crates/dataflow-jit" }
+dataflow-jit = { path = "../../crates/dataflow-jit", optional = true }
 tuple = { path = "../lib/tuple" }
 sqllib = { path = "../lib/sqllib" }
 sqlvalue = { path = "../lib/sqlvalue" }
 serde = { version = "1.0", features = ["derive"] }
-hashing = { path = "../lib/hashing" }
 compare = { version = "0.1.0" }
 genlib = { path = "../lib/genlib" }
 size-of = { version = "0.1.1" }
-readers = { path = "../lib/readers" }
 geo = { version = "0.23" }
 geo-types = { version = "0.7" }
-sqlx = { version = "0.6", features = [ "runtime-async-std-native-tls", "sqlite", "any" ] }
 rust_decimal = { version = "1.29" }
 serde_json = { version = "1.0.89" }
+
+[dev-dependencies]
+hashing = { path = "../lib/hashing" }
+readers = { path = "../lib/readers" }
+sqlx = { version = "0.6", features = [ "runtime-async-std-native-tls", "sqlite", "any" ] }
 
 [lib]
 path = "src/lib.rs"

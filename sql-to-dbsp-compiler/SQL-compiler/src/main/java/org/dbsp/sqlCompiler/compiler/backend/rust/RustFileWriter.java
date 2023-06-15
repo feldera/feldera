@@ -146,8 +146,11 @@ public class RustFileWriter implements ICompilerComponent {
                     "};\n" +
                     "use sqllib::*;\n" +
                     "use sqlvalue::*;\n" +
+                    "#[cfg(test)]\n" +
                     "use hashing::*;\n" +
+                    "#[cfg(test)]\n" +
                     "use readers::*;\n" +
+                    "#[cfg(test)]\n" +
                     "use sqlx::{AnyConnection, any::AnyRow, Row};\n";
 
     final DBSPCompiler compiler;
