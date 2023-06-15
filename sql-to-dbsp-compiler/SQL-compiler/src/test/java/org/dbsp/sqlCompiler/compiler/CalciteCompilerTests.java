@@ -57,6 +57,21 @@ public class CalciteCompilerTests {
         String ddl = "DROP TABLE T";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
+
+        calcite = new CalciteCompiler(options);
+        ddl = "DROP TABLE IF EXISTS T";
+        node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+
+        calcite = new CalciteCompiler(options);
+        ddl = "DROP VIEW V";
+        node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+
+        calcite = new CalciteCompiler(options);
+        ddl = "DROP VIEW IF EXISTS V";
+        node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
     }
 
     @Test
