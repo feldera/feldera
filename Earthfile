@@ -505,7 +505,9 @@ build-demo-container:
 test-docker-compose:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    WITH DOCKER --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
+    WITH DOCKER --pull postgres \
+                --pull docker.redpanda.com/vectorized/redpanda:v22.3.11 \
+                --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
                 --load ghcr.io/feldera/demo-container=+build-demo-container
         RUN SECOPS_DEMO_ARGS="--prepare-args 500000" docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
