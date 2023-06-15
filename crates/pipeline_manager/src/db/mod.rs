@@ -930,8 +930,8 @@ impl Storage for ProjectDB {
         if let Some(connectors) = connectors {
             // Delete all existing attached connectors.
             txn.execute(
-                "DELETE FROM attached_connector WHERE pipeline_id = $1",
-                &[&pipeline_id.0],
+                "DELETE FROM attached_connector WHERE pipeline_id = $1 AND tenant_id = $2",
+                &[&pipeline_id.0, &tenant_id.0],
             )
             .await?;
 
@@ -973,6 +973,7 @@ impl Storage for ProjectDB {
     /// Returns true if the connector of a given name is an input connector.
     async fn attached_connector_is_input(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
         name: &str,
     ) -> AnyResult<bool> {
@@ -981,8 +982,8 @@ impl Storage for ProjectDB {
             .get()
             .await?
             .query_one(
-                "SELECT is_input FROM attached_connector WHERE name = $1 and pipeline_id = $2",
-                &[&name, &pipeline_id.0],
+                "SELECT is_input FROM attached_connector WHERE name = $1 AND pipeline_id = $2 AND tenant_id = $3",
+                &[&name, &pipeline_id.0, &tenant_id.0],
             )
             .await?;
 
@@ -1455,8 +1456,8 @@ impl ProjectDB {
     ) -> AnyResult<()> {
         let rows = txn
             .execute(
-                "INSERT INTO attached_connector (name, pipeline_id, connector_id, is_input, config)
-                 SELECT $2, $3, id, $5, $6
+                "INSERT INTO attached_connector (name, pipeline_id, connector_id, is_input, config, tenant_id)
+                 SELECT $2, $3, id, $5, $6, tenant_id
                  FROM connector
                  WHERE tenant_id = $1 AND id = $4",
                 &[

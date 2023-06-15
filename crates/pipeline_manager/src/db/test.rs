@@ -1442,6 +1442,7 @@ impl Storage for Mutex<DbModel> {
 
     async fn attached_connector_is_input(
         &self,
+        _tenant_id: TenantId,
         _pipeline_id: PipelineId,
         _name: &str,
     ) -> anyhow::Result<bool> {

@@ -247,6 +247,7 @@ pub(crate) trait Storage {
     /// Get input/output status for an attached connector.
     async fn attached_connector_is_input(
         &self,
+        tenant_id: TenantId,
         pipeline_id: PipelineId,
         name: &str,
     ) -> AnyResult<bool>;
