@@ -120,6 +120,7 @@ public class RustFileWriter implements ICompilerComponent {
                     "    marker::PhantomData,\n" +
                     "    str::FromStr,\n" +
                     "};\n" +
+                    "#[cfg(feature = \"jit\")]\n" +
                     "use dataflow_jit::{\n" +
                     "    sql_graph::SqlGraph,\n" +
                     "    ir::{\n" +
