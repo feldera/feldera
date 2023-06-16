@@ -203,3 +203,13 @@ cargo bench --bench nexmark --features with-nexmark -- --help
 
 An extensive blog post about the implementation of Nexmark in DBSP:
 <https://liveandletlearn.net/post/vmware-take-3-experience-with-rust-and-dbsp/>
+
+
+## Updating the pipeline manager database schema
+
+Here are some guidelines when contributing code that affects the Pipeline Manager's DB schema.
+
+* We use SQL migrations to apply the schema to a live database to faciliate upgrades. We use [refinery](https://github.com/rust-db/refinery) to manage migrations.
+* The migration files can be found in `crates/pipeline_manager/migrations`
+* Do not modify an existing migration file. If you want to evolve the schema, add a new SQL or rust file to the migrations folder following [refinery's versioning and naming scheme](https://docs.rs/refinery/latest/refinery/#usage). The migration script should update an existing schema as opposed to assuming a clean slate. For example, use `ALTER TABLE` to add a new column to an existing table and fill that column for existing rows with the appropriate defaults.
+* If you add a new migration script `V{i}`, add tests for migrations from `V{i-1} to V{i}`. For example, add tests that invoke the pipeline manager APIs before and after the migration.
