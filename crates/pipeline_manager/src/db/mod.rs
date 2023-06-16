@@ -25,6 +25,11 @@ pub(crate) mod test;
 mod pg_setup;
 pub(crate) mod storage;
 
+mod embedded {
+    use refinery::embed_migrations;
+    embed_migrations!("./migrations/");
+}
+
 /// Project database API.
 ///
 /// The API assumes that the caller holds a database lock, and therefore
@@ -1426,9 +1431,10 @@ impl ProjectDB {
         };
         let mgr = Manager::from_config(config, NoTls, mgr_config);
         let pool = Pool::builder(mgr).max_size(16).build().unwrap();
-        let client = pool.get().await?;
-
-        client.simple_query(include_str!("ddl.sql")).await?;
+        let mut client = pool.get().await?;
+        embedded::migrations::runner()
+            .run_async(&mut **client)
+            .await?;
         if let Some(initial_sql_file) = &initial_sql {
             if let Ok(initial_sql) = std::fs::read_to_string(initial_sql_file) {
                 client.execute(&initial_sql, &[]).await?;
