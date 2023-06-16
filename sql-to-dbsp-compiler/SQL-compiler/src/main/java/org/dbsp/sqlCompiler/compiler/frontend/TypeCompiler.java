@@ -49,6 +49,7 @@ public class TypeCompiler implements ICompilerComponent {
     }
 
     public DBSPType convertType(RelDataType dt) {
+        CalciteObject node = new CalciteObject(dt);
         boolean nullable = dt.isNullable();
         if (dt.isStruct()) {
             List<DBSPType> fields = new ArrayList<>();
@@ -56,20 +57,20 @@ public class TypeCompiler implements ICompilerComponent {
                 DBSPType type = this.convertType(field.getType());
                 fields.add(type);
             }
-            return new DBSPTypeTuple(dt, fields);
+            return new DBSPTypeTuple(node, fields);
         } else {
             SqlTypeName tn = dt.getSqlTypeName();
             switch (tn) {
                 case BOOLEAN:
-                    return new DBSPTypeBool(tn, nullable);
+                    return new DBSPTypeBool(node, nullable);
                 case TINYINT:
-                    return new DBSPTypeInteger(tn, 8, true, nullable);
+                    return new DBSPTypeInteger(node, 8, true, nullable);
                 case SMALLINT:
-                    return new DBSPTypeInteger(tn, 16, true, nullable);
+                    return new DBSPTypeInteger(node, 16, true, nullable);
                 case INTEGER:
-                    return new DBSPTypeInteger(tn, 32, true, nullable);
+                    return new DBSPTypeInteger(node, 32, true, nullable);
                 case BIGINT:
-                    return new DBSPTypeInteger(tn, 64, true, nullable);
+                    return new DBSPTypeInteger(node, 64, true, nullable);
                 case DECIMAL: {
                     int precision = dt.getPrecision();
                     int scale = dt.getScale();
@@ -90,7 +91,7 @@ public class TypeCompiler implements ICompilerComponent {
                         );
                         scale = DBSPTypeDecimal.MAX_SCALE;
                     }
-                    return new DBSPTypeDecimal(tn, precision, scale, nullable);
+                    return new DBSPTypeDecimal(node, precision, scale, nullable);
                 }
                 case FLOAT:
                 case REAL:
@@ -126,11 +127,11 @@ public class TypeCompiler implements ICompilerComponent {
                 case TIME:
                 case TIME_WITH_LOCAL_TIME_ZONE:
                 case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-                    throw new Unimplemented(tn);
+                    throw new Unimplemented(node);
                 case INTERVAL_YEAR:
                 case INTERVAL_YEAR_MONTH:
                 case INTERVAL_MONTH:
-                    return new DBSPTypeMonthsInterval(tn, nullable);
+                    return new DBSPTypeMonthsInterval(node, nullable);
                 case INTERVAL_DAY:
                 case INTERVAL_DAY_HOUR:
                 case INTERVAL_DAY_MINUTE:
@@ -141,7 +142,7 @@ public class TypeCompiler implements ICompilerComponent {
                 case INTERVAL_MINUTE:
                 case INTERVAL_MINUTE_SECOND:
                 case INTERVAL_SECOND:
-                    return new DBSPTypeMillisInterval(tn, nullable);
+                    return new DBSPTypeMillisInterval(node, nullable);
                 case GEOMETRY:
                     return DBSPTypeGeoPoint.INSTANCE.setMayBeNull(nullable);
                 case TIMESTAMP:
@@ -150,7 +151,7 @@ public class TypeCompiler implements ICompilerComponent {
                     return DBSPTypeDate.INSTANCE.setMayBeNull(nullable);
             }
         }
-        throw new Unimplemented(dt);
+        throw new Unimplemented(node);
     }
 
     @Override

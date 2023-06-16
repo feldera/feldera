@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -31,7 +32,6 @@ import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.util.UnsupportedException;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 /**
@@ -39,10 +39,10 @@ import java.util.Objects;
  * Always stores the interval value in days.
  */
 public class DBSPTypeMonthsInterval extends DBSPTypeBaseType implements IsNumericType, IsDateType {
-    public static final DBSPType INSTANCE = new DBSPTypeMonthsInterval(null, false);
-    public static final DBSPType NULLABLE_INSTANCE = new DBSPTypeMonthsInterval(null, true);
+    public static final DBSPType INSTANCE = new DBSPTypeMonthsInterval(new CalciteObject(), false);
+    public static final DBSPType NULLABLE_INSTANCE = new DBSPTypeMonthsInterval(new CalciteObject(), true);
 
-    public DBSPTypeMonthsInterval(@Nullable Object node, boolean mayBeNull) {
+    public DBSPTypeMonthsInterval(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);
     }
 

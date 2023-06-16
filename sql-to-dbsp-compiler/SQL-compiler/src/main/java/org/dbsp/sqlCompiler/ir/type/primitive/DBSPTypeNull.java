@@ -23,22 +23,22 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 /**
  * This type has a single value, NULL.
  */
 public class DBSPTypeNull extends DBSPTypeBaseType {
-    public static final DBSPType INSTANCE = new DBSPTypeNull(null, true);
+    public static final DBSPType INSTANCE = new DBSPTypeNull(new CalciteObject(), true);
 
     @SuppressWarnings("SameParameterValue")
-    protected DBSPTypeNull(@Nullable Object node, boolean mayBeNull) {
+    protected DBSPTypeNull(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);
     }
 
@@ -56,7 +56,7 @@ public class DBSPTypeNull extends DBSPTypeBaseType {
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
-        return new DBSPTypeNull(null, mayBeNull);
+        return new DBSPTypeNull(this.getNode(), mayBeNull);
     }
 
     @Override

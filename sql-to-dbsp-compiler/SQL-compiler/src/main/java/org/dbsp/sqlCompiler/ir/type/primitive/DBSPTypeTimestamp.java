@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
@@ -31,15 +32,16 @@ import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.util.UnsupportedException;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 public class DBSPTypeTimestamp extends DBSPTypeBaseType
         implements IsNumericType, IsDateType {
-    public static final DBSPTypeTimestamp INSTANCE =new DBSPTypeTimestamp(null, false);
-    public static final DBSPTypeTimestamp NULLABLE_INSTANCE = new DBSPTypeTimestamp(null, true);
+    public static final DBSPTypeTimestamp INSTANCE =
+            new DBSPTypeTimestamp(new CalciteObject(), false);
+    public static final DBSPTypeTimestamp NULLABLE_INSTANCE =
+            new DBSPTypeTimestamp(new CalciteObject(), true);
 
-    protected DBSPTypeTimestamp(@Nullable Object node, boolean mayBeNull) {
+    protected DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);
     }
 

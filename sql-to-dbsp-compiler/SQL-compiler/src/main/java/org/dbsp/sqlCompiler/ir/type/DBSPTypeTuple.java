@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -30,7 +31,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
-import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.List;
 
@@ -38,24 +38,24 @@ import java.util.List;
  * A Raw Rust tuple.
  */
 public class DBSPTypeTuple extends DBSPTypeTupleBase {
-    public DBSPTypeTuple(@Nullable Object node, boolean mayBeNull, DBSPType... tupFields) {
+    public DBSPTypeTuple(CalciteObject node, boolean mayBeNull, DBSPType... tupFields) {
         super(node, mayBeNull, tupFields);
     }
 
-    public DBSPTypeTuple(@Nullable Object node, DBSPType... tupFields) {
+    public DBSPTypeTuple(CalciteObject node, DBSPType... tupFields) {
         this(node, false, tupFields);
     }
 
     public DBSPTypeTuple(DBSPType... tupFields) {
-        this(null, tupFields);
+        this(new CalciteObject(), tupFields);
     }
 
-    public DBSPTypeTuple(@Nullable Object node, List<DBSPType> tupFields) {
+    public DBSPTypeTuple(CalciteObject node, List<DBSPType> tupFields) {
         this(node, tupFields.toArray(new DBSPType[0]));
     }
 
     public DBSPTypeTuple(List<DBSPType> tupFields) {
-        this(null, tupFields);
+        this(new CalciteObject(), tupFields);
     }
 
     @Override

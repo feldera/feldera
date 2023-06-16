@@ -39,7 +39,7 @@ public class DBSPBorrowExpression extends DBSPExpression {
     public final boolean mut;
 
     DBSPBorrowExpression(DBSPExpression expression, boolean mutable) {
-        super(null, expression.getType().ref());
+        super(expression.getNode(), expression.getType().ref());
         this.expression = expression;
         this.mut = mutable;
     }

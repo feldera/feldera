@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.apache.calcite.util.TimeString;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
@@ -35,13 +36,13 @@ import java.util.Objects;
 public class DBSPTimeLiteral extends DBSPLiteral {
     @Nullable public final TimeString value;
 
-    public DBSPTimeLiteral(@Nullable Object node, DBSPType type, @Nullable TimeString value) {
+    public DBSPTimeLiteral(CalciteObject node, DBSPType type, @Nullable TimeString value) {
         super(node, type, value == null);
         this.value = value;
     }
 
     public DBSPTimeLiteral() {
-        this(null, DBSPTypeTime.NULLABLE_INSTANCE, null);
+        this(new CalciteObject(), DBSPTypeTime.NULLABLE_INSTANCE, null);
     }
 
     @Override

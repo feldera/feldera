@@ -30,7 +30,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 
@@ -42,7 +41,7 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
     public final boolean mutable;
 
     public DBSPLetStatement(String variable, DBSPExpression initializer, boolean mutable) {
-        super(null);
+        super(initializer.getNode());
         this.variable = variable;
         this.initializer = initializer;
         this.type = initializer.getType();
@@ -50,7 +49,7 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
     }
 
     public DBSPLetStatement(String variable, DBSPType type, boolean mutable) {
-        super(null);
+        super(type.getNode());
         this.variable = variable;
         this.initializer = null;
         this.type = type;

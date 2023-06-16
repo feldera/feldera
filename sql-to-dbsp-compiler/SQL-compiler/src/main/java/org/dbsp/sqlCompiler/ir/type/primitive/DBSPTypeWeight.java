@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -14,7 +15,7 @@ public class DBSPTypeWeight extends DBSPTypeBaseType {
     public static final DBSPTypeWeight INSTANCE = new DBSPTypeWeight();
 
     protected DBSPTypeWeight() {
-        super(null, false);
+        super(new CalciteObject(), false);
     }
 
     @Override

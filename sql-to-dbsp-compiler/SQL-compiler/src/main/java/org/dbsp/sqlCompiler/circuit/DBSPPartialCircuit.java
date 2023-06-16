@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -51,7 +52,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
     public final IErrorReporter errorReporter;
 
     public DBSPPartialCircuit(IErrorReporter errorReporter) {
-        super(null);
+        super(new CalciteObject());
         this.errorReporter = errorReporter;
     }
 
@@ -72,7 +73,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
     }
 
     public DBSPTypeRawTuple getOutputType() {
-        return new DBSPTypeRawTuple(null, Linq.map(this.outputOperators, IHasType::getType));
+        return new DBSPTypeRawTuple(this.getNode(), Linq.map(this.outputOperators, IHasType::getType));
     }
 
     public void addOperator(DBSPOperator operator) {
@@ -125,7 +126,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
      * No more changes are expected to the circuit.
      */
     public DBSPCircuit seal(String name) {
-        return new DBSPCircuit(this, name);
+        return new DBSPCircuit(this.getNode(), this, name);
     }
 
     public int getInputCount() {

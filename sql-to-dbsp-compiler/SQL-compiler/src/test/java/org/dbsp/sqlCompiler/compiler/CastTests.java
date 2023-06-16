@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -33,8 +34,8 @@ import org.junit.Test;
 import java.math.BigDecimal;
 
 public class CastTests extends BaseSQLTests {
-    final DBSPTypeDecimal tenTwo = new DBSPTypeDecimal(null, 10, 2, true);
-    final DBSPTypeDecimal tenFour = new DBSPTypeDecimal(null, 10, 4, false);
+    final DBSPTypeDecimal tenTwo = new DBSPTypeDecimal(new CalciteObject(), 10, 2, true);
+    final DBSPTypeDecimal tenFour = new DBSPTypeDecimal(new CalciteObject(), 10, 4, false);
 
     @Override
     public DBSPCompiler compileQuery(String query, boolean incremental, boolean optimize, boolean jit) {
@@ -58,7 +59,7 @@ public class CastTests extends BaseSQLTests {
                 new DBSPDoubleLiteral(12.0),
                 new DBSPStringLiteral("100100"),
                 DBSPLiteral.none(tenTwo),
-                new DBSPDecimalLiteral(null, tenFour, new BigDecimal(100103123))));
+                new DBSPDecimalLiteral(tenFour, new BigDecimal(100103123))));
     }
 
     void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {

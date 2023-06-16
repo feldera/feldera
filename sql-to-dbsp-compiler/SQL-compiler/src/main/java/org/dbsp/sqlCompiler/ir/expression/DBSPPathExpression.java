@@ -33,7 +33,7 @@ public class DBSPPathExpression extends DBSPExpression {
     public final DBSPPath path;
 
     public DBSPPathExpression(DBSPType type, DBSPPath path) {
-        super(null, type);
+        super(type.getNode(), type);
         this.path = path;
     }
 

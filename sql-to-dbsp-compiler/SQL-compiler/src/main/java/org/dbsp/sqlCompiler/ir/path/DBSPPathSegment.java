@@ -23,14 +23,13 @@
 
 package org.dbsp.sqlCompiler.ir.path;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 
-import javax.annotation.Nullable;
-
 public abstract class DBSPPathSegment extends DBSPNode implements IDBSPInnerNode {
     @SuppressWarnings("SameParameterValue")
-    protected DBSPPathSegment(@Nullable Object node) {
+    protected DBSPPathSegment(CalciteObject node) {
         super(node);
     }
 }

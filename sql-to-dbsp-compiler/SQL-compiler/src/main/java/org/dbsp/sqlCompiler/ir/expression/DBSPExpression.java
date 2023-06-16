@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -38,7 +39,7 @@ public abstract class DBSPExpression
         implements IHasType, IDBSPInnerNode {
     public final DBSPType type;
 
-    protected DBSPExpression(@Nullable Object node, DBSPType type) {
+    protected DBSPExpression(CalciteObject node, DBSPType type) {
         super(node);
         this.type = type;
     }
@@ -64,7 +65,7 @@ public abstract class DBSPExpression
     }
 
     public DBSPExpression unwrap() {
-        return new DBSPApplyMethodExpression("unwrap", DBSPTypeAny.INSTANCE, this);
+        return new DBSPApplyMethodExpression(this.getNode(), "unwrap", DBSPTypeAny.INSTANCE, this);
     }
 
     public DBSPExpression borrow(boolean mutable) {
@@ -79,7 +80,7 @@ public abstract class DBSPExpression
      * Convenient shortcut to wrap an expression into a Some() constructor.
      */
     public DBSPExpression some() {
-        return new DBSPSomeExpression(null, this);
+        return new DBSPSomeExpression(this.getNode(), this);
     }
 
     public DBSPClosureExpression closure(DBSPParameter... parameters) {

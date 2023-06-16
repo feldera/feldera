@@ -23,14 +23,13 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.IIndentStream;
-
-import javax.annotation.Nullable;
 
 /**
  * Tuple field reference expression.
@@ -39,14 +38,14 @@ public class DBSPFieldExpression extends DBSPExpression {
     public final DBSPExpression expression;
     public final int fieldNo;
 
-    protected DBSPFieldExpression(@Nullable Object node, DBSPExpression expression, int fieldNo, DBSPType type) {
+    protected DBSPFieldExpression(CalciteObject node, DBSPExpression expression, int fieldNo, DBSPType type) {
         super(node, type);
         this.expression = expression;
         this.fieldNo = fieldNo;
     }
 
     protected DBSPFieldExpression(DBSPExpression expression, int fieldNo, DBSPType type) {
-        this(null, expression, fieldNo, type);
+        this(new CalciteObject(), expression, fieldNo, type);
     }
 
     static DBSPType getFieldType(DBSPType type, int fieldNo) {
@@ -56,12 +55,12 @@ public class DBSPFieldExpression extends DBSPExpression {
         return tuple.getFieldType(fieldNo);
     }
 
-    public DBSPFieldExpression(@Nullable Object node, DBSPExpression expression, int fieldNo) {
+    public DBSPFieldExpression(CalciteObject node, DBSPExpression expression, int fieldNo) {
         this(node, expression, fieldNo, getFieldType(expression.getType(), fieldNo));
     }
 
     DBSPFieldExpression(DBSPExpression expression, int fieldNo) {
-        this(null, expression, fieldNo);
+        this(new CalciteObject(), expression, fieldNo);
     }
 
     public DBSPExpression simplify() {

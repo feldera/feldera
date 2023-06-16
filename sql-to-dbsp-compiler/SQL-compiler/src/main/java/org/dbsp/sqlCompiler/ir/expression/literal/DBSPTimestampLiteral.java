@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.apache.calcite.util.TimestampString;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -35,21 +36,25 @@ import java.util.Objects;
 public class DBSPTimestampLiteral extends DBSPLiteral {
     @Nullable public final Long value;
 
-    public DBSPTimestampLiteral(@Nullable Object node, DBSPType type, @Nullable Long value) {
+    public DBSPTimestampLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {
         super(node, type, value == null);
         this.value = value;
     }
 
-    public DBSPTimestampLiteral(@Nullable Object node, DBSPType type, TimestampString value) {
+    public DBSPTimestampLiteral(CalciteObject node, DBSPType type, TimestampString value) {
         this(node, type, value.getMillisSinceEpoch());
     }
 
     public DBSPTimestampLiteral(long value) {
-        this(null, DBSPTypeTimestamp.INSTANCE, value);
+        this(new CalciteObject(), DBSPTypeTimestamp.INSTANCE, value);
     }
 
     public DBSPTimestampLiteral() {
-        this(null, DBSPTypeTimestamp.NULLABLE_INSTANCE, (Long)null);
+        this(new CalciteObject(), DBSPTypeTimestamp.NULLABLE_INSTANCE, (Long)null);
+    }
+
+    public DBSPTimestampLiteral(String string, boolean mayBeNull) {
+        this(new CalciteObject(), DBSPTypeTimestamp.INSTANCE.setMayBeNull(mayBeNull), createTimestampString(string));
     }
 
     static TimestampString createTimestampString(String timestamp) {
@@ -67,10 +72,6 @@ public class DBSPTimestampLiteral extends DBSPLiteral {
         if (o == null || getClass() != o.getClass()) return false;
         DBSPTimestampLiteral that = (DBSPTimestampLiteral) o;
         return Objects.equals(value, that.value);
-    }
-
-    public DBSPTimestampLiteral(String string, boolean mayBeNull) {
-        this(null, DBSPTypeTimestamp.INSTANCE.setMayBeNull(mayBeNull), createTimestampString(string));
     }
 
     @Override

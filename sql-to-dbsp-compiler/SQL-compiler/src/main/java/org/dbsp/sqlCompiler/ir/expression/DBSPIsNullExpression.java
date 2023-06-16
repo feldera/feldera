@@ -23,12 +23,11 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.IIndentStream;
-
-import javax.annotation.Nullable;
 
 /**
  * Given an expression e, this is equivalent with the Rust code
@@ -37,7 +36,7 @@ import javax.annotation.Nullable;
 public class DBSPIsNullExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
-    public DBSPIsNullExpression(@Nullable Object node, DBSPExpression expression) {
+    public DBSPIsNullExpression(CalciteObject node, DBSPExpression expression) {
         super(node, DBSPTypeBool.INSTANCE);
         this.expression = expression;
         if (!expression.getType().mayBeNull)

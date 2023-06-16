@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
@@ -44,18 +45,18 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     public final DBSPTypeVec vecType;
 
     public DBSPVecLiteral(DBSPType elementType) {
-        super(null, new DBSPTypeVec(elementType), false);
+        super(new CalciteObject(), new DBSPTypeVec(elementType), false);
         this.data = new ArrayList<>();
         this.vecType = this.getType().to(DBSPTypeVec.class);
     }
 
     public DBSPVecLiteral(DBSPType elementType, boolean isNull) {
-        super(null, new DBSPTypeVec(elementType), isNull);
+        super(new CalciteObject(), new DBSPTypeVec(elementType), isNull);
         this.data = null;
         this.vecType = this.getType().to(DBSPTypeVec.class);
     }
 
-    public DBSPVecLiteral(@Nullable Object node, DBSPType type, @Nullable List<DBSPExpression> data) {
+    public DBSPVecLiteral(CalciteObject node, DBSPType type, @Nullable List<DBSPExpression> data) {
         super(node, type, false);
         this.vecType = this.getType().to(DBSPTypeVec.class);
         this.data = data;
@@ -70,7 +71,7 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     }
 
     public DBSPVecLiteral(DBSPExpression... data) {
-        super(null, new DBSPTypeVec(data[0].getType()), false);
+        super(new CalciteObject(), new DBSPTypeVec(data[0].getType()), false);
         this.vecType = this.getType().to(DBSPTypeVec.class);
         this.data = new ArrayList<>();
         for (DBSPExpression e: data) {

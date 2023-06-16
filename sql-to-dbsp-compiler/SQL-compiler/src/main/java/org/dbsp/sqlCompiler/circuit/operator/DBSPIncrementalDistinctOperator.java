@@ -23,13 +23,13 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 public class DBSPIncrementalDistinctOperator extends DBSPUnaryOperator {
-    public DBSPIncrementalDistinctOperator(@Nullable Object node, DBSPOperator input) {
+    public DBSPIncrementalDistinctOperator(CalciteObject node, DBSPOperator input) {
         super(node, "distinct", null, input.outputType, false, input);
     }
 

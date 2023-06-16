@@ -23,22 +23,21 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-
-import javax.annotation.Nullable;
 
 public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
     public final DBSPType elementType;
     public final DBSPType weightType;
 
-    public DBSPTypeZSet(@Nullable Object node, DBSPType elementType, DBSPType weightType) {
+    public DBSPTypeZSet(CalciteObject node, DBSPType elementType, DBSPType weightType) {
         super(node, "OrdZSet", false, elementType, weightType);
         this.elementType = elementType;
         this.weightType = weightType;
     }
 
     public DBSPTypeZSet(DBSPType elementType, DBSPType weightType) {
-        this(null, elementType, weightType);
+        this(elementType.getNode(), elementType, weightType);
     }
 
     @Override

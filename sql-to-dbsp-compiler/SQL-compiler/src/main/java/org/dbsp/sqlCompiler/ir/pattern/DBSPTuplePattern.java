@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.pattern;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -34,7 +35,7 @@ public class DBSPTuplePattern extends DBSPPattern {
     public final DBSPPattern[] fields;
 
     public DBSPTuplePattern(DBSPPattern... fields) {
-        super(null);
+        super(new CalciteObject());
         this.fields = fields;
     }
 

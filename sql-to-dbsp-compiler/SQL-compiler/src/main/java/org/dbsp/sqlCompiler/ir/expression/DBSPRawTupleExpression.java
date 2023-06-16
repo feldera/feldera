@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -37,7 +38,8 @@ import java.util.List;
  */
 public class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
     public DBSPRawTupleExpression(DBSPExpression... expressions) {
-        super(null, new DBSPTypeRawTuple(Linq.map(expressions, DBSPExpression::getType, DBSPType.class)), expressions);
+        super(new CalciteObject(),
+                new DBSPTypeRawTuple(Linq.map(expressions, DBSPExpression::getType, DBSPType.class)), expressions);
     }
 
     public <T extends DBSPExpression> DBSPRawTupleExpression(List<T> fields) {

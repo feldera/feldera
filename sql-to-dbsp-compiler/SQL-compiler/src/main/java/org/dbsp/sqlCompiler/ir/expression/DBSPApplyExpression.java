@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
@@ -46,11 +47,15 @@ public class DBSPApplyExpression extends DBSPExpression {
                 throw new RuntimeException("Null arg");
     }
 
-    public DBSPApplyExpression(String function, DBSPType returnType, DBSPExpression... arguments) {
-        super(null, returnType);
+    public DBSPApplyExpression(CalciteObject node, String function, DBSPType returnType, DBSPExpression... arguments) {
+        super(node, returnType);
         this.function = new DBSPPathExpression(DBSPTypeAny.INSTANCE, new DBSPPath(function));
         this.arguments = arguments;
         this.checkArgs();
+    }
+
+    public DBSPApplyExpression(String function, DBSPType returnType, DBSPExpression... arguments) {
+        this(new CalciteObject(), function, returnType, arguments);
     }
 
     public static DBSPType getReturnType(DBSPType type) {
@@ -65,7 +70,7 @@ public class DBSPApplyExpression extends DBSPExpression {
     }
 
     public DBSPApplyExpression(DBSPExpression function, DBSPType returnType, DBSPExpression... arguments) {
-        super(null, returnType);
+        super(new CalciteObject(), returnType);
         this.function = function;
         this.arguments = arguments;
         this.checkArgs();

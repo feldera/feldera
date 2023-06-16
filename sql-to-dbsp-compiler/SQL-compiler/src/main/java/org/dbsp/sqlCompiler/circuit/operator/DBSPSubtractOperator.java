@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -31,7 +32,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 public class DBSPSubtractOperator extends DBSPOperator {
-    public DBSPSubtractOperator(@Nullable Object node, DBSPOperator left, DBSPOperator right) {
+    public DBSPSubtractOperator(CalciteObject node, DBSPOperator left, DBSPOperator right) {
         super(node, "minus", null, left.outputType, false);
         this.addInput(left);
         this.addInput(right);

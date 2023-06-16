@@ -23,13 +23,12 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.IIndentStream;
-
-import javax.annotation.Nullable;
 
 @NonCoreIR
 public class DBSPIfExpression extends DBSPExpression {
@@ -37,7 +36,8 @@ public class DBSPIfExpression extends DBSPExpression {
     public final DBSPExpression positive;
     public final DBSPExpression negative;
 
-    public DBSPIfExpression(@Nullable Object node, DBSPExpression condition, DBSPExpression positive, DBSPExpression negative) {
+    public DBSPIfExpression(CalciteObject node, DBSPExpression condition,
+                            DBSPExpression positive, DBSPExpression negative) {
         super(node, positive.getType());
         this.condition = condition;
         this.positive = positive;

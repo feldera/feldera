@@ -25,6 +25,10 @@
 
 package org.dbsp.util;
 
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
+
 import javax.annotation.Nullable;
 
 /**
@@ -32,29 +36,71 @@ import javax.annotation.Nullable;
  */
 public class Unimplemented extends RuntimeException {
     @Nullable
-    public final Object object;
+    public final IDBSPNode dbspNode;
+    @Nullable
+    public final CalciteObject calciteObject;
 
     public Unimplemented() {
         super("Not yet implemented");
-        this.object = null;
+        this.dbspNode = null;
+        this.calciteObject = null;
     }
 
-    public Unimplemented(Object obj) {
-        super("Not yet implemented: " + obj.getClass().getSimpleName() + ":" + obj);
-        this.object = obj;
+    public Unimplemented(String message) {
+        super("Not yet implemented" + message);
+        this.dbspNode = null;
+        this.calciteObject = null;
     }
 
-    public Unimplemented(String message, Object obj) {
-        super("Not yet implemented: " + message + " " + obj.getClass().getSimpleName() + ":" + obj);
-        this.object = obj;
+    public Unimplemented(IDBSPNode node) {
+        super("Not yet implemented: " + node.getClass().getSimpleName() + ":" + node);
+        this.dbspNode = node;
+        this.calciteObject = null;
     }
 
-    public Unimplemented(Object obj, Throwable cause) {
+    public Unimplemented(CalciteObject node) {
+        super("Not yet implemented: " + node.getClass().getSimpleName() + ":" + node);
+        this.dbspNode = null;
+        this.calciteObject = node;
+    }
+
+    public Unimplemented(String message, IDBSPNode node) {
+        super("Not yet implemented: " + message + " " + node.getClass().getSimpleName() + ":" + node);
+        this.dbspNode = node;
+        this.calciteObject = null;
+    }
+
+    public Unimplemented(String message, CalciteObject node) {
+        super("Not yet implemented: " + message + " " + node.getClass().getSimpleName() + ":" + node);
+        this.dbspNode = null;
+        this.calciteObject = node;
+    }
+
+    public Unimplemented(IDBSPNode node, Throwable cause) {
         super("Not yet implemented: "
                         + cause.getMessage()
                         + System.lineSeparator()
-                        + obj
+                        + node
                 , cause);
-        this.object = obj;
+        this.dbspNode = node;
+        this.calciteObject = null;
+    }
+
+    public Unimplemented(CalciteObject node, Throwable cause) {
+        super("Not yet implemented: "
+                        + cause.getMessage()
+                        + System.lineSeparator()
+                        + node
+                , cause);
+        this.dbspNode = null;
+        this.calciteObject = node;
+    }
+
+    public SourcePositionRange getPositionRange() {
+        if (this.dbspNode != null)
+            return this.dbspNode.getNode().getPositionRange();
+        else if (this.calciteObject != null)
+            return this.calciteObject.getPositionRange();
+        return SourcePositionRange.INVALID;
     }
 }

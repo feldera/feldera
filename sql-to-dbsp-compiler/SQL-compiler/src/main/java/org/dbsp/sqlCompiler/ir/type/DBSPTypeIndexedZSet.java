@@ -23,16 +23,15 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-
-import javax.annotation.Nullable;
 
 public class DBSPTypeIndexedZSet extends DBSPTypeUser {
     public final DBSPType keyType;
     public final DBSPType elementType;
     public final DBSPType weightType;
 
-    public DBSPTypeIndexedZSet(@Nullable Object node, DBSPType keyType,
+    public DBSPTypeIndexedZSet(CalciteObject node, DBSPType keyType,
                                DBSPType elementType, DBSPType weightType) {
         super(node, "OrdIndexedZSet", false, keyType, elementType, weightType);
         this.keyType = keyType;

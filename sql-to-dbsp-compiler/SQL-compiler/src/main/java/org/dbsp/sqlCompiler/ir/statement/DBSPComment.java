@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -11,7 +12,7 @@ public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
     public final String comment;
 
     public DBSPComment(String comment) {
-        super(null);
+        super(new CalciteObject());
         this.comment = comment;
     }
 

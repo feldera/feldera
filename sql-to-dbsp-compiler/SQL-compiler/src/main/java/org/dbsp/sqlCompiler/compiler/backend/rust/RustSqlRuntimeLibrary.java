@@ -217,7 +217,7 @@ public class RustSqlRuntimeLibrary {
             tsuffixr = (rtype == null) ? "" : rtype.to(DBSPTypeBaseType.class).shortName();
         }
         if (map == null)
-            throw new Unimplemented(opcode);
+            throw new Unimplemented(opcode.toString());
         for (String k: map.keySet()) {
             DBSPOpcode inMap = map.get(k);
             if (opcode.equals(inMap)) {

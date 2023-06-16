@@ -42,7 +42,7 @@ public class CreateViewStatement extends CreateRelationStatement {
     private final RelRoot compiled;
     public final SqlNode query;
 
-    public CreateViewStatement(@Nullable SqlNode node, String statement,
+    public CreateViewStatement(SqlNode node, String statement,
                                String tableName, @Nullable String comment,
                                List<RelDataTypeField> columns, SqlNode query,
                                RelRoot compiled) {

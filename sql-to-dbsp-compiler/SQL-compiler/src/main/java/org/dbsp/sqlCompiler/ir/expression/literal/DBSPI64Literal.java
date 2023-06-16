@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -47,23 +48,23 @@ public class DBSPI64Literal extends DBSPLiteral {
         this((long)value, false);
     }
 
-    public DBSPI64Literal(@Nullable Object node, DBSPType type , @Nullable Long value) {
+    public DBSPI64Literal(CalciteObject node, DBSPType type , @Nullable Long value) {
         super(node, type, value == null);
         this.value = value;
     }
 
-    public DBSPI64Literal(@Nullable Object node, @Nullable Long value, boolean nullable) {
+    public DBSPI64Literal(CalciteObject node, @Nullable Long value, boolean nullable) {
         this(node, DBSPTypeInteger.SIGNED_64.setMayBeNull(nullable), value);
         if (value == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }
 
     public DBSPI64Literal(@Nullable Long value, boolean nullable) {
-        this(null, value, nullable);
+        this(new CalciteObject(), value, nullable);
     }
 
     public DBSPI64Literal(@Nullable Integer value, boolean nullable) {
-        this(null, value == null ? null : value.longValue(), nullable);
+        this(new CalciteObject(), value == null ? null : value.longValue(), nullable);
     }
 
     public DBSPTypeInteger getIntegerType() {

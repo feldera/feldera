@@ -23,19 +23,21 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 public class DBSPTypeString extends DBSPTypeBaseType {
-    public static final DBSPTypeString INSTANCE =new DBSPTypeString(null,false);
-    public static final DBSPTypeString NULLABLE_INSTANCE = new DBSPTypeString(null,true);
+    public static final DBSPTypeString INSTANCE =
+            new DBSPTypeString(new CalciteObject(),false);
+    public static final DBSPTypeString NULLABLE_INSTANCE =
+            new DBSPTypeString(new CalciteObject(),true);
 
-    protected DBSPTypeString(@Nullable Object node, boolean mayBeNull) { super(node, mayBeNull); }
+    protected DBSPTypeString(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {

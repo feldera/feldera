@@ -25,6 +25,7 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -138,6 +139,13 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT T.COL4 || ' ' || T.COL4 FROM T";
         DBSPExpression lit = new DBSPTupleExpression(new DBSPStringLiteral("Hi Hi"));
         this.testQuery(query, new DBSPZSetLiteral.Contents(lit, lit));
+    }
+
+    @Test @Ignore("Fails with overflow.  What should the result be?")
+    public void testOverflow() {
+        String query = "SELECT " + Integer.MIN_VALUE + "/ -1";
+        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPI32Literal(0, true)));
+        this.testQuery(query, result);
     }
 
     @Test
@@ -324,7 +332,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT ST_POINT(0, 0)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPGeoPointLiteral(null,
+                        new DBSPGeoPointLiteral(new CalciteObject(),
                                 new DBSPDoubleLiteral(0), new DBSPDoubleLiteral(0)).some())));
     }
 
@@ -460,8 +468,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT CAST('0.5' AS DECIMAL)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT,
-                                new BigDecimal("0.5")))));
+                        new DBSPDecimalLiteral(DBSPTypeDecimal.DEFAULT, new BigDecimal("0.5")))));
     }
 
     @Test
@@ -469,8 +476,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT CAST('blah' AS DECIMAL)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT,
-                                new BigDecimal(0)))));
+                        new DBSPDecimalLiteral(DBSPTypeDecimal.DEFAULT, new BigDecimal(0)))));
     }
 
     @Test
@@ -478,7 +484,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT 'Infinity' / 0";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT_NULLABLE,
+                        new DBSPDecimalLiteral(DBSPTypeDecimal.DEFAULT_NULLABLE,
                                 null))));
     }
 

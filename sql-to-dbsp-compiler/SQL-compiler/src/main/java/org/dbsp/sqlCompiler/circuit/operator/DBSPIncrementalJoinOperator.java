@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -38,7 +39,7 @@ public class DBSPIncrementalJoinOperator extends DBSPOperator {
     public final DBSPType weightType;
 
     public DBSPIncrementalJoinOperator(
-            @Nullable Object node, DBSPType elementResultType, DBSPType weightType,
+            CalciteObject node, DBSPType elementResultType, DBSPType weightType,
             DBSPExpression function, boolean isMultiset,
             DBSPOperator left, DBSPOperator right) {
         super(node, "join", function, TypeCompiler.makeZSet(elementResultType, weightType), isMultiset);

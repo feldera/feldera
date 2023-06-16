@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Unimplemented;
@@ -43,7 +44,7 @@ public class DBSPKeywordLiteral extends DBSPLiteral {
         return keyword.equals(that.keyword);
     }
 
-    public DBSPKeywordLiteral(@Nullable Object node, String keyword) {
+    public DBSPKeywordLiteral(CalciteObject node, String keyword) {
         super(node, DBSPTypeKeyword.INSTANCE, false);
         this.keyword = keyword.toLowerCase();
         switch (keyword.toLowerCase()) {
@@ -68,7 +69,10 @@ public class DBSPKeywordLiteral extends DBSPLiteral {
             case "nanosecond":
                 break;
             default:
-                throw new Unimplemented(node != null ? node : keyword);
+                if (node.isEmpty())
+                    throw new Unimplemented(keyword);
+                else
+                    throw new Unimplemented(node);
         }
     }
 

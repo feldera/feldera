@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -41,7 +42,7 @@ public class DBSPBoolLiteral extends DBSPLiteral {
     public static final DBSPBoolLiteral NULLABLE_TRUE = new DBSPBoolLiteral(true, true);
     public static final DBSPBoolLiteral NULLABLE_FALSE = new DBSPBoolLiteral(false, true);
 
-    public DBSPBoolLiteral(@Nullable Object node, DBSPType type, @Nullable Boolean value) {
+    public DBSPBoolLiteral(CalciteObject node, DBSPType type, @Nullable Boolean value) {
         super(node, type, value == null);
         this.value = value;
     }
@@ -55,7 +56,7 @@ public class DBSPBoolLiteral extends DBSPLiteral {
     }
 
     public DBSPBoolLiteral(@Nullable Boolean b, boolean nullable) {
-        this(null, DBSPTypeBool.INSTANCE.setMayBeNull(nullable), b);
+        this(new CalciteObject(), DBSPTypeBool.INSTANCE.setMayBeNull(nullable), b);
         if (b == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }

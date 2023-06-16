@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -38,7 +39,7 @@ public class DBSPEnumValue extends DBSPExpression {
     public final String constructor;
 
     public DBSPEnumValue(String enumName, String constructor) {
-        super(null, new DBSPTypeUser(null, enumName, false));
+        super(new CalciteObject(), new DBSPTypeUser(new CalciteObject(), enumName, false));
         this.enumName = enumName;
         this.constructor = constructor;
     }

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
@@ -32,7 +33,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Unimplemented;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
@@ -41,14 +41,14 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
      */
     public final boolean mayBeNull;
 
-    protected DBSPType(@Nullable Object node, boolean mayBeNull) {
+    protected DBSPType(CalciteObject node, boolean mayBeNull) {
         super(node);
         this.mayBeNull = mayBeNull;
     }
 
     @SuppressWarnings("SameParameterValue")
     protected DBSPType(boolean mayBeNull) {
-        super(null);
+        super(new CalciteObject());
         this.mayBeNull = mayBeNull;
     }
 
@@ -168,7 +168,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
      * Returns a lambda which casts the current type to the specified type.
      */
     public DBSPExpression caster(DBSPType to) {
-        throw new Unimplemented("Casting from " + this + " to " + to);
+        throw new Unimplemented("Casting from " + this + " to " + to, to);
     }
 
     /**

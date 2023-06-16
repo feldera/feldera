@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -31,7 +32,6 @@ import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.util.UnsupportedException;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 /**
@@ -39,10 +39,10 @@ import java.util.Objects;
  * Always stores the interval value in milliseconds.
  */
 public class DBSPTypeMillisInterval extends DBSPTypeBaseType implements IsNumericType, IsDateType {
-    public static final DBSPType INSTANCE =new DBSPTypeMillisInterval(null, false);
-    public static final DBSPType NULLABLE_INSTANCE = new DBSPTypeMillisInterval(null, true);
+    public static final DBSPType INSTANCE =new DBSPTypeMillisInterval(new CalciteObject(), false);
+    public static final DBSPType NULLABLE_INSTANCE = new DBSPTypeMillisInterval(new CalciteObject(), true);
 
-    public DBSPTypeMillisInterval(@Nullable Object node, boolean mayBeNull) {
+    public DBSPTypeMillisInterval(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);
     }
 

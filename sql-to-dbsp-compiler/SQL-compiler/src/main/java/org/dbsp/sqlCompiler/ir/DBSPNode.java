@@ -23,9 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.util.IndentStream;
-
-import javax.annotation.Nullable;
 
 /**
  * Base interface for all DBSP nodes.
@@ -39,10 +38,10 @@ public abstract class DBSPNode
     /**
      * Original query Sql node that produced this node.
      */
-    private final @Nullable
-    Object node;
+    private final
+    CalciteObject node;
 
-    protected DBSPNode(@Nullable Object node) {
+    protected DBSPNode(CalciteObject node) {
         this.node = node;
         this.id = crtId++;
     }
@@ -55,8 +54,7 @@ public abstract class DBSPNode
         crtId = 0;
     }
 
-    @Nullable
-    public Object getNode() { return this.node; }
+    public CalciteObject getNode() { return this.node; }
 
     @Override
     public long getId() {

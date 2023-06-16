@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -37,7 +38,7 @@ public class DBSPMapOperator extends DBSPUnaryOperator {
     public final DBSPType outputElementType;
     public final DBSPType weightType;
 
-    public DBSPMapOperator(@Nullable Object node, DBSPExpression expression,
+    public DBSPMapOperator(CalciteObject node, DBSPExpression expression,
                            DBSPType elementType, DBSPType weightType, DBSPOperator input) {
         super(node, "map", expression, TypeCompiler.makeZSet(elementType, weightType), true, input);
         this.checkResultType(expression, elementType);

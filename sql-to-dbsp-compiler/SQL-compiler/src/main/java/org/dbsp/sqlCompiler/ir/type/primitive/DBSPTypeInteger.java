@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -31,7 +32,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.util.UnsupportedException;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 public class DBSPTypeInteger extends DBSPTypeBaseType
@@ -39,16 +39,24 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     private final int width;
     public final boolean signed;
 
-    public static final DBSPTypeInteger SIGNED_16 = new DBSPTypeInteger(null, 16, true,false);
-    public static final DBSPTypeInteger SIGNED_32 = new DBSPTypeInteger(null, 32, true,false);
-    public static final DBSPTypeInteger SIGNED_64 = new DBSPTypeInteger(null, 64, true,false);
-    public static final DBSPTypeInteger UNSIGNED_32 = new DBSPTypeInteger(null, 32, false,false);
-    public static final DBSPTypeInteger UNSIGNED_64 = new DBSPTypeInteger(null, 64, false,false);
-    public static final DBSPTypeInteger NULLABLE_SIGNED_16 = new DBSPTypeInteger(null, 16, true,true);
-    public static final DBSPTypeInteger NULLABLE_SIGNED_32 = new DBSPTypeInteger(null, 32, true,true);
-    public static final DBSPTypeInteger NULLABLE_SIGNED_64 = new DBSPTypeInteger(null, 64, true,true);
+    public static final DBSPTypeInteger SIGNED_16 =
+            new DBSPTypeInteger(new CalciteObject(), 16, true,false);
+    public static final DBSPTypeInteger SIGNED_32 =
+            new DBSPTypeInteger(new CalciteObject(), 32, true,false);
+    public static final DBSPTypeInteger SIGNED_64 =
+            new DBSPTypeInteger(new CalciteObject(), 64, true,false);
+    public static final DBSPTypeInteger UNSIGNED_32 =
+            new DBSPTypeInteger(new CalciteObject(), 32, false,false);
+    public static final DBSPTypeInteger UNSIGNED_64 =
+            new DBSPTypeInteger(new CalciteObject(), 64, false,false);
+    public static final DBSPTypeInteger NULLABLE_SIGNED_16 =
+            new DBSPTypeInteger(new CalciteObject(), 16, true,true);
+    public static final DBSPTypeInteger NULLABLE_SIGNED_32 =
+            new DBSPTypeInteger(new CalciteObject(), 32, true,true);
+    public static final DBSPTypeInteger NULLABLE_SIGNED_64 =
+            new DBSPTypeInteger(new CalciteObject(), 64, true,true);
 
-    public DBSPTypeInteger(@Nullable Object node, int width, boolean signed, boolean mayBeNull) {
+    public DBSPTypeInteger(CalciteObject node, int width, boolean signed, boolean mayBeNull) {
         super(node, mayBeNull);
         this.width = width;
         this.signed = signed;

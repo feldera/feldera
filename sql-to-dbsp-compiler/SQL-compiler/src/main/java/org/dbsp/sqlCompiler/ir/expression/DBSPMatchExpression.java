@@ -46,7 +46,7 @@ public class DBSPMatchExpression extends DBSPExpression {
         public final DBSPExpression result;
 
         public Case(DBSPPattern against, DBSPExpression result) {
-            super(null);
+            super(against.getNode());
             this.against = against;
             this.result = result;
         }
@@ -82,7 +82,7 @@ public class DBSPMatchExpression extends DBSPExpression {
     public final List<Case> cases;
 
     public DBSPMatchExpression(DBSPExpression matched, List<Case> cases, DBSPType type) {
-        super(null, type);
+        super(matched.getNode(), type);
         this.matched = matched;
         this.cases = cases;
         if (cases.isEmpty())

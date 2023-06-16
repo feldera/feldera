@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -49,7 +50,7 @@ public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration
     public DBSPFunction(String name, List<DBSPParameter> parameters,
                         DBSPType returnType, DBSPExpression body,
                         List<String> annotations) {
-        super(null);
+        super(new CalciteObject());
         this.name = name;
         this.parameters = parameters;
         this.returnType = returnType;

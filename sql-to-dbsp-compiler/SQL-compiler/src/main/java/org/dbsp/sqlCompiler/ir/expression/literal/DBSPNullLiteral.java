@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
@@ -14,7 +15,7 @@ import javax.annotation.Nullable;
 public class DBSPNullLiteral extends DBSPLiteral {
     public static final DBSPNullLiteral INSTANCE = new DBSPNullLiteral();
 
-    public DBSPNullLiteral(@Nullable Object node, DBSPType type, @Nullable Object value) {
+    public DBSPNullLiteral(CalciteObject node, DBSPType type, @Nullable Object value) {
         super(node,  type, true);
         if (value != null)
             throw new RuntimeException("Value must be null");
@@ -23,7 +24,7 @@ public class DBSPNullLiteral extends DBSPLiteral {
     }
 
     public DBSPNullLiteral() {
-        this(null, DBSPTypeNull.INSTANCE, null);
+        this(new CalciteObject(), DBSPTypeNull.INSTANCE, null);
     }
 
     @Override

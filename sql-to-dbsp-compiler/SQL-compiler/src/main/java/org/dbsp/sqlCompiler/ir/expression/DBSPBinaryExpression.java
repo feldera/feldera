@@ -23,12 +23,11 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
-
-import javax.annotation.Nullable;
 
 public class DBSPBinaryExpression extends DBSPExpression {
     public final DBSPExpression left;
@@ -42,7 +41,7 @@ public class DBSPBinaryExpression extends DBSPExpression {
      */
     public final boolean primitive;
 
-    public DBSPBinaryExpression(@Nullable Object node, DBSPType type, DBSPOpcode operation,
+    public DBSPBinaryExpression(CalciteObject node, DBSPType type, DBSPOpcode operation,
                                 DBSPExpression left, DBSPExpression right, boolean primitive) {
         super(node, type);
         this.operation = operation;
@@ -51,14 +50,14 @@ public class DBSPBinaryExpression extends DBSPExpression {
         this.primitive = primitive;
     }
 
-    public DBSPBinaryExpression(@Nullable Object node, DBSPType type, DBSPOpcode operation,
+    public DBSPBinaryExpression(CalciteObject node, DBSPType type, DBSPOpcode operation,
                                 DBSPExpression left, DBSPExpression right) {
         this(node, type, operation, left, right, false);
     }
 
     public DBSPBinaryExpression(DBSPType type, DBSPOpcode operation,
                                 DBSPExpression left, DBSPExpression right, boolean primitive) {
-        this(null, type, operation, left, right, primitive);
+        this(type.getNode(), type, operation, left, right, primitive);
     }
 
     @Override

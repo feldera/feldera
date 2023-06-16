@@ -36,7 +36,7 @@ public class DBSPTupleStructPattern extends DBSPPattern {
     public final DBSPPattern[] arguments;
 
     public DBSPTupleStructPattern(DBSPPath path, DBSPPattern... arguments) {
-        super(null);
+        super(path.getNode());
         this.path = path;
         this.arguments = arguments;
     }

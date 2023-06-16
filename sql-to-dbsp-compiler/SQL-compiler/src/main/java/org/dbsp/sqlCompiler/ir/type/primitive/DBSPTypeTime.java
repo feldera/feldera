@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
 import org.apache.calcite.util.TimeString;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
@@ -32,14 +33,13 @@ import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.util.UnsupportedException;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 public class DBSPTypeTime extends DBSPTypeBaseType implements IsNumericType, IsDateType {
-    public static final DBSPTypeTime INSTANCE = new DBSPTypeTime(null, false);
-    public static final DBSPTypeTime NULLABLE_INSTANCE = new DBSPTypeTime(null, true);
+    public static final DBSPTypeTime INSTANCE = new DBSPTypeTime(new CalciteObject(), false);
+    public static final DBSPTypeTime NULLABLE_INSTANCE = new DBSPTypeTime(new CalciteObject(), true);
 
-    protected DBSPTypeTime(@Nullable Object node, boolean mayBeNull) {
+    protected DBSPTypeTime(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);
     }
 
@@ -50,7 +50,7 @@ public class DBSPTypeTime extends DBSPTypeBaseType implements IsNumericType, IsD
 
     @Override
     public DBSPLiteral defaultValue() {
-        return new DBSPTimeLiteral(null, this, new TimeString(0, 0, 0));
+        return new DBSPTimeLiteral(this.getNode(), this, new TimeString(0, 0, 0));
     }
 
     @Override

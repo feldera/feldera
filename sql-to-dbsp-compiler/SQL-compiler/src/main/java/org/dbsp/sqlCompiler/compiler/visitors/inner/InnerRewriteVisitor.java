@@ -936,10 +936,11 @@ public abstract class InnerRewriteVisitor
         DBSPType semiGroup = this.transform(implementation.semigroup);
         this.pop(implementation);
 
-        DBSPAggregate.Implementation result = new DBSPAggregate.Implementation(implementation.operator, zero,
-                    increment.to(DBSPClosureExpression.class),
-                    postProcess != null ? postProcess.to(DBSPClosureExpression.class) : null,
-                    emptySetResult, semiGroup);
+        DBSPAggregate.Implementation result = new DBSPAggregate.Implementation(
+                implementation.getNode(), zero,
+                increment.to(DBSPClosureExpression.class),
+                postProcess != null ? postProcess.to(DBSPClosureExpression.class) : null,
+                emptySetResult, semiGroup, implementation.isLinear);
         this.map(implementation, result);
         return VisitDecision.STOP;
     }

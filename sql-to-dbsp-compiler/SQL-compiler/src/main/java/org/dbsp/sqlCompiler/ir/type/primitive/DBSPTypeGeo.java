@@ -23,13 +23,13 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
-import javax.annotation.Nullable;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 
 /**
  * Base class for geographic data types.
  */
 public abstract class DBSPTypeGeo extends DBSPTypeBaseType {
-    protected DBSPTypeGeo(@Nullable Object node, boolean mayBeNull) {
+    protected DBSPTypeGeo(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);
     }
 

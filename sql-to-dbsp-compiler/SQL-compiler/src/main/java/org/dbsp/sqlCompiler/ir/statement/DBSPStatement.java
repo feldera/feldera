@@ -23,16 +23,14 @@
 
 package org.dbsp.sqlCompiler.ir.statement;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-
-import javax.annotation.Nullable;
 
 public abstract class DBSPStatement
         extends DBSPNode
         implements IDBSPInnerNode {
-    @SuppressWarnings("SameParameterValue")
-    protected DBSPStatement(@Nullable Object node) {
+    protected DBSPStatement(CalciteObject node) {
         super(node);
     }
 }

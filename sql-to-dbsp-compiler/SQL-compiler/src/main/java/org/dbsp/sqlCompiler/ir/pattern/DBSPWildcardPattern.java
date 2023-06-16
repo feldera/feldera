@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.pattern;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -33,7 +34,7 @@ public class DBSPWildcardPattern extends DBSPPattern {
     public static final DBSPWildcardPattern INSTANCE = new DBSPWildcardPattern();
 
     private DBSPWildcardPattern() {
-        super(null);
+        super(new CalciteObject());
     }
 
     @Override

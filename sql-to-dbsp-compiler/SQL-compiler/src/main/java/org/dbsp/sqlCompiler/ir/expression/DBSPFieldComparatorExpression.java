@@ -23,12 +23,11 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
-
-import javax.annotation.Nullable;
 
 /**
  * A comparator that looks at the field of a tuple.
@@ -40,7 +39,7 @@ public class DBSPFieldComparatorExpression extends DBSPComparatorExpression {
     public final boolean ascending;
     public final int fieldNo;
 
-    public DBSPFieldComparatorExpression(@Nullable Object node, DBSPComparatorExpression source, int fieldNo, boolean ascending) {
+    public DBSPFieldComparatorExpression(CalciteObject node, DBSPComparatorExpression source, int fieldNo, boolean ascending) {
         super(node);
         this.source = source;
         this.fieldNo = fieldNo;

@@ -23,14 +23,13 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-
-import javax.annotation.Nullable;
 
 public abstract class DBSPTypeTupleBase extends DBSPType {
     public final DBSPType[] tupFields;
 
-    protected DBSPTypeTupleBase(@Nullable Object node, boolean mayBeNull, DBSPType... tupFields) {
+    protected DBSPTypeTupleBase(CalciteObject node, boolean mayBeNull, DBSPType... tupFields) {
         super(node, mayBeNull);
         this.tupFields = tupFields;
         for (DBSPType type: this.tupFields)

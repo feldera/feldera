@@ -23,12 +23,11 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
-
-import javax.annotation.Nullable;
 
 /**
  * This class does not correspond to any Rust construct.
@@ -37,7 +36,7 @@ import javax.annotation.Nullable;
 public class DBSPCastExpression extends DBSPExpression {
     public final DBSPExpression source;
 
-    public DBSPCastExpression(@Nullable Object node, DBSPExpression source, DBSPType to) {
+    public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to) {
         super(node, to);
         this.source = source;
     }
