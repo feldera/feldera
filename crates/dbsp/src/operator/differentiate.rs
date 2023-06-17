@@ -4,7 +4,7 @@ use crate::{
     algebra::GroupValue,
     circuit::{Circuit, GlobalNodeId, Stream},
     circuit_cache_key,
-    operator::Minus,
+    operator::{integrate::IntegralId, Minus},
     NumEntries,
 };
 use size_of::SizeOf;
@@ -35,6 +35,11 @@ where
                     &self.try_sharded_version().delay(),
                 );
                 differentiated.mark_sharded_if(self);
+
+                self.circuit().cache_insert(
+                    IntegralId::new(differentiated.origin_node_id().clone()),
+                    self.clone(),
+                );
                 differentiated
             })
             .clone()
