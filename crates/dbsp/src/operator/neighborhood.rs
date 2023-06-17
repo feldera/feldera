@@ -1,13 +1,14 @@
 use crate::{
     algebra::{HasZero, ZRingValue},
     circuit::{
-        circuit_builder::OwnershipPreference,
         operator_traits::{BinaryOperator, Operator},
         Scope,
     },
     trace::{cursor::Cursor, Batch, BatchReader, Builder},
     Circuit, DBData, DBWeight, IndexedZSet, OrdIndexedZSet, RootCircuit, Stream,
 };
+use serde::Deserialize;
+use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData};
 
 /// A a contiguous range of rows preceding and following a fixed "anchor"
@@ -61,7 +62,7 @@ pub type Neighborhood<K, V, R> = OrdIndexedZSet<isize, (K, V), R>;
 /// output a specific neighborhood.  The neighborhood is defined in
 /// terms of its central point (`anchor`) and the number of rows
 /// preceding and following the anchor to output.
-#[derive(Clone)]
+#[derive(Clone, Debug, Deserialize, PartialOrd, Ord, PartialEq, Eq, Hash, SizeOf)]
 pub struct NeighborhoodDescr<K, V> {
     anchor: (K, V),
     before: usize,
@@ -116,13 +117,9 @@ where
     ///   evaluate at every clock tick.  Set to `None` to disable the operator
     ///   (it will output an empty neighborhood).
     ///
-    /// * `reset` - controls whether the operator outputs the the entire
-    ///   neighborhood or an incrmental change to the neighborhood.  Set to
-    ///   `true` to request the complete neighborhood to be output at the end of
-    ///   the current clock cycle or `false` to output the incremental change to
-    ///   the neighborhood relative to the previous clock cycle.
-    ///
     /// # Output
+    ///
+    /// Outputs a stream of changes to the neighborhood.
     ///
     /// The output neighborhood will contain rows with indexes between
     /// `-descr.before` and `descr.after - 1`.  Row 0 is the anchor row, i.e.,
@@ -139,7 +136,6 @@ where
     pub fn neighborhood(
         &self,
         neighborhood_descr: &NeighborhoodDescrStream<B::Key, B::Val>,
-        reset: &Stream<RootCircuit, bool>,
     ) -> NeighborhoodStream<B::Key, B::Val, B::R> {
         self.circuit().region("neighborhood", || {
             // Compute local neighborhood in each worker.  We don't shard
@@ -168,18 +164,7 @@ where
                 neighborhood_descr,
             );
 
-            output.apply3_with_preference(
-                OwnershipPreference::STRONGLY_PREFER_OWNED,
-                (&output.differentiate(), OwnershipPreference::INDIFFERENT),
-                (reset, OwnershipPreference::INDIFFERENT),
-                |range, delta, reset: Cow<'_, bool>| {
-                    if *reset {
-                        range.into_owned()
-                    } else {
-                        (*delta).clone()
-                    }
-                },
-            )
+            output.differentiate()
         })
     }
 }
@@ -431,7 +416,7 @@ mod test {
         operator::neighborhood::NeighborhoodDescr,
         trace::{
             test_batch::{assert_batch_eq, batch_to_tuples, TestBatch},
-            Batch, Trace,
+            Trace,
         },
         CollectionHandle, DBData, DBWeight, InputHandle, OrdIndexedZSet, OutputHandle, RootCircuit,
         Runtime,
@@ -450,7 +435,9 @@ mod test {
             descr: &Option<NeighborhoodDescr<K, V>>,
         ) -> TestBatch<isize, (K, V), (), R> {
             if let Some(descr) = &descr {
-                let (anchor_k, anchor_v) = &descr.anchor;
+                let anchor_k = &descr.anchor;
+                let anchor_v = &descr.anchor_val;
+
                 let tuples = batch_to_tuples(self);
                 let start = tuples
                     .iter()
@@ -484,37 +471,35 @@ mod test {
     fn test_circuit(
         circuit: &mut RootCircuit,
     ) -> AnyResult<(
-        InputHandle<bool>,
         InputHandle<Option<NeighborhoodDescr<i32, i32>>>,
         CollectionHandle<i32, (i32, i32)>,
         OutputHandle<OrdIndexedZSet<isize, (i32, i32), i32>>,
     )> {
-        let (reset_stream, reset_handle) = circuit.add_input_stream::<bool>();
         let (descr_stream, descr_handle) =
             circuit.add_input_stream::<Option<NeighborhoodDescr<i32, i32>>>();
         let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32, i32>();
 
         let range_handle = input_stream
-            .neighborhood(&descr_stream, &reset_stream)
+            .neighborhood(&descr_stream)
+            .integrate()
+            .index()
             .output();
 
-        Ok((reset_handle, descr_handle, input_handle, range_handle))
+        Ok((descr_handle, input_handle, range_handle))
     }
 
     #[test]
-    fn bounded_range_test() {
-        let (mut dbsp, (reset_handle, descr_handle, input_handle, output_handle)) =
+    fn neighborhood_test() {
+        let (mut dbsp, (descr_handle, input_handle, output_handle)) =
             Runtime::init_circuit(4, test_circuit).unwrap();
 
         // Empty collection.
-        reset_handle.set_for_all(true);
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
 
         dbsp.step().unwrap();
 
         assert!(batch_to_tuples(&output_handle.consolidate()).is_empty());
 
-        reset_handle.set_for_all(true);
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
         input_handle.push(9, (0, 1));
 
@@ -525,7 +510,6 @@ mod test {
             &[((-1, (9, 0), ()), 1)]
         );
 
-        reset_handle.set_for_all(true);
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
         input_handle.push(9, (1, 1));
 
@@ -536,7 +520,6 @@ mod test {
             &[((-2, (9, 0), ()), 1), ((-1, (9, 1), ()), 1)]
         );
 
-        reset_handle.set_for_all(true);
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
         input_handle.push(8, (1, 1));
 
@@ -551,7 +534,6 @@ mod test {
             ]
         );
 
-        reset_handle.set_for_all(true);
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
         input_handle.push(7, (1, 1));
 
@@ -566,7 +548,6 @@ mod test {
             ]
         );
 
-        reset_handle.set_for_all(true);
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
         input_handle.push(10, (10, 1));
 
@@ -582,7 +563,6 @@ mod test {
             ]
         );
 
-        reset_handle.set_for_all(true);
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
         input_handle.push(10, (11, 1));
         input_handle.push(12, (0, 1));
@@ -601,7 +581,6 @@ mod test {
             ]
         );
 
-        reset_handle.set_for_all(true);
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
         input_handle.push(10, (10, -1));
 
@@ -618,7 +597,6 @@ mod test {
             ]
         );
 
-        reset_handle.set_for_all(true);
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
         input_handle.push(13, (0, 1));
         input_handle.push(14, (0, 1));
@@ -650,14 +628,13 @@ mod test {
         max_val: i32,
         max_batch_size: usize,
         max_batches: usize,
-    ) -> impl Strategy<Value = Vec<(Vec<(i32, i32, i32)>, (i32, i32), usize, usize, bool)>> {
+    ) -> impl Strategy<Value = Vec<(Vec<(i32, i32, i32)>, (i32, i32), usize, usize)>> {
         vec(
             (
                 vec((0..max_key, 0..max_val, 1..2), 0..max_batch_size),
                 (0..max_key, 0..max_val),
                 (0..(max_key * max_val) as usize),
                 (0..(max_key * max_val) as usize),
-                prop::bool::ANY,
             ),
             0..max_batches,
         )
@@ -665,15 +642,14 @@ mod test {
 
     proptest! {
         #[test]
-        fn bounded_range_proptest(trace in input_trace(100, 5, 200, 20)) {
+        fn neighborhood_proptest(trace in input_trace(100, 5, 200, 20)) {
 
-            let (mut dbsp, (reset_handle, descr_handle, input_handle, output_handle)) =
+            let (mut dbsp, (descr_handle, input_handle, output_handle)) =
                 Runtime::init_circuit(4, test_circuit).unwrap();
 
             let mut ref_trace = TestBatch::new(None);
-            let mut prev_output = OrdIndexedZSet::empty(());
 
-            for (batch, (start_key, start_val), before, after, reset) in trace.into_iter() {
+            for (batch, (start_key, start_val), before, after) in trace.into_iter() {
 
                 let records = batch.iter().map(|(k, v, r)| ((*k, *v, ()), *r)).collect::<Vec<_>>();
 
@@ -684,7 +660,6 @@ mod test {
                     input_handle.push(k, (v, r));
                 }
                 let descr = NeighborhoodDescr::new(start_key, start_val, before, after);
-                reset_handle.set_for_all(reset);
                 descr_handle.set_for_all(Some(descr.clone()));
 
                 dbsp.step().unwrap();
@@ -692,13 +667,7 @@ mod test {
                 let output = output_handle.consolidate();
                 let ref_output = ref_trace.neighborhood(&Some(descr));
 
-                if reset {
-                    assert_batch_eq(&output, &ref_output);
-                    prev_output = output;
-                } else {
-                    prev_output = prev_output.merge(&output);
-                    assert_batch_eq(&prev_output, &ref_output);
-                }
+                assert_batch_eq(&output, &ref_output);
             }
         }
     }

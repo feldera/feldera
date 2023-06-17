@@ -5,6 +5,7 @@ use crate::{
     circuit::{Circuit, GlobalNodeId, OwnershipPreference, Stream},
     circuit_cache_key,
     operator::{
+        differentiate::DifferentiateId,
         z1::{DelayedFeedback, DelayedNestedFeedback},
         Plus,
     },
@@ -109,6 +110,11 @@ where
                         (self, OwnershipPreference::PREFER_OWNED),
                     );
                     feedback.connect(&integral);
+
+                    self.circuit().cache_insert(
+                        DifferentiateId::new(integral.origin_node_id().clone()),
+                        self.clone(),
+                    );
                     integral
                 })
             })
