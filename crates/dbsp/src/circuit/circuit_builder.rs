@@ -37,8 +37,9 @@ use crate::{
         cache::{CircuitCache, CircuitStoreMarker},
         metadata::OperatorMeta,
         operator_traits::{
-            BinaryOperator, Data, ImportOperator, NaryOperator, QuaternaryOperator, SinkOperator,
-            SourceOperator, StrictUnaryOperator, TernaryOperator, UnaryOperator,
+            BinaryOperator, BinarySinkOperator, Data, ImportOperator, NaryOperator,
+            QuaternaryOperator, SinkOperator, SourceOperator, StrictUnaryOperator, TernaryOperator,
+            UnaryOperator,
         },
         schedule::{
             DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
@@ -1281,6 +1282,29 @@ pub trait Circuit: WithClock + Clone + 'static {
         I: Data,
         Op: SinkOperator<I>;
 
+    /// Add a binary sink operator (see [`BinarySinkOperator`]).
+    fn add_binary_sink<I1, I2, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+    ) where
+        I1: Data,
+        I2: Data,
+        Op: BinarySinkOperator<I1, I2>;
+
+    /// Like [`Self::add_binary_sink`], but overrides the ownership preferences on
+    /// both input streams with `input_preference1` and `input_preference2`.
+    fn add_binary_sink_with_preference<I1, I2, Op>(
+        &self,
+        operator: Op,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
+    ) where
+        I1: Data,
+        I2: Data,
+        Op: BinarySinkOperator<I1, I2>;
+
     /// Add a unary operator (see [`UnaryOperator`]).
     fn add_unary_operator<I, O, Op>(
         &self,
@@ -2446,6 +2470,58 @@ where
         });
     }
 
+    /// Add a binary sink operator (see [`BinarySinkOperator`]).
+    fn add_binary_sink<I1, I2, Op>(
+        &self,
+        operator: Op,
+        input_stream1: &Stream<Self, I1>,
+        input_stream2: &Stream<Self, I2>,
+    ) where
+        I1: Data,
+        I2: Data,
+        Op: BinarySinkOperator<I1, I2>,
+    {
+        let (preference1, preference2) = operator.input_preference();
+        self.add_binary_sink_with_preference(
+            operator,
+            (input_stream1, preference1),
+            (input_stream2, preference2),
+        )
+    }
+
+    fn add_binary_sink_with_preference<I1, I2, Op>(
+        &self,
+        operator: Op,
+        input_stream1: (&Stream<Self, I1>, OwnershipPreference),
+        input_stream2: (&Stream<Self, I2>, OwnershipPreference),
+    ) where
+        I1: Data,
+        I2: Data,
+        Op: BinarySinkOperator<I1, I2>,
+    {
+        let (input_stream1, input_preference1) = input_stream1;
+        let (input_stream2, input_preference2) = input_stream2;
+
+        self.add_node(|id| {
+            self.log_circuit_event(&CircuitEvent::operator(
+                GlobalNodeId::child_of(self, id),
+                operator.name(),
+                operator.location(),
+            ));
+
+            let node = BinarySinkNode::new(
+                operator,
+                input_stream1.clone(),
+                input_stream2.clone(),
+                self.clone(),
+                id,
+            );
+            self.connect_stream(input_stream1, id, input_preference1);
+            self.connect_stream(input_stream2, id, input_preference2);
+            (node, ())
+        });
+    }
+
     fn add_unary_operator<I, O, Op>(
         &self,
         operator: Op,
@@ -3300,6 +3376,101 @@ where
             Cow::Owned(v) => self.operator.eval_owned(v),
             Cow::Borrowed(v) => self.operator.eval(v),
         };
+        Ok(())
+    }
+
+    fn clock_start(&mut self, scope: Scope) {
+        self.operator.clock_start(scope);
+    }
+
+    unsafe fn clock_end(&mut self, scope: Scope) {
+        self.operator.clock_end(scope);
+    }
+
+    fn metadata(&self, output: &mut OperatorMeta) {
+        self.operator.metadata(output);
+    }
+
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
+    }
+}
+
+struct BinarySinkNode<C, I1, I2, Op> {
+    id: GlobalNodeId,
+    operator: Op,
+    input_stream1: Stream<C, I1>,
+    input_stream2: Stream<C, I2>,
+    // `true` if both input streams are aliases of the same stream.
+    is_alias: bool,
+}
+
+impl<C, I1, I2, Op> BinarySinkNode<C, I1, I2, Op>
+where
+    I1: Clone,
+    I2: Clone,
+    Op: BinarySinkOperator<I1, I2>,
+    C: Circuit,
+{
+    fn new(
+        operator: Op,
+        input_stream1: Stream<C, I1>,
+        input_stream2: Stream<C, I2>,
+        circuit: C,
+        id: NodeId,
+    ) -> Self {
+        let is_alias = input_stream1.ptr_eq(&input_stream2);
+        Self {
+            id: circuit.global_node_id().child(id),
+            operator,
+            input_stream1,
+            input_stream2,
+            is_alias,
+        }
+    }
+}
+
+impl<C, I1, I2, Op> Node for BinarySinkNode<C, I1, I2, Op>
+where
+    C: Circuit,
+    I1: Clone,
+    I2: Clone,
+    Op: BinarySinkOperator<I1, I2>,
+{
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
+    fn local_id(&self) -> NodeId {
+        self.id.local_node_id().unwrap()
+    }
+
+    fn global_id(&self) -> &GlobalNodeId {
+        &self.id
+    }
+
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
+    }
+
+    fn register_ready_callback(&mut self, cb: Box<dyn Fn() + Send + Sync>) {
+        self.operator.register_ready_callback(cb);
+    }
+
+    unsafe fn eval(&mut self) -> Result<(), SchedulerError> {
+        let input1 = if self.is_alias {
+            Cow::Borrowed(self.input_stream1.peek())
+        } else {
+            self.input_stream1.take()
+        };
+
+        let input2 = self.input_stream2.take();
+
+        self.operator.eval(input1, input2);
         Ok(())
     }
 

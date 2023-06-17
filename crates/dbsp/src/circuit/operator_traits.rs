@@ -223,6 +223,30 @@ pub trait SinkOperator<I>: Operator {
     }
 }
 
+/// A sink operator that consumes two input streams, but does not produce
+/// an output stream.  Such operators are used to send results of the
+/// computation performed by the circuit to the outside world.
+pub trait BinarySinkOperator<I1, I2>: Operator
+where
+    I1: Clone,
+    I2: Clone,
+{
+    /// Consume inputs.
+    ///
+    /// The operator must be prepated to handle any combination of
+    /// owned and borrowed inputs.
+    fn eval<'a>(&mut self, lhs: Cow<'a, I1>, rhs: Cow<'a, I2>);
+
+    /// Ownership preference on the operator's input streams
+    /// (see [`OwnershipPreference`]).
+    fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
+        (
+            OwnershipPreference::INDIFFERENT,
+            OwnershipPreference::INDIFFERENT,
+        )
+    }
+}
+
 /// A unary operator that consumes a stream of inputs of type `I`
 /// and produces a stream of outputs of type `O`.
 pub trait UnaryOperator<I, O>: Operator {
