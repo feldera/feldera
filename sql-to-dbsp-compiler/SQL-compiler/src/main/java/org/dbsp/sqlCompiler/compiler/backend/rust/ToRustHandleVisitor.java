@@ -79,13 +79,6 @@ public class ToRustHandleVisitor extends ToRustVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSinkOperator operator) {
-        this.writeComments(operator.query);
-        this.writeComments(operator)
-                .append("let handle")
-                .append(this.outputHandleIndex++)
-                .append(" = ")
-                .append(operator.input().getName())
-                .append(".output();");
         return VisitDecision.STOP;
     }
 
@@ -103,41 +96,39 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 .append(this.functionName)
                 .append("(workers: usize) -> (DBSPHandle, Catalog) {")
                 .increase()
-                .append("let mut catalog = Catalog::new();")
                 .newline()
-                .append("let (circuit, handles) = Runtime::init_circuit(workers, |circuit| {")
-                .increase();
+                .append("let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {")
+                .increase()
+                .append("let mut catalog = Catalog::new();");
 
         for (IDBSPNode node : circuit.getAllOperators())
             super.processNode(node);
-        this.builder.append("Ok((");
-        for (int i = 0; i < this.outputHandleIndex; i++)
-            this.builder.append("handle")
-                    .append(i)
-                    .append(",");
-        this.builder.append("))")
+
+        int index = 0;
+        for (DBSPOperator i : circuit.inputOperators) {
+            this.builder.append("catalog.register_input_zset(")
+                    .append(Utilities.doubleQuote(i.getName()))
+                    .append(", ")
+                    .append(i.outputName)
+                    .append(".clone(), handle")
+                    .append(index++)
+                    .append(");")
+                    .newline();
+        }
+        for (DBSPSinkOperator o : circuit.outputOperators) {
+            this.builder.append("catalog.register_output_zset(")
+                    .append(Utilities.doubleQuote(o.getName()))
+                    .append(", ")
+                    .append(o.input().getName())
+                    .append(");")
+                    .newline();
+        }
+
+        this.builder.append("Ok(catalog)")
                 .newline()
                 .decrease()
                 .append("}).unwrap();")
                 .newline();
-
-        int index = 0;
-        for (DBSPOperator i : circuit.inputOperators) {
-            this.builder.append("catalog.register_input_zset_handle(")
-                    .append(Utilities.doubleQuote(i.getName()))
-                    .append(", handles.")
-                    .append(index++)
-                    .append(");")
-                    .newline();
-        }
-        for (DBSPOperator o : circuit.outputOperators) {
-            this.builder.append("catalog.register_output_batch_handle(")
-                    .append(Utilities.doubleQuote(o.getName()))
-                    .append(", handles.")
-                    .append(index++)
-                    .append(");")
-                    .newline();
-        }
 
         this.builder
                 .append("(circuit, catalog)")
