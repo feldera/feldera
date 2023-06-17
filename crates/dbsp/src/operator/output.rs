@@ -1,7 +1,7 @@
 use super::Mailbox;
 use crate::{
     circuit::{
-        operator_traits::{Operator, SinkOperator},
+        operator_traits::{BinarySinkOperator, Operator, SinkOperator},
         LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
     },
     trace::{Batch, Spine, Trace},
@@ -29,6 +29,21 @@ where
     pub fn output(&self) -> OutputHandle<T> {
         let (output, output_handle) = Output::new();
         self.circuit().add_sink(output, self);
+        output_handle
+    }
+
+    /// Create an output handle that makes the contents of `self` available
+    /// outside the circuit on demand.
+    ///
+    /// This operator is similar to [`output`](`Self::output`), but it only
+    /// produces the output conditionally, when the value in the `guard` stream
+    /// is `true`.  When `guard` is false, the output mailbox remains empty at
+    /// the end of the clock cycle, and [`OutputHandle::take_from_worker`] will
+    /// return `None`.  This operator can be used to output a large collection,
+    /// such as an integral of a stream, on demand.
+    pub fn output_guarded(&self, guard: &Stream<RootCircuit, bool>) -> OutputHandle<T> {
+        let (output, output_handle) = OutputGuarded::new();
+        self.circuit().add_binary_sink(output, self, guard);
         output_handle
     }
 }
@@ -278,6 +293,55 @@ where
     }
 }
 
+struct OutputGuarded<T> {
+    mailbox: Mailbox<Option<T>>,
+}
+
+impl<T> OutputGuarded<T>
+where
+    T: Clone + Send + 'static,
+{
+    fn new() -> (Self, OutputHandle<T>) {
+        let handle = OutputHandle::new();
+        let mailbox = handle.mailbox(Runtime::worker_index()).clone();
+
+        let output = Self { mailbox };
+
+        (output, handle)
+    }
+}
+
+impl<T> Operator for OutputGuarded<T>
+where
+    T: 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("OutputGuarded")
+    }
+
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        true
+    }
+}
+
+impl<T> BinarySinkOperator<T, bool> for OutputGuarded<T>
+where
+    T: Clone + 'static,
+{
+    fn eval<'a>(&mut self, val: Cow<'a, T>, guard: Cow<'a, bool>) {
+        if *guard {
+            self.mailbox.set(Some(val.into_owned()));
+        }
+    }
+
+    fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
+        (
+            OwnershipPreference::PREFER_OWNED,
+            OwnershipPreference::INDIFFERENT,
+        )
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::{trace::Batch, OrdZSet, Runtime};
@@ -304,6 +368,42 @@ mod test {
             dbsp.step().unwrap();
             let output = output.consolidate();
             assert_eq!(output, expected_output);
+        }
+
+        dbsp.kill().unwrap();
+    }
+
+    #[test]
+    fn test_guarded_output_handle() {
+        let (mut dbsp, (input, guard, output)) = Runtime::init_circuit(4, |circuit| {
+            let (zset, zset_handle) = circuit.add_input_zset::<u64, isize>();
+            let (guard, guard_handle) = circuit.add_input_stream::<bool>();
+            let zset_output = zset.output_guarded(&guard);
+
+            Ok((zset_handle, guard_handle, zset_output))
+        })
+        .unwrap();
+
+        let inputs = vec![
+            vec![(1, 1), (2, 1), (3, 1), (4, 1), (5, 1)],
+            vec![(1, -1), (2, -1), (3, -1), (4, -1), (5, -1)],
+        ];
+
+        for mut input_vec in inputs {
+            let expected_output = OrdZSet::from_tuples((), input_vec.clone());
+
+            input.append(&mut input_vec.clone());
+            guard.set_for_all(false);
+            dbsp.step().unwrap();
+            let output1 = output.consolidate();
+            assert_eq!(output1, OrdZSet::empty(()));
+
+            input.append(&mut input_vec);
+            guard.set_for_all(true);
+            dbsp.step().unwrap();
+            let output2 = output.consolidate();
+
+            assert_eq!(output2, expected_output);
         }
 
         dbsp.kill().unwrap();
