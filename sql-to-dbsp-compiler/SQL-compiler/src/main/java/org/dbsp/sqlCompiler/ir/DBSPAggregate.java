@@ -244,7 +244,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
      * The linear functions have the signature:
      * '|row| value', where 'row' is always the same variable.
      * The result function will have the signature:
-     * |_k, row| (value0, value1, ...).
+     * |row| (value0, value1, ...).
      */
     public DBSPClosureExpression combineLinear() {
         DBSPClosureExpression[] closures = Linq.map(this.components, c -> c.linearFunction, DBSPClosureExpression.class);
@@ -253,10 +253,9 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                 throw new RuntimeException("Expected exactly 1 parameter for linear closure" + expr);
         }
         DBSPParameter row = closures[0].parameters[0];
-        DBSPParameter key = new DBSPVariablePath("_k", DBSPTypeAny.INSTANCE).asParameter();
         DBSPExpression[] bodies = Linq.map(closures, c -> c.body, DBSPExpression.class);
         DBSPTupleExpression tuple = new DBSPTupleExpression(bodies);
-        return tuple.closure(key, row);
+        return tuple.closure(row);
     }
 
     /**
