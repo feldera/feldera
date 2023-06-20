@@ -101,7 +101,7 @@ impl MulByRef<Present> for i32
 
     #[inline]
     fn mul_by_ref(&self, _other: &Present) -> Self::Output {
-        self.clone()
+        *self
     }
 }
 
@@ -111,7 +111,7 @@ impl MulByRef<Present> for i64
 
     #[inline]
     fn mul_by_ref(&self, _other: &Present) -> Self::Output {
-        self.clone()
+        *self
     }
 }
 
