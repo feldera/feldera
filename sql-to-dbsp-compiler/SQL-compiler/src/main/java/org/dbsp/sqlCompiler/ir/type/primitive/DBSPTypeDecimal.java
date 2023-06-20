@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -30,7 +31,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.util.UnsupportedException;
 
-import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.util.Objects;
 
@@ -40,14 +40,14 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
     public static final int MAX_SCALE = 10;       // Digits after decimal period.  Rather arbitrary.
 
     public static final DBSPTypeDecimal DEFAULT =
-            new DBSPTypeDecimal(null, MAX_PRECISION, MAX_SCALE, false);
+            new DBSPTypeDecimal(CalciteObject.EMPTY, MAX_PRECISION, MAX_SCALE, false);
     public static final DBSPTypeDecimal DEFAULT_NULLABLE =
-            new DBSPTypeDecimal(null, MAX_PRECISION, MAX_SCALE, true);
+            new DBSPTypeDecimal(CalciteObject.EMPTY, MAX_PRECISION, MAX_SCALE, true);
 
     public final int precision;
     public final int scale;
 
-    public DBSPTypeDecimal(@Nullable Object node, int precision, int scale, boolean mayBeNull) {
+    public DBSPTypeDecimal(CalciteObject node, int precision, int scale, boolean mayBeNull) {
         super(node, mayBeNull);
         if (precision <= 0)
             throw new IllegalArgumentException("Precision must be positive: " + precision);
@@ -69,12 +69,12 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
 
     @Override
     public DBSPLiteral getZero() {
-        return new DBSPDecimalLiteral(null, this, new BigDecimal(0));
+        return new DBSPDecimalLiteral(this.getNode(), this, new BigDecimal(0));
     }
 
     @Override
     public DBSPLiteral getOne() {
-        return new DBSPDecimalLiteral(null, this, new BigDecimal(1));
+        return new DBSPDecimalLiteral(this.getNode(), this, new BigDecimal(1));
     }
 
     @Override

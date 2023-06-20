@@ -31,7 +31,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 @SuppressWarnings("GrazieInspection")
 public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
     public DBSPTypeVec(DBSPType vectorElementType) {
-        super(null, "Vec", false, vectorElementType);
+        super(vectorElementType.getNode(), "Vec", false, vectorElementType);
     }
 
     public DBSPType getElementType() {

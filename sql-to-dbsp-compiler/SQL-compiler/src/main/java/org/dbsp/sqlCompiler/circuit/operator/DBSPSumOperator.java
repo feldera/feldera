@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -32,7 +33,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 public class DBSPSumOperator extends DBSPOperator {
-    public DBSPSumOperator(@Nullable Object node, List<DBSPOperator> inputs) {
+    public DBSPSumOperator(CalciteObject node, List<DBSPOperator> inputs) {
         super(node, "sum", null, inputs.get(0).outputType, true);
         for (DBSPOperator op: inputs) {
             this.addInput(op);
@@ -43,7 +44,7 @@ public class DBSPSumOperator extends DBSPOperator {
         }
     }
 
-    public DBSPSumOperator(@Nullable Object node, DBSPOperator... inputs) {
+    public DBSPSumOperator(CalciteObject node, DBSPOperator... inputs) {
         this(node, Linq.list(inputs));
     }
 

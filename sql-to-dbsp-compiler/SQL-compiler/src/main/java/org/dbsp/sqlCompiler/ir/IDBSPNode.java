@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.ToIndentableString;
@@ -50,6 +51,5 @@ public interface IDBSPNode extends ICastable, IHasId, ToIndentableString {
     /**
      * @return the SQL IR node that was compiled to produce this IR node.
      */
-    @Nullable
-    Object getNode();
+    CalciteObject getNode();
 }

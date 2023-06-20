@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFloat;
@@ -35,7 +36,7 @@ public class DBSPFloatLiteral extends DBSPFPLiteral {
     @Nullable
     public final Float value;
 
-    public DBSPFloatLiteral(@Nullable Object node, DBSPType type, @Nullable Float value, boolean raw) {
+    public DBSPFloatLiteral(CalciteObject node, DBSPType type, @Nullable Float value, boolean raw) {
         super(node, type, value, raw);
         this.value = value;
     }
@@ -54,7 +55,7 @@ public class DBSPFloatLiteral extends DBSPFPLiteral {
     }
 
     protected DBSPFloatLiteral(@Nullable Float f, boolean nullable, boolean raw) {
-        this(null, DBSPTypeFloat.INSTANCE.setMayBeNull(nullable), f, raw);
+        this(CalciteObject.EMPTY, DBSPTypeFloat.INSTANCE.setMayBeNull(nullable), f, raw);
         if (f == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }

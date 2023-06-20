@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -30,8 +31,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.util.IIndentStream;
-
-import javax.annotation.Nullable;
 
 /**
  * Represents a closure that sorts an IndexedZSet with empty keys and
@@ -45,7 +44,7 @@ public class DBSPSortExpression extends DBSPExpression {
     public final DBSPComparatorExpression comparator;
     public final DBSPType elementType;
 
-    public DBSPSortExpression(@Nullable Object node, DBSPType elementType, DBSPComparatorExpression comparator) {
+    public DBSPSortExpression(CalciteObject node, DBSPType elementType, DBSPComparatorExpression comparator) {
         super(node, new DBSPTypeFunction(
                 // Return type
                 new DBSPTypeVec(elementType),

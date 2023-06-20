@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -31,16 +32,15 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
 public class DBSPTupleExpression extends DBSPBaseTupleExpression {
     public final boolean isNull;
 
-    public DBSPTupleExpression(@Nullable Object object, boolean mayBeNull, DBSPExpression... expressions) {
+    public DBSPTupleExpression(CalciteObject object, boolean mayBeNull, DBSPExpression... expressions) {
         super(object,
-                new DBSPTypeTuple(null, mayBeNull, Linq.map(expressions, DBSPExpression::getType, DBSPType.class)),
+                new DBSPTypeTuple(object, mayBeNull, Linq.map(expressions, DBSPExpression::getType, DBSPType.class)),
                 expressions);
         this.isNull = false;
     }
@@ -49,19 +49,19 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
      * A tuple with value 'null'.
      */
     public DBSPTupleExpression(DBSPTypeTuple type) {
-        super(null, type);
+        super(type.getNode(), type);
         this.isNull = true;
     }
 
     public DBSPTupleExpression(DBSPExpression... expressions) {
-        this(null, false, expressions);
+        this(CalciteObject.EMPTY, false, expressions);
     }
 
     public DBSPTupleExpression(List<DBSPExpression> fields, boolean mayBeNull) {
-        this(null, mayBeNull, fields.toArray(new DBSPExpression[0]));
+        this(CalciteObject.EMPTY, mayBeNull, fields.toArray(new DBSPExpression[0]));
     }
 
-    public DBSPTupleExpression(@Nullable Object node, List<DBSPExpression> fields) {
+    public DBSPTupleExpression(CalciteObject node, List<DBSPExpression> fields) {
         this(node, false, fields.toArray(new DBSPExpression[0]));
     }
 

@@ -57,7 +57,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         if (type.is(DBSPTypeZSet.class))
             return new DBSPZSetLiteral(type);
         else
-            return new DBSPIndexedZSetLiteral(null, type);
+            return new DBSPIndexedZSetLiteral(type.getNode(), type);
     }
 
     boolean replaceUnary(DBSPUnaryOperator operator) {

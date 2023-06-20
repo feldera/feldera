@@ -39,7 +39,7 @@ public class DBSPQualifyTypeExpression extends DBSPExpression {
     public final DBSPType[] types;
 
     public DBSPQualifyTypeExpression(DBSPExpression expression, DBSPType... types) {
-        super(null, expression.getType());
+        super(expression.getNode(), expression.getType());
         this.expression = expression;
         this.types = types;
     }

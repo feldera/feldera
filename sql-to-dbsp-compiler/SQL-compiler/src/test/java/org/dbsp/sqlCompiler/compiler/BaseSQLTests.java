@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.JITSinkOperator;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.JITSourceOperator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -118,20 +119,20 @@ public class BaseSQLTests {
          */
         DBSPFunction createTesterCode(int testNumber) {
             List<DBSPStatement> list = new ArrayList<>();
-            DBSPLetStatement circ = new DBSPLetStatement("circuit",
+            DBSPLetStatement circuit = new DBSPLetStatement("circuit",
                     new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.INSTANCE), true);
-            list.add(circ);
+            list.add(circuit);
             for (InputOutputPair pairs: this.data) {
                 DBSPZSetLiteral[] inputs = pairs.getInputs();
                 DBSPZSetLiteral[] outputs = pairs.getOutputs();
                 DBSPLetStatement out = new DBSPLetStatement("output",
-                        circ.getVarReference().call(inputs));
+                        circuit.getVarReference().call(inputs));
                 list.add(out);
                 for (int i = 0; i < pairs.outputs.length; i++) {
                     DBSPStatement compare = new DBSPExpressionStatement(
                             new DBSPApplyExpression("assert!", DBSPTypeVoid.INSTANCE,
                                     new DBSPApplyExpression("must_equal", DBSPTypeBool.INSTANCE,
-                                            new DBSPFieldExpression(null, out.getVarReference(), i).borrow(),
+                                            out.getVarReference().field(i).borrow(),
                                             outputs[i].borrow()),
                                     new DBSPStrLiteral(this.name)));
                     list.add(compare);
@@ -188,7 +189,7 @@ public class BaseSQLTests {
                 DBSPLetStatement id = new DBSPLetStatement(table + "_id", nodeId);
                 list.add(id);
 
-                DBSPIndexExpression indexExpr = new DBSPIndexExpression(null,
+                DBSPIndexExpression indexExpr = new DBSPIndexExpression(CalciteObject.EMPTY,
                         graphNodes.getVarReference(), id.getVarReference().borrow(), false);
                 DBSPExpression layout = new DBSPApplyMethodExpression(
                         "layout", DBSPTypeAny.INSTANCE,

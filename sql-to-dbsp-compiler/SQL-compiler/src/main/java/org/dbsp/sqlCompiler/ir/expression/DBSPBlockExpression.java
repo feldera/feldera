@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
@@ -39,7 +40,7 @@ public class DBSPBlockExpression extends DBSPExpression {
     public final DBSPExpression lastExpression;
 
     public DBSPBlockExpression(List<DBSPStatement> contents, @Nullable DBSPExpression last) {
-        super(null, last != null ? last.getType() : DBSPTypeVoid.INSTANCE);
+        super(CalciteObject.EMPTY, last != null ? last.getType() : DBSPTypeVoid.INSTANCE);
         this.contents = contents;
         this.lastExpression = last;
     }

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
@@ -38,13 +39,13 @@ public class DBSPIntervalMillisLiteral extends DBSPLiteral {
         this(null, DBSPTypeMillisInterval.NULLABLE_INSTANCE, null);
     }
 
-    public DBSPIntervalMillisLiteral(@Nullable Object node, DBSPType type, @Nullable Long value) {
+    public DBSPIntervalMillisLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {
         super(node, type, value == null);
         this.value = value;
     }
 
     public DBSPIntervalMillisLiteral(long value, boolean mayBeNull) {
-        this(null, DBSPTypeMillisInterval.INSTANCE.setMayBeNull(mayBeNull), value);
+        this(CalciteObject.EMPTY, DBSPTypeMillisInterval.INSTANCE.setMayBeNull(mayBeNull), value);
     }
 
     @Override

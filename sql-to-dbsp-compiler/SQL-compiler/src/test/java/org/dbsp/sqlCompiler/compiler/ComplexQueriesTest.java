@@ -65,6 +65,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         this.addRustTestCase("ComplexQueriesTest.smallTaxiTest", compiler, getCircuit(compiler));
     }
 
+    // Also compiles the code using the Rust handle API
     @Test
     public void testComplex() throws IOException, InterruptedException {
         String statements = "-- Git repository.\n" +

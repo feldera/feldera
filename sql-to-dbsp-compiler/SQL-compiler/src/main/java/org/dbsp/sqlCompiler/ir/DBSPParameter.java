@@ -40,7 +40,7 @@ public class DBSPParameter extends DBSPNode implements
     public final boolean mutable;
 
     public DBSPParameter(String name, DBSPType type, boolean mutable) {
-        super(null);
+        super(type.getNode());
         this.name = name;
         this.type = type;
         this.mutable = mutable;

@@ -23,13 +23,13 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 /**
@@ -42,15 +42,14 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
     public final DBSPPartialCircuit circuit;
     public final String name;
 
-    public DBSPCircuit(DBSPPartialCircuit circuit, String name) {
-        super(null);
+    public DBSPCircuit(CalciteObject object, DBSPPartialCircuit circuit, String name) {
+        super(object);
         this.circuit = circuit;
         this.name = name;
     }
 
-    @Nullable
     @Override
-    public Object getNode() {
+    public CalciteObject getNode() {
         return this.circuit.getNode();
     }
 
@@ -90,7 +89,7 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
      * @param name Name of the new circuit.
      */
     public DBSPCircuit rename(String name) {
-        return new DBSPCircuit(this.circuit, name);
+        return new DBSPCircuit(this.getNode(), this.circuit, name);
     }
 
     /**

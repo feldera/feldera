@@ -23,17 +23,16 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-
-import javax.annotation.Nullable;
 
 /**
  * A base class representing a comparator used for sorting.
  */
 public abstract class DBSPComparatorExpression extends DBSPExpression {
-    protected DBSPComparatorExpression(@Nullable Object node) {
+    protected DBSPComparatorExpression(CalciteObject node) {
         super(node, DBSPTypeAny.INSTANCE);
     }
 

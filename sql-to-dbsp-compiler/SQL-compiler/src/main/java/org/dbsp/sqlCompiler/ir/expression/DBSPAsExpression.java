@@ -34,7 +34,7 @@ public class DBSPAsExpression extends DBSPExpression {
     public final DBSPExpression source;
 
     public DBSPAsExpression(DBSPExpression source, DBSPType type) {
-        super(null, type);
+        super(source.getNode(), type);
         this.source = source;
     }
 

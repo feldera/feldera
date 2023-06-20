@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.apache.calcite.rex.*;
 import org.apache.calcite.sql.SqlKind;
-import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -89,21 +88,23 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     public DBSPExpression visitInputRef(RexInputRef inputRef) {
         if (this.inputRow == null)
             throw new RuntimeException("Row referenced without a row context");
+        CalciteObject node = new CalciteObject(inputRef);
         // Unfortunately it looks like we can't trust the type coming from Calcite.
         DBSPTypeTuple type = this.inputRow.getType().deref().to(DBSPTypeTuple.class);
         int index = inputRef.getIndex();
         if (index < type.size()) {
             return new DBSPFieldExpression(
-                    inputRef, this.inputRow,
+                    node, this.inputRow,
                     inputRef.getIndex()).applyCloneIfNeeded();
         }
         if (index - type.size() < this.constants.size())
             return this.visitLiteral(this.constants.get(index - type.size()));
-        throw new TranslationException("Index in row out of bounds ", inputRef);
+        throw new TranslationException("Index in row out of bounds ", node);
     }
 
     @Override
     public DBSPExpression visitLiteral(RexLiteral literal) {
+        CalciteObject node = new CalciteObject(literal);
         try {
             DBSPType type = this.typeCompiler.convertType(literal.getType());
             if (literal.isNull())
@@ -130,28 +131,28 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return new DBSPBoolLiteral(Objects.requireNonNull(literal.getValueAs(Boolean.class)));
             else if (type.is(DBSPTypeDecimal.class))
                 return new DBSPDecimalLiteral(
-                        literal, type, Objects.requireNonNull(literal.getValueAs(BigDecimal.class)));
+                        node, type, Objects.requireNonNull(literal.getValueAs(BigDecimal.class)));
             else if (type.is(DBSPTypeKeyword.class))
-                return new DBSPKeywordLiteral(literal, Objects.requireNonNull(literal.getValue()).toString());
+                return new DBSPKeywordLiteral(node, Objects.requireNonNull(literal.getValue()).toString());
             else if (type.is(DBSPTypeMillisInterval.class))
-                return new DBSPIntervalMillisLiteral(literal, type, Objects.requireNonNull(
+                return new DBSPIntervalMillisLiteral(node, type, Objects.requireNonNull(
                         literal.getValueAs(BigDecimal.class)).longValue());
             else if (type.is(DBSPTypeTimestamp.class)) {
-                return new DBSPTimestampLiteral(literal, type,
+                return new DBSPTimestampLiteral(node, type,
                         Objects.requireNonNull(literal.getValueAs(TimestampString.class)));
             } else if (type.is(DBSPTypeDate.class)) {
-                return new DBSPDateLiteral(literal, type, Objects.requireNonNull(literal.getValueAs(DateString.class)));
+                return new DBSPDateLiteral(node, type, Objects.requireNonNull(literal.getValueAs(DateString.class)));
             } else if (type.is(DBSPTypeGeoPoint.class)) {
                 Point point = literal.getValueAs(Point.class);
                 Coordinate c = Objects.requireNonNull(point).getCoordinate();
-                return new DBSPGeoPointLiteral(literal,
+                return new DBSPGeoPointLiteral(node,
                         new DBSPDoubleLiteral(c.getOrdinate(0)),
                         new DBSPDoubleLiteral(c.getOrdinate(1)));
             }
         } catch (Throwable ex) {
-            throw new Unimplemented(literal, ex);
+            throw new Unimplemented(node, ex);
         }
-        throw new Unimplemented(literal);
+        throw new Unimplemented(node);
     }
 
     /**
@@ -180,7 +181,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         DBSPTypeFP rf = right.as(DBSPTypeFP.class);
         if (li != null) {
             if (ri != null)
-                return new DBSPTypeInteger(null, Math.max(li.getWidth(), ri.getWidth()), true,false);
+                return new DBSPTypeInteger(left.getNode(), Math.max(li.getWidth(), ri.getWidth()), true,false);
             if (rf != null || rd != null)
                 return right.setMayBeNull(false);
         }
@@ -204,7 +205,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     }
 
     public static DBSPExpression aggregateOperation(
-            SqlOperator node, DBSPOpcode op,
+            CalciteObject node, DBSPOpcode op,
             DBSPType type, DBSPExpression left, DBSPExpression right) {
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
@@ -219,7 +220,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
     // Like makeBinaryExpression, but accepts multiple operands.
     private static DBSPExpression makeBinaryExpressions(
-            Object node, DBSPType type, DBSPOpcode opcode, List<DBSPExpression> operands) {
+            CalciteObject node, DBSPType type, DBSPOpcode opcode, List<DBSPExpression> operands) {
         if (operands.size() < 2)
             throw new Unimplemented(node);
         DBSPExpression accumulator = operands.get(0);
@@ -233,7 +234,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     }
 
     public static DBSPExpression makeBinaryExpression(
-            Object node, DBSPType type, DBSPOpcode opcode, List<DBSPExpression> operands) {
+            CalciteObject node, DBSPType type, DBSPOpcode opcode, List<DBSPExpression> operands) {
         // Why doesn't Calcite do this?
         if (operands.size() != 2)
             throw new TranslationException("Expected 2 operands, got " + operands.size(), node);
@@ -263,7 +264,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     }
 
     public static DBSPExpression makeUnaryExpression(
-            Object node, DBSPType type, DBSPOpcode op, List<DBSPExpression> operands) {
+            CalciteObject node, DBSPType type, DBSPOpcode op, List<DBSPExpression> operands) {
         if (operands.size() != 1)
             throw new TranslationException("Expected 1 operands, got " + operands.size(), node);
         DBSPExpression operand = operands.get(0);
@@ -289,13 +290,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
     @Override
     public DBSPExpression visitCall(RexCall call) {
+        CalciteObject node = new CalciteObject(call);
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(call.toString())
                 .append(" ")
                 .append(call.getType().toString());
         if (call.op.kind == SqlKind.SEARCH) {
-            // TODO: ideally the optimizer should do this before handing the expression to us.
-            // Then we can get rid of the rexBuilder field too.
+            // TODO: Ideally the optimizer should do this before handing the expression to us.
+            // Then the rexBuilder won't be needed.
             call = (RexCall)RexUtil.expandSearch(this.rexBuilder, null, call);
         }
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));
@@ -303,73 +305,73 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         DBSPType type = this.typeCompiler.convertType(call.getType());
         switch (call.op.kind) {
             case TIMES:
-                return makeBinaryExpression(call, type, DBSPOpcode.MUL, ops);
+                return makeBinaryExpression(node, type, DBSPOpcode.MUL, ops);
             case DIVIDE:
                 // We enforce that the type of the result of division is always nullable
                 type = type.setMayBeNull(true);
-                return makeBinaryExpression(call, type, DBSPOpcode.DIV, ops);
+                return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
             case MOD:
-                return makeBinaryExpression(call, type, DBSPOpcode.MOD, ops);
+                return makeBinaryExpression(node, type, DBSPOpcode.MOD, ops);
             case PLUS:
-                return makeBinaryExpressions(call, type, DBSPOpcode.ADD, ops);
+                return makeBinaryExpressions(node, type, DBSPOpcode.ADD, ops);
             case MINUS:
-                return makeBinaryExpression(call, type, DBSPOpcode.SUB, ops);
+                return makeBinaryExpression(node, type, DBSPOpcode.SUB, ops);
             case LESS_THAN:
-                return makeBinaryExpression(call, type, DBSPOpcode.LT, ops);
+                return makeBinaryExpression(node, type, DBSPOpcode.LT, ops);
             case GREATER_THAN:
-                return makeBinaryExpression(call, type, DBSPOpcode.GT, ops);
+                return makeBinaryExpression(node, type, DBSPOpcode.GT, ops);
             case LESS_THAN_OR_EQUAL:
-                return makeBinaryExpression(call, type, DBSPOpcode.LTE, ops);
+                return makeBinaryExpression(node, type, DBSPOpcode.LTE, ops);
             case GREATER_THAN_OR_EQUAL:
-                return makeBinaryExpression(call, type, DBSPOpcode.GTE, ops);
+                return makeBinaryExpression(node, type, DBSPOpcode.GTE, ops);
             case EQUALS:
-                return makeBinaryExpression(call, type, DBSPOpcode.EQ, ops);
+                return makeBinaryExpression(node, type, DBSPOpcode.EQ, ops);
             case IS_DISTINCT_FROM:
-                return makeBinaryExpression(call, type, DBSPOpcode.IS_DISTINCT, ops);
+                return makeBinaryExpression(node, type, DBSPOpcode.IS_DISTINCT, ops);
             case IS_NOT_DISTINCT_FROM: {
-                DBSPExpression op = makeBinaryExpression(call, type, DBSPOpcode.IS_DISTINCT, ops);
-                return makeUnaryExpression(call, DBSPTypeBool.INSTANCE, DBSPOpcode.NOT, Linq.list(op));
+                DBSPExpression op = makeBinaryExpression(node, type, DBSPOpcode.IS_DISTINCT, ops);
+                return makeUnaryExpression(node, DBSPTypeBool.INSTANCE, DBSPOpcode.NOT, Linq.list(op));
             }
             case NOT_EQUALS:
-                return makeBinaryExpression(call, type, DBSPOpcode.NEQ, ops);
+                return makeBinaryExpression(node, type, DBSPOpcode.NEQ, ops);
             case OR:
-                return makeBinaryExpressions(call, type, DBSPOpcode.OR, ops);
+                return makeBinaryExpressions(node, type, DBSPOpcode.OR, ops);
             case AND:
-                return makeBinaryExpressions(call, type, DBSPOpcode.AND, ops);
+                return makeBinaryExpressions(node, type, DBSPOpcode.AND, ops);
             case NOT:
-                return makeUnaryExpression(call, type, DBSPOpcode.NOT, ops);
+                return makeUnaryExpression(node, type, DBSPOpcode.NOT, ops);
             case IS_FALSE:
-                return makeUnaryExpression(call, type, DBSPOpcode.IS_FALSE, ops);
+                return makeUnaryExpression(node, type, DBSPOpcode.IS_FALSE, ops);
             case IS_NOT_TRUE:
-                return makeUnaryExpression(call, type, DBSPOpcode.IS_NOT_TRUE, ops);
+                return makeUnaryExpression(node, type, DBSPOpcode.IS_NOT_TRUE, ops);
             case IS_TRUE:
-                return makeUnaryExpression(call, type, DBSPOpcode.IS_TRUE, ops);
+                return makeUnaryExpression(node, type, DBSPOpcode.IS_TRUE, ops);
             case IS_NOT_FALSE:
-                return makeUnaryExpression(call, type, DBSPOpcode.IS_NOT_FALSE, ops);
+                return makeUnaryExpression(node, type, DBSPOpcode.IS_NOT_FALSE, ops);
             case PLUS_PREFIX:
-                return makeUnaryExpression(call, type, DBSPOpcode.UNARY_PLUS, ops);
+                return makeUnaryExpression(node, type, DBSPOpcode.UNARY_PLUS, ops);
             case MINUS_PREFIX:
-                return makeUnaryExpression(call, type, DBSPOpcode.NEG, ops);
+                return makeUnaryExpression(node, type, DBSPOpcode.NEG, ops);
             case BIT_AND:
-                return makeBinaryExpressions(call, type, DBSPOpcode.BW_AND, ops);
+                return makeBinaryExpressions(node, type, DBSPOpcode.BW_AND, ops);
             case BIT_OR:
-                return makeBinaryExpressions(call, type, DBSPOpcode.BW_OR, ops);
+                return makeBinaryExpressions(node, type, DBSPOpcode.BW_OR, ops);
             case BIT_XOR:
-                return makeBinaryExpressions(call, type, DBSPOpcode.XOR, ops);
+                return makeBinaryExpressions(node, type, DBSPOpcode.XOR, ops);
             case CAST:
             case REINTERPRET:
                 return ops.get(0).cast(type);
             case IS_NULL:
             case IS_NOT_NULL: {
                 if (!type.sameType(DBSPTypeBool.INSTANCE))
-                    throw new TranslationException("Expected expression to produce a boolean result", call);
+                    throw new TranslationException("Expected expression to produce a boolean result", node);
                 DBSPExpression arg = ops.get(0);
                 DBSPType argType = arg.getType();
                 if (argType.mayBeNull) {
                     if (call.op.kind == SqlKind.IS_NULL)
                         return ops.get(0).is_null();
                     else
-                        return new DBSPUnaryExpression(call, type, DBSPOpcode.NOT, ops.get(0).is_null());
+                        return new DBSPUnaryExpression(node, type, DBSPOpcode.NOT, ops.get(0).is_null());
                 } else {
                     // Constant-fold
                     if (call.op.kind == SqlKind.IS_NULL)
@@ -401,10 +403,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         if (!alt.getType().sameType(finalType))
                             alt = alt.cast(finalType);
                         DBSPExpression comp = makeBinaryExpression(
-                                call, DBSPTypeBool.INSTANCE, DBSPOpcode.EQ,
+                                node, DBSPTypeBool.INSTANCE, DBSPOpcode.EQ,
                                 Linq.list(value, ops.get(i)));
                         comp = wrapBoolIfNeeded(comp);
-                        result = new DBSPIfExpression(call, comp, alt, result);
+                        result = new DBSPIfExpression(node, comp, alt, result);
                     }
                 } else {
                     // Compute casts if needed.
@@ -424,20 +426,20 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         if (!alt.getType().sameType(finalType))
                             alt = alt.cast(finalType);
                         DBSPExpression condition = wrapBoolIfNeeded(ops.get(index - 1));
-                        result = new DBSPIfExpression(call, condition, alt, result);
+                        result = new DBSPIfExpression(node, condition, alt, result);
                     }
                 }
                 return result;
             }
             case ST_POINT: {
                 if (ops.size() != 2)
-                    throw new Unimplemented("Expected only 2 operands", call);
+                    throw new Unimplemented("Expected only 2 operands", node);
                 DBSPExpression left = ops.get(0);
                 DBSPExpression right = ops.get(1);
                 String functionName = "make_geopoint" + type.nullableSuffix() +
                         "_d" + left.getType().nullableSuffix() +
                         "_d" + right.getType().nullableSuffix();
-                return new DBSPApplyExpression(functionName, type, left, right);
+                return new DBSPApplyExpression(node, functionName, type, left, right);
             }
             case OTHER_FUNCTION: {
                 String opName = call.op.getName().toLowerCase();
@@ -446,7 +448,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "round": {
                         DBSPExpression right;
                         if (call.operands.size() < 1)
-                            throw new Unimplemented(call);
+                            throw new Unimplemented(node);
                         DBSPExpression left = ops.get(0);
                         if (call.operands.size() == 1)
                             right = new DBSPI32Literal(0);
@@ -455,10 +457,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         DBSPType leftType = left.getType();
                         DBSPType rightType = right.getType();
                         if (!rightType.is(DBSPTypeInteger.class))
-                            throw new Unimplemented("ROUND expects a constant second argument", call);
+                            throw new Unimplemented("ROUND expects a constant second argument", node);
                         String function = opName + "_" +
                                 leftType.baseTypeWithSuffix();
-                        return new DBSPApplyExpression(function, type, left, right);
+                        return new DBSPApplyExpression(node, function, type, left, right);
                     }
                     case "numeric_inc":
                     case "sign":
@@ -466,28 +468,28 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "ln":
                     case "abs": {
                         if (call.operands.size() != 1)
-                            throw new Unimplemented(call);
+                            throw new Unimplemented(node);
                         DBSPExpression arg = ops.get(0);
                         DBSPType argType = arg.getType();
                         String function = opName + "_" + argType.baseTypeWithSuffix();
-                        return new DBSPApplyExpression(function, type, arg);
+                        return new DBSPApplyExpression(node, function, type, arg);
                     }
                     case "st_distance": {
                         if (call.operands.size() != 2)
-                            throw new Unimplemented(call);
+                            throw new Unimplemented(node);
                         DBSPExpression left = ops.get(0);
                         DBSPExpression right = ops.get(1);
                         String function = "st_distance_" + left.getType().nullableSuffix() +
                                 "_" + right.getType().nullableSuffix();
-                        return new DBSPApplyExpression(function, DBSPTypeDouble.INSTANCE.setMayBeNull(anyNull), left, right);
+                        return new DBSPApplyExpression(node, function, DBSPTypeDouble.INSTANCE.setMayBeNull(anyNull), left, right);
                     }
                     case "division":
-                        return makeBinaryExpression(call, type, DBSPOpcode.DIV, ops);
+                        return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
                     case "cardinality": {
                         if (call.operands.size() != 1)
-                            throw new Unimplemented(call);
+                            throw new Unimplemented(node);
                         DBSPExpression arg = ops.get(0);
-                        DBSPExpression len = new DBSPApplyMethodExpression("len", DBSPTypeUSize.INSTANCE, arg);
+                        DBSPExpression len = new DBSPApplyMethodExpression(node, "len", DBSPTypeUSize.INSTANCE, arg);
                         return len.cast(type);
                     }
                     case "element": {
@@ -497,38 +499,38 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         String method = "element";
                         if (arrayType.getElementType().mayBeNull)
                             method += "N";
-                        return new DBSPApplyExpression(method, type, arg);
+                        return new DBSPApplyExpression(node, method, type, arg);
                     }
                     case "power": {
                         if (call.operands.size() != 2)
-                            throw new Unimplemented(call);
+                            throw new Unimplemented(node);
                         DBSPType leftType = ops.get(0).getType();
                         DBSPType rightType = ops.get(1).getType();
                         String functionName = "power_" + leftType.baseTypeWithSuffix() +
                                 "_" + rightType.baseTypeWithSuffix();
-                        return new DBSPApplyExpression(functionName, type, ops.get(0), ops.get(1));
+                        return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1));
                     }
                 }
-                throw new Unimplemented(call);
+                throw new Unimplemented(node);
             }
             case OTHER:
                 String opName = call.op.getName().toLowerCase();
                 //noinspection SwitchStatementWithTooFewBranches
                 switch (opName) {
                     case "||":
-                        return makeBinaryExpression(call, type, DBSPOpcode.CONCAT, ops);
+                        return makeBinaryExpression(node, type, DBSPOpcode.CONCAT, ops);
                     default:
                         break;
                 }
-                throw new Unimplemented(call);
+                throw new Unimplemented(node);
             case EXTRACT: {
                 if (call.operands.size() != 2)
-                    throw new Unimplemented(call);
+                    throw new Unimplemented(node);
                 DBSPKeywordLiteral keyword = ops.get(0).to(DBSPKeywordLiteral.class);
                 DBSPType type1 = ops.get(1).getType();
                 String functionName = "extract_" + type1.to(IsNumericType.class).getRustString() +
                         "_" + keyword + type1.nullableSuffix();
-                return new DBSPApplyExpression(functionName, type, ops.get(1));
+                return new DBSPApplyExpression(node, functionName, type, ops.get(1));
             }
             case FLOOR:
             case CEIL: {
@@ -536,29 +538,29 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     DBSPKeywordLiteral keyword = ops.get(1).to(DBSPKeywordLiteral.class);
                     String functionName = call.getKind().toString().toLowerCase() + "_" +
                             type.to(DBSPTypeBaseType.class).shortName() + "_" + keyword + type.nullableSuffix();
-                    return new DBSPApplyExpression(functionName, type, ops.get(0));
+                    return new DBSPApplyExpression(node, functionName, type, ops.get(0));
                 } else if (call.operands.size() == 1) {
                     String functionName = call.getKind().toString().toLowerCase() + "_" +
                             type.to(DBSPTypeBaseType.class).shortName() + type.nullableSuffix();
-                    return new DBSPApplyExpression(functionName, type, ops.get(0));
+                    return new DBSPApplyExpression(node, functionName, type, ops.get(0));
                 } else {
-                    throw new Unimplemented(call);
+                    throw new Unimplemented(node);
                 }
             }
             case ARRAY_VALUE_CONSTRUCTOR: {
                 DBSPTypeVec vec = type.to(DBSPTypeVec.class);
                 DBSPType elemType = vec.getElementType();
                 List<DBSPExpression> args = Linq.map(ops, o -> o.cast(elemType));
-                return new DBSPApplyExpression("vec!", type, args.toArray(new DBSPExpression[0]));
+                return new DBSPApplyExpression(node, "vec!", type, args.toArray(new DBSPExpression[0]));
             }
             case ITEM: {
                 if (call.operands.size() != 2)
-                    throw new Unimplemented(call);
-                return new DBSPIndexExpression(call, ops.get(0), ops.get(1).cast(DBSPTypeUSize.INSTANCE), true);
+                    throw new Unimplemented(node);
+                return new DBSPIndexExpression(node, ops.get(0), ops.get(1).cast(DBSPTypeUSize.INSTANCE), true);
             }
             case DOT:
             default:
-                throw new Unimplemented(call);
+                throw new Unimplemented(node);
         }
     }
 
@@ -569,7 +571,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 .newline();
         DBSPExpression result = expression.accept(this);
         if (result == null)
-            throw new Unimplemented(expression);
+            throw new Unimplemented(new CalciteObject(expression));
         return result;
     }
 

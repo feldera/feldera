@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -36,7 +36,7 @@ import java.util.List;
 public class DBSPSinkOperator extends DBSPOperator {
     public final String query;
 
-    public DBSPSinkOperator(@Nullable Object node,
+    public DBSPSinkOperator(CalciteObject node,
                             String outputName, String query,
                             @Nullable String comment, DBSPOperator input) {
         super(node, "inspect", null, input.outputType, input.isMultiset, comment, outputName);

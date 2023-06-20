@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -37,7 +38,7 @@ public class DBSPNoopOperator extends DBSPUnaryOperator {
         return var.applyClone().closure(var.asRefParameter());
     }
 
-    public DBSPNoopOperator(@Nullable Object node, DBSPOperator source,
+    public DBSPNoopOperator(CalciteObject node, DBSPOperator source,
                             @Nullable String comment, String outputName) {
         super(node, "map", getClosure(),
                 source.getType(), source.isMultiset, source, comment, outputName);

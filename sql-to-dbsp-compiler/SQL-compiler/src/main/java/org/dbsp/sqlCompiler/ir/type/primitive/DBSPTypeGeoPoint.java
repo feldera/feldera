@@ -23,19 +23,19 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 public class DBSPTypeGeoPoint extends DBSPTypeGeo {
-    public static final DBSPTypeGeoPoint INSTANCE =new DBSPTypeGeoPoint(null, false);
-    public static final DBSPTypeGeoPoint NULLABLE_INSTANCE = new DBSPTypeGeoPoint(null, true);
+    public static final DBSPTypeGeoPoint INSTANCE =new DBSPTypeGeoPoint(CalciteObject.EMPTY, false);
+    public static final DBSPTypeGeoPoint NULLABLE_INSTANCE = new DBSPTypeGeoPoint(CalciteObject.EMPTY, true);
 
-    public DBSPTypeGeoPoint(@Nullable Object node, boolean mayBeNull) {
+    public DBSPTypeGeoPoint(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);
     }
 

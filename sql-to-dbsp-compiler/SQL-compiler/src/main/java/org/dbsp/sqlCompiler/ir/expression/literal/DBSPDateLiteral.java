@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.apache.calcite.util.DateString;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
@@ -35,17 +36,17 @@ import java.util.Objects;
 public class DBSPDateLiteral extends DBSPLiteral {
     @Nullable public final Integer value;
 
-    public DBSPDateLiteral(@Nullable Object node, DBSPType type, @Nullable Integer value) {
+    public DBSPDateLiteral(CalciteObject node, DBSPType type, @Nullable Integer value) {
         super(node, type, value == null);
         this.value = value;
     }
 
-    public DBSPDateLiteral(@Nullable Object node, DBSPType type, DateString value) {
+    public DBSPDateLiteral(CalciteObject node, DBSPType type, DateString value) {
         this(node, type, value.getDaysSinceEpoch());
     }
 
     public DBSPDateLiteral(String value, boolean mayBeNull) {
-        this(null, DBSPTypeDate.INSTANCE.setMayBeNull(mayBeNull), new DateString(value).getDaysSinceEpoch());
+        this(CalciteObject.EMPTY, DBSPTypeDate.INSTANCE.setMayBeNull(mayBeNull), new DateString(value).getDaysSinceEpoch());
     }
 
     public DBSPDateLiteral(String value) {
@@ -56,7 +57,7 @@ public class DBSPDateLiteral extends DBSPLiteral {
      * A NULL date.
      */
     public DBSPDateLiteral() {
-        this(null, DBSPTypeDate.NULLABLE_INSTANCE, (Integer)null);
+        this(CalciteObject.EMPTY, DBSPTypeDate.NULLABLE_INSTANCE, (Integer)null);
     }
 
     @Override

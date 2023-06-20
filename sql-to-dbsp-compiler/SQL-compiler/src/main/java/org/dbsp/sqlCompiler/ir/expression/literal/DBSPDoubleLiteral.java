@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
@@ -47,13 +48,13 @@ public class DBSPDoubleLiteral extends DBSPFPLiteral {
         this(f, nullable, false);
     }
 
-    public DBSPDoubleLiteral(@Nullable Object node, DBSPType type, @Nullable Double value, boolean raw) {
+    public DBSPDoubleLiteral(CalciteObject node, DBSPType type, @Nullable Double value, boolean raw) {
         super(node, type, value, raw);
         this.value = value;
     }
 
     protected DBSPDoubleLiteral(@Nullable Double f, boolean nullable, boolean raw) {
-        this(null, DBSPTypeDouble.INSTANCE.setMayBeNull(nullable), f, raw);
+        this(CalciteObject.EMPTY, DBSPTypeDouble.INSTANCE.setMayBeNull(nullable), f, raw);
         if (f == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }

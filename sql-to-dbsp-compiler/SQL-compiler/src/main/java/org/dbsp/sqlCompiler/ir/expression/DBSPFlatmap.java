@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.backend.rust.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -69,7 +70,7 @@ public class DBSPFlatmap extends DBSPExpression {
     public static final int ITERATED_ELEMENT = -1;
     public static final int COLLECTION_INDEX = -2;
 
-    public DBSPFlatmap(@Nullable Object node, DBSPTypeTuple inputElementType,
+    public DBSPFlatmap(CalciteObject node, DBSPTypeTuple inputElementType,
                        int collectionFieldIndex, List<Integer> outputFieldIndexes,
                        @Nullable DBSPType indexType) {
         super(node, DBSPTypeAny.INSTANCE);

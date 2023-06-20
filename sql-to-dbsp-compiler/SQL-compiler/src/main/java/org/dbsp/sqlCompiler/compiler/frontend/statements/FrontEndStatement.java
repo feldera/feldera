@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.util.ICastable;
 
 import javax.annotation.Nullable;
@@ -32,7 +33,7 @@ import javax.annotation.Nullable;
  * This class is a base class for the results produced by the DDL execution simulator.
  */
 public abstract class FrontEndStatement implements ICastable {
-    @Nullable public final SqlNode node;
+    public final SqlNode node;
     /**
      * Original statement compiled.
      */
@@ -40,14 +41,17 @@ public abstract class FrontEndStatement implements ICastable {
     @Nullable
     public final String comment;
 
-    protected FrontEndStatement(@Nullable SqlNode node, String statement, @Nullable String comment) {
+    protected FrontEndStatement(SqlNode node, String statement, @Nullable String comment) {
         this.node = node;
         this.statement = statement;
         this.comment = comment;
     }
 
-    @Nullable
     public SqlNode getNode() { return this.node; }
+
+    public CalciteObject getCalciteObject() {
+        return new CalciteObject(this.node);
+    }
 
     @Override
     public void error(String message) {

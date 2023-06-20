@@ -24,7 +24,6 @@
 package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.util.ToIndentableString;
 
 /**
  * IR modes from the inner language: expressions, types, etc.

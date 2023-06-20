@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 
@@ -44,13 +45,13 @@ public class DBSPISizeLiteral extends DBSPLiteral {
         this(value, false);
     }
 
-    public DBSPISizeLiteral(@Nullable Object node, DBSPType type, @Nullable Long value) {
+    public DBSPISizeLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {
         super(node, type, value == null);
         this.value = value;
     }
 
     public DBSPISizeLiteral(@Nullable Long value, boolean nullable) {
-        this(null, DBSPTypeISize.INSTANCE.setMayBeNull(nullable), value);
+        this(CalciteObject.EMPTY, DBSPTypeISize.INSTANCE.setMayBeNull(nullable), value);
         if (value == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }

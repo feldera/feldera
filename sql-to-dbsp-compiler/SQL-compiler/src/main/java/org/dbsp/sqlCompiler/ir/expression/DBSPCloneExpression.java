@@ -23,11 +23,10 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.IIndentStream;
-
-import javax.annotation.Nullable;
 
 /**
  * Represents an expression of the form e.clone().
@@ -35,7 +34,7 @@ import javax.annotation.Nullable;
 public class DBSPCloneExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
-    public DBSPCloneExpression(@Nullable Object object, DBSPExpression expression) {
+    public DBSPCloneExpression(CalciteObject object, DBSPExpression expression) {
         super(object, expression.getType().derefIfNeeded());
         this.expression = expression;
     }

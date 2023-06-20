@@ -83,8 +83,7 @@ class ModifyTableTranslation implements ICompilerComponent {
             DBSPType[] columnTypes = new DBSPType[columnList.size()];
             for (SqlNode node : columnList) {
                 if (!(node instanceof SqlIdentifier)) {
-                    assert statement.node != null;
-                    throw new Unimplemented(statement.node);
+                    throw new Unimplemented(statement.getCalciteObject());
                 }
                 SqlIdentifier id = (SqlIdentifier) node;
                 int actualIndex = tableDefinition.getColumnIndex(id);
@@ -92,7 +91,7 @@ class ModifyTableTranslation implements ICompilerComponent {
                 for (int value : this.columnPermutation.values())
                     if (value == actualIndex)
                         throw new TranslationException("Not a column permutation " +
-                                this.columnPermutation, statement.node);
+                                this.columnPermutation, statement.getCalciteObject());
                 Utilities.putNew(this.columnPermutation, index, actualIndex);
                 columnTypes[index] = sourceType.getFieldType(actualIndex);
                 index++;

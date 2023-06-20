@@ -37,7 +37,7 @@ public class DBSPVariablePath extends DBSPExpression {
     public final String variable;
 
     public DBSPVariablePath(String variable, DBSPType type) {
-        super(null, type);
+        super(type.getNode(), type);
         this.variable = variable;
     }
 

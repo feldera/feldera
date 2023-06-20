@@ -25,18 +25,16 @@
 
 package org.dbsp.util;
 
-import javax.annotation.Nullable;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 
 public class TranslationException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
-    public TranslationException(String message, @Nullable Object node) {
+    public TranslationException(String message, CalciteObject node) {
         super(message + "\n" + getPosition(node));
     }
 
-    private static String getPosition(@Nullable Object node) {
-        if (node == null)
-            return "";
+    private static String getPosition(CalciteObject node) {
         return node.toString();
     }
 }

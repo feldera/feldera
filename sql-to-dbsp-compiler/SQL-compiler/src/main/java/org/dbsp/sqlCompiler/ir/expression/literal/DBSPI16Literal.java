@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -20,13 +21,13 @@ public class DBSPI16Literal extends DBSPLiteral {
         this(value, false);
     }
 
-    public DBSPI16Literal(@Nullable Object node, DBSPType type , @Nullable Short value) {
+    public DBSPI16Literal(CalciteObject node, DBSPType type , @Nullable Short value) {
         super(node, type, value == null);
         this.value = value;
     }
 
     public DBSPI16Literal(@Nullable Short value, boolean nullable) {
-        this(null, DBSPTypeInteger.SIGNED_16.setMayBeNull(nullable), value);
+        this(CalciteObject.EMPTY, DBSPTypeInteger.SIGNED_16.setMayBeNull(nullable), value);
         if (value == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }

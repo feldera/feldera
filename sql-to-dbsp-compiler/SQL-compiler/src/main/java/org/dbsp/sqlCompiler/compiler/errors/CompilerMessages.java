@@ -5,13 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.CalciteContextException;
-import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParseException;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.util.Unimplemented;
 
-import javax.annotation.Nullable;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
@@ -62,7 +59,7 @@ public class CompilerMessages {
         }
 
         Error(Unimplemented e) {
-            this.range = CompilerMessages.getPositionRange(e.object);
+            this.range = e.getPositionRange();
             this.errorType = "Feature not yet implemented";
             this.warning = false;
             this.message = e.getMessage();
@@ -162,21 +159,6 @@ public class CompilerMessages {
 
     public Error getError(int ct) {
         return this.messages.get(ct);
-    }
-
-    public static SourcePositionRange getPositionRange(@Nullable Object object) {
-        if (object == null)
-            return SourcePositionRange.INVALID;
-        if (object instanceof SqlNode) {
-            SqlNode node = (SqlNode) object;
-            return new SourcePositionRange(node.getParserPosition());
-        } else if (object instanceof FrontEndStatement){
-            FrontEndStatement stat = (FrontEndStatement) object;
-            SqlNode node = stat.getNode();
-            if (node != null)
-                return new SourcePositionRange(node.getParserPosition());
-        }
-        return SourcePositionRange.INVALID;
     }
 
     public void show(PrintStream stream) {

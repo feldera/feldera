@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.circuit.*;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -87,10 +88,8 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     void generateOperator(DBSPOperator operator) {
-        if (operator.getNode() != null) {
-            String str = operator.getNode().toString();
-            this.writeComments(str);
-        }
+        String str = operator.getNode().toString();
+        this.writeComments(str);
         operator.accept(this);
         this.builder.newline();
     }
@@ -128,7 +127,7 @@ public class ToRustVisitor extends CircuitVisitor {
             i.getType().accept(this.innerVisitor);
         }
         this.builder.append(") -> ");
-        DBSPTypeRawTuple tuple = new DBSPTypeRawTuple(null, Linq.map(circuit.outputOperators, DBSPOperator::getType));
+        DBSPTypeRawTuple tuple = new DBSPTypeRawTuple(CalciteObject.EMPTY, Linq.map(circuit.outputOperators, DBSPOperator::getType));
         tuple.accept(this.innerVisitor);
         this.builder.append(" {").increase();
         // For each input and output operator a corresponding Rc cell
@@ -312,7 +311,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     IIndentStream writeComments(@Nullable String comment) {
-        if (comment == null)
+        if (comment == null || comment.isEmpty())
             return this.builder;
         String[] parts = comment.split("\n");
         parts = Linq.map(parts, p -> "// " + p, String.class);

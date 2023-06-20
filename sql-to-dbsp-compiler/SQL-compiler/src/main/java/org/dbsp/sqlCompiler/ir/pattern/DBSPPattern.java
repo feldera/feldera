@@ -23,13 +23,12 @@
 
 package org.dbsp.sqlCompiler.ir.pattern;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 
-import javax.annotation.Nullable;
-
 public abstract class DBSPPattern extends DBSPNode implements IDBSPInnerNode {
-    protected DBSPPattern(@Nullable Object node) {
+    protected DBSPPattern(CalciteObject node) {
         super(node);
     }
 }

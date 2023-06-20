@@ -33,7 +33,8 @@ import java.util.List;
  * Describes a table as produced by a CREATE TABLE DDL statement.
  */
 public class CreateTableStatement extends CreateRelationStatement {
-    public CreateTableStatement(@Nullable SqlNode node, String statement, String tableName, @Nullable String comment, List<RelDataTypeField> columns) {
+    public CreateTableStatement(SqlNode node, String statement,
+                                String tableName, @Nullable String comment, List<RelDataTypeField> columns) {
         super(node, statement, tableName, comment, columns);
     }
 }

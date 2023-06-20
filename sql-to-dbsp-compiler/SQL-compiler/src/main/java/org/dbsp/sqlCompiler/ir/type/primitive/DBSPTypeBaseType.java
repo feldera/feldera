@@ -23,16 +23,15 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-import javax.annotation.Nullable;
-
 public abstract class DBSPTypeBaseType extends DBSPType {
-    protected DBSPTypeBaseType(@Nullable Object node, boolean mayBeNull) {
+    protected DBSPTypeBaseType(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);
     }
 

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
@@ -39,19 +40,24 @@ public class DBSPApplyMethodExpression extends DBSPExpression {
     public final DBSPExpression self;
     public final DBSPExpression[] arguments;
 
-    public DBSPApplyMethodExpression(
+    public DBSPApplyMethodExpression(CalciteObject node,
             String function, DBSPType returnType,
             DBSPExpression self, DBSPExpression... arguments) {
-        super(null, returnType);
+        super(node, returnType);
         this.function = DBSPTypeAny.INSTANCE.path(new DBSPPath(function));
         this.self = self;
         this.arguments = arguments;
     }
 
+    public DBSPApplyMethodExpression(String function, DBSPType returnType,
+                                     DBSPExpression self, DBSPExpression... arguments) {
+        this(CalciteObject.EMPTY, function, returnType, self, arguments);
+    }
+
     public DBSPApplyMethodExpression(
             DBSPExpression function, DBSPType returnType,
             DBSPExpression self, DBSPExpression... arguments) {
-        super(null, returnType);
+        super(CalciteObject.EMPTY, returnType);
         this.function = function;
         this.self = self;
         this.arguments = arguments;

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -55,7 +56,7 @@ import javax.annotation.Nullable;
 public abstract class DBSPLiteral extends DBSPExpression {
     public final boolean isNull;
 
-    protected DBSPLiteral(@Nullable Object node, DBSPType type, boolean isNull) {
+    protected DBSPLiteral(CalciteObject node, DBSPType type, boolean isNull) {
         super(node, type);
         this.isNull = isNull;
         if (this.isNull && !type.mayBeNull && !type.is(DBSPTypeAny.class))
@@ -83,7 +84,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
         } else if (type.is(DBSPTypeDate.class)) {
             return new DBSPDateLiteral();
         } else if (type.is(DBSPTypeDecimal.class)) {
-            return new DBSPDecimalLiteral(null, type, null);
+            return new DBSPDecimalLiteral(type.getNode(), type, null);
         } else if (type.is(DBSPTypeDouble.class)) {
             return new DBSPDoubleLiteral();
         } else if (type.is(DBSPTypeFloat.class)) {

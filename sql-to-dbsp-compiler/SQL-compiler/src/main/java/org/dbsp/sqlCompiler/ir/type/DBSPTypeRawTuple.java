@@ -23,13 +23,13 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.util.IIndentStream;
 
-import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.List;
 
@@ -39,15 +39,15 @@ import java.util.List;
 public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     public static final DBSPTypeRawTuple EMPTY_TUPLE_TYPE = new DBSPTypeRawTuple();
 
-    private DBSPTypeRawTuple(@Nullable Object node, boolean mayBeNull, DBSPType... tupArgs) {
+    private DBSPTypeRawTuple(CalciteObject node, boolean mayBeNull, DBSPType... tupArgs) {
         super(node, mayBeNull, tupArgs);
     }
 
     public DBSPTypeRawTuple(DBSPType... tupArgs) {
-        this(null, false, tupArgs);
+        this(CalciteObject.EMPTY, false, tupArgs);
     }
 
-    public DBSPTypeRawTuple(@Nullable Object node, List<DBSPType> tupArgs) {
+    public DBSPTypeRawTuple(CalciteObject node, List<DBSPType> tupArgs) {
         this(node, false, tupArgs.toArray(new DBSPType[0]));
     }
 

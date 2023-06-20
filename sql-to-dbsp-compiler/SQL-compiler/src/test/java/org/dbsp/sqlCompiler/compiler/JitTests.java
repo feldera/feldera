@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
@@ -54,7 +55,7 @@ public class JitTests extends EndToEndTests {
         String query = "SELECT 'Infinity' / 0";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT_NULLABLE,
+                        new DBSPDecimalLiteral(DBSPTypeDecimal.DEFAULT_NULLABLE,
                                 null))));
     }
 
@@ -73,7 +74,7 @@ public class JitTests extends EndToEndTests {
         String query = "SELECT CAST('0.5' AS DECIMAL)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT,
+                        new DBSPDecimalLiteral(DBSPTypeDecimal.DEFAULT,
                                 new BigDecimal("0.5")))));
     }
 
@@ -82,8 +83,7 @@ public class JitTests extends EndToEndTests {
         String query = "SELECT CAST('blah' AS DECIMAL)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(null, DBSPTypeDecimal.DEFAULT,
-                                new BigDecimal(0)))));
+                        new DBSPDecimalLiteral(DBSPTypeDecimal.DEFAULT, new BigDecimal(0)))));
     }
 
     @Test @Override @Ignore("WINDOWS not yet implemented")
@@ -163,7 +163,7 @@ public class JitTests extends EndToEndTests {
         String query = "SELECT ST_POINT(0, 0)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPGeoPointLiteral(null,
+                        new DBSPGeoPointLiteral(CalciteObject.EMPTY,
                                 new DBSPDoubleLiteral(0), new DBSPDoubleLiteral(0)).some())));
     }
 

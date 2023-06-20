@@ -23,9 +23,9 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.*;
@@ -68,7 +68,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
     @Nullable
     public final String comment;
 
-    protected DBSPOperator(@Nullable Object node, String operation,
+    protected DBSPOperator(CalciteObject node, String operation,
                            @Nullable DBSPExpression function, DBSPType outputType,
                            boolean isMultiset, @Nullable String comment, String outputName) {
         super(node);
@@ -81,7 +81,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
         this.comment = comment;
     }
 
-    public DBSPOperator(@Nullable Object node, String operation,
+    public DBSPOperator(CalciteObject node, String operation,
                         @Nullable DBSPExpression function,
                         DBSPType outputType, boolean isMultiset) {
         this(node, operation, function, outputType, isMultiset, null,
@@ -211,7 +211,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
     }
 
     public SourcePositionRange getSourcePosition() {
-        return CompilerMessages.getPositionRange(this.getNode());
+        return this.getNode().getPositionRange();
     }
 
     IIndentStream writeComments(IIndentStream builder, @Nullable String comment) {

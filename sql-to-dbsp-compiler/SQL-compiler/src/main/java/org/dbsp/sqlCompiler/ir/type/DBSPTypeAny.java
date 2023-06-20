@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.IIndentStream;
 
@@ -35,7 +36,7 @@ public class DBSPTypeAny extends DBSPType {
     public static final DBSPType INSTANCE = new DBSPTypeAny();
 
     protected DBSPTypeAny() {
-        super(null, false);
+        super(CalciteObject.EMPTY, false);
     }
 
     @Override
