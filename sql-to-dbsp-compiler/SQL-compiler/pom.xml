@@ -205,7 +205,7 @@
         <dependency>
             <groupId>net.hydromatic</groupId>
             <artifactId>sql-logic-test</artifactId>
-            <version>0.2</version>
+            <version>0.3</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>

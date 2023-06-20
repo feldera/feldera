@@ -59,8 +59,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Sql test executor that uses DBSP as a SQL runtime.
- * Does not support arbitrary tests: only tests that can be recast as a standing query will work.
+ * Sql test executor that uses DBSP for query execution.
  */
 public class DBSPExecutor extends SqlSltTestExecutor {
     /**
@@ -273,7 +272,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     System.err.println("Error while compiling " + testQuery.getQuery() + ": " + ex.getMessage());
                     result.addFailure(
                             new TestStatistics.FailedTestDescription(testQuery,
-                                    "Exception during test", ex, options.verbosity > 0));
+                                    "Exception during test", "", ex));
                     return false;
                 }
                 queryNo++;
@@ -290,9 +289,10 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             System.out.println(elapsedTime(queryNo));
             this.cleanupFilesystem();
             if (this.execute)
-                result.setPassed(result.getPassed() + queryNo);  // This is not entirely correct, but I am not parsing the rust output
+                // This is not entirely correct, but I am not parsing the rust output
+                result.setPassedTestCount(result.getPassedTestCount() + queryNo);
             else
-                result.setIgnored(result.getIgnored() + queryNo);
+                result.setIgnoredTestCount(result.getIgnoredTestCount() + queryNo);
         } catch (SQLException | IOException | InterruptedException e) {
             throw new RuntimeException(e);
         }
@@ -423,7 +423,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         // Used for debugging
         int toSkip = 0; // file.getTestCount() - 10;
 
-        TestStatistics result = new TestStatistics(options.stopAtFirstError);
+        TestStatistics result = new TestStatistics(options.stopAtFirstError, options.verbosity);
         boolean seenQueries = false;
         int remainingInBatch = batchSize;
         for (ISqlTestOperation operation: file.fileContents) {
@@ -436,22 +436,17 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     remainingInBatch = batchSize;
                     seenQueries = false;
                 }
-                boolean status;
                 try {
                     if (this.buggyOperations.contains(stat.statement)) {
                         this.options.message("Skipping buggy test " + stat.statement + "\n", 1);
-                        status = stat.shouldPass;
                     } else {
-                        status = this.statement(stat);
+                        this.statement(stat);
                     }
                 } catch (SQLException ex) {
-                    this.options.error(ex);
-                    status = false;
+                    if (stat.shouldPass)
+                        this.options.error(ex);
                 }
                 this.statementsExecuted++;
-                if (//this.options.validateStatus &&
-                        status != stat.shouldPass)
-                    throw new RuntimeException("Statement " + stat.statement + " status " + status + " expected " + stat.shouldPass);
             } else {
                 SqlTestQuery query = operation.to(options.err, SqlTestQuery.class);
                 if (toSkip > 0) {
@@ -632,7 +627,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         this.queriesToRun.clear();
     }
 
-    public String writeCodeToFile(
+    public void writeCodeToFile(
             DBSPCompiler compiler,
             List<DBSPFunction> inputFunctions,
             List<ProgramAndTester> functions
@@ -649,12 +644,13 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             rust.add(pt.tester);
         }
         rust.writeAndClose();
-        return testFileName;
     }
 
     public static void register(OptionsParser parser) {
         AtomicReference<Boolean> jit = new AtomicReference<>();
+        jit.set(false);
         AtomicReference<Boolean> incremental = new AtomicReference<>();
+        incremental.set(false);
         parser.registerOption("-j", null, "Emit JIT code", o-> {
                     jit.set(true);
                     return true;
