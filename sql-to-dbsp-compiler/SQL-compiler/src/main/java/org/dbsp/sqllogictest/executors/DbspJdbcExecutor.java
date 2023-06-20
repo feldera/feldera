@@ -27,7 +27,6 @@ import net.hydromatic.sqllogictest.OptionsParser;
 import net.hydromatic.sqllogictest.SltSqlStatement;
 import net.hydromatic.sqllogictest.SltTestFile;
 import net.hydromatic.sqllogictest.TestStatistics;
-import net.hydromatic.sqllogictest.executors.HsqldbExecutor;
 import net.hydromatic.sqllogictest.executors.JdbcExecutor;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
@@ -46,6 +45,7 @@ import java.io.IOException;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -57,10 +57,6 @@ import java.util.regex.Pattern;
 public class DbspJdbcExecutor extends DBSPExecutor {
     private final JdbcExecutor statementExecutor;
     private final List<String> tablesCreated;
-    // TODO: remove this field.
-    private final Connection fakeConnection;
-
-    static int counter = 0;
 
     /**
      * @param compilerOptions Compilation options.
@@ -73,18 +69,10 @@ public class DbspJdbcExecutor extends DBSPExecutor {
         super(options, compilerOptions, "csv");
         this.statementExecutor = executor;
         this.tablesCreated = new ArrayList<>();
-        try {
-            this.fakeConnection = DriverManager.getConnection("jdbc:hsqldb:mem:db" + counter++, "", "");
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     Connection getStatementExecutorConnection() {
-        // TODO: once a new version of the org.hydromatic.sql-logic-test package
-        // is published replace this with its connection.
-        // return this.statementExecutor.getConnection();
-        return this.fakeConnection;
+        return this.statementExecutor.getConnection();
     }
 
     public DBSPZSetLiteral getTableContents(String table) throws SQLException {
@@ -281,17 +269,14 @@ public class DbspJdbcExecutor extends DBSPExecutor {
         parser.registerExecutor("hybrid", () -> {
             OptionsParser.SuppliedOptions options = parser.getOptions();
             try {
-                // TODO: replace there on the next version of sql-logic-test.
-                // JdbcExecutor inner = parser.getExecutorByName("hsql");
-                JdbcExecutor inner = new HsqldbExecutor(options);
-                // DBSPExecutor unused = parser.getExecutorByName("dbsp").to(DBSPExecutor.class);
-                // boolean validateJIT = unused.validateJIT;
-                boolean validateJIT = false;
-                // CompilerOptions compilerOptions = unused.compilerOptions;
-                CompilerOptions compilerOptions = new CompilerOptions();
+                JdbcExecutor inner = Objects.requireNonNull(options.getExecutorByName("hsql"))
+                        .as(JdbcExecutor.class);
+                DBSPExecutor dbsp = Objects.requireNonNull(options.getExecutorByName("dbsp"))
+                        .as(DBSPExecutor.class);
+                CompilerOptions compilerOptions = Objects.requireNonNull(dbsp).compilerOptions;
                 compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
                 DbspJdbcExecutor result = new DbspJdbcExecutor(
-                        inner, options, compilerOptions);
+                        Objects.requireNonNull(inner), options, compilerOptions);
                 Set<String> bugs = options.readBugsFile();
                 result.avoid(bugs);
                 return result;
