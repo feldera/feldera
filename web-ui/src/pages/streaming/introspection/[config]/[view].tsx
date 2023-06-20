@@ -8,7 +8,7 @@ import Typography from '@mui/material/Typography'
 import { DataGridPro, GridColumns, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/router'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import PageHeader from 'src/layouts/components/page-header'
 import { PipelineDescr, PipelineId, ProgramDescr, PipelineStatus, OpenAPI } from 'src/types/manager'
 import { parse } from 'csv-parse'
@@ -65,7 +65,6 @@ const IntrospectInputOutput = () => {
     }
   }, [configQuery.isLoading, configQuery.isError, configQuery.data, setConfig])
 
-  const ws = useRef<WebSocket | null>(null)
   useEffect(() => {
     if (
       configDescr &&
@@ -74,23 +73,19 @@ const IntrospectInputOutput = () => {
       headers !== undefined &&
       apiRef.current
     ) {
-      const endpoint = configDescr.attached_connectors.find(ac => ac.config == view)
+      const watchStream = async function (url: string) {
+        const response = await fetch(url)
+        const reader = response.body?.getReader()
+        const decoder = new TextDecoder('utf-8')
 
-      const host = OpenAPI.BASE.replace('https', 'ws').replace('http', 'ws')
-      const url = host + '/v0/pipelines/' + pipelineId + '/connector/debug-' + endpoint?.name
-      const socket = new WebSocket(url)
-      socket.onopen = () => {
-        console.log('opened')
-      }
-
-      socket.onclose = () => {
-        console.log('closed')
-      }
-
-      socket.onmessage = event => {
-        event.data.text().then((txt: string) => {
+        while (true) {
+          const value = await reader?.read().then(function (result) {
+            return decoder.decode(result.value)
+          })
+          const obj = JSON.parse(value || '{}')
+          console.log(obj.text_data)
           parse(
-            txt,
+            obj.text_data,
             {
               delimiter: ','
             },
@@ -100,7 +95,7 @@ const IntrospectInputOutput = () => {
               }
 
               const newRows: any[] = result.map(row => {
-                const genId = row[0] //row.slice(0, row.length - 1).join('-')
+                const genId = row[0]
                 const weight = row[row.length - 1]
                 const fields = row.slice(0, row.length - 1)
 
@@ -131,15 +126,13 @@ const IntrospectInputOutput = () => {
               )
             }
           )
-        })
+        }
       }
-      ws.current = socket
 
-      return () => {
-        socket.close()
-      }
+      const url = OpenAPI.BASE + '/v0/pipelines/' + pipelineId + '/egress/' + viewName + '?format=csv'
+      watchStream(url)
     }
-  }, [configDescr, view, apiRef, headers])
+  }, [configDescr, pipelineId, viewName, view, apiRef, headers])
 
   return (
     !configQuery.isLoading &&
@@ -159,6 +152,7 @@ const IntrospectInputOutput = () => {
         <Grid item xs={12}>
           <Card>
             <DataGridPro
+              columnVisibilityModel={{ genId: false, weight: false }}
               getRowId={(row: any) => row.genId}
               apiRef={apiRef}
               autoHeight
