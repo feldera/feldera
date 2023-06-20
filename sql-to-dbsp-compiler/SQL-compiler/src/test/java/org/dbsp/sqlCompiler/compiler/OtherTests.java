@@ -41,6 +41,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.CollectIdentifiers;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
@@ -290,7 +291,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
         String connectionString = "sqlite://" + filepath;
         // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
-        DBSPTypeUser sqliteRowType = new DBSPTypeUser(null, "AnyRow", false);
+        DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, "AnyRow", false);
         DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType);
         DBSPExpression[] fields = BaseSQLTests.e0NoDouble.fields; // Should be the same for e1NoDouble too
         final List<DBSPExpression> rowGets = new ArrayList<>(fields.length);
@@ -302,7 +303,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
             rowGets.add(rowGet);
         }
         DBSPTupleExpression tuple = new DBSPTupleExpression(rowGets, false);
-        DBSPClosureExpression mapClosure = new DBSPClosureExpression(null, tuple,
+        DBSPClosureExpression mapClosure = new DBSPClosureExpression(tuple,
                rowVariable.asRefParameter());
         DBSPApplyExpression readDb = new DBSPApplyExpression("read_db", data.getType(),
                 new DBSPStrLiteral(connectionString), new DBSPStrLiteral("t1"), mapClosure);

@@ -36,7 +36,7 @@ public class DBSPTypeRef extends DBSPType {
     public final boolean mutable;
 
     public DBSPTypeRef(DBSPType type, boolean mutable) {
-        super(null, false);
+        super(type.getNode(), false);
         this.type = type;
         this.mutable = mutable;
     }

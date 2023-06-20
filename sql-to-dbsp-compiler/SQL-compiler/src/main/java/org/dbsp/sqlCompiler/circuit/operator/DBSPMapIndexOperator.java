@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -39,7 +40,7 @@ public class DBSPMapIndexOperator extends DBSPUnaryOperator {
     public final DBSPType weightType;
 
     // Expression must return a tuple that is composed of a key and a value
-    public DBSPMapIndexOperator(@Nullable Object node, DBSPExpression expression,
+    public DBSPMapIndexOperator(CalciteObject node, DBSPExpression expression,
                                 DBSPType keyType, DBSPType valueType, DBSPType weightType,
                                 DBSPOperator input) {
         super(node, "map_index", expression,

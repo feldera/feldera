@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -37,7 +38,7 @@ public class DBSPJoinOperator extends DBSPOperator {
     public final DBSPType elementResultType;
     public final DBSPType weightType;
 
-    public DBSPJoinOperator(@Nullable Object node, DBSPType elementResultType, DBSPType weightType,
+    public DBSPJoinOperator(CalciteObject node, DBSPType elementResultType, DBSPType weightType,
                             // Closure from key, valueLeft, valueRight to result type
                             DBSPExpression function, boolean isMultiset,
                             DBSPOperator left, DBSPOperator right) {

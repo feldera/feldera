@@ -23,20 +23,19 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.TranslationException;
 
-import javax.annotation.Nullable;
-
 public class DBSPUnaryExpression extends DBSPExpression {
     public final DBSPExpression source;
     public final DBSPOpcode operation;
 
     @SuppressWarnings("ConstantConditions")
-    public DBSPUnaryExpression(@Nullable Object node, DBSPType type, DBSPOpcode operation, DBSPExpression operand) {
+    public DBSPUnaryExpression(CalciteObject node, DBSPType type, DBSPOpcode operation, DBSPExpression operand) {
         super(node, type);
         this.operation = operation;
         this.source = operand;

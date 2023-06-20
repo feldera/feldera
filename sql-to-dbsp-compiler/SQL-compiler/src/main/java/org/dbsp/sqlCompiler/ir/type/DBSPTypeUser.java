@@ -23,10 +23,10 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.IIndentStream;
 
-import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Objects;
 
@@ -37,7 +37,7 @@ public class DBSPTypeUser extends DBSPType {
     public final String name;
     public final DBSPType[] typeArgs;
 
-    public DBSPTypeUser(@Nullable Object node, String name, boolean mayBeNull, DBSPType... typeArgs) {
+    public DBSPTypeUser(CalciteObject node, String name, boolean mayBeNull, DBSPType... typeArgs) {
         super(node, mayBeNull);
         this.name = name;
         this.typeArgs = typeArgs;

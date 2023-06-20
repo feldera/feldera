@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -38,13 +39,13 @@ public class DBSPIncrementalAggregateOperator extends DBSPAggregateOperatorBase 
     public final DBSPType weightType;
 
     public DBSPIncrementalAggregateOperator(
-            @Nullable Object node,
+            CalciteObject node,
             DBSPType keyType, DBSPType outputElementType, DBSPType weightType,
             @Nullable DBSPExpression function,
-            @Nullable DBSPAggregate aggregate, DBSPOperator input) {
-        super(node, "aggregate",
+            @Nullable DBSPAggregate aggregate, DBSPOperator input, boolean isLinear) {
+        super(node, isLinear ? "aggregate_linear" : "aggregate",
                 new DBSPTypeIndexedZSet(node, keyType, outputElementType, weightType),
-                function, aggregate, false, input);
+                function, aggregate, false, input, isLinear);
         this.keyType = keyType;
         this.outputElementType = outputElementType;
         this.weightType = weightType;
@@ -61,7 +62,7 @@ public class DBSPIncrementalAggregateOperator extends DBSPAggregateOperatorBase 
         DBSPType outputElementType = outputType.to(DBSPTypeIndexedZSet.class).elementType;
         return new DBSPIncrementalAggregateOperator(
                 this.getNode(), this.keyType, outputElementType, this.weightType,
-                expression, this.aggregate, this.input());
+                expression, this.aggregate, this.input(), this.isLinear);
     }
 
     @Override
@@ -69,7 +70,7 @@ public class DBSPIncrementalAggregateOperator extends DBSPAggregateOperatorBase 
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIncrementalAggregateOperator(
                     this.getNode(), this.keyType, this.outputElementType, this.weightType,
-                    this.function, this.aggregate, newInputs.get(0));
+                    this.function, this.aggregate, newInputs.get(0), this.isLinear);
         return this;
     }
 }

@@ -23,17 +23,17 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 public class DBSPTypeFloat extends DBSPTypeFP implements IsNumericType {
-    protected DBSPTypeFloat(@Nullable Object node, boolean mayBeNull) { super(node, mayBeNull); }
+    protected DBSPTypeFloat(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
@@ -47,8 +47,8 @@ public class DBSPTypeFloat extends DBSPTypeFP implements IsNumericType {
         return "f";
     }
 
-    public static final DBSPTypeFloat INSTANCE =new DBSPTypeFloat(null,false);
-    public static final DBSPTypeFloat NULLABLE_INSTANCE = new DBSPTypeFloat(null,true);
+    public static final DBSPTypeFloat INSTANCE =new DBSPTypeFloat(CalciteObject.EMPTY,false);
+    public static final DBSPTypeFloat NULLABLE_INSTANCE = new DBSPTypeFloat(CalciteObject.EMPTY,true);
 
     @Override
     public boolean sameType(DBSPType type) {

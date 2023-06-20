@@ -165,7 +165,7 @@
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <version>31.1-jre</version>
+            <version>32.0.1-jre</version>
         </dependency>
         <dependency>
             <groupId>com.google.code.findbugs</groupId>
@@ -225,7 +225,7 @@
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
-            <version>3.41.2.2</version>
+            <version>3.42.0.0</version>
             <scope>test</scope>
         </dependency>
         <!-- Command-line parsing -->

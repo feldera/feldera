@@ -122,7 +122,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || input != operator.input()) {
             result = new DBSPAggregateOperator(operator.getNode(),
                     keyType, outputElementType, weightType,
-                    function, aggregate, input);
+                    function, aggregate, input, operator.isLinear);
         }
         this.map(operator, result);
     }
@@ -160,7 +160,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || aggregate != operator.aggregate
                 || function != operator.function) {
             result = new DBSPIncrementalAggregateOperator(operator.getNode(),
-                    keyType, outputElementType, weightType, function, aggregate, input);
+                    keyType, outputElementType, weightType, function, aggregate, input, operator.isLinear);
         }
         this.map(operator, result);
     }

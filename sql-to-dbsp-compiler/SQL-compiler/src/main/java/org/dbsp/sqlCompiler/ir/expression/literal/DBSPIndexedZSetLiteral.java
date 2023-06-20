@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
@@ -19,7 +20,7 @@ import javax.annotation.Nullable;
 public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContainer {
     public final DBSPTypeIndexedZSet indexedZSetType;
 
-    public DBSPIndexedZSetLiteral(@Nullable Object node, DBSPType type) {
+    public DBSPIndexedZSetLiteral(CalciteObject node, DBSPType type) {
         super(node, type, false);
         this.indexedZSetType = this.getType().to(DBSPTypeIndexedZSet.class);
     }

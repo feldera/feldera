@@ -23,11 +23,10 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
-
-import javax.annotation.Nullable;
 
 /**
  * A comparator that does not compare any fields.
@@ -35,7 +34,7 @@ import javax.annotation.Nullable;
 public class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     public final DBSPType tupleType;
 
-    public DBSPNoComparatorExpression(@Nullable Object node, DBSPType tupleType) {
+    public DBSPNoComparatorExpression(CalciteObject node, DBSPType tupleType) {
         super(node);
         this.tupleType = tupleType;
     }

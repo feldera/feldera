@@ -23,17 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
-import org.junit.Test;
-
 public class OptimizedIncrementalTests extends NaiveIncrementalTests {
     public void invokeTestQueryBase(String query, BaseSQLTests.InputOutputPair... streams) {
         super.testQueryBase(query, true, true, false, streams);
-    }
-
-    // Override the "Ignore" from NaiveIncrementalTests
-    @Test @Override
-    public void idTest() {
-        String query = "SELECT * FROM T";
-        this.testQuery(query, this.createInput());
     }
 }

@@ -37,7 +37,7 @@ public class DBSPStructExpression extends DBSPExpression {
     public final DBSPExpression[] arguments;
 
     public DBSPStructExpression(DBSPExpression function, DBSPType type, DBSPExpression... arguments) {
-        super(null, type);
+        super(function.getNode(), type);
         this.function = function;
         this.arguments = arguments;
     }

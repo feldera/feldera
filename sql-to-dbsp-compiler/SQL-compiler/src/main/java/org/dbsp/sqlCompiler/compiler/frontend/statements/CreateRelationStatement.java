@@ -36,6 +36,7 @@ import org.apache.calcite.schema.ScannableTable;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
@@ -53,7 +54,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
     public final String tableName;
     public final List<RelDataTypeField> columns;
 
-    protected CreateRelationStatement(@Nullable SqlNode node, String statement,
+    protected CreateRelationStatement(SqlNode node, String statement,
                                       String tableName, @Nullable String comment,
                                       List<RelDataTypeField> columns) {
         super(node, statement, comment);
@@ -93,7 +94,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
             if (this.columns.get(i).getName().equals(id.toString()))
                 return i;
         }
-        throw new TranslationException("Column not found", id);
+        throw new TranslationException("Column not found", new CalciteObject(id));
     }
 
     public DBSPTypeTuple getRowType(TypeCompiler compiler) {

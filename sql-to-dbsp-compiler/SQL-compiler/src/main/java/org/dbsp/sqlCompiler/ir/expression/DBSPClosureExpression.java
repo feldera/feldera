@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -30,8 +31,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
-
-import javax.annotation.Nullable;
 
 /**
  * An expression of the form |param0, param1, ...| body.
@@ -48,7 +47,7 @@ public class DBSPClosureExpression extends DBSPExpression {
         return this.getFunctionType().resultType;
     }
 
-    public DBSPClosureExpression(@Nullable Object node, DBSPExpression body, DBSPParameter... parameters) {
+    public DBSPClosureExpression(CalciteObject node, DBSPExpression body, DBSPParameter... parameters) {
         // In Rust in general we can't write the type of the closure.
         super(node, new DBSPTypeFunction(body.getType(), Linq.map(parameters, DBSPParameter::getType, DBSPType.class)));
         this.body = body;
@@ -56,7 +55,7 @@ public class DBSPClosureExpression extends DBSPExpression {
     }
 
     public DBSPClosureExpression(DBSPExpression body, DBSPParameter... variables) {
-        this(null, body, variables);
+        this(CalciteObject.EMPTY, body, variables);
     }
 
     public DBSPExpression call(DBSPExpression... arguments) {

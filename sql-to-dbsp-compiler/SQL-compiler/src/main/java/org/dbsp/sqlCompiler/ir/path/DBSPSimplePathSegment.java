@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.path;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -34,7 +35,7 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
     public final DBSPType[] genericArgs;
 
     public DBSPSimplePathSegment(String identifier, DBSPType... genericArgs) {
-        super(null);
+        super(CalciteObject.EMPTY);
         this.identifier = identifier;
         this.genericArgs = genericArgs;
     }

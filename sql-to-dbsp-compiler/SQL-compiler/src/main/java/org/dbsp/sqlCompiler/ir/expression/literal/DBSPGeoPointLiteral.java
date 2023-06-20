@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
@@ -38,7 +39,7 @@ public class DBSPGeoPointLiteral extends DBSPLiteral {
     @Nullable
     public final DBSPExpression right;
 
-    public DBSPGeoPointLiteral(@Nullable Object node,
+    public DBSPGeoPointLiteral(CalciteObject node,
                                @Nullable DBSPExpression left, @Nullable DBSPExpression right) {
         super(node, DBSPTypeGeoPoint.INSTANCE, left == null || right == null);
         this.left = left;
@@ -46,7 +47,7 @@ public class DBSPGeoPointLiteral extends DBSPLiteral {
     }
 
     public DBSPGeoPointLiteral() {
-        super(null, DBSPTypeGeoPoint.NULLABLE_INSTANCE, true);
+        super(CalciteObject.EMPTY, DBSPTypeGeoPoint.NULLABLE_INSTANCE, true);
         this.left = null;
         this.right = null;
     }

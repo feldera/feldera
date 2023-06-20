@@ -23,17 +23,16 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-
-import javax.annotation.Nullable;
 
 /**
  * Base class for floating-point types.
  */
 public abstract class DBSPTypeFP extends DBSPTypeBaseType implements IsNumericType {
-    protected DBSPTypeFP(@Nullable Object node, boolean mayBeNull) { super(node, mayBeNull); }
+    protected DBSPTypeFP(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
 
     /**
      * Width in bits.

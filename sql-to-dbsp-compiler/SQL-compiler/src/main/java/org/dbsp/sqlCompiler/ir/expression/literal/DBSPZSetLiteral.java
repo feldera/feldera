@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -185,26 +186,26 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
     public final DBSPTypeZSet zsetType;
     public final Contents data;
 
-    public DBSPZSetLiteral(@Nullable Object node, DBSPType type, Contents contents) {
+    public DBSPZSetLiteral(CalciteObject node, DBSPType type, Contents contents) {
         super(node, type, false);
         this.data = contents;
         this.zsetType = this.getType().to(DBSPTypeZSet.class);
     }
 
     public DBSPZSetLiteral(DBSPType zsetType) {
-        this(null, zsetType, new Contents(zsetType.to(DBSPTypeZSet.class).elementType));
+        this(zsetType.getNode(), zsetType, new Contents(zsetType.to(DBSPTypeZSet.class).elementType));
     }
 
     public DBSPZSetLiteral(DBSPType weightType, Contents contents) {
-        this(null, TypeCompiler.makeZSet(contents.elementType, weightType), contents);
+        this(CalciteObject.EMPTY, TypeCompiler.makeZSet(contents.elementType, weightType), contents);
     }
 
     public DBSPZSetLiteral(DBSPType weightType, DBSPExpression... data) {
-        this(null, TypeCompiler.makeZSet(data[0].getType(), weightType), new Contents(data));
+        this(CalciteObject.EMPTY, TypeCompiler.makeZSet(data[0].getType(), weightType), new Contents(data));
     }
 
     public DBSPZSetLiteral(DBSPType elementType, DBSPType weightType) {
-        this(null, TypeCompiler.makeZSet(elementType, weightType), new Contents(elementType));
+        this(CalciteObject.EMPTY, TypeCompiler.makeZSet(elementType, weightType), new Contents(elementType));
     }
 
     @Override

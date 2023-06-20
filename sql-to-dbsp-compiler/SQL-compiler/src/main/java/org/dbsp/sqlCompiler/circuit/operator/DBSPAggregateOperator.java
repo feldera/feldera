@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -37,17 +38,18 @@ public class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
     public final DBSPType outputElementType;
     public final DBSPType weightType;
 
-    public DBSPAggregateOperator(@Nullable Object node,
+    public DBSPAggregateOperator(CalciteObject node,
                                  DBSPType keyType, DBSPType outputElementType,
                                  DBSPType weightType,
                                  @Nullable
                                  DBSPExpression function,
                                  @Nullable
                                  DBSPAggregate aggregate,
-                                 DBSPOperator input) {
-        super(node, "stream_aggregate",
+                                 DBSPOperator input,
+                                 boolean isLinear) {
+        super(node, isLinear ? "stream_aggregate_linear" : "stream_aggregate",
                 new DBSPTypeIndexedZSet(node, keyType, outputElementType, weightType),
-                function, aggregate, false, input);
+                function, aggregate, false, input, isLinear);
         this.keyType = keyType;
         this.outputElementType = outputElementType;
         this.weightType = weightType;
@@ -64,7 +66,7 @@ public class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
         DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
         return new DBSPAggregateOperator(this.getNode(),
                 ixOutputType.keyType, ixOutputType.elementType, ixOutputType.weightType,
-                expression, this.aggregate, this.input());
+                expression, this.aggregate, this.input(), this.isLinear);
     }
 
     @Override
@@ -72,7 +74,7 @@ public class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateOperator(
                     this.getNode(), this.keyType, this.outputElementType, this.weightType,
-                    this.function, this.aggregate, newInputs.get(0));
+                    this.function, this.aggregate, newInputs.get(0), this.isLinear);
         return this;
     }
 }

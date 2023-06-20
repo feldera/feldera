@@ -95,9 +95,13 @@ public class RustFileWriter implements ICompilerComponent {
      */
     @SuppressWarnings("SpellCheckingInspection")
     static final String rustPreamble =
+            "use paste::paste;\n" +
+            "use derive_more::{Add,Sub,Neg,From,Into,AddAssign};\n" +
             "use dbsp::{\n" +
-            "    algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue,\n" +
-            "    UnimplementedSemigroup, DefaultSemigroup},\n" +
+            "    algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,\n" +
+            "         UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,\n" +
+            "         AddAssignByRef,\n" +
+            "    },\n" +
             "    circuit::{Circuit, Stream},\n" +
             "    operator::{\n" +
             "        Generator,\n" +
@@ -122,6 +126,7 @@ public class RustFileWriter implements ICompilerComponent {
             "use compare::{Compare, Extract};\n" +
             "use std::{\n" +
             "    convert::identity,\n" +
+            "    ops::{Add, Neg, AddAssign},\n" +
             "    fmt::{Debug, Formatter, Result as FmtResult},\n" +
             "    cell::RefCell,\n" +
             "    path::Path,\n" +

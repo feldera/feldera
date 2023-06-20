@@ -65,6 +65,7 @@ import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.Pair;
 import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.*;
@@ -499,7 +500,7 @@ public class CalciteCompiler implements IWritesLogs {
                 result.add(field);
                 continue;
             }
-            throw new Unimplemented(col);
+            throw new Unimplemented(new CalciteObject(col));
         }
         return result;
     }
@@ -588,7 +589,7 @@ public class CalciteCompiler implements IWritesLogs {
                 SqlInsert insert = (SqlInsert) node;
                 SqlNode table = insert.getTargetTable();
                 if (!(table instanceof SqlIdentifier))
-                    throw new Unimplemented(table);
+                    throw new Unimplemented(new CalciteObject(table));
                 SqlIdentifier id = (SqlIdentifier) table;
                 TableModifyStatement stat = new TableModifyStatement(node, sqlStatement, id.toString(), insert.getSource(), comment);
                 RelRoot values = this.converter.convertQuery(stat.data, true, true);
@@ -598,6 +599,6 @@ public class CalciteCompiler implements IWritesLogs {
             }
         }
 
-        throw new Unimplemented(node);
+        throw new Unimplemented(new CalciteObject(node));
     }
 }

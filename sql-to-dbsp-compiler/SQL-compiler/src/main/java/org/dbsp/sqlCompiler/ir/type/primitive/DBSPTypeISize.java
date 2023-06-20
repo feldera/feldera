@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -30,7 +31,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.util.UnsupportedException;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 /**
@@ -38,10 +38,10 @@ import java.util.Objects;
  */
 public class DBSPTypeISize extends DBSPTypeBaseType
         implements IsNumericType {
-    public static final DBSPTypeISize INSTANCE =new DBSPTypeISize(null, false);
+    public static final DBSPTypeISize INSTANCE =new DBSPTypeISize(CalciteObject.EMPTY, false);
 
     @SuppressWarnings("SameParameterValue")
-    protected DBSPTypeISize(@Nullable Object node, boolean mayBeNull) {
+    protected DBSPTypeISize(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);
     }
 

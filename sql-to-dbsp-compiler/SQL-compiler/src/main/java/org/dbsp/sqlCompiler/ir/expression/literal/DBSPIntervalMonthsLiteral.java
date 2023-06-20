@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
@@ -34,21 +35,21 @@ import java.util.Objects;
 public class DBSPIntervalMonthsLiteral extends DBSPLiteral {
     @Nullable public final Integer value;
 
-    public DBSPIntervalMonthsLiteral(@Nullable Object node, DBSPType type, @Nullable Integer value) {
+    public DBSPIntervalMonthsLiteral(CalciteObject node, DBSPType type, @Nullable Integer value) {
         super(node, type, value == null);
         this.value = value;
     }
 
     public DBSPIntervalMonthsLiteral(int value) {
-        this(null, DBSPTypeMonthsInterval.INSTANCE, value);
+        this(CalciteObject.EMPTY, DBSPTypeMonthsInterval.INSTANCE, value);
     }
 
     public DBSPIntervalMonthsLiteral(int value, boolean mayBeNull) {
-        this(null, DBSPTypeMonthsInterval.INSTANCE.setMayBeNull(mayBeNull), value);
+        this(CalciteObject.EMPTY, DBSPTypeMonthsInterval.INSTANCE.setMayBeNull(mayBeNull), value);
     }
 
     public DBSPIntervalMonthsLiteral() {
-        this(null, DBSPTypeMonthsInterval.NULLABLE_INSTANCE, null);
+        this(CalciteObject.EMPTY, DBSPTypeMonthsInterval.NULLABLE_INSTANCE, null);
     }
 
     @Override

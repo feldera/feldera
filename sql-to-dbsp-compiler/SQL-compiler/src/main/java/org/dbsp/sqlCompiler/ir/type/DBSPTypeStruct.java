@@ -23,13 +23,13 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.IIndentStream;
 
-import javax.annotation.Nullable;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -39,7 +39,7 @@ public class DBSPTypeStruct extends DBSPType {
         public final String name;
         public final DBSPType type;
 
-        public Field(@Nullable Object node, String name, DBSPType type) {
+        public Field(CalciteObject node, String name, DBSPType type) {
             super(node);
             this.name = name;
             this.type = type;
@@ -98,7 +98,7 @@ public class DBSPTypeStruct extends DBSPType {
     public final List<Field> args;
     private final HashSet<String> fields = new HashSet<>();
 
-    public DBSPTypeStruct(@Nullable Object node, String name, List<Field> args) {
+    public DBSPTypeStruct(CalciteObject node, String name, List<Field> args) {
         super(node,false);
         this.name = name;
         this.args = args;

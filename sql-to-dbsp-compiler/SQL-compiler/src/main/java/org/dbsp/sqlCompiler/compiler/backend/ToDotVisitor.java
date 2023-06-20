@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.util.IWritesLogs;
@@ -97,9 +98,10 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         DBSPExpression expression = node.function;
         if (node.is(DBSPAggregateOperatorBase.class)) {
             DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
-            if (aggregate.aggregate != null)
-                expression = LowerCircuitVisitor.createAggregator(
-                        this.errorReporter, aggregate.aggregate, true);
+            if (aggregate.aggregate != null) {
+                DBSPAggregate.Implementation impl = aggregate.aggregate.combine(this.errorReporter);
+                expression = impl.asFold(true);
+            }
         }
         if (expression == null)
             return "";

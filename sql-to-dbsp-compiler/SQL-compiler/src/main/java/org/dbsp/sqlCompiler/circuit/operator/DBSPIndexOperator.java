@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -37,7 +38,7 @@ public class DBSPIndexOperator extends DBSPUnaryOperator {
     public final DBSPType elementType;
     public final DBSPType weightType;
 
-    public DBSPIndexOperator(@Nullable Object node, DBSPExpression indexFunction,
+    public DBSPIndexOperator(CalciteObject node, DBSPExpression indexFunction,
                              DBSPType keyType, DBSPType elementType, DBSPType weightType,
                              boolean isMultiset, DBSPOperator input) {
         super(node, "index_with", indexFunction,

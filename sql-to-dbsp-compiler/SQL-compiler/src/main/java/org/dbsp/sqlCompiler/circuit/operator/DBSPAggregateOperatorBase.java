@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -13,14 +14,17 @@ import java.util.Objects;
 public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
     @Nullable
     public final DBSPAggregate aggregate;
+    public final boolean isLinear;
 
-    protected DBSPAggregateOperatorBase(@Nullable Object node, String operation, DBSPType outputType,
+    protected DBSPAggregateOperatorBase(CalciteObject node, String operation, DBSPType outputType,
                                         @Nullable DBSPExpression function,
                                         @Nullable DBSPAggregate aggregate,
                                         boolean multiset,
-                                        DBSPOperator source) {
+                                        DBSPOperator source,
+                                        boolean isLinear) {
         super(node, operation, function, outputType, multiset, source);
         this.aggregate = aggregate;
+        this.isLinear = isLinear;
         // There are really two different representations of an aggregate operator,
         // which reuse the same classes: a high-level one, which contains an Aggregate,
         // and a low-level one, which contains a function.

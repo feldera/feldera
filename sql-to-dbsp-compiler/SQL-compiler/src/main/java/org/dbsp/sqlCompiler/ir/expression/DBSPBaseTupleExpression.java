@@ -23,17 +23,16 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-
-import javax.annotation.Nullable;
 
 public abstract class DBSPBaseTupleExpression extends DBSPExpression {
     public final DBSPExpression[] fields;
 
     public int size() { return this.fields.length; }
 
-    public DBSPBaseTupleExpression(@Nullable Object object, DBSPType type, DBSPExpression... expressions) {
-        super(object, type);
+    public DBSPBaseTupleExpression(CalciteObject node, DBSPType type, DBSPExpression... expressions) {
+        super(node, type);
         this.fields = expressions;
     }
 

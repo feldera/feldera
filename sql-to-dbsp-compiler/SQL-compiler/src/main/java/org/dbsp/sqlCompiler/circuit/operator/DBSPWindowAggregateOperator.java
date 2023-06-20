@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -44,7 +45,7 @@ public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
     public final DBSPExpression window;
 
     public DBSPWindowAggregateOperator(
-            @Nullable Object node,
+            CalciteObject node,
             @Nullable DBSPExpression function, @Nullable DBSPAggregate aggregate,
             DBSPExpression window,
             DBSPType partitionKeyType, DBSPType timestampType, DBSPType aggregateType, DBSPType weightType,
@@ -53,7 +54,7 @@ public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
                 new DBSPTypeIndexedZSet(node,
                         new DBSPTypeRawTuple(partitionKeyType, timestampType), aggregateType, weightType),
                 function, aggregate,
-                true, input);
+                true, input, false);
         this.window = window;
         this.partitionKeyType = partitionKeyType;
         this.timestampType = timestampType;

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -30,8 +31,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.UnsupportedException;
-
-import javax.annotation.Nullable;
 
 /**
  * Index within an array.
@@ -51,7 +50,7 @@ public class DBSPIndexExpression extends DBSPExpression {
         throw new UnsupportedException(type);
     }
 
-    public DBSPIndexExpression(@Nullable Object node, DBSPExpression array, DBSPExpression index, boolean startsAtOne) {
+    public DBSPIndexExpression(CalciteObject node, DBSPExpression array, DBSPExpression index, boolean startsAtOne) {
         super(node, getVecElementType(array.getType()));
         this.array = array;
         this.index = index;

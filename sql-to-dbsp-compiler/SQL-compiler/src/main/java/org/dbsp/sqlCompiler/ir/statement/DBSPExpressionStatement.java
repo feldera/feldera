@@ -27,13 +27,12 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.Linq;
 
 public class DBSPExpressionStatement extends DBSPStatement {
     public final DBSPExpression expression;
 
     public DBSPExpressionStatement(DBSPExpression expression) {
-        super(null);
+        super(expression.getNode());
         this.expression = expression;
     }
 

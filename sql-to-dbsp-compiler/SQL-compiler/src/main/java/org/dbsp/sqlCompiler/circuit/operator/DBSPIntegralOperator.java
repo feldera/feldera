@@ -23,13 +23,13 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 public class DBSPIntegralOperator extends DBSPUnaryOperator {
-    public DBSPIntegralOperator(@Nullable Object node, DBSPOperator source) {
+    public DBSPIntegralOperator(CalciteObject node, DBSPOperator source) {
         super(node, "integrate", null, source.outputType, source.isMultiset, source);
     }
 

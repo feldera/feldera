@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -32,7 +33,7 @@ import java.util.List;
 import java.util.Objects;
 
 public class DBSPFlatMapOperator extends DBSPUnaryOperator {
-    public DBSPFlatMapOperator(@Nullable Object node, DBSPExpression expression,
+    public DBSPFlatMapOperator(CalciteObject node, DBSPExpression expression,
                                DBSPType resultType, DBSPOperator input) {
         super(node, "flat_map", expression, resultType, true, input);
         this.checkArgumentFunctionType(expression, 0, input);

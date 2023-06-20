@@ -23,16 +23,16 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
-import javax.annotation.Nullable;
 import java.util.Objects;
 
 public class DBSPTypeBool extends DBSPTypeBaseType {
-    public DBSPTypeBool(@Nullable Object node, boolean mayBeNull) { super(node, mayBeNull); }
+    public DBSPTypeBool(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
@@ -62,8 +62,8 @@ public class DBSPTypeBool extends DBSPTypeBaseType {
         return type.is(DBSPTypeBool.class);
     }
 
-    public static final DBSPTypeBool INSTANCE = new DBSPTypeBool(null, false);
-    public static final DBSPTypeBool NULLABLE_INSTANCE = new DBSPTypeBool(null, true);
+    public static final DBSPTypeBool INSTANCE = new DBSPTypeBool(CalciteObject.EMPTY, false);
+    public static final DBSPTypeBool NULLABLE_INSTANCE = new DBSPTypeBool(CalciteObject.EMPTY, true);
 
     @Override
     public void accept(InnerVisitor visitor) {
