@@ -940,7 +940,7 @@ public abstract class InnerRewriteVisitor
                 implementation.getNode(), zero,
                 increment.to(DBSPClosureExpression.class),
                 postProcess != null ? postProcess.to(DBSPClosureExpression.class) : null,
-                emptySetResult, semiGroup, implementation.isLinear);
+                emptySetResult, semiGroup, null);
         this.map(implementation, result);
         return VisitDecision.STOP;
     }

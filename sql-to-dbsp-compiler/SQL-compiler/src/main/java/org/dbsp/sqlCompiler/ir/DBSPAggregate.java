@@ -270,9 +270,13 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
          */
         public final DBSPType semigroup;
         /**
-         * True if the fold function is linear.
+         * If non-null this is a function with the signature
+         * (key, value) -> accumulator, where 'accumulator' implements
+         * MulByRef.  The function is applied to each row, the result
+         * is weighted by the row weight, and the results are added.
          */
-        public final boolean isLinear;
+        @Nullable
+        public final DBSPClosureExpression linearFunction;
 
         public Implementation(
                 CalciteObject origin,
@@ -282,14 +286,15 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                 DBSPClosureExpression postProcess,
                 DBSPExpression emptySetResult,
                 DBSPType semigroup,
-                boolean linear) {
+                @Nullable
+                DBSPClosureExpression linearFunction) {
             super(origin);
             this.zero = zero;
             this.increment = increment;
             this.postProcess = postProcess;
             this.emptySetResult = emptySetResult;
             this.semigroup = semigroup;
-            this.isLinear = linear;
+            this.linearFunction = linearFunction;
             this.validate();
         }
 
@@ -299,8 +304,9 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                 DBSPClosureExpression increment,
                 DBSPExpression emptySetResult,
                 DBSPType semigroup,
-                boolean linear) {
-            this(operator, zero, increment, null, emptySetResult, semigroup, linear);
+                @Nullable
+                DBSPClosureExpression linearFunction) {
+            this(operator, zero, increment, null, emptySetResult, semigroup, linearFunction);
         }
 
         void validate() {
@@ -430,6 +436,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         DBSPExpression[] increments = new DBSPExpression[parts];
         DBSPExpression[] posts = new DBSPExpression[parts];
         DBSPExpression[] emptySetResults = new DBSPExpression[parts];
+        DBSPExpression[] linear = new DBSPExpression[parts];
 
         DBSPType[] accumulatorTypes = new DBSPType[parts];
         DBSPType[] semigroups = new DBSPType[parts];
@@ -480,6 +487,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         DBSPClosureExpression postClosure = new DBSPTupleExpression(posts).closure(postAccumulator.asParameter());
         DBSPType semigroup = new DBSPTypeSemigroup(semigroups, accumulatorTypes);
         return new DBSPAggregate.Implementation(this.getNode(), new DBSPRawTupleExpression(zeros),
-                accumFunction, postClosure, new DBSPRawTupleExpression(emptySetResults), semigroup, this.isLinear());
+                // TODO
+                accumFunction, postClosure, new DBSPRawTupleExpression(emptySetResults), semigroup, null);
     }
 }
