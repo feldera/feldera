@@ -522,7 +522,7 @@ fn main() {
 
     println!("Generating repositories");
     let repositories = generate_repositories(NUM_REPOSITORIES);
-    println!("repos: {repositories:#?}");
+    // println!("repos: {repositories:#?}");
     producer.send_to_topic(TOPIC_REPOSITORY, &[repositories]);
 
     println!("Generating commits");
