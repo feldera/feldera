@@ -200,15 +200,17 @@ where
     /// functions.
     ///
     /// This method only works for linear aggregation functions `f`, i.e.,
-    /// functions that satisfy `f(a+b) = f(a) + f(b)`.  It will produce
-    /// incorrect results if `f` is not linear.  Linearity means that
-    /// `f` can be defined per `(key, value)` tuple.
+    /// functions that satisfy `f(a+b) = f(a) + f(b)`, where the first "+"
+    /// is the zset union of zsets composed of tuples a and b.
+    /// This function will will produce incorrect results if `f` is not linear.
+    /// The input stream is ZSet of (key, value) pairs, but the function
+    /// only receives the "value" part as an input.
     pub fn stream_aggregate_linear<F, A>(&self, f: F) -> Stream<C, OrdIndexedZSet<Z::Key, A, Z::R>>
     where
         Z: IndexedZSet + Send,
         A: DBData + MulByRef<Z::R, Output = A> + GroupValue,
         Z::R: ZRingValue,
-        F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
+        F: Fn(&Z::Val) -> A + Clone + 'static,
     {
         self.stream_aggregate_linear_generic(f)
     }
@@ -220,9 +222,9 @@ where
         A: DBData + MulByRef<Z::R, Output = A> + GroupValue,
         O: IndexedZSet<Key = Z::Key, Val = A>,
         O::R: ZRingValue,
-        F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
+        F: Fn(&Z::Val) -> A + Clone + 'static,
     {
-        self.weigh(f).stream_aggregate_generic(WeightedCount)
+        self.weigh(move |_k, v| f(v)).stream_aggregate_generic(WeightedCount)
     }
 
     /// Incremental aggregation operator.
@@ -280,14 +282,17 @@ where
     /// aggregation functions.
     ///
     /// This method only works for linear aggregation functions `f`, i.e.,
-    /// functions that satisfy `f(a+b) = f(a) + f(b)`.  It will produce
-    /// incorrect results if `f` is not linear.  Linearity means that
-    /// `f` can be defined per `(key, value)` tuple.
+    /// functions that satisfy `f(a+b) = f(a) + f(b)`, where the first "+"
+    /// is zset union of the zsets composed of tuples a and b.
+    /// This function will produce
+    /// incorrect results if `f` is not linear.  The input of
+    /// `aggregate_linear` is an indexed Zset, but the function `f` is only
+    /// applied to the values, ignoring the keys.
     pub fn aggregate_linear<F, A>(&self, f: F) -> Stream<C, OrdIndexedZSet<Z::Key, A, Z::R>>
     where
         Z: IndexedZSet,
         A: DBData + MulByRef<Z::R, Output = A> + GroupValue,
-        F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
+        F: Fn(&Z::Val) -> A + Clone + 'static,
         Z::R: ZRingValue,
     {
         self.aggregate_linear_generic(f)
@@ -297,12 +302,12 @@ where
     pub fn aggregate_linear_generic<F, O>(&self, f: F) -> Stream<C, O>
     where
         Z: IndexedZSet,
-        F: Fn(&Z::Key, &Z::Val) -> O::Val + Clone + 'static,
+        F: Fn(&Z::Val) -> O::Val + Clone + 'static,
         O: Batch<Key = Z::Key, Time = ()>,
         O::R: ZRingValue,
         O::Val: MulByRef<Z::R, Output = O::Val> + GroupValue,
     {
-        self.weigh(f).aggregate_generic(WeightedCount)
+        self.weigh(move |_k, v| f(v)).aggregate_generic(WeightedCount)
     }
 
     /// Convert indexed Z-set `Z` into a Z-set where the weight of each key
@@ -773,7 +778,7 @@ mod test {
 
                 // Weighted sum aggregate that returns only the weighted sum
                 // value and is therefore linear.
-                let sum_linear = |_key: &usize, val: &isize| -> isize { *val };
+                let sum_linear = |val: &isize| -> isize { *val };
 
                 let sum_inc = input.aggregate(sum.clone()).gather(0);
                 let sum_inc_linear: Stream<_, OrdIndexedZSet<usize, isize, isize>> =
@@ -966,7 +971,7 @@ mod test {
                 });
 
             input_stream
-                .aggregate_linear(|_key, value: &usize| *value as isize)
+                .aggregate_linear(|value: &usize| *value as isize)
                 .gather(0)
                 .inspect(move |batch| {
                     if Runtime::worker_index() == 0 {
