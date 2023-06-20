@@ -934,13 +934,15 @@ public abstract class InnerRewriteVisitor
         @Nullable DBSPExpression postProcess = this.transformN(implementation.postProcess);
         DBSPExpression emptySetResult = this.transform(implementation.emptySetResult);
         DBSPType semiGroup = this.transform(implementation.semigroup);
+        DBSPExpression linear = this.transformN(implementation.linearFunction);
         this.pop(implementation);
 
         DBSPAggregate.Implementation result = new DBSPAggregate.Implementation(
                 implementation.getNode(), zero,
                 increment.to(DBSPClosureExpression.class),
                 postProcess != null ? postProcess.to(DBSPClosureExpression.class) : null,
-                emptySetResult, semiGroup, null);
+                emptySetResult, semiGroup,
+                linear != null ? linear.to(DBSPClosureExpression.class) : null);
         this.map(implementation, result);
         return VisitDecision.STOP;
     }

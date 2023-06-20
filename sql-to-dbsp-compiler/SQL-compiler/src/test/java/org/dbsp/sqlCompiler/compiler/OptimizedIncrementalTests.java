@@ -23,15 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
-import org.junit.Test;
-
 public class OptimizedIncrementalTests extends NaiveIncrementalTests {
     public void invokeTestQueryBase(String query, BaseSQLTests.InputOutputPair... streams) {
         super.testQueryBase(query, true, true, false, streams);
-    }
-
-    @Test
-    public void aggregateTest() {
-        super.aggregateTest();
     }
 }

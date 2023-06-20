@@ -138,8 +138,11 @@ public class AggregateCompiler implements ICompilerComponent {
                 argument = one;
         }
 
+        @Nullable
+        DBSPClosureExpression linear = argument.closure(this.v.asParameter());
         DBSPVariablePath accumulator = this.resultType.var(this.genAccumulatorName());
         if (this.isDistinct) {
+            linear = null;
             increment = ExpressionCompiler.aggregateOperation(
                     node, DBSPOpcode.AGG_ADD,
                     this.resultType, accumulator, argument);
@@ -153,8 +156,8 @@ public class AggregateCompiler implements ICompilerComponent {
         }
         DBSPType semigroup = new DBSPTypeUser(node, "DefaultSemigroup", false, this.resultType);
         this.foldingFunction = new DBSPAggregate.Implementation(
-                new CalciteObject(function), zero, this.makeRowClosure(increment, accumulator),
-                zero, semigroup, null);
+                node, zero, this.makeRowClosure(increment, accumulator),
+                zero, semigroup, linear);
     }
 
     private DBSPExpression getAggregatedValue() {
@@ -224,11 +227,14 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPVariablePath accumulator = this.resultType.var(this.genAccumulatorName());
         CalciteObject node = new CalciteObject(function);
 
+        @Nullable
+        DBSPClosureExpression linear = null;
         if (this.isDistinct) {
             increment = ExpressionCompiler.aggregateOperation(
                     node, DBSPOpcode.AGG_ADD,
                     this.resultType, accumulator, aggregatedValue);
         } else {
+            linear = aggregatedValue.closure(this.v.asParameter());
             increment = ExpressionCompiler.aggregateOperation(
                     node, DBSPOpcode.AGG_ADD, this.resultType,
                     accumulator, new DBSPBinaryExpression(
@@ -241,7 +247,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPType semigroup = new DBSPTypeUser(node, semigroupName, false,
                 accumulator.getType().setMayBeNull(false));
         this.foldingFunction = new DBSPAggregate.Implementation(
-                node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, null);
+                node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, linear);
     }
 
     void processAvg(SqlAvgAggFunction function) {

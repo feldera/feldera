@@ -95,11 +95,19 @@ impl MulAssign<&'_ Present> for Present {
     fn mul_assign(&mut self, _rhs: &Self) {}
 }
 
-impl<T> MulByRef<Present> for T
-where
-    T: Clone,
+impl MulByRef<Present> for i32
 {
-    type Output = T;
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, _other: &Present) -> Self::Output {
+        self.clone()
+    }
+}
+
+impl MulByRef<Present> for i64
+{
+    type Output = Self;
 
     #[inline]
     fn mul_by_ref(&self, _other: &Present) -> Self::Output {

@@ -1177,30 +1177,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPAggregate aggregate) {
-        // Should only happen during debugging, we never generate code directly for aggregates.
-        this.builder.append("Aggregate:").increase();
-        for (DBSPAggregate.Implementation impl : aggregate.components)
-            impl.accept(this);
-        this.builder.decrease();
-        return VisitDecision.STOP;
+        // This should have been eliminated
+        throw new UnsupportedException(aggregate);
     }
 
     @Override
     public VisitDecision preorder(DBSPAggregate.Implementation implementation) {
-        // Should only happen during debugging, we never generate code directly for aggregates.
-        this.builder.append("zero=");
-        implementation.zero.accept(this);
-        this.builder.newline().append("increment=");
-        implementation.increment.accept(this);
-        if (implementation.postProcess != null) {
-            this.builder.newline().append("postProcess=");
-            implementation.postProcess.accept(this);
-        }
-        this.builder.newline().append("emptySetResult=");
-        implementation.emptySetResult.accept(this);
-        this.builder.newline().append("semigroup=");
-        implementation.semigroup.accept(this);
-        return VisitDecision.STOP;
+        // This should have been eliminated
+        throw new UnsupportedException(implementation);
     }
 
     public static String toRustString(IErrorReporter reporter, IDBSPInnerNode node, boolean compact) {

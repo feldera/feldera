@@ -112,8 +112,13 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPAggregate.Implementation impl = node.getAggregate().combine(this.errorReporter);
-        DBSPExpression function = node.isLinear ? impl.increment : impl.asFold();
+        DBSPExpression function;
+        if (node.isLinear) {
+            function = node.getAggregate().combineLinear();
+        } else {
+            DBSPAggregate.Implementation impl = node.getAggregate().combine(this.errorReporter);
+            function = impl.asFold();
+        }
         DBSPOperator result = new DBSPAggregateOperator(node.getNode(), node.keyType, node.outputElementType,
                 node.weightType, function, null, this.mapped(node.input()), node.isLinear);
         this.map(node, result);
@@ -126,8 +131,13 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPAggregate.Implementation impl = node.getAggregate().combine(this.errorReporter);
-        DBSPExpression function = node.isLinear ? impl.increment : impl.asFold();
+        DBSPExpression function;
+        if (node.isLinear) {
+            function = node.getAggregate().combineLinear();
+        } else {
+            DBSPAggregate.Implementation impl = node.getAggregate().combine(this.errorReporter);
+            function = impl.asFold();
+        }
         DBSPOperator result = new DBSPIncrementalAggregateOperator(node.getNode(), node.keyType, node.outputElementType,
                 DBSPTypeWeight.INSTANCE, function, null, this.mapped(node.input()), node.isLinear);
         this.map(node, result);

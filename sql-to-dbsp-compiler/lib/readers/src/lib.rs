@@ -4,10 +4,12 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
+use paste::paste;
+use derive_more::{Add,Sub,Neg,From,Into,AddAssign};
 use async_std::task;
 use csv::{Reader, ReaderBuilder};
 use dbsp::{
-    algebra::{HasOne, ZRingValue, ZSet},
+    algebra::{HasOne,HasZero,ZRingValue,ZSet,MulByRef,AddByRef,NegByRef,AddAssignByRef},
     trace::Batch,
     zset, DBData, DBWeight, OrdZSet,
 };

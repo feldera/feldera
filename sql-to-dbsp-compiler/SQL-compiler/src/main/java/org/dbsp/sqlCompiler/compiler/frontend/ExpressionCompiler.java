@@ -296,8 +296,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 .append(" ")
                 .append(call.getType().toString());
         if (call.op.kind == SqlKind.SEARCH) {
-            // TODO: ideally the optimizer should do this before handing the expression to us.
-            // Then we can get rid of the rexBuilder field too.
+            // TODO: Ideally the optimizer should do this before handing the expression to us.
+            // Then the rexBuilder won't be needed.
             call = (RexCall)RexUtil.expandSearch(this.rexBuilder, null, call);
         }
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));

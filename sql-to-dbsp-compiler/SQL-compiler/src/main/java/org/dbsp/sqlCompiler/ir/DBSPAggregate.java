@@ -239,6 +239,27 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
     }
 
     /**
+     * Given an DBSPAggregate where all Implementation objects have a linearFunction
+     * component, combine these linear functions into a single one.
+     * The linear functions have the signature:
+     * '|row| value', where 'row' is always the same variable.
+     * The result function will have the signature:
+     * |_k, row| (value0, value1, ...).
+     */
+    public DBSPClosureExpression combineLinear() {
+        DBSPClosureExpression[] closures = Linq.map(this.components, c -> c.linearFunction, DBSPClosureExpression.class);
+        for (DBSPClosureExpression expr: closures) {
+            if (expr.parameters.length != 1)
+                throw new RuntimeException("Expected exactly 1 parameter for linear closure" + expr);
+        }
+        DBSPParameter row = closures[0].parameters[0];
+        DBSPParameter key = new DBSPVariablePath("_k", DBSPTypeAny.INSTANCE).asParameter();
+        DBSPExpression[] bodies = Linq.map(closures, c -> c.body, DBSPExpression.class);
+        DBSPTupleExpression tuple = new DBSPTupleExpression(bodies);
+        return tuple.closure(key, row);
+    }
+
+    /**
      * An aggregate is compiled as functional fold operation,
      * described by a zero (initial value), an increment
      * function, and a postprocessing step that makes any necessary conversions.
@@ -271,8 +292,8 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         public final DBSPType semigroup;
         /**
          * If non-null this is a function with the signature
-         * (key, value) -> accumulator, where 'accumulator' implements
-         * MulByRef.  The function is applied to each row, the result
+         * |value| accumulator, where 'accumulator' implements
+         * GroupValue.  The function is applied to each row, the result
          * is weighted by the row weight, and the results are added.
          */
         @Nullable
@@ -395,19 +416,23 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                         .append("postProcess=")
                         .append(this.postProcess);
             }
-            return builder.newline()
+            builder.newline()
                     .append("emptySetResult=")
                     .append(this.emptySetResult)
                     .newline()
                     .append("semigroup=")
                     .append(this.semigroup);
+            if (this.linearFunction != null) {
+                builder.newline()
+                        .append("linearFunction=")
+                        .append(this.linearFunction);
+            }
+            return builder;
         }
     }
 
     public boolean isLinear() {
-        return false;
-        // TODO: enable this
-        // return Linq.all(this.components, c -> c.isLinear);
+        return Linq.all(this.components, c -> c.linearFunction != null);
     }
 
     @Override
@@ -487,7 +512,6 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         DBSPClosureExpression postClosure = new DBSPTupleExpression(posts).closure(postAccumulator.asParameter());
         DBSPType semigroup = new DBSPTypeSemigroup(semigroups, accumulatorTypes);
         return new DBSPAggregate.Implementation(this.getNode(), new DBSPRawTupleExpression(zeros),
-                // TODO
                 accumFunction, postClosure, new DBSPRawTupleExpression(emptySetResults), semigroup, null);
     }
 }
