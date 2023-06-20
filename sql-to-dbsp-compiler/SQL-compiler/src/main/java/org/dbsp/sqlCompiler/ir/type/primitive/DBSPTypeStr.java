@@ -32,7 +32,7 @@ import org.dbsp.util.UnsupportedException;
 import java.util.Objects;
 
 public class DBSPTypeStr extends DBSPTypeBaseType {
-    public static final DBSPTypeStr INSTANCE =new DBSPTypeStr(new CalciteObject(),false);
+    public static final DBSPTypeStr INSTANCE =new DBSPTypeStr(CalciteObject.EMPTY,false);
 
     protected DBSPTypeStr(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
 

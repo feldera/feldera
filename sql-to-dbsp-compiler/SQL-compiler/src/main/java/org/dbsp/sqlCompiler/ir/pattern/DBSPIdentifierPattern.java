@@ -35,7 +35,7 @@ public class DBSPIdentifierPattern extends DBSPPattern {
     public final boolean mutable;
 
     public DBSPIdentifierPattern(String identifier, boolean mutable) {
-        super(new CalciteObject());
+        super(CalciteObject.EMPTY);
         this.identifier = identifier;
         this.mutable = mutable;
     }

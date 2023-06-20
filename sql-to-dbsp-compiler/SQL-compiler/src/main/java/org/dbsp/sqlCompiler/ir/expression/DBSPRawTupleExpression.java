@@ -38,7 +38,7 @@ import java.util.List;
  */
 public class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
     public DBSPRawTupleExpression(DBSPExpression... expressions) {
-        super(new CalciteObject(),
+        super(CalciteObject.EMPTY,
                 new DBSPTypeRawTuple(Linq.map(expressions, DBSPExpression::getType, DBSPType.class)), expressions);
     }
 

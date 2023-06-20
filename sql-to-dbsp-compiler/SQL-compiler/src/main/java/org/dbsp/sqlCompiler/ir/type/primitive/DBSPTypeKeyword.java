@@ -40,7 +40,7 @@ public class DBSPTypeKeyword extends DBSPTypeBaseType {
     public static final DBSPTypeKeyword INSTANCE =new DBSPTypeKeyword();
 
     protected DBSPTypeKeyword() {
-        super(new CalciteObject(), false);
+        super(CalciteObject.EMPTY, false);
     }
 
     @Override

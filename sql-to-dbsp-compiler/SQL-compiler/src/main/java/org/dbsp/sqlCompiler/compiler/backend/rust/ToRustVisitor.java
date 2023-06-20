@@ -127,7 +127,7 @@ public class ToRustVisitor extends CircuitVisitor {
             i.getType().accept(this.innerVisitor);
         }
         this.builder.append(") -> ");
-        DBSPTypeRawTuple tuple = new DBSPTypeRawTuple(new CalciteObject(), Linq.map(circuit.outputOperators, DBSPOperator::getType));
+        DBSPTypeRawTuple tuple = new DBSPTypeRawTuple(CalciteObject.EMPTY, Linq.map(circuit.outputOperators, DBSPOperator::getType));
         tuple.accept(this.innerVisitor);
         this.builder.append(" {").increase();
         // For each input and output operator a corresponding Rc cell

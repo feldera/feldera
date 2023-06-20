@@ -44,7 +44,7 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     }
 
     public DBSPTypeRawTuple(DBSPType... tupArgs) {
-        this(new CalciteObject(), false, tupArgs);
+        this(CalciteObject.EMPTY, false, tupArgs);
     }
 
     public DBSPTypeRawTuple(CalciteObject node, List<DBSPType> tupArgs) {

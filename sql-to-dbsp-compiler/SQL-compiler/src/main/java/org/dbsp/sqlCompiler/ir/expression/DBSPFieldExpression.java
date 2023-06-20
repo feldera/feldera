@@ -45,7 +45,7 @@ public class DBSPFieldExpression extends DBSPExpression {
     }
 
     protected DBSPFieldExpression(DBSPExpression expression, int fieldNo, DBSPType type) {
-        this(new CalciteObject(), expression, fieldNo, type);
+        this(CalciteObject.EMPTY, expression, fieldNo, type);
     }
 
     static DBSPType getFieldType(DBSPType type, int fieldNo) {
@@ -60,7 +60,7 @@ public class DBSPFieldExpression extends DBSPExpression {
     }
 
     DBSPFieldExpression(DBSPExpression expression, int fieldNo) {
-        this(new CalciteObject(), expression, fieldNo);
+        this(CalciteObject.EMPTY, expression, fieldNo);
     }
 
     public DBSPExpression simplify() {

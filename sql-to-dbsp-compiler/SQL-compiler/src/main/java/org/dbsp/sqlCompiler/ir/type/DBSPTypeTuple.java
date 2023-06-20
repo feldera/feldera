@@ -47,7 +47,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     public DBSPTypeTuple(DBSPType... tupFields) {
-        this(new CalciteObject(), tupFields);
+        this(CalciteObject.EMPTY, tupFields);
     }
 
     public DBSPTypeTuple(CalciteObject node, List<DBSPType> tupFields) {
@@ -55,7 +55,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     public DBSPTypeTuple(List<DBSPType> tupFields) {
-        this(new CalciteObject(), tupFields);
+        this(CalciteObject.EMPTY, tupFields);
     }
 
     @Override

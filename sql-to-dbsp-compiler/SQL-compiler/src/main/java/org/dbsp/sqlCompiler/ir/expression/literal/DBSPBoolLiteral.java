@@ -56,7 +56,7 @@ public class DBSPBoolLiteral extends DBSPLiteral {
     }
 
     public DBSPBoolLiteral(@Nullable Boolean b, boolean nullable) {
-        this(new CalciteObject(), DBSPTypeBool.INSTANCE.setMayBeNull(nullable), b);
+        this(CalciteObject.EMPTY, DBSPTypeBool.INSTANCE.setMayBeNull(nullable), b);
         if (b == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }

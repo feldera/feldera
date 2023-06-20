@@ -147,7 +147,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 for (int i = 0; i < tables.length; i++) {
                     String fileName = (rustDirectory + tables[i].tableName) + ".csv";
                     ToCsvVisitor.toCsv(compiler, fileName, tables[i].contents);
-                    fields[i] = new DBSPApplyExpression(new CalciteObject(), "read_csv",
+                    fields[i] = new DBSPApplyExpression(CalciteObject.EMPTY, "read_csv",
                             tables[i].contents.getType(),
                             new DBSPStrLiteral(fileName));
                 }
@@ -165,7 +165,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
 
     private DBSPExpression generateReadDbCall(TableValue tableValue) {
         // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
-        DBSPTypeUser sqliteRowType = new DBSPTypeUser(new CalciteObject(), "AnyRow", false);
+        DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, "AnyRow", false);
         DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType);
         DBSPTypeTuple tupleType = tableValue.contents.zsetType.elementType.to(DBSPTypeTuple.class);
         final List<DBSPExpression> rowGets = new ArrayList<>(tupleType.tupFields.length);
@@ -177,7 +177,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             rowGets.add(rowGet);
         }
         DBSPTupleExpression tuple = new DBSPTupleExpression(rowGets, false);
-        DBSPClosureExpression mapClosure = new DBSPClosureExpression(new CalciteObject(), tuple,
+        DBSPClosureExpression mapClosure = new DBSPClosureExpression(CalciteObject.EMPTY, tuple,
                 rowVariable.asRefParameter());
         return new DBSPApplyExpression("read_db", tableValue.contents.zsetType,
                 new DBSPStrLiteral(this.connectionString), new DBSPStrLiteral(tableValue.tableName),
@@ -366,7 +366,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 fields.add(field);
                 col++;
                 if (col == outputElementType.size()) {
-                    container.add(new DBSPTupleExpression(new CalciteObject(), fields));
+                    container.add(new DBSPTupleExpression(CalciteObject.EMPTY, fields));
                     fields = new ArrayList<>();
                     col = 0;
                 }

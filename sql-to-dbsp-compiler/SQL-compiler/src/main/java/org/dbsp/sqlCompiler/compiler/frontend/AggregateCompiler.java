@@ -214,7 +214,7 @@ public class AggregateCompiler implements ICompilerComponent {
                             aggregatedValue,
                             this.compiler.weightVar));
         }
-        DBSPType semigroup = new DBSPTypeUser(new CalciteObject(), "DefaultOptSemigroup",
+        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, "DefaultOptSemigroup",
                 false, accumulator.getType().setMayBeNull(false));
         this.foldingFunction = new DBSPAggregate.Implementation(
                 node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, null);

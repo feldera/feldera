@@ -15,7 +15,7 @@ public class DBSPTypeWeight extends DBSPTypeBaseType {
     public static final DBSPTypeWeight INSTANCE = new DBSPTypeWeight();
 
     protected DBSPTypeWeight() {
-        super(new CalciteObject(), false);
+        super(CalciteObject.EMPTY, false);
     }
 
     @Override

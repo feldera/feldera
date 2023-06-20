@@ -39,7 +39,9 @@ public class CalciteObject {
         this.rexNode = rexNode;
     }
 
-    public CalciteObject() {
+    public static final CalciteObject EMPTY = new CalciteObject();
+
+    protected CalciteObject() {
         this(null, null, null, null, null);
     }
 

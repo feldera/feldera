@@ -54,7 +54,7 @@ public class DBSPU32Literal extends DBSPLiteral {
     }
 
     public DBSPU32Literal(@Nullable Integer value, boolean nullable) {
-        this(new CalciteObject(), DBSPTypeInteger.UNSIGNED_32.setMayBeNull(nullable), value);
+        this(CalciteObject.EMPTY, DBSPTypeInteger.UNSIGNED_32.setMayBeNull(nullable), value);
         if (value == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
         if (value != null && value < 0)

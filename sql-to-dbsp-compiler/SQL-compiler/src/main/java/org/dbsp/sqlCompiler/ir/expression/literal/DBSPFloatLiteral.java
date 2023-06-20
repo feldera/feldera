@@ -55,7 +55,7 @@ public class DBSPFloatLiteral extends DBSPFPLiteral {
     }
 
     protected DBSPFloatLiteral(@Nullable Float f, boolean nullable, boolean raw) {
-        this(new CalciteObject(), DBSPTypeFloat.INSTANCE.setMayBeNull(nullable), f, raw);
+        this(CalciteObject.EMPTY, DBSPTypeFloat.INSTANCE.setMayBeNull(nullable), f, raw);
         if (f == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }

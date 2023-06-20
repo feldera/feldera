@@ -36,8 +36,8 @@ import org.dbsp.util.UnsupportedException;
 import java.util.Objects;
 
 public class DBSPTypeDate extends DBSPTypeBaseType implements IsNumericType, IsDateType {
-    public static final DBSPTypeDate INSTANCE =new DBSPTypeDate(new CalciteObject(), false);
-    public static final DBSPTypeDate NULLABLE_INSTANCE = new DBSPTypeDate(new CalciteObject(), true);
+    public static final DBSPTypeDate INSTANCE =new DBSPTypeDate(CalciteObject.EMPTY, false);
+    public static final DBSPTypeDate NULLABLE_INSTANCE = new DBSPTypeDate(CalciteObject.EMPTY, true);
 
     protected DBSPTypeDate(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);

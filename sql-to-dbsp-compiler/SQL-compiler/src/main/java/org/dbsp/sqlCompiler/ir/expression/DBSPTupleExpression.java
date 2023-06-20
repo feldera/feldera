@@ -54,11 +54,11 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
     }
 
     public DBSPTupleExpression(DBSPExpression... expressions) {
-        this(new CalciteObject(), false, expressions);
+        this(CalciteObject.EMPTY, false, expressions);
     }
 
     public DBSPTupleExpression(List<DBSPExpression> fields, boolean mayBeNull) {
-        this(new CalciteObject(), mayBeNull, fields.toArray(new DBSPExpression[0]));
+        this(CalciteObject.EMPTY, mayBeNull, fields.toArray(new DBSPExpression[0]));
     }
 
     public DBSPTupleExpression(CalciteObject node, List<DBSPExpression> fields) {

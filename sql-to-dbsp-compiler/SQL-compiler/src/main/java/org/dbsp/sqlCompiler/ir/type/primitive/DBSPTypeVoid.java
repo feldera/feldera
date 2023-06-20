@@ -10,7 +10,7 @@ public class DBSPTypeVoid extends DBSPTypeBaseType {
     public static final DBSPTypeVoid INSTANCE = new DBSPTypeVoid();
 
     protected DBSPTypeVoid() {
-        super(new CalciteObject(), false);
+        super(CalciteObject.EMPTY, false);
     }
 
     @Override

@@ -52,7 +52,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
     public final IErrorReporter errorReporter;
 
     public DBSPPartialCircuit(IErrorReporter errorReporter) {
-        super(new CalciteObject());
+        super(CalciteObject.EMPTY);
         this.errorReporter = errorReporter;
     }
 

@@ -35,7 +35,7 @@ public class DBSPTuplePattern extends DBSPPattern {
     public final DBSPPattern[] fields;
 
     public DBSPTuplePattern(DBSPPattern... fields) {
-        super(new CalciteObject());
+        super(CalciteObject.EMPTY);
         this.fields = fields;
     }
 

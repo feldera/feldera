@@ -189,7 +189,7 @@ public class BaseSQLTests {
                 DBSPLetStatement id = new DBSPLetStatement(table + "_id", nodeId);
                 list.add(id);
 
-                DBSPIndexExpression indexExpr = new DBSPIndexExpression(new CalciteObject(),
+                DBSPIndexExpression indexExpr = new DBSPIndexExpression(CalciteObject.EMPTY,
                         graphNodes.getVarReference(), id.getVarReference().borrow(), false);
                 DBSPExpression layout = new DBSPApplyMethodExpression(
                         "layout", DBSPTypeAny.INSTANCE,

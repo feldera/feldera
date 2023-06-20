@@ -51,13 +51,13 @@ public class DBSPApplyMethodExpression extends DBSPExpression {
 
     public DBSPApplyMethodExpression(String function, DBSPType returnType,
                                      DBSPExpression self, DBSPExpression... arguments) {
-        this(new CalciteObject(), function, returnType, self, arguments);
+        this(CalciteObject.EMPTY, function, returnType, self, arguments);
     }
 
     public DBSPApplyMethodExpression(
             DBSPExpression function, DBSPType returnType,
             DBSPExpression self, DBSPExpression... arguments) {
-        super(new CalciteObject(), returnType);
+        super(CalciteObject.EMPTY, returnType);
         this.function = function;
         this.self = self;
         this.arguments = arguments;

@@ -41,15 +41,15 @@ public class DBSPIntervalMonthsLiteral extends DBSPLiteral {
     }
 
     public DBSPIntervalMonthsLiteral(int value) {
-        this(new CalciteObject(), DBSPTypeMonthsInterval.INSTANCE, value);
+        this(CalciteObject.EMPTY, DBSPTypeMonthsInterval.INSTANCE, value);
     }
 
     public DBSPIntervalMonthsLiteral(int value, boolean mayBeNull) {
-        this(new CalciteObject(), DBSPTypeMonthsInterval.INSTANCE.setMayBeNull(mayBeNull), value);
+        this(CalciteObject.EMPTY, DBSPTypeMonthsInterval.INSTANCE.setMayBeNull(mayBeNull), value);
     }
 
     public DBSPIntervalMonthsLiteral() {
-        this(new CalciteObject(), DBSPTypeMonthsInterval.NULLABLE_INSTANCE, null);
+        this(CalciteObject.EMPTY, DBSPTypeMonthsInterval.NULLABLE_INSTANCE, null);
     }
 
     @Override

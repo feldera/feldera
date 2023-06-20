@@ -39,8 +39,8 @@ import java.util.Objects;
  * Always stores the interval value in days.
  */
 public class DBSPTypeMonthsInterval extends DBSPTypeBaseType implements IsNumericType, IsDateType {
-    public static final DBSPType INSTANCE = new DBSPTypeMonthsInterval(new CalciteObject(), false);
-    public static final DBSPType NULLABLE_INSTANCE = new DBSPTypeMonthsInterval(new CalciteObject(), true);
+    public static final DBSPType INSTANCE = new DBSPTypeMonthsInterval(CalciteObject.EMPTY, false);
+    public static final DBSPType NULLABLE_INSTANCE = new DBSPTypeMonthsInterval(CalciteObject.EMPTY, true);
 
     public DBSPTypeMonthsInterval(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);

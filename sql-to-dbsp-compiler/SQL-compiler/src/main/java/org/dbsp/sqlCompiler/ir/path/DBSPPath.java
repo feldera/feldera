@@ -35,7 +35,7 @@ public class DBSPPath extends DBSPNode implements IDBSPInnerNode {
     public final DBSPPathSegment[] components;
 
     public DBSPPath(DBSPPathSegment... components) {
-        super(new CalciteObject());
+        super(CalciteObject.EMPTY);
         this.components = components;
     }
 

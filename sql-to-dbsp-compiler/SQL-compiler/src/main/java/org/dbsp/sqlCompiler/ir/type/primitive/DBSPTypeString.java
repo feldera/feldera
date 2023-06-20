@@ -33,9 +33,9 @@ import java.util.Objects;
 
 public class DBSPTypeString extends DBSPTypeBaseType {
     public static final DBSPTypeString INSTANCE =
-            new DBSPTypeString(new CalciteObject(),false);
+            new DBSPTypeString(CalciteObject.EMPTY,false);
     public static final DBSPTypeString NULLABLE_INSTANCE =
-            new DBSPTypeString(new CalciteObject(),true);
+            new DBSPTypeString(CalciteObject.EMPTY,true);
 
     protected DBSPTypeString(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
 

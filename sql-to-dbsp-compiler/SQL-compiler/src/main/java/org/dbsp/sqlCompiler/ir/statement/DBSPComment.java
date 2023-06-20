@@ -12,7 +12,7 @@ public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
     public final String comment;
 
     public DBSPComment(String comment) {
-        super(new CalciteObject());
+        super(CalciteObject.EMPTY);
         this.comment = comment;
     }
 

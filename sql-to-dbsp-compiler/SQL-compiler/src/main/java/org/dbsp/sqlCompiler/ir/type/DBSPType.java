@@ -48,7 +48,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
 
     @SuppressWarnings("SameParameterValue")
     protected DBSPType(boolean mayBeNull) {
-        super(new CalciteObject());
+        super(CalciteObject.EMPTY);
         this.mayBeNull = mayBeNull;
     }
 

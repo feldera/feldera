@@ -37,9 +37,9 @@ import java.util.Objects;
 public class DBSPTypeTimestamp extends DBSPTypeBaseType
         implements IsNumericType, IsDateType {
     public static final DBSPTypeTimestamp INSTANCE =
-            new DBSPTypeTimestamp(new CalciteObject(), false);
+            new DBSPTypeTimestamp(CalciteObject.EMPTY, false);
     public static final DBSPTypeTimestamp NULLABLE_INSTANCE =
-            new DBSPTypeTimestamp(new CalciteObject(), true);
+            new DBSPTypeTimestamp(CalciteObject.EMPTY, true);
 
     protected DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);

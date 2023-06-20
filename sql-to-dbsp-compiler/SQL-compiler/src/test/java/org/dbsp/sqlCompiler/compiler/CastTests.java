@@ -34,8 +34,8 @@ import org.junit.Test;
 import java.math.BigDecimal;
 
 public class CastTests extends BaseSQLTests {
-    final DBSPTypeDecimal tenTwo = new DBSPTypeDecimal(new CalciteObject(), 10, 2, true);
-    final DBSPTypeDecimal tenFour = new DBSPTypeDecimal(new CalciteObject(), 10, 4, false);
+    final DBSPTypeDecimal tenTwo = new DBSPTypeDecimal(CalciteObject.EMPTY, 10, 2, true);
+    final DBSPTypeDecimal tenFour = new DBSPTypeDecimal(CalciteObject.EMPTY, 10, 4, false);
 
     @Override
     public DBSPCompiler compileQuery(String query, boolean incremental, boolean optimize, boolean jit) {

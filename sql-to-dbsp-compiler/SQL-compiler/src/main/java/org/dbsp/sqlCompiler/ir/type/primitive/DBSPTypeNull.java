@@ -35,7 +35,7 @@ import java.util.Objects;
  * This type has a single value, NULL.
  */
 public class DBSPTypeNull extends DBSPTypeBaseType {
-    public static final DBSPType INSTANCE = new DBSPTypeNull(new CalciteObject(), true);
+    public static final DBSPType INSTANCE = new DBSPTypeNull(CalciteObject.EMPTY, true);
 
     @SuppressWarnings("SameParameterValue")
     protected DBSPTypeNull(CalciteObject node, boolean mayBeNull) {

@@ -197,15 +197,15 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
     }
 
     public DBSPZSetLiteral(DBSPType weightType, Contents contents) {
-        this(new CalciteObject(), TypeCompiler.makeZSet(contents.elementType, weightType), contents);
+        this(CalciteObject.EMPTY, TypeCompiler.makeZSet(contents.elementType, weightType), contents);
     }
 
     public DBSPZSetLiteral(DBSPType weightType, DBSPExpression... data) {
-        this(new CalciteObject(), TypeCompiler.makeZSet(data[0].getType(), weightType), new Contents(data));
+        this(CalciteObject.EMPTY, TypeCompiler.makeZSet(data[0].getType(), weightType), new Contents(data));
     }
 
     public DBSPZSetLiteral(DBSPType elementType, DBSPType weightType) {
-        this(new CalciteObject(), TypeCompiler.makeZSet(elementType, weightType), new Contents(elementType));
+        this(CalciteObject.EMPTY, TypeCompiler.makeZSet(elementType, weightType), new Contents(elementType));
     }
 
     @Override

@@ -39,8 +39,8 @@ import java.util.Objects;
  * Always stores the interval value in milliseconds.
  */
 public class DBSPTypeMillisInterval extends DBSPTypeBaseType implements IsNumericType, IsDateType {
-    public static final DBSPType INSTANCE =new DBSPTypeMillisInterval(new CalciteObject(), false);
-    public static final DBSPType NULLABLE_INSTANCE = new DBSPTypeMillisInterval(new CalciteObject(), true);
+    public static final DBSPType INSTANCE =new DBSPTypeMillisInterval(CalciteObject.EMPTY, false);
+    public static final DBSPType NULLABLE_INSTANCE = new DBSPTypeMillisInterval(CalciteObject.EMPTY, true);
 
     public DBSPTypeMillisInterval(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);

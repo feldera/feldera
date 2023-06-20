@@ -7,6 +7,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
  */
 public abstract class DBSPItem extends DBSPStatement {
     protected DBSPItem() {
-        super(new CalciteObject());
+        super(CalciteObject.EMPTY);
     }
 }

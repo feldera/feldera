@@ -40,21 +40,21 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     public final boolean signed;
 
     public static final DBSPTypeInteger SIGNED_16 =
-            new DBSPTypeInteger(new CalciteObject(), 16, true,false);
+            new DBSPTypeInteger(CalciteObject.EMPTY, 16, true,false);
     public static final DBSPTypeInteger SIGNED_32 =
-            new DBSPTypeInteger(new CalciteObject(), 32, true,false);
+            new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false);
     public static final DBSPTypeInteger SIGNED_64 =
-            new DBSPTypeInteger(new CalciteObject(), 64, true,false);
+            new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false);
     public static final DBSPTypeInteger UNSIGNED_32 =
-            new DBSPTypeInteger(new CalciteObject(), 32, false,false);
+            new DBSPTypeInteger(CalciteObject.EMPTY, 32, false,false);
     public static final DBSPTypeInteger UNSIGNED_64 =
-            new DBSPTypeInteger(new CalciteObject(), 64, false,false);
+            new DBSPTypeInteger(CalciteObject.EMPTY, 64, false,false);
     public static final DBSPTypeInteger NULLABLE_SIGNED_16 =
-            new DBSPTypeInteger(new CalciteObject(), 16, true,true);
+            new DBSPTypeInteger(CalciteObject.EMPTY, 16, true,true);
     public static final DBSPTypeInteger NULLABLE_SIGNED_32 =
-            new DBSPTypeInteger(new CalciteObject(), 32, true,true);
+            new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true);
     public static final DBSPTypeInteger NULLABLE_SIGNED_64 =
-            new DBSPTypeInteger(new CalciteObject(), 64, true,true);
+            new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,true);
 
     public DBSPTypeInteger(CalciteObject node, int width, boolean signed, boolean mayBeNull) {
         super(node, mayBeNull);

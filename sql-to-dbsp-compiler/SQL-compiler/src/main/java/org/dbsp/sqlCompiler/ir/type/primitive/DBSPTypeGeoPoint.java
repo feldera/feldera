@@ -32,8 +32,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import java.util.Objects;
 
 public class DBSPTypeGeoPoint extends DBSPTypeGeo {
-    public static final DBSPTypeGeoPoint INSTANCE =new DBSPTypeGeoPoint(new CalciteObject(), false);
-    public static final DBSPTypeGeoPoint NULLABLE_INSTANCE = new DBSPTypeGeoPoint(new CalciteObject(), true);
+    public static final DBSPTypeGeoPoint INSTANCE =new DBSPTypeGeoPoint(CalciteObject.EMPTY, false);
+    public static final DBSPTypeGeoPoint NULLABLE_INSTANCE = new DBSPTypeGeoPoint(CalciteObject.EMPTY, true);
 
     public DBSPTypeGeoPoint(CalciteObject node, boolean mayBeNull) {
         super(node, mayBeNull);

@@ -47,8 +47,8 @@ public class DBSPTypeDouble extends DBSPTypeFP implements IsNumericType {
         return "d";
     }
 
-    public static final DBSPTypeDouble INSTANCE = new DBSPTypeDouble(new CalciteObject(),false);
-    public static final DBSPTypeDouble NULLABLE_INSTANCE = new DBSPTypeDouble(new CalciteObject(),true);
+    public static final DBSPTypeDouble INSTANCE = new DBSPTypeDouble(CalciteObject.EMPTY,false);
+    public static final DBSPTypeDouble NULLABLE_INSTANCE = new DBSPTypeDouble(CalciteObject.EMPTY,true);
 
     @Override
     public boolean sameType(DBSPType type) {

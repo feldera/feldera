@@ -59,7 +59,7 @@ public class DBSPStringLiteral extends DBSPLiteral {
     }
 
     public DBSPStringLiteral(@Nullable String value, boolean nullable) {
-        this(new CalciteObject(), DBSPTypeString.INSTANCE.setMayBeNull(nullable), value);
+        this(CalciteObject.EMPTY, DBSPTypeString.INSTANCE.setMayBeNull(nullable), value);
         if (value == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }

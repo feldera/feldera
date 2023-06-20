@@ -39,7 +39,7 @@ public class DBSPEnumValue extends DBSPExpression {
     public final String constructor;
 
     public DBSPEnumValue(String enumName, String constructor) {
-        super(new CalciteObject(), new DBSPTypeUser(new CalciteObject(), enumName, false));
+        super(CalciteObject.EMPTY, new DBSPTypeUser(CalciteObject.EMPTY, enumName, false));
         this.enumName = enumName;
         this.constructor = constructor;
     }

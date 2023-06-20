@@ -24,7 +24,7 @@ public class DBSPNullLiteral extends DBSPLiteral {
     }
 
     public DBSPNullLiteral() {
-        this(new CalciteObject(), DBSPTypeNull.INSTANCE, null);
+        this(CalciteObject.EMPTY, DBSPTypeNull.INSTANCE, null);
     }
 
     @Override

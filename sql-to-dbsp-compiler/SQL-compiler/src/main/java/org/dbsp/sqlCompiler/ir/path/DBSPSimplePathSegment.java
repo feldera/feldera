@@ -35,7 +35,7 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
     public final DBSPType[] genericArgs;
 
     public DBSPSimplePathSegment(String identifier, DBSPType... genericArgs) {
-        super(new CalciteObject());
+        super(CalciteObject.EMPTY);
         this.identifier = identifier;
         this.genericArgs = genericArgs;
     }

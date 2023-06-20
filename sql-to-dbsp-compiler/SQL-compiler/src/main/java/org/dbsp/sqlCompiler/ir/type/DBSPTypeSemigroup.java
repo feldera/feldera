@@ -33,7 +33,7 @@ import org.dbsp.util.Linq;
  */
 public class DBSPTypeSemigroup extends DBSPTypeUser {
     public DBSPTypeSemigroup(DBSPType[] elementTypes, DBSPType[] semigroupTypes) {
-        super(new CalciteObject(), "Semigroup" + elementTypes.length, false,
+        super(CalciteObject.EMPTY, "Semigroup" + elementTypes.length, false,
                 Linq.concat(semigroupTypes, elementTypes));
         if (elementTypes.length != semigroupTypes.length)
             throw new RuntimeException("Each element must have a corresponding semigroup, but I have " +

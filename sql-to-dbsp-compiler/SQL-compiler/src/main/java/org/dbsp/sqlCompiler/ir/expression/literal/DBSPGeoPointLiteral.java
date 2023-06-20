@@ -47,7 +47,7 @@ public class DBSPGeoPointLiteral extends DBSPLiteral {
     }
 
     public DBSPGeoPointLiteral() {
-        super(new CalciteObject(), DBSPTypeGeoPoint.NULLABLE_INSTANCE, true);
+        super(CalciteObject.EMPTY, DBSPTypeGeoPoint.NULLABLE_INSTANCE, true);
         this.left = null;
         this.right = null;
     }

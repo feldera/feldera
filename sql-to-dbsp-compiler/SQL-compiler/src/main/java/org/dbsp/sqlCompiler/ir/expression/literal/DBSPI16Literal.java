@@ -27,7 +27,7 @@ public class DBSPI16Literal extends DBSPLiteral {
     }
 
     public DBSPI16Literal(@Nullable Short value, boolean nullable) {
-        this(new CalciteObject(), DBSPTypeInteger.SIGNED_16.setMayBeNull(nullable), value);
+        this(CalciteObject.EMPTY, DBSPTypeInteger.SIGNED_16.setMayBeNull(nullable), value);
         if (value == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }

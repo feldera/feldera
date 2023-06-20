@@ -55,7 +55,7 @@ public class DBSPApplyExpression extends DBSPExpression {
     }
 
     public DBSPApplyExpression(String function, DBSPType returnType, DBSPExpression... arguments) {
-        this(new CalciteObject(), function, returnType, arguments);
+        this(CalciteObject.EMPTY, function, returnType, arguments);
     }
 
     public static DBSPType getReturnType(DBSPType type) {
@@ -70,7 +70,7 @@ public class DBSPApplyExpression extends DBSPExpression {
     }
 
     public DBSPApplyExpression(DBSPExpression function, DBSPType returnType, DBSPExpression... arguments) {
-        super(new CalciteObject(), returnType);
+        super(CalciteObject.EMPTY, returnType);
         this.function = function;
         this.arguments = arguments;
         this.checkArgs();

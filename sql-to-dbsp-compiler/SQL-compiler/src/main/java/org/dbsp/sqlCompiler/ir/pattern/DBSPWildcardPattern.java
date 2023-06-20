@@ -34,7 +34,7 @@ public class DBSPWildcardPattern extends DBSPPattern {
     public static final DBSPWildcardPattern INSTANCE = new DBSPWildcardPattern();
 
     private DBSPWildcardPattern() {
-        super(new CalciteObject());
+        super(CalciteObject.EMPTY);
     }
 
     @Override

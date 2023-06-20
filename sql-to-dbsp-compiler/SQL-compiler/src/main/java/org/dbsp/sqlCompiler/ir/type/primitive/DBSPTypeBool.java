@@ -62,8 +62,8 @@ public class DBSPTypeBool extends DBSPTypeBaseType {
         return type.is(DBSPTypeBool.class);
     }
 
-    public static final DBSPTypeBool INSTANCE = new DBSPTypeBool(new CalciteObject(), false);
-    public static final DBSPTypeBool NULLABLE_INSTANCE = new DBSPTypeBool(new CalciteObject(), true);
+    public static final DBSPTypeBool INSTANCE = new DBSPTypeBool(CalciteObject.EMPTY, false);
+    public static final DBSPTypeBool NULLABLE_INSTANCE = new DBSPTypeBool(CalciteObject.EMPTY, true);
 
     @Override
     public void accept(InnerVisitor visitor) {

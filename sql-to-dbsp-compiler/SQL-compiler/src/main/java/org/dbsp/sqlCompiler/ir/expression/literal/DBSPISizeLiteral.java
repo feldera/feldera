@@ -51,7 +51,7 @@ public class DBSPISizeLiteral extends DBSPLiteral {
     }
 
     public DBSPISizeLiteral(@Nullable Long value, boolean nullable) {
-        this(new CalciteObject(), DBSPTypeISize.INSTANCE.setMayBeNull(nullable), value);
+        this(CalciteObject.EMPTY, DBSPTypeISize.INSTANCE.setMayBeNull(nullable), value);
         if (value == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }

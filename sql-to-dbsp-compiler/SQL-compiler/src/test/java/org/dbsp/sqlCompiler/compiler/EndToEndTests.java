@@ -332,7 +332,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT ST_POINT(0, 0)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPGeoPointLiteral(new CalciteObject(),
+                        new DBSPGeoPointLiteral(CalciteObject.EMPTY,
                                 new DBSPDoubleLiteral(0), new DBSPDoubleLiteral(0)).some())));
     }
 

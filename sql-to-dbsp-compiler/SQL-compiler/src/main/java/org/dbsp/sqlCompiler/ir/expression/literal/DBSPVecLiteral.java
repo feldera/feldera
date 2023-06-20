@@ -45,13 +45,13 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     public final DBSPTypeVec vecType;
 
     public DBSPVecLiteral(DBSPType elementType) {
-        super(new CalciteObject(), new DBSPTypeVec(elementType), false);
+        super(CalciteObject.EMPTY, new DBSPTypeVec(elementType), false);
         this.data = new ArrayList<>();
         this.vecType = this.getType().to(DBSPTypeVec.class);
     }
 
     public DBSPVecLiteral(DBSPType elementType, boolean isNull) {
-        super(new CalciteObject(), new DBSPTypeVec(elementType), isNull);
+        super(CalciteObject.EMPTY, new DBSPTypeVec(elementType), isNull);
         this.data = null;
         this.vecType = this.getType().to(DBSPTypeVec.class);
     }
@@ -71,7 +71,7 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     }
 
     public DBSPVecLiteral(DBSPExpression... data) {
-        super(new CalciteObject(), new DBSPTypeVec(data[0].getType()), false);
+        super(CalciteObject.EMPTY, new DBSPTypeVec(data[0].getType()), false);
         this.vecType = this.getType().to(DBSPTypeVec.class);
         this.data = new ArrayList<>();
         for (DBSPExpression e: data) {

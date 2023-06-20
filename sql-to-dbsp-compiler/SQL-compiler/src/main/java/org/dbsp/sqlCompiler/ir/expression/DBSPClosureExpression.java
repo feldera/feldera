@@ -55,7 +55,7 @@ public class DBSPClosureExpression extends DBSPExpression {
     }
 
     public DBSPClosureExpression(DBSPExpression body, DBSPParameter... variables) {
-        this(new CalciteObject(), body, variables);
+        this(CalciteObject.EMPTY, body, variables);
     }
 
     public DBSPExpression call(DBSPExpression... arguments) {

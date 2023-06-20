@@ -60,11 +60,11 @@ public class DBSPI64Literal extends DBSPLiteral {
     }
 
     public DBSPI64Literal(@Nullable Long value, boolean nullable) {
-        this(new CalciteObject(), value, nullable);
+        this(CalciteObject.EMPTY, value, nullable);
     }
 
     public DBSPI64Literal(@Nullable Integer value, boolean nullable) {
-        this(new CalciteObject(), value == null ? null : value.longValue(), nullable);
+        this(CalciteObject.EMPTY, value == null ? null : value.longValue(), nullable);
     }
 
     public DBSPTypeInteger getIntegerType() {

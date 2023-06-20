@@ -60,7 +60,7 @@ public class DBSPU64Literal extends DBSPLiteral {
     }
 
     public DBSPU64Literal(@Nullable Long value, boolean nullable) {
-        this(new CalciteObject(), value, nullable);
+        this(CalciteObject.EMPTY, value, nullable);
     }
 
     public DBSPTypeInteger getIntegerType() {

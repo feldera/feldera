@@ -50,7 +50,7 @@ public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration
     public DBSPFunction(String name, List<DBSPParameter> parameters,
                         DBSPType returnType, DBSPExpression body,
                         List<String> annotations) {
-        super(new CalciteObject());
+        super(CalciteObject.EMPTY);
         this.name = name;
         this.parameters = parameters;
         this.returnType = returnType;

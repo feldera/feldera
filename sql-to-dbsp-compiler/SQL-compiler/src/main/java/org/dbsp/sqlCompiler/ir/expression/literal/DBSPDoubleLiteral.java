@@ -54,7 +54,7 @@ public class DBSPDoubleLiteral extends DBSPFPLiteral {
     }
 
     protected DBSPDoubleLiteral(@Nullable Double f, boolean nullable, boolean raw) {
-        this(new CalciteObject(), DBSPTypeDouble.INSTANCE.setMayBeNull(nullable), f, raw);
+        this(CalciteObject.EMPTY, DBSPTypeDouble.INSTANCE.setMayBeNull(nullable), f, raw);
         if (f == null && !nullable)
             throw new RuntimeException("Null value with non-nullable type");
     }
