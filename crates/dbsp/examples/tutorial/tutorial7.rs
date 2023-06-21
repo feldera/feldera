@@ -56,7 +56,7 @@ fn build_circuit(
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
-        .aggregate_linear(|(_l, _y, _m), v| *v as isize);
+        .aggregate_linear(|v| *v as isize);
     let most_vax = monthly_totals
         .map_index(|((l, y, m), sum)| {
             (

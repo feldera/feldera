@@ -573,13 +573,13 @@
 //!
 //! Then we can call [`Stream::aggregate_linear`], the simplest form of
 //! aggregation in DBSP, to sum across months.  This function sums the output of
-//! a function of key-value pairs across each unique key.  To get monthly
+//! a function.  To get monthly
 //! vaccinations, we just sum the values from our indexed Z-set (we have to
 //! convert to `isize` because aggregation implicitly multiplies by record
 //! weights):
 //!
 //! ```ignore
-//!         .aggregate_linear(|(_l, _y, _m), v| *v as isize);
+//!         .aggregate_linear(|v| *v as isize);
 //! ```
 //!
 //! We output the indexed Z-set as before, and then in `main` print it record by
@@ -622,7 +622,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|(_l, _y, _m), v| *v as isize);
+//! #         .aggregate_linear(|v| *v as isize);
 //!     // ...
 //!     Ok((input_handle, monthly_totals.output()))
 //! }
@@ -762,7 +762,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|(_l, _y, _m), v| *v as isize);
+//! #         .aggregate_linear(|v| *v as isize);
 //! #     let moving_averages = monthly_totals
 //! #         .map_index(|((l, y, m), v)| (l.clone(), (*y as u32 * 12 + (*m as u32 - 1), *v)))
 //! #         .partitioned_rolling_average(RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
@@ -903,7 +903,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|(_l, _y, _m), v| *v as isize);
+//! #         .aggregate_linear(|v| *v as isize);
 //! #     let moving_averages = monthly_totals
 //! #         .map_index(|((l, y, m), v)| (l.clone(), (*y as u32 * 12 + (*m as u32 - 1), *v)))
 //! #         .partitioned_rolling_average(RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
@@ -946,7 +946,7 @@
 //!
 //! The whole program is in `tutorial6.rs`.  If we run it, it prints both per-month
 //! vaccination numbers and 3-month moving averages:
-//!  
+//!
 //!  ```text
 //! England          2021-01    5600174    5600174: +1
 //! England          2021-02    9377418    7488796: +1
@@ -1055,7 +1055,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|(_l, _y, _m), v| *v as isize);
+//! #         .aggregate_linear(|v| *v as isize);
 //! #     let most_vax = monthly_totals
 //! #         .map_index(|((l, y, m), sum)| {
 //! #             (
@@ -1178,7 +1178,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|(_l, _y, _m), v| *v as isize);
+//! #         .aggregate_linear(|v| *v as isize);
 //! #     let running_monthly_totals = monthly_totals
 //! #         .map_index(|((l, y, m), v)| (l.clone(), (*y as u32 * 12 + (*m as u32 - 1), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
@@ -1281,7 +1281,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|(_l, _y, _m), v| *v as isize);
+//! #         .aggregate_linear(|v| *v as isize);
 //! #     let running_monthly_totals = monthly_totals
 //! #         .map_index(|((l, y, m), v)| (l.clone(), (*y as u32 * 12 + (*m as u32 - 1), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
@@ -1387,7 +1387,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|(_l, _y, _m), v| *v as isize);
+//! #         .aggregate_linear(|v| *v as isize);
 //!    let running_monthly_totals = monthly_totals
 //!        .map_index(|((l, y, m), v)| (l.clone(), (*y as u32 * 12 + (*m as u32 - 1), *v)))
 //!        .partitioned_rolling_aggregate_linear(
@@ -1454,7 +1454,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|(_l, _y, _m), v| *v as isize);
+//! #         .aggregate_linear(|v| *v as isize);
 //! #     let running_monthly_totals = monthly_totals
 //! #         .map_index(|((l, y, m), v)| (l.clone(), (*y as u32 * 12 + (*m as u32 - 1), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
@@ -1584,7 +1584,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|(_l, _y, _m), v| *v as isize);
+//! #         .aggregate_linear(|v| *v as isize);
 //! #     let most_vax = monthly_totals
 //! #         .map_index(|((l, y, m), sum)| {
 //! #             (

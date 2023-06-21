@@ -180,9 +180,7 @@ impl<T, R> MulByRef<R> for Avg<T, R>
 where
     T: MulByRef<Output = T>,
     T: From<R>,
-    R: MulByRef<Output = R>,
-    // This bound is only here to prevent conflict with `MulByRef<Present>` :(
-    R: From<i8> + Clone,
+    R: MulByRef<Output = R> + Clone,
 {
     type Output = Avg<T, R>;
 
@@ -230,9 +228,9 @@ where
         Z::R: ZRingValue,
         Avg<A, Z::R>: MulByRef<Z::R, Output = Avg<A, Z::R>>,
         A: DBData + From<Z::R> + Div<Output = A> + GroupValue,
-        F: Fn(&Z::Key, &Z::Val) -> A + Clone + 'static,
+        F: Fn(&Z::Val) -> A + Clone + 'static,
     {
-        let aggregate = self.aggregate_linear(move |key, val| Avg::new(f(key, val), Z::R::one()));
+        let aggregate = self.aggregate_linear(move |val| Avg::new(f(val), Z::R::one()));
 
         // We're the only possible consumer of the aggregated stream so we can use an
         // owned consumer to skip any cloning
