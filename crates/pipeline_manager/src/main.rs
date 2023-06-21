@@ -427,6 +427,7 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
         match runner_error {
             RunnerError::PipelineShutdown(_) => HttpResponse::Gone(),
         }
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(ErrorResponse::new(&message))
     } else {
         warn!("Unexpected error in http_resp_from_error: {}", error);
