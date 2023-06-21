@@ -12,7 +12,6 @@ const PipelineManagement = () => {
       />
 
       <Grid item xs={12} id='pipeline-management-content'>
-        {' '}
         {/* id referenced by webui-tester */}
         <PipelineTable />
       </Grid>

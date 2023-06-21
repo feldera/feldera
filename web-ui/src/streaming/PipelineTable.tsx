@@ -174,7 +174,7 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
                 {
                   field: 'config',
                   valueGetter: params => params.row.ac.config,
-                  headerName: 'Feeds Table',
+                  headerName: 'Into Table',
                   flex: 0.8
                 },
                 {
@@ -195,7 +195,7 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
                   headerName: 'Action',
                   flex: 0.15,
                   renderCell: params => (
-                    <Tooltip title='Inspect Connector'>
+                    <Tooltip title='Inspect Table'>
                       <IconButton
                         size='small'
                         onClick={e => {
@@ -249,18 +249,12 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
                   renderCell: params =>
                     humanSize(outputMetrics?.get(params.row.ac.config.trim())?.transmitted_bytes || 0)
                 },
-                //{
-                //  field: 'enabled',
-                //  headerName: 'Active',
-                //  flex: 0.15,
-                //  renderCell: () => <Switch defaultChecked disabled />
-                //},
                 {
                   field: 'action',
                   headerName: 'Action',
                   flex: 0.15,
                   renderCell: params => (
-                    <Tooltip title='Inspect Connector'>
+                    <Tooltip title='Inspect View'>
                       <IconButton
                         size='small'
                         onClick={e => {
@@ -320,7 +314,7 @@ const statusToChip = (status: ClientPipelineStatus | undefined) => {
       <CustomChip rounded size='small' skin='light' color='error' label={status} />
     ))
     .with(ClientPipelineStatus.DEPLOYED, () => (
-      <CustomChip rounded size='small' skin='light' color='error' label={status} />
+      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
     .with(ClientPipelineStatus.STARTING, () => (
       <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
@@ -389,7 +383,11 @@ export default function PipelineTable() {
 
   const startPipelineClick = useCallback(
     (curRow: PipelineDescr) => {
-      if (!pipelineActionLoading && isLaunching.get(curRow.pipeline_id) != ClientPipelineStatus.PAUSED) {
+      if (
+        !pipelineActionLoading &&
+        (isLaunching.get(curRow.pipeline_id) != ClientPipelineStatus.PAUSED ||
+          isLaunching.get(curRow.pipeline_id) != ClientPipelineStatus.DEPLOYED)
+      ) {
         setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.CREATING)))
         piplineAction(
           {
@@ -582,8 +580,11 @@ export default function PipelineTable() {
         const needsPause = isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.RUNNING
         const needsStart =
           isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE ||
-          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSED
-        const needsShutdown = isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSED
+          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSED ||
+          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.DEPLOYED
+        const needsShutdown =
+          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSED ||
+          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.DEPLOYED
         const needsDelete = isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE
         const needsEdit = isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE
         const needsInspect = isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.RUNNING
