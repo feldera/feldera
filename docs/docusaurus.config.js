@@ -59,6 +59,13 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
+      algolia: {
+        appId: '3SZT2K1T21',
+        // Public API key: it is safe to commit it
+        apiKey: '959618f671e39b8520016368d09232d2',
+        indexName: 'feldera',
+        contextualSearch: true,
+      },
       colorMode: {
         defaultMode: "dark",
         respectPrefersColorScheme: false,
@@ -87,6 +94,10 @@ const config = {
             href: "https://github.com/feldera/dbsp",
             label: "GitHub",
             position: "right",
+          },
+          {
+            type: 'search',
+            position: 'right',
           },
         ],
       },
