@@ -27,7 +27,7 @@ where
     where
         O: Batch<Key = Z::Key, Val = Z::R, R = Z::R, Time = ()>,
     {
-        self.aggregate_linear_generic(|_k, _v| Z::R::one())
+        self.aggregate_linear_generic(|_v| Z::R::one())
     }
 
     /// Incrementally, for each key in `self`, counts the number of unique
@@ -68,7 +68,7 @@ where
         O: IndexedZSet<Key = Z::Key, Val = Z::R, R = Z::R, Time = ()>,
         Z: Send,
     {
-        self.stream_aggregate_linear_generic(|_k, _v| Z::R::one())
+        self.stream_aggregate_linear_generic(|_v| Z::R::one())
     }
 
     /// Incrementally, for each key in `self`, counts the number of unique
