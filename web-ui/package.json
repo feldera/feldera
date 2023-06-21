@@ -27,6 +27,7 @@
     "generate-openapi": "cargo run --bin dbsp_pipeline_manager -- --dump-openapi && openapi --input ./openapi.json --output ./src/types/manager && rm ./openapi.json"
   },
   "dependencies": {
+    "@docusaurus/theme-search-algolia": "^2.4.1",
     "@emotion/cache": "^11.10.7",
     "@emotion/react": "^11.10.6",
     "@emotion/server": "^11.10.0",

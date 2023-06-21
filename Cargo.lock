@@ -4352,6 +4352,8 @@ dependencies = [
  "async-std",
  "csv 1.2.2",
  "dbsp",
+ "derive_more",
+ "paste",
  "serde",
  "size-of",
  "sqlvalue",
