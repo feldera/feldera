@@ -1,4 +1,4 @@
-use rust_decimal::Decimal;
+use dbsp::algebra::Decimal;
 
 #[cfg(test)]
 pub(crate) fn test_logger() {

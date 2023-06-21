@@ -5,5 +5,4 @@ edition = "2021"
 
 [dependencies]
 dbsp = { path = "../../../crates/dbsp", default-features = false }
-rust_decimal = { version = "1.29" }
 sqllib = { path = "../sqllib" }

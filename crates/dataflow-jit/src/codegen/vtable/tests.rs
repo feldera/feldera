@@ -400,7 +400,7 @@ mod proptests {
         strategy::Strategy, test_runner::TestCaseResult,
     };
     use proptest_derive::Arbitrary;
-    use rust_decimal::Decimal;
+    use dbsp::algebra::Decimal;
     use size_of::SizeOf;
     use std::{
         cmp::Ordering,
@@ -892,6 +892,6 @@ mod proptests {
             Nonnull(U16(40022)), Nullable(I64(6376951496006352246), true), Nonnull(F32(-8.540973e-39)), Nullable(String("\"*wⷎ".to_owned()), false),
             Nullable(F64(0.0), false),
         ],
-        decimal = [Nullable(Decimal(rust_decimal::Decimal::from_str("-418972098951.06177358336234255").unwrap()), false)],
+        decimal = [Nullable(Decimal(dbsp::algebra::Decimal::from_str("-418972098951.06177358336234255").unwrap()), false)],
     }
 }

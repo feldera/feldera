@@ -10,7 +10,7 @@ use crate::{
     some_existing_operator
 };
 
-use rust_decimal::{Decimal};
+use dbsp::algebra::Decimal;
 use num::PrimInt;
 use core::ops::{Add,Sub,Mul};
 

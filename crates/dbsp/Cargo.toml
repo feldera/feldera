@@ -16,6 +16,8 @@ persistence = ["rocksdb", "uuid"]
 with-serde = ["serde"]
 with-csv = ["csv"]
 __gdelt = ["size-of/arcstr"]
+decimal_maths = ["rust_decimal/maths"]
+decimal_proptest = ["rust_decimal/proptest", "dep:proptest", "dep:proptest-derive"]
 
 [dependencies]
 num = "0.4.0"
@@ -43,9 +45,11 @@ uuid = { version = "1.1.2", features = ["v4"], optional = true }
 arc-swap = "1.5.1"
 mimalloc-rust-sys = "1.7.2"
 rand = "0.8.5"
-rust_decimal = "1.29"
+rust_decimal = { version = "1.29", features = ["c-repr"] }
 arcstr = { version = "1.1.4" }
-size-of = { version = "0.1.5", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr"] }
+size-of = { version = "0.1.5", features = ["hashbrown", "time-std", "xxhash-xxh3", "rust_decimal", "arcstr"] }
+proptest = { default-features = false, optional = true, version = "1.0" }
+proptest-derive = { default-features = false, optional = true, version = "0.3.0" }
 
 [dev-dependencies]
 csv = "1.2.2"

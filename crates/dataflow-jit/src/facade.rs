@@ -17,7 +17,7 @@ use dbsp::{
     trace::{BatchReader, Cursor},
     DBSPHandle, Error, Runtime,
 };
-use rust_decimal::Decimal;
+use dbsp::algebra::Decimal;
 use std::{collections::BTreeMap, mem::transmute, ops::Not, path::Path, thread, time::Instant};
 
 // TODO: A lot of this still needs fleshing out, mainly the little tweaks that

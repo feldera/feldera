@@ -16,7 +16,7 @@ use cranelift::{
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use csv::StringRecord;
-use rust_decimal::Decimal;
+use dbsp::algebra::Decimal;
 use std::{
     alloc::Layout,
     cell::RefCell,

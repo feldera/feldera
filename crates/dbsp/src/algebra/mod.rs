@@ -1,8 +1,8 @@
 //! This module contains declarations of abstract algebraic concepts:
 //! monoids, groups, rings, etc.
 
-#[macro_use]
 mod checked_int;
+mod decimal;
 mod floats;
 mod lattice;
 mod order;
@@ -14,13 +14,13 @@ pub mod arcstr;
 pub use self::arcstr::ArcStr;
 
 pub use checked_int::CheckedInt;
+pub use decimal::Decimal;
 pub use floats::{F32, F64};
 pub use lattice::Lattice;
 pub use order::{PartialOrder, TotalOrder};
 pub use present::Present;
 pub use zset::{IndexedZSet, ZSet};
 
-use rust_decimal::Decimal;
 use size_of::SizeOf;
 use std::{
     marker::PhantomData,

@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dbsp = { path = "../../../crates/dbsp" }
-rust_decimal = { version = "1.29", features = ["maths"] }
+dbsp = { path = "../../../crates/dbsp", features = ["decimal_maths"] }
 geo = { version = "0.23" }
 geo-types = { version = "0.7" }
 size-of = { version = "0.1.5", features = ["rust_decimal"] }
@@ -15,3 +14,4 @@ chrono = { version = "0.4.23" }
 like = { version = "0.3.1" }
 paste = { version = "1.0.12" }
 regex = { version = "1.9.1" }
+bincode = { version = "2.0.0-rc.2", features = ["serde"] }

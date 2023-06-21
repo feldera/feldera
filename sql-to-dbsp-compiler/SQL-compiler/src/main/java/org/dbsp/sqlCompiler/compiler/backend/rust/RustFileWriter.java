@@ -102,7 +102,7 @@ public class RustFileWriter implements ICompilerComponent {
             "use dbsp::{\n" +
             "    algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,\n" +
             "         UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,\n" +
-            "         AddAssignByRef,\n" +
+            "         AddAssignByRef, Decimal,\n" +
             "    },\n" +
             "    circuit::{Circuit, Stream},\n" +
             "    operator::{\n" +
@@ -123,6 +123,7 @@ public class RustFileWriter implements ICompilerComponent {
             "};\n" +
             "use dbsp_adapters::Catalog;\n" +
             "use size_of::*;\n" +
+            "use bincode::{Decode, Encode};\n" +
             "use ::serde::{Deserialize,Serialize};\n" +
             "use compare::{Compare, Extract};\n" +
             "use std::{\n" +
@@ -135,7 +136,6 @@ public class RustFileWriter implements ICompilerComponent {
             "    marker::PhantomData,\n" +
             "    str::FromStr,\n" +
             "};\n" +
-            "use rust_decimal::Decimal;\n" +
             "use tuple::declare_tuples;\n" +
             "use sqllib::{\n" +
             "    *,\n" +
@@ -184,7 +184,7 @@ public class RustFileWriter implements ICompilerComponent {
             "#[cfg(test)]\n" +
             "use chrono::{NaiveDate, NaiveDateTime};\n" +
             "#[cfg(test)]\n" +
-            "use rust_decimal::Decimal;\n" +
+            "use dbsp::algebra::Decimal;\n" +
             "#[cfg(test)]\n" +
             "use std::str::FromStr;\n"
             ;

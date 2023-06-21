@@ -25,7 +25,7 @@ cranelift-jit = "0.96.2"
 target-lexicon = "0.12.5"
 cranelift-module = "0.96.2"
 unicode-normalization = "0.1.22"
-dbsp = { path = "../dbsp", features = ["serde"] }
+dbsp = { path = "../dbsp", features = ["serde", "decimal_maths"] }
 bitvec = { version = "1.0.1", features = ["serde"] }
 bitflags = { version = "2.0.1", features = ["serde"] }
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
@@ -69,10 +69,6 @@ clap = { version = "4.1.8", features = ["derive"], optional = true }
     version = "1.6.0"
     features = ["std", "rustc_1_57"]
 
-    [dependencies.rust_decimal]
-    version = "1.29"
-    features = ["maths", "c-repr"]
-
 [target.'cfg(windows)'.dependencies.winapi]
 version = "0.3.9"
 features = ["winnt"]
@@ -83,12 +79,9 @@ is-terminal = "0.4.7"
 num-integer = "0.1.45"
 proptest-derive = "0.3.0"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+dbsp = { path = "../dbsp", features = ["serde", "decimal_maths", "decimal_proptest" ] }
 
     [dev-dependencies.chrono]
     version = "0.4.23"
     default-features = false
     features = ["std", "clock"]
-
-    [dev-dependencies.rust_decimal]
-    version = "1.29"
-    features = ["maths", "c-repr", "proptest"]

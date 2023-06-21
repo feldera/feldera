@@ -3,7 +3,7 @@ use crate::ir::{
     ColumnType, RowLayoutCache,
 };
 use chrono::{NaiveDate, NaiveDateTime};
-use rust_decimal::Decimal;
+use dbsp::algebra::Decimal;
 use schemars::{
     gen::SchemaGenerator,
     schema::{InstanceType, Schema, SchemaObject},

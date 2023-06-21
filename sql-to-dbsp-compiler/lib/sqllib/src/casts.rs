@@ -6,9 +6,8 @@ use std::cmp::Ordering;
 
 use crate::{geopoint::*, interval::*, timestamp::*};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike, NaiveTime};
-use dbsp::algebra::{HasOne, HasZero, F32, F64};
+use dbsp::algebra::{HasOne, HasZero, F32, F64, Decimal};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
-use rust_decimal::Decimal;
 
 /////////// cast to b
 

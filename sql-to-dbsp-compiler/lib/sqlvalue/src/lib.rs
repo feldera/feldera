@@ -4,9 +4,8 @@
 //! Tuple* types are used for computations, and they are converted
 //! to SqlRow objects when they need to be serialized as strings.
 
-use dbsp::algebra::{F32, F64};
-use rust_decimal::Decimal;
-use sqllib::casts::*;
+use dbsp::algebra::{F32, F64, Decimal};
+use sqllib::{casts::*};
 
 #[derive(Debug)]
 pub enum SqlValue {

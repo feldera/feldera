@@ -7,11 +7,10 @@ pub mod operators;
 pub mod string;
 pub mod timestamp;
 
-use crate::interval::ShortInterval;
-use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
+use crate::{interval::ShortInterval};
+use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64, Decimal};
 use geopoint::GeoPoint;
-use num::{Signed, ToPrimitive};
-use rust_decimal::{Decimal, MathematicalOps};
+use num::{ToPrimitive, Signed};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Index};
