@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -44,10 +45,10 @@ import java.util.function.Supplier;
  * This allows the deserialized unambiguously figure out missing values in the last column.
  */
 public class ToCsvVisitor extends InnerVisitor {
-    private final Appendable appendable;
+    private final StringBuilder appendable;
     public final Supplier<String> nullRepresentation;
 
-    public ToCsvVisitor(IErrorReporter reporter, Appendable destination, Supplier<String> nullRepresentation) {
+    public ToCsvVisitor(IErrorReporter reporter, StringBuilder destination, Supplier<String> nullRepresentation) {
         super(reporter);
         this.appendable = destination;
         this.nullRepresentation = nullRepresentation;
@@ -55,123 +56,88 @@ public class ToCsvVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPI32Literal literal) {
-        try {
-            if (literal.value != null)
-                this.appendable.append(Integer.toString(literal.value));
-            else
-                this.appendable.append(this.nullRepresentation.get());
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
+        if (literal.value != null)
+            this.appendable.append(literal.value);
+        else
+            this.appendable.append(this.nullRepresentation.get());
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPI64Literal literal) {
-        try {
-            if (literal.value != null)
-                this.appendable.append(Long.toString(literal.value));
-            else
-                this.appendable.append(this.nullRepresentation.get());
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
+        if (literal.value != null)
+            this.appendable.append(literal.value);
+        else
+            this.appendable.append(this.nullRepresentation.get());
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTimestampLiteral literal) {
-        try {
-            if (!literal.isNull)
-                this.appendable.append(Long.toString(Objects.requireNonNull(literal.value)));
-            else
-                this.appendable.append(this.nullRepresentation.get());
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
+        if (!literal.isNull)
+            this.appendable.append(Objects.requireNonNull(literal.value));
+        else
+            this.appendable.append(this.nullRepresentation.get());
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPFloatLiteral literal) {
-        try {
-            if (literal.value != null)
-                this.appendable.append(Float.toString(literal.value));
-            else
-                this.appendable.append(this.nullRepresentation.get());
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
+        if (literal.value != null)
+            this.appendable.append(literal.value);
+        else
+            this.appendable.append(this.nullRepresentation.get());
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPDoubleLiteral literal) {
-        try {
-            if (literal.value != null)
-                this.appendable.append(Double.toString(literal.value));
-            else
-                this.appendable.append(this.nullRepresentation.get());
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
+        if (literal.value != null)
+            this.appendable.append(literal.value);
+        else
+            this.appendable.append(this.nullRepresentation.get());
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPStringLiteral literal) {
-        try {
-            if (literal.value != null)
-                this.appendable.append(Utilities.doubleQuote(literal.value));
-            else
-                this.appendable.append(this.nullRepresentation.get());
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
+        if (literal.value != null)
+            this.appendable.append(Utilities.doubleQuote(literal.value));
+        else
+            this.appendable.append(this.nullRepresentation.get());
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPBoolLiteral literal) {
-        try {
-            if (literal.value != null)
-                this.appendable.append(Boolean.toString(literal.value));
-            else
-                this.appendable.append(this.nullRepresentation.get());
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
+        if (literal.value != null)
+            this.appendable.append(literal.value);
+        else
+            this.appendable.append(this.nullRepresentation.get());
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTupleExpression node) {
-        try {
-            for (DBSPExpression expression : node.fields) {
-                expression.accept(this);
-                this.appendable.append(",");
-            }
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
+        for (DBSPExpression expression : node.fields) {
+            expression.accept(this);
+            this.appendable.append(",");
         }
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPZSetLiteral literal) {
-        try {
-            for (Map.Entry<DBSPExpression, Long> entry: literal.data.data.entrySet()) {
-                DBSPExpression key = entry.getKey();
-                long value = entry.getValue();
-                if (value < 0)
-                    throw new RuntimeException("ZSet with negative weights is not representable as CSV");
-                for (; value != 0; value--) {
-                    key.accept(this);
-                    this.appendable.append("\n");
-                }
+        for (Map.Entry<DBSPExpression, Long> entry: literal.data.data.entrySet()) {
+            DBSPExpression key = entry.getKey();
+            long value = entry.getValue();
+            if (value < 0)
+                throw new UnsupportedException("ZSet with negative weights is not representable as CSV",
+                        literal.getNode());
+            for (; value != 0; value--) {
+                key.accept(this);
+                this.appendable.append("\n");
             }
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
         }
         return VisitDecision.STOP;
     }

@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.util.Utilities;
@@ -21,8 +22,8 @@ public class ReferenceMap {
         if (this.declarations.containsKey(var)) {
             IDBSPDeclaration decl = this.declarations.get(var);
             if (decl != declaration)
-                throw new RuntimeException("Changing declaration of " + var + " from " +
-                        decl + " to " + declaration);
+                throw new InternalCompilerError("Changing declaration of " + var + " from " +
+                        decl + " to " + declaration, var);
             return;
         }
         Utilities.putNew(this.declarations, var, declaration);

@@ -25,6 +25,9 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -34,9 +37,11 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.util.Utilities;
 import org.junit.Ignore;
 import org.junit.Test;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 
 /**
@@ -249,6 +254,16 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(DBSPBoolLiteral.TRUE),
                         new DBSPTupleExpression(DBSPBoolLiteral.FALSE)));
+    }
+
+    @Test @Ignore("JSON_OBJECT not yet implemented")
+    public void jsonTest() {
+        String query = "select JSON_OBJECT(\n" +
+                "    KEY 'level1' \n" +
+                "    VALUE(T.COL1)) \n" +
+                "from T";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(new DBSPStringLiteral(""))));
     }
 
     @Test

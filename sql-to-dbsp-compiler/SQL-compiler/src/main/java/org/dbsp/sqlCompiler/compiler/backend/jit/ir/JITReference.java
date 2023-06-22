@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.util.IIndentStream;
 
 /**
@@ -61,7 +63,7 @@ public class JITReference extends JITNode {
 
     public void mustBeValid() {
         if (!this.isValid())
-            throw new RuntimeException("Expected a valid reference");
+            throw new InternalCompilerError("Expected a valid reference", this);
     }
 
     @Override

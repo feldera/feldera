@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -15,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -155,7 +157,7 @@ public class Projection extends InnerVisitor {
     public DBSPClosureExpression applyAfter(DBSPClosureExpression before) {
         Objects.requireNonNull(this.expression);
         if (this.expression.parameters.length != 1)
-            throw new RuntimeException();
+            throw new InternalCompilerError("Expected closure with 1 parameter", this.expression);
         DBSPExpression apply = new DBSPApplyExpression(this.expression, before.body);
         DBSPClosureExpression result = new DBSPClosureExpression(apply, before.parameters);
         BetaReduction reduction = new BetaReduction(this.errorReporter);
@@ -167,7 +169,8 @@ public class Projection extends InnerVisitor {
 
     public Description getDescription() {
         if (!this.isProjection)
-            throw new RuntimeException("This is not a projection");
+            throw new InternalCompilerError("This is not a projection",
+                    this.expression != null ? this.expression : DBSPTypeAny.INSTANCE);
         return this.description;
     }
 

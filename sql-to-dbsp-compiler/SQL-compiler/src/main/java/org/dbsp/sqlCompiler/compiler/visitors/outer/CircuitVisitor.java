@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
@@ -90,7 +91,7 @@ public abstract class CircuitVisitor
 
     public void setCircuit(DBSPCircuit circuit) {
         if (this.circuit != null)
-            throw new RuntimeException("Circuit is already set");
+            throw new InternalCompilerError("Circuit is already set", circuit);
         this.circuit = circuit;
     }
 

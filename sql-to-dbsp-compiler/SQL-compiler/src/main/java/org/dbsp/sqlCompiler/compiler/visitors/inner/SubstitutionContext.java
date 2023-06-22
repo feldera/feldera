@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -51,13 +53,13 @@ public class SubstitutionContext<T> {
 
     public void substitute(String name, @Nullable T value) {
         if (this.stack.isEmpty())
-            throw new RuntimeException("Empty context");
+            throw new InternalCompilerError("Empty context", CalciteObject.EMPTY);
         this.stack.get(this.stack.size() - 1).substitute(name, value);
     }
 
     public void mustBeEmpty() {
         if (!this.stack.isEmpty())
-            throw new RuntimeException("Non-empty context");
+            throw new InternalCompilerError("Non-empty context", CalciteObject.EMPTY);
     }
 
     /**

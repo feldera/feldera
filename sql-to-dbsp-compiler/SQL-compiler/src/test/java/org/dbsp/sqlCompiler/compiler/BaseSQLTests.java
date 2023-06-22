@@ -45,7 +45,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.util.Linq;
-import org.dbsp.util.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.util.Utilities;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -214,7 +214,7 @@ public class BaseSQLTests {
             list.add(circuit);
 
             if (this.data.length > 1) {
-                throw new UnsupportedException("Only support 1 input/output pair for tests");
+                throw new UnsupportedException("Only support 1 input/output pair for tests", CalciteObject.EMPTY);
             }
 
             ToRustJitLiteral converter = new ToRustJitLiteral(this.compiler);
@@ -335,14 +335,10 @@ public class BaseSQLTests {
     }
 
     void testQueryBase(String query, boolean incremental, boolean optimize, boolean jit, InputOutputPair... streams) {
-        try {
-            query = "CREATE VIEW V AS " + query;
-            DBSPCompiler compiler = this.compileQuery(query, incremental, optimize, jit);
-            DBSPCircuit circuit = getCircuit(compiler);
-            this.addRustTestCase(query, compiler, circuit, streams);
-        } catch (Exception ex) {
-            throw new RuntimeException(ex);
-        }
+        query = "CREATE VIEW V AS " + query;
+        DBSPCompiler compiler = this.compileQuery(query, incremental, optimize, jit);
+        DBSPCircuit circuit = getCircuit(compiler);
+        this.addRustTestCase(query, compiler, circuit, streams);
     }
 
     protected void addRustTestCase(String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {

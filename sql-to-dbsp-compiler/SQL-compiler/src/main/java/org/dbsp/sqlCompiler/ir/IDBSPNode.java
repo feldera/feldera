@@ -27,7 +27,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.ToIndentableString;
-import org.dbsp.util.TranslationException;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 
 import javax.annotation.Nullable;
 
@@ -40,12 +40,12 @@ public interface IDBSPNode extends ICastable, IHasId, ToIndentableString {
         if (value == null)
             this.error("Null pointer");
         if (value == null)
-            throw new RuntimeException("Did not expect a null value");
+            throw new InternalCompilerError("Did not expect a null value", this);
         return value;
     }
 
     default void error(String message) {
-        throw new TranslationException(message, this.getNode());
+        throw new InternalCompilerError(message, this.getNode());
     }
 
     /**

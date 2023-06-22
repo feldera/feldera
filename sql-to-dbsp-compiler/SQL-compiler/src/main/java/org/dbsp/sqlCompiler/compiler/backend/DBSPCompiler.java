@@ -35,9 +35,12 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
@@ -50,7 +53,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -169,6 +173,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return this.typeCompiler;
     }
 
+    /**
+     * Report an error or warning during compilation.
+     * @param range      Position in source where error is located.
+     * @param warning    True if this is a warning.
+     * @param errorType  A short string that categorizes the error type.
+     * @param message    Error message.
+     */
     public void reportError(SourcePositionRange range, boolean warning,
                             String errorType, String message) {
         if (warning)
@@ -188,7 +199,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
    void setSource(InputSource source) {
         if (this.inputSources != InputSource.None &&
                 this.inputSources != source)
-            throw new RuntimeException("Input data already received from " + this.inputSources);
+            throw new UnsupportedException("Input data already received from " + this.inputSources,
+                    CalciteObject.EMPTY);
         this.inputSources = source;
     }
 
@@ -220,7 +232,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             this.messages.reportError(e);
         } catch (CalciteContextException e) {
             this.messages.reportError(e);
-        } catch (Unimplemented e) {
+        } catch (BaseCompilerException e) {
             this.messages.reportError(e);
         } catch (Throwable e) {
             this.messages.reportError(e);
@@ -259,7 +271,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     public void compileInput() {
         if (this.inputSources == InputSource.None)
-            throw new RuntimeException("compileInput has been called without calling setEntireInput");
+            throw new UnsupportedException("compileInput has been called without calling setEntireInput",
+                    CalciteObject.EMPTY);
         this.compileInternal(this.sources.getWholeProgram(), true, null);
     }
 

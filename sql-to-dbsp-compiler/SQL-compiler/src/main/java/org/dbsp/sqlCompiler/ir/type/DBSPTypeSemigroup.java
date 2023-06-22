@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.Linq;
@@ -36,8 +37,8 @@ public class DBSPTypeSemigroup extends DBSPTypeUser {
         super(CalciteObject.EMPTY, "Semigroup" + elementTypes.length, false,
                 Linq.concat(semigroupTypes, elementTypes));
         if (elementTypes.length != semigroupTypes.length)
-            throw new RuntimeException("Each element must have a corresponding semigroup, but I have " +
-                    elementTypes.length + " and " + semigroupTypes.length);
+            throw new InternalCompilerError("Each element must have a corresponding semigroup, but I have " +
+                    elementTypes.length + " and " + semigroupTypes.length, this);
     }
 
     public int semigroupSize() {

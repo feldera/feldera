@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -82,7 +83,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
 
     public DBSPTypeTuple slice(int start, int endExclusive) {
         if (endExclusive <= start)
-            throw new RuntimeException("Incorrect slice parameters " + start + ":" + endExclusive);
+            throw new InternalCompilerError("Incorrect slice parameters " + start + ":" + endExclusive, this);
         return new DBSPTypeTuple(Utilities.arraySlice(this.tupFields, start, endExclusive));
     }
 

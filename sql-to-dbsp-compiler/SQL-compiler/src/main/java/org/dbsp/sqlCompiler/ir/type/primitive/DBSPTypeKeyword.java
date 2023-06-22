@@ -27,7 +27,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.util.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
@@ -45,22 +45,22 @@ public class DBSPTypeKeyword extends DBSPTypeBaseType {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        throw new UnsupportedException(this);
+        throw new UnsupportedException(this.getNode());
     }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
-        throw new UnsupportedException(this);
+        throw new UnsupportedException(this.getNode());
     }
 
     @Override
     public String shortName() {
-        throw new UnsupportedException(this);
+        throw new UnsupportedException(this.getNode());
     }
 
     @Override
     public DBSPLiteral defaultValue() {
-        throw new UnsupportedException("Default value for type 'keyword'");
+        throw new UnsupportedException("Default value for type 'keyword'", this.getNode());
     }
 
     @Override

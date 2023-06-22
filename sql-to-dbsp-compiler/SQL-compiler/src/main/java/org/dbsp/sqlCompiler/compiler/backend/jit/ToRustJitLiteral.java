@@ -21,7 +21,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import java.util.Map;
 
@@ -120,7 +120,7 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
 
     @Override
     public VisitDecision preorder(DBSPExpression expression) {
-        throw new Unimplemented(expression);
+        throw new UnimplementedException(expression);
     }
 
     DBSPExpression convertRow(Map.Entry<DBSPExpression, Long> row) {

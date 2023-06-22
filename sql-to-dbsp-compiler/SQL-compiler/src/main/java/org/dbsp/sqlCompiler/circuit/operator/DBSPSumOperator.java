@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -38,8 +39,8 @@ public class DBSPSumOperator extends DBSPOperator {
         for (DBSPOperator op: inputs) {
             this.addInput(op);
             if (!op.outputType.sameType(this.outputType)) {
-                throw new RuntimeException("Sum operator input type " + op.outputType +
-                        " does not match output type " + this.outputType);
+                throw new InternalCompilerError("Sum operator input type " + op.outputType +
+                        " does not match output type " + this.outputType, this);
             }
         }
     }

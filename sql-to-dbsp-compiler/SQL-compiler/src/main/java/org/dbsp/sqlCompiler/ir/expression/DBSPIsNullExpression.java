@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -40,7 +41,7 @@ public class DBSPIsNullExpression extends DBSPExpression {
         super(node, DBSPTypeBool.INSTANCE);
         this.expression = expression;
         if (!expression.getType().mayBeNull)
-            throw new RuntimeException("isNull applied to non-nullable expression? " + expression);
+            throw new InternalCompilerError("isNull applied to non-nullable expression?", expression);
     }
 
     @Override

@@ -31,7 +31,7 @@ import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -127,7 +127,7 @@ public class TypeCompiler implements ICompilerComponent {
                 case TIME:
                 case TIME_WITH_LOCAL_TIME_ZONE:
                 case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-                    throw new Unimplemented(node);
+                    throw new UnimplementedException(node);
                 case INTERVAL_YEAR:
                 case INTERVAL_YEAR_MONTH:
                 case INTERVAL_MONTH:
@@ -151,7 +151,7 @@ public class TypeCompiler implements ICompilerComponent {
                     return DBSPTypeDate.INSTANCE.setMayBeNull(nullable);
             }
         }
-        throw new Unimplemented(node);
+        throw new UnimplementedException(node);
     }
 
     @Override

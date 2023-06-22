@@ -25,9 +25,8 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.util.Linq;
-import org.dbsp.util.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import java.util.List;
 
@@ -176,6 +175,6 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPOperator operator) {
-        throw new UnsupportedException(operator);
+        throw new UnimplementedException(operator.getNode());
     }
 }

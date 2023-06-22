@@ -34,7 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import java.util.*;
 
@@ -59,7 +59,7 @@ public class JITParameterMapping {
             return type.to(DBSPTypeTuple.class);
         else if (type.is(DBSPTypeRawTuple.class))
             return new DBSPTypeTuple(type.to(DBSPTypeRawTuple.class).tupFields);
-        throw new Unimplemented("Conversion to Tuple", type);
+        throw new UnimplementedException("Conversion to Tuple", type);
     }
 
     /**

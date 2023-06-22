@@ -33,6 +33,8 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITConstantInst
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITInstruction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITInstructionRef;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.util.IIndentStream;
 
@@ -90,7 +92,7 @@ public class JITBlock extends JITNode implements IJITId {
             body.add(i.asJson());
         }
         if (this.terminator == null)
-            throw new RuntimeException("Block without terminator " + this);
+            throw new InternalCompilerError("Block without terminator", this);
         result.set("terminator", this.terminator.asJson());
         ArrayNode params = result.putArray("params");
         for (JITBlockParameter param: this.parameters) {
@@ -108,7 +110,7 @@ public class JITBlock extends JITNode implements IJITId {
 
     public void add(JITInstruction instruction) {
         if (this.terminator != null)
-            throw new RuntimeException("Block already terminated while adding instruction " + instruction);
+            throw new InternalCompilerError("Block already terminated while adding instruction ", instruction);
         this.instructions.add(instruction);
         if (instruction.is(JITConstantInstruction.class)) {
             JITConstantInstruction cst = instruction.to(JITConstantInstruction.class);
@@ -128,7 +130,7 @@ public class JITBlock extends JITNode implements IJITId {
 
     public void terminate(JITBlockTerminator terminator) {
         if (this.terminator != null)
-            throw new RuntimeException("Block already terminated with " + this.terminator);
+            throw new InternalCompilerError("Block already terminated", this.terminator);
         this.terminator = terminator;
     }
 

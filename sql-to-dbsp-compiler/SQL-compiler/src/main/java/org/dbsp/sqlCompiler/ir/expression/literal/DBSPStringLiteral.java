@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -61,7 +62,7 @@ public class DBSPStringLiteral extends DBSPLiteral {
     public DBSPStringLiteral(@Nullable String value, boolean nullable) {
         this(CalciteObject.EMPTY, DBSPTypeString.INSTANCE.setMayBeNull(nullable), value);
         if (value == null && !nullable)
-            throw new RuntimeException("Null value with non-nullable type");
+            throw new InternalCompilerError("Null value with non-nullable type", this);
     }
 
     @Override

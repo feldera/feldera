@@ -1,11 +1,12 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import javax.annotation.Nullable;
 
@@ -18,9 +19,9 @@ public class DBSPNullLiteral extends DBSPLiteral {
     public DBSPNullLiteral(CalciteObject node, DBSPType type, @Nullable Object value) {
         super(node,  type, true);
         if (value != null)
-            throw new RuntimeException("Value must be null");
+            throw new InternalCompilerError("Value must be null", this);
         if (!this.getType().sameType(DBSPTypeNull.INSTANCE))
-            throw new RuntimeException("Type must be NULL");
+            throw new InternalCompilerError("Type must be NULL", this);
     }
 
     public DBSPNullLiteral() {
@@ -43,7 +44,7 @@ public class DBSPNullLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getNonNullable() {
-        throw new UnsupportedException(this);
+        throw new UnsupportedException(this.getNode());
     }
 
     @Override

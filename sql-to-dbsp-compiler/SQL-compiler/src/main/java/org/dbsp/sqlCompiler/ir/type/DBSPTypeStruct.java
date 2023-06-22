@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -153,8 +154,7 @@ public class DBSPTypeStruct extends DBSPType {
             if (f.getName().equals(col))
                 return f.getType();
         }
-        this.error("Field " + col + " not present in struct " + this.name);
-        throw new RuntimeException("unreachable");
+        throw new InternalCompilerError("Field " + col + " not present in struct " + this.name, this);
     }
 
     @Override

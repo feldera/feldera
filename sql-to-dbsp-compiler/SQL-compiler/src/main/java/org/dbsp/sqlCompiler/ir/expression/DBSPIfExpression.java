@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -43,13 +44,13 @@ public class DBSPIfExpression extends DBSPExpression {
         this.positive = positive;
         this.negative = negative;
         if (!this.condition.getType().is(DBSPTypeBool.class))
-            throw new RuntimeException("Expected a boolean condition type " + condition + " got " +
-                    this.condition.getType());
+            throw new InternalCompilerError("Expected a boolean condition type " + condition + " got " +
+                    this.condition.getType(), this);
         if (this.condition.getType().mayBeNull)
-            throw new RuntimeException("Nullable condition in if expression " + condition);
+            throw new InternalCompilerError("Nullable condition in if expression", condition);
         if (!this.positive.getType().sameType(this.negative.getType()))
-            throw new RuntimeException("Mismatched types in conditional expression " + this.positive +
-                    "/" + this.positive.getType() + " vs" + this.negative + "/" + this.negative.getType());
+            throw new InternalCompilerError("Mismatched types in conditional expression " + this.positive +
+                    "/" + this.positive.getType() + " vs" + this.negative + "/" + this.negative.getType(), this);
     }
 
     @Override

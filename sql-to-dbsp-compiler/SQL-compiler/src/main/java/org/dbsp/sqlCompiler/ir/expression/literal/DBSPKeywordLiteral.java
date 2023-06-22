@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import javax.annotation.Nullable;
 
@@ -67,12 +67,13 @@ public class DBSPKeywordLiteral extends DBSPLiteral {
             case "millisecond":
             case "microsecond":
             case "nanosecond":
+            case "null_on_null":
                 break;
             default:
                 if (node.isEmpty())
-                    throw new Unimplemented(keyword);
+                    throw new UnimplementedException(keyword);
                 else
-                    throw new Unimplemented(node);
+                    throw new UnimplementedException(node);
         }
     }
 

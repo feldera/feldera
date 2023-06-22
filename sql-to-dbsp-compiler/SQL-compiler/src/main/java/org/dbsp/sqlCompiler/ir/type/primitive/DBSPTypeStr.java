@@ -27,7 +27,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.util.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
@@ -50,7 +50,7 @@ public class DBSPTypeStr extends DBSPTypeBaseType {
 
     @Override
     public DBSPLiteral defaultValue() {
-        throw new UnsupportedException("default value for 'str' type");
+        throw new UnsupportedException("default value for 'str' type", this.getNode());
     }
 
     @Override

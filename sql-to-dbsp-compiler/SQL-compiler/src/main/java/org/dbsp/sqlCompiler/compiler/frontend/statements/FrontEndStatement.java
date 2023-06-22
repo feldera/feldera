@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.util.ICastable;
 
@@ -55,6 +56,6 @@ public abstract class FrontEndStatement implements ICastable {
 
     @Override
     public void error(String message) {
-        throw new RuntimeException(message + ": " + this.getNode());
+        throw new InternalCompilerError(message, this.getCalciteObject());
     }
 }
