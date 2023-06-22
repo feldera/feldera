@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
@@ -86,11 +87,11 @@ public class DBSPMatchExpression extends DBSPExpression {
         this.matched = matched;
         this.cases = cases;
         if (cases.isEmpty())
-            throw new RuntimeException("Empty list of cases for match");
+            throw new InternalCompilerError("Empty list of cases for match", this);
         for (Case c: cases) {
             if (!c.result.getType().sameType(type))
-                throw new RuntimeException("Type mismatch in case " + c +
-                        " expected " + type + " got " + c.result.getType());
+                throw new InternalCompilerError("Type mismatch in case " + c +
+                        " expected " + type + " got " + c.result.getType(), this);
         }
     }
 

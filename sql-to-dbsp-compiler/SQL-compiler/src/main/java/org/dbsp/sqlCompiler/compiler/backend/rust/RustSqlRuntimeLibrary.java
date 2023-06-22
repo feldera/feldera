@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
@@ -34,7 +35,7 @@ import org.dbsp.sqlCompiler.ir.pattern.*;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -174,7 +175,7 @@ public class RustSqlRuntimeLibrary {
             DBSPType ltype, @Nullable DBSPType rtype) {
         boolean isAggregate = opcode.isAggregate;
         if (ltype.is(DBSPTypeAny.class) || (rtype != null && rtype.is(DBSPTypeAny.class)))
-            throw new RuntimeException("Unexpected type _ for operand of " + opcode);
+            throw new InternalCompilerError("Unexpected type _ for operand of " + opcode, ltype);
         HashMap<String, DBSPOpcode> map = null;
         boolean anyNull = ltype.mayBeNull || (rtype != null && rtype.mayBeNull);
         String suffixReturn = "";  // suffix based on the return type
@@ -217,7 +218,7 @@ public class RustSqlRuntimeLibrary {
             tsuffixr = (rtype == null) ? "" : rtype.to(DBSPTypeBaseType.class).shortName();
         }
         if (map == null)
-            throw new Unimplemented(opcode.toString());
+            throw new UnimplementedException(opcode.toString());
         for (String k: map.keySet()) {
             DBSPOpcode inMap = map.get(k);
             if (opcode.equals(inMap)) {
@@ -226,7 +227,7 @@ public class RustSqlRuntimeLibrary {
                         returnType);
             }
         }
-        throw new Unimplemented("Could not find `" + opcode + "` for type " + ltype);
+        throw new UnimplementedException("Could not find `" + opcode + "` for type " + ltype);
     }
 
     void generateProgram() {

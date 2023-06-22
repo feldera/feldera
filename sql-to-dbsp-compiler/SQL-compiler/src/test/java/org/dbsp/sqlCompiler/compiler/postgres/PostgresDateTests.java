@@ -100,6 +100,7 @@ public class PostgresDateTests extends BaseSQLTests {
         CompilerOptions options = new CompilerOptions();
         options.optimizerOptions.optimizationLevel = optimizationLevel;
         options.optimizerOptions.generateInputForEveryTable = true;
+        options.optimizerOptions.throwOnError = true;
         DBSPCompiler compiler = new DBSPCompiler(options);
         compiler.compileStatements(data);
         compiler.compileStatement(query);
@@ -109,7 +110,6 @@ public class PostgresDateTests extends BaseSQLTests {
     void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput, boolean optimize) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query, optimize ? 2 : 0);
-        compiler.throwIfErrorsOccurred();
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPZSetLiteral.Contents input = compiler.getTableContents().getTableContents("DATE_TBL");
         InputOutputPair streams = new InputOutputPair(input, expectedOutput);

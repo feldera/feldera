@@ -63,15 +63,11 @@ public class CastTests extends BaseSQLTests {
     }
 
     void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
-        try {
-            query = "CREATE VIEW V AS " + query;
-            DBSPCompiler compiler = this.compileQuery(query, false, true, false);
-            DBSPCircuit circuit = getCircuit(compiler);
-            InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
-            this.addRustTestCase(query, compiler, circuit, streams);
-        } catch (Exception ex) {
-            throw new RuntimeException(ex);
-        }
+        query = "CREATE VIEW V AS " + query;
+        DBSPCompiler compiler = this.compileQuery(query, false, true, false);
+        DBSPCircuit circuit = getCircuit(compiler);
+        InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
+        this.addRustTestCase(query, compiler, circuit, streams);
     }
 
     @Test

@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.util.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
@@ -100,7 +100,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             case 64:
                 return new DBSPI64Literal(Long.MAX_VALUE, this.mayBeNull);
             default:
-                throw new UnsupportedException(this);
+                throw new UnsupportedException(this.getNode());
         }
     }
 
@@ -114,7 +114,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             case 64:
                 return new DBSPI64Literal(Long.MIN_VALUE, this.mayBeNull);
             default:
-                throw new UnsupportedException(this);
+                throw new UnsupportedException(this.getNode());
         }
     }
 

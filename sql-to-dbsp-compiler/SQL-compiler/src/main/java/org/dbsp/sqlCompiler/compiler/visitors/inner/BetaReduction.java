@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.*;
@@ -51,8 +52,9 @@ public class BetaReduction extends InnerRewriteVisitor {
             DBSPClosureExpression closure = expression.function.to(DBSPClosureExpression.class);
             this.context.newContext();
             if (closure.parameters.length != expression.arguments.length)
-                throw new RuntimeException("Closure with " + closure.parameters.length +
-                        " parameters called with " + expression.arguments.length + " arguments");
+                throw new InternalCompilerError("Closure with " + closure.parameters.length +
+                        " parameters called with " + expression.arguments.length + " arguments",
+                        expression);
             this.push(expression);
             for (int i = 0; i < closure.parameters.length; i++) {
                 DBSPParameter param = closure.parameters[i];

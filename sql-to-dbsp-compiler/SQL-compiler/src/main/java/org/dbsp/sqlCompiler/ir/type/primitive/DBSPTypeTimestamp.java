@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.util.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
@@ -81,7 +81,7 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
 
     @Override
     public DBSPLiteral getOne() {
-        throw new UnsupportedException(this);
+        throw new UnsupportedException(this.getNode());
     }
 
     @Override
@@ -91,7 +91,7 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
 
     @Override
     public DBSPLiteral getMinValue() {
-        throw new UnsupportedException(this);
+        throw new UnsupportedException(this.getNode());
     }
 
     @Override

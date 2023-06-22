@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -63,8 +64,8 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
         if (data != null) {
             for (DBSPExpression e : data) {
                 if (!e.getType().sameType(data.get(0).getType()))
-                    throw new RuntimeException("Not all values of set have the same type:" +
-                            e.getType() + " vs " + data.get(0).getType());
+                    throw new InternalCompilerError("Not all values of set have the same type:" +
+                            e.getType() + " vs " + data.get(0).getType(), this);
                 this.add(e);
             }
         }
@@ -76,8 +77,8 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
         this.data = new ArrayList<>();
         for (DBSPExpression e: data) {
             if (!e.getType().sameType(data[0].getType()))
-                throw new RuntimeException("Not all values of set have the same type:" +
-                    e.getType() + " vs " + data[0].getType());
+                throw new InternalCompilerError("Not all values of set have the same type:" +
+                    e.getType() + " vs " + data[0].getType(), this);
             this.add(e);
         }
     }
@@ -89,15 +90,15 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     public void add(DBSPExpression expression) {
         // We expect the expression to be a constant value (a literal)
         if (!expression.getType().sameType(this.getElementType()))
-            throw new RuntimeException("Added element " + expression + " type " +
-                    expression.getType() + " does not match vector type " + this.getElementType());
+            throw new InternalCompilerError("Added element " + expression + " type " +
+                    expression.getType() + " does not match vector type " + this.getElementType(), this);
         Objects.requireNonNull(this.data).add(expression);
     }
 
     public void add(DBSPVecLiteral other) {
         if (!this.getType().sameType(other.getType()))
-            throw new RuntimeException("Added vectors do not have the same type " +
-                    this.getElementType() + " vs " + other.getElementType());
+            throw new InternalCompilerError("Added vectors do not have the same type " +
+                    this.getElementType() + " vs " + other.getElementType(), this);
         Objects.requireNonNull(other.data).forEach(this::add);
     }
 

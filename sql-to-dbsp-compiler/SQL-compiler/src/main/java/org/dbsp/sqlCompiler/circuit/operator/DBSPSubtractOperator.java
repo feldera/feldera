@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -37,8 +38,8 @@ public class DBSPSubtractOperator extends DBSPOperator {
         this.addInput(left);
         this.addInput(right);
         if (!left.outputType.sameType(right.outputType))
-            throw new RuntimeException("Inputs do not have the same type " + left.outputType +
-                    " and " + right.outputType);
+            throw new InternalCompilerError("Inputs do not have the same type " + left.outputType +
+                    " and " + right.outputType, this);
     }
 
     @Override

@@ -88,7 +88,7 @@ public class SourceFileContents {
     }
 
     public String getSourceFileName(SourcePosition ignoredPosition) {
-        return this.sourceFileName == null ? "(none)" : this.sourceFileName;
+        return this.sourceFileName == null ? "(no input file)" : this.sourceFileName;
     }
 
     public void setEntireInput(@Nullable String sourceFileName, InputStream stream) throws IOException {

@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITFunction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITReference;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.IJitKvOrRowType;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
@@ -129,10 +130,10 @@ public abstract class JITOperator extends JITNode implements IJITId {
      */
     ObjectNode getInnerObject(BaseJsonNode node) {
         if (!(node instanceof ObjectNode))
-            throw new RuntimeException("Expected an Object");
+            throw new InternalCompilerError("Expected an Object", this);
         JsonNode result = node.get(this.name);
         if (!(result instanceof ObjectNode))
-            throw new RuntimeException("Expected the field " + this.name + " to be an Object");
+            throw new InternalCompilerError("Expected the field " + this.name + " to be an Object", this);
         return (ObjectNode)result;
     }
 

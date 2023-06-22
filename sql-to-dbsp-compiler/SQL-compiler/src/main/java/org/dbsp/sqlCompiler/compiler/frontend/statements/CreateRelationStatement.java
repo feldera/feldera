@@ -36,12 +36,13 @@ import org.apache.calcite.schema.ScannableTable;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
-import org.dbsp.util.TranslationException;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -66,7 +67,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         @Override
         public Enumerable<Object[]> scan(DataContext root) {
             // We don't plan to use this method, but the optimizer requires this API
-            throw new Unimplemented();
+            throw new UnsupportedException(new CalciteObject(node));
         }
 
         @Override
@@ -94,7 +95,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
             if (this.columns.get(i).getName().equals(id.toString()))
                 return i;
         }
-        throw new TranslationException("Column not found", new CalciteObject(id));
+        throw new InternalCompilerError("Column not found", new CalciteObject(id));
     }
 
     public DBSPTypeTuple getRowType(TypeCompiler compiler) {

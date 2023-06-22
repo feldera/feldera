@@ -18,6 +18,7 @@ public class PostgresBoolTests extends BaseSQLTests {
         CompilerOptions options = new CompilerOptions();
         options.optimizerOptions.optimizationLevel = optimize ? 2 : 1;
         options.optimizerOptions.generateInputForEveryTable = true;
+        options.optimizerOptions.throwOnError = true;
         DBSPCompiler compiler = new DBSPCompiler(options);
         compiler.compileStatement(query);
         return compiler;
@@ -27,7 +28,6 @@ public class PostgresBoolTests extends BaseSQLTests {
     void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput, boolean optimize) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query, optimize);
-        compiler.throwIfErrorsOccurred();
         DBSPCircuit circuit = getCircuit(compiler);
         InputOutputPair streams = new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0],

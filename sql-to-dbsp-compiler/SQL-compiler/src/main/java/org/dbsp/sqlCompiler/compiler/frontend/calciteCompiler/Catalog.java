@@ -26,6 +26,8 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
 import org.apache.calcite.sql.SqlIdentifier;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -44,7 +46,7 @@ public class Catalog extends AbstractSchema {
 
     public static String identifierToString(SqlIdentifier identifier) {
         if (!identifier.isSimple())
-            throw new RuntimeException("Not a simple identifier " + identifier);
+            throw new UnsupportedException("Not a simple identifier", new CalciteObject(identifier));
         return identifier.getSimple();
     }
 

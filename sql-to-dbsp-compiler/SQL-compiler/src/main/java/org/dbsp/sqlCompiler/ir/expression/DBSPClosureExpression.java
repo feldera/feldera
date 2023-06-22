@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -60,7 +61,7 @@ public class DBSPClosureExpression extends DBSPExpression {
 
     public DBSPExpression call(DBSPExpression... arguments) {
         if (arguments.length != this.parameters.length)
-            throw new RuntimeException("Received " + arguments.length + " but need " + this.parameters.length);
+            throw new InternalCompilerError("Received " + arguments.length + " but need " + this.parameters.length, this);
         return new DBSPApplyExpression(this, arguments);
     }
 

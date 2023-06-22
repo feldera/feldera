@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.util.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
@@ -88,17 +88,17 @@ public class DBSPTypeMonthsInterval extends DBSPTypeBaseType implements IsNumeri
 
     @Override
     public DBSPLiteral getOne() {
-        throw new UnsupportedException("One month");
+        throw new UnsupportedException(this.getNode());
     }
 
     @Override
     public DBSPLiteral getMaxValue() {
-        throw new UnsupportedException(this);
+        throw new UnsupportedException(this.getNode());
     }
 
     @Override
     public DBSPLiteral getMinValue() {
-        throw new UnsupportedException(this);
+        throw new UnsupportedException(this.getNode());
     }
 
     @Override

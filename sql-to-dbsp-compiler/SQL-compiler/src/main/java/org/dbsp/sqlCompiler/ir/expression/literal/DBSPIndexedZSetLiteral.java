@@ -7,7 +7,7 @@ import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import javax.annotation.Nullable;
 
@@ -57,7 +57,7 @@ public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContaine
 
     @Override
     public void add(DBSPExpression expression) {
-        throw new Unimplemented();
+        throw new UnimplementedException(expression);
     }
 
     @Override

@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.apache.calcite.rex.*;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
@@ -38,10 +39,10 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
     private final ConditionDecomposition result;
     private final TypeCompiler typeCompiler;
 
-    public JoinConditionAnalyzer(int leftTableColumnCount, TypeCompiler typeCompiler) {
+    public JoinConditionAnalyzer(CalciteObject object, int leftTableColumnCount, TypeCompiler typeCompiler) {
         super(true);
         this.leftTableColumnCount = leftTableColumnCount;
-        this.result = new ConditionDecomposition();
+        this.result = new ConditionDecomposition(object);
         this.typeCompiler = typeCompiler;
     }
 
@@ -59,7 +60,7 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
             this.rightColumn = rightColumn;
             this.resultType = resultType;
             if (leftColumn < 0 || rightColumn < 0)
-                throw new RuntimeException("Illegal column number " + leftColumn + ":" + rightColumn);
+                throw new InternalCompilerError("Illegal column number " + leftColumn + ":" + rightColumn, resultType);
         }
     }
 
@@ -68,11 +69,13 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
      * and another general-purpose boolean expression.
      */
     class ConditionDecomposition {
+        final CalciteObject object;
         public final List<EqualityTest> comparisons;
         @Nullable
         RexNode            leftOver;
 
-        ConditionDecomposition() {
+        ConditionDecomposition(CalciteObject object) {
+            this.object = object;
             this.comparisons = new ArrayList<>();
             this.leftOver = null;
         }
@@ -91,7 +94,7 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
 
         void validate() {
             if (this.leftOver == null && this.comparisons.isEmpty())
-                throw new RuntimeException("Unexpected empty join condition");
+                throw new InternalCompilerError("Unexpected empty join condition", this.object);
         }
 
         /**

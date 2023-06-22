@@ -497,11 +497,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         CompilerMessages message = CompilerMain.execute("-png", "-o", png.getPath(), file.getPath());
         Assert.assertEquals(message.exitCode, 0);
         Assert.assertTrue(file.exists());
-        try {
-            ImageIO.read(new File(png.getPath()));
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        ImageIO.read(new File(png.getPath()));
         boolean success = file.delete();
         Assert.assertTrue(success);
     }

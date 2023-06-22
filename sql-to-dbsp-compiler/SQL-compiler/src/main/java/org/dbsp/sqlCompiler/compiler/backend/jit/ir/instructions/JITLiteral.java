@@ -41,7 +41,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 public class JITLiteral extends JITValue {
     public final DBSPLiteral literal;
@@ -90,7 +90,7 @@ public class JITLiteral extends JITValue {
         } else if (this.literal.is(DBSPFloatLiteral.class)) {
             return isNull ? new FloatNode(0.0F) : new FloatNode(this.literal.to(DBSPFloatLiteral.class).value);
         } else {
-            throw new Unimplemented(this.literal);
+            throw new UnimplementedException(this.literal);
         }
     }
 

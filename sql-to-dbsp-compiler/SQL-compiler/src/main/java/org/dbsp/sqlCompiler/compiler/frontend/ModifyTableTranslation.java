@@ -36,8 +36,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
-import org.dbsp.util.TranslationException;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -83,14 +83,14 @@ class ModifyTableTranslation implements ICompilerComponent {
             DBSPType[] columnTypes = new DBSPType[columnList.size()];
             for (SqlNode node : columnList) {
                 if (!(node instanceof SqlIdentifier)) {
-                    throw new Unimplemented(statement.getCalciteObject());
+                    throw new UnimplementedException(statement.getCalciteObject());
                 }
                 SqlIdentifier id = (SqlIdentifier) node;
                 int actualIndex = tableDefinition.getColumnIndex(id);
                 // This must be a permutation
                 for (int value : this.columnPermutation.values())
                     if (value == actualIndex)
-                        throw new TranslationException("Not a column permutation " +
+                        throw new InternalCompilerError("Not a column permutation " +
                                 this.columnPermutation, statement.getCalciteObject());
                 Utilities.putNew(this.columnPermutation, index, actualIndex);
                 columnTypes[index] = sourceType.getFieldType(actualIndex);
@@ -134,7 +134,7 @@ class ModifyTableTranslation implements ICompilerComponent {
 
     public void setResult(DBSPZSetLiteral literal) {
         if (this.valuesTranslation != null)
-            throw new RuntimeException("Overwriting logical value translation");
+            throw new InternalCompilerError("Overwriting logical value translation", CalciteObject.EMPTY);
         this.valuesTranslation = this.permuteColumns(literal);
     }
 

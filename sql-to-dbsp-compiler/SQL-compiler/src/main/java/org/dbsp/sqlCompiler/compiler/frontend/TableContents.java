@@ -25,11 +25,12 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.dbsp.util.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -67,7 +68,7 @@ public class TableContents implements ICompilerComponent {
 
     public DBSPZSetLiteral.Contents getTableContents(String tableName) {
         if (this.tableContents == null)
-            throw new UnsupportedException("Not keeping track of table contents");
+            throw new UnsupportedException("Not keeping track of table contents", CalciteObject.EMPTY);
         return Utilities.getExists(this.tableContents, tableName);
     }
 
@@ -95,7 +96,7 @@ public class TableContents implements ICompilerComponent {
 
     public void addToTable(String tableName, DBSPZSetLiteral.Contents value) {
         if (this.tableContents == null)
-            throw new UnsupportedException("Not keeping track of table contents");
+            throw new UnsupportedException("Not keeping track of table contents", CalciteObject.EMPTY);
         this.tableContents.get(tableName).add(value);
     }
 
@@ -103,7 +104,7 @@ public class TableContents implements ICompilerComponent {
         for (int i = 0; i < this.tablesCreated.size(); i++)
             if (this.tablesCreated.get(i).equals(tableName))
                 return i;
-        throw new RuntimeException("No table named " + tableName);
+        throw new InternalCompilerError("No table named " + tableName, CalciteObject.EMPTY);
     }
 
     @Override

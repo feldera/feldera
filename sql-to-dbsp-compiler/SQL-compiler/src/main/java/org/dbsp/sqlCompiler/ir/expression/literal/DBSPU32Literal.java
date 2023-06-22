@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -56,9 +57,9 @@ public class DBSPU32Literal extends DBSPLiteral {
     public DBSPU32Literal(@Nullable Integer value, boolean nullable) {
         this(CalciteObject.EMPTY, DBSPTypeInteger.UNSIGNED_32.setMayBeNull(nullable), value);
         if (value == null && !nullable)
-            throw new RuntimeException("Null value with non-nullable type");
+            throw new InternalCompilerError("Null value with non-nullable type", this);
         if (value != null && value < 0)
-            throw new RuntimeException("Negative value for unsigned literal");
+            throw new InternalCompilerError("Negative value for unsigned literal", this);
     }
 
     @Override

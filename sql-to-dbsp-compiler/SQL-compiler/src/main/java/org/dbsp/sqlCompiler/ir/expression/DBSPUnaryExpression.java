@@ -28,7 +28,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.TranslationException;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 
 public class DBSPUnaryExpression extends DBSPExpression {
     public final DBSPExpression source;
@@ -40,7 +40,7 @@ public class DBSPUnaryExpression extends DBSPExpression {
         this.operation = operation;
         this.source = operand;
         if (this.source == null)
-            throw new TranslationException("Null operand", node);
+            throw new InternalCompilerError("Null operand", node);
     }
 
     @Override
