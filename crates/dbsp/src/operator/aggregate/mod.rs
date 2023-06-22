@@ -224,7 +224,8 @@ where
         O::R: ZRingValue,
         F: Fn(&Z::Val) -> A + Clone + 'static,
     {
-        self.weigh(move |_k, v| f(v)).stream_aggregate_generic(WeightedCount)
+        self.weigh(move |_k, v| f(v))
+            .stream_aggregate_generic(WeightedCount)
     }
 
     /// Incremental aggregation operator.
@@ -307,7 +308,8 @@ where
         O::R: ZRingValue,
         O::Val: MulByRef<Z::R, Output = O::Val> + GroupValue,
     {
-        self.weigh(move |_k, v| f(v)).aggregate_generic(WeightedCount)
+        self.weigh(move |_k, v| f(v))
+            .aggregate_generic(WeightedCount)
     }
 
     /// Convert indexed Z-set `Z` into a Z-set where the weight of each key

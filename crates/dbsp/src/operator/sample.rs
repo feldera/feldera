@@ -14,6 +14,11 @@ use std::{borrow::Cow, cmp::min, marker::PhantomData};
 
 // Prevent gigantic memory allocations by bounding sample size.
 pub const MAX_SAMPLE_SIZE: usize = 10_000_000;
+pub const MAX_QUANTILES: usize = 1_000;
+
+pub const fn default_quantiles() -> u32 {
+    100
+}
 
 // TODO: Operator to randomly sample `(K, V)` pairs.  This is
 // a little more tricky and also more expensive to implement than
@@ -44,7 +49,7 @@ where
     ///
     /// This is not an incremental operator.  It samples the input
     /// batch received at the current clock cycle and not the integral
-    /// of the input stream.  Prefix the call to `sample_keys()` with
+    /// of the input stream.  Prefix the call to `stream_sample_keys()` with
     /// `integrate_trace()` to sample the integral of the input.
     ///
     /// WARNING: This operator (by definition) returns non-deterministic
@@ -54,7 +59,7 @@ where
         &self,
         sample_size: &Stream<RootCircuit, usize>,
     ) -> Stream<RootCircuit, OrdZSet<B::Key, B::R>> {
-        self.circuit().region("sample_keys", || {
+        self.circuit().region("stream_sample_keys", || {
             let stream = self.try_sharded_version();
 
             // Sample each worker.
@@ -69,6 +74,59 @@ where
                 sample_size,
             )
         })
+    }
+
+    /// Generates a subset of keys that partition the set of all keys in `self`
+    /// into `num_quantiles + 1` approximately equal-size quantiles.
+    ///
+    /// Internally, this operator uses the
+    /// [`stream_sample_keys`](`Self::stream_sample_keys`) operator to compute a uniforn random
+    /// sample of size `num_quantiles ^ 2` and then picks every `num_quantile`'s element of the
+    /// sample.
+    ///
+    /// Maximal supported `num_quantiles` value is [`MAX_QUANTILES`].  If the operator
+    /// receives a larger `num_quantiles` value, it treats it as
+    /// `MAX_QUANTILES`.
+    ///
+    /// Outputs a Z-set containing `<=num_quantiles` keys.  Each key is output
+    /// with weight `1` regardless of its weight or the number of associated
+    /// values in the input batch.
+    ///
+    /// This is not an incremental operator.  It samples the input
+    /// batch received at the current clock cycle and not the integral
+    /// of the input stream.  Prefix the call to `stream_key_quantiles()` with
+    /// `integrate_trace()` to sample the integral of the input.
+    ///
+    /// WARNING: This operator returns non-deterministic outputs, i.e.,
+    /// feeding the same input twice can produce different outputs.  As such it
+    /// may not play well with most other DBSP operators and must be used with
+    /// care.
+    pub fn stream_key_quantiles(
+        &self,
+        num_quantiles: &Stream<RootCircuit, usize>,
+    ) -> Stream<RootCircuit, OrdZSet<B::Key, B::R>> {
+        let sample_size = num_quantiles.apply(|num| num * num);
+
+        self.stream_sample_keys(&sample_size).apply2_owned(
+            num_quantiles,
+            |sample, num_quantiles| {
+                let num_quantiles = min(*num_quantiles, MAX_QUANTILES);
+
+                let sample_size = sample.key_count();
+
+                if sample_size <= num_quantiles {
+                    sample
+                } else {
+                    let mut builder =
+                        <<OrdZSet<_, _> as Batch>::Builder>::with_capacity((), num_quantiles);
+                    for i in 0..num_quantiles {
+                        let key = sample.layer.keys()[(i * sample_size) / num_quantiles].clone();
+                        builder.push((key, HasOne::one()));
+                    }
+                    builder.done()
+                }
+            },
+        )
     }
 }
 
@@ -146,6 +204,7 @@ mod test {
         InputHandle<usize>,
         CollectionHandle<i32, (i32, i32)>,
         OutputHandle<OrdZSet<i32, i32>>,
+        OutputHandle<OrdZSet<i32, i32>>,
     )> {
         let (sample_size_stream, sample_size_handle) = circuit.add_input_stream::<usize>();
         let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32, i32>();
@@ -156,7 +215,18 @@ mod test {
             .stream_sample_keys(&sample_size_stream)
             .output();
 
-        Ok((sample_size_handle, input_handle, sample_handle))
+        let quantile_handle = input_stream
+            .shard()
+            .integrate_trace()
+            .stream_key_quantiles(&sample_size_stream)
+            .output();
+
+        Ok((
+            sample_size_handle,
+            input_handle,
+            sample_handle,
+            quantile_handle,
+        ))
     }
 
     use proptest::{collection::vec, prelude::*};
@@ -180,7 +250,7 @@ mod test {
         #[test]
         fn sample_keys_proptest(trace in input_trace(100, 5, 200, 20)) {
 
-            let (mut dbsp, (sample_size_handle, input_handle, output_handle)) =
+            let (mut dbsp, (sample_size_handle, input_handle, output_sample_handle, output_quantile_handle)) =
                 Runtime::init_circuit(4, test_circuit).unwrap();
 
             let mut ref_trace = TestBatch::new(None);
@@ -200,7 +270,8 @@ mod test {
 
                 dbsp.step().unwrap();
 
-                let output = output_handle.consolidate();
+                let output_sample = output_sample_handle.consolidate();
+                let output_quantile = output_quantile_handle.consolidate();
 
                 // Validation.
 
@@ -215,12 +286,19 @@ mod test {
                 }
                 let all_keys_set = all_keys.iter().cloned().collect::<BTreeSet<_>>();
 
-                println!("all_keys: {all_keys_set:?}");
-                println!("output: {output:?}");
-                assert!(output.key_count() <= all_keys_set.len());
-                assert!(output.key_count() <= sample_size);
+                assert!(output_sample.key_count() <= all_keys_set.len());
+                assert!(output_sample.key_count() <= sample_size);
 
-                let mut cursor = output.cursor();
+                let mut cursor = output_sample.cursor();
+                while cursor.key_valid() {
+                    assert!(all_keys_set.contains(cursor.key()));
+                    cursor.step_key();
+                }
+
+                assert!(output_quantile.key_count() <= all_keys_set.len());
+                assert!(output_quantile.key_count() <= sample_size);
+
+                let mut cursor = output_quantile.cursor();
                 while cursor.key_valid() {
                     assert!(all_keys_set.contains(cursor.key()));
                     cursor.step_key();

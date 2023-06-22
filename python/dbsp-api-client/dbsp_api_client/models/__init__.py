@@ -8,6 +8,7 @@ from .compile_program_request import CompileProgramRequest
 from .connector_descr import ConnectorDescr
 from .csv_encoder_config import CsvEncoderConfig
 from .csv_parser_config import CsvParserConfig
+from .egress_mode import EgressMode
 from .error_response import ErrorResponse
 from .file_input_config import FileInputConfig
 from .file_output_config import FileOutputConfig
@@ -19,6 +20,8 @@ from .kafka_input_config_log_level import KafkaInputConfigLogLevel
 from .kafka_log_level import KafkaLogLevel
 from .kafka_output_config import KafkaOutputConfig
 from .kafka_output_config_log_level import KafkaOutputConfigLogLevel
+from .neighborhood_query import NeighborhoodQuery
+from .neighborhood_query_anchor import NeighborhoodQueryAnchor
 from .new_connector_request import NewConnectorRequest
 from .new_connector_response import NewConnectorResponse
 from .new_pipeline_request import NewPipelineRequest
@@ -26,6 +29,7 @@ from .new_pipeline_response import NewPipelineResponse
 from .new_program_request import NewProgramRequest
 from .new_program_response import NewProgramResponse
 from .output_endpoint_config import OutputEndpointConfig
+from .output_query import OutputQuery
 from .pipeline_config import PipelineConfig
 from .pipeline_config_inputs import PipelineConfigInputs
 from .pipeline_config_outputs import PipelineConfigOutputs
@@ -61,6 +65,7 @@ __all__ = (
     "ConnectorDescr",
     "CsvEncoderConfig",
     "CsvParserConfig",
+    "EgressMode",
     "ErrorResponse",
     "FileInputConfig",
     "FileOutputConfig",
@@ -72,6 +77,8 @@ __all__ = (
     "KafkaLogLevel",
     "KafkaOutputConfig",
     "KafkaOutputConfigLogLevel",
+    "NeighborhoodQuery",
+    "NeighborhoodQueryAnchor",
     "NewConnectorRequest",
     "NewConnectorResponse",
     "NewPipelineRequest",
@@ -79,6 +86,7 @@ __all__ = (
     "NewProgramRequest",
     "NewProgramResponse",
     "OutputEndpointConfig",
+    "OutputQuery",
     "PipelineConfig",
     "PipelineConfigInputs",
     "PipelineConfigOutputs",

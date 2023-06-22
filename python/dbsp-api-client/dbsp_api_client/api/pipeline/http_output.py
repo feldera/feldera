@@ -6,8 +6,11 @@ import httpx
 from ... import errors
 from ...client import Client
 from ...models.chunk import Chunk
+from ...models.egress_mode import EgressMode
 from ...models.error_response import ErrorResponse
-from ...types import UNSET, Response
+from ...models.neighborhood_query import NeighborhoodQuery
+from ...models.output_query import OutputQuery
+from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
@@ -15,7 +18,10 @@ def _get_kwargs(
     table_name: str,
     *,
     client: Client,
+    json_body: Optional[NeighborhoodQuery],
     format_: str,
+    query: Union[Unset, None, OutputQuery] = UNSET,
+    mode: Union[Unset, None, EgressMode] = UNSET,
 ) -> Dict[str, Any]:
     url = "{}/v0/pipelines/{pipeline_id}/egress/{table_name}".format(
         client.base_url, pipeline_id=pipeline_id, table_name=table_name
@@ -27,7 +33,21 @@ def _get_kwargs(
     params: Dict[str, Any] = {}
     params["format"] = format_
 
+    json_query: Union[Unset, None, str] = UNSET
+    if not isinstance(query, Unset):
+        json_query = query.value if query else None
+
+    params["query"] = json_query
+
+    json_mode: Union[Unset, None, str] = UNSET
+    if not isinstance(mode, Unset):
+        json_mode = mode.value if mode else None
+
+    params["mode"] = json_mode
+
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
+
+    json_json_body = json_body.to_dict() if json_body else None
 
     return {
         "method": "get",
@@ -36,6 +56,7 @@ def _get_kwargs(
         "cookies": cookies,
         "timeout": client.get_timeout(),
         "follow_redirects": client.follow_redirects,
+        "json": json_json_body,
         "params": params,
     }
 
@@ -81,7 +102,10 @@ def sync_detailed(
     table_name: str,
     *,
     client: Client,
+    json_body: Optional[NeighborhoodQuery],
     format_: str,
+    query: Union[Unset, None, OutputQuery] = UNSET,
+    mode: Union[Unset, None, EgressMode] = UNSET,
 ) -> Response[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates to a SQL view or table.
 
@@ -98,6 +122,15 @@ def sync_detailed(
         pipeline_id (str):
         table_name (str):
         format_ (str):
+        query (Union[Unset, None, OutputQuery]): A query over an output stream.
+
+            We currently do not support ad hoc queries.  Instead the client can use
+            three pre-defined queries to inspect the contents of a table or view.
+        mode (Union[Unset, None, EgressMode]):
+        json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
+            table or view.
+            The neighborhood is defined in terms of its central point (`anchor`)
+            and the number of rows preceding and following the anchor to output.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -111,7 +144,10 @@ def sync_detailed(
         pipeline_id=pipeline_id,
         table_name=table_name,
         client=client,
+        json_body=json_body,
         format_=format_,
+        query=query,
+        mode=mode,
     )
 
     response = httpx.request(
@@ -127,7 +163,10 @@ def sync(
     table_name: str,
     *,
     client: Client,
+    json_body: Optional[NeighborhoodQuery],
     format_: str,
+    query: Union[Unset, None, OutputQuery] = UNSET,
+    mode: Union[Unset, None, EgressMode] = UNSET,
 ) -> Optional[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates to a SQL view or table.
 
@@ -144,6 +183,15 @@ def sync(
         pipeline_id (str):
         table_name (str):
         format_ (str):
+        query (Union[Unset, None, OutputQuery]): A query over an output stream.
+
+            We currently do not support ad hoc queries.  Instead the client can use
+            three pre-defined queries to inspect the contents of a table or view.
+        mode (Union[Unset, None, EgressMode]):
+        json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
+            table or view.
+            The neighborhood is defined in terms of its central point (`anchor`)
+            and the number of rows preceding and following the anchor to output.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -157,7 +205,10 @@ def sync(
         pipeline_id=pipeline_id,
         table_name=table_name,
         client=client,
+        json_body=json_body,
         format_=format_,
+        query=query,
+        mode=mode,
     ).parsed
 
 
@@ -166,7 +217,10 @@ async def asyncio_detailed(
     table_name: str,
     *,
     client: Client,
+    json_body: Optional[NeighborhoodQuery],
     format_: str,
+    query: Union[Unset, None, OutputQuery] = UNSET,
+    mode: Union[Unset, None, EgressMode] = UNSET,
 ) -> Response[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates to a SQL view or table.
 
@@ -183,6 +237,15 @@ async def asyncio_detailed(
         pipeline_id (str):
         table_name (str):
         format_ (str):
+        query (Union[Unset, None, OutputQuery]): A query over an output stream.
+
+            We currently do not support ad hoc queries.  Instead the client can use
+            three pre-defined queries to inspect the contents of a table or view.
+        mode (Union[Unset, None, EgressMode]):
+        json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
+            table or view.
+            The neighborhood is defined in terms of its central point (`anchor`)
+            and the number of rows preceding and following the anchor to output.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -196,7 +259,10 @@ async def asyncio_detailed(
         pipeline_id=pipeline_id,
         table_name=table_name,
         client=client,
+        json_body=json_body,
         format_=format_,
+        query=query,
+        mode=mode,
     )
 
     async with httpx.AsyncClient(verify=client.verify_ssl) as _client:
@@ -210,7 +276,10 @@ async def asyncio(
     table_name: str,
     *,
     client: Client,
+    json_body: Optional[NeighborhoodQuery],
     format_: str,
+    query: Union[Unset, None, OutputQuery] = UNSET,
+    mode: Union[Unset, None, EgressMode] = UNSET,
 ) -> Optional[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates to a SQL view or table.
 
@@ -227,6 +296,15 @@ async def asyncio(
         pipeline_id (str):
         table_name (str):
         format_ (str):
+        query (Union[Unset, None, OutputQuery]): A query over an output stream.
+
+            We currently do not support ad hoc queries.  Instead the client can use
+            three pre-defined queries to inspect the contents of a table or view.
+        mode (Union[Unset, None, EgressMode]):
+        json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
+            table or view.
+            The neighborhood is defined in terms of its central point (`anchor`)
+            and the number of rows preceding and following the anchor to output.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -241,6 +319,9 @@ async def asyncio(
             pipeline_id=pipeline_id,
             table_name=table_name,
             client=client,
+            json_body=json_body,
             format_=format_,
+            query=query,
+            mode=mode,
         )
     ).parsed

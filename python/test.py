@@ -164,18 +164,18 @@ def main():
 
     if (connector_type == "http"):
         output = requests.get(
-                url + "/v0/pipelines/" + str(pipeline.pipeline_id) + "/egress/TRANSACTIONS_WITH_DEMOGRAPHICS",
+                f'{url}/v0/pipelines/{pipeline.pipeline_id}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS',
                 stream = True)
 
         print("Sending demongraphics data")
         r = requests.post(
-                url + "/v0/pipelines/" + str(pipeline.pipeline_id) + "/ingress/DEMOGRAPHICS",
+                f'{url}/v0/pipelines/{pipeline.pipeline_id}/ingress/DEMOGRAPHICS',
                 data = demographics)
         print("result: " + str(r))
 
         print("Sending transaction data")
         r = requests.post(
-                url + "/v0/pipelines/" + str(pipeline.pipeline_id) + "/ingress/TRANSACTIONS",
+                f'{url}/v0/pipelines/{pipeline.pipeline_id}/ingress/TRANSACTIONS',
                 data = transactions)
         print("result: " + str(r))
 
@@ -188,6 +188,36 @@ def main():
                 break
 
         assert data.strip() == expected.strip()
+
+        print("Sending neighborhood request")
+        neighborhood = requests.get(
+                f'{url}/v0/pipelines/{pipeline.pipeline_id}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS?query=neighborhood&mode=snapshot&format=csv',
+                json = {'before': 10, 'after': 20, 'anchor': ['2008-01-03 05:38:14', 0.0, 'John', 'New York'] })
+        print("result: " + str(neighborhood))
+        assert neighborhood.status_code == requests.codes.ok
+
+        print("neighborhood:")
+        csv = neighborhood.json()['text_data']
+        print(csv.strip())
+
+        print("Sending invalid neighborhood request")
+        response = requests.get(
+                f'{url}/v0/pipelines/{pipeline.pipeline_id}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS?query=neighborhood&mode=snapshot&format=csv',
+                json = {'before': 10, 'after': 20, 'anchor': ['not_a_date', 0.0, 'John', 'New York'] })
+        print("result: " + str(response))
+        assert response.status_code != requests.codes.ok
+        print("response:")
+        print(response.json())
+
+        print("Sending quantiles request")
+        quantiles = requests.get(
+                f'{url}/v0/pipelines/{pipeline.pipeline_id}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS?query=quantiles&mode=snapshot&format=csv&quntiles=100')
+        print("result: " + str(quantiles))
+        assert quantiles.status_code == requests.codes.ok
+
+        print("quantiles:")
+        csv = quantiles.json()['text_data']
+        print(csv.strip())
 
     print("Pipeline status: " + str(pipeline.descriptor().status))
 

@@ -137,7 +137,10 @@ pub enum PipelineState {
     Terminated = 2,
 }
 
-pub use catalog::Catalog;
+#[cfg(feature = "server")]
+pub use server::EgressMode;
+
+pub use catalog::{Catalog, NeighborhoodQuery, OutputQuery, OutputQueryHandles};
 pub use deinput::{
     DeCollectionHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
 };

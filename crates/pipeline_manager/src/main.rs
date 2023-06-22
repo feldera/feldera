@@ -24,7 +24,6 @@
 
 // TODOs:
 // * Tests.
-// * Support multi-node DBSP deployments.
 
 use actix_web::dev::Service;
 use actix_web::{
@@ -145,9 +144,12 @@ observed by the user is outdated, so the request is rejected."
         db::ConnectorDescr,
         db::PipelineDescr,
         db::PipelineStatus,
+        dbsp_adapters::EgressMode,
         dbsp_adapters::PipelineConfig,
         dbsp_adapters::InputEndpointConfig,
+        dbsp_adapters::NeighborhoodQuery,
         dbsp_adapters::OutputEndpointConfig,
+        dbsp_adapters::OutputQuery,
         dbsp_adapters::TransportConfig,
         dbsp_adapters::FormatConfig,
         dbsp_adapters::transport::FileInputConfig,
@@ -1624,8 +1626,15 @@ async fn http_input(
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier."),
-        ("table_name" = String, Path, description = "SQL table name."),
+        ("table_name" = String, Path, description = "SQL table or view name."),
         ("format" = String, Query, description = "Output data format, e.g., 'csv' or 'json'."),
+        ("query" = Option<OutputQuery>, Query, description = "Query to execute on the table. Must be one of 'table', 'neighborhood', or 'quantiles'. The default value is 'table'"),
+        ("mode" = Option<EgressMode>, Query, description = "Output mode. Must be one of 'watch' or 'snapshot'. The default value is 'watch'"),
+    ),
+    request_body(
+        content = Option<NeighborhoodQuery>,
+        description = "When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.",
+        content_type = "application/json",
     ),
     tag = "Pipeline"
 )]
