@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -56,9 +57,9 @@ public class DBSPUSizeLiteral extends DBSPLiteral {
     public DBSPUSizeLiteral(@Nullable Long value, boolean nullable) {
         this(CalciteObject.EMPTY, DBSPTypeUSize.INSTANCE.setMayBeNull(nullable), value);
         if (value == null && !nullable)
-            throw new RuntimeException("Null value with non-nullable type");
+            throw new InternalCompilerError("Null value with non-nullable type", this);
         if (value != null && value < 0)
-            throw new RuntimeException("Negative usize value " + value);
+            throw new InternalCompilerError("Negative usize value " + value, this);
     }
 
     @Override

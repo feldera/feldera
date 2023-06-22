@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -89,8 +90,8 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
      */
     public DBSPTupleExpression pointwiseCast(DBSPTypeTuple destType) {
         if (this.size() != destType.size())
-            throw new RuntimeException("Cannot cast " + this + " with " + this.size() + " fields "
-                    + " to " + destType + " with " + destType.size() + " fields");
+            throw new InternalCompilerError("Cannot cast " + this + " with " + this.size() + " fields "
+                    + " to " + destType + " with " + destType.size() + " fields", this);
         return new DBSPTupleExpression(
                 Linq.zip(this.fields, destType.tupFields,
                         DBSPExpression::cast, DBSPExpression.class));
@@ -98,7 +99,7 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
 
     public DBSPTupleExpression slice(int start, int endExclusive) {
         if (endExclusive <= start)
-            throw new RuntimeException("Incorrect slice parameters " + start + ":" + endExclusive);
+            throw new InternalCompilerError("Incorrect slice parameters " + start + ":" + endExclusive, this);
         return new DBSPTupleExpression(Utilities.arraySlice(this.fields, start, endExclusive));
     }
 

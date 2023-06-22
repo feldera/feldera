@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -45,7 +46,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import javax.annotation.Nullable;
 
@@ -60,7 +61,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
         super(node, type);
         this.isNull = isNull;
         if (this.isNull && !type.mayBeNull && !type.is(DBSPTypeAny.class))
-            throw new RuntimeException("Type " + type + " cannot represent null");
+            throw new InternalCompilerError("Type " + type + " cannot represent null", this);
     }
 
     /**
@@ -70,7 +71,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
         if (type.is(DBSPTypeInteger.class)) {
             DBSPTypeInteger it = type.to(DBSPTypeInteger.class);
             if (!it.signed)
-                throw new Unimplemented("Null of type ", type);
+                throw new UnimplementedException("Null of type ", type);
             switch (it.getWidth()) {
                 case 16:
                     return new DBSPI16Literal();
@@ -108,7 +109,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
         } else if (type.is(DBSPTypeTimestamp.class)) {
             return new DBSPTimestampLiteral();
         }
-        throw new Unimplemented(type);
+        throw new UnimplementedException(type);
     }
 
     public String wrapSome(String value) {
@@ -136,7 +137,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
 
     public void checkNotNull() {
         if (this.isNull)
-            throw new RuntimeException("Expected a non-null literal, got " + this);
+            throw new InternalCompilerError("Expected a non-null literal", this);
     }
 
     boolean hasSameType(DBSPLiteral other) {

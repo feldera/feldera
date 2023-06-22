@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -67,7 +68,7 @@ public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
         DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
         DBSPTypeRawTuple outputTuple = ixOutputType.keyType.to(DBSPTypeRawTuple.class);
         if (outputTuple.tupFields.length != 2)
-            throw new RuntimeException("Expected two fields in output element type " + outputTuple);
+            throw new InternalCompilerError("Expected two fields in output element type " + outputTuple, this);
         return new DBSPWindowAggregateOperator(
                 this.getNode(), expression, this.aggregate, this.window,
                 outputTuple.tupFields[0], outputTuple.tupFields[1],

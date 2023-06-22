@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -74,8 +75,8 @@ public abstract class InnerVisitor implements IRTransform {
     public void pop(IDBSPInnerNode node) {
         IDBSPInnerNode last = Utilities.removeLast(this.context);
         if (node != last)
-            throw new RuntimeException("Corrupted visitor context: popping " + node
-                    + " instead of " + last);
+            throw new InternalCompilerError("Corrupted visitor context: popping " + node
+                    + " instead of " + last, node);
     }
 
     @Nullable

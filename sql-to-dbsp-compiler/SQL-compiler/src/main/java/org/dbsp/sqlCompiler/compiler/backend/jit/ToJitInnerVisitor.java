@@ -52,6 +52,9 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITI64Type;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITRowType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITScalarType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
@@ -65,7 +68,7 @@ import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -107,7 +110,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
          */
         JITInstructionPair addVariable(String varName, boolean needsNull) {
             if (this.variables.containsKey(varName)) {
-                throw new RuntimeException("Duplicate declaration " + varName);
+                throw new InternalCompilerError("Duplicate declaration" + varName, CalciteObject.EMPTY);
             }
             JITInstructionRef value = ToJitInnerVisitor.this.nextId();
             JITInstructionRef isNull = JITInstructionRef.INVALID;
@@ -198,7 +201,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             if (ids != null)
                 return ids;
         }
-        throw new RuntimeException("Could not resolve " + varName);
+        throw new InternalCompilerError("Could not resolve " + varName, CalciteObject.EMPTY);
     }
 
     void map(DBSPExpression expression, JITInstructionPair pair) {
@@ -362,7 +365,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPExpression expression) {
-        throw new Unimplemented(expression);
+        throw new UnimplementedException(expression);
     }
 
     @Override
@@ -437,7 +440,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 return VisitDecision.STOP;
             }
         }
-        throw new Unimplemented(expression);
+        throw new UnimplementedException(expression);
     }
 
     @Override
@@ -827,7 +830,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             }
             return VisitDecision.STOP;
         } else if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
-            throw new RuntimeException("Should have been removed");
+            throw new InternalCompilerError("Should have been removed", expression);
         }
 
         JITInstructionRef value = this.insertBinary(
@@ -921,14 +924,14 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             }
             case INDICATOR: {
                 if (!source.hasNull())
-                    throw new RuntimeException("indicator called on non-nullable expression" + expression);
+                    throw new InternalCompilerError("indicator called on non-nullable expression", expression);
                 JITInstructionRef value = this.insertCast(
                     source.isNull, JITBoolType.INSTANCE, JITI64Type.INSTANCE, "");
                 this.map(expression, new JITInstructionPair(value));
                 return VisitDecision.STOP;
             }
             default:
-                throw new Unimplemented(expression);
+                throw new UnimplementedException(expression);
         }
         JITInstructionRef value = this.insertUnary(kind, source.value, convertScalarType(expression.source));
         JITInstructionRef isNull = JITInstructionRef.INVALID;
@@ -1055,7 +1058,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 this.map(expression, result);
             }
         } else {
-            throw new Unimplemented("Clone with non-scalar type ", expression);
+            throw new UnimplementedException("Clone with non-scalar type ", expression);
         }
         return VisitDecision.STOP;
     }

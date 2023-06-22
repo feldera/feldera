@@ -65,6 +65,8 @@ import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.Pair;
 import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -500,7 +502,7 @@ public class CalciteCompiler implements IWritesLogs {
                 result.add(field);
                 continue;
             }
-            throw new Unimplemented(new CalciteObject(col));
+            throw new UnimplementedException(new CalciteObject(col));
         }
         return result;
     }
@@ -544,7 +546,7 @@ public class CalciteCompiler implements IWritesLogs {
                     cols = this.getColumnTypes(Objects.requireNonNull(ct.columnList));
                 } else {
                     if (ct.query == null)
-                        throw new UnsupportedException(node);
+                        throw new UnsupportedException(new CalciteObject(node));
                     Logger.INSTANCE.belowLevel(this, 1)
                             .append(ct.query.toString())
                             .newline();
@@ -589,7 +591,7 @@ public class CalciteCompiler implements IWritesLogs {
                 SqlInsert insert = (SqlInsert) node;
                 SqlNode table = insert.getTargetTable();
                 if (!(table instanceof SqlIdentifier))
-                    throw new Unimplemented(new CalciteObject(table));
+                    throw new UnimplementedException(new CalciteObject(table));
                 SqlIdentifier id = (SqlIdentifier) table;
                 TableModifyStatement stat = new TableModifyStatement(node, sqlStatement, id.toString(), insert.getSource(), comment);
                 RelRoot values = this.converter.convertQuery(stat.data, true, true);
@@ -599,6 +601,11 @@ public class CalciteCompiler implements IWritesLogs {
             }
         }
 
-        throw new Unimplemented(new CalciteObject(node));
+        if (node.getKind().equals(SqlKind.SELECT)) {
+            throw new UnsupportedException("Raw 'SELECT' statements are not supported; did you forget to CREATE VIEW?",
+                    new CalciteObject(node));
+        }
+
+        throw new UnimplementedException(new CalciteObject(node));
     }
 }

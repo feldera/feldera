@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.IIndentStream;
 
@@ -48,7 +49,7 @@ public class DBSPTypeRef extends DBSPType {
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull)
-            throw new RuntimeException("Reference types cannot be null");
+            throw new InternalCompilerError("Reference types cannot be null", this);
         return this;
     }
 

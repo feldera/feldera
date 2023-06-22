@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.backend.jit.ir;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.BaseJsonNode;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.*;
 
 /**
@@ -32,7 +33,7 @@ import org.dbsp.util.*;
  */
 public abstract class JITNode implements ICastable, ToIndentableString {
     public BaseJsonNode asJson() {
-        throw new Unimplemented("Should be overridden in all subclasses");
+        throw new UnimplementedException("Should be overridden in all subclasses");
     }
 
     private static final ObjectMapper topMapper = new ObjectMapper();

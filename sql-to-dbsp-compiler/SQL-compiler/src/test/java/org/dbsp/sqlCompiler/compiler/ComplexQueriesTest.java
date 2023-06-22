@@ -33,7 +33,9 @@ import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 
 @SuppressWarnings("SpellCheckingInspection")
 public class ComplexQueriesTest extends BaseSQLTests {
@@ -198,7 +200,6 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "-- create view k8scluster_vulnerability_stats ();";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(statements);
-        compiler.throwIfErrorsOccurred();
         DBSPCircuit circuit = getCircuit(compiler);
         RustFileWriter writer = new RustFileWriter(compiler, testFilePath);
         writer.emitCodeWithHandle(true);
@@ -355,7 +356,6 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "-- create view k8scluster_vulnerability_stats ();";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(statements);
-        compiler.throwIfErrorsOccurred();
         DBSPCircuit circuit = getCircuit(compiler);
         RustFileWriter writer = new RustFileWriter(compiler, testFilePath);
         writer.emitCodeWithHandle(true);
@@ -524,8 +524,6 @@ public class ComplexQueriesTest extends BaseSQLTests {
         compiler.compileStatement(query);
         this.addRustTestCase("ComplexQueriesTest.taxiTest", compiler, getCircuit(compiler));
     }
-
-
 
     @Test
     public void fraudDetectionTest() {

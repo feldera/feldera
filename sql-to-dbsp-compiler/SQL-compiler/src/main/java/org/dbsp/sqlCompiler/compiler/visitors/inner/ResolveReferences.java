@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -27,7 +28,7 @@ public class ResolveReferences extends InnerVisitor {
     public VisitDecision preorder(DBSPVariablePath variable) {
         IDBSPDeclaration declaration = this.substitutionContext.get(variable.variable);
         if (declaration == null)
-            throw new RuntimeException("Could not resolve " + variable);
+            throw new InternalCompilerError("Could not resolve", variable);
         this.reference.declare(variable, declaration);
         return VisitDecision.STOP;
     }

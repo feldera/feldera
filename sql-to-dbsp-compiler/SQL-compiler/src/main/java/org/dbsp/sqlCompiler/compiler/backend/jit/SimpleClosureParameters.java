@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -84,7 +85,7 @@ public class SimpleClosureParameters
     public VisitDecision preorder(DBSPVariablePath variable) {
         if (this.context.containsSubstitution(variable.variable))
             // We cannot allow accesses to the original parameter.
-            throw new RuntimeException("Could not substitute all uses of " + variable);
+            throw new InternalCompilerError("Could not substitute all uses of " + variable, variable);
         this.map(variable, variable);
         return VisitDecision.STOP;
     }
@@ -129,7 +130,7 @@ public class SimpleClosureParameters
             for (DBSPType field: tuple.tupFields) {
                 String name = this.generator.nextName();
                 if (field.is(DBSPTypeTupleBase.class))
-                    throw new RuntimeException("Tuple types nested too deeply " + parameter);
+                    throw new InternalCompilerError("Tuple types nested too deeply", parameter);
                 DBSPVariablePath newParam = new DBSPVariablePath(name, field);
                 newParams.add(newParam);
                 parameters.add(newParam.asParameter());

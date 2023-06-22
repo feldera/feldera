@@ -41,7 +41,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.util.IndentStream;
-import org.dbsp.util.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.util.Utilities;
 
 import java.util.Map;
@@ -73,7 +73,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     public VisitDecision doNull(DBSPLiteral literal) {
         if (!literal.isNull)
-            throw new UnsupportedException(literal);
+            throw new UnsupportedException(literal.getNode());
         return this.doNullExpression(literal);
     }
 
@@ -414,11 +414,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
          */
         DBSPTypeBaseType baseDest = expression.getType().as(DBSPTypeBaseType.class);
         if (baseDest == null)
-            throw new UnsupportedException(this);
+            throw new UnsupportedException(expression.getNode());
         DBSPType sourceType = expression.source.getType();
         DBSPTypeBaseType baseSource = sourceType.as(DBSPTypeBaseType.class);
         if (baseSource == null)
-            throw new UnsupportedException(sourceType);
+            throw new UnsupportedException(sourceType.getNode());
         String destName = baseDest.shortName();
         String srcName = baseSource.shortName();
         String functionName = "cast_to_" + destName + baseDest.nullableSuffix() +
@@ -1178,13 +1178,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPAggregate aggregate) {
         // This should have been eliminated
-        throw new UnsupportedException(aggregate);
+        throw new UnsupportedException(aggregate.getNode());
     }
 
     @Override
     public VisitDecision preorder(DBSPAggregate.Implementation implementation) {
         // This should have been eliminated
-        throw new UnsupportedException(implementation);
+        throw new UnsupportedException(implementation.getNode());
     }
 
     public static String toRustString(IErrorReporter reporter, IDBSPInnerNode node, boolean compact) {

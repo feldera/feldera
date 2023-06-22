@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -30,10 +31,10 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
         // and a low-level one, which contains a function.
         if (aggregate == null) {
             if (function == null)
-                throw new RuntimeException("'function' and 'aggregate' are both null");
+                throw new InternalCompilerError("'function' and 'aggregate' are both null", node);
         } else {
             if (function != null)
-                throw new RuntimeException("'function' and 'aggregate' are both non-null");
+                throw new InternalCompilerError("'function' and 'aggregate' are both non-null", node);
         }
     }
 

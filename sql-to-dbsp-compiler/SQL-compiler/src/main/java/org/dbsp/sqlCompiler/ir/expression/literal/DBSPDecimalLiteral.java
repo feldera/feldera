@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -40,7 +41,7 @@ public class DBSPDecimalLiteral extends DBSPLiteral {
     public DBSPDecimalLiteral(CalciteObject node, DBSPType type, @Nullable BigDecimal value) {
         super(node, type, value == null);
         if (!type.is(DBSPTypeDecimal.class))
-            throw new RuntimeException("Decimal literal cannot have type " + type);
+            throw new InternalCompilerError("Decimal literal cannot have type " + type, this);
         this.value = value;
     }
 

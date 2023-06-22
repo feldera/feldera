@@ -33,6 +33,9 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.*;
 import org.apache.calcite.sql.*;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -201,7 +204,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 return index;
             index++;
         }
-        throw new RuntimeException("Type " + type + " has no field named " + field);
+        throw new InternalCompilerError("Type " + type + " has no field named " + field, new CalciteObject(type));
     }
 
     public void visitCorrelate(LogicalCorrelate correlate) {
@@ -229,25 +232,25 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject node = new CalciteObject(correlate);
         DBSPTypeTuple type = this.convertType(correlate.getRowType()).to(DBSPTypeTuple.class);
         if (correlate.getJoinType().isOuterJoin())
-            throw new Unimplemented(node);
+            throw new UnimplementedException(node);
         this.visit(correlate.getLeft(), 0, correlate);
         DBSPOperator left = this.getInputAs(correlate.getLeft(), true);
         DBSPTypeTuple leftElementType = left.getOutputZSetElementType();
 
         RelNode correlateRight = correlate.getRight();
         if (!(correlateRight instanceof Uncollect))
-            throw new Unimplemented(node);
+            throw new UnimplementedException(node);
         Uncollect uncollect = (Uncollect) correlateRight;
         CalciteObject uncollectNode = new CalciteObject(uncollect);
         RelNode uncollectInput = uncollect.getInput();
         if (!(uncollectInput instanceof LogicalProject))
-            throw new Unimplemented(node);
+            throw new UnimplementedException(node);
         LogicalProject project = (LogicalProject) uncollectInput;
         if (project.getProjects().size() != 1)
-            throw new Unimplemented(node);
+            throw new UnimplementedException(node);
         RexNode projection = project.getProjects().get(0);
         if (!(projection instanceof RexFieldAccess))
-            throw new Unimplemented(node);
+            throw new UnimplementedException(node);
         RexFieldAccess field = (RexFieldAccess) projection;
         RelDataType leftRowType = correlate.getLeft().getRowType();
         // The index of the field that is the array
@@ -305,7 +308,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         if (!aggregates.isEmpty()) {
             if (aggregate.getGroupType() != org.apache.calcite.rel.core.Aggregate.Group.SIMPLE)
-                throw new Unimplemented(node);
+                throw new UnimplementedException(node);
             DBSPExpression[] groups = new DBSPExpression[aggregate.getGroupCount()];
             int next = 0;
             for (int index: aggregate.getGroupSet()) {
@@ -411,7 +414,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         if (this.options.optimizerOptions.generateInputForEveryTable)
-            throw new RuntimeException("Could not find input for table " + tableName);
+            throw new InternalCompilerError("Could not find input for table " + tableName, node);
         @Nullable String comment = null;
         if (scan.getTable() instanceof RelOptTableImpl) {
             RelOptTableImpl impl = (RelOptTableImpl) scan.getTable();
@@ -448,7 +451,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         int index = 0;
         for (RexNode column : project.getProjects()) {
             if (column instanceof RexOver) {
-                throw new UnsupportedException("Optimizer should have removed OVER expressions", column);
+                throw new UnsupportedException("Optimizer should have removed OVER expressions",
+                        new CalciteObject(column));
             } else {
                 DBSPExpression exp = expressionCompiler.compile(column);
                 DBSPType expectedType = tuple.getFieldType(index);
@@ -574,17 +578,17 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject node = new CalciteObject(join);
         JoinRelType joinType = join.getJoinType();
         if (joinType == JoinRelType.ANTI || joinType == JoinRelType.SEMI)
-            throw new Unimplemented(node);
+            throw new UnimplementedException(node);
 
         DBSPTypeTuple resultType = this.convertType(join.getRowType()).to(DBSPTypeTuple.class);
         if (join.getInputs().size() != 2)
-            throw new TranslationException("Unexpected join with " + join.getInputs().size() + " inputs", node);
+            throw new InternalCompilerError("Unexpected join with " + join.getInputs().size() + " inputs", node);
         DBSPOperator left = this.getInputAs(join.getInput(0), true);
         DBSPOperator right = this.getInputAs(join.getInput(1), true);
         DBSPTypeTuple leftElementType = left.getType().to(DBSPTypeZSet.class).elementType
                 .to(DBSPTypeTuple.class);
 
-        JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(
+        JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(node,
                 leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
         JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join.getCondition());
         // If any key field is nullable we need to filter the inputs; this will make key columns non-nullable
@@ -767,7 +771,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (this.modifyTableTranslation != null) {
             resultType = this.modifyTableTranslation.getResultType();
             if (sourceType.size() != resultType.size())
-                throw new TranslationException("Expected a tuple with " + resultType.size() +
+                throw new InternalCompilerError("Expected a tuple with " + resultType.size() +
                         " values but got " + values, node);
         } else {
             resultType = sourceType;
@@ -777,7 +781,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         for (List<RexLiteral> t : values.getTuples()) {
             List<DBSPExpression> expressions = new ArrayList<>();
             if (t.size() != sourceType.size())
-                throw new TranslationException("Expected a tuple with " + sourceType.size() +
+                throw new InternalCompilerError("Expected a tuple with " + sourceType.size() +
                         " values but got " + t, node);
             int i = 0;
             for (RexLiteral rl : t) {
@@ -818,7 +822,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPOperator previous = this.getInputAs(input, false);
 
         if (inputs.size() == 0)
-            throw new UnsupportedException(intersect);
+            throw new UnsupportedException(node);
         if (inputs.size() == 1) {
             Utilities.putNew(this.nodeOperator, intersect, previous);
             return;
@@ -894,18 +898,18 @@ public class CalciteToDBSPCompiler extends RelVisitor
             List<RelFieldCollation> orderKeys = group.orderKeys.getFieldCollations();
             // Sanity checks
             if (orderKeys.size() > 1)
-                throw new Unimplemented("ORDER BY not yet supported with multiple columns", node);
+                throw new UnimplementedException("ORDER BY not yet supported with multiple columns", node);
             RelFieldCollation collation = orderKeys.get(0);
             if (collation.getDirection() != RelFieldCollation.Direction.ASCENDING)
-                throw new Unimplemented("OVER only supports ascending sorting", node);
+                throw new UnimplementedException("OVER only supports ascending sorting", node);
             int orderColumnIndex = collation.getFieldIndex();
             DBSPExpression orderField = inputRowRefVar.field(orderColumnIndex);
             DBSPType sortType = inputRowType.tupFields[orderColumnIndex];
             if (!sortType.is(DBSPTypeInteger.class) &&
                     !sortType.is(DBSPTypeTimestamp.class))
-                throw new Unimplemented("OVER currently requires an integer type for ordering ", node);
+                throw new UnimplementedException("OVER currently requires an integer type for ordering ", node);
             if (sortType.mayBeNull)
-                throw new Unimplemented("OVER currently does not support sorting on nullable column ", node);
+                throw new UnimplementedException("OVER currently does not support sorting on nullable column ", node);
 
             // Create window description
             DBSPExpression lb = this.compileWindowBound(group.lowerBound, sortType, eComp);
@@ -1045,7 +1049,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 case STRICTLY_ASCENDING:
                 case STRICTLY_DESCENDING:
                 case CLUSTERED:
-                    throw new Unimplemented(node);
+                    throw new UnimplementedException(node);
             }
             comparator = new DBSPFieldComparatorExpression(node, comparator, field, ascending);
         }
@@ -1089,7 +1093,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.visitIfMatches(node, LogicalSort.class, this::visitSort) ||
                 this.visitIfMatches(node, Uncollect.class, this::visitUncollect);
         if (!success)
-            throw new Unimplemented(new CalciteObject(node));
+            throw new UnimplementedException(new CalciteObject(node));
     }
 
     @SuppressWarnings("UnusedReturnValue")
@@ -1139,7 +1143,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             TableModifyStatement modify = statement.to(TableModifyStatement.class);
             // The type of the data must be extracted from the modified table
             if (!(modify.node instanceof SqlInsert))
-                throw new Unimplemented(statement.getCalciteObject());
+                throw new UnimplementedException(statement.getCalciteObject());
             SqlInsert insert = (SqlInsert) statement.node;
             CreateTableStatement def = this.tableContents.getTableDefinition(modify.tableName);
             this.modifyTableTranslation = new ModifyTableTranslation(
@@ -1161,7 +1165,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 return result;
             }
         }
-        throw new Unimplemented(statement.getCalciteObject());
+        throw new UnimplementedException(statement.getCalciteObject());
     }
 
     public TableContents getTableContents() {

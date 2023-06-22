@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -98,7 +99,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
             return;
         DBSPType type = function.getType().to(DBSPTypeFunction.class).resultType;
         if (!expected.sameType(type))
-            throw new RuntimeException(this + ": Expected function to return " + expected +
+            throw new InternalError(this + ": Expected function to return " + expected +
                     " but it returns " + type);
     }
 
@@ -144,22 +145,23 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
                     iZSet.keyType.ref(),
                     iZSet.elementType.ref());
         } else {
-            throw new RuntimeException("Source " + source + " does not produce an (Indexed)ZSet, but "
-                    + source.outputType);
+            throw new InternalCompilerError(
+                    "Source " + source + " does not produce an (Indexed)ZSet, but "
+                    + source.outputType, this);
         }
         DBSPTypeFunction funcType = function.getType().to(DBSPTypeFunction.class);
         DBSPType argType = funcType.argumentTypes[arg];
         if (argType.is(DBSPTypeAny.class))
             return;
         if (!sourceElementType.sameType(argType))
-            throw new RuntimeException(this + ": Expected function to accept " + sourceElementType +
-                    " as argument " + arg + " but it expects " + funcType.argumentTypes[arg]);
+            throw new InternalCompilerError("Expected function to accept " + sourceElementType +
+                    " as argument " + arg + " but it expects " + funcType.argumentTypes[arg], this);
     }
 
     protected void addInput(DBSPOperator node) {
         //noinspection ConstantConditions
         if (node == null)
-            throw new RuntimeException("Null input to operator");
+            throw new InternalCompilerError("Null input to operator", node);
         this.inputs.add(node);
     }
 
@@ -192,8 +194,8 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
      */
     public boolean inputsDiffer(List<DBSPOperator> newInputs) {
         if (this.inputs.size() != newInputs.size())
-            throw new RuntimeException("Trying to replace " + this.inputs.size() +
-                    " with " + newInputs.size() + " inputs");
+            throw new InternalCompilerError("Trying to replace " + this.inputs.size() +
+                    " with " + newInputs.size() + " inputs", this);
         for (boolean b: Linq.zip(this.inputs, newInputs, (l, r) -> l != r)) {
             if (b)
                 return true;

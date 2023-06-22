@@ -26,6 +26,8 @@ package org.dbsp.sqlCompiler.compiler.backend.jit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
@@ -177,7 +179,8 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
         }
 
         if (index != 3)
-            throw new RuntimeException("Expected 3 parameters for step function, got " + index);
+            throw new InternalCompilerError(
+                    "Expected 3 parameters for step function, got " + index, function);
 
         List<JITBlock> blocks = ToJitInnerVisitor.convertClosure(
                 this.errorReporter, this, mapping, function, this.getTypeCatalog());
@@ -197,7 +200,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
             type = ref.type;
         DBSPTypeBaseType base = type.as(DBSPTypeBaseType.class);
         if (base == null)
-            throw new RuntimeException("Expected a base type, got " + type);
+            throw new InternalCompilerError("Expected a base type", type);
         switch (base.shortName()) {
             case "b":
                 return JITBoolType.INSTANCE;
@@ -224,7 +227,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
             default:
                 break;
         }
-        throw new Unimplemented(type);
+        throw new UnimplementedException(type);
     }
 
     IJitKvOrRowType convertType(DBSPType type) {
@@ -413,7 +416,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
     @Override
     public VisitDecision preorder(DBSPAggregateOperator operator) {
         if (operator.function != null)
-            throw new RuntimeException("Didn't expect the Aggregate to have a function");
+            throw new InternalCompilerError("Didn't expect the Aggregate to have a function", operator);
 
         List<JITOperatorReference> inputs = Linq.map(
                 operator.inputs, i -> new JITOperatorReference(i.id));
@@ -431,8 +434,8 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
 
         closure = aggregate.getPostprocessing();
         if (closure.parameters.length != 1)
-            throw new RuntimeException("Expected function to have exactly 1 parameter, not " +
-                    closure.parameters.length);
+            throw new InternalCompilerError("Expected function to have exactly 1 parameter, not " +
+                    closure.parameters.length, operator);
         JITFunction finishFn = this.convertFunction(closure, false);
 
         JITRowType accLayout = this.getTypeCatalog().convertTupleType(aggregate.defaultZeroType(), this);
@@ -477,7 +480,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPOperator operator) {
-        throw new Unimplemented(operator);
+        throw new UnimplementedException(operator);
     }
 
     public static JITProgram circuitToJIT(DBSPCompiler compiler, DBSPCircuit circuit) {

@@ -28,6 +28,7 @@ import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.fun.*;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
@@ -93,7 +94,7 @@ public class AggregateCompiler implements ICompilerComponent {
             int fieldNumber = call.getArgList().get(0);
             this.aggArgument = this.v.field(fieldNumber);
         } else {
-            throw new Unimplemented(new CalciteObject(call.getAggregation()));
+            throw new UnimplementedException(new CalciteObject(call.getAggregation()));
         }
     }
 
@@ -183,7 +184,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 semigroupName = "MaxSemigroup";
                 break;
             default:
-                throw new Unimplemented(node);
+                throw new UnimplementedException(node);
         }
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         DBSPVariablePath accumulator = this.nullableResultType.var(this.genAccumulatorName());
@@ -315,7 +316,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 this.process(this.aggFunction, SqlSumEmptyIsZeroAggFunction.class, this::processSumZero) ||
                 this.process(this.aggFunction, SqlAvgAggFunction.class, this::processAvg);
         if (!success || this.foldingFunction == null)
-            throw new Unimplemented(new CalciteObject(this.aggFunction));
+            throw new UnimplementedException(new CalciteObject(this.aggFunction));
         return this.foldingFunction;
     }
 

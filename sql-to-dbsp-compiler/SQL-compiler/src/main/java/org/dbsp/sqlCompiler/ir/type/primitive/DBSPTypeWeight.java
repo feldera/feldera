@@ -4,7 +4,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.util.Unimplemented;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 /**
  * This type stands for the weights of an element in a collection.
@@ -45,6 +45,6 @@ public class DBSPTypeWeight extends DBSPTypeBaseType {
 
     @Override
     public DBSPLiteral defaultValue() {
-        throw new Unimplemented();
+        throw new UnimplementedException();
     }
 }

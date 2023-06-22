@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -44,7 +45,7 @@ public class DBSPApplyExpression extends DBSPExpression {
     void checkArgs() {
         for (DBSPExpression arg: this.arguments)
             if (arg == null)
-                throw new RuntimeException("Null arg");
+                throw new InternalCompilerError("Null arg", this);
     }
 
     public DBSPApplyExpression(CalciteObject node, String function, DBSPType returnType, DBSPExpression... arguments) {

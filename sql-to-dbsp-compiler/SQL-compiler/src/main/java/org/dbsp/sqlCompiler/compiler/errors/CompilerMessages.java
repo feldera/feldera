@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.dbsp.util.Unimplemented;
 
 import java.io.PrintStream;
 import java.util.ArrayList;
@@ -21,7 +20,7 @@ public class CompilerMessages {
         public final String errorType;
         public final String message;
 
-        Error(SourcePositionRange range, boolean warning, String errorType, String message) {
+        protected Error(SourcePositionRange range, boolean warning, String errorType, String message) {
             this.range = range;
             this.warning = warning;
             this.errorType = errorType;
@@ -29,40 +28,25 @@ public class CompilerMessages {
         }
 
         Error(SqlParseException e) {
-            this.range = new SourcePositionRange(e.getPos());
-            this.warning = false;
-            this.errorType = "Error parsing SQL";
-            this.message = e.getMessage();
+            this(new SourcePositionRange(e.getPos()), false, "Error parsing SQL", e.getMessage());
         }
 
         Error(CalciteContextException e) {
-            this.range = new SourcePositionRange(
+            this(new SourcePositionRange(
                     new SourcePosition(e.getPosLine(), e.getPosColumn()),
-                    new SourcePosition(e.getEndPosLine(), e.getEndPosColumn()));
-            this.warning = false;
-            this.errorType = "Error in SQL statement";
-            String message;
-            if (e.getCause() != null)
-                message = e.getCause().getMessage();
-            else if (e.getMessage() != null)
-                message = e.getMessage();
-            else
-                message = "";
-            this.message = Objects.requireNonNull(message);
+                    new SourcePosition(e.getEndPosLine(), e.getEndPosColumn())),
+            false, "Error in SQL statement",
+                (e.getCause() != null) ? e.getCause().getMessage() :
+                        (e.getMessage() != null) ? e.getMessage() : "");
         }
 
         Error(Throwable e) {
-            this.range = SourcePositionRange.INVALID;
-            this.warning = false;
-            this.errorType = "This is a bug in the compiler (please report it to the developers)";
-            this.message = e.getMessage();
+            this(SourcePositionRange.INVALID, false,
+                    "This is a bug in the compiler (please report it to the developers)", e.getMessage());
         }
 
-        Error(Unimplemented e) {
-            this.range = e.getPositionRange();
-            this.errorType = "Feature not yet implemented";
-            this.warning = false;
-            this.message = e.getMessage();
+        Error(BaseCompilerException e) {
+            this(e.getPositionRange(), false, e.getErrorKind(), e.getMessage());
         }
 
         public void format(SourceFileContents contents, StringBuilder output) {
@@ -122,8 +106,9 @@ public class CompilerMessages {
         this.messages.add(message);
         if (!message.warning) {
             this.setExitCode(1);
-            if (this.compiler.options.optimizerOptions.throwOnError)
+            if (this.compiler.options.optimizerOptions.throwOnError) {
                 throw new RuntimeException(message.toString());
+            }
         }
     }
 
@@ -141,7 +126,11 @@ public class CompilerMessages {
         this.reportError(new Error(e));
     }
 
-    public void reportError(Unimplemented e) {
+    public void reportError(UnimplementedException e) {
+        this.reportError(new Error(e));
+    }
+
+    public void reportError(UnsupportedException e) {
         this.reportError(new Error(e));
     }
 

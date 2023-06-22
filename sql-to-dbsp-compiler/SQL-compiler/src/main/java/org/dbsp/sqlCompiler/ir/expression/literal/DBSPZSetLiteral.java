@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -58,6 +59,8 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
          *             with just a type argument.
          */
         public Contents(DBSPExpression... data) {
+            if (data.length == 0)
+                throw new RuntimeException("This constructor cannot be used to build an empty set; you need to specify the type");
             // value 0 is not used
             this.elementType = data[0].getType();
             this.data = new HashMap<>();
@@ -106,8 +109,8 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
         public void add(DBSPExpression expression, long weight) {
             // We expect the expression to be a constant value (a literal)
             if (!expression.getType().sameType(this.getElementType()))
-                throw new RuntimeException("Added element type " +
-                        expression.getType() + " does not match zset type " + this.getElementType());
+                throw new InternalCompilerError("Added element type " +
+                        expression.getType() + " does not match zset type " + this.getElementType(), expression);
             if (this.data.containsKey(expression)) {
                 long oldWeight = this.data.get(expression);
                 long newWeight = weight + oldWeight;
@@ -122,8 +125,8 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
 
         public void add(Contents other) {
             if (!this.elementType.sameType(other.elementType))
-                throw new RuntimeException("Added zsets do not have the same type " +
-                        this.getElementType() + " vs " + other.getElementType());
+                throw new InternalCompilerError("Added zsets do not have the same type " +
+                        this.getElementType() + " vs " + other.getElementType(), this.elementType);
             other.data.forEach(this::add);
         }
 

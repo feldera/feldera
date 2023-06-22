@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 /**
  * Index within an array.
@@ -47,7 +47,7 @@ public class DBSPIndexExpression extends DBSPExpression {
         if (type.is(DBSPTypeVec.class)) {
             return type.to(DBSPTypeVec.class).getElementType();
         }
-        throw new UnsupportedException(type);
+        throw new UnsupportedException(type.getNode());
     }
 
     public DBSPIndexExpression(CalciteObject node, DBSPExpression array, DBSPExpression index, boolean startsAtOne) {

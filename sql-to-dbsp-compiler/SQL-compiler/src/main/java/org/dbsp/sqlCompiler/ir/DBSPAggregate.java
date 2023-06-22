@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.ir;
 
 import org.apache.calcite.rel.RelNode;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -124,11 +125,11 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         //    (tmp0, tmp1)
         // }
         if (this.components.length == 0)
-            throw new RuntimeException("Empty aggregation components");
+            throw new InternalCompilerError("Empty aggregation components", this);
         DBSPClosureExpression[] closures = Linq.map(this.components, c -> c.increment, DBSPClosureExpression.class);
         for (DBSPClosureExpression expr: closures) {
             if (expr.parameters.length != 3)
-                throw new RuntimeException("Expected exactly 3 parameters for increment closure" + expr);
+                throw new InternalCompilerError("Expected exactly 3 parameters for increment closure", expr);
         }
         DBSPType[] accumulatorTypes = Linq.map(closures, c -> c.parameters[0].getType(), DBSPType.class);
         List<DBSPType> flatAccumTypes = Linq.flatMap(accumulatorTypes, this::flatten);
@@ -190,7 +191,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             if (paramCount == -1)
                 paramCount = params.length;
             else if (paramCount != params.length)
-                throw new RuntimeException("Closures cannot be combined");
+                throw new InternalCompilerError("Closures cannot be combined", this);
         }
 
         DBSPVariablePath[] resultParams = new DBSPVariablePath[paramCount];
@@ -250,7 +251,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         DBSPClosureExpression[] closures = Linq.map(this.components, c -> c.linearFunction, DBSPClosureExpression.class);
         for (DBSPClosureExpression expr: closures) {
             if (expr.parameters.length != 1)
-                throw new RuntimeException("Expected exactly 1 parameter for linear closure" + expr);
+                throw new InternalCompilerError("Expected exactly 1 parameter for linear closure", expr);
         }
         DBSPParameter row = closures[0].parameters[0];
         DBSPExpression[] bodies = Linq.map(closures, c -> c.body, DBSPExpression.class);
@@ -336,12 +337,12 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             // TODO: check them for standard aggregates.
             if (this.postProcess != null) {
                 if (!this.emptySetResult.getType().sameType(this.postProcess.getResultType()))
-                    throw new RuntimeException("Post-process result type " + this.postProcess.getResultType() +
-                            " different from empty set type " + this.emptySetResult.getType());
+                    throw new InternalCompilerError("Post-process result type " + this.postProcess.getResultType() +
+                            " different from empty set type " + this.emptySetResult.getType(), this);
             } else {
                 if (!this.emptySetResult.getType().sameType(this.increment.getResultType())) {
-                    throw new RuntimeException("Increment result type " + this.increment.getResultType() +
-                            " different from empty set type " + this.emptySetResult.getType());
+                    throw new InternalCompilerError("Increment result type " + this.increment.getResultType() +
+                            " different from empty set type " + this.emptySetResult.getType(), this);
                 }
             }
         }
@@ -471,8 +472,8 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             zeros[i] = implementation.zero;
             increments[i] = implementation.increment;
             if (implementation.increment.parameters.length != 3)
-                throw new RuntimeException("Expected increment function to have 3 parameters: "
-                        + implementation.increment);
+                throw new InternalCompilerError("Expected increment function to have 3 parameters",
+                         implementation.increment);
             DBSPType lastParamType = implementation.increment.parameters[2].getType();
             // Extract weight type from increment function signature.
             // It may not be DBSPTypeWeight anymore.
@@ -480,8 +481,8 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                 weightType = lastParamType;
             else
             if (!weightType.sameType(lastParamType))
-                throw new RuntimeException("Not all increment functions have the same type "
-                        + weightType + " and " + lastParamType);
+                throw new InternalCompilerError("Not all increment functions have the same type "
+                        + weightType + " and " + lastParamType, this);
             accumulatorTypes[i] = Objects.requireNonNull(incType);
             semigroups[i] = implementation.semigroup;
             posts[i] = implementation.getPostprocessing();

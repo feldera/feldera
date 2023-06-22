@@ -30,6 +30,9 @@ import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
+import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.*;
@@ -76,7 +79,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         this.typeCompiler = compiler.getTypeCompiler();
         if (inputRow != null &&
                 !inputRow.getType().is(DBSPTypeRef.class))
-            throw new TranslationException("Expected a reference type for row", inputRow.getNode());
+            throw new InternalCompilerError("Expected a reference type for row", inputRow.getNode());
     }
 
     /**
@@ -86,9 +89,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
      */
     @Override
     public DBSPExpression visitInputRef(RexInputRef inputRef) {
-        if (this.inputRow == null)
-            throw new RuntimeException("Row referenced without a row context");
         CalciteObject node = new CalciteObject(inputRef);
+        if (this.inputRow == null)
+            throw new InternalCompilerError("Row referenced without a row context", node);
         // Unfortunately it looks like we can't trust the type coming from Calcite.
         DBSPTypeTuple type = this.inputRow.getType().deref().to(DBSPTypeTuple.class);
         int index = inputRef.getIndex();
@@ -99,7 +102,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         }
         if (index - type.size() < this.constants.size())
             return this.visitLiteral(this.constants.get(index - type.size()));
-        throw new TranslationException("Index in row out of bounds ", node);
+        throw new InternalCompilerError("Index in row out of bounds ", node);
     }
 
     @Override
@@ -149,10 +152,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         new DBSPDoubleLiteral(c.getOrdinate(0)),
                         new DBSPDoubleLiteral(c.getOrdinate(1)));
             }
+        } catch (BaseCompilerException ex) {
+            throw ex;
         } catch (Throwable ex) {
-            throw new Unimplemented(node, ex);
+            throw new UnimplementedException(node, ex);
         }
-        throw new Unimplemented(node);
+        throw new UnimplementedException(node);
     }
 
     /**
@@ -201,7 +206,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             if (rf != null)
                 return right.setMayBeNull(false);
         }
-        throw new Unimplemented("Cast from " + right + " to " + left);
+        throw new UnimplementedException("Cast from " + right + " to " + left);
     }
 
     public static DBSPExpression aggregateOperation(
@@ -222,7 +227,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     private static DBSPExpression makeBinaryExpressions(
             CalciteObject node, DBSPType type, DBSPOpcode opcode, List<DBSPExpression> operands) {
         if (operands.size() < 2)
-            throw new Unimplemented(node);
+            throw new UnimplementedException(node);
         DBSPExpression accumulator = operands.get(0);
         for (int i = 1; i < operands.size(); i++)
             accumulator = makeBinaryExpression(node, type, opcode, Linq.list(accumulator, operands.get(i)));
@@ -237,11 +242,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             CalciteObject node, DBSPType type, DBSPOpcode opcode, List<DBSPExpression> operands) {
         // Why doesn't Calcite do this?
         if (operands.size() != 2)
-            throw new TranslationException("Expected 2 operands, got " + operands.size(), node);
+            throw new InternalCompilerError("Expected 2 operands, got " + operands.size(), node);
         DBSPExpression left = operands.get(0);
         DBSPExpression right = operands.get(1);
         if (left == null || right == null)
-            throw new Unimplemented(node);
+            throw new UnimplementedException(node);
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
 
@@ -266,10 +271,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     public static DBSPExpression makeUnaryExpression(
             CalciteObject node, DBSPType type, DBSPOpcode op, List<DBSPExpression> operands) {
         if (operands.size() != 1)
-            throw new TranslationException("Expected 1 operands, got " + operands.size(), node);
+            throw new InternalCompilerError("Expected 1 operands, got " + operands.size(), node);
         DBSPExpression operand = operands.get(0);
         if (operand == null)
-            throw new Unimplemented("Found unimplemented expression in " + node);
+            throw new UnimplementedException("Found unimplemented expression in " + node);
         DBSPType resultType = operand.getType();
         if (op.toString().startsWith("is_"))
             // these do not produce nullable results
@@ -364,7 +369,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             case IS_NULL:
             case IS_NOT_NULL: {
                 if (!type.sameType(DBSPTypeBool.INSTANCE))
-                    throw new TranslationException("Expected expression to produce a boolean result", node);
+                    throw new InternalCompilerError("Expected expression to produce a boolean result", node);
                 DBSPExpression arg = ops.get(0);
                 DBSPType argType = arg.getType();
                 if (argType.mayBeNull) {
@@ -433,7 +438,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             }
             case ST_POINT: {
                 if (ops.size() != 2)
-                    throw new Unimplemented("Expected only 2 operands", node);
+                    throw new UnimplementedException("Expected only 2 operands", node);
                 DBSPExpression left = ops.get(0);
                 DBSPExpression right = ops.get(1);
                 String functionName = "make_geopoint" + type.nullableSuffix() +
@@ -448,7 +453,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "round": {
                         DBSPExpression right;
                         if (call.operands.size() < 1)
-                            throw new Unimplemented(node);
+                            throw new UnimplementedException(node);
                         DBSPExpression left = ops.get(0);
                         if (call.operands.size() == 1)
                             right = new DBSPI32Literal(0);
@@ -457,7 +462,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         DBSPType leftType = left.getType();
                         DBSPType rightType = right.getType();
                         if (!rightType.is(DBSPTypeInteger.class))
-                            throw new Unimplemented("ROUND expects a constant second argument", node);
+                            throw new UnimplementedException("ROUND expects a constant second argument", node);
                         String function = opName + "_" +
                                 leftType.baseTypeWithSuffix();
                         return new DBSPApplyExpression(node, function, type, left, right);
@@ -468,7 +473,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "ln":
                     case "abs": {
                         if (call.operands.size() != 1)
-                            throw new Unimplemented(node);
+                            throw new UnimplementedException(node);
                         DBSPExpression arg = ops.get(0);
                         DBSPType argType = arg.getType();
                         String function = opName + "_" + argType.baseTypeWithSuffix();
@@ -476,7 +481,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     }
                     case "st_distance": {
                         if (call.operands.size() != 2)
-                            throw new Unimplemented(node);
+                            throw new UnimplementedException(node);
                         DBSPExpression left = ops.get(0);
                         DBSPExpression right = ops.get(1);
                         String function = "st_distance_" + left.getType().nullableSuffix() +
@@ -487,7 +492,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
                     case "cardinality": {
                         if (call.operands.size() != 1)
-                            throw new Unimplemented(node);
+                            throw new UnimplementedException(node);
                         DBSPExpression arg = ops.get(0);
                         DBSPExpression len = new DBSPApplyMethodExpression(node, "len", DBSPTypeUSize.INSTANCE, arg);
                         return len.cast(type);
@@ -503,7 +508,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     }
                     case "power": {
                         if (call.operands.size() != 2)
-                            throw new Unimplemented(node);
+                            throw new UnimplementedException(node);
                         DBSPType leftType = ops.get(0).getType();
                         DBSPType rightType = ops.get(1).getType();
                         String functionName = "power_" + leftType.baseTypeWithSuffix() +
@@ -511,7 +516,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1));
                     }
                 }
-                throw new Unimplemented(node);
+                throw new UnimplementedException(node);
             }
             case OTHER:
                 String opName = call.op.getName().toLowerCase();
@@ -522,10 +527,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     default:
                         break;
                 }
-                throw new Unimplemented(node);
+                throw new UnimplementedException(node);
             case EXTRACT: {
                 if (call.operands.size() != 2)
-                    throw new Unimplemented(node);
+                    throw new UnimplementedException(node);
                 DBSPKeywordLiteral keyword = ops.get(0).to(DBSPKeywordLiteral.class);
                 DBSPType type1 = ops.get(1).getType();
                 String functionName = "extract_" + type1.to(IsNumericType.class).getRustString() +
@@ -544,7 +549,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                             type.to(DBSPTypeBaseType.class).shortName() + type.nullableSuffix();
                     return new DBSPApplyExpression(node, functionName, type, ops.get(0));
                 } else {
-                    throw new Unimplemented(node);
+                    throw new UnimplementedException(node);
                 }
             }
             case ARRAY_VALUE_CONSTRUCTOR: {
@@ -555,12 +560,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             }
             case ITEM: {
                 if (call.operands.size() != 2)
-                    throw new Unimplemented(node);
+                    throw new UnimplementedException(node);
                 return new DBSPIndexExpression(node, ops.get(0), ops.get(1).cast(DBSPTypeUSize.INSTANCE), true);
             }
             case DOT:
             default:
-                throw new Unimplemented(node);
+                throw new UnimplementedException(node);
         }
     }
 
@@ -571,7 +576,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 .newline();
         DBSPExpression result = expression.accept(this);
         if (result == null)
-            throw new Unimplemented(new CalciteObject(expression));
+            throw new UnimplementedException(new CalciteObject(expression));
         return result;
     }
 

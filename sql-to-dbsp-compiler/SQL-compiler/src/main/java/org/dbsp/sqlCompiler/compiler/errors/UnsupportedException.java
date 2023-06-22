@@ -23,18 +23,27 @@
  *
  */
 
-package org.dbsp.util;
+package org.dbsp.sqlCompiler.compiler.errors;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 
-public class TranslationException extends RuntimeException {
-    private static final long serialVersionUID = 1L;
+/**
+ * Exception thrown when an unsupported construct is compiled.
+ * This signals a bug in the user input.
+ */
+public class UnsupportedException extends BaseCompilerException {
+    public static final String kind = "Not supported";
 
-    public TranslationException(String message, CalciteObject node) {
-        super(message + "\n" + getPosition(node));
+    public UnsupportedException(CalciteObject obj) {
+        super(kind, obj);
     }
 
-    private static String getPosition(CalciteObject node) {
-        return node.toString();
+    public UnsupportedException(String msg, CalciteObject obj) {
+        super(kind + ": " + msg, obj);
+    }
+
+    @Override
+    public String getErrorKind() {
+        return kind;
     }
 }
