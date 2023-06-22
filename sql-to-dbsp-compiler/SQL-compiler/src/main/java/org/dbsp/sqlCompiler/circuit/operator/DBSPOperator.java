@@ -99,8 +99,8 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
             return;
         DBSPType type = function.getType().to(DBSPTypeFunction.class).resultType;
         if (!expected.sameType(type))
-            throw new InternalError(this + ": Expected function to return " + expected +
-                    " but it returns " + type);
+            throw new InternalCompilerError(this + ": Expected function to return " + expected +
+                    " but it returns " + type, this);
     }
 
     /**

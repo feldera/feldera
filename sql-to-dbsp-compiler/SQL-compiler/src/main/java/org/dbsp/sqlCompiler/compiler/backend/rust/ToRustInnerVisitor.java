@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.*;
@@ -1177,14 +1178,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPAggregate aggregate) {
-        // This should have been eliminated
-        throw new UnsupportedException(aggregate.getNode());
+        throw new InternalCompilerError("Should have been eliminated", aggregate.getNode());
     }
 
     @Override
     public VisitDecision preorder(DBSPAggregate.Implementation implementation) {
-        // This should have been eliminated
-        throw new UnsupportedException(implementation.getNode());
+        throw new InternalCompilerError("Should have been eliminated", implementation.getNode());
     }
 
     public static String toRustString(IErrorReporter reporter, IDBSPInnerNode node, boolean compact) {

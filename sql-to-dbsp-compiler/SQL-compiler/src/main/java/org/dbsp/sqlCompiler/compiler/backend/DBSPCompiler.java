@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
@@ -231,9 +232,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             this.messages.reportError(e);
         } catch (CalciteContextException e) {
             this.messages.reportError(e);
-        } catch (UnimplementedException e) {
-            this.messages.reportError(e);
-        } catch (UnsupportedException e) {
+        } catch (BaseCompilerException e) {
             this.messages.reportError(e);
         } catch (Throwable e) {
             this.messages.reportError(e);

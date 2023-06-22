@@ -36,6 +36,7 @@ import org.apache.calcite.schema.ScannableTable;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -66,7 +67,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         @Override
         public Enumerable<Object[]> scan(DataContext root) {
             // We don't plan to use this method, but the optimizer requires this API
-            throw new UnimplementedException();
+            throw new UnsupportedException(new CalciteObject(node));
         }
 
         @Override

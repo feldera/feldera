@@ -57,7 +57,7 @@ public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContaine
 
     @Override
     public void add(DBSPExpression expression) {
-        throw new UnimplementedException();
+        throw new UnimplementedException(expression);
     }
 
     @Override

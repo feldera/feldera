@@ -126,11 +126,7 @@ public class CompilerMessages {
         this.reportError(new Error(e));
     }
 
-    public void reportError(UnimplementedException e) {
-        this.reportError(new Error(e));
-    }
-
-    public void reportError(UnsupportedException e) {
+    public void reportError(BaseCompilerException e) {
         this.reportError(new Error(e));
     }
 

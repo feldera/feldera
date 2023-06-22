@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -29,7 +30,7 @@ public class DBSPTypeVoid extends DBSPTypeBaseType {
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull)
-            throw new UnimplementedException();
+            throw new UnsupportedException(this.getNode());
         return this;
     }
 
@@ -40,6 +41,6 @@ public class DBSPTypeVoid extends DBSPTypeBaseType {
 
     @Override
     public DBSPLiteral defaultValue() {
-        throw new UnimplementedException();
+        throw new UnsupportedException(this.getNode());
     }
 }
