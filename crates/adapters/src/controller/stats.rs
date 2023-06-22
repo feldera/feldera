@@ -67,6 +67,11 @@ pub struct GlobalControllerMetrics {
     ///   endponts.
     // This field is computed on-demand by calling `ControllerStatus::update`.
     pub pipeline_complete: AtomicBool,
+
+    /// Forces the controller to perform a step regardless of the state of
+    /// input buffers.
+    #[serde(skip)]
+    pub step_requested: AtomicBool,
 }
 
 impl GlobalControllerMetrics {
@@ -79,6 +84,7 @@ impl GlobalControllerMetrics {
 
     fn consume_buffered_inputs(&self) {
         self.buffered_input_records.store(0, Ordering::Release);
+        self.step_requested.store(false, Ordering::Release);
     }
 
     fn num_buffered_input_records(&self) -> u64 {
@@ -97,8 +103,20 @@ impl GlobalControllerMetrics {
         self.total_processed_records
             .store(total_processed_records, Ordering::Release);
     }
+
+    fn step_requested(&self) -> bool {
+        self.step_requested.load(Ordering::Acquire)
+    }
+
+    fn set_step_requested(&self) -> bool {
+        self.step_requested.swap(true, Ordering::AcqRel)
+    }
 }
 
+// `ShardedLock` is a read/write lock optimized for fast reads.
+// Write access is only required when adding or removing an endpoint.
+// Regular stats updates only require a read lock thanks to the use of
+// atomics.
 type InputsStatus = ShardedLock<BTreeMap<EndpointId, InputEndpointStatus>>;
 type OutputsStatus = ShardedLock<BTreeMap<EndpointId, OutputEndpointStatus>>;
 
@@ -134,10 +152,6 @@ pub struct ControllerStatus {
     pub global_metrics: GlobalControllerMetrics,
 
     /// Input endpoint configs and metrics.
-    // `ShardedLock` is a read/write lock optimized for fast reads.
-    // Write access is only required when adding or removing an endpoint.
-    // Regular stats updates only require a read lock thanks to the use of
-    // atomics.
     #[serde(serialize_with = "serialize_inputs")]
     inputs: InputsStatus,
 
@@ -207,6 +221,17 @@ impl ControllerStatus {
     pub fn set_num_total_processed_records(&self, total_processed_records: u64) {
         self.global_metrics
             .set_num_total_processed_records(total_processed_records);
+    }
+
+    pub fn step_requested(&self) -> bool {
+        self.global_metrics.step_requested()
+    }
+
+    pub fn request_step(&self, circuit_thread_unparker: &Unparker) {
+        let old = self.global_metrics.set_step_requested();
+        if !old {
+            circuit_thread_unparker.unpark();
+        }
     }
 
     /// Input endpoint stats.
@@ -331,7 +356,7 @@ impl ControllerStatus {
     ) {
         let num_records = num_records as u64;
 
-        // Increment `buffered_input_records` and `total_input_records`;unpark
+        // Increment `buffered_input_records` and `total_input_records`; unpark
         // circuit thread if `min_batch_size_records` exceeded.
         //
         // Note: we increment `total_input_records` _before_ setting the `eoi` flag on

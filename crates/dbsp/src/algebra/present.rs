@@ -95,8 +95,7 @@ impl MulAssign<&'_ Present> for Present {
     fn mul_assign(&mut self, _rhs: &Self) {}
 }
 
-impl MulByRef<Present> for i32
-{
+impl MulByRef<Present> for i32 {
     type Output = Self;
 
     #[inline]
@@ -105,8 +104,7 @@ impl MulByRef<Present> for i32
     }
 }
 
-impl MulByRef<Present> for i64
-{
+impl MulByRef<Present> for i64 {
     type Output = Self;
 
     #[inline]

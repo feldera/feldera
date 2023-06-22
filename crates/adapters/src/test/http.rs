@@ -56,14 +56,14 @@ impl TestHttpReceiver {
 
         while received.len() < num_records {
             let bytes = response.next().await.unwrap().unwrap();
-            println!("received {} bytes", bytes.len());
+            println!("TestHttpReceiver: received {} bytes", bytes.len());
 
             data.extend_from_slice(&bytes);
 
             if data[data.len() - 1] == b'\n' {
                 let chunk: Chunk = serde_json::from_slice(&data).unwrap();
 
-                println!("chunk {}", chunk.sequence_number);
+                println!("TestHttpReceiver: chunk {}", chunk.sequence_number);
 
                 let mut builder = CsvReaderBuilder::new();
                 builder.has_headers(false);

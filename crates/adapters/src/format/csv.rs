@@ -210,6 +210,10 @@ impl CsvEncoder {
 }
 
 impl Encoder for CsvEncoder {
+    fn consumer(&mut self) -> &mut dyn OutputConsumer {
+        self.output_consumer.as_mut()
+    }
+
     fn encode(&mut self, batches: &[Arc<dyn SerBatch>]) -> AnyResult<()> {
         let buffer = take(&mut self.buffer);
         let mut writer = self.builder.from_writer(buffer);
