@@ -5,6 +5,7 @@
 //! endpoint configs.  We represent these configs as opaque yaml values, so
 //! that the entire configuration tree can be deserialized from a yaml file.
 
+use crate::OutputQuery;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, collections::BTreeMap};
@@ -99,6 +100,10 @@ pub struct OutputEndpointConfig {
     /// The name of the output stream of the circuit that this endpoint is
     /// connected to.
     pub stream: Cow<'static, str>,
+
+    /// Query over the output stream.  Only used for HTTP API endpoints.
+    #[serde(skip)]
+    pub query: OutputQuery,
 
     /// Transport endpoint configuration.
     pub transport: TransportConfig,

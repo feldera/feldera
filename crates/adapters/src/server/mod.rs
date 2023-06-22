@@ -4,7 +4,7 @@ use crate::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
     Catalog, Controller, ControllerError, FormatConfig, InputEndpoint, InputEndpointConfig,
-    OutputEndpoint, OutputEndpointConfig, PipelineConfig,
+    OutputEndpoint, OutputEndpointConfig, OutputQuery, PipelineConfig,
 };
 use actix_web::{
     dev::{Server, ServiceFactory, ServiceRequest},
@@ -12,7 +12,7 @@ use actix_web::{
     http::StatusCode,
     middleware::Logger,
     post, rt, web,
-    web::{Data as WebData, Payload, Query},
+    web::{Data as WebData, Json, Payload, Query},
     App, Error as ActixError, HttpRequest, HttpResponse, HttpResponseBuilder, HttpServer,
     Responder,
 };
@@ -20,12 +20,13 @@ use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
 use colored::Colorize;
-use dbsp::DBSPHandle;
+use dbsp::{operator::sample::MAX_QUANTILES, DBSPHandle};
 use env_logger::Env;
 use erased_serde::Deserializer as ErasedDeserializer;
 use form_urlencoded;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value as JsonValue};
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
 use std::io::Write;
@@ -38,6 +39,7 @@ use tokio::{
     spawn,
     sync::mpsc::{channel, Receiver, Sender},
 };
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 mod prometheus;
@@ -106,7 +108,7 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
 /// Create a HTTP error response from a status code and an error message.
 pub(crate) fn http_error(status: StatusCode, msg: &str) -> HttpResponse {
     let response = HttpResponseBuilder::new(status).json(&ErrorResponse::new(msg));
-    error!("HTTP error response: {response:?}");
+    error!("HTTP error response: {status}: {msg}");
     response
 }
 
@@ -418,7 +420,7 @@ async fn input_endpoint(
     // Generate endpoint name.
     let endpoint_name = format!("api-ingress-{table_name}-{}", Uuid::new_v4());
 
-    // Create HTTP endpoint with given mode.
+    // Create HTTP endpoint.
     let endpoint = HttpInputEndpoint::new(&endpoint_name);
 
     // Create endpoint config.
@@ -463,7 +465,6 @@ async fn input_endpoint(
     };
 
     // Call endpoint to complete request.
-    // Who calls `start` on new endpoint?
     let response = endpoint.complete_request(payload).await;
     drop(endpoint);
 
@@ -476,12 +477,53 @@ async fn input_endpoint(
     response
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, ToSchema)]
+pub enum EgressMode {
+    /// Continuously monitor the output of the query.
+    ///
+    /// For queries that support snapshots, e.g.,
+    /// [neighborhood](`OutputQuery::Neighborhood`) queries,
+    /// the endpoint outputs the initial snapshot followed
+    /// by a stream of deltas.  For queries that don't support
+    /// snapshots, the endpoint outputs the stream of deltas
+    /// relative to the current output of the query.
+    #[serde(rename = "watch")]
+    Watch,
+    /// Output a single snapshot of query results.
+    ///
+    /// Currently only supported for [quantile](`OutputQuery::Quantiles`)
+    /// and [neighborhood](`OutputQuery::Neighborhood`) queries.
+    #[serde(rename = "snapshot")]
+    Snapshot,
+}
+
+impl Default for EgressMode {
+    /// If `mode` is not specified, default to `Watch`.
+    fn default() -> Self {
+        Self::Watch
+    }
+}
+
+/// URL-encoded arguments to the `/egress` endpoint.
 #[derive(Debug, Deserialize)]
 struct EgressArgs {
-    // #[serde(default = "HttpOutputTransport::default_mode")]
-    // mode: HttpIngressMode,
+    /// Query to execute on the table.
+    #[serde(default)]
+    query: OutputQuery,
+
+    /// Output mode.
+    #[serde(default)]
+    mode: EgressMode,
+
+    /// Data format used to encode the output of the query, e.g., 'csv',
+    /// 'json' etc.
     #[serde(default = "HttpOutputTransport::default_format")]
     format: String,
+
+    /// For [`quantiles`](`OutputQuery::Quantiles`) queries:
+    /// the number of quantiles to output.
+    #[serde(default = "dbsp::operator::sample::default_quantiles")]
+    quantiles: u32,
 }
 
 #[get("/egress/{table_name}")]
@@ -489,23 +531,81 @@ async fn output_endpoint(
     state: WebData<ServerState>,
     req: HttpRequest,
     args: Query<EgressArgs>,
+    body: Option<Json<JsonValue>>,
 ) -> impl Responder {
-    debug!("{req:?}");
+    debug!("/egress request:{req:?}");
+
+    let state = state.into_inner();
+
     let table_name = match req.match_info().get("table_name") {
         None => return http_error(StatusCode::BAD_REQUEST, "Missing table name argument."),
         Some(table_name) => table_name.to_string(),
     };
 
-    // Generate endpoint name.
-    let endpoint_name = format!("api-egress-{table_name}-{}", Uuid::new_v4());
+    // Check for unsupported combinations.
+    match (args.mode, args.query) {
+        (EgressMode::Watch, OutputQuery::Quantiles) => {
+            return http_error(
+                StatusCode::METHOD_NOT_ALLOWED,
+                "Continuous monitoring is not supported for quantiles. Use '?mode=snapshot' to retrieve a single set of quantiles."
+            );
+        }
+        (EgressMode::Snapshot, OutputQuery::Table) => {
+            return http_error(
+                StatusCode::NOT_IMPLEMENTED,
+                "Taking a snapshot of a table or view is not yet supported",
+            );
+        }
+        _ => {}
+    };
+
+    if args.query == OutputQuery::Neighborhood {
+        if body.is_none() {
+            return http_error(
+                StatusCode::BAD_REQUEST,
+                r#"Neighborhood request must specify neighborhood in the body of the request: '{"anchor": ..., "before": 100, "after": 100}'."#,
+            );
+        }
+    } else if args.query == OutputQuery::Quantiles {
+        if args.quantiles as usize > MAX_QUANTILES {
+            return http_error(
+                StatusCode::RANGE_NOT_SATISFIABLE,
+                &format!("Requested number of quantiles '{}' exceeds maximal supported value '{MAX_QUANTILES}'.", args.quantiles),
+            );
+        } else if args.quantiles == 0 {
+            return http_error(
+                StatusCode::RANGE_NOT_SATISFIABLE,
+                "The 'quantiles' argument must be greater than 0.",
+            );
+        }
+    }
+
+    // Generate endpoint name depending on the query and output mode.
+    let endpoint_name = format!(
+        "api-{}-{table_name}-{}{}",
+        match args.mode {
+            EgressMode::Watch => "watch",
+            EgressMode::Snapshot => "snapshot",
+        },
+        match args.query {
+            OutputQuery::Table => "",
+            OutputQuery::Neighborhood => "neighborhood-",
+            OutputQuery::Quantiles => "quantiles-",
+        },
+        Uuid::new_v4()
+    );
+
+    // debug!("Endpoint name: '{endpoint_name}'");
 
     // Create HTTP endpoint.
-    let endpoint = HttpOutputEndpoint::new(&endpoint_name, &args.format);
+    let endpoint =
+        HttpOutputEndpoint::new(&endpoint_name, &args.format, args.mode == EgressMode::Watch);
 
     // Create endpoint config.
     let config = OutputEndpointConfig {
-        transport: HttpOutputTransport::config(),
         stream: Cow::from(table_name),
+        query: args.query,
+        transport: HttpOutputTransport::config(),
         format: FormatConfig {
             name: Cow::from(args.format.clone()),
             config: YamlValue::Null,
@@ -513,16 +613,22 @@ async fn output_endpoint(
         max_buffered_records: HttpOutputTransport::default_max_buffered_records(),
     };
 
+    // Declare `response` in this scope, before we lock `state.controller`.  This makes
+    // sure that on error the finalizer for `response` also runs in this scope, preventing
+    // the deadlock caused by the finalizer trying to lock the controller.
+    let response: HttpResponse;
+
     // Connect endpoint.
-    let endpoint_id = match &*state.controller.lock().unwrap() {
+    match &*state.controller.lock().unwrap() {
         Some(controller) => {
             if controller.register_api_connection().is_err() {
-                return http_error(StatusCode::TOO_MANY_REQUESTS,
-                        "The API connections limit has been exceded. Close some of the existing connections before opening new ones."
-                    );
+                return http_error(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "The API connections limit has been exceded. Close some of the existing connections before opening new ones."
+                );
             }
 
-            match controller.add_output_endpoint(
+            let endpoint_id = match controller.add_output_endpoint(
                 &endpoint_name,
                 &config,
                 &mut <dyn ErasedDeserializer>::erase(UrlDeserializer::new(form_urlencoded::parse(
@@ -540,31 +646,82 @@ async fn output_endpoint(
                         &format!("Failed to create HTTP endpoint: '{e}'"),
                     );
                 }
+            };
+
+            // We need to pass a callback to `request` to disconnect the endpoint when the request
+            // completes.  Use a donwgraded reference to `state`, so this closure doesn't prevent
+            // the controller from shutting down.
+            let weak_state = Arc::downgrade(&state);
+
+            // Call endpoint to create a response with a streaming body, which will be evaluated
+            // after we return the response object to actix.
+            response = endpoint.request(Box::new(move || {
+                // Delete endpoint on completion/error.
+                // We don't control the lifetime of the reponse object after
+                // returning it to actix, so the only way to run cleanup code
+                // when the HTTP request terminates is to piggyback on the
+                // destructor.
+                if let Some(state) = weak_state.upgrade() {
+                    // This code will be invoked from `drop`, which means that
+                    // it can run as part of a panic handler, so we need to
+                    // handle a poisoned lock without causing a nested panic.
+                    if let Ok(guard) = state.controller.lock() {
+                        if let Some(controller) = guard.as_ref() {
+                            controller.disconnect_output(&endpoint_id);
+                            controller.unregister_api_connection();
+                        }
+                    }
+                }
+            }));
+
+            // The endpoint is ready to receive data from the pipeline.
+            match args.query {
+                // Send reset signal to produce a complete neighborhood snapshot.
+                OutputQuery::Neighborhood => {
+                    let body = body.unwrap();
+
+                    if let Err(e) = controller
+                        .catalog()
+                        .lock()
+                        .unwrap()
+                        .output_handles(&config.stream)
+                        // The following `unwrap` is safe because `table_name` was previously validated
+                        // by `add_output_endpoint`.
+                        .unwrap()
+                        .neighborhood_descr_handle
+                        .set_for_all(&mut <dyn ErasedDeserializer>::erase(json!([
+                            json!(true),
+                            body
+                        ])))
+                    {
+                        // Dropping `response` triggers the finalizer closure, which will
+                        // disconnect this endpoint.
+                        return http_error(
+                            StatusCode::BAD_REQUEST,
+                            &format!("Unable to parse neighborhood descriptor '{body}'. Error returned by the parser: '{e}'."),
+                        );
+                    }
+                    controller.request_step();
+                }
+                // Write quantiles size.
+                OutputQuery::Quantiles => {
+                    controller
+                        .catalog()
+                        .lock()
+                        .unwrap()
+                        .output_handles(&config.stream)
+                        .unwrap()
+                        .num_quantiles_handle
+                        .set_for_all(args.quantiles as usize);
+                    controller.request_step();
+                }
+                OutputQuery::Table => {}
             }
         }
         None => {
             return http_error(StatusCode::GONE, "The pipeline has been terminated");
         }
     };
-
-    // We need to pass a callback to `request` to disconnect the endpoint when the request
-    // completes.  Use a donwgraded reference to `state`, so this closure doesn't prevent
-    // the controller from shutting down.
-    let weak_state = Arc::downgrade(&state.into_inner());
-
-    // Call endpoint to complete request.
-    // Who calls `start` on new endpoint?
-    let response = endpoint.request(Box::new(move || {
-        // Delete endpoint on completion/error.
-        if let Some(state) = weak_state.upgrade() {
-            if let Some(controller) = state.controller.lock().unwrap().as_ref() {
-                controller.disconnect_output(&endpoint_id);
-                controller.unregister_api_connection();
-            }
-        }
-    }));
-
-    drop(endpoint);
 
     response
 }
@@ -585,11 +742,13 @@ mod test_with_kafka {
     };
     use actix_web::{http::StatusCode, middleware::Logger, web::Data as WebData, App};
     use crossbeam::queue::SegQueue;
+    use futures_util::StreamExt;
     use log::{error, LevelFilter};
     use proptest::{
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
     };
+    use serde_json::{self, json, Value as JsonValue};
     use std::{sync::Arc, thread::sleep, time::Duration};
 
     #[actix_web::test]
@@ -748,6 +907,72 @@ outputs:
         TestHttpReceiver::wait_for_output_unordered(&mut resp2, &data).await;
         drop(resp1);
         drop(resp2);
+
+        // Request quantiles.
+        let mut quantiles_resp1 = server
+            .get("/egress/test_output1?mode=snapshot&query=quantiles")
+            .send()
+            .await
+            .unwrap();
+        assert!(quantiles_resp1.status().is_success());
+        let body = quantiles_resp1.body().await;
+        // println!("Response: {body:?}");
+        let body = serde_json::from_slice::<JsonValue>(&body.unwrap()).unwrap();
+        println!("Quantiles: {body}");
+
+        // Request quantiles for the input collection -- inputs must also behave as outputs.
+        let mut input_quantiles = server
+            .get("/egress/test_input1?mode=snapshot&query=quantiles")
+            .send()
+            .await
+            .unwrap();
+        assert!(input_quantiles.status().is_success());
+        let body = input_quantiles.body().await;
+        let body = serde_json::from_slice::<JsonValue>(&body.unwrap()).unwrap();
+        println!("Input quantiles: {body}");
+
+        // Request neighborhood snapshot.
+        let mut hood_resp1 = server
+            .get("/egress/test_output1?mode=snapshot&query=neighborhood")
+            .send_json(
+                &json!({"anchor": {"id": 1000, "b": true, "s": "foo"}, "before": 50, "after": 30}),
+            )
+            .await
+            .unwrap();
+        assert!(hood_resp1.status().is_success());
+        let body = hood_resp1.body().await;
+        // println!("Response: {body:?}");
+        let body = serde_json::from_slice::<JsonValue>(&body.unwrap()).unwrap();
+        println!("Neighborhood: {body}");
+
+        // Request neighborhood snapshot: invalid request.
+        let mut hood_inv_resp = server
+            .get("/egress/test_output1?mode=snapshot&query=neighborhood")
+            .send_json(
+                &json!({"anchor": {"id": "string_instead_of_integer", "b": true, "s": "foo"}, "before": 50, "after": 30}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(hood_inv_resp.status(), StatusCode::BAD_REQUEST);
+        let body = hood_inv_resp.body().await;
+        // println!("Response: {body:?}");
+        let body = serde_json::from_slice::<JsonValue>(&body.unwrap()).unwrap();
+        println!("Neighborhood: {body}");
+
+        // Request neighborhood stream.
+        let mut hood_resp2 = server
+            .get("/egress/test_output1?mode=watch&query=neighborhood")
+            .send_json(
+                &json!({"anchor": {"id": 1000, "b": true, "s": "foo"}, "before": 50, "after": 30}),
+            )
+            .await
+            .unwrap();
+        assert!(hood_resp2.status().is_success());
+
+        let bytes = hood_resp2.next().await.unwrap().unwrap();
+        // println!("Response: {body:?}");
+        let body = serde_json::from_slice::<JsonValue>(&bytes).unwrap();
+        println!("Neighborhood: {body}");
 
         println!("/pause");
         let resp = server.get("/pause").send().await.unwrap();

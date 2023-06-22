@@ -35,8 +35,8 @@
 
 use crate::{
     Catalog, Encoder, InputConsumer, InputEndpoint, InputFormat, InputTransport, OutputConsumer,
-    OutputEndpoint, OutputFormat, OutputTransport, Parser, PipelineState, SerBatch,
-    SerOutputBatchHandle,
+    OutputEndpoint, OutputFormat, OutputQuery, OutputQueryHandles, OutputTransport, Parser,
+    PipelineState, SerBatch,
 };
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use crossbeam::{
@@ -286,6 +286,22 @@ impl Controller {
         self.inner.num_api_connections()
     }
 
+    /// Force the circuit to perform a step even if all of its
+    /// input buffers are empty or nearly empty.
+    ///
+    /// Can be used in two situations:
+    ///
+    /// * To process scalar inputs, such as neighborhood or quantile querues that
+    ///   are not reflected in input buffer sizes.
+    ///
+    /// * When input buffers are not completely empty, but contain fewer than
+    ///   `min_batch_size_records` records the circuit will normally wait for a small
+    ///   timeout before processing the data.  This function can be used to force
+    ///   immediate processing.
+    pub fn request_step(&self) {
+        self.inner.request_step();
+    }
+
     /// Change the state of all input endpoints to running.
     ///
     /// Start streaming data through all connected input endpoints.
@@ -308,6 +324,10 @@ impl Controller {
         // Update pipeline metrics computed on-demand.
         self.inner.status.update();
         &self.inner.status
+    }
+
+    pub fn catalog(&self) -> &Arc<Mutex<Catalog>> {
+        &self.inner.catalog
     }
 
     pub fn dump_profile(&self) {
@@ -390,10 +410,12 @@ impl Controller {
 
                     let buffered_records = controller.status.num_buffered_input_records();
 
-                    // We have sufficient buffered inputs or the buffering delay has expired --
-                    // kick the circuit to consume buffered data.  Use strict inequality in case
-                    // `min_batch_size_records` is 0.
-                    if buffered_records > min_batch_size_records
+                    // We have sufficient buffered inputs or the buffering delay has expired or
+                    // the client explicitly requested the circuit to run -- kick the circuit to
+                    // consume buffered data.
+                    // Use strict inequality in case `min_batch_size_records` is 0.
+                    if controller.status.step_requested()
+                        || buffered_records > min_batch_size_records
                         || start
                             .map(|start| start.elapsed() >= max_buffering_delay)
                             .unwrap_or(false)
@@ -421,21 +443,70 @@ impl Controller {
 
                         // Push output batches to output pipelines.
                         let outputs = controller.outputs.read().unwrap();
-                        for (_stream, (output_handle, endpoints)) in outputs.iter_by_stream() {
+                        for ((_stream, _query), (output_handles, endpoints)) in
+                            outputs.iter_by_stream()
+                        {
                             // TODO: add an endpoint config option to consolidate output batches.
-                            let batch = output_handle.take_from_all();
-                            let num_records = batch.iter().map(|b| b.len()).sum();
 
-                            for endpoint_id in endpoints.iter() {
+                            let mut delta_batch = output_handles
+                                .delta
+                                .as_ref()
+                                .map(|handle| handle.take_from_all());
+                            let num_delta_records = delta_batch
+                                .as_ref()
+                                .map(|batch| batch.iter().map(|b| b.len()).sum());
+
+                            let mut snapshot_batch = output_handles
+                                .snapshot
+                                .as_ref()
+                                .map(|handle| handle.take_from_all());
+                            let num_snapshot_records = snapshot_batch
+                                .as_ref()
+                                .map(|batch| batch.iter().map(|b| b.len()).sum());
+
+                            for (i, endpoint_id) in endpoints.iter().enumerate() {
                                 let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
 
-                                // Increment stats first, so we don't end up with negative counts.
-                                controller.status.enqueue_batch(*endpoint_id, num_records);
+                                // If the endpoint has a snapshot stream associated with it,
+                                // then the first output sent to this endpoint must be
+                                // the snapshot.  Subsequent outputs are deltas on top of
+                                // the snapshot.
+                                if !endpoint.snapshot_sent.load(Ordering::Acquire)
+                                    && output_handles.snapshot.is_some()
+                                {
+                                    if snapshot_batch.is_some() {
+                                        // Increment stats first, so we don't end up with negative counts.
+                                        controller.status.enqueue_batch(
+                                            *endpoint_id,
+                                            num_snapshot_records.unwrap(),
+                                        );
 
-                                // Associate the input frontier with the batch.  Once the batch has
-                                // been sent to the output endpoint, the endpoint will get labeled
-                                // with this frontier.
-                                endpoint.queue.push((batch.clone(), processed_records));
+                                        // Send the batch without cloning to the last consumer.
+                                        let batch = if i == endpoints.len() - 1 {
+                                            snapshot_batch.take().unwrap()
+                                        } else {
+                                            snapshot_batch.as_ref().unwrap().clone()
+                                        };
+
+                                        // Associate the input frontier with the batch.  Once the batch has
+                                        // been sent to the output endpoint, the endpoint will get labeled
+                                        // with this frontier.
+                                        endpoint.queue.push((batch, processed_records));
+                                        endpoint.snapshot_sent.store(true, Ordering::Release);
+                                    }
+                                } else if delta_batch.is_some() {
+                                    controller
+                                        .status
+                                        .enqueue_batch(*endpoint_id, num_delta_records.unwrap());
+
+                                    let batch = if i == endpoints.len() - 1 {
+                                        delta_batch.take().unwrap()
+                                    } else {
+                                        delta_batch.as_ref().unwrap().clone()
+                                    };
+
+                                    endpoint.queue.push((batch, processed_records));
+                                }
 
                                 // Wake up the output thread.  We're not trying to be smart here and
                                 // wake up the thread conditionally if it was previously idle, as I
@@ -575,8 +646,15 @@ struct OutputEndpointDescr {
     /// Stream name that the endpoint is connected to.
     stream_name: String,
 
+    /// Query associated with the endpoint.
+    query: OutputQuery,
+
     /// FIFO queue of batches read from the stream.
     queue: Arc<BatchQueue>,
+
+    /// True if the endpoint has already received a complete snapshot
+    /// of the query result.
+    snapshot_sent: AtomicBool,
 
     /// Used to notify the endpoint thread that the endpoint is being disconnected.
     disconnect_flag: Arc<AtomicBool>,
@@ -586,18 +664,26 @@ struct OutputEndpointDescr {
 }
 
 impl OutputEndpointDescr {
-    pub fn new(endpoint_name: &str, stream_name: &str, unparker: Unparker) -> Self {
+    pub fn new(
+        endpoint_name: &str,
+        stream_name: &str,
+        query: OutputQuery,
+        unparker: Unparker,
+    ) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
             stream_name: stream_name.to_string(),
+            query,
             queue: Arc::new(SegQueue::new()),
+            snapshot_sent: AtomicBool::new(false),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
             unparker,
         }
     }
 }
 
-type StreamEndpointMap = BTreeMap<String, (Box<dyn SerOutputBatchHandle>, BTreeSet<EndpointId>)>;
+type StreamEndpointMap =
+    BTreeMap<(String, OutputQuery), (OutputQueryHandles, BTreeSet<EndpointId>)>;
 
 struct OutputEndpoints {
     by_id: BTreeMap<EndpointId, OutputEndpointDescr>,
@@ -616,8 +702,8 @@ impl OutputEndpoints {
         &self,
     ) -> impl Iterator<
         Item = (
-            &'_ String,
-            &'_ (Box<dyn SerOutputBatchHandle>, BTreeSet<EndpointId>),
+            &'_ (String, OutputQuery),
+            &'_ (OutputQueryHandles, BTreeSet<EndpointId>),
         ),
     > {
         self.by_stream.iter()
@@ -640,22 +726,21 @@ impl OutputEndpoints {
     fn insert(
         &mut self,
         endpoint_id: EndpointId,
-        stream: &str,
-        collection_handle: Box<dyn SerOutputBatchHandle>,
+        handles: OutputQueryHandles,
         endpoint_descr: OutputEndpointDescr,
     ) {
-        self.by_id.insert(endpoint_id, endpoint_descr);
         self.by_stream
-            .entry(stream.to_string())
-            .or_insert_with(|| (collection_handle, BTreeSet::new()))
+            .entry((endpoint_descr.stream_name.clone(), endpoint_descr.query))
+            .or_insert_with(|| (handles, BTreeSet::new()))
             .1
             .insert(endpoint_id);
+        self.by_id.insert(endpoint_id, endpoint_descr);
     }
 
     fn remove(&mut self, endpoint_id: &EndpointId) -> Option<OutputEndpointDescr> {
         self.by_id.remove(endpoint_id).map(|descr| {
             self.by_stream
-                .get_mut(&descr.stream_name)
+                .get_mut(&(descr.stream_name.clone(), descr.query))
                 .map(|(_, endpoints)| endpoints.remove(endpoint_id));
             descr
         })
@@ -819,6 +904,10 @@ impl ControllerInner {
         self.num_api_connections.load(Ordering::Acquire)
     }
 
+    pub fn request_step(&self) {
+        self.status.request_step(&self.circuit_thread_unparker);
+    }
+
     /// Unpark the circuit thread.
     fn unpark_circuit(&self) {
         self.circuit_thread_unparker.unpark();
@@ -880,13 +969,12 @@ impl ControllerInner {
         // └───────┘   └───────────┘   └────────┘
 
         // Lookup output handle in catalog.
-        let collection_handle = self
+        let handles = self
             .catalog
             .lock()
             .unwrap()
-            .output_batch_handle(&endpoint_config.stream)
-            .ok_or_else(|| ControllerError::unknown_output_stream(&endpoint_config.stream))?
-            .fork();
+            .output_query_handles(&endpoint_config.stream, endpoint_config.query)
+            .ok_or_else(|| ControllerError::unknown_output_stream(&endpoint_config.stream))?;
 
         let endpoint_id = outputs.alloc_endpoint_id();
         let endpoint_name_str = endpoint_name.to_string();
@@ -912,21 +1000,17 @@ impl ControllerInner {
         let encoder = format.new_encoder(format_config, probe)?;
 
         let parker = Parker::new();
-        let endpoint_state = OutputEndpointDescr::new(
+        let endpoint_descr = OutputEndpointDescr::new(
             endpoint_name,
             &endpoint_config.stream,
+            endpoint_config.query,
             parker.unparker().clone(),
         );
-        let queue = endpoint_state.queue.clone();
-        let disconnect_flag = endpoint_state.disconnect_flag.clone();
+        let queue = endpoint_descr.queue.clone();
+        let disconnect_flag = endpoint_descr.disconnect_flag.clone();
         let controller = self.clone();
 
-        outputs.insert(
-            endpoint_id,
-            &endpoint_config.stream,
-            collection_handle,
-            endpoint_state,
-        );
+        outputs.insert(endpoint_id, handles, endpoint_descr);
 
         let endpoint_name_string = endpoint_name.to_string();
         // Thread to run the output pipeline.
@@ -973,9 +1057,11 @@ impl ControllerInner {
             if let Some((data, processed_records)) = queue.pop() {
                 let num_records = data.iter().map(|b| b.len()).sum();
 
+                encoder.consumer().batch_start();
                 encoder
                     .encode(data.as_slice())
                     .unwrap_or_else(|e| controller.encode_error(endpoint_id, &endpoint_name, e));
+                encoder.consumer().batch_end();
 
                 // `num_records` output records have been transmitted --
                 // update output stats, wake up the circuit thread if the
@@ -1222,6 +1308,13 @@ impl OutputProbe {
 }
 
 impl OutputConsumer for OutputProbe {
+    fn batch_start(&mut self) {
+        self.endpoint.batch_start().unwrap_or_else(|e| {
+            self.controller
+                .output_transport_error(self.endpoint_id, &self.endpoint_name, false, e);
+        })
+    }
+
     fn push_buffer(&mut self, buffer: &[u8]) {
         let num_bytes = buffer.len();
 
@@ -1240,6 +1333,13 @@ impl OutputConsumer for OutputProbe {
                 );
             }
         }
+    }
+
+    fn batch_end(&mut self) {
+        self.endpoint.batch_end().unwrap_or_else(|e| {
+            self.controller
+                .output_transport_error(self.endpoint_id, &self.endpoint_name, false, e);
+        })
     }
 }
 

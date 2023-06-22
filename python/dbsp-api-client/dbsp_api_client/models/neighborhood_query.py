@@ -1,0 +1,81 @@
+from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
+
+import attr
+
+if TYPE_CHECKING:
+    from ..models.neighborhood_query_anchor import NeighborhoodQueryAnchor
+
+
+T = TypeVar("T", bound="NeighborhoodQuery")
+
+
+@attr.s(auto_attribs=True)
+class NeighborhoodQuery:
+    """A request to output a specific neighborhood of a table or view.
+    The neighborhood is defined in terms of its central point (`anchor`)
+    and the number of rows preceding and following the anchor to output.
+
+        Attributes:
+            after (int):
+            anchor (NeighborhoodQueryAnchor):
+            before (int):
+    """
+
+    after: int
+    anchor: "NeighborhoodQueryAnchor"
+    before: int
+    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        after = self.after
+        anchor = self.anchor.to_dict()
+
+        before = self.before
+
+        field_dict: Dict[str, Any] = {}
+        field_dict.update(self.additional_properties)
+        field_dict.update(
+            {
+                "after": after,
+                "anchor": anchor,
+                "before": before,
+            }
+        )
+
+        return field_dict
+
+    @classmethod
+    def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
+        from ..models.neighborhood_query_anchor import NeighborhoodQueryAnchor
+
+        d = src_dict.copy()
+        after = d.pop("after")
+
+        anchor = NeighborhoodQueryAnchor.from_dict(d.pop("anchor"))
+
+        before = d.pop("before")
+
+        neighborhood_query = cls(
+            after=after,
+            anchor=anchor,
+            before=before,
+        )
+
+        neighborhood_query.additional_properties = d
+        return neighborhood_query
+
+    @property
+    def additional_keys(self) -> List[str]:
+        return list(self.additional_properties.keys())
+
+    def __getitem__(self, key: str) -> Any:
+        return self.additional_properties[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self.additional_properties[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self.additional_properties[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.additional_properties

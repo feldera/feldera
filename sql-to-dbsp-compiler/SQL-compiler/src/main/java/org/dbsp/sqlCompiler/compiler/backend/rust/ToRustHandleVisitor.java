@@ -40,14 +40,13 @@ import org.dbsp.util.Utilities;
  * Generate Rust for a circuit, but with an API using handles.
  * Output generated has this structure:
  * pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
- *     let mut catalog = Catalog::new();
- *     let (circuit, handles) = Runtime::init_circuit(workers, |circuit| {
+ *     let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {
+ *         let mut catalog = Catalog::new();
  *         let (input, handle0) = circuit.add_input_zset::<TestStruct, i32>();
- *         let handle1 = input.output();
- *         (handle0, handle1)
+ *         catalog.register_input_zset("test_input1", input, handles.0);
+ *         catalog.register_output_zset("test_output1", input);
+ *         Ok(catalog)
  *     }).unwrap();
- *     catalog.register_input_zset_handle("test_input1", handles.0);
- *     catalog.register_output_batch_handle("test_output1", handles.1);
  *     (circuit, catalog)
  * }
  */
@@ -104,6 +103,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         for (IDBSPNode node : circuit.getAllOperators())
             super.processNode(node);
 
+        // Register input streams in the catalog.
         int index = 0;
         for (DBSPOperator i : circuit.inputOperators) {
             this.builder.append("catalog.register_input_zset(")
@@ -115,6 +115,8 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                     .append(");")
                     .newline();
         }
+
+        // Register output streams in the catalog.
         for (DBSPSinkOperator o : circuit.outputOperators) {
             this.builder.append("catalog.register_output_zset(")
                     .append(Utilities.doubleQuote(o.getName()))

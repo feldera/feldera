@@ -2,6 +2,7 @@ use crate::{AsyncErrorCallback, OutputEndpoint, TransportConfig};
 use actix_web::{http::header::ContentType, web::Bytes, HttpResponse};
 use anyhow::{anyhow, Result as AnyResult};
 use async_stream::stream;
+use crossbeam::sync::ShardedLock;
 use log::debug;
 use serde::{ser::SerializeStruct, Serializer};
 use serde_yaml::Value as YamlValue;
@@ -68,17 +69,19 @@ struct HttpOutputEndpointInner {
     format: Format,
 
     total_buffers: AtomicU64,
-    sender: broadcast::Sender<Buffer>,
+    sender: ShardedLock<Option<broadcast::Sender<Buffer>>>,
+    stream: bool,
     // async_error_callback: RwLock<Option<AsyncErrorCallback>>,
 }
 
 impl HttpOutputEndpointInner {
-    pub(crate) fn new(name: &str, format: Format) -> Self {
+    pub(crate) fn new(name: &str, format: Format, stream: bool) -> Self {
         Self {
             name: name.to_string(),
             format,
             total_buffers: AtomicU64::new(0),
-            sender: broadcast::channel(MAX_BUFFERS).0,
+            sender: ShardedLock::new(Some(broadcast::channel(MAX_BUFFERS).0)),
+            stream,
             // async_error_callback: RwLock::new(None),
         }
     }
@@ -111,13 +114,13 @@ pub(crate) struct HttpOutputEndpoint {
 }
 
 impl HttpOutputEndpoint {
-    pub(crate) fn new(name: &str, format: &str) -> Self {
+    pub(crate) fn new(name: &str, format: &str, stream: bool) -> Self {
         let format = match format {
             "csv" => Format::Text,
             _ => Format::Binary,
         };
         Self {
-            inner: Arc::new(HttpOutputEndpointInner::new(name, format)),
+            inner: Arc::new(HttpOutputEndpointInner::new(name, format, stream)),
         }
     }
 
@@ -126,7 +129,13 @@ impl HttpOutputEndpoint {
     }
 
     fn connect(&self) -> broadcast::Receiver<Buffer> {
-        self.inner.sender.subscribe()
+        self.inner
+            .sender
+            .read()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .subscribe()
     }
 
     /// Create an HTTP response object with a streaming body that
@@ -151,12 +160,12 @@ impl HttpOutputEndpoint {
                         Err(RecvError::Lagged(_)) => (),
                         Ok(buffer) => {
                             debug!(
-                                "HTTP output endpoint '{}': sending frame #{} ({} bytes)",
+                                "HTTP output endpoint '{}': sending chunk #{} ({} bytes)",
                                 name,
                                 buffer.sequence_number,
                                 buffer.data.len(),
                             );
-                            yield <AnyResult<_>>::Ok(buffer.data)
+                            yield <AnyResult<_>>::Ok(buffer.data);
                         },
                     }
                 }
@@ -205,7 +214,20 @@ impl OutputEndpoint for HttpOutputEndpoint {
         let _ = self
             .inner
             .sender
-            .send(Buffer::new(seq_number, Bytes::from(json_buf)));
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|sender| sender.send(Buffer::new(seq_number, Bytes::from(json_buf))));
+        Ok(())
+    }
+
+    fn batch_end(&mut self) -> AnyResult<()> {
+        if !self.inner.stream {
+            // Drop the sender after receiving the first batch of updates in
+            // the snapshot mode.  The receiver will receive all buffered
+            // messages followed by a `RecvError::Closed` notification.
+            *self.inner.sender.write().unwrap() = None;
+        }
         Ok(())
     }
 }

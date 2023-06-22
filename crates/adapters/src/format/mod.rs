@@ -119,9 +119,16 @@ impl dyn OutputFormat {
 }
 
 pub trait Encoder: Send {
+    /// Returns a reference to the consumer that the encoder is connected to.
+    fn consumer(&mut self) -> &mut dyn OutputConsumer;
+
+    /// Encode a batch of updates, push encoded buffers to the consumer
+    /// using [`OutputConsumer::push_buffer`].
     fn encode(&mut self, batches: &[Arc<dyn SerBatch>]) -> AnyResult<()>;
 }
 
 pub trait OutputConsumer: Send {
+    fn batch_start(&mut self);
     fn push_buffer(&mut self, buffer: &[u8]);
+    fn batch_end(&mut self);
 }

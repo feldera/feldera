@@ -227,5 +227,13 @@ pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError) + Send + Sync>;
 pub trait OutputEndpoint: Send {
     fn connect(&self, async_error_callback: AsyncErrorCallback) -> AnyResult<()>;
 
+    fn batch_start(&mut self) -> AnyResult<()> {
+        Ok(())
+    }
+
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()>;
+
+    fn batch_end(&mut self) -> AnyResult<()> {
+        Ok(())
+    }
 }

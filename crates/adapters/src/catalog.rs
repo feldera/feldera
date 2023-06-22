@@ -4,23 +4,61 @@ use crate::{
 use dbsp::{
     algebra::ZRingValue,
     operator::{DelayedFeedback, NeighborhoodDescr},
-    CollectionHandle, DBData, DBWeight, InputHandle, RootCircuit, Stream, ZSet,
+    CollectionHandle, InputHandle, RootCircuit, Stream, ZSet,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use utoipa::ToSchema;
+
+// This is only here so we can derive `ToSchema` for it without adding
+// a `utoipa` dependency to the `dbsp` crate to derive ToSchema for
+// `NeighborhoodDescr`.
+/// A request to output a specific neighborhood of a table or view.
+/// The neighborhood is defined in terms of its central point (`anchor`)
+/// and the number of rows preceding and following the anchor to output.
+#[derive(Deserialize, ToSchema)]
+pub struct NeighborhoodQuery {
+    pub anchor: utoipa::openapi::Object,
+    pub before: u32,
+    pub after: u32,
+}
 
 /// A set of stream handles associated with each output collection.
 pub struct OutputCollectionHandles {
     /// A stream of changes to the collection.
     pub delta_handle: Box<dyn SerOutputBatchHandle>,
 
-    /// Input stream used to specify the [neighborhood](`Stream::neighborhood`)
-    /// of the collection, which the circuit will monitor.
+    /// Input stream used to submit neighborhood queries.
     ///
-    /// The circuit monitors at most one neighborhood at any time.  The stream
-    /// carries values of type `Option<NeighborhoodDescr<K, V>>`, where `K` and `V`
-    /// are the key and value types of the collection.  Writing a `Some(..)` value
-    /// to the stream changes the monitored neighborhood.
+    /// The stream carries values of type `(bool, Option<NeighborhoodDescr<K, V>>)`,
+    /// where `K` and `V` are the key and value types of the collection.
+    ///
+    /// The first component of the tuple is the `reset` flag, which instructs
+    /// the circuit to start executing the neighborhood query specified in the
+    /// second component of the tuple.  The outputs of the neighborhood query are
+    /// emitted to [`neighborhood_handle`](`Self::neighborhood_handle`) and
+    /// [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
+    /// streams.  When the flag is `false`, this input is ignored.
+    ///
+    /// In more detail, the circuit handles inputs written to this stream as follows:
+    ///
+    /// * `(true, Some(descr))` - Start monitoring the specified descriptor.  The
+    ///   circuit will output a complete snapshot of the neighborhood to the
+    ///   [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
+    ///   sstream at the end of the current clock cycle.  The
+    ///   [`neighborhood_handle`](`Self::neighborhood_handle`) stream will output
+    ///   the difference between the previous and the new neighborhoods at the end
+    ///   of the current clock cycle and will contain changes to the new neighborhood
+    ///   going forward.
+    ///
+    /// * `(true, None)` - Stop executing the neighborhood query.  This is equivalent
+    ///   to writing `(true, Some(descr))`, where `descr` specifies an empty
+    ///   neighborhood.
+    ///
+    /// * `(false, _)` - This is a no-op. The circuit will continue monitoring the
+    ///   previously specified neighborhood if any.  Nothing is written to the
+    ///   [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
+    ///   stream.
     pub neighborhood_descr_handle: Box<dyn DeScalarHandle>,
 
     /// A stream of changes to the neighborhood, computed using the
@@ -31,23 +69,36 @@ pub struct OutputCollectionHandles {
     /// an output whenever the `neighborhood_descr_handle` input is set to `Some(..)`.  
     pub neighborhood_snapshot_handle: Box<dyn SerOutputBatchHandle>,
 
-    /// Input stream used to specify the number of quantiles.
+    /// Input stream used to submit the quantiles query.
+    ///
+    /// The value in the stream specifies the number of quantiles to
+    /// output.  When  greater than zero, it triggers the quantiles
+    /// computation.  The result is output to the
+    /// [`quantiles_handle`](`Self::quantiles_handle`) stream at the
+    /// end of the current clock cycle.
     pub num_quantiles_handle: InputHandle<usize>,
 
     /// Quantiles stream.
     ///
-    /// When the `num_quantiles_handle` input is set to `N`, `N>0`, this stream contains
+    /// When the `num_quantiles_handle` input is set to `N`, `N>0`, this stream outputs
     /// up to `N` quantiles of the input collection, computed using the
-    /// `Stream::stream_key_quantiles` operator.
+    /// [`Stream::stream_key_quantiles`] operator.
     pub quantiles_handle: Box<dyn SerOutputBatchHandle>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+/// A query over an output stream.
+///
+/// We currently do not support ad hoc queries.  Instead the client can use
+/// three pre-defined queries to inspect the contents of a table or view.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, ToSchema, Ord)]
 pub enum OutputQuery {
+    /// Query the entire contents of the table (similar to `SELECT * FROM`).
     #[serde(rename = "table")]
     Table,
+    /// Neighborhood query (see [`Stream::neightborhood`]).
     #[serde(rename = "neighborhood")]
     Neighborhood,
+    /// Quantiles query (see `[Stream::stream_key_quantiles]`).
     #[serde(rename = "quantiles")]
     Quantiles,
 }
@@ -58,6 +109,19 @@ impl Default for OutputQuery {
     }
 }
 
+/// Query result streams.
+///
+/// Stores the result of a a [query](`OutputQuery`) as a pair of streams:
+/// a stream of changes and a snapshot, i.e., the integral, of all previous
+/// changes.  Not all queries return both streams, e.g., the
+/// [quantiles](`OutputQuery::quantiles`) query only returns a snapshot,
+/// while the [table](`OutputTransport::query`) currently only returns the
+/// delta stream; therefore the stream handles are wrapped in `Option`s.
+///
+/// Whenever both streams are present, the client may consume the result in
+/// a hybrid mode: read the initial snapshot containing a full answer to the
+/// query based on previously received inputs, and then listen to the delta
+/// stream for incremental updates triggered by new inputs.
 pub struct OutputQueryHandles {
     pub delta: Option<Box<dyn SerOutputBatchHandle>>,
     pub snapshot: Option<Box<dyn SerOutputBatchHandle>>,
@@ -68,9 +132,7 @@ pub struct OutputQueryHandles {
 /// An instance of this type is created by the user (or auto-generated code)
 /// who constructs the circuit and is used by
 /// [`Controller`](`crate::Controller`) to bind external data sources and sinks
-/// to DBSP streams
-/// (See [`InputFormat::new_parser()`](`crate::InputFormat::new_parser`)
-/// method).
+/// to DBSP streams.
 #[derive(Default)]
 pub struct Catalog {
     input_collection_handles: BTreeMap<String, Box<dyn DeCollectionHandle>>,
@@ -83,6 +145,7 @@ impl Catalog {
         Self::default()
     }
 
+    /// Add an input stream of Z-sets to the catalog.
     pub fn register_input_zset<Z>(
         &mut self,
         name: &str,
@@ -100,7 +163,7 @@ impl Catalog {
     }
 
     /// Add a named input stream handle to the catalog.
-    pub fn register_input_collection_handle<H>(&mut self, name: &str, handle: H)
+    fn register_input_collection_handle<H>(&mut self, name: &str, handle: H)
     where
         H: DeCollectionHandle + 'static,
     {
@@ -108,7 +171,7 @@ impl Catalog {
             .insert(name.to_owned(), Box::new(handle));
     }
 
-    /// Add a named output stream handle to the catalog.
+    /// Add an output stream of Z-sets to the catalog.
     pub fn register_output_zset<Z>(&mut self, name: &str, stream: Stream<RootCircuit, Z>)
     where
         Z: ZSet + Send + Sync,
@@ -117,11 +180,15 @@ impl Catalog {
     {
         let circuit = stream.circuit();
 
+        // Create handle for the stream itself.
         let delta_handle = stream.output();
 
+        // Create handles for the neighborhood query.
         let (neighborhood_descr_stream, neighborhood_descr_handle) =
             circuit.add_input_stream::<(bool, Option<NeighborhoodDescr<Z::Key, Z::Val>>)>();
         let neighborhood_stream = {
+            // Create a feedback loop to latch the latest neighborhood descriptor
+            // when `reset=true`.
             let feedback =
                 <DelayedFeedback<RootCircuit, Option<NeighborhoodDescr<Z::Key, Z::Val>>>>::new(
                     stream.circuit(),
@@ -140,13 +207,19 @@ impl Catalog {
             stream.neighborhood(&new_neighborhood)
         };
 
+        // Neighborhood delta stream.
         let neighborhood_handle = neighborhood_stream.output();
 
+        // Neighborhood snapshot stream.  The integral computation
+        // is essentially free thanks to stream caching.
         let neighborhood_snapshot_stream = neighborhood_stream.integrate();
         let neighborhood_snapshot_handle = neighborhood_snapshot_stream
             .output_guarded(&neighborhood_descr_stream.apply(|(reset, _descr)| *reset));
 
+        // Handle for the quantiles query.
         let (num_quantiles_stream, num_quantiles_handle) = circuit.add_input_stream::<usize>();
+
+        // Output of the quantiles query, only produced when `num_quantiles>0`.
         let quantiles_stream = stream
             .integrate_trace()
             .stream_key_quantiles(&num_quantiles_stream);
@@ -174,12 +247,12 @@ impl Catalog {
         self.input_collection_handles.get(name).map(|b| &**b)
     }
 
-    /// Look up an output stream handle by name&.
+    /// Look up output stream handles by name.
     pub fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles> {
         self.output_batch_handles.get(name)
     }
 
-    /// Look up an output stream handle by name.
+    /// Look up an output query handles by stream name and query type.
     pub fn output_query_handles(
         &self,
         name: &str,

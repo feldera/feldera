@@ -5,7 +5,8 @@ use crate::{
         Scope,
     },
     trace::{cursor::Cursor, Batch, BatchReader, Builder},
-    Circuit, DBData, DBWeight, IndexedZSet, OrdIndexedZSet, RootCircuit, Stream,
+    Circuit, DBData, DBWeight, IndexedZSet, NumEntries, OrdIndexedZSet, OrdZSet, RootCircuit,
+    Stream,
 };
 use serde::Deserialize;
 use size_of::SizeOf;
@@ -56,7 +57,7 @@ use std::{borrow::Cow, marker::PhantomData};
 ///             │ -2  │ "a" │ 101 │ -1
 ///             │ -2  │ "a" │ 102 │ +1 // ("a", 102) in inserted in positon -2.
 /// ```
-pub type Neighborhood<K, V, R> = OrdIndexedZSet<isize, (K, V), R>;
+pub type Neighborhood<K, V, R> = OrdZSet<(isize, (K, V)), R>;
 
 /// Neighborhood descriptor represents a request from the user to
 /// output a specific neighborhood.  The neighborhood is defined in
@@ -64,9 +65,23 @@ pub type Neighborhood<K, V, R> = OrdIndexedZSet<isize, (K, V), R>;
 /// preceding and following the anchor to output.
 #[derive(Clone, Debug, Deserialize, PartialOrd, Ord, PartialEq, Eq, Hash, SizeOf)]
 pub struct NeighborhoodDescr<K, V> {
-    anchor: (K, V),
+    anchor: K,
+    #[serde(default)]
+    anchor_val: V,
     before: usize,
     after: usize,
+}
+
+impl<K, V> NumEntries for NeighborhoodDescr<K, V> {
+    const CONST_NUM_ENTRIES: Option<usize> = Some(1);
+
+    fn num_entries_shallow(&self) -> usize {
+        1
+    }
+
+    fn num_entries_deep(&self) -> usize {
+        1
+    }
 }
 
 /// Stream of neighborhoods output by the [`Stream::neighborhood`] operator.
@@ -79,7 +94,8 @@ pub type NeighborhoodDescrStream<K, V> = Stream<RootCircuit, Option<Neighborhood
 impl<K, V> NeighborhoodDescr<K, V> {
     pub fn new(k: K, v: V, before: usize, after: usize) -> Self {
         Self {
-            anchor: (k, v),
+            anchor: k,
+            anchor_val: v,
             before,
             after,
         }
@@ -232,7 +248,8 @@ where
         let mut cursor = input_trace.cursor();
 
         if let Some(descr) = descr {
-            let (anchor_key, anchor_val) = &descr.anchor;
+            let anchor_key = &descr.anchor;
+            let anchor_val = &descr.anchor_val;
 
             // Forward pass: locate the anchor and `decr.after`
             // following rows.
@@ -342,7 +359,8 @@ where
         let mut cursor = input_trace.cursor();
 
         if let Some(descr) = &descr {
-            let (anchor_key, anchor_val) = &descr.anchor;
+            let anchor_key = &descr.anchor;
+            let anchor_val = &descr.anchor_val;
 
             let mut after = Vec::with_capacity(descr.after);
             let mut offset = 0;
