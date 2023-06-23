@@ -15,6 +15,9 @@
 // limitations under the License.
 -->
 
+// This file is adapted from Calcite:
+// https://github.com/apache/calcite/tree/main/babel/src/main/codegen/includes/parserImpls.ftl
+
 JoinType LeftSemiJoin() :
 {
 }

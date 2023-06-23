@@ -15,6 +15,10 @@
 // limitations under the License.
 -->
 
+// This file is adapted from Calcite:
+// TODO: This file is not currently used, but hopefully it will be when Calcite 1.35 is released
+// https://github.com/apache/calcite/tree/main/babel/src/main/codegen/includes/parserPostgresqlImpls.ftl
+
 /** SHOW (<TRANSACTION ISOLATION LEVEL> | name) */
 SqlNode PostgresqlSqlShow() :
 {
