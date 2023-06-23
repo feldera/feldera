@@ -3,14 +3,14 @@ RUST_BUILD_PROFILE = "--release"
 
 [tasks.build]
 command = "cargo"
-args = ["build", "@@remove-empty(RUST_BUILD_PROFILE)"]
+args = ["build", "--features=pg-embed", "@@remove-empty(RUST_BUILD_PROFILE)"]
 
 [tasks.openapi_json]
 description = "Dump OpenAPI specification of the REST API to 'openapi.json'"
 dependencies = ["build"]
 script = '''
 cd ../../
-cargo run --package dbsp_pipeline_manager -- --dump-openapi
+cargo run --package dbsp_pipeline_manager --features=pg-embed $RUST_BUILD_PROFILE -- --dump-openapi
 '''
 
 [tasks.openapi_python]
