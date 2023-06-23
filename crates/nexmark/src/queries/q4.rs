@@ -78,7 +78,7 @@ pub fn q4(input: NexmarkStream) -> Q4Stream {
     // Finally, calculate the average winning bid per category.
     // TODO: use linear aggregation when ready (#138).
     winning_bids_by_category_indexed
-        .average(|_category, val| *val as isize)
+        .average(|val| *val as isize)
         .map(|(category, avg): (&usize, &isize)| (*category, *avg as usize))
 }
 
