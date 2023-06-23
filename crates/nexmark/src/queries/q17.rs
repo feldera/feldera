@@ -99,7 +99,7 @@ pub fn q17(input: NexmarkStream) -> Q17Stream {
     let min_price = bids_indexed.aggregate(Min);
     let max_price = bids_indexed.aggregate(Max);
     let sum_price =
-        bids_indexed.aggregate_linear(|_, price| -> isize { *price as isize });
+        bids_indexed.aggregate_linear(|price| -> isize { *price as isize });
 
     // Another outer-join abomination to put all aggregates into single stream.
     count_total_bids
