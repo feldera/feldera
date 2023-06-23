@@ -31,6 +31,7 @@ services:
      - --db-connection-string=postgresql://postgres:postgres@db:5432
 
   redpanda:
+    profiles: ["demo"]
     command:
       - redpanda
       - start
