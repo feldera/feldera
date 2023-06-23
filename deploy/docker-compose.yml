@@ -21,7 +21,7 @@ services:
    environment:
      - RUST_BACKTRACE=1
      - REDPANDA_BROKERS=redpanda:9092
-     - RUST_LOG=debug,tokio_postgres=info
+     - RUST_LOG
    command:
      - ./dbsp_pipeline_manager
      - --bind-address=0.0.0.0
