@@ -5,6 +5,7 @@ use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, 
 use serde::{de::Error as _, ser::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use size_of::SizeOf;
 use std::{
+    borrow::Cow,
     fmt::{self, Debug},
     ops::Add,
 };
@@ -61,9 +62,11 @@ impl<'de> Deserialize<'de> for Timestamp {
     where
         D: Deserializer<'de>,
     {
-        let timestamp_str: &'de str = Deserialize::deserialize(deserializer)?;
+        // `timestamp_str: &'de` doesn't work for JSON, which escapes strings
+        // and can only deserialize into an owned string.
+        let timestamp_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
 
-        let timestamp = NaiveDateTime::parse_from_str(timestamp_str, "%F %T%.f").map_err(|e| {
+        let timestamp = NaiveDateTime::parse_from_str(&timestamp_str, "%F %T%.f").map_err(|e| {
             D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
         })?;
 
