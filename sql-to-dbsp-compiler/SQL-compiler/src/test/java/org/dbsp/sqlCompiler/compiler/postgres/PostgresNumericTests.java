@@ -822,17 +822,29 @@ public class PostgresNumericTests extends BaseSQLTests {
         this.compare(query, expected);
     }
 
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5795")
+    public void testCast() {
+        String query = "WITH v(x) AS (VALUES(0::numeric),(4.2)) SELECT x FROM v as v1(x)";
+        String expected =
+                "    x1     \n" +
+                "-----------\n" +
+                "         0 \n" +
+                "       4.2 \n";
+        this.compare(query, expected);
+    }
+
     @Test
     public void testSpecialValuesNumeric() {
         // Removed unsupported numeric values inf, nan, etc.
         String query =
-                "WITH v(x) AS (VALUES(0),(1),(-1),(4.2))\n" +
+                "WITH v(x) AS (VALUES('0'::numeric),(1),(-1),('4.2'::numeric))\n" +
                         "SELECT x1, x2,\n" +
                         "  x1 + x2 AS s,\n" +
                         "  x1 - x2 AS diff,\n" +
                         "  x1 * x2 AS prod\n" +
                         "FROM v AS v1(x1), v AS v2(x2)";
-        String expected = "    x1     |    x2     |    sum    |   diff    |   prod    \n" +
+        String expected =
+                "    x1     |    x2     |    sum    |   diff    |   prod    \n" +
                 "-----------+-----------+-----------+-----------+-----------\n" +
                 "         0 |         0 |         0 |         0 |         0\n" +
                 "         0 |         1 |         1 |        -1 |         0\n" +

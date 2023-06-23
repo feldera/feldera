@@ -46,8 +46,11 @@ public class CalciteCompilerTests {
                 ", COL3 BOOLEAN" +
                 ", COL4 VARCHAR" +
                 ")";
+        String ddl1 = "CREATE VIEW V AS SELECT * FROM T";
 
         SqlNode node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+        node = calcite.parse(ddl1);
         Assert.assertNotNull(node);
     }
 

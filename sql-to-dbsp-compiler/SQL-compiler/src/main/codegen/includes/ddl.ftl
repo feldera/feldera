@@ -1,14 +1,14 @@
 /// Adapted from calcite-ddl and calcite-BABEL
 /// https://github.com/apache/calcite/tree/main/server/src/main/codegen
 
-boolean IfNotExistsOpt() :
-{
-}
-{
-    <IF> <NOT> <EXISTS> { return true; }
-|
-    { return false; }
-}
+///boolean IfNotExistsOpt() :
+///{
+///}
+///{
+///    <IF> <NOT> <EXISTS> { return true; }
+///|
+///    { return false; }
+///}
 
 boolean IfExistsOpt() :
 {
@@ -145,22 +145,22 @@ SqlCreate SqlCreateType(Span s, boolean replace) :
     }
 }
 
-SqlCreate SqlCreateTable(Span s, boolean replace) :
-{
-    final boolean ifNotExists;
-    final SqlIdentifier id;
-    SqlNodeList tableElementList = null;
-    SqlNode query = null;
-}
-{
-    <TABLE> ifNotExists = IfNotExistsOpt() id = CompoundIdentifier()
-    [ tableElementList = TableElementList() ]
-    [ <AS> query = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY) ]
-    {
-        return SqlDdlNodes.createTable(s.end(this), replace, ifNotExists, id,
-            tableElementList, query);
-    }
-}
+///SqlCreate SqlCreateTable(Span s, boolean replace) :
+///{
+///    final boolean ifNotExists;
+///    final SqlIdentifier id;
+///    SqlNodeList tableElementList = null;
+///    SqlNode query = null;
+///}
+///{
+///    <TABLE> ifNotExists = IfNotExistsOpt() id = CompoundIdentifier()
+///    [ tableElementList = TableElementList() ]
+///    [ <AS> query = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY) ]
+///    {
+///        return SqlDdlNodes.createTable(s.end(this), replace, ifNotExists, id,
+///            tableElementList, query);
+///    }
+///}
 
 SqlCreate SqlCreateView(Span s, boolean replace) :
 {
