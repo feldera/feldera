@@ -46,7 +46,7 @@ jobs:
       - name: Run integration tests
         run: |
           cd deploy && \
-          SECOPS_DEMO_ARGS="--prepare-args 500000" docker compose -f docker-compose.yml -f docker-compose-dev.yml --profile demo up --build --force-recreate --exit-code-from demo --renew-anon-volumes
+          SECOPS_DEMO_ARGS="--prepare-args 500000" RUST_LOG=debug,tokio_postgres=info docker compose -f docker-compose.yml -f docker-compose-dev.yml --profile demo up --build --force-recreate --exit-code-from demo --renew-anon-volumes
 
       # Disable until we bring the Kubernetes workflows up to speed
       #

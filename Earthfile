@@ -515,7 +515,7 @@ test-docker-compose:
                 --pull docker.redpanda.com/vectorized/redpanda:v22.3.11 \
                 --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
                 --load ghcr.io/feldera/demo-container=+build-demo-container
-        RUN SECOPS_DEMO_ARGS="--prepare-args 500000" docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
+        RUN SECOPS_DEMO_ARGS="--prepare-args 500000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
 all-tests:
