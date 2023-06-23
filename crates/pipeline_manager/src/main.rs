@@ -195,7 +195,7 @@ fn main() -> AnyResult<()> {
 
     // Create env logger.
     let name = "[manager]".cyan();
-    env_logger::Builder::from_env(Env::default().default_filter_or("debug"))
+    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
         .format(move |buf, record| {
             let t = chrono::Utc::now();
             let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
