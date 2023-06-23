@@ -68,8 +68,9 @@ mod auth;
 mod compiler;
 mod config;
 mod db;
+#[cfg(test)]
+mod integration_test;
 mod runner;
-
 pub(crate) use compiler::{Compiler, ProgramStatus};
 pub(crate) use config::ManagerConfig;
 use db::{
