@@ -73,7 +73,7 @@ CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-
 
 # Prepare SecOps simulator recipe
 FROM chef as demo-planner
-COPY ./demo/project_demo04-SecOps/simulator/ .
+COPY ./demo/project_demo00-SecOps/simulator/ .
 RUN /root/.cargo/bin/cargo chef prepare --recipe-path recipe.json
 
 # Use the recipe.json file to build dependencies first and cache that
@@ -81,7 +81,7 @@ RUN /root/.cargo/bin/cargo chef prepare --recipe-path recipe.json
 FROM chef AS demo-builder
 COPY --from=demo-planner /app/recipe.json recipe.json
 RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json
-COPY ./demo/project_demo04-SecOps/simulator/ .
+COPY ./demo/project_demo00-SecOps/simulator/ .
 RUN /root/.cargo/bin/cargo build --release
 
 # The dev target adds an rpk client and demo projects
@@ -91,8 +91,8 @@ ENV PATH="$PATH:/root/.cargo/bin"
 COPY --from=builder /app/target/release/dbsp_pipeline_manager dbsp_pipeline_manager
 COPY demo demo
 # Remove the simulator cargo project and the corresponding build artifacts
-RUN rm -rf ./demo/project_demo04-SecOps/simulator/*
-COPY --from=demo-builder /app/target/release/secops_simulator demo/project_demo04-SecOps/simulator/
+RUN rm -rf ./demo/project_demo00-SecOps/simulator/*
+COPY --from=demo-builder /app/target/release/secops_simulator demo/project_demo00-SecOps/simulator/
 COPY python python
 RUN apt update && apt install pkg-config \
                               python3-pip python3-plumbum \
