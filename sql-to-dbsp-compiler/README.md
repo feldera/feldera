@@ -26,7 +26,7 @@ to also install graphviz as described here <https://graphviz.org/download/>.
 To build the compiler, `cd` into the `SQL-compiler` directory and run:
 ```
 mvn -DskipTests package
-``` 
+```
 
 ## Rust compilation errors
 
@@ -41,25 +41,6 @@ $ cargo update
 
 (`temp` is the directory where the tests write the generated Rust code.)
 
-## Documentation
-
-Documentation is under development.  Generating the documentation
-requires Python, and make.  The documentation can be generated using
-the following command:
-
-```
-$ cd doc
-$ make html
-```
-
-(The first time you attempt to generate the documentation it will
-attempt to install additional dependencies, such as Sphinx; you may
-need to delete the Python-created `venv-docs` directory after this
-installation to be able to properly generate html.  The directory will
-be regenerated.)
-
-The result is produced in `doc/_build/html/index.html`.
-
 ## Running
 
 To run the tests:
@@ -70,20 +51,20 @@ $ ./run-tests.sh
 ```
 
 Beware that the full sql logic tests can run for a few weeks, there
-are more than 7 million of them!  Most of the time is spent compiling Rust,
+are more than 5 million of them!  Most of the time is spent compiling Rust,
 hopefully we'll be able to speed that up at some point.
 
 ## Incremental view maintenance
 
 The DBSP runtime is optimized for performing incremental view
 maintenance.  In consequence, DBSP programs in SQL are expressed as
-VIEWS, or *standing queries*.  A view is a function of one or more
-tables and other views.
+VIEWS, or *standing queries*.  A view is essentially a computation
+that describes a relation that is computed from other tables or views.
 
 For example, the following query defines a view:
 
-```SQL
-CREATE VIEW V AS SELECT * FROM T WHERE T.age > 18
+```sql
+CREATE VIEW V AS SELECT T.COL1 FROM T WHERE T.age > 18
 ```
 
 In order to interpret this query the compiler needs to have been given
@@ -116,109 +97,15 @@ views                                           V
                                            view changes
 ```
 
-## Command-line compiler
+## Using the compiler
 
-A compiler from SQL to DBSP is produced by the build system usign `mvn
--DskipTests package`.  A one-line Linux shell script, called
-`sql-to-dbsp`, residing in the directory `SQL-compiler` directory,
-invokes the compiler.  Here is an example:
-
-```
-$ ./sql-to-dbsp
-Usage: sql-to-dbsp [options] Input file to compile
-  Options:
-    -h, --help, -
-      Show this message and exit
-    -O0
-      Do not optimize
-      Default: false
-    -alltables
-      Generate an input for each CREATE TABLE, even if the table is not used
-      by any view
-      Default: false
-    -d
-      SQL syntax dialect used
-      Default: ORACLE
-      Possible Values: [BIG_QUERY, ORACLE, MYSQL, MYSQL_ANSI, SQL_SERVER, JAVA]
-    -f
-      Name of function to generate
-      Default: circuit
-    -i
-      Generate an incremental circuit
-      Default: false
-    -j
-      Emit JSON instead of Rust
-      Default: false
-    -je
-      Emit error messages as a JSON array to stderr
-      Default: false
-    -jpg, -png
-      Emit a JPG or PNG image of the circuit instead of Rust
-      Default: false
-    -o
-      Output file; stdout if null
-$ ./sql-to-dbsp x.sql -o ../temp/src/lib.rs
-```
-
-The last command-line compiles a script called `x.sql` and writes the
-result in a file `lib.rs`.  Let's assume we are compiling the
-following input file:
-
-```
-$ cat x.sql
--- example input file
-CREATE TABLE T(COL0 INTEGER, COL1 INTEGER);
-CREATE VIEW V AS SELECT T.COL1 FROM T;
-```
-
-The input file can contain comments, and only two kinds of SQL
-statements, separated by semicolons: `CREATE TABLE` and `CREATE VIEW`.
-In the generated DBSP circuit every `CREATE TABLE` is translated to an
-input, and every `CREATE VIEW` is translated to an output.  The result
-produced will look like this:
-
-```
-$ cat ../temp/src/lib.rs
-// Automatically-generated file
-[...boring stuff removed...]
-
-pub fn circuit(workers: usize) -> (DBSPHandle, Catalog) {
-    let mut catalog = Catalog::new();
-    let (circuit, handles) = Runtime::init_circuit(workers, |circuit| {
-        let map34: _ = move |t: &Tuple2<Option<i32>, Option<i32>>, | -> Tuple1<Option<i32>> {
-            Tuple1::new(t.1)
-        };
-        // CREATE TABLE `T` (`COL0` INTEGER, `COL1` INTEGER)
-        let (T, handle0) = circuit.add_input_zset::<Tuple2<Option<i32>, Option<i32>>, Weight>();
-        let stream38: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = T.map(map34);
-        // CREATE VIEW `V` AS
-        // SELECT `T`.`COL1`
-        // FROM `T`
-        let handle1 = stream38.output();
-        (handle0,handle1,)
-    }).unwrap();
-    catalog.register_input_zset_handle("T", handles.0);
-    catalog.register_output_batch_handle("V", handles.1);
-    (circuit, catalog)
-}
-```
-
-You can compile the generated Rust code:
-
-```
-$ cd ../temp
-$ cargo build
-```
-
-The generated file contains a Rust function called `circuit` (you can
-change its name using the compiler option `-f`).  Calling `circuit`
-will return an executable DBSP circuit handle, and a DBSP catalog.
-These APIs can be used to execute the circuit.  See the DBSP
-documentation for more information.
-
-TODO: add here an example invoking the circuit.
+See the [documentation](https://docs.feldera.io/guides/sql)
 
 ## Compiler architecture
+
+[A
+presentation](http://budiu.info/work/sql-compiler-architecture23.pptx)
+about the internals of the compiler implementation.
 
 Compilation proceeds in several stages:
 
@@ -245,54 +132,47 @@ They can be executed usign `mvn test`.
 One of the means of testing the compiler is using sqllogictests:
 <https://www.sqlite.org/sqllogictest/doc/trunk/about.wiki>.
 
-We have implemented a general-purpose testing framework for running
-SqlLogicTest programs, in the `org.dbsp.sqllogictest` package.  The
-framework parses SqlLogicTest files and creates an internal
-representation of these files.  The files are executed by "test
-executors".
+We have implemented a [general-purpose testing
+framework](https://github.com/hydromatic/sql-logic-test) in Java for
+running SqlLogicTest programs.  The framework parses SqlLogicTest
+files and creates an internal representation of these files.  The
+files are executed by "test executors".
 
 The tests are run by a standalone executable (the executable is
 invoked by the `run-tests.sh` script).  The executable supports the
 following command-line arguments:
 
 ```
-Usage: [options] Files or directories with test data (relative to the specified directory)
+slt [options] files_or_directories_with_tests
+Executes the SQL Logic Tests using a SQL execution engine
+See https://www.sqlite.org/sqllogictest/doc/trunk/about.wiki
 Options:
--b
-Load a list of buggy commands to skip from this file
--d
-Directory with SLT tests
-Default: ../../sqllogictest
--e
-Executor to use; one of 'none, JDBC, calcite'
-Default: none
--h
-Show this help message and exit
-Default: false
--i
-Install the SLT tests if the directory does not exist
-Default: false
--inc
-Incremental testing
-Default: false
--n
-Do not execute, just parse the test files
-Default: false
--s
-Ignore the status of SQL commands executed
-Default: false
--x
-Stop at the first encountered query error
-Default: false
+-h            Show this help message and exit
+-x            Stop at the first encountered query error
+-n            Do not execute, just parse the test files
+-e executor   Executor to use
+-b filename   Load a list of buggy commands to skip from this file
+-v            Increase verbosity (can be repeated)
+-j            Emit JIT code
+-inc          Incremental validation
+-u username   Postgres user name
+-p password   Postgres password
+Registered executors:
+	hybrid
+	dbsp
+	hsql
+	psql
+	none
 ```
 
-We have multiple executors:
+We have multiple executors.  Some executors are inherited
+from the hydromatic project.
 
 #### The `NoExecutor` test executor
 
-This executor does not really run any tests.  But it can still be used
-by the test loading mechanism to check that we correctly parse all
-SQL logic test files.
+This executor is part of the base hydromatic package; it does not
+really run any tests.  But it can still be used by the test loading
+mechanism to check that we correctly parse all SQL logic test files.
 
 #### The `DBSPExecutor`
 
@@ -318,27 +198,12 @@ validates it, executing exactly one transaction.  When testing
 incremental circuits the test code feeds multiple inputs and
 only checks the final output.
 
-#### The `JDBC` executor
-
-This executor parallels the standard ODBC executor written in C by
-sending the statements and queries to a database to be executed.  Any
-database that supports JDBC and can handle the correct syntax of the
-queries can be used, but we use by default the HSQLDB
-<http://hsqldb.org/> database.
-
-#### The hybrid `DBSP_JDBC_Executor`
+#### The `hybrid` executor
 
 This executor is a combination of the DBSP executor and the JDBC
 executor, using a real database to store data in tables, but using
 DBSP as a query engine.  It should be able to execute all SqlLogicTest
 queries that are supported by the underlying database.
-
-#### The 'Calcite' executor
-
-This executor uses the JDBC executor to execute the statements storing
-the data, and the default Calcite compiler settings to compile and
-execute the queries.  This code has been contributed to the Calcite
-project.
 
 #### SqlLogicTest Test results
 
