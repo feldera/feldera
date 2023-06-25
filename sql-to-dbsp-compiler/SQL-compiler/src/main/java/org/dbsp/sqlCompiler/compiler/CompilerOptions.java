@@ -95,7 +95,7 @@ public class CompilerOptions {
         public boolean emitPng = false;
         @Parameter(names = "-je", description = "Emit error messages as a JSON array to stderr")
         public boolean emitJsonErrors = false;
-        @Parameter(names = "-js", description = "File containing schemas of all views and tables involved (in json)")
+        @Parameter(names = "-js", description = "Emit a JSON file containing the schema of all views and tables involved")
         @Nullable
         public String emitJsonSchema = null;
         @Parameter(description = "Input file to compile", required = true)

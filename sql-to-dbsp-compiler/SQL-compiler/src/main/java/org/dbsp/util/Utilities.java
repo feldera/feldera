@@ -34,20 +34,6 @@ public class Utilities {
     private Utilities() {}
 
     /**
-     * Generate a rust file which does nothing but includes the specified modules.
-     * @param file     File to write to.
-     * @param modules  List of modules to include.
-     */
-    public static void writeRustLib(String file, List<String> modules) throws FileNotFoundException {
-        PrintWriter writer = new PrintWriter(file);
-        writer.println("// automatically-generated file");
-        for (String module: modules) {
-            writer.println("mod " + module + ";");
-        }
-        writer.close();
-    }
-
-    /**
      * Escape special characters in a string.
      */
     public static String escape(String value) {
@@ -190,18 +176,6 @@ public class Utilities {
             runProcess(directory, "cargo", "clean");
             compile(directory, quiet, extraArgs);
         }
-    }
-
-    @SuppressWarnings("SpellCheckingInspection")
-    private static final char[] hexCode = "0123456789abcdef".toCharArray();
-
-    public static String toHex(byte[] data) {
-        StringBuilder r = new StringBuilder(data.length * 2);
-        for (byte b : data) {
-            r.append(hexCode[(b >> 4) & 0xF]);
-            r.append(hexCode[(b & 0xF)]);
-        }
-        return r.toString();
     }
 
     public static void compileAndTestJit(String directory, File jsonFile) throws IOException, InterruptedException {

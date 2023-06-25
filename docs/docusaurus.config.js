@@ -35,16 +35,16 @@ const config = {
       /** @type {import('docusaurus-preset-openapi').Options} */
       ({
         docs: {
-          sidebarPath: require.resolve("./sidebars.js"),
-          editUrl: "https://github.com/feldera/dbsp/docs",
+          sidebarPath: require.resolve("./sidebars.js")
+          /* editUrl: "https://github.com/feldera/dbsp/docs", */
         },
         api: {
           path: "openapi.json",
           routeBasePath: "/api",
         },
         blog: {
-          showReadingTime: true,
-          editUrl: "https://github.com/feldera/dbsp/docs",
+          showReadingTime: false,
+          /* editUrl: "https://github.com/feldera/dbsp/docs", */
         },
         theme: {
           customCss: [
@@ -71,30 +71,12 @@ const config = {
         respectPrefersColorScheme: false,
       },
       navbar: {
-        style: "dark",
         title: "DBSP",
         logo: {
           alt: "DBSP",
           src: "img/logo.svg",
         },
         items: [
-          {
-            type: "docSidebar",
-            sidebarId: "docsSidebar",
-            position: "right",
-            label: "Get Started",
-          },
-          {
-            position: "right",
-            label: "REST API",
-            to: "/api",
-          },
-          { to: "/blog", label: "Blog", position: "right" },
-          {
-            href: "https://github.com/feldera/dbsp",
-            label: "GitHub",
-            position: "right",
-          },
           {
             type: 'search',
             position: 'right',
@@ -108,7 +90,7 @@ const config = {
             title: "Docs",
             items: [
               {
-                label: "Tutorial",
+                label: "Documentation",
                 to: "/docs/intro",
               },
             ],

@@ -1,3 +1,3 @@
 # REST API
 
-Learn more about the provided REST APIs.
+Automatically-generated documentation for our [REST APIs](../../api).
