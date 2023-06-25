@@ -14,8 +14,8 @@
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
   docsSidebar: [
-    "intro",
     "what-is-dbsp",
+    "intro",
     {
       type: "category",
       label: "Demos",
@@ -33,14 +33,17 @@ const sidebars = {
     {
       type: "category",
       label: "Guides",
-      items: ["guides/your-first-program"],
+        items: [
+            "guides/overview",
+            "guides/rust",
+            "guides/sql"
+        ],
     },
     {
       type: "category",
       label: "SQL Reference",
       link: { type: "doc", id: "sql/intro" },
       items: [
-        "sql/structure",
         "sql/types",
         "sql/boolean",
         "sql/comparisons",
@@ -56,6 +59,7 @@ const sidebars = {
       label: "API Reference",
       items: ["api/rest", "api/dbsp", "api/python"],
     },
+    "papers",
     "contribute-to-dbsp",
   ],
 };
