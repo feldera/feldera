@@ -121,7 +121,6 @@ observed by the user is outdated, so the request is rejected."
         new_program,
         update_program,
         compile_program,
-        cancel_program,
         delete_program,
         new_pipeline,
         update_pipeline,
@@ -175,7 +174,6 @@ observed by the user is outdated, so the request is rejected."
         UpdateProgramRequest,
         UpdateProgramResponse,
         CompileProgramRequest,
-        CancelProgramRequest,
         NewPipelineRequest,
         NewPipelineResponse,
         UpdatePipelineRequest,
@@ -804,50 +802,6 @@ async fn compile_program(
         .lock()
         .await
         .set_program_pending(*tenant_id, request.program_id, request.version)
-        .await
-        .map(|_| HttpResponse::Accepted().finish())
-        .unwrap_or_else(|e| http_resp_from_error(&e))
-}
-
-/// Request to cancel ongoing program compilation.
-#[derive(Deserialize, ToSchema)]
-struct CancelProgramRequest {
-    /// Program id.
-    program_id: ProgramId,
-    /// Latest program version known to the client.
-    version: Version,
-}
-
-/// Cancel outstanding compilation request.
-///
-/// The client should poll the `/program_status` endpoint
-/// to determine when the cancelation request completes.
-#[utoipa::path(
-    request_body = CancelProgramRequest,
-    responses(
-        (status = ACCEPTED, description = "Cancelation request submitted."),
-        (status = NOT_FOUND
-            , description = "Specified `program_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
-        (status = CONFLICT
-            , description = "Program version specified in the request doesn't match the latest program version in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Outdated program version '{3}'"))),
-    ),
-    tag = "Program"
-)]
-#[delete("/v0/programs/compile")]
-async fn cancel_program(
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-    request: web::Json<CancelProgramRequest>,
-) -> impl Responder {
-    state
-        .db
-        .lock()
-        .await
-        .cancel_program(*tenant_id, request.program_id, request.version)
         .await
         .map(|_| HttpResponse::Accepted().finish())
         .unwrap_or_else(|e| http_resp_from_error(&e))
