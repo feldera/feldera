@@ -51,10 +51,6 @@ def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Uni
         response_404 = ErrorResponse.from_dict(response.json())
 
         return response_404
-    if response.status_code == HTTPStatus.GONE:
-        response_410 = ErrorResponse.from_dict(response.json())
-
-        return response_410
     if response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY:
         response_422 = ErrorResponse.from_dict(response.json())
 

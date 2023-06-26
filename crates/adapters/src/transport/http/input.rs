@@ -1,7 +1,7 @@
-use crate::{server::http_error, InputConsumer, InputEndpoint, PipelineState, TransportConfig};
+use crate::{ControllerError, InputConsumer, InputEndpoint, PipelineState, TransportConfig};
 use actix::Message;
-use actix_web::{http::StatusCode, web::Payload, HttpResponse};
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use actix_web::{web::Payload, HttpResponse};
+use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use futures_util::StreamExt;
 use log::debug;
 use num_traits::FromPrimitive;
@@ -130,7 +130,7 @@ impl HttpInputEndpoint {
     ///
     /// Returns on reaching the end of the `payload` stream
     /// (if any) or when the pipeline terminates.
-    pub(crate) async fn complete_request(&self, mut payload: Payload) -> HttpResponse {
+    pub(crate) async fn complete_request(&self, mut payload: Payload) -> AnyResult<HttpResponse> {
         debug!("HTTP input endpoint '{}': start of request", self.name());
 
         let mut num_bytes = 0;
@@ -141,10 +141,7 @@ impl HttpInputEndpoint {
                     let _ = status_watch.changed().await;
                 }
                 PipelineState::Terminated => {
-                    return http_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "Pipeline terminated: aborting execution of request",
-                    );
+                    bail!(ControllerError::pipeline_terminating());
                 }
                 PipelineState::Running => {
                     // Check pipeline status at least every second.
@@ -153,25 +150,20 @@ impl HttpInputEndpoint {
                         Ok(Some(Ok(bytes))) => {
                             num_bytes += bytes.len();
                             if let Err(e) = self.push_bytes(&bytes) {
-                                return http_error(
-                                    StatusCode::UNPROCESSABLE_ENTITY,
-                                    &format!("Error ingesting data: '{e}'"),
-                                );
+                                bail!(ControllerError::parse_error(self.name(), &e));
                             }
                         }
                         Ok(Some(Err(e))) => {
-                            let resp = http_error(
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                &format!("Error receiving HTTP request data: '{e}'"),
-                            );
-                            self.error(true, anyhow!(e));
-                            return resp;
+                            self.error(true, anyhow!(e.to_string()));
+                            bail!(ControllerError::input_transport_error(
+                                self.name(),
+                                true,
+                                anyhow!(e)
+                            ));
                         }
                         Ok(None) => {
                             if let Err(e) = self.eoi() {
-                                return http_error(StatusCode::UNPROCESSABLE_ENTITY,
-                                    &format!("Error ingesting data (while processing end-of-input notification): '{e}'")
-                                );
+                                bail!(ControllerError::parse_error(self.name(), &e));
                             }
                             break;
                         }
@@ -184,7 +176,7 @@ impl HttpInputEndpoint {
             "HTTP input endpoint '{}': end of request, {num_bytes} received",
             self.name()
         );
-        HttpResponse::Ok().finish()
+        Ok(HttpResponse::Ok().finish())
     }
 }
 

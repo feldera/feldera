@@ -1,6 +1,10 @@
-from typing import Any, Dict, List, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
 import attr
+
+if TYPE_CHECKING:
+    from ..models.error_response_details import ErrorResponseDetails
+
 
 T = TypeVar("T", bound="ErrorResponse")
 
@@ -10,19 +14,28 @@ class ErrorResponse:
     """Pipeline manager error response.
 
     Attributes:
-        message (str):  Example: Unknown program id 42..
+        details (ErrorResponseDetails):
+        error_code (str):  Example: UnknownInputFormat.
+        message (str):  Example: Unknown input format 'xml'..
     """
 
+    details: "ErrorResponseDetails"
+    error_code: str
     message: str
     additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        details = self.details.to_dict()
+
+        error_code = self.error_code
         message = self.message
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
+                "details": details,
+                "error_code": error_code,
                 "message": message,
             }
         )
@@ -31,10 +44,18 @@ class ErrorResponse:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
+        from ..models.error_response_details import ErrorResponseDetails
+
         d = src_dict.copy()
+        details = ErrorResponseDetails.from_dict(d.pop("details"))
+
+        error_code = d.pop("error_code")
+
         message = d.pop("message")
 
         error_response = cls(
+            details=details,
+            error_code=error_code,
             message=message,
         )
 
