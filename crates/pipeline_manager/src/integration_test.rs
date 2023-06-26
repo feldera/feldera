@@ -15,8 +15,8 @@ struct TestConfig {
 }
 
 impl TestConfig {
-    fn with_endpoint(&self, endpoint: &str) -> String {
-        format!("{}{}", self.dbsp_url, endpoint)
+    fn with_endpoint<S: AsRef<str>>(&self, endpoint: S) -> String {
+        format!("{}{}", self.dbsp_url, endpoint.as_ref())
     }
 
     async fn cleanup(&self) {
@@ -27,9 +27,7 @@ impl TestConfig {
         let pipelines: Value = req.json().await.unwrap();
         for pipeline in pipelines.as_array().unwrap() {
             let id = pipeline.get("pipeline_id").unwrap().as_str().unwrap();
-            let req = config
-                .delete(format!("/v0/pipelines/{}", id).as_str())
-                .await;
+            let req = config.delete(format!("/v0/pipelines/{}", id)).await;
             assert_eq!(StatusCode::OK, req.status())
         }
 
@@ -38,12 +36,12 @@ impl TestConfig {
         let programs: Value = req.json().await.unwrap();
         for program in programs.as_array().unwrap() {
             let id = program.get("program_id").unwrap().as_str().unwrap();
-            let req = config.delete(format!("/v0/programs/{}", id).as_str()).await;
+            let req = config.delete(format!("/v0/programs/{}", id)).await;
             assert_eq!(StatusCode::OK, req.status())
         }
     }
 
-    async fn get(&self, endpoint: &str) -> ClientResponse<Decoder<Payload>> {
+    async fn get<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
         self.client
             .get(self.with_endpoint(endpoint))
             .send()
@@ -51,7 +49,11 @@ impl TestConfig {
             .unwrap()
     }
 
-    async fn post(&self, endpoint: &str, json: &Value) -> ClientResponse<Decoder<Payload>> {
+    async fn post<S: AsRef<str>>(
+        &self,
+        endpoint: S,
+        json: &Value,
+    ) -> ClientResponse<Decoder<Payload>> {
         self.client
             .post(self.with_endpoint(endpoint))
             .send_json(&json)
@@ -59,10 +61,22 @@ impl TestConfig {
             .unwrap()
     }
 
-    async fn delete(&self, endpoint: &str) -> ClientResponse<Decoder<Payload>> {
+    async fn delete<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
         self.client
             .delete(self.with_endpoint(endpoint))
             .send()
+            .await
+            .unwrap()
+    }
+
+    async fn delete_with_payload<S: AsRef<str>>(
+        &self,
+        endpoint: S,
+        with_payload: Value,
+    ) -> ClientResponse<Decoder<Payload>> {
+        self.client
+            .delete(self.with_endpoint(endpoint))
+            .send_json(&with_payload)
             .await
             .unwrap()
     }
@@ -84,9 +98,7 @@ impl TestConfig {
             if now.elapsed().as_secs() > 100 {
                 panic!("Compilation timeout");
             }
-            let mut resp = self
-                .get(format!("/v0/program?id={}", program_id).as_str())
-                .await;
+            let mut resp = self.get(format!("/v0/program?id={}", program_id)).await;
             let val: Value = resp.json().await.unwrap();
             let status = val.get("status").unwrap().as_str().unwrap();
             if status != "CompilingSql" && status != "CompilingRust" && status != "Pending" {
@@ -149,7 +161,7 @@ async fn program_create_compile_delete() {
     let version = resp.get("version").unwrap().as_i64().unwrap();
     config.compile(id, version).await;
 
-    let resp = config.delete(format!("/v0/programs/{}", id).as_str()).await;
+    let resp = config.delete(format!("/v0/programs/{}", id)).await;
     assert_eq!(StatusCode::OK, resp.status());
 
     let resp = config.get(format!("/v0/program?id={}", id).as_str()).await;
