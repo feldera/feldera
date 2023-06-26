@@ -1,13 +1,23 @@
-use std::time::{self, Instant};
+use std::{
+    process::Command,
+    time::{self, Duration, Instant},
+};
 
 use actix_http::{encoding::Decoder, Payload, StatusCode};
 use awc::ClientResponse;
-use log::info;
 use serde_json::{json, Value};
 use serial_test::serial;
+use tempfile::TempDir;
+use tokio::sync::OnceCell;
+
+use crate::{compiler::Compiler, config::ManagerConfig};
 
 const TEST_DBSP_URL_VAR: &str = "TEST_DBSP_URL";
-const TEST_DBSP_URL_DEFAULT: &str = "http://localhost:8085";
+const TEST_DBSP_DEFAULT_PORT: u16 = 8089;
+
+// Used if we are testing against a local DBSP instance
+// whose lifecycle is managed by this test file
+static INSTANCE: OnceCell<TempDir> = OnceCell::const_new();
 
 struct TestConfig {
     dbsp_url: String,
@@ -69,18 +79,6 @@ impl TestConfig {
             .unwrap()
     }
 
-    async fn delete_with_payload<S: AsRef<str>>(
-        &self,
-        endpoint: S,
-        with_payload: Value,
-    ) -> ClientResponse<Decoder<Payload>> {
-        self.client
-            .delete(self.with_endpoint(endpoint))
-            .send_json(&with_payload)
-            .await
-            .unwrap()
-    }
-
     async fn compile(&self, program_id: &str, version: i64) {
         let compilation_request = json!({
             "program_id":  program_id,
@@ -94,6 +92,7 @@ impl TestConfig {
 
         let now = Instant::now();
         loop {
+            println!("Waiting for compilation");
             std::thread::sleep(time::Duration::from_secs(1));
             if now.elapsed().as_secs() > 100 {
                 panic!("Compilation timeout");
@@ -115,16 +114,70 @@ impl TestConfig {
 async fn setup() -> TestConfig {
     let dbsp_url = match std::env::var(TEST_DBSP_URL_VAR) {
         Ok(val) => {
-            info!("Running integration tests against TEST_DBSP_URL: {}", val);
+            println!("Running integration test against TEST_DBSP_URL: {}", val);
             val
         }
         Err(e) => {
-            info!(
-                "Could not get TEST_DBSP_URL environment variable (reason: {}).
-                Running integration tests against: localhost:8085",
-                e
-            );
-            TEST_DBSP_URL_DEFAULT.to_owned()
+            INSTANCE
+                .get_or_init(|| async {
+                    println!(
+                        "Could not get TEST_DBSP_URL environment variable (reason: {}). Running integration test against: localhost:{}",
+                        e, TEST_DBSP_DEFAULT_PORT
+                    );
+                    println!("Performing one time initialization for integration tests.");
+                    println!("Initializing a postgres container");
+                    let _output = Command::new("docker")
+                        .args([
+                            "compose",
+                            "-f",
+                            "../../deploy/docker-compose.yml",
+                            "-f",
+                            "../../deploy/docker-compose-dev.yml",
+                            "up",
+                            "--pull",
+                            "always",
+                            "--renew-anon-volumes",
+                            "--force-recreate",
+                            "-d",
+                            "db",
+                        ])
+                        .output()
+                        .unwrap();
+                    tokio::time::sleep(Duration::from_millis(5000)).await;
+                    let tmp_dir = TempDir::new().unwrap();
+                    let manager_config = ManagerConfig {
+                        port: TEST_DBSP_DEFAULT_PORT,
+                        bind_address: "0.0.0.0".to_owned(),
+                        logfile: None,
+                        working_directory: tmp_dir.path().to_str().unwrap().to_owned(),
+                        sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
+                        dbsp_override_path: Some("../../".to_owned()),
+                        debug: false,
+                        unix_daemon: false,
+                        use_auth: false,
+                        db_connection_string: "postgresql://postgres:postgres@localhost:6666"
+                            .to_owned(),
+                        dump_openapi: false,
+                        precompile: true,
+                        config_file: None,
+                        initial_sql: None,
+                        dev_mode: false,
+                    };
+                    let manager_config = manager_config.canonicalize().unwrap();
+                    println!("Using ManagerConfig: {:?}", manager_config);
+                    println!("Issuing Compiler::precompile_dependencies(). This will be slow.");
+                    Compiler::precompile_dependencies(&manager_config)
+                        .await
+                        .unwrap();
+                    println!("Completed Compiler::precompile_dependencies().");
+                    let _ = std::thread::spawn(|| {
+                        super::run(manager_config).unwrap();
+                    });
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                    tmp_dir
+                })
+                .await;
+            format!("http://localhost:{}", TEST_DBSP_DEFAULT_PORT).to_owned()
         }
     };
     let client = awc::Client::default();
@@ -156,14 +209,11 @@ async fn program_create_compile_delete() {
     let mut req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
     let resp: Value = req.json().await.unwrap();
-
     let id = resp.get("program_id").unwrap().as_str().unwrap();
     let version = resp.get("version").unwrap().as_i64().unwrap();
     config.compile(id, version).await;
-
     let resp = config.delete(format!("/v0/programs/{}", id)).await;
     assert_eq!(StatusCode::OK, resp.status());
-
     let resp = config.get(format!("/v0/program?id={}", id).as_str()).await;
     assert_eq!(StatusCode::NOT_FOUND, resp.status());
 }
