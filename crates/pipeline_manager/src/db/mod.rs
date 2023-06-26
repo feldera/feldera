@@ -6,13 +6,14 @@ use crate::{
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use dbsp_adapters::DetailedError;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use futures_util::TryFutureExt;
 use log::{debug, error};
 use openssl::sha;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{error::Error as StdError, fmt, fmt::Display};
+use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display};
 use storage::Storage;
 use tokio_postgres::NoTls;
 use utoipa::ToSchema;
@@ -111,49 +112,72 @@ impl Display for AttachedConnectorId {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(transparent)]
 #[serde(transparent)]
-pub(crate) struct Version(#[cfg_attr(test, proptest(strategy = "1..25i64"))] i64);
+pub(crate) struct Version(#[cfg_attr(test, proptest(strategy = "1..25i64"))] pub i64);
 impl Display for Version {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
 pub(crate) enum DBError {
-    UnknownProgram(ProgramId),
-    OutdatedProgramVersion(Version),
-    UnknownPipeline(PipelineId),
-    UnknownConnector(ConnectorId),
-    UnknownTenant(TenantId),
-    UnknownAttachedConnector(PipelineId, String),
-    UnknownName(String),
+    UnknownProgram {
+        program_id: ProgramId,
+    },
+    OutdatedProgramVersion {
+        expected_version: Version,
+    },
+    UnknownPipeline {
+        pipeline_id: PipelineId,
+    },
+    UnknownConnector {
+        connector_id: ConnectorId,
+    },
+    UnknownTenant {
+        tenant_id: TenantId,
+    },
+    UnknownAttachedConnector {
+        pipeline_id: PipelineId,
+        name: String,
+    },
+    UnknownName {
+        name: String,
+    },
     DuplicateName,
     DuplicateKey,
     InvalidKey,
-    UniqueKeyViolation(&'static str),
+    UniqueKeyViolation {
+        constraint: &'static str,
+    },
     UnknownPipelineStatus,
 }
 
 impl Display for DBError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DBError::UnknownProgram(program_id) => write!(f, "Unknown program id '{program_id}'"),
-            DBError::OutdatedProgramVersion(version) => {
-                write!(f, "Outdated program version '{version}'")
+            DBError::UnknownProgram { program_id } => {
+                write!(f, "Unknown program id '{program_id}'")
             }
-            DBError::UnknownPipeline(pipeline_id) => {
+            DBError::OutdatedProgramVersion { expected_version } => {
+                write!(
+                    f,
+                    "Outdated program version. Expected version: '{expected_version}'"
+                )
+            }
+            DBError::UnknownPipeline { pipeline_id } => {
                 write!(f, "Unknown pipeline id '{pipeline_id}'")
             }
-            DBError::UnknownAttachedConnector(pipeline_id, name) => {
+            DBError::UnknownAttachedConnector { pipeline_id, name } => {
                 write!(
                     f,
                     "Pipeline '{pipeline_id}' does not have a connector named '{name}'"
                 )
             }
-            DBError::UnknownConnector(connector_id) => {
+            DBError::UnknownConnector { connector_id } => {
                 write!(f, "Unknown connector id '{connector_id}'")
             }
-            DBError::UnknownTenant(tenant_id) => {
+            DBError::UnknownTenant { tenant_id } => {
                 write!(f, "Unknown tenant id '{tenant_id}'")
             }
             DBError::DuplicateName => {
@@ -165,11 +189,32 @@ impl Display for DBError {
             DBError::InvalidKey => {
                 write!(f, "Could not validate API")
             }
-            DBError::UnknownName(name) => {
+            DBError::UnknownName { name } => {
                 write!(f, "An entity with name {name} was not found")
             }
-            DBError::UniqueKeyViolation(id) => write!(f, "Unique key violation for '{id}'"),
+            DBError::UniqueKeyViolation { constraint } => {
+                write!(f, "Unique key violation for '{constraint}'")
+            }
             DBError::UnknownPipelineStatus => write!(f, "Unknown pipeline status encountered"),
+        }
+    }
+}
+
+impl DetailedError for DBError {
+    fn error_code(&self) -> Cow<'static, str> {
+        match self {
+            Self::UnknownProgram { .. } => Cow::from("UnknownProgram"),
+            Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
+            Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
+            Self::UnknownConnector { .. } => Cow::from("UnknownConnector"),
+            Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
+            Self::UnknownAttachedConnector { .. } => Cow::from("UnknownAttachedConnector"),
+            Self::UnknownName { .. } => Cow::from("UnknownName"),
+            Self::DuplicateName => Cow::from("DuplicateName"),
+            Self::DuplicateKey => Cow::from("DuplicateKey"),
+            Self::InvalidKey => Cow::from("InvalidKey"),
+            Self::UniqueKeyViolation { .. } => Cow::from("UniqueKeyViolation"),
+            Self::UnknownPipelineStatus => Cow::from("UnknownPipelineStatus"),
         }
     }
 }
@@ -443,7 +488,7 @@ impl Storage for ProjectDB {
             "SELECT name, description, version, status, error, code, schema FROM program WHERE id = $1 AND tenant_id = $2", &[&program_id.0, &tenant_id.0]
         )
         .await?
-        .ok_or(DBError::UnknownProgram(program_id))?;
+        .ok_or(DBError::UnknownProgram{program_id})?;
 
         let name: String = row.get(0);
         let description: String = row.get(1);
@@ -541,7 +586,7 @@ impl Storage for ProjectDB {
         if let Some(row) = row {
             Ok(Version(row.get(0)))
         } else {
-            Err(DBError::UnknownProgram(program_id).into())
+            Err(DBError::UnknownProgram { program_id }.into())
         }
     }
 
@@ -660,7 +705,7 @@ impl Storage for ProjectDB {
             )
             .await?;
         if row.is_none() {
-            Err(anyhow!(DBError::UnknownProgram(program_id)))
+            Err(anyhow!(DBError::UnknownProgram { program_id }))
         } else {
             Ok(())
         }
@@ -698,7 +743,7 @@ impl Storage for ProjectDB {
         if res > 0 {
             Ok(())
         } else {
-            Err(anyhow!(DBError::UnknownProgram(program_id)))
+            Err(anyhow!(DBError::UnknownProgram { program_id }))
         }
     }
 
@@ -810,7 +855,7 @@ impl Storage for ProjectDB {
 
             Ok(descr)
         } else {
-            Err(DBError::UnknownPipeline(pipeline_id).into())
+            Err(DBError::UnknownPipeline { pipeline_id }.into())
         }
     }
 
@@ -861,7 +906,7 @@ impl Storage for ProjectDB {
 
             Ok(descr)
         } else {
-            Err(DBError::UnknownName(name).into())
+            Err(DBError::UnknownName { name }.into())
         }
     }
 
@@ -937,7 +982,7 @@ impl Storage for ProjectDB {
             )
             .await?;
         if row.is_none() {
-            return Err(anyhow!(DBError::UnknownPipeline(pipeline_id)));
+            return Err(anyhow!(DBError::UnknownPipeline { pipeline_id }));
         }
         if let Some(connectors) = connectors {
             // Delete all existing attached connectors.
@@ -961,7 +1006,7 @@ impl Storage for ProjectDB {
         txn.commit().await?;
         match row {
             Some(row) => Ok(Version(row.get(0))),
-            None => Err(DBError::UnknownPipeline(pipeline_id).into()),
+            None => Err(DBError::UnknownPipeline { pipeline_id }.into()),
         }
     }
 
@@ -978,7 +1023,7 @@ impl Storage for ProjectDB {
         if res > 0 {
             Ok(())
         } else {
-            Err(anyhow!(DBError::UnknownPipeline(pipeline_id)))
+            Err(anyhow!(DBError::UnknownPipeline { pipeline_id }))
         }
     }
 
@@ -1001,10 +1046,10 @@ impl Storage for ProjectDB {
 
         match row {
             Some(row) => Ok(row.get(0)),
-            None => Err(anyhow!(DBError::UnknownAttachedConnector(
+            None => Err(anyhow!(DBError::UnknownAttachedConnector {
                 pipeline_id,
-                name.to_string()
-            ))),
+                name: name.to_string()
+            })),
         }
     }
 
@@ -1029,7 +1074,7 @@ impl Storage for ProjectDB {
         if res > 0 {
             Ok(())
         } else {
-            Err(DBError::UnknownPipeline(pipeline_id).into())
+            Err(DBError::UnknownPipeline { pipeline_id }.into())
         }
     }
 
@@ -1144,7 +1189,7 @@ impl Storage for ProjectDB {
                 config,
             })
         } else {
-            Err(DBError::UnknownName(name).into())
+            Err(DBError::UnknownName { name }.into())
         }
     }
 
@@ -1175,7 +1220,7 @@ impl Storage for ProjectDB {
                 config,
             })
         } else {
-            Err(DBError::UnknownConnector(connector_id).into())
+            Err(DBError::UnknownConnector { connector_id }.into())
         }
     }
 
@@ -1227,7 +1272,7 @@ impl Storage for ProjectDB {
         if res > 0 {
             Ok(())
         } else {
-            Err(anyhow!(DBError::UnknownConnector(connector_id)))
+            Err(anyhow!(DBError::UnknownConnector { connector_id }))
         }
     }
 
@@ -1493,7 +1538,9 @@ impl ProjectDB {
             .map_err(Self::maybe_unique_violation)
             .await?;
         if rows == 0 {
-            Err(anyhow!(DBError::UnknownConnector(ac.connector_id)))
+            Err(anyhow!(DBError::UnknownConnector {
+                connector_id: ac.connector_id
+            }))
         } else {
             Ok(())
         }
@@ -1530,19 +1577,19 @@ impl ProjectDB {
                 if dberr.code() == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION {
                     match dberr.constraint() {
                         Some("program_pkey") => {
-                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation(
-                                "program_pkey"
-                            )))
+                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation {
+                                constraint: "program_pkey"
+                            }))
                         }
                         Some("connector_pkey") => {
-                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation(
-                                "connector_pkey"
-                            )))
+                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation {
+                                constraint: "connector_pkey"
+                            }))
                         }
                         Some("pipeline_pkey") => {
-                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation(
-                                "pipeline_pkey"
-                            )))
+                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation {
+                                constraint: "pipeline_pkey"
+                            }))
                         }
                         Some("api_key_pkey") => {
                             return EitherError::Any(anyhow!(DBError::DuplicateKey))
@@ -1573,7 +1620,7 @@ impl ProjectDB {
                     && db_err.constraint() == Some("pipeline_program_id_tenant_id_fkey")
                 {
                     if let Some(program_id) = program_id {
-                        return EitherError::Any(anyhow!(DBError::UnknownProgram(program_id)));
+                        return EitherError::Any(anyhow!(DBError::UnknownProgram { program_id }));
                     } else {
                         unreachable!("program_id cannot be none");
                     }
@@ -1596,7 +1643,7 @@ impl ProjectDB {
                     && (db_err.constraint() == Some("pipeline_pipeline_id_fkey")
                         || db_err.constraint() == Some("attached_connector_pipeline_id_fkey"))
                 {
-                    return EitherError::Any(anyhow!(DBError::UnknownPipeline(pipeline_id)));
+                    return EitherError::Any(anyhow!(DBError::UnknownPipeline { pipeline_id }));
                 }
             }
         }
@@ -1616,12 +1663,12 @@ impl ProjectDB {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION {
                     if let Some(constraint_name) = db_err.constraint() {
                         if constraint_name.ends_with("pipeline_program_id_tenant_id_fkey") {
-                            return EitherError::Any(anyhow!(DBError::UnknownProgram(ProgramId(
-                                missing_id.unwrap()
-                            ))));
+                            return EitherError::Any(anyhow!(DBError::UnknownProgram {
+                                program_id: ProgramId(missing_id.unwrap())
+                            }));
                         }
                         if constraint_name.ends_with("tenant_id_fkey") {
-                            return EitherError::Any(anyhow!(DBError::UnknownTenant(tenant_id)));
+                            return EitherError::Any(anyhow!(DBError::UnknownTenant { tenant_id }));
                         }
                     }
                 }

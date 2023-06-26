@@ -10,6 +10,7 @@ from .csv_encoder_config import CsvEncoderConfig
 from .csv_parser_config import CsvParserConfig
 from .egress_mode import EgressMode
 from .error_response import ErrorResponse
+from .error_response_details import ErrorResponseDetails
 from .file_input_config import FileInputConfig
 from .file_output_config import FileOutputConfig
 from .format_config import FormatConfig
@@ -67,6 +68,7 @@ __all__ = (
     "CsvParserConfig",
     "EgressMode",
     "ErrorResponse",
+    "ErrorResponseDetails",
     "FileInputConfig",
     "FileOutputConfig",
     "FormatConfig",

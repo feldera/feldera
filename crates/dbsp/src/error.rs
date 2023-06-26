@@ -1,10 +1,16 @@
 use crate::{RuntimeError, SchedulerError};
 use anyhow::Error as AnyError;
+use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
+    borrow::Cow,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
     io::Error as IOError,
 };
+
+pub trait DetailedError: StdError + Serialize {
+    fn error_code(&self) -> Cow<'static, str>;
+}
 
 #[derive(Debug)]
 pub enum Error {
@@ -12,7 +18,38 @@ pub enum Error {
     Runtime(RuntimeError),
     IO(IOError),
     Constructor(AnyError),
-    Custom(String),
+}
+
+impl DetailedError for Error {
+    fn error_code(&self) -> Cow<'static, str> {
+        match self {
+            Self::Scheduler(error) => Cow::from(format!("SchedulerError.{}", error.error_code())),
+            Self::Runtime(error) => Cow::from(format!("RuntimeError.{}", error.error_code())),
+            Self::IO(_) => Cow::from("IOError"),
+            Self::Constructor(_) => Cow::from("CircuitConstructorError"),
+        }
+    }
+}
+
+impl Serialize for Error {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Scheduler(error) => error.serialize(serializer),
+            Self::Runtime(error) => error.serialize(serializer),
+            Self::IO(error) => {
+                let mut ser = serializer.serialize_struct("IOError", 2)?;
+                ser.serialize_field("kind", &error.kind().to_string())?;
+                ser.serialize_field("os_error", &error.raw_os_error())?;
+                ser.end()
+            }
+            Self::Constructor(_) => serializer
+                .serialize_struct("CircuitConstructorError", 0)?
+                .end(),
+        }
+    }
 }
 
 impl StdError for Error {}
@@ -30,9 +67,8 @@ impl Display for Error {
                 write!(f, "IO error: '{error}'")
             }
             Self::Constructor(error) => {
-                write!(f, "construction error: '{error}'")
+                write!(f, "circuit construction error: '{error}'")
             }
-            Self::Custom(error) => f.write_str(error),
         }
     }
 }
@@ -52,11 +88,5 @@ impl From<SchedulerError> for Error {
 impl From<RuntimeError> for Error {
     fn from(error: RuntimeError) -> Self {
         Self::Runtime(error)
-    }
-}
-
-impl From<String> for Error {
-    fn from(error: String) -> Self {
-        Self::Custom(error)
     }
 }

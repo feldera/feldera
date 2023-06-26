@@ -22,9 +22,6 @@
 //! * Runner.  The runner component is responsible for starting and killing
 //!   compiled pipelines and for interacting with them at runtime.
 
-// TODOs:
-// * Tests.
-
 use actix_web::dev::Service;
 use actix_web::{
     delete,
@@ -42,27 +39,32 @@ use actix_web::{
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
-use anyhow::{Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use auth::JwkCache;
 use clap::Parser;
 use colored::Colorize;
 #[cfg(unix)]
 use daemonize::Daemonize;
+use dbsp_adapters::{ControllerError, DetailedError, ErrorResponse};
 use env_logger::Env;
 
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
-use std::{env, io::Write};
 use std::{
+    borrow::Cow,
+    error::Error as StdError,
+    fmt::{Display, Error as FmtError, Formatter},
     fs::{read, write},
     net::TcpListener,
     sync::Arc,
 };
+use std::{env, io::Write};
 use tokio::sync::Mutex;
 use utoipa::{openapi::OpenApi as OpenApiDoc, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
-use uuid::Uuid;
+use uuid::{uuid, Uuid};
 
 mod auth;
 mod compiler;
@@ -78,9 +80,62 @@ use db::{
     storage::Storage, AttachedConnector, AttachedConnectorId, ConnectorId, DBError, PipelineId,
     ProgramDescr, ProgramId, ProjectDB, Version,
 };
-use runner::{LocalRunner, Runner, RunnerError};
+use runner::{LocalRunner, Runner, RunnerError, STARTUP_TIMEOUT};
 
 use crate::auth::TenantId;
+
+/// Errors validating API endpoint parameters.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum ApiError {
+    ProgramNotSpecified,
+    PipelineNotSpecified,
+    ConnectorNotSpecified,
+    // I don't think this can ever happen.
+    MissingUrlEncodedParam { param: &'static str },
+    InvalidUuidParam { value: String, error: String },
+    InvalidPipelineAction { action: String },
+}
+
+impl StdError for ApiError {}
+
+impl Display for ApiError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        match self {
+            Self::ProgramNotSpecified => {
+                f.write_str("Program not specified: set either '?id=' or '?name='")
+            }
+            Self::PipelineNotSpecified => {
+                f.write_str("Pipeline not specified: set either '?id=' or '?name='")
+            }
+            Self::ConnectorNotSpecified => {
+                f.write_str("Connector not specified: set either '?id=' or '?name='")
+            }
+            Self::MissingUrlEncodedParam { param } => {
+                write!(f, "Missing URL-encoded parameter '{param}'")
+            }
+            Self::InvalidUuidParam { value, error } => {
+                write!(f, "Invalid UUID string '{value}': '{error}'")
+            }
+            Self::InvalidPipelineAction { action } => {
+                write!(f, "Invalid pipeline action '{action}'; valid actions are: 'deploy', 'start', 'pause', or 'shutdown'")
+            }
+        }
+    }
+}
+
+impl DetailedError for ApiError {
+    fn error_code(&self) -> Cow<'static, str> {
+        match self {
+            Self::ProgramNotSpecified => Cow::from("ProgramNotSpecified"),
+            Self::PipelineNotSpecified => Cow::from("PipelineNotSpecified"),
+            Self::ConnectorNotSpecified => Cow::from("ConnectorNotSpecified"),
+            Self::MissingUrlEncodedParam { .. } => Cow::from("MissingUrlEncodedParam"),
+            Self::InvalidUuidParam { .. } => Cow::from("InvalidUuidParam"),
+            Self::InvalidPipelineAction { .. } => Cow::from("InvalidPipelineAction"),
+        }
+    }
+}
 
 #[derive(OpenApi)]
 #[openapi(
@@ -388,85 +443,185 @@ where
         .service(ResourceFiles::new("/", generated))
 }
 
-/// Pipeline manager error response.
-#[derive(Serialize, ToSchema)]
-pub(crate) struct ErrorResponse {
-    #[schema(example = "Unknown program id 42.")]
-    message: String,
-}
-
-impl ErrorResponse {
-    pub(crate) fn new(message: &str) -> Self {
-        Self {
-            message: message.to_string(),
-        }
-    }
-}
-
 fn http_resp_from_error(error: &AnyError) -> HttpResponse {
     debug!("Returning HTTP error: {:?}", error);
     if let Some(db_error) = error.downcast_ref::<DBError>() {
-        let message = db_error.to_string();
-        match db_error {
-            DBError::UnknownProgram(_) => HttpResponse::NotFound(),
+        match &db_error {
+            DBError::UnknownProgram { .. } => HttpResponse::NotFound(),
             DBError::DuplicateName => HttpResponse::Conflict(),
-            DBError::OutdatedProgramVersion(_) => HttpResponse::Conflict(),
-            DBError::UnknownPipeline(_) => HttpResponse::NotFound(),
-            DBError::UnknownConnector(_) => HttpResponse::NotFound(),
+            DBError::OutdatedProgramVersion { .. } => HttpResponse::Conflict(),
+            DBError::UnknownPipeline { .. } => HttpResponse::NotFound(),
+            DBError::UnknownConnector { .. } => HttpResponse::NotFound(),
             // TODO: should we report not found instead?
-            DBError::UnknownTenant(_) => HttpResponse::Unauthorized(),
-            DBError::UnknownAttachedConnector(..) => HttpResponse::NotFound(),
+            DBError::UnknownTenant { .. } => HttpResponse::Unauthorized(),
+            DBError::UnknownAttachedConnector { .. } => HttpResponse::NotFound(),
             // This error should never bubble up till here
             DBError::DuplicateKey => HttpResponse::InternalServerError(),
             DBError::InvalidKey => HttpResponse::Unauthorized(),
-            DBError::UnknownName(_) => HttpResponse::NotFound(),
+            DBError::UnknownName { .. } => HttpResponse::NotFound(),
             // should in practice not happen, e.g., would mean a Uuid conflict:
-            DBError::UniqueKeyViolation(_) => HttpResponse::InternalServerError(),
+            DBError::UniqueKeyViolation { .. } => HttpResponse::InternalServerError(),
             // should in practice not happen, e.g., would mean invalid status in db:
             DBError::UnknownPipelineStatus => HttpResponse::InternalServerError(),
         }
-        .json(ErrorResponse::new(&message))
+        .json(ErrorResponse::from_error(db_error))
     } else if let Some(runner_error) = error.downcast_ref::<RunnerError>() {
-        let message = runner_error.to_string();
-        match runner_error {
-            RunnerError::PipelineShutdown(_) => HttpResponse::Gone(),
+        match &runner_error {
+            RunnerError::PipelineShutdown { .. } => HttpResponse::NotFound(),
+            RunnerError::HttpForwardError { .. } => HttpResponse::InternalServerError(),
+            RunnerError::PortFileParseError { .. } => HttpResponse::InternalServerError(),
+            RunnerError::PipelineInitializationTimeout { .. } => {
+                HttpResponse::InternalServerError()
+            }
+            RunnerError::ProgramNotSet { .. } => HttpResponse::BadRequest(),
+            RunnerError::ProgramNotCompiled { .. } => HttpResponse::ServiceUnavailable(),
+            RunnerError::PipelineStartupError { .. } => HttpResponse::InternalServerError(),
         }
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(ErrorResponse::new(&message))
+        .json(ErrorResponse::from_error(runner_error))
+    } else if let Some(api_error) = error.downcast_ref::<ApiError>() {
+        match &api_error {
+            ApiError::ProgramNotSpecified => HttpResponse::BadRequest(),
+            ApiError::PipelineNotSpecified => HttpResponse::BadRequest(),
+            ApiError::ConnectorNotSpecified => HttpResponse::BadRequest(),
+            ApiError::MissingUrlEncodedParam { .. } => HttpResponse::BadRequest(),
+            ApiError::InvalidUuidParam { .. } => HttpResponse::BadRequest(),
+            ApiError::InvalidPipelineAction { .. } => HttpResponse::BadRequest(),
+        }
+        .json(ErrorResponse::from_error(api_error))
     } else {
         warn!("Unexpected error in http_resp_from_error: {}", error);
         warn!("Backtrace: {:#?}", error.backtrace());
-        HttpResponse::InternalServerError().json(ErrorResponse::new(&error.to_string()))
+        HttpResponse::InternalServerError().json(ErrorResponse::new(
+            &error.to_string(),
+            "UnknownError",
+            json!(null),
+        ))
     }
 }
 
-fn parse_program_id_param(req: &HttpRequest) -> Result<ProgramId, HttpResponse> {
-    match req.match_info().get("program_id") {
-        None => Err(HttpResponse::BadRequest().body("missing program id argument")),
-        Some(program_id) => {
-            match program_id.parse::<Uuid>() {
-                Err(e) => Err(HttpResponse::BadRequest()
-                    .body(format!("invalid program id '{program_id}': {e}"))),
-                Ok(program_id) => Ok(ProgramId(program_id)),
-            }
-        }
-    }
+// Example errors for use in OpenApi docs.
+
+fn example_unknown_program() -> ErrorResponse {
+    ErrorResponse::from_error(&DBError::UnknownProgram {
+        program_id: ProgramId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
+    })
 }
 
-fn parse_pipeline_id_param(req: &HttpRequest) -> Result<PipelineId, HttpResponse> {
-    match req.match_info().get("pipeline_id") {
-        None => Err(HttpResponse::BadRequest().body("missing pipeline id argument")),
-        Some(pipeline_id) => match pipeline_id.parse::<Uuid>() {
-            Err(e) => Err(HttpResponse::BadRequest()
-                .body(format!("invalid pipeline id '{pipeline_id}': {e}"))),
-            Ok(pipeline_id) => Ok(PipelineId(pipeline_id)),
+fn example_duplicate_name() -> ErrorResponse {
+    ErrorResponse::from_error(&DBError::DuplicateName)
+}
+
+fn example_outdated_program_version() -> ErrorResponse {
+    ErrorResponse::from_error(&DBError::OutdatedProgramVersion {
+        expected_version: Version(5),
+    })
+}
+
+fn example_unknown_pipeline() -> ErrorResponse {
+    ErrorResponse::from_error(&DBError::UnknownPipeline {
+        pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
+    })
+}
+
+fn example_unknown_connector() -> ErrorResponse {
+    ErrorResponse::from_error(&DBError::UnknownConnector {
+        connector_id: ConnectorId(uuid!("d764b9e2-19f2-4572-ba20-8b42641b07c4")),
+    })
+}
+
+fn example_unknown_name() -> ErrorResponse {
+    ErrorResponse::from_error(&DBError::UnknownName {
+        name: "unknown_name".to_string(),
+    })
+}
+
+fn example_unknown_input_table(table: &str) -> ErrorResponse {
+    ErrorResponse::from_error(&ControllerError::unknown_input_stream(table))
+}
+
+fn example_unknown_output_table(table: &str) -> ErrorResponse {
+    ErrorResponse::from_error(&ControllerError::unknown_output_stream(table))
+}
+
+fn example_unknown_input_format() -> ErrorResponse {
+    ErrorResponse::from_error(&ControllerError::unknown_input_format("xml"))
+}
+
+fn example_parse_error() -> ErrorResponse {
+    ErrorResponse::from_error(&ControllerError::parse_error(
+        "api-ingress-my_table-d24e60a3-9058-4751-aa6b-b88f4ddfd7bd",
+        &"missing field 'column_name'",
+    ))
+}
+
+fn example_unknown_output_format() -> ErrorResponse {
+    ErrorResponse::from_error(&ControllerError::unknown_output_format("xml"))
+}
+
+fn example_pipeline_shutdown() -> ErrorResponse {
+    ErrorResponse::from_error(&RunnerError::PipelineShutdown {
+        pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
+    })
+}
+
+fn example_program_not_set() -> ErrorResponse {
+    ErrorResponse::from_error(&RunnerError::ProgramNotSet {
+        pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
+    })
+}
+
+fn example_program_not_compiled() -> ErrorResponse {
+    ErrorResponse::from_error(&RunnerError::ProgramNotCompiled {
+        pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
+    })
+}
+
+fn example_pipeline_timeout() -> ErrorResponse {
+    ErrorResponse::from_error(&RunnerError::PipelineInitializationTimeout {
+        pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
+        timeout: STARTUP_TIMEOUT,
+    })
+}
+
+fn example_invalid_uuid_param() -> ErrorResponse {
+    ErrorResponse::from_error(&ApiError::InvalidUuidParam{value: "not_a_uuid".to_string(), error: "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1".to_string()})
+}
+
+fn example_program_not_specified() -> ErrorResponse {
+    ErrorResponse::from_error(&ApiError::ProgramNotSpecified)
+}
+
+fn example_pipeline_not_specified() -> ErrorResponse {
+    ErrorResponse::from_error(&ApiError::PipelineNotSpecified)
+}
+
+fn example_connector_not_specified() -> ErrorResponse {
+    ErrorResponse::from_error(&ApiError::ConnectorNotSpecified)
+}
+
+fn example_invalid_pipeline_action() -> ErrorResponse {
+    ErrorResponse::from_error(&ApiError::InvalidPipelineAction {
+        action: "my_action".to_string(),
+    })
+}
+
+fn parse_uuid_param(req: &HttpRequest, param_name: &'static str) -> AnyResult<Uuid> {
+    match req.match_info().get(param_name) {
+        None => bail!(ApiError::MissingUrlEncodedParam { param: param_name }),
+        Some(id) => match id.parse::<Uuid>() {
+            Err(e) => bail!(ApiError::InvalidUuidParam {
+                value: id.to_string(),
+                error: e.to_string()
+            }),
+            Ok(uuid) => Ok(uuid),
         },
     }
 }
 
-fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, HttpResponse> {
+fn parse_pipeline_action(req: &HttpRequest) -> AnyResult<&str> {
     match req.match_info().get("action") {
-        None => Err(HttpResponse::BadRequest().body("missing action id argument")),
+        None => bail!(ApiError::MissingUrlEncodedParam { param: "action" }),
         Some(action) => Ok(action),
     }
 }
@@ -511,13 +666,13 @@ struct ProgramCodeResponse {
     responses(
         (status = OK, description = "Program data and code retrieved successfully.", body = ProgramCodeResponse),
         (status = BAD_REQUEST
-            , description = "Missing or invalid `program_id` parameter."
+            , description = "Specified program id is not a valid uuid."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Missing 'program_id' parameter."))),
+            , example = json!(example_invalid_uuid_param())),
         (status = NOT_FOUND
-            , description = "Specified `program_id` does not exist in the database."
+            , description = "Specified program id does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
+            , example = json!(example_unknown_program())),
     ),
     params(
         ("program_id" = Uuid, Path, description = "Unique program identifier")
@@ -530,11 +685,11 @@ async fn program_code(
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> impl Responder {
-    let program_id = match parse_program_id_param(&req) {
+    let program_id = match parse_uuid_param(&req, "program_id") {
         Err(e) => {
-            return e;
+            return http_resp_from_error(&e);
         }
-        Ok(program_id) => program_id,
+        Ok(program_id) => ProgramId(program_id),
     };
 
     state
@@ -557,13 +712,17 @@ async fn program_code(
     responses(
         (status = OK, description = "Program status retrieved successfully.", body = ProgramDescr),
         (status = BAD_REQUEST
-            , description = "Missing or invalid `program_id` parameter."
+            , description = "Program not specified: set either '?id=' or '?name='."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Missing 'program_id' parameter."))),
+            , example = json!(example_program_not_specified())),
         (status = NOT_FOUND
-            , description = "Specified `program_id` does not exist in the database."
+            , description = "Specified program name does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
+            , example = json!(example_unknown_name())),
+        (status = NOT_FOUND
+            , description = "Specified program id does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_program())),
     ),
     params(
         ("id" = Option<Uuid>, Query, description = "Unique connector identifier"),
@@ -592,7 +751,7 @@ async fn program_status(
             .get_program_by_name(*tenant_id, &name)
             .await
     } else {
-        return HttpResponse::BadRequest().json(ErrorResponse::new("Set either `id` or `name`"));
+        return http_resp_from_error(&anyhow!(ApiError::ProgramNotSpecified));
     };
     resp.map(|descr| {
         HttpResponse::Ok()
@@ -642,7 +801,7 @@ struct NewProgramResponse {
         (status = CONFLICT
             , description = "A program with this name already exists in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Duplicate program name 'p'."))),
+            , example = json!(example_duplicate_name())),
     ),
     tag = "Program"
 )]
@@ -730,13 +889,13 @@ struct UpdateProgramResponse {
     responses(
         (status = OK, description = "Program updated successfully.", body = UpdateProgramResponse),
         (status = NOT_FOUND
-            , description = "Specified `program_id` does not exist in the database."
+            , description = "Specified program id does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
+            , example = json!(example_unknown_program())),
         (status = CONFLICT
             , description = "A program with this name already exists in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Duplicate program name 'p'."))),
+            , example = json!(example_duplicate_name())),
     ),
     tag = "Program"
 )]
@@ -784,13 +943,13 @@ struct CompileProgramRequest {
     responses(
         (status = ACCEPTED, description = "Compilation request submitted."),
         (status = NOT_FOUND
-            , description = "Specified `program_id` does not exist in the database."
+            , description = "Specified program id does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
+            , example = json!(example_unknown_program())),
         (status = CONFLICT
             , description = "Program version specified in the request doesn't match the latest program version in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Outdated program version '{version}'"))),
+            , example = json!(example_outdated_program_version())),
     ),
     tag = "Program"
 )]
@@ -828,13 +987,13 @@ struct CancelProgramRequest {
     responses(
         (status = ACCEPTED, description = "Cancelation request submitted."),
         (status = NOT_FOUND
-            , description = "Specified `program_id` does not exist in the database."
+            , description = "Specified program id does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
+            , example = json!(example_unknown_program())),
         (status = CONFLICT
             , description = "Program version specified in the request doesn't match the latest program version in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Outdated program version '{3}'"))),
+            , example = json!(example_outdated_program_version())),
     ),
     tag = "Program"
 )]
@@ -860,10 +1019,14 @@ async fn cancel_program(
 #[utoipa::path(
     responses(
         (status = OK, description = "Program successfully deleted."),
-        (status = NOT_FOUND
-            , description = "Specified `program_id` does not exist in the database."
+        (status = BAD_REQUEST
+            , description = "Specified program id is not a valid uuid."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
+            , example = json!(example_invalid_uuid_param())),
+        (status = NOT_FOUND
+            , description = "Specified program id does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_program())),
     ),
     params(
         ("program_id" = Uuid, Path, description = "Unique program identifier")
@@ -876,11 +1039,11 @@ async fn delete_program(
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> impl Responder {
-    let program_id = match parse_program_id_param(&req) {
+    let program_id = match parse_uuid_param(&req, "program_id") {
         Err(e) => {
-            return e;
+            return http_resp_from_error(&e);
         }
-        Ok(program_id) => program_id,
+        Ok(program_id) => ProgramId(program_id),
     };
 
     do_delete_program(state, *tenant_id, program_id)
@@ -929,9 +1092,9 @@ struct NewPipelineResponse {
     responses(
         (status = OK, description = "Configuration successfully created.", body = NewPipelineResponse),
         (status = NOT_FOUND
-            , description = "Specified `program_id` does not exist in the database."
+            , description = "Specified program id does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown program id '42'"))),
+            , example = json!(example_unknown_program())),
     ),
     tag = "Pipeline"
 )]
@@ -1006,13 +1169,13 @@ struct UpdatePipelineResponse {
     responses(
         (status = OK, description = "Configuration successfully updated.", body = UpdatePipelineResponse),
         (status = NOT_FOUND
-            , description = "Specified `pipeline_id` does not exist in the database."
+            , description = "Specified pipeline id does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown config id '5'"))),
+            , example = json!(example_unknown_pipeline())),
         (status = NOT_FOUND
-            , description = "A connector ID in `connectors` does not exist in the database."
+            , description = "Specified connector id does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown connector id '5'"))),
+            , example = json!(example_unknown_connector())),
     ),
     tag = "Pipeline"
 )]
@@ -1076,14 +1239,14 @@ async fn list_pipelines(
         // TODO: Implement `ToSchema` for `ControllerStatus`, which is the
         // actual type returned by this endpoint.
         (status = OK, description = "Pipeline metrics retrieved successfully.", body = Object),
-        (status = NOT_FOUND
-            , description = "Specified `pipeline_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
         (status = BAD_REQUEST
-            , description = "Specified `pipeline_id` is not a valid uuid."
+            , description = "Specified pipeline id is not a valid uuid."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
+            , example = json!(example_invalid_uuid_param())),
+        (status = NOT_FOUND
+            , description = "Specified pipeline id does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_pipeline())),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
@@ -1096,11 +1259,11 @@ async fn pipeline_stats(
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> impl Responder {
-    let pipeline_id = match parse_pipeline_id_param(&req) {
+    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
         Err(e) => {
-            return e;
+            return http_resp_from_error(&e);
         }
-        Ok(pipeline_id) => pipeline_id,
+        Ok(pipeline_id) => PipelineId(pipeline_id),
     };
 
     state
@@ -1114,14 +1277,22 @@ async fn pipeline_stats(
 #[utoipa::path(
     responses(
         (status = OK, description = "Pipeline descriptor retrieved successfully.", body = PipelineDescr),
-        (status = NOT_FOUND
-            , description = "Specified `pipeline_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
         (status = BAD_REQUEST
-            , description = "Specified `pipeline_id` is not a valid uuid."
+            , description = "Pipeline not specified: set either '?id=' or '?name='."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
+            , example = json!(example_pipeline_not_specified())),
+        (status = NOT_FOUND
+            , description = "Specified pipeline name does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_name())),
+        (status = NOT_FOUND
+            , description = "Specified pipeline id does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_pipeline())),
+        (status = NOT_FOUND
+            , description = "Specified pipeline name does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_name())),
     ),
     params(
         ("id" = Option<Uuid>, Query, description = "Unique pipeline identifier"),
@@ -1150,7 +1321,7 @@ async fn pipeline_status(
             .get_pipeline_by_name(*tenant_id, name)
             .await
     } else {
-        return HttpResponse::BadRequest().json(ErrorResponse::new("Set either `id` or `name`"));
+        return http_resp_from_error(&anyhow!(ApiError::PipelineNotSpecified));
     };
 
     resp.map(|descr| {
@@ -1178,14 +1349,30 @@ async fn pipeline_status(
             , description = "Performed a Pipeline action."
             , content_type = "application/json"
             , body = String),
-        (status = NOT_FOUND
-            , description = "Specified `pipeline_id` does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown pipeline id '13'"))),
         (status = BAD_REQUEST
-            , description = "Specified `pipeline_id` is not a valid uuid."
+            , description = "Invalid pipeline action specified."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("invalid pipeline id 'abc'"))),
+            , example = json!(example_invalid_pipeline_action())),
+        (status = BAD_REQUEST
+            , description = "Specified pipeline id is not a valid uuid."
+            , body = ErrorResponse
+            , example = json!(example_invalid_uuid_param())),
+        (status = NOT_FOUND
+            , description = "Specified pipeline id does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_pipeline())),
+        (status = BAD_REQUEST
+            , description = "Pipeline does not have a program set."
+            , body = ErrorResponse
+            , example = json!(example_program_not_set())),
+        (status = SERVICE_UNAVAILABLE
+            , description = "Unable to start the pipeline before its program has been compiled."
+            , body = ErrorResponse
+            , example = json!(example_program_not_compiled())),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Timeout waiting for the pipeline to initialize. Indicates an internal system error."
+            , body = ErrorResponse
+            , example = json!(example_pipeline_timeout())),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
@@ -1199,15 +1386,15 @@ async fn pipeline_action(
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> impl Responder {
-    let pipeline_id = match parse_pipeline_id_param(&req) {
+    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
         Err(e) => {
-            return e;
+            return http_resp_from_error(&e);
         }
-        Ok(pipeline_id) => pipeline_id,
+        Ok(pipeline_id) => PipelineId(pipeline_id),
     };
     let action = match parse_pipeline_action(&req) {
         Err(e) => {
-            return e;
+            return http_resp_from_error(&e);
         }
         Ok(action) => action,
     };
@@ -1222,7 +1409,9 @@ async fn pipeline_action(
                 .shutdown_pipeline(*tenant_id, pipeline_id)
                 .await
         }
-        _ => Ok(HttpResponse::BadRequest().body(format!("invalid action argument '{action}"))),
+        _ => Err(anyhow!(ApiError::InvalidPipelineAction {
+            action: action.to_string()
+        })),
     }
     .unwrap_or_else(|e| http_resp_from_error(&e))
 }
@@ -1238,14 +1427,14 @@ async fn pipeline_action(
             , content_type = "application/json"
             , body = String
             , example = json!("Pipeline successfully deleted")),
+        (status = BAD_REQUEST
+            , description = "Specified pipeline id is not a valid uuid."
+            , body = ErrorResponse
+            , example = json!(example_invalid_uuid_param())),
         (status = NOT_FOUND
-            , description = "Specified `pipeline_id` does not exist in the database."
+            , description = "Specified pipeline id does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown pipeline id '64'"))),
-        (status = INTERNAL_SERVER_ERROR
-            , description = "Request failed."
-            , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Failed to shut down the pipeline; response from pipeline controller: ..."))),
+            , example = json!(example_unknown_pipeline())),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
@@ -1258,11 +1447,11 @@ async fn pipeline_delete(
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> impl Responder {
-    let pipeline_id = match parse_pipeline_id_param(&req) {
+    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
         Err(e) => {
-            return e;
+            return http_resp_from_error(&e);
         }
-        Ok(pipeline_id) => pipeline_id,
+        Ok(pipeline_id) => PipelineId(pipeline_id),
     };
 
     let db = state.db.lock().await;
@@ -1272,17 +1461,6 @@ async fn pipeline_delete(
         .delete_pipeline(*tenant_id, &db, pipeline_id)
         .await
         .unwrap_or_else(|e| http_resp_from_error(&e))
-}
-
-fn parse_connector_id_param(req: &HttpRequest) -> Result<ConnectorId, HttpResponse> {
-    match req.match_info().get("connector_id") {
-        None => Err(HttpResponse::BadRequest().body("missing connector id argument")),
-        Some(connector_id) => match connector_id.parse::<Uuid>() {
-            Err(e) => Err(HttpResponse::BadRequest()
-                .body(format!("invalid connector id '{connector_id}': {e}"))),
-            Ok(connector_id) => Ok(ConnectorId(connector_id)),
-        },
-    }
 }
 
 /// Enumerate the connector database.
@@ -1389,9 +1567,9 @@ struct UpdateConnectorResponse {}
     responses(
         (status = OK, description = "connector successfully updated.", body = UpdateConnectorResponse),
         (status = NOT_FOUND
-            , description = "Specified `connector_id` does not exist in the database."
+            , description = "Specified connector id does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown connector id '5'"))),
+            , example = json!(example_unknown_connector())),
     ),
     tag = "Connector"
 )]
@@ -1425,10 +1603,14 @@ async fn update_connector(
 #[utoipa::path(
     responses(
         (status = OK, description = "connector successfully deleted."),
-        (status = NOT_FOUND
-            , description = "Specified `connector_id` does not exist in the database."
+        (status = BAD_REQUEST
+            , description = "Specified connector id is not a valid uuid."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown connector id '5'"))),
+            , example = json!(example_invalid_uuid_param())),
+        (status = NOT_FOUND
+            , description = "Specified connector id does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_connector())),
     ),
     params(
         ("connector_id" = Uuid, Path, description = "Unique connector identifier")
@@ -1441,11 +1623,11 @@ async fn delete_connector(
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> impl Responder {
-    let connector_id = match parse_connector_id_param(&req) {
+    let connector_id = match parse_uuid_param(&req, "connector_id") {
         Err(e) => {
-            return e;
+            return http_resp_from_error(&e);
         }
-        Ok(connector_id) => connector_id,
+        Ok(connector_id) => ConnectorId(connector_id),
     };
 
     state
@@ -1469,13 +1651,21 @@ pub struct IdOrNameQuery {
     responses(
         (status = OK, description = "connector status retrieved successfully.", body = ConnectorDescr),
         (status = BAD_REQUEST
-            , description = "Missing or invalid `connector_id` parameter."
+            , description = "Connector not specified: set either '?id=' or '?name='."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Missing 'connector_id' parameter."))),
+            , example = json!(example_connector_not_specified())),
         (status = NOT_FOUND
-            , description = "Specified `connector_id` does not exist in the database."
+            , description = "Specified connector name does not exist in the database."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown connector id '42'"))),
+            , example = json!(example_unknown_name())),
+        (status = NOT_FOUND
+            , description = "Specified connector id does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_connector())),
+        (status = NOT_FOUND
+            , description = "Specified connector name does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_name())),
     ),
     params(
         ("id" = Option<Uuid>, Query, description = "Unique connector identifier"),
@@ -1504,7 +1694,7 @@ async fn connector_status(
             .get_connector_by_name(*tenant_id, name)
             .await
     } else {
-        return HttpResponse::BadRequest().json(ErrorResponse::new("Set either `id` or `name`"));
+        return http_resp_from_error(&anyhow!(ApiError::ConnectorNotSpecified));
     };
 
     resp.map(|descr| {
@@ -1530,26 +1720,30 @@ async fn connector_status(
         (status = OK
             , description = "Data successfully delivered to the pipeline."
             , content_type = "application/json"),
-        (status = NOT_FOUND
-            , description = "Specified `pipeline_id` does not exist in the database."
+        (status = BAD_REQUEST
+            , description = "Specified pipeline id is not a valid uuid."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown pipeline id '64'"))),
+            , example = json!(example_invalid_uuid_param())),
+        (status = NOT_FOUND
+            , description = "Specified pipeline id does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_pipeline())),
         (status = NOT_FOUND
             , description = "Specified table does not exist."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown table 'MyTable'"))),
-        (status = GONE
+            , example = json!(example_unknown_input_table("MyTable"))),
+        (status = NOT_FOUND
             , description = "Pipeline is not currently running because it has been shutdown or not yet started."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Pipeline 'MyPipeline' is not currently running."))),
+            , example = json!(example_pipeline_shutdown())),
         (status = BAD_REQUEST
             , description = "Unknown data format specified in the '?format=' argument."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown input format 'custom_format'."))),
+            , example = json!(example_unknown_input_format())),
         (status = UNPROCESSABLE_ENTITY
-            , description = "The pipeline an invalid"
+            , description = "Error parsing input data."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Error ingesting data: 'missing field 'foo''."))),
+            , example = json!(example_parse_error())),
         (status = INTERNAL_SERVER_ERROR
             , description = "Request failed."
             , body = ErrorResponse),
@@ -1570,16 +1764,20 @@ async fn http_input(
 ) -> impl Responder {
     debug!("Received {req:?}");
 
-    let pipeline_id = match parse_pipeline_id_param(&req) {
+    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
         Err(e) => {
-            return e;
+            return http_resp_from_error(&e);
         }
-        Ok(pipeline_id) => pipeline_id,
+        Ok(pipeline_id) => PipelineId(pipeline_id),
     };
     debug!("Pipeline_id {:?}", pipeline_id);
 
     let table_name = match req.match_info().get("table_name") {
-        None => return HttpResponse::BadRequest().body("Missing table name argument."),
+        None => {
+            return http_resp_from_error(&anyhow!(ApiError::MissingUrlEncodedParam {
+                param: "table_name"
+            }))
+        }
         Some(table_name) => table_name,
     };
     debug!("Table name {table_name:?}");
@@ -1607,22 +1805,26 @@ async fn http_input(
             , description = "Connection to the endpoint successfully established. The body of the response contains a stream of data chunks."
             , content_type = "application/json"
             , body = Chunk),
-        (status = NOT_FOUND
-            , description = "Specified `pipeline_id` does not exist in the database."
+        (status = BAD_REQUEST
+            , description = "Specified pipeline id is not a valid uuid."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown pipeline id '64'"))),
+            , example = json!(example_invalid_uuid_param())),
+        (status = NOT_FOUND
+            , description = "Specified pipeline id does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_pipeline())),
         (status = NOT_FOUND
             , description = "Specified table or view does not exist."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown table or view 'MyTable'"))),
+            , example = json!(example_unknown_output_table("MyTable"))),
         (status = GONE
             , description = "Pipeline is not currently running because it has been shutdown or not yet started."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Pipeline 'MyPipeline' is not currently running."))),
+            , example = json!(example_pipeline_shutdown())),
         (status = BAD_REQUEST
             , description = "Unknown data format specified in the '?format=' argument."
             , body = ErrorResponse
-            , example = json!(ErrorResponse::new("Unknown input format 'custom_format'."))),
+            , example = json!(example_unknown_output_format())),
         (status = INTERNAL_SERVER_ERROR
             , description = "Request failed."
             , body = ErrorResponse),
@@ -1650,16 +1852,20 @@ async fn http_output(
 ) -> impl Responder {
     debug!("Received {req:?}");
 
-    let pipeline_id = match parse_pipeline_id_param(&req) {
+    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
         Err(e) => {
-            return e;
+            return http_resp_from_error(&e);
         }
-        Ok(pipeline_id) => pipeline_id,
+        Ok(pipeline_id) => PipelineId(pipeline_id),
     };
     debug!("Pipeline_id {:?}", pipeline_id);
 
     let table_name = match req.match_info().get("table_name") {
-        None => return HttpResponse::BadRequest().body("Missing table name argument."),
+        None => {
+            return http_resp_from_error(&anyhow!(ApiError::MissingUrlEncodedParam {
+                param: "table_name"
+            }))
+        }
         Some(table_name) => table_name,
     };
     debug!("Table name {table_name:?}");

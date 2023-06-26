@@ -1,13 +1,15 @@
 use crate::{
     auth::TenantId, db::storage::Storage, db::AttachedConnector, db::PipelineDescr,
-    db::PipelineStatus, ErrorResponse, ManagerConfig, PipelineId, ProgramId, ProgramStatus,
-    ProjectDB, Version,
+    db::PipelineStatus, ManagerConfig, PipelineId, ProgramId, ProgramStatus, ProjectDB, Version,
 };
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
-use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, bail, Result as AnyResult};
 use awc::Client;
+use dbsp_adapters::DetailedError;
 use serde::Serialize;
-use std::{error::Error as StdError, fmt, fmt::Display, path::Path, process::Stdio, sync::Arc};
+use std::{
+    borrow::Cow, error::Error as StdError, fmt, fmt::Display, path::Path, process::Stdio, sync::Arc,
+};
 use tokio::{
     fs,
     fs::{create_dir_all, remove_dir_all},
@@ -16,19 +18,92 @@ use tokio::{
     time::{sleep, Duration, Instant},
 };
 
-const STARTUP_TIMEOUT: Duration = Duration::from_millis(10_000);
+pub(crate) const STARTUP_TIMEOUT: Duration = Duration::from_millis(10_000);
 const PORT_FILE_LOG_QUIET_PERIOD: Duration = Duration::from_millis(2_000);
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
 pub(crate) enum RunnerError {
-    PipelineShutdown(PipelineId),
+    PipelineShutdown {
+        pipeline_id: PipelineId,
+    },
+    HttpForwardError {
+        pipeline_id: PipelineId,
+        error: String,
+    },
+    PortFileParseError {
+        pipeline_id: PipelineId,
+        error: String,
+    },
+    PipelineInitializationTimeout {
+        pipeline_id: PipelineId,
+        timeout: Duration,
+    },
+    ProgramNotSet {
+        pipeline_id: PipelineId,
+    },
+    ProgramNotCompiled {
+        pipeline_id: PipelineId,
+    },
+    PipelineStartupError {
+        pipeline_id: PipelineId,
+        // TODO: This should be IOError, so we can serialize the error code
+        // similar to `DBSPError::IO`.
+        error: String,
+    },
+}
+
+impl DetailedError for RunnerError {
+    fn error_code(&self) -> Cow<'static, str> {
+        match self {
+            Self::PipelineShutdown { .. } => Cow::from("PipelineShutdown"),
+            Self::HttpForwardError { .. } => Cow::from("HttpForwardError"),
+            Self::PortFileParseError { .. } => Cow::from("PortFileParseError"),
+            Self::PipelineInitializationTimeout { .. } => {
+                Cow::from("PipelineInitializationTimeout")
+            }
+            Self::ProgramNotSet { .. } => Cow::from("ProgramNotSet"),
+            Self::ProgramNotCompiled { .. } => Cow::from("ProgramNotCompiled"),
+            Self::PipelineStartupError { .. } => Cow::from("PipelineStartupError"),
+        }
+    }
 }
 
 impl Display for RunnerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RunnerError::PipelineShutdown(pipeline_id) => {
+            Self::PipelineShutdown { pipeline_id } => {
                 write!(f, "Pipeline '{pipeline_id}' is not currently running.")
+            }
+            Self::HttpForwardError { pipeline_id, error } => {
+                write!(
+                    f,
+                    "Error forwarding HTTP request to pipeline '{pipeline_id}': '{error}'"
+                )
+            }
+            Self::PipelineInitializationTimeout {
+                pipeline_id,
+                timeout,
+            } => {
+                write!(f, "Waiting for pipeline '{pipeline_id}' initialization status timed out after {timeout:?}")
+            }
+            Self::PortFileParseError { pipeline_id, error } => {
+                write!(
+                    f,
+                    "Could not parse port for pipeline '{pipeline_id}' from port file: '{error}'"
+                )
+            }
+            Self::ProgramNotSet { pipeline_id } => {
+                write!(f, "Pipeline '{pipeline_id}' does not have a program set")
+            }
+            Self::ProgramNotCompiled { pipeline_id } => {
+                write!(
+                    f,
+                    "Program hasn't been compiled for pipeline '{pipeline_id}' yet"
+                )
+            }
+            Self::PipelineStartupError { pipeline_id, error } => {
+                write!(f, "Failed to start pipeline '{pipeline_id}': '{error}'")
             }
         }
     }
@@ -203,17 +278,14 @@ impl LocalRunner {
         // Read and validate config.
         let pipeline_descr = db.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         if pipeline_descr.program_id.is_none() {
-            return Ok(HttpResponse::BadRequest().body(format!(
-                "Pipeline '{}' does not have a program set",
-                pipeline_id
-            )));
+            bail!(RunnerError::ProgramNotSet { pipeline_id });
         }
         let program_version = pipeline_descr.program_id.unwrap();
 
         // Check: program exists, version = current version, compilation completed.
         let program_descr = db.get_program_by_id(tenant_id, program_version).await?;
         if program_descr.status != ProgramStatus::Success {
-            return Ok(HttpResponse::Conflict().body("Program hasn't been compiled yet"));
+            bail!(RunnerError::ProgramNotCompiled { pipeline_id });
         };
 
         // Run the pipeline executable.
@@ -222,7 +294,7 @@ impl LocalRunner {
         // Unlock db -- the next part can be slow.
         drop(db);
 
-        match Self::wait_for_startup(&self.config.port_file_path(pipeline_id)).await {
+        match Self::wait_for_startup(pipeline_id, &self.config.port_file_path(pipeline_id)).await {
             Ok(port) => {
                 // Store pipeline in the database.
                 if let Err(e) = self
@@ -323,7 +395,7 @@ impl LocalRunner {
             .await?;
 
         if pipeline_descr.status == PipelineStatus::Shutdown {
-            return Err(AnyError::from(RunnerError::PipelineShutdown(pipeline_id)));
+            bail!(RunnerError::PipelineShutdown { pipeline_id });
         }
 
         let client = Client::default();
@@ -338,7 +410,10 @@ impl LocalRunner {
         let mut response = request
             .send()
             .await
-            .map_err(|e| AnyError::msg(format!("Failed to connect to pipeline: {e}")))?;
+            .map_err(|e| RunnerError::HttpForwardError {
+                pipeline_id,
+                error: e.to_string(),
+            })?;
 
         let response_body = response.body().await?;
 
@@ -371,7 +446,7 @@ impl LocalRunner {
             .get_pipeline_by_id(tenant_id, pipeline_id)
             .await?;
         if pipeline_descr.status == PipelineStatus::Shutdown {
-            bail!(RunnerError::PipelineShutdown(pipeline_id));
+            bail!(RunnerError::PipelineShutdown { pipeline_id });
         }
         let port = pipeline_descr.port;
 
@@ -383,14 +458,22 @@ impl LocalRunner {
 
         let mut request = client.request(req.method().clone(), url);
 
-        for header in req.headers().into_iter() {
+        for header in req
+            .headers()
+            .into_iter()
+            .filter(|(h, _)| *h != "connection")
+        {
             request = request.append_header(header);
         }
 
-        let response = request
-            .send_stream(body)
-            .await
-            .map_err(|e| anyhow!("Error forwarding request to pipeline {pipeline_id}: '{e}'"))?;
+        let response =
+            request
+                .send_stream(body)
+                .await
+                .map_err(|e| RunnerError::HttpForwardError {
+                    pipeline_id,
+                    error: e.to_string(),
+                })?;
 
         let mut builder = HttpResponseBuilder::new(response.status());
         for header in response.headers().into_iter() {
@@ -476,7 +559,7 @@ impl LocalRunner {
 
         // Run executable, set current directory to pipeline directory, pass metadata
         // file and config as arguments.
-        let pipeline_process = Command::new(&executable)
+        let pipeline_process = Command::new(executable)
             .current_dir(self.config.pipeline_dir(pipeline_id))
             .arg("--config-file")
             .arg(&config_file_path)
@@ -484,14 +567,19 @@ impl LocalRunner {
             .arg(&metadata_file_path)
             .stdin(Stdio::null())
             .spawn()
-            .map_err(|e| AnyError::msg(format!("failed to run '{}': {e}", executable.display())))?;
+            .map_err(|e| {
+                anyhow!(RunnerError::PipelineStartupError {
+                    pipeline_id,
+                    error: e.to_string()
+                })
+            })?;
 
         Ok(pipeline_process)
     }
 
     /// Monitor pipeline log until either port number or error shows up or
     /// the child process exits.
-    async fn wait_for_startup(port_file_path: &Path) -> AnyResult<u16> {
+    async fn wait_for_startup(pipeline_id: PipelineId, port_file_path: &Path) -> AnyResult<u16> {
         let start = Instant::now();
         let mut count = 0;
         loop {
@@ -501,14 +589,18 @@ impl LocalRunner {
                     let parse = port.trim().parse::<u16>();
                     return match parse {
                         Ok(port) => Ok(port),
-                        Err(e) => Err(AnyError::msg(format!(
-                            "Could not parse port from port file: {e:?}\n"
-                        ))),
+                        Err(e) => Err(anyhow!(RunnerError::PortFileParseError {
+                            pipeline_id,
+                            error: e.to_string()
+                        })),
                     };
                 }
                 Err(e) => {
                     if start.elapsed() > STARTUP_TIMEOUT {
-                        return Err(AnyError::msg(format!("Waiting for pipeline initialization status timed out after {STARTUP_TIMEOUT:?}\n")));
+                        return Err(anyhow!(RunnerError::PipelineInitializationTimeout {
+                            pipeline_id,
+                            timeout: STARTUP_TIMEOUT
+                        }));
                     }
                     if start.elapsed() > PORT_FILE_LOG_QUIET_PERIOD && (count % 10) == 0 {
                         log::info!("Could not read runner port file yet. Retrying\n{}", e);
@@ -533,7 +625,10 @@ impl LocalRunner {
         };
 
         let url = format!("http://localhost:{}/shutdown", pipeline_descr.port);
-        let response = match reqwest::get(&url).await {
+
+        let client = awc::Client::new();
+
+        let mut response = match client.get(&url).send().await {
             Ok(response) => response,
             Err(_) => {
                 db.set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Shutdown)
@@ -551,11 +646,11 @@ impl LocalRunner {
                 .await?;
             Ok(HttpResponse::Ok().json("Pipeline successfully terminated."))
         } else {
-            Ok(HttpResponse::InternalServerError().json(
-                &ErrorResponse::new(&format!(
-                    "Failed to shut down the pipeline; response from pipeline controller: {response:?}"
-                )),
-            ))
+            let mut builder = HttpResponseBuilder::new(response.status());
+            for header in response.headers().into_iter() {
+                builder.append_header(header);
+            }
+            Ok(builder.body(response.body().await?))
         }
     }
 }

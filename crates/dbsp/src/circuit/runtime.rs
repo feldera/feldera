@@ -1,9 +1,12 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
+use crate::DetailedError;
 use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
+use serde::Serialize;
 use std::{
+    borrow::Cow,
     cell::{Cell, RefCell},
     error::Error as StdError,
     fmt,
@@ -16,16 +19,28 @@ use std::{
 };
 use typedmap::{TypedDashMap, TypedMapKey};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum Error {
-    WorkerPanic(usize),
+    /// Panic in a worker thread.
+    WorkerPanic {
+        worker: usize,
+    },
     Killed,
+}
+
+impl DetailedError for Error {
+    fn error_code(&self) -> Cow<'static, str> {
+        match self {
+            Self::WorkerPanic { .. } => Cow::from("WorkerPanic"),
+            Self::Killed => Cow::from("Killed"),
+        }
+    }
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
-            Self::WorkerPanic(worker) => {
+            Self::WorkerPanic { worker } => {
                 write!(f, "worker thread '{worker}' panicked")
             }
             Self::Killed => f.write_str("circuit killed by the user"),

@@ -144,9 +144,11 @@ impl Runtime {
             match receiver.recv() {
                 Ok(Err(error)) => init_status.push(Some(Err(error))),
                 Ok(Ok(ret)) => init_status.push(Some(Ok(ret))),
-                Err(_) => init_status.push(Some(Err(DBSPError::Runtime(
-                    RuntimeError::WorkerPanic(worker),
-                )))),
+                Err(_) => {
+                    init_status.push(Some(Err(DBSPError::Runtime(RuntimeError::WorkerPanic {
+                        worker,
+                    }))))
+                }
             }
         }
 
@@ -230,7 +232,7 @@ impl DBSPHandle {
         for (worker, sender) in self.command_senders.iter().enumerate() {
             if matches!(sender.send(command.clone()), Err(_)) {
                 let _ = self.kill_inner();
-                return Err(DBSPError::Runtime(RuntimeError::WorkerPanic(worker)));
+                return Err(DBSPError::Runtime(RuntimeError::WorkerPanic { worker }));
             }
             self.runtime.as_ref().unwrap().unpark_worker(worker);
         }
@@ -240,7 +242,7 @@ impl DBSPHandle {
             match receiver.recv() {
                 Err(_) => {
                     let _ = self.kill_inner();
-                    return Err(DBSPError::Runtime(RuntimeError::WorkerPanic(worker)));
+                    return Err(DBSPError::Runtime(RuntimeError::WorkerPanic { worker }));
                 }
                 Ok(Err(e)) => {
                     let _ = self.kill_inner();
@@ -352,7 +354,7 @@ mod tests {
         });
 
         if let DBSPError::Runtime(err) = res.unwrap_err() {
-            assert_eq!(err, RuntimeError::WorkerPanic(0));
+            assert_eq!(err, RuntimeError::WorkerPanic { worker: 0 });
         } else {
             panic!();
         }
@@ -387,7 +389,7 @@ mod tests {
         .unwrap();
 
         if let DBSPError::Runtime(err) = handle.step().unwrap_err() {
-            assert_eq!(err, RuntimeError::WorkerPanic(0));
+            assert_eq!(err, RuntimeError::WorkerPanic { worker: 0 });
         } else {
             panic!();
         }

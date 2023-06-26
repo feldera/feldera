@@ -17,7 +17,7 @@ pub mod time;
 pub mod trace;
 pub mod utils;
 
-pub use crate::error::Error;
+pub use crate::error::{DetailedError, Error};
 pub use crate::hash::default_hash;
 pub use crate::num_entries::NumEntries;
 pub use crate::ref_pair::RefPair;

@@ -33,14 +33,14 @@ def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Uni
     if response.status_code == HTTPStatus.OK:
         response_200 = cast(str, response.json())
         return response_200
+    if response.status_code == HTTPStatus.BAD_REQUEST:
+        response_400 = ErrorResponse.from_dict(response.json())
+
+        return response_400
     if response.status_code == HTTPStatus.NOT_FOUND:
         response_404 = ErrorResponse.from_dict(response.json())
 
         return response_404
-    if response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
-        response_500 = ErrorResponse.from_dict(response.json())
-
-        return response_500
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:

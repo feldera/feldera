@@ -28,7 +28,7 @@ pub(crate) trait Storage {
     ) -> AnyResult<ProgramDescr> {
         self.get_program_if_exists(tenant_id, program_id)
             .await?
-            .ok_or_else(|| anyhow!(DBError::UnknownProgram(program_id)))
+            .ok_or_else(|| anyhow!(DBError::UnknownProgram { program_id }))
     }
 
     /// Retrieve program descriptor.
@@ -42,7 +42,7 @@ pub(crate) trait Storage {
     ) -> AnyResult<ProgramDescr> {
         self.lookup_program(tenant_id, name)
             .await?
-            .ok_or_else(|| anyhow!(DBError::UnknownName(name.into())))
+            .ok_or_else(|| anyhow!(DBError::UnknownName { name: name.into() }))
     }
 
     /// Validate program version and retrieve program descriptor.
@@ -58,7 +58,9 @@ pub(crate) trait Storage {
     ) -> AnyResult<ProgramDescr> {
         let descr = self.get_program_by_id(tenant_id, program_id).await?;
         if descr.version != expected_version {
-            return Err(anyhow!(DBError::OutdatedProgramVersion(expected_version)));
+            return Err(anyhow!(DBError::OutdatedProgramVersion {
+                expected_version
+            }));
         }
 
         Ok(descr)

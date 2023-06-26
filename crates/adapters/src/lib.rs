@@ -137,8 +137,11 @@ pub enum PipelineState {
     Terminated = 2,
 }
 
+// Re-export `DetailedError`.
+pub use dbsp::DetailedError;
+
 #[cfg(feature = "server")]
-pub use server::EgressMode;
+pub use server::{EgressMode, ErrorResponse};
 
 pub use catalog::{Catalog, NeighborhoodQuery, OutputQuery, OutputQueryHandles};
 pub use deinput::{
