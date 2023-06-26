@@ -1047,7 +1047,7 @@ impl Storage for Mutex<DbModel> {
         s.programs
             .get(&(tenant_id, program_id))
             .map(|(p, c, _e)| (p.clone(), c.clone()))
-            .ok_or(anyhow::anyhow!(DBError::UnknownProgram(program_id)))
+            .ok_or(anyhow::anyhow!(DBError::UnknownProgram { program_id }))
     }
 
     async fn new_program(
@@ -1060,7 +1060,9 @@ impl Storage for Mutex<DbModel> {
     ) -> anyhow::Result<(super::ProgramId, super::Version)> {
         let mut s = self.lock().await;
         if s.programs.keys().any(|k| k.1 == ProgramId(id)) {
-            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation("program_pkey")));
+            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation {
+                constraint: "program_pkey"
+            }));
         }
         if s.programs
             .iter()
@@ -1103,7 +1105,7 @@ impl Storage for Mutex<DbModel> {
     ) -> anyhow::Result<super::Version> {
         let mut s = self.lock().await;
         if !s.programs.contains_key(&(tenant_id, program_id)) {
-            return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
+            return Err(anyhow::anyhow!(DBError::UnknownProgram { program_id }));
         }
 
         if s.programs
@@ -1130,7 +1132,7 @@ impl Storage for Mutex<DbModel> {
                 }
                 p.version
             })
-            .ok_or(anyhow::anyhow!(DBError::UnknownProgram(program_id)))
+            .ok_or(anyhow::anyhow!(DBError::UnknownProgram { program_id }))
     }
 
     async fn get_program_if_exists(
@@ -1197,7 +1199,7 @@ impl Storage for Mutex<DbModel> {
                     *t = SystemTime::now();
                 }
             })
-            .ok_or(anyhow::anyhow!(DBError::UnknownProgram(program_id)))
+            .ok_or(anyhow::anyhow!(DBError::UnknownProgram { program_id }))
     }
 
     async fn set_program_schema(
@@ -1226,7 +1228,7 @@ impl Storage for Mutex<DbModel> {
         s.programs
             .remove(&(tenant_id, program_id))
             .map(|_| ())
-            .ok_or(anyhow::anyhow!(DBError::UnknownProgram(program_id)))?;
+            .ok_or(anyhow::anyhow!(DBError::UnknownProgram { program_id }))?;
         // Foreign key delete:
         s.pipelines.retain(|_, c| c.program_id != Some(program_id));
 
@@ -1264,9 +1266,9 @@ impl Storage for Mutex<DbModel> {
 
         // UUIDs are global
         if s.pipelines.keys().any(|k| k.1 == PipelineId(id)) {
-            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation(
-                "pipeline_pkey"
-            )));
+            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation {
+                constraint: "pipeline_pkey"
+            }));
         }
         // UNIQUE constraint on name
         if s.pipelines
@@ -1280,7 +1282,7 @@ impl Storage for Mutex<DbModel> {
         // Model the foreign key constraint on `program_id`
         if let Some(program_id) = program_id {
             if !s.programs.contains_key(&(tenant_id, program_id)) {
-                return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
+                return Err(anyhow::anyhow!(DBError::UnknownProgram { program_id }));
             }
         }
 
@@ -1306,7 +1308,9 @@ impl Storage for Mutex<DbModel> {
                 // Check that all attached connectors point to a valid
                 // connector_id
                 if !db_connectors.contains_key(&(tenant_id, ac.connector_id)) {
-                    return Err(anyhow::anyhow!(DBError::UnknownConnector(ac.connector_id)));
+                    return Err(anyhow::anyhow!(DBError::UnknownConnector {
+                        connector_id: ac.connector_id
+                    }));
                 }
 
                 new_acs.push(ac.clone());
@@ -1351,7 +1355,7 @@ impl Storage for Mutex<DbModel> {
         // pipeline must exist
         s.pipelines
             .get_mut(&(tenant_id, pipeline_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
+            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline { pipeline_id }))?;
         // UNIQUE constraint on name
         if let Some(c) = s
             .pipelines
@@ -1387,7 +1391,9 @@ impl Storage for Mutex<DbModel> {
                 // Check that all attached connectors point to a valid
                 // connector_id
                 if !db_connectors.contains_key(&(tenant_id, ac.connector_id)) {
-                    return Err(anyhow::anyhow!(DBError::UnknownConnector(ac.connector_id)));
+                    return Err(anyhow::anyhow!(DBError::UnknownConnector {
+                        connector_id: ac.connector_id
+                    }));
                 }
 
                 new_acs.push(ac.clone());
@@ -1396,21 +1402,21 @@ impl Storage for Mutex<DbModel> {
         // Check program exists foreign key constraint
         if let Some(program_id) = program_id {
             if !db_programs.contains_key(&(tenant_id, program_id)) {
-                return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
+                return Err(anyhow::anyhow!(DBError::UnknownProgram { program_id }));
             }
         }
 
         let c = s
             .pipelines
             .get_mut(&(tenant_id, pipeline_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
+            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline { pipeline_id }))?;
 
         // Foreign key constraint on `program_id`
         if let Some(program_id) = program_id {
             if db_programs.contains_key(&(tenant_id, program_id)) {
                 c.program_id = Some(program_id);
             } else {
-                return Err(anyhow::anyhow!(DBError::UnknownProgram(program_id)));
+                return Err(anyhow::anyhow!(DBError::UnknownProgram { program_id }));
             }
         } else {
             c.program_id = None;
@@ -1435,7 +1441,7 @@ impl Storage for Mutex<DbModel> {
         let mut s = self.lock().await;
         s.pipelines
             .remove(&(tenant_id, pipeline_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
+            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline { pipeline_id }))?;
 
         Ok(())
     }
@@ -1459,7 +1465,7 @@ impl Storage for Mutex<DbModel> {
         let p = s
             .pipelines
             .get_mut(&(tenant_id, pipeline_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))?;
+            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline { pipeline_id }))?;
 
         p.port = port;
         p.status = PipelineStatus::Deployed;
@@ -1506,7 +1512,7 @@ impl Storage for Mutex<DbModel> {
         s.pipelines
             .get(&(tenant_id, pipeline_id))
             .cloned()
-            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline(pipeline_id)))
+            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline { pipeline_id }))
     }
 
     async fn get_pipeline_by_name(
@@ -1520,7 +1526,7 @@ impl Storage for Mutex<DbModel> {
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
             .find(|p| p.name == name)
-            .ok_or(anyhow::anyhow!(DBError::UnknownName(name)))
+            .ok_or(anyhow::anyhow!(DBError::UnknownName { name }))
     }
 
     async fn list_pipelines(
@@ -1547,9 +1553,9 @@ impl Storage for Mutex<DbModel> {
     ) -> anyhow::Result<super::ConnectorId> {
         let mut s = self.lock().await;
         if s.connectors.keys().any(|k| k.1 == ConnectorId(id)) {
-            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation(
-                "connector_pkey"
-            )));
+            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation {
+                constraint: "connector_pkey"
+            }));
         }
         if s.connectors
             .iter()
@@ -1591,7 +1597,7 @@ impl Storage for Mutex<DbModel> {
         s.connectors
             .get(&(tenant_id, connector_id))
             .cloned()
-            .ok_or(anyhow::anyhow!(DBError::UnknownConnector(connector_id)))
+            .ok_or(anyhow::anyhow!(DBError::UnknownConnector { connector_id }))
     }
 
     async fn get_connector_by_name(
@@ -1605,7 +1611,7 @@ impl Storage for Mutex<DbModel> {
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
             .find(|c| c.name == name)
-            .ok_or(anyhow::anyhow!(DBError::UnknownName(name)))
+            .ok_or(anyhow::anyhow!(DBError::UnknownName { name }))
     }
 
     async fn update_connector(
@@ -1619,7 +1625,7 @@ impl Storage for Mutex<DbModel> {
         let mut s = self.lock().await;
         // `connector_id` needs to exist
         if s.connectors.get(&(tenant_id, connector_id)).is_none() {
-            return Err(DBError::UnknownConnector(connector_id).into());
+            return Err(DBError::UnknownConnector { connector_id }.into());
         }
         // UNIQUE constraint on name
         if let Some(c) = s
@@ -1638,7 +1644,7 @@ impl Storage for Mutex<DbModel> {
         let c = s
             .connectors
             .get_mut(&(tenant_id, connector_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownConnector(connector_id)))?;
+            .ok_or(anyhow::anyhow!(DBError::UnknownConnector { connector_id }))?;
         c.name = connector_name.to_owned();
         c.description = description.to_owned();
         if let Some(config) = config {
@@ -1655,7 +1661,7 @@ impl Storage for Mutex<DbModel> {
         let mut s = self.lock().await;
         s.connectors
             .remove(&(tenant_id, connector_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownConnector(connector_id)))?;
+            .ok_or(anyhow::anyhow!(DBError::UnknownConnector { connector_id }))?;
         s.pipelines.values_mut().for_each(|c| {
             c.attached_connectors
                 .retain(|c| c.connector_id != connector_id);

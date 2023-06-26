@@ -53,6 +53,7 @@ use crate::{
     Error as DBSPError, Runtime,
 };
 use anyhow::Error as AnyError;
+use serde::Serialize;
 use std::{
     borrow::Cow,
     cell::{Ref, RefCell, RefMut, UnsafeCell},
@@ -792,7 +793,7 @@ pub trait Node {
 }
 
 /// Id of an operator, guaranteed to be unique within a circuit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[repr(transparent)]
 pub struct NodeId(usize);
 
@@ -825,7 +826,7 @@ impl Display for NodeId {
 /// circuit or a sub-circuit nested inside the top-level circuit will have a
 /// path of length 1, e.g., `[5]`, an operator inside the nested circuit
 /// will have a path of length 2, e.g., `[5, 1]`, etc.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[repr(transparent)]
 pub struct GlobalNodeId(Vec<NodeId>);
 

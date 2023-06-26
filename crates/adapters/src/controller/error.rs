@@ -1,12 +1,17 @@
+use crate::DetailedError;
 use anyhow::Error as AnyError;
 use dbsp::Error as DBSPError;
+use serde::Serialize;
 use std::{
+    borrow::Cow,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
+    string::ToString,
 };
 
 /// Controller configuration error.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
 pub enum ConfigError {
     /// Input endpoint with this name already exists.
     DuplicateInputEndpoint { endpoint_name: String },
@@ -35,32 +40,49 @@ pub enum ConfigError {
     UnknownOutputStream { stream_name: String },
 }
 
+impl StdError for ConfigError {}
+
+impl DetailedError for ConfigError {
+    fn error_code(&self) -> Cow<'static, str> {
+        match self {
+            Self::DuplicateInputEndpoint { .. } => Cow::from("DuplicateInputEndpoint"),
+            Self::DuplicateOutputEndpoint { .. } => Cow::from("DuplicateOutputEndpoint"),
+            Self::UnknownInputFormat { .. } => Cow::from("UnknownInputFormat"),
+            Self::UnknownOutputFormat { .. } => Cow::from("UnknownOutputFormat"),
+            Self::UnknownInputTransport { .. } => Cow::from("UnknownInputTransport"),
+            Self::UnknownOutputTransport { .. } => Cow::from("UnknownOutputTransport"),
+            Self::UnknownInputStream { .. } => Cow::from("UnknownInputStream"),
+            Self::UnknownOutputStream { .. } => Cow::from("UnknownOutputStream"),
+        }
+    }
+}
+
 impl Display for ConfigError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
             Self::DuplicateInputEndpoint { endpoint_name } => {
-                write!(f, "input endpoint '{endpoint_name}' already exists")
+                write!(f, "Input endpoint '{endpoint_name}' already exists")
             }
             Self::UnknownInputFormat { format_name } => {
-                write!(f, "unknown input format '{format_name}'")
+                write!(f, "Unknown input format '{format_name}'")
             }
             Self::UnknownInputTransport { transport_name } => {
-                write!(f, "unknown input transport '{transport_name}'")
+                write!(f, "Unknown input transport '{transport_name}'")
             }
             Self::DuplicateOutputEndpoint { endpoint_name } => {
-                write!(f, "output endpoint '{endpoint_name}' already exists")
+                write!(f, "Output endpoint '{endpoint_name}' already exists")
             }
             Self::UnknownOutputFormat { format_name } => {
-                write!(f, "unknown output format '{format_name}'")
+                write!(f, "Unknown output format '{format_name}'")
             }
             Self::UnknownOutputTransport { transport_name } => {
-                write!(f, "unknown output transport '{transport_name}'")
+                write!(f, "Unknown output transport '{transport_name}'")
             }
             Self::UnknownInputStream { stream_name } => {
-                write!(f, "unknown table '{stream_name}'")
+                write!(f, "Unknown table '{stream_name}'")
             }
             Self::UnknownOutputStream { stream_name } => {
-                write!(f, "unknown output table or view '{stream_name}'")
+                write!(f, "Unknown output table or view '{stream_name}'")
             }
         }
     }
@@ -117,7 +139,8 @@ impl ConfigError {
 }
 
 /// Controller error.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
 pub enum ControllerError {
     /// Invalid controller configuration.
     Config { config_error: ConfigError },
@@ -129,7 +152,7 @@ pub enum ControllerError {
     /// new valid inputs after an error.
     ParseError {
         endpoint_name: String,
-        error: AnyError,
+        error: String,
     },
 
     /// Encode error.
@@ -139,6 +162,7 @@ pub enum ControllerError {
     /// new valid inputs after an error.
     EncodeError {
         endpoint_name: String,
+        #[serde(skip)]
         error: AnyError,
     },
 
@@ -146,6 +170,7 @@ pub enum ControllerError {
     InputTransportError {
         endpoint_name: String,
         fatal: bool,
+        #[serde(skip)]
         error: AnyError,
     },
 
@@ -153,11 +178,32 @@ pub enum ControllerError {
     OutputTransportError {
         endpoint_name: String,
         fatal: bool,
+        #[serde(skip)]
         error: AnyError,
     },
 
+    /// Operation failed to complete because the pipeline is shutting down.
+    PipelineTerminating,
+
     /// Error evaluating the DBSP circuit.
     DbspError { error: DBSPError },
+}
+
+impl DetailedError for ControllerError {
+    // TODO: attempts to cast `AnyError` to `DetailedError`.
+    fn error_code(&self) -> Cow<'static, str> {
+        match self {
+            Self::Config { config_error } => {
+                Cow::from(format!("ConfigError.{}", config_error.error_code()))
+            }
+            Self::ParseError { .. } => Cow::from("ParseError"),
+            Self::EncodeError { .. } => Cow::from("EncodeError"),
+            Self::InputTransportError { .. } => Cow::from("InputTransportError"),
+            Self::OutputTransportError { .. } => Cow::from("OutputTransportError"),
+            Self::DbspError { error } => error.error_code(),
+            Self::PipelineTerminating => Cow::from("PipelineTerminating"),
+        }
+    }
 }
 
 impl StdError for ControllerError {}
@@ -210,6 +256,9 @@ impl Display for ControllerError {
             }
             Self::DbspError { error } => {
                 write!(f, "DBSP error: '{error}'")
+            }
+            Self::PipelineTerminating => {
+                f.write_str("Operation failed to complete because the pipeline is shutting down")
             }
         }
     }
@@ -280,10 +329,13 @@ impl ControllerError {
         }
     }
 
-    pub fn parse_error(endpoint_name: &str, error: AnyError) -> Self {
+    pub fn parse_error<E>(endpoint_name: &str, error: &E) -> Self
+    where
+        E: ToString,
+    {
         Self::ParseError {
             endpoint_name: endpoint_name.to_owned(),
-            error,
+            error: error.to_string(),
         }
     }
 
@@ -292,6 +344,10 @@ impl ControllerError {
             endpoint_name: endpoint_name.to_owned(),
             error,
         }
+    }
+
+    pub fn pipeline_terminating() -> Self {
+        Self::PipelineTerminating
     }
 
     pub fn dbsp_error(error: DBSPError) -> Self {

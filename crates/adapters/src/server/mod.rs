@@ -3,8 +3,8 @@ use crate::{
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
-    Catalog, Controller, ControllerError, FormatConfig, InputEndpoint, InputEndpointConfig,
-    OutputEndpoint, OutputEndpointConfig, OutputQuery, PipelineConfig,
+    Catalog, Controller, ControllerError, DetailedError, FormatConfig, InputEndpoint,
+    InputEndpointConfig, OutputEndpoint, OutputEndpointConfig, OutputQuery, PipelineConfig,
 };
 use actix_web::{
     dev::{Server, ServiceFactory, ServiceRequest},
@@ -72,15 +72,40 @@ impl ServerState {
     }
 }
 
-#[derive(Serialize)]
-pub(crate) struct ErrorResponse {
+/// Information returned by REST API endpoints on error.
+#[derive(Serialize, ToSchema)]
+pub struct ErrorResponse {
+    /// Human-readable error message.
+    #[schema(example = "Unknown input format 'xml'.")]
     message: String,
+    /// Error code is a string that specifies this error type.
+    #[schema(example = "UnknownInputFormat")]
+    error_code: Cow<'static, str>,
+    /// Detailed error metadata.
+    /// The contents of this field is determined by `error_code`.
+    #[schema(value_type=Object)]
+    details: JsonValue,
 }
 
 impl ErrorResponse {
-    pub(crate) fn new(message: &str) -> Self {
+    pub fn new(message: &str, error_code: &'static str, details: JsonValue) -> Self {
         Self {
             message: message.to_string(),
+            error_code: Cow::from(error_code),
+            details,
+        }
+    }
+
+    pub fn from_error<E>(error: &E) -> Self
+    where
+        E: DetailedError,
+    {
+        Self {
+            message: error.to_string(),
+            error_code: error.error_code(),
+            details: serde_json::to_value(error).unwrap_or_else(|e| {
+                JsonValue::String(format!("Failed to serialize error details: '{e}'"))
+            }),
         }
     }
 }
@@ -88,7 +113,6 @@ impl ErrorResponse {
 fn http_resp_from_error(error: &AnyError) -> HttpResponse {
     debug!("Returning HTTP error: {:?}", error);
     if let Some(controller_error) = error.downcast_ref::<ControllerError>() {
-        let message = controller_error.to_string();
         match controller_error {
             ControllerError::Config {
                 config_error: ConfigError::UnknownInputStream { .. },
@@ -97,17 +121,27 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
                 config_error: ConfigError::UnknownOutputStream { .. },
             } => HttpResponse::NotFound(),
             ControllerError::Config { .. } => HttpResponse::BadRequest(),
+            ControllerError::ParseError { .. } => HttpResponse::UnprocessableEntity(),
+            ControllerError::PipelineTerminating { .. } => HttpResponse::NotFound(),
             _ => HttpResponse::InternalServerError(),
         }
-        .json(ErrorResponse::new(&message))
+        .json(ErrorResponse::from_error(controller_error))
     } else {
-        HttpResponse::InternalServerError().json(ErrorResponse::new(&error.to_string()))
+        HttpResponse::InternalServerError().json(ErrorResponse::new(
+            &error.to_string(),
+            "UnknownError",
+            json!(null),
+        ))
     }
 }
 
 /// Create a HTTP error response from a status code and an error message.
 pub(crate) fn http_error(status: StatusCode, msg: &str) -> HttpResponse {
-    let response = HttpResponseBuilder::new(status).json(&ErrorResponse::new(msg));
+    let response = HttpResponseBuilder::new(status).json(&ErrorResponse::new(
+        msg,
+        "UnknownError",
+        json!(null),
+    ));
     error!("HTTP error response: {status}: {msg}");
     response
 }
@@ -387,7 +421,7 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
             }
             Err(e) => http_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("Failed to terminate the pipeline: '{e}'"),
+                &format!("Failed to shut down the pipeline: '{e}'"),
             ),
         }
     } else {
@@ -465,7 +499,10 @@ async fn input_endpoint(
     };
 
     // Call endpoint to complete request.
-    let response = endpoint.complete_request(payload).await;
+    let response = endpoint
+        .complete_request(payload)
+        .await
+        .unwrap_or_else(|e| http_resp_from_error(&e));
     drop(endpoint);
 
     // Delete endpoint on completion/error.

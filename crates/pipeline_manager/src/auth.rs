@@ -50,6 +50,7 @@ use actix_web_httpauth::extractors::{
     bearer::{BearerAuth, Config},
     AuthenticationError,
 };
+use awc::error::JsonPayloadError;
 use cached::{Cached, TimedCache};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
 use log::{error, info};
@@ -324,7 +325,9 @@ struct AwsCognitoClaim {
 #[derive(Debug)]
 enum AuthError {
     JwtDecoding(jsonwebtoken::errors::Error),
-    JwkFetch(reqwest::Error),
+    JwkFetch(awc::error::SendRequestError),
+    JwkPayload(awc::error::PayloadError),
+    JwkContentType,
     JwkShape(String),
 }
 
@@ -333,13 +336,15 @@ impl std::fmt::Display for AuthError {
         match self {
             AuthError::JwtDecoding(err) => err.fmt(f),
             AuthError::JwkFetch(err) => err.fmt(f),
+            AuthError::JwkPayload(err) => err.fmt(f),
             AuthError::JwkShape(err) => err.fmt(f),
+            AuthError::JwkContentType => f.write_str("Content type error"),
         }
     }
 }
 
-impl From<reqwest::Error> for AuthError {
-    fn from(value: reqwest::Error) -> Self {
+impl From<awc::error::SendRequestError> for AuthError {
+    fn from(value: awc::error::SendRequestError) -> Self {
         Self::JwkFetch(value)
     }
 }
@@ -468,9 +473,10 @@ async fn fetch_jwk_keys(
 async fn fetch_jwk_aws_cognito_keys(
     url: &String,
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
-    let res = reqwest::get(url).await;
-    let res = res?.text().await?;
-    let keys_as_json: Result<Value, serde_json::Error> = serde_json::from_str(&res);
+    let client = awc::Client::new();
+
+    let res = client.get(url).send().await;
+    let keys_as_json = res?.json::<Value>().await;
 
     match keys_as_json {
         Ok(value) => {
@@ -505,7 +511,11 @@ async fn fetch_jwk_aws_cognito_keys(
             }
             Ok(ret)
         }
-        Err(e) => Err(AuthError::JwkShape(e.to_string())),
+        Err(JsonPayloadError::Deserialize(json_error)) => {
+            Err(AuthError::JwkShape(json_error.to_string()))
+        }
+        Err(JsonPayloadError::Payload(payload)) => Err(AuthError::JwkPayload(payload)),
+        Err(JsonPayloadError::ContentType) => Err(AuthError::JwkContentType),
     }
 }
 

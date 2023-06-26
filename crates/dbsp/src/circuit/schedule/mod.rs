@@ -1,8 +1,11 @@
 //! The scheduling framework controls the execution of a circuit at runtime.
 
 use super::{trace::SchedulerEvent, Circuit, GlobalNodeId};
+use crate::DetailedError;
 use itertools::Itertools;
+use serde::Serialize;
 use std::{
+    borrow::Cow,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
     string::ToString,
@@ -15,7 +18,8 @@ mod dynamic_scheduler;
 pub use dynamic_scheduler::DynamicScheduler;
 
 /// Scheduler errors.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
 pub enum Error {
     /// `origin` node has more than one strong successors who insist on
     /// consuming its output by value
@@ -29,6 +33,16 @@ pub enum Error {
     /// Execution of the circuit interrupted by the user (via
     /// [`RuntimeHandle::kill`](`crate::circuit::RuntimeHandle::kill`)).
     Killed,
+}
+
+impl DetailedError for Error {
+    fn error_code(&self) -> Cow<'static, str> {
+        match self {
+            Self::OwnershipConflict { .. } => Cow::from("OwnershipConflict"),
+            Self::CyclicCircuit { .. } => Cow::from("CyclicCircuit"),
+            Self::Killed => Cow::from("Killed"),
+        }
+    }
 }
 
 impl Display for Error {
