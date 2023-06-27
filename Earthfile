@@ -421,8 +421,10 @@ test-manager:
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
-            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager
+            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager -- --skip integration_test::
     END
+    RUN cp `cargo test --no-run --package dbsp_pipeline_manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable'` test_binary
+    SAVE ARTIFACT test_binary
 
 test-python:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -518,9 +520,30 @@ test-docker-compose:
         RUN SECOPS_DEMO_ARGS="--prepare-args 500000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
+integration-test-container:
+    FROM +install-deps
+    COPY +test-manager/test_binary .
+    ENV TEST_DBSP_URL=http://dbsp:8080
+    ENTRYPOINT ["./test_binary", "integration_test::"]
+    SAVE IMAGE itest:latest
+
+integration-tests:
+    FROM earthly/dind:alpine
+    COPY deploy/docker-compose.yml .
+    WITH DOCKER --pull postgres \
+                --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
+                --compose docker-compose.yml \
+                --service db \
+                --service dbsp \
+                --load itest:latest=+integration-test-container
+        RUN sleep 5 && docker run --network default_default itest:latest
+    END
+
+
 all-tests:
     BUILD +test-rust
     BUILD +test-python
     BUILD +audit
     BUILD +test-sql
     BUILD +test-docker-compose
+    BUILD +integration-tests
