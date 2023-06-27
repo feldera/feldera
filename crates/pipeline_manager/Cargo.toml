@@ -58,7 +58,6 @@ pg-client-config = "0.1.1"
 base64 = "0.21.0"
 actix-http = "3.3.1"
 serial_test = "2.0.0"
-async-once-cell = "0.5.2"
 
 [package.metadata.cargo-machete]
 ignored = ["static-files"]
