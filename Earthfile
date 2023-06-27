@@ -423,6 +423,8 @@ test-manager:
             sleep 3 && \
             cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager -- --skip integration_test::
     END
+    # We keep the test binary around so we can run integration tests later. This incantation is used to find the
+    # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
     RUN cp `cargo test --no-run --package dbsp_pipeline_manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable'` test_binary
     SAVE ARTIFACT test_binary
 
@@ -521,6 +523,7 @@ test-docker-compose:
         RUN SECOPS_DEMO_ARGS="--prepare-args 500000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
+# Fetches the test binary from test-manager, and produces a container image out of it
 integration-test-container:
     FROM +install-deps
     COPY +test-manager/test_binary .
@@ -528,6 +531,7 @@ integration-test-container:
     ENTRYPOINT ["./test_binary", "integration_test::"]
     SAVE IMAGE itest:latest
 
+# Runs the integration test container against the docker compose setup
 integration-tests:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
