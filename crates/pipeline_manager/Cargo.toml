@@ -15,7 +15,7 @@ awc = "3.1.0"
 static-files = "0.2.3"
 actix-cors = "0.6.4"
 anyhow = { version = "1.0.57", features = ["backtrace"] }
-tokio = { version = "1.25.0", features = ["rt-multi-thread", "fs", "macros", "process", "io-util", "io-std", "sync"] }
+tokio = { version = "1.25.0", features = ["rt-multi-thread", "fs", "macros", "process", "io-util", "io-std"] }
 log = "0.4.17"
 env_logger = "0.10.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -58,6 +58,11 @@ pg-client-config = "0.1.1"
 base64 = "0.21.0"
 actix-http = "3.3.1"
 serial_test = "2.0.0"
+
+# Used in integration tests
+[dev-dependencies.tokio]
+version = "*"
+features = ["sync"]
 
 [package.metadata.cargo-machete]
 ignored = ["static-files"]
