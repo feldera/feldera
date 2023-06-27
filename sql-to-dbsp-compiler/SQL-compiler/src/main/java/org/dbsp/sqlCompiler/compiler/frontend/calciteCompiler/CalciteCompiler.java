@@ -532,6 +532,7 @@ public class CalciteCompiler implements IWritesLogs {
             @Nullable String comment,
             @Nullable ArrayNode inputs,
             @Nullable ArrayNode outputs) {
+        CalciteObject object = new CalciteObject(node);
         if (SqlKind.DDL.contains(node.getKind())) {
             if (node.getKind().equals(SqlKind.DROP_TABLE)) {
                 SqlDropTable dt = (SqlDropTable) node;
@@ -540,13 +541,16 @@ public class CalciteCompiler implements IWritesLogs {
                 return new DropTableStatement(node, sqlStatement, tableName, comment);
             } else if (node.getKind().equals(SqlKind.CREATE_TABLE)) {
                 SqlCreateTable ct = (SqlCreateTable)node;
+                if (ct.ifNotExists)
+                    throw new UnsupportedException("IF NOT EXISTS not supported", object);
                 String tableName = Catalog.identifierToString(ct.name);
                 List<RelDataTypeField> cols;
                 if (ct.columnList != null) {
                     cols = this.getColumnTypes(Objects.requireNonNull(ct.columnList));
                 } else {
                     if (ct.query == null)
-                        throw new UnsupportedException(new CalciteObject(node));
+                        throw new UnsupportedException("CREATE TABLE cannot contain a query",
+                                new CalciteObject(node));
                     Logger.INSTANCE.belowLevel(this, 1)
                             .append(ct.query.toString())
                             .newline();
@@ -563,6 +567,8 @@ public class CalciteCompiler implements IWritesLogs {
             if (node.getKind().equals(SqlKind.CREATE_VIEW)) {
                 SqlCreateView cv = (SqlCreateView) node;
                 SqlNode query = cv.query;
+                if (cv.getReplace())
+                    throw new UnsupportedException("OR REPLACE not supported", object);
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append(query.toString())
                         .newline();
