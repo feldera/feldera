@@ -421,11 +421,11 @@ test-manager:
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
-            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager -- --skip integration_test::
+            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
-    RUN cp `cargo test --no-run --package dbsp_pipeline_manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable'` test_binary
+    RUN cp `cargo test --features integration-test --no-run --package dbsp_pipeline_manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable'` test_binary
     SAVE ARTIFACT test_binary
 
 test-python:

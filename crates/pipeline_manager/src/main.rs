@@ -69,6 +69,7 @@ mod compiler;
 mod config;
 mod db;
 #[cfg(test)]
+#[cfg(feature = "integration-test")]
 mod integration_test;
 mod runner;
 pub(crate) use compiler::{Compiler, ProgramStatus};

@@ -46,6 +46,9 @@ refinery = {version = "0.8.10", features = ["tokio-postgres"]}
 [target.'cfg(unix)'.dependencies]
 daemonize = { version = "0.5.0" }
 
+[features]
+integration-test = []
+
 [build-dependencies]
 change-detection = "1.2"
 static-files = "0.2.3"

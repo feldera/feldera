@@ -30,12 +30,10 @@ async fn initialize_local_dbsp_instance() -> TempDir {
             "-f",
             "../../deploy/docker-compose-dev.yml",
             "up",
-            "--pull",
-            "always",
             "--renew-anon-volumes",
             "--force-recreate",
             "-d",
-            "db",
+            "db", // run only the DB service
         ])
         .output()
         .unwrap();
@@ -80,7 +78,7 @@ struct TestConfig {
 }
 
 impl TestConfig {
-    fn with_endpoint<S: AsRef<str>>(&self, endpoint: S) -> String {
+    fn endpoint_url<S: AsRef<str>>(&self, endpoint: S) -> String {
         format!("{}{}", self.dbsp_url, endpoint.as_ref())
     }
 
@@ -117,7 +115,7 @@ impl TestConfig {
 
     async fn get<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
         self.client
-            .get(self.with_endpoint(endpoint))
+            .get(self.endpoint_url(endpoint))
             .send()
             .await
             .unwrap()
@@ -129,7 +127,7 @@ impl TestConfig {
         json: &Value,
     ) -> ClientResponse<Decoder<Payload>> {
         self.client
-            .post(self.with_endpoint(endpoint))
+            .post(self.endpoint_url(endpoint))
             .send_json(&json)
             .await
             .unwrap()
@@ -137,7 +135,7 @@ impl TestConfig {
 
     async fn delete<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
         self.client
-            .delete(self.with_endpoint(endpoint))
+            .delete(self.endpoint_url(endpoint))
             .send()
             .await
             .unwrap()
