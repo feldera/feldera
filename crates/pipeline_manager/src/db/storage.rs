@@ -91,6 +91,30 @@ pub(crate) trait Storage {
         Ok(())
     }
 
+    /// Cancel compilation request.
+    ///
+    /// Cancels compilation request if the program is pending in the queue
+    /// or already being compiled.
+    async fn cancel_program(
+        &self,
+        tenant_id: TenantId,
+        program_id: ProgramId,
+        expected_version: Version,
+    ) -> AnyResult<()> {
+        let descr = self
+            .get_program_guarded(tenant_id, program_id, expected_version)
+            .await?;
+
+        if descr.status != ProgramStatus::Pending || !descr.status.is_compiling() {
+            return Ok(());
+        }
+
+        self.set_program_status(tenant_id, program_id, ProgramStatus::None)
+            .await?;
+
+        Ok(())
+    }
+
     /// Retrieve code of the specified program along with the program's
     /// meta-data.
     async fn program_code(
