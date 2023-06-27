@@ -17,7 +17,62 @@ const TEST_DBSP_DEFAULT_PORT: u16 = 8089;
 
 // Used if we are testing against a local DBSP instance
 // whose lifecycle is managed by this test file
-static INSTANCE: OnceCell<TempDir> = OnceCell::const_new();
+static LOCAL_DBSP_INSTANCE: OnceCell<TempDir> = OnceCell::const_new();
+
+async fn initialize_local_dbsp_instance() -> TempDir {
+    println!("Performing one time initialization for integration tests.");
+    println!("Initializing a postgres container");
+    let _output = Command::new("docker")
+        .args([
+            "compose",
+            "-f",
+            "../../deploy/docker-compose.yml",
+            "-f",
+            "../../deploy/docker-compose-dev.yml",
+            "up",
+            "--pull",
+            "always",
+            "--renew-anon-volumes",
+            "--force-recreate",
+            "-d",
+            "db",
+        ])
+        .output()
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(5000)).await;
+    let tmp_dir = TempDir::new().unwrap();
+    let manager_config = ManagerConfig {
+        port: TEST_DBSP_DEFAULT_PORT,
+        bind_address: "0.0.0.0".to_owned(),
+        logfile: None,
+        working_directory: tmp_dir.path().to_str().unwrap().to_owned(),
+        sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
+        dbsp_override_path: Some("../../".to_owned()),
+        debug: false,
+        unix_daemon: false,
+        use_auth: false,
+        db_connection_string: "postgresql://postgres:postgres@localhost:6666".to_owned(),
+        dump_openapi: false,
+        precompile: true,
+        config_file: None,
+        initial_sql: None,
+        dev_mode: false,
+    };
+    let manager_config = manager_config.canonicalize().unwrap();
+    println!("Using ManagerConfig: {:?}", manager_config);
+    println!("Issuing Compiler::precompile_dependencies(). This will be slow.");
+    Compiler::precompile_dependencies(&manager_config)
+        .await
+        .unwrap();
+    println!("Completed Compiler::precompile_dependencies().");
+
+    // We can't use tokio::spawn because super::run() creates its own Tokio Runtime
+    let _ = std::thread::spawn(|| {
+        super::run(manager_config).unwrap();
+    });
+    tokio::time::sleep(Duration::from_millis(1000)).await;
+    tmp_dir
+}
 
 struct TestConfig {
     dbsp_url: String,
@@ -118,64 +173,11 @@ async fn setup() -> TestConfig {
             val
         }
         Err(e) => {
-            INSTANCE
-                .get_or_init(|| async {
-                    println!(
-                        "Could not get TEST_DBSP_URL environment variable (reason: {}). Running integration test against: localhost:{}",
-                        e, TEST_DBSP_DEFAULT_PORT
-                    );
-                    println!("Performing one time initialization for integration tests.");
-                    println!("Initializing a postgres container");
-                    let _output = Command::new("docker")
-                        .args([
-                            "compose",
-                            "-f",
-                            "../../deploy/docker-compose.yml",
-                            "-f",
-                            "../../deploy/docker-compose-dev.yml",
-                            "up",
-                            "--pull",
-                            "always",
-                            "--renew-anon-volumes",
-                            "--force-recreate",
-                            "-d",
-                            "db",
-                        ])
-                        .output()
-                        .unwrap();
-                    tokio::time::sleep(Duration::from_millis(5000)).await;
-                    let tmp_dir = TempDir::new().unwrap();
-                    let manager_config = ManagerConfig {
-                        port: TEST_DBSP_DEFAULT_PORT,
-                        bind_address: "0.0.0.0".to_owned(),
-                        logfile: None,
-                        working_directory: tmp_dir.path().to_str().unwrap().to_owned(),
-                        sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
-                        dbsp_override_path: Some("../../".to_owned()),
-                        debug: false,
-                        unix_daemon: false,
-                        use_auth: false,
-                        db_connection_string: "postgresql://postgres:postgres@localhost:6666"
-                            .to_owned(),
-                        dump_openapi: false,
-                        precompile: true,
-                        config_file: None,
-                        initial_sql: None,
-                        dev_mode: false,
-                    };
-                    let manager_config = manager_config.canonicalize().unwrap();
-                    println!("Using ManagerConfig: {:?}", manager_config);
-                    println!("Issuing Compiler::precompile_dependencies(). This will be slow.");
-                    Compiler::precompile_dependencies(&manager_config)
-                        .await
-                        .unwrap();
-                    println!("Completed Compiler::precompile_dependencies().");
-                    let _ = std::thread::spawn(|| {
-                        super::run(manager_config).unwrap();
-                    });
-                    tokio::time::sleep(Duration::from_millis(1000)).await;
-                    tmp_dir
-                })
+            println!(
+                "TEST_DBSP_URL is unset (reason: {}). Running integration test against: localhost:{}", e, TEST_DBSP_DEFAULT_PORT
+            );
+            LOCAL_DBSP_INSTANCE
+                .get_or_init(initialize_local_dbsp_instance)
                 .await;
             format!("http://localhost:{}", TEST_DBSP_DEFAULT_PORT).to_owned()
         }
