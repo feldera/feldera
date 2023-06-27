@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 public class DBSPTypeString extends DBSPTypeBaseType {
@@ -53,7 +54,7 @@ public class DBSPTypeString extends DBSPTypeBaseType {
 
     @Override
     public DBSPLiteral defaultValue() {
-        return new DBSPStringLiteral("", this.mayBeNull);
+        return new DBSPStringLiteral("", StandardCharsets.UTF_8, this.mayBeNull);
     }
 
     @Override

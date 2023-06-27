@@ -248,6 +248,30 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void someTest() {
+        String query = "SELECT SOME(T.COL3) FROM T";
+        this.testQuery(query,
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(DBSPBoolLiteral.NULLABLE_TRUE)));
+    }
+
+    @Test
+    public void orTest() {
+        String query = "SELECT LOGICAL_OR(T.COL3) FROM T";
+        this.testQuery(query,
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(DBSPBoolLiteral.NULLABLE_TRUE)));
+    }
+
+    @Test
+    public void everyTest() {
+        String query = "SELECT EVERY(T.COL3) FROM T";
+        this.testQuery(query,
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(DBSPBoolLiteral.NULLABLE_FALSE)));
+    }
+
+    @Test
     public void projectTest() {
         String query = "SELECT T.COL3 FROM T";
         this.testQuery(query,

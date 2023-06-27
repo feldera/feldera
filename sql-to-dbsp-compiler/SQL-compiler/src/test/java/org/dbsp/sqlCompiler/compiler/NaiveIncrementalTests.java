@@ -131,6 +131,36 @@ public class NaiveIncrementalTests extends EndToEndTests {
     }
 
     @Test @Override
+    public void someTest() {
+        String query = "SELECT SOME(T.COL3) FROM T";
+        this.testAggregate(query,
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(DBSPBoolLiteral.NULLABLE_TRUE)),
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(DBSPBoolLiteral.NONE)));
+    }
+
+    @Test @Override
+    public void everyTest() {
+        String query = "SELECT EVERY(T.COL3) FROM T";
+        this.testAggregate(query,
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(DBSPBoolLiteral.NULLABLE_FALSE)),
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(DBSPBoolLiteral.NONE)));
+    }
+
+    @Test @Override
+    public void orTest() {
+        String query = "SELECT LOGICAL_OR(T.COL3) FROM T";
+        this.testAggregate(query,
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(DBSPBoolLiteral.NULLABLE_TRUE)),
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(DBSPBoolLiteral.NONE)));
+    }
+
+    @Test @Override
     public void correlatedAggregate() {
         String query = "SELECT Sum(r.COL1 * r.COL5) FROM T r\n" +
                 "WHERE\n" +

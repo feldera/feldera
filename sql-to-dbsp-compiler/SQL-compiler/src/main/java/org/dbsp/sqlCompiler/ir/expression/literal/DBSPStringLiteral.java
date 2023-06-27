@@ -31,23 +31,31 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 public class DBSPStringLiteral extends DBSPLiteral {
     @Nullable
     public final String value;
+    public final Charset charset;
 
     @SuppressWarnings("unused")
     public DBSPStringLiteral() {
-        this(null, true);
+        this(null, StandardCharsets.UTF_8, true);
+    }
+
+    public DBSPStringLiteral(String value, Charset charset) {
+        this(value, charset, false);
     }
 
     public DBSPStringLiteral(String value) {
-        this(value, false);
+        this(value, StandardCharsets.UTF_8, false);
     }
 
-    public DBSPStringLiteral(CalciteObject node, DBSPType type, @Nullable String value) {
+    public DBSPStringLiteral(CalciteObject node, DBSPType type, @Nullable String value, Charset charset) {
         super(node, type, value == null);
+        this.charset = charset;
         this.value = value;
     }
 
@@ -59,8 +67,14 @@ public class DBSPStringLiteral extends DBSPLiteral {
         return Objects.equals(value, that.value);
     }
 
+    public DBSPStringLiteral(@Nullable String value, Charset charset, boolean nullable) {
+        this(CalciteObject.EMPTY, DBSPTypeString.INSTANCE.setMayBeNull(nullable), value, charset);
+        if (value == null && !nullable)
+            throw new InternalCompilerError("Null value with non-nullable type", this);
+    }
+
     public DBSPStringLiteral(@Nullable String value, boolean nullable) {
-        this(CalciteObject.EMPTY, DBSPTypeString.INSTANCE.setMayBeNull(nullable), value);
+        this(CalciteObject.EMPTY, DBSPTypeString.INSTANCE.setMayBeNull(nullable), value, StandardCharsets.UTF_8);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
@@ -75,7 +89,7 @@ public class DBSPStringLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getNonNullable() {
-        return new DBSPStringLiteral(Objects.requireNonNull(this.value));
+        return new DBSPStringLiteral(Objects.requireNonNull(this.value), this.charset);
     }
 
     @Override

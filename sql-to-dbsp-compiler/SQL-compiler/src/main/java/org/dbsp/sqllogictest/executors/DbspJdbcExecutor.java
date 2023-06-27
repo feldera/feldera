@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -129,7 +130,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                         if (s == null)
                             exp = DBSPLiteral.none(DBSPTypeString.NULLABLE_INSTANCE);
                         else
-                            exp = new DBSPStringLiteral(s, type.mayBeNull);
+                            exp = new DBSPStringLiteral(s, StandardCharsets.UTF_8, type.mayBeNull);
                     }
                     cols[i] = exp;
                 }

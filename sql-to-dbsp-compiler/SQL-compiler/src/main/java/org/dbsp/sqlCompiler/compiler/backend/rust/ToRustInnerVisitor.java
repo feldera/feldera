@@ -368,8 +368,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPStringLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);
+        Objects.requireNonNull(literal.value);
+        byte[] bytes = literal.value.getBytes(literal.charset);
+        String decoded = new String(bytes, literal.charset);
+        decoded = Utilities.doubleQuote(decoded);
         this.builder.append(literal.wrapSome(
-                "String::from(" + Utilities.doubleQuote(Objects.requireNonNull(literal.value)) + ")"));
+        "String::from(" + decoded + ")"));
         return VisitDecision.STOP;
     }
 

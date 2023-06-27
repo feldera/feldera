@@ -38,9 +38,13 @@ public class Utilities {
      */
     public static String escape(String value) {
         StringBuilder builder = new StringBuilder();
-        for (char c : value.toCharArray()) {
+        final int length = value.length();
+        for (int offset = 0; offset < length; ) {
+            final int c = value.codePointAt(offset);
             if (c == '\'')
                 builder.append("\\'");
+            else if (c == '\\')
+                builder.append("\\\\");
             else if (c == '\"' )
                 builder.append("\\\"");
             else if (c == '\r' )
@@ -49,10 +53,13 @@ public class Utilities {
                 builder.append("\\n");
             else if (c == '\t' )
                 builder.append("\\t");
-            else if (c < 32 || c >= 127 )
-                builder.append( String.format( "\\u%04x", (int)c ) );
-            else
-                builder.append(c);
+            else if (c < 32 || c >= 127) {
+                builder.append("\\u{");
+                builder.append(String.format("%04x", c));
+                builder.append("}");
+            } else
+                builder.append((char)c);
+            offset += Character.charCount(c);
         }
         return builder.toString();
     }

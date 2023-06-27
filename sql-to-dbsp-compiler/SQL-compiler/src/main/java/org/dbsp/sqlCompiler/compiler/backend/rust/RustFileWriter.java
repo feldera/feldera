@@ -169,7 +169,16 @@ public class RustFileWriter implements ICompilerComponent {
             "    },\n" +
             "    facade::{DbspCircuit,Demands},\n" +
             "    codegen::CodegenConfig,\n" +
-            "};\n";
+            "};\n" +
+            "#[cfg(test)]\n" +
+            "use sqllib::{\n" +
+            "    *,\n" +
+            "    casts::*,\n" +
+            "    geopoint::*,\n" +
+            "    timestamp::*,\n" +
+            "    interval::*,\n" +
+            "};\n"
+            ;
 
     final DBSPCompiler compiler;
 

@@ -42,19 +42,18 @@ public class TimeTests extends BaseSQLTests {
         return compiler;
     }
 
-    void testQuery(String query, DBSPExpression... fields) {
+    public void testQuery(String query, DBSPExpression... fields) {
         // T contains a date with timestamp '100'.
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query, false, true, false);
         DBSPCircuit circuit = getCircuit(compiler);
-        // ToJitVisitor.validateJson(circuit);
         DBSPZSetLiteral.Contents expectedOutput = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(fields));
         InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
         this.addRustTestCase(query, compiler, circuit, streams);
     }
 
     @Override
-    DBSPZSetLiteral.Contents createInput() {
+    public DBSPZSetLiteral.Contents createInput() {
         return new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPTimestampLiteral(100)));
     }
 
