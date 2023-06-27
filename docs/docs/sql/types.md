@@ -28,7 +28,7 @@ The compiler supports the following SQL data types:
   to a millisecond.
 - `DATE`, a SQL date without a timezone.  A date represents a value
   containing a date (year, month, day).
-- `GEOMETRY`: geographic data type
+- `GEOMETRY`: geographic data type (only rudimentary support at this point)
 - `ARRAY`: used as a suffix for another type, as in `INT ARRAY`.
   An array with element of the specified type.
 
@@ -48,3 +48,66 @@ Most SQL operations are defined for nullable types.  Our compiler
 follows the SQL standard in this respect.  Most operations (e.g.,
 `+`), when applied a `NULL` operand will produce a `NULL`
 value.
+
+## Grammar for specifying types
+
+```
+type:
+      typeName
+      [ collectionsTypeName ]*
+
+typeName:
+      sqlTypeName
+  |   compoundIdentifier
+
+sqlTypeName:
+      char [ precision ] [ charSet ]
+  |   varchar [ precision ] [ charSet ]
+  |   DATE
+  |   time
+  |   timestamp
+  |   GEOMETRY
+  |   decimal [ precision [, scale] ]
+  |   BOOLEAN
+  |   integer
+  |   TINYINT
+  |   SMALLINT
+  |   BIGINT
+  |   REAL
+  |   double
+  |   FLOAT
+  |   ANY [ precision [, scale] ]
+
+collectionsTypeName:
+      ARRAY
+
+char:
+      CHARACTER | CHAR
+
+varchar:
+      char VARYING | VARCHAR
+
+decimal:
+      DECIMAL | DEC | NUMERIC
+
+integer:
+      INTEGER | INT
+
+varbinary:
+      BINARY VARYING | VARBINARY
+
+double:
+      DOUBLE [ PRECISION ]
+
+time:
+      TIME [ precision ] [ timeZone ]
+
+timestamp:
+      TIMESTAMP [ precision ] [ timeZone ]
+
+charSet:
+      CHARACTER SET charSetName
+
+timeZone:
+      WITHOUT TIME ZONE
+```

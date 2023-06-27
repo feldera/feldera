@@ -134,7 +134,7 @@ public class BaseSQLTests {
                                     new DBSPApplyExpression("must_equal", DBSPTypeBool.INSTANCE,
                                             out.getVarReference().field(i).borrow(),
                                             outputs[i].borrow()),
-                                    new DBSPStrLiteral(this.name)));
+                                    new DBSPStrLiteral(this.name, false, true)));
                     list.add(compare);
                 }
             }

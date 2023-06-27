@@ -419,7 +419,8 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
-        DBSPExpression result = new DBSPStringLiteral(expression.getNode(), type, expression.value);
+        DBSPExpression result = new DBSPStringLiteral(
+                expression.getNode(), type, expression.value, expression.charset);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

@@ -20,7 +20,7 @@ duplicated values, the resulting table will be a multiset.
 
 The `UNNEST` operator can be used in self-joins as follows:
 
-```
+```sql
 SELECT city, country
 FROM data, UNNEST(cities) AS t (city)
 ```

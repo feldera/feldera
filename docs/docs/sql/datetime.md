@@ -126,6 +126,13 @@ timestamp)`.
 two timestamps and expresses the result in the specified time units.
 The result is a 32-bit integer.
 
+## Timezones
+
+`DATE`, `TIME` and `TIMESTAMP` have no time zone. For those types,
+there is not even an implicit time zone, such as UTC (as in Java) or
+the local time zone.  It is left to the user or application to supply a
+time zone.
+
 ## Important unsupported operations
 
 Since DBSP is a *deterministic* query engine, it cannot offer support

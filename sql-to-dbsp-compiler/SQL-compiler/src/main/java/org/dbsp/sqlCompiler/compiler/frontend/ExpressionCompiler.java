@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend;
 
+import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.*;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.util.DateString;
@@ -43,6 +44,7 @@ import org.locationtech.jts.geom.Point;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
+import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Objects;
 
@@ -128,8 +130,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return new DBSPDoubleLiteral(Objects.requireNonNull(literal.getValueAs(Double.class)));
             else if (type.is(DBSPTypeFloat.class))
                 return new DBSPFloatLiteral(Objects.requireNonNull(literal.getValueAs(Float.class)));
-            else if (type.is(DBSPTypeString.class))
-                return new DBSPStringLiteral(Objects.requireNonNull(literal.getValueAs(String.class)));
+            else if (type.is(DBSPTypeString.class)) {
+                String str = literal.getValueAs(String.class);
+                RelDataType litType = literal.getType();
+                Charset charset = litType.getCharset();
+                return new DBSPStringLiteral(Objects.requireNonNull(str), Objects.requireNonNull(charset));
+            }
             else if (type.is(DBSPTypeBool.class))
                 return new DBSPBoolLiteral(Objects.requireNonNull(literal.getValueAs(Boolean.class)));
             else if (type.is(DBSPTypeDecimal.class))
