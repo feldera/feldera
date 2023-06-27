@@ -87,7 +87,7 @@ impl TestConfig {
     async fn cleanup(&self) {
         let config = self;
 
-        // Cleanup pipelines
+        // Cleanup pipelines..
         let mut req = config.get("/v0/pipelines").await;
         let pipelines: Value = req.json().await.unwrap();
         for pipeline in pipelines.as_array().unwrap() {
@@ -96,12 +96,21 @@ impl TestConfig {
             assert_eq!(StatusCode::OK, req.status())
         }
 
-        // programs
+        // .. programs
         let mut req = config.get("/v0/programs").await;
         let programs: Value = req.json().await.unwrap();
         for program in programs.as_array().unwrap() {
             let id = program.get("program_id").unwrap().as_str().unwrap();
             let req = config.delete(format!("/v0/programs/{}", id)).await;
+            assert_eq!(StatusCode::OK, req.status())
+        }
+
+        // .. connectors
+        let mut req = config.get("/v0/connectors").await;
+        let programs: Value = req.json().await.unwrap();
+        for program in programs.as_array().unwrap() {
+            let id = program.get("connector_id").unwrap().as_str().unwrap();
+            let req = config.delete(format!("/v0/connectors/{}", id)).await;
             assert_eq!(StatusCode::OK, req.status())
         }
     }
