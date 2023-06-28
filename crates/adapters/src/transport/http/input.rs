@@ -1,7 +1,7 @@
 use crate::{ControllerError, InputConsumer, InputEndpoint, PipelineState, TransportConfig};
 use actix::Message;
 use actix_web::{web::Payload, HttpResponse};
-use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use futures_util::StreamExt;
 use log::debug;
 use num_traits::FromPrimitive;
@@ -130,7 +130,10 @@ impl HttpInputEndpoint {
     ///
     /// Returns on reaching the end of the `payload` stream
     /// (if any) or when the pipeline terminates.
-    pub(crate) async fn complete_request(&self, mut payload: Payload) -> AnyResult<HttpResponse> {
+    pub(crate) async fn complete_request(
+        &self,
+        mut payload: Payload,
+    ) -> Result<HttpResponse, ControllerError> {
         debug!("HTTP input endpoint '{}': start of request", self.name());
 
         let mut num_bytes = 0;
@@ -141,7 +144,7 @@ impl HttpInputEndpoint {
                     let _ = status_watch.changed().await;
                 }
                 PipelineState::Terminated => {
-                    bail!(ControllerError::pipeline_terminating());
+                    return Err(ControllerError::pipeline_terminating());
                 }
                 PipelineState::Running => {
                     // Check pipeline status at least every second.
@@ -150,20 +153,20 @@ impl HttpInputEndpoint {
                         Ok(Some(Ok(bytes))) => {
                             num_bytes += bytes.len();
                             if let Err(e) = self.push_bytes(&bytes) {
-                                bail!(ControllerError::parse_error(self.name(), &e));
+                                return Err(ControllerError::parse_error(self.name(), &e));
                             }
                         }
                         Ok(Some(Err(e))) => {
                             self.error(true, anyhow!(e.to_string()));
-                            bail!(ControllerError::input_transport_error(
+                            return Err(ControllerError::input_transport_error(
                                 self.name(),
                                 true,
-                                anyhow!(e)
+                                anyhow!(e),
                             ));
                         }
                         Ok(None) => {
                             if let Err(e) = self.eoi() {
-                                bail!(ControllerError::parse_error(self.name(), &e));
+                                return Err(ControllerError::parse_error(self.name(), &e));
                             }
                             break;
                         }

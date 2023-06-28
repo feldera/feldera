@@ -9,15 +9,13 @@ use crate::{
 use actix_web::{
     dev::{Server, ServiceFactory, ServiceRequest},
     get,
-    http::StatusCode,
     middleware::Logger,
     post, rt, web,
     web::{Data as WebData, Json, Payload, Query},
-    App, Error as ActixError, HttpRequest, HttpResponse, HttpResponseBuilder, HttpServer,
-    Responder,
+    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use actix_web_static_files::ResourceFiles;
-use anyhow::{Error as AnyError, Result as AnyResult};
+use anyhow::Error as AnyError;
 use clap::Parser;
 use colored::Colorize;
 use dbsp::{operator::sample::MAX_QUANTILES, DBSPHandle};
@@ -32,6 +30,8 @@ use serde_yaml::Value as YamlValue;
 use std::io::Write;
 use std::{
     borrow::Cow,
+    error::Error as StdError,
+    fmt::{Display, Error as FmtError, Formatter},
     net::TcpListener,
     sync::{Arc, Mutex},
 };
@@ -45,6 +45,76 @@ use uuid::Uuid;
 mod prometheus;
 
 use self::prometheus::PrometheusMetrics;
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum ApiError {
+    PrometheusError {
+        error: String,
+    },
+    MissingUrlEncodedParam {
+        param: &'static str,
+    },
+    ApiConnectionLimit,
+    TableSnapshotNotImplemented,
+    QuantileStreamingNotSupported,
+    NumQuantilesOutOfRange {
+        quantiles: u32,
+    },
+    MissingNeighborhoodSpec,
+    InvalidNeighborhoodSpec {
+        spec: JsonValue,
+        parse_error: String,
+    },
+}
+
+impl StdError for ApiError {}
+
+impl Display for ApiError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        match self {
+            Self::PrometheusError{error} => {
+                write!(f, "Error retrieving Prometheus metrics: '{error}'.")
+            }
+            Self::MissingUrlEncodedParam { param } => {
+                write!(f, "Missing URL-encoded parameter '{param}'.")
+            }
+            Self::ApiConnectionLimit => {
+                f.write_str("The API connections limit has been exceded. Close some of the existing connections before opening new ones.")
+            }
+            Self::QuantileStreamingNotSupported => {
+                f.write_str("Continuous monitoring is not supported for quantiles. Use '?mode=snapshot' to retrieve a single set of quantiles.")
+            }
+            Self::TableSnapshotNotImplemented => {
+                f.write_str("Taking a snapshot of a table or view is not yet supported.")
+            }
+            Self::MissingNeighborhoodSpec => {
+                f.write_str(r#"Neighborhood request must specify neighborhood in the body of the request: '{"anchor": ..., "before": 100, "after": 100}'."#)
+            }
+            Self::NumQuantilesOutOfRange{quantiles} => {
+                write!(f, "The requested number of quantiles, {quantiles}, is beyond the allowed range 1 to {MAX_QUANTILES}.")
+            }
+            Self::InvalidNeighborhoodSpec{spec, parse_error} => {
+                write!(f, "Unable to parse neighborhood descriptor '{spec}'. Error returned by the parser: '{parse_error}'.")
+            }
+        }
+    }
+}
+
+impl DetailedError for ApiError {
+    fn error_code(&self) -> Cow<'static, str> {
+        match self {
+            Self::PrometheusError { .. } => Cow::from("PrometheusError"),
+            Self::MissingUrlEncodedParam { .. } => Cow::from("MissingUrlEncodedParam"),
+            Self::ApiConnectionLimit => Cow::from("ApiConnectionLimit"),
+            Self::QuantileStreamingNotSupported => Cow::from("QuantileStreamingNotSupported"),
+            Self::TableSnapshotNotImplemented => Cow::from("TableSnapshotNotImplemented"),
+            Self::MissingNeighborhoodSpec => Cow::from("MissingNeighborhoodSpec"),
+            Self::NumQuantilesOutOfRange { .. } => Cow::from("NumQuantilesOutOfRange"),
+            Self::InvalidNeighborhoodSpec { .. } => Cow::from("InvalidNeighborhoodSpec"),
+        }
+    }
+}
 
 struct ServerState {
     metadata: String,
@@ -88,11 +158,17 @@ pub struct ErrorResponse {
 }
 
 impl ErrorResponse {
-    pub fn new(message: &str, error_code: &'static str, details: JsonValue) -> Self {
+    pub fn from_anyerror(error: &AnyError) -> Self {
+        let message = error.to_string();
+        let error_code = Cow::from("UnknownError");
+
+        error!("[HTTP error response] {error_code}: {message}");
+        warn!("Backtrace: {:#?}", error.backtrace());
+
         Self {
-            message: message.to_string(),
-            error_code: Cow::from(error_code),
-            details,
+            message,
+            error_code,
+            details: json!(null),
         }
     }
 
@@ -100,50 +176,49 @@ impl ErrorResponse {
     where
         E: DetailedError,
     {
+        let message = error.to_string();
+        let error_code = error.error_code();
+
+        error!("[HTTP error response] {error_code}: {message}");
+
         Self {
-            message: error.to_string(),
-            error_code: error.error_code(),
+            message,
+            error_code,
             details: serde_json::to_value(error).unwrap_or_else(|e| {
-                JsonValue::String(format!("Failed to serialize error details: '{e}'"))
+                JsonValue::String(format!("Failed to serialize error. Details: '{e}'"))
             }),
         }
     }
 }
 
-fn http_resp_from_error(error: &AnyError) -> HttpResponse {
-    debug!("Returning HTTP error: {:?}", error);
-    if let Some(controller_error) = error.downcast_ref::<ControllerError>() {
-        match controller_error {
-            ControllerError::Config {
-                config_error: ConfigError::UnknownInputStream { .. },
-            } => HttpResponse::NotFound(),
-            ControllerError::Config {
-                config_error: ConfigError::UnknownOutputStream { .. },
-            } => HttpResponse::NotFound(),
-            ControllerError::Config { .. } => HttpResponse::BadRequest(),
-            ControllerError::ParseError { .. } => HttpResponse::UnprocessableEntity(),
-            ControllerError::PipelineTerminating { .. } => HttpResponse::NotFound(),
-            _ => HttpResponse::InternalServerError(),
-        }
-        .json(ErrorResponse::from_error(controller_error))
-    } else {
-        HttpResponse::InternalServerError().json(ErrorResponse::new(
-            &error.to_string(),
-            "UnknownError",
-            json!(null),
-        ))
+fn http_resp_from_controller_error(error: &ControllerError) -> HttpResponse {
+    match error {
+        ControllerError::Config {
+            config_error: ConfigError::UnknownInputStream { .. },
+        } => HttpResponse::NotFound(),
+        ControllerError::Config {
+            config_error: ConfigError::UnknownOutputStream { .. },
+        } => HttpResponse::NotFound(),
+        ControllerError::Config { .. } => HttpResponse::BadRequest(),
+        ControllerError::ParseError { .. } => HttpResponse::BadRequest(),
+        ControllerError::PipelineTerminating { .. } => HttpResponse::NotFound(),
+        _ => HttpResponse::InternalServerError(),
     }
+    .json(ErrorResponse::from_error(error))
 }
 
-/// Create a HTTP error response from a status code and an error message.
-pub(crate) fn http_error(status: StatusCode, msg: &str) -> HttpResponse {
-    let response = HttpResponseBuilder::new(status).json(&ErrorResponse::new(
-        msg,
-        "UnknownError",
-        json!(null),
-    ));
-    error!("HTTP error response: {status}: {msg}");
-    response
+fn http_resp_from_api_error(error: &ApiError) -> HttpResponse {
+    match error {
+        ApiError::PrometheusError { .. } => HttpResponse::InternalServerError(),
+        ApiError::MissingUrlEncodedParam { .. } => HttpResponse::BadRequest(),
+        ApiError::ApiConnectionLimit => HttpResponse::TooManyRequests(),
+        ApiError::QuantileStreamingNotSupported => HttpResponse::MethodNotAllowed(),
+        ApiError::TableSnapshotNotImplemented => HttpResponse::NotImplemented(),
+        ApiError::MissingNeighborhoodSpec => HttpResponse::BadRequest(),
+        ApiError::NumQuantilesOutOfRange { .. } => HttpResponse::RangeNotSatisfiable(),
+        ApiError::InvalidNeighborhoodSpec { .. } => HttpResponse::BadRequest(),
+    }
+    .json(ErrorResponse::from_error(error))
 }
 
 #[derive(Parser, Debug)]
@@ -182,17 +257,23 @@ pub const SERVER_PORT_FILE: &str = "port";
 /// * `circuit_factory` - a function that creates a circuit and builds an
 ///   input/output stream
 /// catalog.
-pub fn server_main<F>(circuit_factory: &F) -> AnyResult<()>
+pub fn server_main<F>(circuit_factory: &F) -> Result<(), ControllerError>
 where
     F: Fn(usize) -> (DBSPHandle, Catalog),
 {
-    let args = Args::try_parse()?;
-    let yaml_config = std::fs::read(&args.config_file)?;
-    let yaml_config = String::from_utf8(yaml_config)?;
+    let args = Args::try_parse().map_err(|e| ControllerError::cli_args_error(&e))?;
+    let yaml_config = std::fs::read(&args.config_file).map_err(|e| {
+        ControllerError::io_error(
+            format!("reading configuration file '{}'", args.config_file),
+            &e,
+        )
+    })?;
+    let yaml_config = String::from_utf8(yaml_config)
+        .map_err(|e| ControllerError::config_parse_error(&format!("invalid UTF8 string ({e})")))?;
     let config: PipelineConfig = serde_yaml::from_str(yaml_config.as_str()).map_err(|e| {
         let err = format!("error parsing pipeline configuration: {e}");
         error!("{err}");
-        AnyError::msg(err)
+        ControllerError::config_parse_error(&e)
     })?;
 
     // Create env logger.
@@ -213,8 +294,14 @@ where
     let meta = match args.metadata_file {
         None => String::new(),
         Some(metadata_file) => {
-            let meta = std::fs::read(metadata_file)?;
-            String::from_utf8(meta)?
+            let meta = std::fs::read(&metadata_file).map_err(|e| {
+                ControllerError::io_error(format!("reading metadata file '{}'", metadata_file), &e)
+            })?;
+            String::from_utf8(meta).map_err(|e| {
+                ControllerError::config_parse_error(&format!(
+                    "invalid UTF8 string in the metadata file ({e})"
+                ))
+            })?
         }
     };
     run_server(circuit_factory, &config, meta, args.default_port).map_err(|e| {
@@ -228,7 +315,7 @@ pub fn run_server<F>(
     config: &PipelineConfig,
     meta: String,
     default_port: Option<u16>,
-) -> AnyResult<()>
+) -> Result<(), ControllerError>
 where
     F: Fn(usize) -> (DBSPHandle, Catalog),
 {
@@ -237,8 +324,7 @@ where
     // If you change these messages, make sure to make a corresponding change to
     // `runner.rs`.
     let (port, server, mut terminate_receiver) =
-        create_server(circuit_factory, config, meta, default_port)
-            .map_err(|e| AnyError::msg(format!("Failed to create pipeline: {e}")))?;
+        create_server(circuit_factory, config, meta, default_port)?;
 
     rt::System::new().block_on(async {
         // Spawn a task that will shutdown the server on `/kill`.
@@ -249,8 +335,12 @@ where
         });
 
         info!("Started HTTP server on port {port}");
-        tokio::fs::write(SERVER_PORT_FILE, format!("{}\n", port)).await?;
-        server.await
+        tokio::fs::write(SERVER_PORT_FILE, format!("{}\n", port))
+            .await
+            .map_err(|e| ControllerError::io_error("writing server port file".to_string(), &e))?;
+        server
+            .await
+            .map_err(|e| ControllerError::io_error("in the HTTP server".to_string(), &e))
     })?;
     Ok(())
 }
@@ -260,7 +350,7 @@ pub fn create_server<F>(
     config: &PipelineConfig,
     meta: String,
     default_port: Option<u16>,
-) -> AnyResult<(u16, Server, Receiver<()>)>
+) -> Result<(u16, Server, Receiver<()>), ControllerError>
 where
     F: Fn(usize) -> (DBSPHandle, Catalog),
 {
@@ -273,16 +363,26 @@ where
         Box::new(|e| error!("{e}")) as Box<dyn Fn(ControllerError) + Send + Sync>,
     )?;
 
-    let prometheus = PrometheusMetrics::new(&controller)
-        .map_err(|e| AnyError::msg(format!("failed to initialize Prometheus metrics: {e}")))?;
+    let prometheus =
+        PrometheusMetrics::new(&controller).map_err(|e| ControllerError::prometheus_error(&e))?;
 
     let listener = match default_port {
         Some(port) => TcpListener::bind(("127.0.0.1", port))
-            .or_else(|_| TcpListener::bind(("127.0.0.1", 0)))?,
-        None => TcpListener::bind(("127.0.0.1", 0))?,
+            .or_else(|_| TcpListener::bind(("127.0.0.1", 0)))
+            .map_err(|e| ControllerError::io_error(format!("binding to TCP port {port}"), &e))?,
+        None => TcpListener::bind(("127.0.0.1", 0))
+            .map_err(|e| ControllerError::io_error("binding to TCP port".to_string(), &e))?,
     };
 
-    let port = listener.local_addr()?.port();
+    let port = listener
+        .local_addr()
+        .map_err(|e| {
+            ControllerError::io_error(
+                "retrieving local socket address of the TCP listener".to_string(),
+                &e,
+            )
+        })?
+        .port();
 
     let (terminate_sender, terminate_receiver) = channel(1);
     let state = WebData::new(ServerState::new(
@@ -294,7 +394,10 @@ where
     let server =
         HttpServer::new(move || build_app(App::new().wrap(Logger::default()), state.clone()))
             .workers(1)
-            .listen(listener)?
+            .listen(listener)
+            .map_err(|e| {
+                ControllerError::io_error("binding server to the listener".to_string(), &e)
+            })?
             .run();
 
     Ok((port, server, terminate_receiver))
@@ -342,7 +445,7 @@ async fn start(state: WebData<ServerState>) -> impl Responder {
             controller.start();
             HttpResponse::Ok().json("The pipeline is running")
         }
-        None => http_error(StatusCode::GONE, "The pipeline has been terminated"),
+        None => http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
     }
 }
 
@@ -353,7 +456,7 @@ async fn pause(state: WebData<ServerState>) -> impl Responder {
             controller.pause();
             HttpResponse::Ok().json("Pipeline paused")
         }
-        None => http_error(StatusCode::GONE, "The pipeline has been terminated"),
+        None => http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
     }
 }
 
@@ -366,7 +469,7 @@ async fn stats(state: WebData<ServerState>) -> impl Responder {
                 .content_type(mime::APPLICATION_JSON)
                 .body(json_string)
         }
-        None => http_error(StatusCode::GONE, "The pipeline has been terminated"),
+        None => http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
     }
 }
 
@@ -378,12 +481,11 @@ async fn metrics(state: WebData<ServerState>) -> impl Responder {
             Ok(metrics) => HttpResponse::Ok()
                 .content_type(mime::TEXT_PLAIN)
                 .body(metrics),
-            Err(e) => http_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("Error retrieving metrics: {e}"),
-            ),
+            Err(e) => http_resp_from_api_error(&ApiError::PrometheusError {
+                error: e.to_string(),
+            }),
         },
-        None => http_error(StatusCode::GONE, "The pipeline has been terminated"),
+        None => http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
     }
 }
 
@@ -401,7 +503,7 @@ async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
             controller.dump_profile();
             HttpResponse::Ok().json("Profile dump initiated")
         }
-        None => http_error(StatusCode::GONE, "The pipeline has been terminated"),
+        None => http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
     }
 }
 
@@ -419,10 +521,7 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
                 }
                 HttpResponse::Ok().json("Pipeline terminated")
             }
-            Err(e) => http_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("Failed to shut down the pipeline: '{e}'"),
-            ),
+            Err(e) => http_resp_from_controller_error(&e),
         }
     } else {
         HttpResponse::Ok().json("Pipeline already terminated")
@@ -446,7 +545,11 @@ async fn input_endpoint(
 ) -> impl Responder {
     debug!("{req:?}");
     let table_name = match req.match_info().get("table_name") {
-        None => return http_error(StatusCode::BAD_REQUEST, "Missing table name argument."),
+        None => {
+            return http_resp_from_api_error(&ApiError::MissingUrlEncodedParam {
+                param: "table_name",
+            })
+        }
         Some(table_name) => table_name.to_string(),
     };
     // debug!("Table name {table_name:?}");
@@ -472,9 +575,7 @@ async fn input_endpoint(
     let endpoint_id = match &*state.controller.lock().unwrap() {
         Some(controller) => {
             if controller.register_api_connection().is_err() {
-                return http_error(StatusCode::TOO_MANY_REQUESTS,
-                        "The API connections limit has been exceded. Close some of the existing connections before opening new ones."
-                    );
+                return http_resp_from_api_error(&ApiError::ApiConnectionLimit);
             }
 
             match controller.add_input_endpoint(
@@ -489,12 +590,12 @@ async fn input_endpoint(
                 Err(e) => {
                     controller.unregister_api_connection();
                     debug!("Failed to create API endpoint: '{e}'");
-                    return http_resp_from_error(&e);
+                    return http_resp_from_controller_error(&e);
                 }
             }
         }
         None => {
-            return http_error(StatusCode::GONE, "The pipeline has been terminated");
+            return http_resp_from_controller_error(&ControllerError::pipeline_terminating());
         }
     };
 
@@ -502,7 +603,7 @@ async fn input_endpoint(
     let response = endpoint
         .complete_request(payload)
         .await
-        .unwrap_or_else(|e| http_resp_from_error(&e));
+        .unwrap_or_else(|e| http_resp_from_controller_error(&e));
     drop(endpoint);
 
     // Delete endpoint on completion/error.
@@ -575,46 +676,35 @@ async fn output_endpoint(
     let state = state.into_inner();
 
     let table_name = match req.match_info().get("table_name") {
-        None => return http_error(StatusCode::BAD_REQUEST, "Missing table name argument."),
+        None => {
+            return http_resp_from_api_error(&ApiError::MissingUrlEncodedParam {
+                param: "table_name",
+            })
+        }
         Some(table_name) => table_name.to_string(),
     };
 
     // Check for unsupported combinations.
     match (args.mode, args.query) {
         (EgressMode::Watch, OutputQuery::Quantiles) => {
-            return http_error(
-                StatusCode::METHOD_NOT_ALLOWED,
-                "Continuous monitoring is not supported for quantiles. Use '?mode=snapshot' to retrieve a single set of quantiles."
-            );
+            return http_resp_from_api_error(&ApiError::QuantileStreamingNotSupported);
         }
         (EgressMode::Snapshot, OutputQuery::Table) => {
-            return http_error(
-                StatusCode::NOT_IMPLEMENTED,
-                "Taking a snapshot of a table or view is not yet supported",
-            );
+            return http_resp_from_api_error(&ApiError::TableSnapshotNotImplemented);
         }
         _ => {}
     };
 
     if args.query == OutputQuery::Neighborhood {
         if body.is_none() {
-            return http_error(
-                StatusCode::BAD_REQUEST,
-                r#"Neighborhood request must specify neighborhood in the body of the request: '{"anchor": ..., "before": 100, "after": 100}'."#,
-            );
+            return http_resp_from_api_error(&ApiError::MissingNeighborhoodSpec);
         }
-    } else if args.query == OutputQuery::Quantiles {
-        if args.quantiles as usize > MAX_QUANTILES {
-            return http_error(
-                StatusCode::RANGE_NOT_SATISFIABLE,
-                &format!("Requested number of quantiles '{}' exceeds maximal supported value '{MAX_QUANTILES}'.", args.quantiles),
-            );
-        } else if args.quantiles == 0 {
-            return http_error(
-                StatusCode::RANGE_NOT_SATISFIABLE,
-                "The 'quantiles' argument must be greater than 0.",
-            );
-        }
+    } else if args.query == OutputQuery::Quantiles
+        && (args.quantiles as usize > MAX_QUANTILES || args.quantiles == 0)
+    {
+        return http_resp_from_api_error(&ApiError::NumQuantilesOutOfRange {
+            quantiles: args.quantiles,
+        });
     }
 
     // Generate endpoint name depending on the query and output mode.
@@ -659,10 +749,7 @@ async fn output_endpoint(
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
             if controller.register_api_connection().is_err() {
-                return http_error(
-                    StatusCode::TOO_MANY_REQUESTS,
-                    "The API connections limit has been exceded. Close some of the existing connections before opening new ones."
-                );
+                return http_resp_from_api_error(&ApiError::ApiConnectionLimit);
             }
 
             let endpoint_id = match controller.add_output_endpoint(
@@ -676,12 +763,7 @@ async fn output_endpoint(
                 Ok(endpoint_id) => endpoint_id,
                 Err(e) => {
                     controller.unregister_api_connection();
-                    // TODO: Convert `e` to an appropriate HTTP error code.
-                    debug!("Failed to create HTTP endpoint: '{e}'");
-                    return http_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        &format!("Failed to create HTTP endpoint: '{e}'"),
-                    );
+                    return http_resp_from_controller_error(&e);
                 }
             };
 
@@ -733,10 +815,10 @@ async fn output_endpoint(
                     {
                         // Dropping `response` triggers the finalizer closure, which will
                         // disconnect this endpoint.
-                        return http_error(
-                            StatusCode::BAD_REQUEST,
-                            &format!("Unable to parse neighborhood descriptor '{body}'. Error returned by the parser: '{e}'."),
-                        );
+                        return http_resp_from_api_error(&ApiError::InvalidNeighborhoodSpec {
+                            spec: body.into_inner(),
+                            parse_error: e.to_string(),
+                        });
                     }
                     controller.request_step();
                 }
@@ -755,9 +837,7 @@ async fn output_endpoint(
                 OutputQuery::Table => {}
             }
         }
-        None => {
-            return http_error(StatusCode::GONE, "The pipeline has been terminated");
-        }
+        None => return http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
     };
 
     response
@@ -1025,7 +1105,7 @@ outputs:
         // Start after shutdown must fail.
         println!("/start");
         let resp = server.get("/start").send().await.unwrap();
-        assert_eq!(resp.status(), StatusCode::GONE);
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
         drop(buffer_consumer);
         drop(kafka_resources);

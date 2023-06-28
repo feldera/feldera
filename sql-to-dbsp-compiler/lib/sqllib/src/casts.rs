@@ -996,24 +996,35 @@ pub fn truncate(value: String, size: usize) -> String {
 /// specified size.
 #[inline(always)]
 pub fn size_string(value: String, size: usize) -> String {
-    if size == 0 || value.len() == size { value }
-    else if value.len() > size { truncate(value, size) }
-    else { format!("{value:>size$}") }
+    if size == 0 || value.len() == size {
+        value
+    } else if value.len() > size {
+        truncate(value, size)
+    } else {
+        format!("{value:>size$}")
+    }
 }
 
 /// Make sure that the specified string does not exceed
 /// the specified size.
 #[inline(always)]
 pub fn limit_string(value: String, size: usize) -> String {
-    if size == 0 || value.len() < size { value }
+    if size == 0 || value.len() < size {
+        value
+    }
     // TODO: this is legal only of all excess characters are spaces
-    else { truncate(value, size) }
+    else {
+        truncate(value, size)
+    }
 }
 
 #[inline(always)]
 pub fn limit_or_size_string(value: String, size: usize, fixed: bool) -> String {
-    if fixed { size_string(value, size) }
-    else { limit_string(value, size) }
+    if fixed {
+        size_string(value, size)
+    } else {
+        limit_string(value, size)
+    }
 }
 
 #[inline]
