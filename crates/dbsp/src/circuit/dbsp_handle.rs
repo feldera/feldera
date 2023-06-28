@@ -225,7 +225,7 @@ impl DBSPHandle {
         F: FnMut(Response),
     {
         if self.runtime.is_none() {
-            return Err(DBSPError::Runtime(RuntimeError::Killed));
+            return Err(DBSPError::Runtime(RuntimeError::Terminated));
         }
 
         // Send command.

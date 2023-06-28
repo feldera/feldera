@@ -85,7 +85,7 @@ pub struct Controller {
     inner: Arc<ControllerInner>,
 
     /// The circuit thread handle (see module-level docs).
-    circuit_thread_handle: JoinHandle<AnyResult<()>>,
+    circuit_thread_handle: JoinHandle<Result<(), ControllerError>>,
 
     /// The backpressure thread handle (see module-level docs).
     backpressure_thread_handle: JoinHandle<()>,
@@ -126,7 +126,7 @@ impl Controller {
         catalog: Catalog,
         config: &PipelineConfig,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
-    ) -> AnyResult<Self> {
+    ) -> Result<Self, ControllerError> {
         let circuit_thread_parker = Parker::new();
         let circuit_thread_unparker = circuit_thread_parker.unparker().clone();
 
@@ -144,7 +144,7 @@ impl Controller {
         if config.global.cpu_profiler {
             circuit
                 .enable_cpu_profiler()
-                .map_err(|e| AnyError::msg(format!("error enabling CPU profiler: {e}")))?;
+                .map_err(ControllerError::dbsp_error)?;
         }
 
         let backpressure_thread_handle = {
@@ -191,7 +191,7 @@ impl Controller {
         &self,
         endpoint_name: &str,
         config: &InputEndpointConfig,
-    ) -> AnyResult<EndpointId> {
+    ) -> Result<EndpointId, ControllerError> {
         self.inner.connect_input(endpoint_name, config)
     }
 
@@ -225,7 +225,7 @@ impl Controller {
         endpoint_config: InputEndpointConfig,
         format_config: &mut dyn ErasedDeserializer,
         endpoint: Box<dyn InputEndpoint>,
-    ) -> AnyResult<EndpointId> {
+    ) -> Result<EndpointId, ControllerError> {
         self.inner
             .add_input_endpoint(endpoint_name, endpoint_config, format_config, endpoint)
     }
@@ -260,7 +260,7 @@ impl Controller {
         endpoint_config: &OutputEndpointConfig,
         format_config: &mut dyn ErasedDeserializer,
         endpoint: Box<dyn OutputEndpoint>,
-    ) -> AnyResult<EndpointId> {
+    ) -> Result<EndpointId, ControllerError> {
         self.inner
             .add_output_endpoint(endpoint_name, endpoint_config, format_config, endpoint)
     }
@@ -336,14 +336,14 @@ impl Controller {
 
     /// Terminate the controller, stop all input endpoints and destroy the
     /// circuit.
-    pub fn stop(self) -> AnyResult<()> {
+    pub fn stop(self) -> Result<(), ControllerError> {
         self.inner.stop();
         self.circuit_thread_handle
             .join()
-            .map_err(|_| AnyError::msg("circuit thread panicked"))??;
+            .map_err(|_| ControllerError::controller_panic())??;
         self.backpressure_thread_handle
             .join()
-            .map_err(|_| AnyError::msg("backpressure thread panicked"))?;
+            .map_err(|_| ControllerError::controller_panic())?;
         Ok(())
     }
 
@@ -371,7 +371,7 @@ impl Controller {
         mut circuit: DBSPHandle,
         controller: Arc<ControllerInner>,
         parker: Parker,
-    ) -> AnyResult<()> {
+    ) -> Result<(), ControllerError> {
         let mut start: Option<Instant> = None;
 
         let max_buffering_delay =
@@ -529,9 +529,7 @@ impl Controller {
                     }
                 }
                 PipelineState::Terminated => {
-                    circuit
-                        .kill()
-                        .map_err(|_| AnyError::msg("dbsp thead panicked"))?;
+                    circuit.kill().map_err(|_| ControllerError::dbsp_panic())?;
                     return Ok(());
                 }
             }
@@ -794,14 +792,16 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &InputEndpointConfig,
-    ) -> AnyResult<EndpointId> {
+    ) -> Result<EndpointId, ControllerError> {
         // Create transport endpoint.
         let transport = <dyn InputTransport>::get_transport(&endpoint_config.transport.name)
             .ok_or_else(|| {
                 ControllerError::unknown_input_transport(&endpoint_config.transport.name)
             })?;
 
-        let endpoint = transport.new_endpoint(endpoint_name, &endpoint_config.transport.config)?;
+        let endpoint = transport
+            .new_endpoint(endpoint_name, &endpoint_config.transport.config)
+            .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
 
         self.add_input_endpoint(
             endpoint_name,
@@ -828,7 +828,7 @@ impl ControllerInner {
         endpoint_config: InputEndpointConfig,
         format_config: &mut dyn ErasedDeserializer,
         mut endpoint: Box<dyn InputEndpoint>,
-    ) -> AnyResult<EndpointId> {
+    ) -> Result<EndpointId, ControllerError> {
         let mut inputs = self.inputs.lock().unwrap();
 
         if inputs.values().any(|ep| ep.endpoint_name == endpoint_name) {
@@ -851,7 +851,9 @@ impl ControllerInner {
         let format = <dyn InputFormat>::get_format(&endpoint_config.format.name)
             .ok_or_else(|| ControllerError::unknown_input_format(&endpoint_config.format.name))?;
 
-        let parser = format.new_parser(input_stream, format_config)?;
+        let parser = format
+            .new_parser(input_stream, format_config)
+            .map_err(|e| ControllerError::parse_error(endpoint_name, &e))?;
 
         // Create probe.
         let endpoint_id = inputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
@@ -868,9 +870,13 @@ impl ControllerInner {
         self.status
             .add_input(&endpoint_id, endpoint_name, endpoint_config);
 
-        endpoint.connect(probe)?;
+        endpoint
+            .connect(probe)
+            .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
         if self.state() == PipelineState::Running {
-            endpoint.start()?;
+            endpoint
+                .start()
+                .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
         }
 
         inputs.insert(
@@ -922,14 +928,16 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
-    ) -> AnyResult<EndpointId> {
+    ) -> Result<EndpointId, ControllerError> {
         // Create transport endpoint.
         let transport = <dyn OutputTransport>::get_transport(&endpoint_config.transport.name)
             .ok_or_else(|| {
                 ControllerError::unknown_output_transport(&endpoint_config.transport.name)
             })?;
 
-        let endpoint = transport.new_endpoint(endpoint_name, endpoint_config)?;
+        let endpoint = transport
+            .new_endpoint(endpoint_name, endpoint_config)
+            .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
         self.add_output_endpoint(
             endpoint_name,
             endpoint_config,
@@ -954,7 +962,7 @@ impl ControllerInner {
         endpoint_config: &OutputEndpointConfig,
         format_config: &mut dyn ErasedDeserializer,
         endpoint: Box<dyn OutputEndpoint>,
-    ) -> AnyResult<EndpointId> {
+    ) -> Result<EndpointId, ControllerError> {
         let mut outputs = self.outputs.write().unwrap();
 
         if outputs.lookup_by_name(endpoint_name).is_some() {
@@ -980,11 +988,13 @@ impl ControllerInner {
         let endpoint_name_str = endpoint_name.to_string();
 
         let self_weak = Arc::downgrade(self);
-        endpoint.connect(Box::new(move |fatal: bool, e: AnyError| {
-            if let Some(controller) = self_weak.upgrade() {
-                controller.output_transport_error(endpoint_id, &endpoint_name_str, fatal, e)
-            }
-        }))?;
+        endpoint
+            .connect(Box::new(move |fatal: bool, e: AnyError| {
+                if let Some(controller) = self_weak.upgrade() {
+                    controller.output_transport_error(endpoint_id, &endpoint_name_str, fatal, e)
+                }
+            }))
+            .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
 
         // Create probe.
         let probe = Box::new(OutputProbe::new(
@@ -997,7 +1007,9 @@ impl ControllerInner {
         // Create encoder.
         let format = <dyn OutputFormat>::get_format(&endpoint_config.format.name)
             .ok_or_else(|| ControllerError::unknown_output_format(&endpoint_config.format.name))?;
-        let encoder = format.new_encoder(format_config, probe)?;
+        let encoder = format
+            .new_encoder(format_config, probe)
+            .map_err(|e| ControllerError::encode_error(endpoint_name, e))?;
 
         let parker = Parker::new();
         let endpoint_descr = OutputEndpointDescr::new(
