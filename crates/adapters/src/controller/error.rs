@@ -6,6 +6,7 @@ use std::{
     borrow::Cow,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
+    io::Error as IOError,
     string::ToString,
 };
 
@@ -13,6 +14,9 @@ use std::{
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum ConfigError {
+    /// Failed to parse pipeline configuration.
+    ConfigParseError { error: String },
+
     /// Input endpoint with this name already exists.
     DuplicateInputEndpoint { endpoint_name: String },
 
@@ -45,6 +49,7 @@ impl StdError for ConfigError {}
 impl DetailedError for ConfigError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
+            Self::ConfigParseError { .. } => Cow::from("ConfigParseError"),
             Self::DuplicateInputEndpoint { .. } => Cow::from("DuplicateInputEndpoint"),
             Self::DuplicateOutputEndpoint { .. } => Cow::from("DuplicateOutputEndpoint"),
             Self::UnknownInputFormat { .. } => Cow::from("UnknownInputFormat"),
@@ -60,6 +65,9 @@ impl DetailedError for ConfigError {
 impl Display for ConfigError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
+            Self::ConfigParseError { error } => {
+                write!(f, "Failed to parse pipeline configuration: '{error}'")
+            }
             Self::DuplicateInputEndpoint { endpoint_name } => {
                 write!(f, "Input endpoint '{endpoint_name}' already exists")
             }
@@ -89,6 +97,15 @@ impl Display for ConfigError {
 }
 
 impl ConfigError {
+    pub fn config_parse_error<E>(error: &E) -> Self
+    where
+        E: ToString,
+    {
+        Self::ConfigParseError {
+            error: error.to_string(),
+        }
+    }
+
     pub fn duplicate_input_endpoint(endpoint_name: &str) -> Self {
         Self::DuplicateInputEndpoint {
             endpoint_name: endpoint_name.to_owned(),
@@ -142,6 +159,19 @@ impl ConfigError {
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum ControllerError {
+    /// I/O error.
+    IoError {
+        /// Describes the context where the error occurred.
+        context: String,
+        /// Error kind (e.g., "PermissionDenied").
+        kind: String,
+        /// Error code returned by the OS.
+        os_error: Option<i32>,
+    },
+
+    /// Error parsing CLI arguments.
+    CliArgsError { error: String },
+
     /// Invalid controller configuration.
     Config { config_error: ConfigError },
 
@@ -162,24 +192,21 @@ pub enum ControllerError {
     /// new valid inputs after an error.
     EncodeError {
         endpoint_name: String,
-        #[serde(skip)]
-        error: AnyError,
+        error: String,
     },
 
     /// Input transport endpoint error.
     InputTransportError {
         endpoint_name: String,
         fatal: bool,
-        #[serde(skip)]
-        error: AnyError,
+        error: String,
     },
 
     /// Output transport endpoint error.
     OutputTransportError {
         endpoint_name: String,
         fatal: bool,
-        #[serde(skip)]
-        error: AnyError,
+        error: String,
     },
 
     /// Operation failed to complete because the pipeline is shutting down.
@@ -187,12 +214,24 @@ pub enum ControllerError {
 
     /// Error evaluating the DBSP circuit.
     DbspError { error: DBSPError },
+
+    /// Error inside the Prometheus module.
+    PrometheusError { error: String },
+
+    // TODO: we currently don't have a way to include more info about the panic.
+    /// Panic inside the DBSP runtime.
+    DbspPanic,
+
+    /// Panic inside the DBSP controller.
+    ControllerPanic,
 }
 
 impl DetailedError for ControllerError {
     // TODO: attempts to cast `AnyError` to `DetailedError`.
     fn error_code(&self) -> Cow<'static, str> {
         match self {
+            Self::IoError { .. } => Cow::from("ControllerIOError"),
+            Self::CliArgsError { .. } => Cow::from("ControllerCliArgsError"),
             Self::Config { config_error } => {
                 Cow::from(format!("ConfigError.{}", config_error.error_code()))
             }
@@ -200,8 +239,11 @@ impl DetailedError for ControllerError {
             Self::EncodeError { .. } => Cow::from("EncodeError"),
             Self::InputTransportError { .. } => Cow::from("InputTransportError"),
             Self::OutputTransportError { .. } => Cow::from("OutputTransportError"),
-            Self::DbspError { error } => error.error_code(),
             Self::PipelineTerminating => Cow::from("PipelineTerminating"),
+            Self::PrometheusError { .. } => Cow::from("PrometheusError"),
+            Self::DbspError { error } => error.error_code(),
+            Self::DbspPanic => Cow::from("DbspPanic"),
+            Self::ControllerPanic => Cow::from("ControllerPanic"),
         }
     }
 }
@@ -211,6 +253,23 @@ impl StdError for ControllerError {}
 impl Display for ControllerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
+            Self::IoError {
+                context,
+                kind,
+                os_error,
+            } => {
+                write!(
+                    f,
+                    "I/O error {context}: {}({kind}",
+                    os_error
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_default()
+                )
+            }
+            Self::CliArgsError { error } => {
+                write!(f, "Error parsing command line arguments: '{error}'")
+            }
             Self::Config { config_error } => {
                 write!(f, "invalid controller configuration: '{config_error}'")
             }
@@ -254,17 +313,52 @@ impl Display for ControllerError {
                     "encoder error on output endpoint '{endpoint_name}': '{error}'"
                 )
             }
+            Self::PipelineTerminating => {
+                f.write_str("Operation failed to complete because the pipeline is shutting down")
+            }
+            Self::PrometheusError { error } => {
+                write!(f, "Error in the Prometheus metrics module: '{error}'")
+            }
             Self::DbspError { error } => {
                 write!(f, "DBSP error: '{error}'")
             }
-            Self::PipelineTerminating => {
-                f.write_str("Operation failed to complete because the pipeline is shutting down")
+            Self::DbspPanic => {
+                write!(f, "Panic inside the DBSP runtime")
+            }
+            Self::ControllerPanic => {
+                write!(f, "Panic inside the DBSP controller")
             }
         }
     }
 }
 
 impl ControllerError {
+    pub fn io_error(context: String, error: &IOError) -> Self {
+        Self::IoError {
+            context,
+            kind: error.kind().to_string(),
+            os_error: error.raw_os_error(),
+        }
+    }
+
+    pub fn cli_args_error<E>(error: &E) -> Self
+    where
+        E: ToString,
+    {
+        Self::CliArgsError {
+            error: error.to_string(),
+        }
+    }
+
+    pub fn config_parse_error<E>(error: &E) -> Self
+    where
+        E: ToString,
+    {
+        Self::Config {
+            config_error: ConfigError::config_parse_error(error),
+        }
+    }
+
     pub fn duplicate_input_endpoint(endpoint_name: &str) -> Self {
         Self::Config {
             config_error: ConfigError::duplicate_input_endpoint(endpoint_name),
@@ -317,7 +411,7 @@ impl ControllerError {
         Self::InputTransportError {
             endpoint_name: endpoint_name.to_owned(),
             fatal,
-            error,
+            error: error.to_string(),
         }
     }
 
@@ -325,7 +419,7 @@ impl ControllerError {
         Self::OutputTransportError {
             endpoint_name: endpoint_name.to_owned(),
             fatal,
-            error,
+            error: error.to_string(),
         }
     }
 
@@ -342,7 +436,7 @@ impl ControllerError {
     pub fn encode_error(endpoint_name: &str, error: AnyError) -> Self {
         Self::EncodeError {
             endpoint_name: endpoint_name.to_owned(),
-            error,
+            error: error.to_string(),
         }
     }
 
@@ -350,7 +444,24 @@ impl ControllerError {
         Self::PipelineTerminating
     }
 
+    pub fn prometheus_error<E>(error: &E) -> Self
+    where
+        E: ToString,
+    {
+        Self::PrometheusError {
+            error: error.to_string(),
+        }
+    }
+
     pub fn dbsp_error(error: DBSPError) -> Self {
         Self::DbspError { error }
+    }
+
+    pub fn dbsp_panic() -> Self {
+        Self::DbspPanic
+    }
+
+    pub fn controller_panic() -> Self {
+        Self::ControllerPanic
     }
 }

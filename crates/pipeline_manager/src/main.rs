@@ -48,9 +48,8 @@ use daemonize::Daemonize;
 use dbsp_adapters::{ControllerError, DetailedError, ErrorResponse};
 use env_logger::Env;
 
-use log::{debug, warn};
+use log::debug;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use std::{
     borrow::Cow,
@@ -103,13 +102,13 @@ impl Display for ApiError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
             Self::ProgramNotSpecified => {
-                f.write_str("Program not specified: set either '?id=' or '?name='")
+                f.write_str("Program not specified. Use ?id or ?name query strings in the URL.")
             }
             Self::PipelineNotSpecified => {
-                f.write_str("Pipeline not specified: set either '?id=' or '?name='")
+                f.write_str("Pipeline not specified. Use ?id or ?name query strings in the URL.")
             }
             Self::ConnectorNotSpecified => {
-                f.write_str("Connector not specified: set either '?id=' or '?name='")
+                f.write_str("Connector not specified. Use ?id or ?name query strings in the URL.")
             }
             Self::MissingUrlEncodedParam { param } => {
                 write!(f, "Missing URL-encoded parameter '{param}'")
@@ -443,60 +442,63 @@ where
         .service(ResourceFiles::new("/", generated))
 }
 
+fn http_resp_from_db_error(error: &DBError) -> HttpResponse {
+    match error {
+        DBError::UnknownProgram { .. } => HttpResponse::NotFound(),
+        DBError::DuplicateName => HttpResponse::Conflict(),
+        DBError::OutdatedProgramVersion { .. } => HttpResponse::Conflict(),
+        DBError::UnknownPipeline { .. } => HttpResponse::NotFound(),
+        DBError::UnknownConnector { .. } => HttpResponse::NotFound(),
+        // TODO: should we report not found instead?
+        DBError::UnknownTenant { .. } => HttpResponse::Unauthorized(),
+        DBError::UnknownAttachedConnector { .. } => HttpResponse::NotFound(),
+        // This error should never bubble up till here
+        DBError::DuplicateKey => HttpResponse::InternalServerError(),
+        DBError::InvalidKey => HttpResponse::Unauthorized(),
+        DBError::UnknownName { .. } => HttpResponse::NotFound(),
+        // should in practice not happen, e.g., would mean a Uuid conflict:
+        DBError::UniqueKeyViolation { .. } => HttpResponse::InternalServerError(),
+        // should in practice not happen, e.g., would mean invalid status in db:
+        DBError::UnknownPipelineStatus => HttpResponse::InternalServerError(),
+    }
+    .json(ErrorResponse::from_error(error))
+}
+
+fn http_resp_from_runner_error(error: &RunnerError) -> HttpResponse {
+    match error {
+        RunnerError::PipelineShutdown { .. } => HttpResponse::NotFound(),
+        RunnerError::HttpForwardError { .. } => HttpResponse::InternalServerError(),
+        RunnerError::PortFileParseError { .. } => HttpResponse::InternalServerError(),
+        RunnerError::PipelineInitializationTimeout { .. } => HttpResponse::InternalServerError(),
+        RunnerError::ProgramNotSet { .. } => HttpResponse::BadRequest(),
+        RunnerError::ProgramNotCompiled { .. } => HttpResponse::ServiceUnavailable(),
+        RunnerError::PipelineStartupError { .. } => HttpResponse::InternalServerError(),
+    }
+    .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+    .json(ErrorResponse::from_error(error))
+}
+
+fn http_resp_from_api_error(error: &ApiError) -> HttpResponse {
+    match error {
+        ApiError::ProgramNotSpecified => HttpResponse::BadRequest(),
+        ApiError::PipelineNotSpecified => HttpResponse::BadRequest(),
+        ApiError::ConnectorNotSpecified => HttpResponse::BadRequest(),
+        ApiError::MissingUrlEncodedParam { .. } => HttpResponse::BadRequest(),
+        ApiError::InvalidUuidParam { .. } => HttpResponse::BadRequest(),
+        ApiError::InvalidPipelineAction { .. } => HttpResponse::BadRequest(),
+    }
+    .json(ErrorResponse::from_error(error))
+}
+
 fn http_resp_from_error(error: &AnyError) -> HttpResponse {
-    debug!("Returning HTTP error: {:?}", error);
     if let Some(db_error) = error.downcast_ref::<DBError>() {
-        match &db_error {
-            DBError::UnknownProgram { .. } => HttpResponse::NotFound(),
-            DBError::DuplicateName => HttpResponse::Conflict(),
-            DBError::OutdatedProgramVersion { .. } => HttpResponse::Conflict(),
-            DBError::UnknownPipeline { .. } => HttpResponse::NotFound(),
-            DBError::UnknownConnector { .. } => HttpResponse::NotFound(),
-            // TODO: should we report not found instead?
-            DBError::UnknownTenant { .. } => HttpResponse::Unauthorized(),
-            DBError::UnknownAttachedConnector { .. } => HttpResponse::NotFound(),
-            // This error should never bubble up till here
-            DBError::DuplicateKey => HttpResponse::InternalServerError(),
-            DBError::InvalidKey => HttpResponse::Unauthorized(),
-            DBError::UnknownName { .. } => HttpResponse::NotFound(),
-            // should in practice not happen, e.g., would mean a Uuid conflict:
-            DBError::UniqueKeyViolation { .. } => HttpResponse::InternalServerError(),
-            // should in practice not happen, e.g., would mean invalid status in db:
-            DBError::UnknownPipelineStatus => HttpResponse::InternalServerError(),
-        }
-        .json(ErrorResponse::from_error(db_error))
+        http_resp_from_db_error(db_error)
     } else if let Some(runner_error) = error.downcast_ref::<RunnerError>() {
-        match &runner_error {
-            RunnerError::PipelineShutdown { .. } => HttpResponse::NotFound(),
-            RunnerError::HttpForwardError { .. } => HttpResponse::InternalServerError(),
-            RunnerError::PortFileParseError { .. } => HttpResponse::InternalServerError(),
-            RunnerError::PipelineInitializationTimeout { .. } => {
-                HttpResponse::InternalServerError()
-            }
-            RunnerError::ProgramNotSet { .. } => HttpResponse::BadRequest(),
-            RunnerError::ProgramNotCompiled { .. } => HttpResponse::ServiceUnavailable(),
-            RunnerError::PipelineStartupError { .. } => HttpResponse::InternalServerError(),
-        }
-        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(ErrorResponse::from_error(runner_error))
+        http_resp_from_runner_error(runner_error)
     } else if let Some(api_error) = error.downcast_ref::<ApiError>() {
-        match &api_error {
-            ApiError::ProgramNotSpecified => HttpResponse::BadRequest(),
-            ApiError::PipelineNotSpecified => HttpResponse::BadRequest(),
-            ApiError::ConnectorNotSpecified => HttpResponse::BadRequest(),
-            ApiError::MissingUrlEncodedParam { .. } => HttpResponse::BadRequest(),
-            ApiError::InvalidUuidParam { .. } => HttpResponse::BadRequest(),
-            ApiError::InvalidPipelineAction { .. } => HttpResponse::BadRequest(),
-        }
-        .json(ErrorResponse::from_error(api_error))
+        http_resp_from_api_error(api_error)
     } else {
-        warn!("Unexpected error in http_resp_from_error: {}", error);
-        warn!("Backtrace: {:#?}", error.backtrace());
-        HttpResponse::InternalServerError().json(ErrorResponse::new(
-            &error.to_string(),
-            "UnknownError",
-            json!(null),
-        ))
+        HttpResponse::InternalServerError().json(ErrorResponse::from_anyerror(error))
     }
 }
 
@@ -712,7 +714,7 @@ async fn program_code(
     responses(
         (status = OK, description = "Program status retrieved successfully.", body = ProgramDescr),
         (status = BAD_REQUEST
-            , description = "Program not specified: set either '?id=' or '?name='."
+            , description = "Program not specified. Use ?id or ?name query strings in the URL."
             , body = ErrorResponse
             , example = json!(example_program_not_specified())),
         (status = NOT_FOUND
@@ -751,7 +753,7 @@ async fn program_status(
             .get_program_by_name(*tenant_id, &name)
             .await
     } else {
-        return http_resp_from_error(&anyhow!(ApiError::ProgramNotSpecified));
+        return http_resp_from_api_error(&ApiError::ProgramNotSpecified);
     };
     resp.map(|descr| {
         HttpResponse::Ok()
@@ -1278,7 +1280,7 @@ async fn pipeline_stats(
     responses(
         (status = OK, description = "Pipeline descriptor retrieved successfully.", body = PipelineDescr),
         (status = BAD_REQUEST
-            , description = "Pipeline not specified: set either '?id=' or '?name='."
+            , description = "Pipeline not specified. Use ?id or ?name query strings in the URL."
             , body = ErrorResponse
             , example = json!(example_pipeline_not_specified())),
         (status = NOT_FOUND
@@ -1321,7 +1323,7 @@ async fn pipeline_status(
             .get_pipeline_by_name(*tenant_id, name)
             .await
     } else {
-        return http_resp_from_error(&anyhow!(ApiError::PipelineNotSpecified));
+        return http_resp_from_api_error(&ApiError::PipelineNotSpecified);
     };
 
     resp.map(|descr| {
@@ -1651,7 +1653,7 @@ pub struct IdOrNameQuery {
     responses(
         (status = OK, description = "connector status retrieved successfully.", body = ConnectorDescr),
         (status = BAD_REQUEST
-            , description = "Connector not specified: set either '?id=' or '?name='."
+            , description = "Connector not specified. Use ?id or ?name query strings in the URL."
             , body = ErrorResponse
             , example = json!(example_connector_not_specified())),
         (status = NOT_FOUND
@@ -1694,7 +1696,7 @@ async fn connector_status(
             .get_connector_by_name(*tenant_id, name)
             .await
     } else {
-        return http_resp_from_error(&anyhow!(ApiError::ConnectorNotSpecified));
+        return http_resp_from_api_error(&ApiError::ConnectorNotSpecified);
     };
 
     resp.map(|descr| {

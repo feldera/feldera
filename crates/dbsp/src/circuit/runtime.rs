@@ -25,14 +25,14 @@ pub enum Error {
     WorkerPanic {
         worker: usize,
     },
-    Killed,
+    Terminated,
 }
 
 impl DetailedError for Error {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::WorkerPanic { .. } => Cow::from("WorkerPanic"),
-            Self::Killed => Cow::from("Killed"),
+            Self::Terminated => Cow::from("Terminated"),
         }
     }
 }
@@ -43,7 +43,7 @@ impl Display for Error {
             Self::WorkerPanic { worker } => {
                 write!(f, "worker thread '{worker}' panicked")
             }
-            Self::Killed => f.write_str("circuit killed by the user"),
+            Self::Terminated => f.write_str("circuit terminated by the user"),
         }
     }
 }
@@ -58,7 +58,7 @@ thread_local! {
 
     // Set to `true` by `RuntimeHandle::kill`.
     // Schedulers must check this signal before evaluating each operator
-    // and exit immediately returning `SchedulerError::Killed`.
+    // and exit immediately returning `SchedulerError::Terminated`.
     static KILL_SIGNAL: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 }
 
