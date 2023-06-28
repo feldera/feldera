@@ -1,6 +1,10 @@
 # For developers to build the two required
 # DBSP containers from local sources
 services:
+  db:
+    ports:
+      - 6666:5432 # Used for pipeline manager integration tests
+
   dbsp:
    build:
      context: ../

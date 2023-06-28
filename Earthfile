@@ -423,6 +423,10 @@ test-manager:
             sleep 3 && \
             cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager
     END
+    # We keep the test binary around so we can run integration tests later. This incantation is used to find the
+    # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
+    RUN cp `cargo test --features integration-test --no-run --package dbsp_pipeline_manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable'` test_binary
+    SAVE ARTIFACT test_binary
 
 test-python:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -489,6 +493,7 @@ build-dbsp-manager-container:
     COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp /database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
     COPY sql-to-dbsp-compiler/lib /database-stream-processor/sql-to-dbsp-compiler/lib
     COPY sql-to-dbsp-compiler/temp /database-stream-processor/sql-to-dbsp-compiler/temp
+    RUN ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
     CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor
     SAVE IMAGE ghcr.io/feldera/dbsp-manager
 
@@ -518,9 +523,32 @@ test-docker-compose:
         RUN SECOPS_DEMO_ARGS="--prepare-args 500000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
+# Fetches the test binary from test-manager, and produces a container image out of it
+integration-test-container:
+    FROM +install-deps
+    COPY +test-manager/test_binary .
+    ENV TEST_DBSP_URL=http://dbsp:8080
+    ENTRYPOINT ["./test_binary", "integration_test::"]
+    SAVE IMAGE itest:latest
+
+# Runs the integration test container against the docker compose setup
+integration-tests:
+    FROM earthly/dind:alpine
+    COPY deploy/docker-compose.yml .
+    WITH DOCKER --pull postgres \
+                --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
+                --compose docker-compose.yml \
+                --service db \
+                --service dbsp \
+                --load itest:latest=+integration-test-container
+        RUN sleep 5 && docker run --network default_default itest:latest
+    END
+
+
 all-tests:
     BUILD +test-rust
     BUILD +test-python
     BUILD +audit
     BUILD +test-sql
     BUILD +test-docker-compose
+    BUILD +integration-tests
