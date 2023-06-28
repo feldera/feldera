@@ -46,6 +46,9 @@ refinery = {version = "0.8.10", features = ["tokio-postgres"]}
 [target.'cfg(unix)'.dependencies]
 daemonize = { version = "0.5.0" }
 
+[features]
+integration-test = []
+
 [build-dependencies]
 change-detection = "1.2"
 static-files = "0.2.3"
@@ -57,6 +60,12 @@ pretty_assertions = "1.3.0"
 pg-client-config = "0.1.1"
 base64 = "0.21.0"
 actix-http = "3.3.1"
+serial_test = "2.0.0"
+
+# Used in integration tests
+[dev-dependencies.tokio]
+version = "*"
+features = ["sync"]
 
 [package.metadata.cargo-machete]
 ignored = ["static-files"]
