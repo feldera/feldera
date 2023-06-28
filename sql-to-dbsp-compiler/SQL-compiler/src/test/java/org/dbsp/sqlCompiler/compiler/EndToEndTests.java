@@ -27,7 +27,6 @@ package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -37,11 +36,9 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.util.Utilities;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import java.io.IOException;
 import java.math.BigDecimal;
 
 /**
@@ -51,22 +48,78 @@ import java.math.BigDecimal;
  * from the declared views.
  */
 public class EndToEndTests extends BaseSQLTests {
-    /*
-     * T is
-     *  col1  col2   col3   col4  col5      col6
-     *                            nullable nullable
+    static final String E2E_TABLE = "CREATE TABLE T (\n" +
+            "COL1 INT NOT NULL" +
+            ", COL2 DOUBLE NOT NULL" +
+            ", COL3 BOOLEAN NOT NULL" +
+            ", COL4 VARCHAR NOT NULL" +
+            ", COL5 INT" +
+            ", COL6 DOUBLE" +
+            ")";
+
+    public DBSPCompiler compileQuery(String query) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatement(E2E_TABLE);
+        compiler.compileStatement(query);
+        return compiler;
+    }
+
+    void testQueryBase(String query, InputOutputPair... streams) {
+        query = "CREATE VIEW V AS " + query;
+        DBSPCompiler compiler = this.compileQuery(query);
+        DBSPCircuit circuit = getCircuit(compiler);
+        this.addRustTestCase(query, compiler, circuit, streams);
+    }
+
+    /**
+     * Returns the table T containing:
      * -------------------------------------------
      * | 10 | 12.0 | true  | Hi | NULL    | NULL |
      * | 10 |  1.0 | false | Hi | Some[1] |  0.0 |
      * -------------------------------------------
-     *
      * INSERT INTO T VALUES (10, 12, true, 'Hi', NULL, NULL);
      * INSERT INTO T VALUES (10, 1.0, false, 'Hi', 1, 0.0);
      */
+    DBSPZSetLiteral.Contents createInput() {
+        return new DBSPZSetLiteral.Contents(e0, e1);
+    }
+
+    public static final DBSPTupleExpression e0 = new DBSPTupleExpression(
+            new DBSPI32Literal(10),
+            new DBSPDoubleLiteral(12.0),
+            DBSPBoolLiteral.TRUE,
+            new DBSPStringLiteral("Hi"),
+            DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32),
+            DBSPLiteral.none(DBSPTypeDouble.NULLABLE_INSTANCE)
+    );
+    public static final DBSPTupleExpression e1 = new DBSPTupleExpression(
+            new DBSPI32Literal(10),
+            new DBSPDoubleLiteral(1.0),
+            DBSPBoolLiteral.FALSE,
+            new DBSPStringLiteral("Hi"),
+            new DBSPI32Literal(1, true),
+            new DBSPDoubleLiteral(0.0, true)
+    );
+
+    public static final DBSPTupleExpression e0NoDouble = new DBSPTupleExpression(
+            new DBSPI32Literal(10),
+            DBSPBoolLiteral.TRUE,
+            new DBSPStringLiteral("Hi"),
+            DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32)
+    );
+    public static final DBSPTupleExpression e1NoDouble = new DBSPTupleExpression(
+            new DBSPI32Literal(10),
+            DBSPBoolLiteral.FALSE,
+            new DBSPStringLiteral("Hi"),
+            new DBSPI32Literal(1, true)
+    );
+    static final DBSPZSetLiteral.Contents z0 = new DBSPZSetLiteral.Contents(e0);
+    static final DBSPZSetLiteral.Contents z1 = new DBSPZSetLiteral.Contents(e1);
+    static final DBSPZSetLiteral.Contents empty = DBSPZSetLiteral.Contents.emptyWithElementType(z0.getElementType());
 
     void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
         DBSPZSetLiteral.Contents input = this.createInput();
-        super.testQueryBase(query, false, true, false, new InputOutputPair(input, expectedOutput));
+        this.testQueryBase(query, new InputOutputPair(input, expectedOutput));
     }
 
     @Test
@@ -188,7 +241,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testConcatNull() {
         String query = "SELECT T.COL4 || NULL FROM T";
-        DBSPExpression lit = new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeString.NULLABLE_INSTANCE));
+        DBSPExpression lit = new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeString.UNLIMITED_INSTANCE));
         this.testQuery(query, new DBSPZSetLiteral.Contents(lit, lit));
     }
 

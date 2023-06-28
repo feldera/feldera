@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.postgres;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.InputOutputPair;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -13,7 +14,7 @@ import org.junit.Test;
 /**
  * <a href="https://github.com/postgres/postgres/blob/master/src/test/regress/expected/boolean.out">boolean.out</a>
  */
-public class PostgresBoolTests extends BaseSQLTests {
+public class PostgresBoolTests extends PostgresBaseTest {
     public DBSPCompiler compileQuery(String query, boolean optimize) {
         CompilerOptions options = new CompilerOptions();
         options.optimizerOptions.optimizationLevel = optimize ? 2 : 1;

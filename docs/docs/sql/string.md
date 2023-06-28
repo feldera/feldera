@@ -6,15 +6,13 @@ can store strings up to n characters (not bytes) in length. An attempt
 to store a longer string into a column of these types will result in
 an error, unless the excess characters are all spaces, in which case
 the string will be truncated to the maximum length. (This somewhat
-bizarre exception is required by the SQL standard.) If the string to
+bizarre exception is required by the SQL standard.)  If the string to
 be stored is shorter than the declared length, values of type
 character will be space-padded; values of type character varying will
 simply store the shorter string.
 
 In addition, we provides the `text`, or `varchar` type, which stores
-strings of any length.  Although the type `text` is not in the SQL
-standard, several other SQL database management systems have it as
-well.
+strings of any length.
 
 ## String constants (literals)
 

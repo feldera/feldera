@@ -123,6 +123,7 @@ public class Utilities {
      * @param map  Map to look for.
      * @param key  Key the value is indexed with.
      */
+    @SuppressWarnings("unused")
     public static <K, V> V removeExists(Map<K, V> map, K key) {
         V result = map.remove(key);
         if (result == null)

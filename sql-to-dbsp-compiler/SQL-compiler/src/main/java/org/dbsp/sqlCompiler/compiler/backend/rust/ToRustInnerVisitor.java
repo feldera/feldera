@@ -438,6 +438,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .append(", ")
                     .append(dec.scale);
         }
+        DBSPTypeString str = baseDest.as(DBSPTypeString.class);
+        if (str != null) {
+            // pass precision and scale as arguments to cast method too
+            this.builder.append(", ")
+                    .append(str.precision)
+                    .append(", ")
+                    .append(Boolean.toString(str.fixed));
+        }
         this.builder.append(")");
         return VisitDecision.STOP;
     }

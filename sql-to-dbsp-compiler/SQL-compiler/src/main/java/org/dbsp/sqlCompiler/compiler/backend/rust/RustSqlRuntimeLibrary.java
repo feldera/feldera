@@ -241,7 +241,7 @@ public class RustSqlRuntimeLibrary {
                 DBSPTypeBool.INSTANCE
         };
         DBSPType[] stringTypes = new DBSPType[] {
-                DBSPTypeString.INSTANCE
+                DBSPTypeString.UNLIMITED_INSTANCE
         };
         DBSPType[] fpTypes = new DBSPType[] {
                 DBSPTypeDouble.INSTANCE,

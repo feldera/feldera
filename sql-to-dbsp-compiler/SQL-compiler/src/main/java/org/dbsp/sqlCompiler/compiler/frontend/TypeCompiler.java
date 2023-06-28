@@ -29,6 +29,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
@@ -99,8 +100,14 @@ public class TypeCompiler implements ICompilerComponent {
                 case DOUBLE:
                     return DBSPTypeDouble.INSTANCE.setMayBeNull(nullable);
                 case CHAR:
-                case VARCHAR:
-                    return DBSPTypeString.INSTANCE.setMayBeNull(nullable);
+                case VARCHAR: {
+                    int precision = dt.getPrecision();
+                    if (precision == 0)
+                        throw new UnsupportedException("0 size string", node);
+                    if (precision == RelDataType.PRECISION_NOT_SPECIFIED)
+                        precision = 0;
+                    return new DBSPTypeString(node, precision, tn.equals(SqlTypeName.CHAR), nullable);
+                }
                 case NULL:
                     return DBSPTypeNull.INSTANCE;
                 case SYMBOL:
