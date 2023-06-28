@@ -1,25 +1,30 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.junit.Assert;
 import org.junit.Test;
 
-public class PostgresStringTests extends BaseSQLTests {
-    void compare(String query, DBSPZSetLiteral.Contents expected) {
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement("CREATE VIEW VV AS " + query);
-        compiler.optimize();
-        DBSPCircuit circuit = getCircuit(compiler);
-        InputOutputPair streams = new InputOutputPair(
-                new DBSPZSetLiteral.Contents[0],
-                new DBSPZSetLiteral.Contents[] { expected }
-        );
-        this.addRustTestCase(query, compiler, circuit, streams);
+/**
+ * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/strings.out
+ */
+@SuppressWarnings("JavadocLinkAsPlainText")
+public class PostgresStringTests extends PostgresBaseTest {
+    @Override
+    public void prepareData(DBSPCompiler compiler) {
+        String data =
+                "CREATE TABLE CHAR_TBL(f1 char(4));\n" +
+                "INSERT INTO CHAR_TBL (f1) VALUES\n" +
+                "  ('a'),\n" +
+                "  ('ab'),\n" +
+                "  ('abcd'),\n" +
+                "  ('abcd    ');" +
+                "CREATE TABLE VARCHAR_TBL(f1 varchar(4));\n" +
+                "INSERT INTO VARCHAR_TBL (f1) VALUES\n" +
+                "  ('a'),\n" +
+                "  ('ab'),\n" +
+                "  ('abcd'),\n" +
+                "  ('abcd    ');";
+        compiler.compileStatements(data);
     }
 
     @Test
@@ -28,8 +33,10 @@ public class PostgresStringTests extends BaseSQLTests {
                 "' - next line'\n" +
                 "\t' - third line'\n" +
                 "\tAS \"Three lines to one\"";
-        this.compare(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                new DBSPStringLiteral("first line - next line - third line"))));
+        String expected = "         Three lines to one          \n" +
+                "-------------------------------------\n" +
+                "first line - next line - third line";
+        this.compare(query, expected);
     }
 
     @Test
@@ -39,8 +46,7 @@ public class PostgresStringTests extends BaseSQLTests {
             String query = "SELECT 'first line' " +
                     "' - next line'\n" +
                     "\tAS \"Illegal comment within continuation\"\n";
-            this.compare(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                    new DBSPStringLiteral("first line - next line - third line"))));
+            this.compare(query, "");
         });
         Assert.assertTrue(exception.getMessage().contains("String literal continued on same line"));
     }
@@ -50,29 +56,37 @@ public class PostgresStringTests extends BaseSQLTests {
         // Calcite does not support 6-digits escapes like Postgres, so
         // I have modified +000061 to just 0061
         String query = "SELECT U&'d\\0061t\\0061' AS U&\"d\\0061t\\0061\"";
-        this.compare(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                new DBSPStringLiteral("data"))));
+        String expected = " data \n" +
+                "------\n" +
+                "data";
+        this.compare(query, expected);
     }
 
     @Test
     public void unicodeNewEscapeTest() {
         String query = "SELECT U&'d!0061t!0061' UESCAPE '!' AS U&\"d*0061t\\0061\" UESCAPE '*'";
-        this.compare(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                new DBSPStringLiteral("data"))));
+        String expected = " data \n" +
+                "------\n" +
+                "data";
+        this.compare(query, expected);
     }
 
     @Test
     public void namesWithSlashTest() {
         String query = "SELECT U&'a\\\\b' AS \"a\\b\"";
-        this.compare(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                new DBSPStringLiteral("a\\b"))));
+        String expected = " a\\b \n" +
+                "-----\n" +
+                "a\\b";
+        this.compare(query, expected);
     }
 
     @Test
     public void backslashWithSpacesTest() {
         String query = "SELECT U&' \\' UESCAPE '!' AS \"tricky\"";
-        this.compare(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                new DBSPStringLiteral(" \\"))));
+        String expected = "tricky \n" +
+                "--------\n" +
+                " \\";
+        this.compare(query, expected);
     }
 
     @Test
@@ -80,48 +94,39 @@ public class PostgresStringTests extends BaseSQLTests {
         Exception exception = Assert.assertThrows(
                 RuntimeException.class, () -> {
                     String query = "SELECT U&'wrong: \\061'";
-                    this.compare(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                            new DBSPStringLiteral(""))));
+                    this.compare(query, "");
                 });
         Assert.assertTrue(exception.getMessage().contains(
                 "Unicode escape sequence starting at character 7 is not exactly four hex digits"));
     }
 
-    //SELECT U&'wrong: \+0061';
-    //ERROR:  invalid Unicode escape
-    //LINE 1: SELECT U&'wrong: \+0061';
-    //                         ^
-    //HINT:  Unicode escapes must be \XXXX or \+XXXXXX.
-    //SELECT U&'wrong: +0061' UESCAPE +;
-    //ERROR:  UESCAPE must be followed by a simple string literal at or near "+"
-    //LINE 1: SELECT U&'wrong: +0061' UESCAPE +;
-    //                                        ^
-    //SELECT U&'wrong: +0061' UESCAPE '+';
-    //ERROR:  invalid Unicode escape character at or near "'+'"
-    //LINE 1: SELECT U&'wrong: +0061' UESCAPE '+';
-    //                                        ^
-    //SELECT U&'wrong: \db99';
-    //ERROR:  invalid Unicode surrogate pair
-    //LINE 1: SELECT U&'wrong: \db99';
-    //                              ^
-    //SELECT U&'wrong: \db99xy';
-    //ERROR:  invalid Unicode surrogate pair
-    //LINE 1: SELECT U&'wrong: \db99xy';
-    //                              ^
-    //SELECT U&'wrong: \db99\\';
-    //ERROR:  invalid Unicode surrogate pair
-    //LINE 1: SELECT U&'wrong: \db99\\';
-    //                              ^
-    //SELECT U&'wrong: \db99\0061';
-    //ERROR:  invalid Unicode surrogate pair
-    //LINE 1: SELECT U&'wrong: \db99\0061';
-    //                              ^
-    //SELECT U&'wrong: \+00db99\+000061';
-    //ERROR:  invalid Unicode surrogate pair
-    //LINE 1: SELECT U&'wrong: \+00db99\+000061';
-    //                                 ^
-    //SELECT U&'wrong: \+2FFFFF';
-    //ERROR:  invalid Unicode escape value
-    //LINE 1: SELECT U&'wrong: \+2FFFFF';
-    // Skipped a bunch more tests with various errors
+    // Lots of other escaping tests skipped, many using the E escaping notation from Postgres
+
+    @Test
+    public void testCharN() {
+        // I hope this is right, the .out file does not contain trailing spaces.
+        String query = "SELECT CAST(f1 AS text) AS \"text(char)\" FROM CHAR_TBL";
+        String expected =
+                " text(char) \n" +
+                "------------\n" +
+                "a   \n" +
+                "ab  \n" +
+                "abcd\n" +
+                "abcd";
+        this.compare(query, expected);
+    }
+
+    @Test
+    public void testVarcharN() {
+        // I hope this is right, the .out file does not contain trailing spaces.
+        String query = "SELECT CAST(f1 AS text) AS \"text(varchar)\" FROM VARCHAR_TBL";
+        String expected =
+                " text(char) \n" +
+                        "------------\n" +
+                        "a   \n" +
+                        "ab  \n" +
+                        "abcd\n" +
+                        "abcd";
+        this.compare(query, expected);
+    }
 }

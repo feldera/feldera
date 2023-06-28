@@ -588,14 +588,14 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 throw new RuntimeException("Expected hash to be supplied");
             String hash = isVector ? "hash_vectors" : "hash";
             list.add(new DBSPLetStatement("_hash",
-                    new DBSPApplyExpression(hash, DBSPTypeString.INSTANCE,
+                    new DBSPApplyExpression(hash, DBSPTypeString.UNLIMITED_INSTANCE,
                             output0.borrow(),
                             columnTypes,
                             sort)));
             list.add(
                     new DBSPExpressionStatement(
                             new DBSPApplyExpression("assert_eq!", DBSPTypeVoid.INSTANCE,
-                                    DBSPTypeString.INSTANCE.var("_hash"),
+                                    DBSPTypeString.UNLIMITED_INSTANCE.var("_hash"),
                                     new DBSPStringLiteral(description.hash))));
         }
         DBSPExpression body = new DBSPBlockExpression(list, null);

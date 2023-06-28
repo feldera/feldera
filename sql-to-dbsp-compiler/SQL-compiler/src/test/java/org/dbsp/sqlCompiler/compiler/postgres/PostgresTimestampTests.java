@@ -23,25 +23,18 @@
 
 package org.dbsp.sqlCompiler.compiler.postgres;
 
-import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.InputOutputPair;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
 import org.junit.Test;
 
-import javax.annotation.Nullable;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -50,7 +43,7 @@ import java.util.regex.Pattern;
  * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/timestamp.out
  */
 @SuppressWarnings("JavadocLinkAsPlainText")
-public class PostgresTimestampTests extends BaseSQLTests {
+public class PostgresTimestampTests extends PostgresBaseTest {
     // Cannot use non-deterministic values:
     // INSERT INTO TIMESTAMP_TBL VALUES ('today');
     // INSERT INTO TIMESTAMP_TBL VALUES ('yesterday');
@@ -63,20 +56,20 @@ public class PostgresTimestampTests extends BaseSQLTests {
     // INSERT INTO TIMESTAMP_TBL VALUES ('-infinity');
     // INSERT INTO TIMESTAMP_TBL VALUES ('infinity');
 
-    // Calcite is not very flexible regarding timestamp formats
-    public DBSPCompiler compileQuery(String query, boolean optimize) {
+    @Override
+    public void prepareData(DBSPCompiler compiler) {
         String data =
                 "CREATE TABLE TIMESTAMP_TBL (d1 timestamp(2) without time zone)\n;" +
-                                                                                         // -- Postgres v6.0 standard output format
+                // -- Postgres v6.0 standard output format
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1970-01-01 00:00:00');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('epoch');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Mon Feb 10 17:32:01 1997 PST');
-                                                                                         // -- Variations on Postgres v6.1 standard output format
+                // -- Variations on Postgres v6.1 standard output format
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01.000001');\n" +   // INSERT INTO TIMESTAMP_TBL VALUES ('Mon Feb 10 17:32:01.000001 1997 PST');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01.999999');\n" +   // INSERT INTO TIMESTAMP_TBL VALUES ('Mon Feb 10 17:32:01.999999 1997 PST');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01.4');\n" +        // INSERT INTO TIMESTAMP_TBL VALUES ('Mon Feb 10 17:32:01.4 1997 PST');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01.5');\n" +        // INSERT INTO TIMESTAMP_TBL VALUES ('Mon Feb 10 17:32:01.5 1997 PST');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01.6');\n" +        // INSERT INTO TIMESTAMP_TBL VALUES ('Mon Feb 10 17:32:01.6 1997 PST');
-                                                                                         // -- ISO 8601 format
+                // -- ISO 8601 format
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-01-02');\n" +                   // INSERT INTO TIMESTAMP_TBL VALUES ('1997-01-02');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-01-02 03:04:05');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('1997-01-02 03:04:05');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01-08');
@@ -85,13 +78,13 @@ public class PostgresTimestampTests extends BaseSQLTests {
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('19970210 173201 -0800');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-06-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('1997-06-10 17:32:01 -07:00');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('2001-09-22 18:19:20');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('2001-09-22T18:19:20');
-                                                                                         // POSIX format (note that the timezone abbrev is just decoration here)
+                // POSIX format (note that the timezone abbrev is just decoration here)
                 "INSERT INTO TIMESTAMP_TBL VALUES ('2000-03-15 08:14:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('2000-03-15 08:14:01 GMT+8');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('2000-03-15 13:14:02');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('2000-03-15 13:14:02 GMT-1');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('2000-03-15 12:14:03');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('2000-03-15 12:14:03 GMT-2');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('2000-03-15 03:14:04');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('2000-03-15 03:14:04 PST+8');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('2000-03-15 02:14:05');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('2000-03-15 02:14:05 MST+7:00');
-                                                                                         // -- Variations for acceptable input formats
+                // -- Variations for acceptable input formats
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Feb 10 17:32:01 1997 -0800');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Feb 10 17:32:01 1997');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:00');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Feb 10 5:32PM 1997');
@@ -100,17 +93,17 @@ public class PostgresTimestampTests extends BaseSQLTests {
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Feb-10-1997 17:32:01 PST');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('02-10-1997 17:32:01 PST');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('19970210 173201 PST');
-                                                                                         // set datestyle to ymd;
+                // set datestyle to ymd;
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('97FEB10 5:32:01PM UTC');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('97/02/10 17:32:01 UTC');
-                                                                                         // reset datestyle
+                // reset datestyle
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('1997.041 17:32:01 UTC'); // 41st day
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('19970210 173201 America/New_York');
-                                                                                         // -- this fails (even though TZ is a no-op, we still look it up)
-                                                                                         // INSERT INTO TIMESTAMP_TBL VALUES ('19970710 173201 America/Does_not_exist');
-                                                                                         // ERROR:  time zone "america/does_not_exist" not recognized
-                                                                                         // LINE 1: INSERT INTO TIMESTAMP_TBL VALUES ('19970710 173201 America/D...
-                                                                                         // -- Check date conversion and date arithmetic
+                // -- this fails (even though TZ is a no-op, we still look it up)
+                // INSERT INTO TIMESTAMP_TBL VALUES ('19970710 173201 America/Does_not_exist');
+                // ERROR:  time zone "america/does_not_exist" not recognized
+                // LINE 1: INSERT INTO TIMESTAMP_TBL VALUES ('19970710 173201 America/D...
+                // -- Check date conversion and date arithmetic
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-06-10 18:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('1997-06-10 18:32:01 PDT');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Feb 10 17:32:01 1997');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-11 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Feb 11 17:32:01 1997');
@@ -135,10 +128,10 @@ public class PostgresTimestampTests extends BaseSQLTests {
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1996-12-31 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Dec 31 17:32:01 1996');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-01-01 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Jan 01 17:32:01 1997');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-28 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Feb 28 17:32:01 1997');
-                        // The following is not a legal date.  In calcite this inserts a NULL, in Postgres this insertion fails altogether.
-                        // That's why the next few queries will find a NULL in this table.
+                // The following is not a legal date.  In calcite this inserts a NULL, in Postgres this insertion fails altogether.
+                // That's why the next few queries will find a NULL in this table.
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-29 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Feb 29 17:32:01 1997');
-                                                                                         // ERROR:  date/time field value out of range: "Feb 29 17:32:01 1997"
+                // ERROR:  date/time field value out of range: "Feb 29 17:32:01 1997"
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-03-01 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Mar 01 17:32:01 1997');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-12-30 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Dec 30 17:32:01 1997');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-12-31 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Dec 31 17:32:01 1997');
@@ -146,14 +139,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
                 "INSERT INTO TIMESTAMP_TBL VALUES ('2000-01-01 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Jan 01 17:32:01 2000');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('2000-12-31 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Dec 31 17:32:01 2000');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('2001-01-01 17:32:01')\n";            // INSERT INTO TIMESTAMP_TBL VALUES ('Jan 01 17:32:01 2001');
-        CompilerOptions options = new CompilerOptions();
-        options.ioOptions.lexicalRules = Lex.ORACLE;
-        options.optimizerOptions.optimizationLevel = optimize ? 2 : 1;
-        options.optimizerOptions.generateInputForEveryTable = true;
-        DBSPCompiler compiler = new DBSPCompiler(options);
         compiler.compileStatements(data);
-        compiler.compileStatement(query);
-        return compiler;
     }
 
     void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput, boolean optimize) {
@@ -163,37 +149,6 @@ public class PostgresTimestampTests extends BaseSQLTests {
         DBSPZSetLiteral.Contents input = compiler.getTableContents().getTableContents("TIMESTAMP_TBL");
         InputOutputPair streams = new InputOutputPair(input, expectedOutput);
         this.addRustTestCase(query, compiler, circuit, streams);
-    }
-
-    static final SimpleDateFormat[] inputFormats = {
-            new SimpleDateFormat("EEE MMM d HH:mm:ss.SSS yyyy"),
-            new SimpleDateFormat("EEE MMM d HH:mm:ss yyyy G"),
-            new SimpleDateFormat("EEE MMM d HH:mm:ss yyyy")
-    };
-    static final SimpleDateFormat outputFormats = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.S");
-
-    /**
-     * Convert a date from a format like Sat Feb 16 17:32:01 1996 to
-     * a format like 1996-02-16 17:32:01
-     */
-    static DBSPExpression convertDate(@Nullable String date) {
-        if (date == null)
-            return DBSPLiteral.none(DBSPTypeTimestamp.NULLABLE_INSTANCE);
-        for (SimpleDateFormat input: inputFormats) {
-            String out;
-            try {
-                // Calcite problems: does not support negative years, or fractional seconds ending in 0
-                Date zero = new SimpleDateFormat("yyyy-MM-dd").parse("0000-01-01");
-                Date converted = input.parse(date);
-                out = outputFormats.format(converted);
-                if (converted.before(zero))
-                    out = "-" + out;
-            } catch (ParseException ignored) {
-                continue;
-            }
-            return new DBSPTimestampLiteral(out, true);
-        }
-        throw new RuntimeException("Could not parse " + date);
     }
 
     @Test
@@ -266,7 +221,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
         };
         String query = "SELECT d1 FROM TIMESTAMP_TBL";
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertDate(d)), DBSPExpression.class);
+                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
         this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
     }
 
@@ -344,7 +299,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
                 "Mon Jan 01 17:32:01 2001"
         };
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertDate(d)), DBSPExpression.class);
+                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
         String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
                 "   WHERE d1 > timestamp '1997-01-02'";
         this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
@@ -371,7 +326,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
                 "Wed Jan 01 17:32:01 1997"
         };
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertDate(d)), DBSPExpression.class);
+                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
         String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
                 "   WHERE d1 < timestamp '1997-01-02'";
         this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
@@ -385,7 +340,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
                 "Thu Jan 02 00:00:00 1997"
         };
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertDate(d)), DBSPExpression.class);
+                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
         String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
                 "   WHERE d1 = timestamp '1997-01-02'";
         this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
@@ -460,7 +415,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
                 "Mon Jan 01 17:32:01 2001",
         };
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertDate(d)), DBSPExpression.class);
+                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
         String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
                 "   WHERE d1 != timestamp '1997-01-02'";
         this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
@@ -488,7 +443,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
                 "Wed Jan 01 17:32:01 1997"
         };
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertDate(d)), DBSPExpression.class);
+                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
         String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
                 "   WHERE d1 <= timestamp '1997-01-02'";
         this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
@@ -550,7 +505,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
                 "Mon Jan 01 17:32:01 2001"
         };
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertDate(d)), DBSPExpression.class);
+                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
         String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
                 "   WHERE d1 >= timestamp '1997-01-02'";
         this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
@@ -874,14 +829,14 @@ public class PostgresTimestampTests extends BaseSQLTests {
             String[] fields = d.split("[|]");
             Assert.assertEquals(columns, fields.length);
             DBSPExpression[] expressions = new DBSPExpression[columns];
-            expressions[0] = convertDate(fields[0].trim());
+            expressions[0] = convertTimestamp(fields[0].trim());
             for (int i = 1; i < columns - 1; i++)
                 expressions[i] = new DBSPI64Literal(Long.parseLong(fields[i].trim()), true);
             expressions[columns - 1] = new DBSPI64Literal((long)Double.parseDouble(fields[6].trim()), true);
             tuples[j] = new DBSPTupleExpression(expressions);
         }
         DBSPExpression none = DBSPLiteral.none(DBSPTypeInteger.SIGNED_64.setMayBeNull(true));
-        tuples[data.length] = new DBSPTupleExpression(convertDate(null), none, none, none, none, none, none);
+        tuples[data.length] = new DBSPTupleExpression(convertTimestamp(null), none, none, none, none, none, none);
         this.testQuery(query, new DBSPZSetLiteral.Contents(tuples), true);
     }
     
@@ -966,13 +921,13 @@ public class PostgresTimestampTests extends BaseSQLTests {
             String[] fields = d.split("[|]");
             Assert.assertEquals(columns, fields.length);
             DBSPExpression[] expressions = new DBSPExpression[columns];
-            expressions[0] = convertDate(fields[0].trim());
+            expressions[0] = convertTimestamp(fields[0].trim());
             for (int i = 1; i < columns; i++)
                 expressions[i] = new DBSPI64Literal(Long.parseLong(fields[i].trim()), true);
             tuples[j] = new DBSPTupleExpression(expressions);
         }
         DBSPExpression none = DBSPLiteral.none(DBSPTypeInteger.SIGNED_64.setMayBeNull(true));
-        tuples[data.length] = new DBSPTupleExpression(convertDate(null), none, none, none);
+        tuples[data.length] = new DBSPTupleExpression(convertTimestamp(null), none, none, none);
         this.testQuery(query, new DBSPZSetLiteral.Contents(tuples), true);
     }
     
@@ -1060,7 +1015,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
             String[] fields = d.split("[|]");
             Assert.assertEquals(columns, fields.length);
             DBSPExpression[] expressions = new DBSPExpression[columns];
-            expressions[0] = convertDate(fields[0].trim());
+            expressions[0] = convertTimestamp(fields[0].trim());
             for (int i = 1; i < columns; i++) {
                 long adjust = (i == 4) ? CalciteToDBSPCompiler.firstDOW : 0;
                 expressions[i] = new DBSPI64Literal(Long.parseLong(fields[i].trim()) + adjust, true);
@@ -1068,7 +1023,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
             tuples[j] = new DBSPTupleExpression(expressions);
         }
         DBSPExpression none = DBSPLiteral.none(DBSPTypeInteger.SIGNED_64.setMayBeNull(true));
-        tuples[data.length] = new DBSPTupleExpression(convertDate(null), none, none, none, none, none);
+        tuples[data.length] = new DBSPTupleExpression(convertTimestamp(null), none, none, none, none, none);
         this.testQuery(query, new DBSPZSetLiteral.Contents(tuples), true);
     }
     
@@ -1160,7 +1115,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
             String[] fields = d.split("[|]");
             Assert.assertEquals(columns, fields.length);
             DBSPExpression[] expressions = new DBSPExpression[columns - 1]; // Skip the Julian unsupported column
-            expressions[0] = convertDate(fields[0].trim());
+            expressions[0] = convertTimestamp(fields[0].trim());
             for (int i = 1; i < columns - 2; i++)
                 expressions[i] = new DBSPI64Literal(Long.parseLong(fields[i].trim()), true);
             // Postgres gives a float for epoch
@@ -1168,7 +1123,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
             tuples[j] = new DBSPTupleExpression(expressions);
         }
         DBSPExpression none = DBSPLiteral.none(DBSPTypeInteger.SIGNED_64.setMayBeNull(true));
-        tuples[data.length] = new DBSPTupleExpression(convertDate(null), none, none, none, none);
+        tuples[data.length] = new DBSPTupleExpression(convertTimestamp(null), none, none, none, none);
         this.testQuery(query, new DBSPZSetLiteral.Contents(tuples), true);
     }
 
@@ -1261,7 +1216,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
             String[] fields = d.split("[|]");
             Assert.assertEquals(columns, fields.length);
             DBSPExpression[] expressions = new DBSPExpression[columns - 1]; // Skip the Julian unsupported column
-            expressions[0] = convertDate(fields[0].trim());
+            expressions[0] = convertTimestamp(fields[0].trim());
             for (int i = 1; i < columns - 2; i++)
                 expressions[i] = new DBSPI64Literal((long)Double.parseDouble(fields[i].trim()), true);
             // Postgres gives a float for epoch
@@ -1269,7 +1224,7 @@ public class PostgresTimestampTests extends BaseSQLTests {
             tuples[j] = new DBSPTupleExpression(expressions);
         }
         DBSPExpression none = DBSPLiteral.none(DBSPTypeInteger.SIGNED_64.setMayBeNull(true));
-        tuples[data.length] = new DBSPTupleExpression(convertDate(null), none, none, none, none);
+        tuples[data.length] = new DBSPTupleExpression(convertTimestamp(null), none, none, none, none);
         this.testQuery(query, new DBSPZSetLiteral.Contents(tuples), true);
     }
 
