@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.type.primitive;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
@@ -66,6 +67,13 @@ public abstract class DBSPTypeBaseType extends DBSPType {
      * Default value for this type.
      */
     public abstract DBSPLiteral defaultValue();
+
+    /**
+     * The null value with this type.
+     */
+    public DBSPExpression nullValue() {
+        return DBSPLiteral.none(this);
+    }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {

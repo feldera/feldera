@@ -28,23 +28,40 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 public class DBSPTypeString extends DBSPTypeBaseType {
-    public static final DBSPTypeString INSTANCE =
-            new DBSPTypeString(CalciteObject.EMPTY,false);
-    public static final DBSPTypeString NULLABLE_INSTANCE =
-            new DBSPTypeString(CalciteObject.EMPTY,true);
+    /**
+     * Strings with unlimited precision.
+     */
+    public static final DBSPTypeString UNLIMITED_INSTANCE =
+            new DBSPTypeString(CalciteObject.EMPTY,0, false, false);
 
-    protected DBSPTypeString(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
+    /**
+     * If true the width is fixed, i.e., this is a CHAR type.
+     * Otherwise, this is a VARCHAR.
+     */
+    public final boolean fixed;
+    /**
+     * Number of characters.  If 0 it means "unlimited".
+     * This is the size specified by CHAR or VARCHAR.
+     */
+    public final int precision;
+
+    public DBSPTypeString(CalciteObject node, int precision, boolean fixed, boolean mayBeNull) {
+        super(node, mayBeNull);
+        this.precision = precision;
+        this.fixed = fixed;
+    }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
-        return new DBSPTypeString(this.getNode(), mayBeNull);
+        return new DBSPTypeString(this.getNode(), this.precision, this.fixed, mayBeNull);
     }
 
     @Override
@@ -59,14 +76,20 @@ public class DBSPTypeString extends DBSPTypeBaseType {
 
     @Override
     public boolean sameType(DBSPType type) {
+        DBSPTypeString other = type.as(DBSPTypeString.class);
+        if (other == null)
+            return false;
         if (!super.sameNullability(type))
             return false;
-        return type.is(DBSPTypeString.class);
+        return this.fixed == other.fixed && this.precision == other.precision;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(this.mayBeNull, 12);
+        int result = super.hashCode();
+        result = 31 * result + (fixed ? 1 : 0);
+        result = 31 * result + precision;
+        return result;
     }
 
     @Override
@@ -80,5 +103,18 @@ public class DBSPTypeString extends DBSPTypeBaseType {
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        if (this.precision == 0)
+            return super.toString(builder);
+        return builder.append(this.shortName())
+                .append("(")
+                .append(this.precision)
+                .append(",")
+                .append(Boolean.toString(this.fixed))
+                .append(")")
+                .append(this.mayBeNull ? "?" : "");
     }
 }

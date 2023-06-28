@@ -37,9 +37,8 @@ public class CastTests extends BaseSQLTests {
     final DBSPTypeDecimal tenTwo = new DBSPTypeDecimal(CalciteObject.EMPTY, 10, 2, true);
     final DBSPTypeDecimal tenFour = new DBSPTypeDecimal(CalciteObject.EMPTY, 10, 4, false);
 
-    @Override
-    public DBSPCompiler compileQuery(String query, boolean incremental, boolean optimize, boolean jit) {
-        DBSPCompiler compiler = testCompiler(incremental, optimize, jit);
+   public DBSPCompiler compileQuery(String query) {
+        DBSPCompiler compiler = this.testCompiler();
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 INT NOT NULL" +
                 ", COL2 DOUBLE NOT NULL" +
@@ -52,7 +51,6 @@ public class CastTests extends BaseSQLTests {
         return compiler;
     }
 
-    @Override
     DBSPZSetLiteral.Contents createInput() {
         return new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
                 new DBSPI32Literal(10),
@@ -64,7 +62,7 @@ public class CastTests extends BaseSQLTests {
 
     void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
         query = "CREATE VIEW V AS " + query;
-        DBSPCompiler compiler = this.compileQuery(query, false, true, false);
+        DBSPCompiler compiler = this.compileQuery(query);
         DBSPCircuit circuit = getCircuit(compiler);
         InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
         this.addRustTestCase(query, compiler, circuit, streams);

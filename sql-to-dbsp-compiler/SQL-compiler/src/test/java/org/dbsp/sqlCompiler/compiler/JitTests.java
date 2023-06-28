@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler;
 
+import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -25,9 +26,9 @@ import java.math.BigDecimal;
  */
 public class JitTests extends EndToEndTests {
     @Override
-    void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
-        DBSPZSetLiteral.Contents input = this.createInput();
-        super.testQueryBase(query, false, true, true, new InputOutputPair(input, expectedOutput));
+    public DBSPCompiler testCompiler() {
+        CompilerOptions options = this.testOptions(false, true, true);
+        return new DBSPCompiler(options);
     }
 
     // All the @Ignore-ed tests below should eventually pass.

@@ -23,8 +23,16 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
+import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+
 public class OptimizedIncrementalTests extends NaiveIncrementalTests {
-    public void invokeTestQueryBase(String query, BaseSQLTests.InputOutputPair... streams) {
-        super.testQueryBase(query, true, true, false, streams);
+    @Override
+    public DBSPCompiler testCompiler() {
+        CompilerOptions options = this.testOptions(true, true, false);
+        return new DBSPCompiler(options);
+    }
+
+    public void invokeTestQueryBase(String query, InputOutputPair... streams) {
+        super.testQueryBase(query, streams);
     }
 }

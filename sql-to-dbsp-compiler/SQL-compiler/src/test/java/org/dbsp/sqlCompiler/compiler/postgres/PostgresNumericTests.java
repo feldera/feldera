@@ -23,35 +23,26 @@
 
 package org.dbsp.sqlCompiler.compiler.postgres;
 
-import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.InputOutputPair;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Ignore;
 import org.junit.Test;
-
-import java.math.BigDecimal;
 
 /**
  * Tests manually adapted from
  * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/numeric.out
  */
 @SuppressWarnings("ALL")
-public class PostgresNumericTests extends BaseSQLTests {
+public class PostgresNumericTests extends PostgresBaseTest {
     final int width = 25;
-    DBSPCompiler create() {
+
+    @Override
+    public void prepareData(DBSPCompiler compiler) {
         String createTables = "CREATE TABLE num_data (id int4, val numeric(" + width + ",10));\n" +
                 "CREATE TABLE num_exp_add (id1 int4, id2 int4, expected numeric(" + width + ",10));\n" +
                 "CREATE TABLE num_exp_sub (id1 int4, id2 int4, expected numeric(" + width + ",10));\n" +
@@ -61,17 +52,8 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "CREATE TABLE num_exp_ln (id int4, expected numeric(" + width + ",10));\n" +
                 "CREATE TABLE num_exp_log10 (id int4, expected numeric(" + width + ",10));\n" +
                 "CREATE TABLE num_exp_power_10_ln (id int4, expected numeric(" + width + ",10));\n";
-        CompilerOptions options = new CompilerOptions();
-        options.ioOptions.lexicalRules = Lex.ORACLE;
-        options.optimizerOptions.generateInputForEveryTable = true;
-        options.optimizerOptions.throwOnError = true;
-        DBSPCompiler compiler = new DBSPCompiler(options);
-        compiler.compileStatements(createTables);
-        return compiler;
-    }
-
-    void prepare(DBSPCompiler compiler) {
-        String insert = "INSERT INTO num_exp_add VALUES (0,0,'0');\n" +
+        String insert =
+                "INSERT INTO num_exp_add VALUES (0,0,'0');\n" +
                 "INSERT INTO num_exp_sub VALUES (0,0,'0');\n" +
                 "INSERT INTO num_exp_mul VALUES (0,0,'0');\n" +
                 "INSERT INTO num_exp_div VALUES (0,0,'NaN');\n" +
@@ -521,6 +503,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "INSERT INTO num_data VALUES (7, '-83028485');\n" +
                 "INSERT INTO num_data VALUES (8, '74881');\n" +
                 "INSERT INTO num_data VALUES (9, '-24926804.045047420');";
+        compiler.compileStatements(createTables);
         compiler.compileStatements(insert);
     }
 
@@ -528,23 +511,17 @@ public class PostgresNumericTests extends BaseSQLTests {
      * @param intermediate  A SQL query that defines an intermediate view, which is not output by the circuit.
      * @param last          A SQL query that defines the final view, which is output from the circuit.
      */
-    void testQuery(String intermediate, String last) {
-        DBSPCompiler compiler = this.create();
-        this.prepare(compiler);
+    void testTwoViews(String intermediate, String last) {
+        DBSPCompiler compiler = this.testCompiler();
+        this.prepareData(compiler);
         compiler.generateOutputForNextView(false);
         compiler.compileStatement(intermediate);
         compiler.generateOutputForNextView(true);
         compiler.compileStatement(last);
         compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
-        DBSPZSetLiteral.Contents[] inputs = new DBSPZSetLiteral.Contents[compiler.getTableContents().tablesCreated.size()];
-        int index = 0;
-        for (String table: compiler.getTableContents().tablesCreated) {
-            DBSPZSetLiteral.Contents data = compiler.getTableContents().getTableContents(table.toUpperCase());
-            inputs[index++] = data;
-        }
         InputOutputPair streams = new InputOutputPair(
-                inputs,
+                this.getPreparedInputs(compiler),
                 new DBSPZSetLiteral.Contents[] {
                         DBSPZSetLiteral.Contents.emptyWithElementType(new DBSPTypeTuple(
                     DBSPTypeInteger.SIGNED_32,
@@ -565,7 +542,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_add t2\n" +
                 "    WHERE t1.id1 = t2.id1 AND t1.id2 = t2.id2\n" +
                 "    AND t1.results != t2.expected";
-        this.testQuery(intermediate, last);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test
@@ -577,7 +554,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_add t2\n" +
                 "    WHERE t1.id1 = t2.id1 AND t1.id2 = t2.id2\n" +
                 "    AND t1.results != round(t2.expected, 10)";
-        this.testQuery(intermediate, last);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test
@@ -589,7 +566,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_sub t2\n" +
                 "    WHERE t1.id1 = t2.id1 AND t1.id2 = t2.id2\n" +
                 "    AND t1.results != t2.expected";
-        this.testQuery(intermediate, last);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test
@@ -601,7 +578,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_sub t2\n" +
                 "    WHERE t1.id1 = t2.id1 AND t1.id2 = t2.id2\n" +
                 "    AND t1.results != ROUND(t2.expected, 40)";
-        this.testQuery(intermediate, last);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test
@@ -613,7 +590,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_mul t2\n" +
                 "    WHERE t1.id1 = t2.id1 AND t1.id2 = t2.id2\n" +
                 "    AND t1.results != t2.expected";
-        this.testQuery(intermediate, last);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test
@@ -625,7 +602,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_mul t2\n" +
                 "    WHERE t1.id1 = t2.id1 AND t1.id2 = t2.id2\n" +
                 "    AND t1.results != round(t2.expected, 30)";
-        this.testQuery(intermediate, last);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test
@@ -637,7 +614,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_div t2\n" +
                 "    WHERE t1.id1 = t2.id1 AND t1.id2 = t2.id2\n" +
                 "    AND t1.results != t2.expected";
-        this.testQuery(intermediate, last);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test
@@ -649,7 +626,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_div t2\n" +
                 "    WHERE t1.id1 = t2.id1 AND t1.id2 = t2.id2\n" +
                 "    AND t1.results != round(t2.expected, 10)";
-        this.testQuery(intermediate, last);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test
@@ -661,7 +638,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_sqrt t2\n" +
                 "    WHERE t1.id1 = t2.id\n" +
                 "    AND t1.results != t2.expected";
-        this.testQuery(intermediate, last);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test
@@ -674,7 +651,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_ln t2\n" +
                 "    WHERE t1.id1 = t2.id\n" +
                 "    AND t1.results != t2.expected";
-        this.testQuery(intermediate, last);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test
@@ -687,7 +664,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_log10 t2\n" +
                 "    WHERE t1.id1 = t2.id\n" +
                 "    AND t1.results != t2.expected";
-        this.testQuery(intermediate, last);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test @Ignore("This test fails because Postgres has higher precision than we support")
@@ -701,60 +678,7 @@ public class PostgresNumericTests extends BaseSQLTests {
                 "    FROM num_result t1, num_exp_power_10_ln t2\n" +
                 "    WHERE t1.id1 = t2.id\n" +
                 "    AND t1.results != t2.expected";
-        this.testQuery(intermediate, last);
-    }
-
-    DBSPZSetLiteral.Contents parseTable(String table, DBSPType outputType) {
-        DBSPTypeZSet zset = outputType.to(DBSPTypeZSet.class);
-        DBSPZSetLiteral.Contents result = DBSPZSetLiteral.Contents.emptyWithElementType(zset.elementType);
-        DBSPTypeTuple tuple = zset.elementType.to(DBSPTypeTuple.class);
-
-        String[] lines = table.split("\n");
-        boolean inHeader = true;
-        for (String line: lines) {
-            if (line.startsWith("---")) {
-                inHeader = false;
-                continue;
-            }
-            if (inHeader)
-                continue;
-            String[] columns = line.split("[|]");
-            if (columns.length != tuple.size())
-                throw new RuntimeException("Row has " + columns.length + " columns, but expected " + tuple.size());
-            DBSPExpression[] values = new DBSPExpression[columns.length];
-            for (int i = 0; i < columns.length; i++) {
-                String column = columns[i].trim();
-                DBSPType fieldType = tuple.getFieldType(i);
-                if (fieldType.is(DBSPTypeFP.class)) {
-                    double value = Double.parseDouble(column);
-                    values[i] = new DBSPDoubleLiteral(value, fieldType.mayBeNull);
-                } else {
-                    BigDecimal value;
-                    if (column.isEmpty()) {
-                        values[i] = new DBSPDecimalLiteral(fieldType, null);
-                    } else {
-                        value = new BigDecimal(column);
-                        values[i] = new DBSPDecimalLiteral(fieldType, value);
-                    }
-                }
-            }
-            result.add(new DBSPTupleExpression(values));
-        }
-        return result;
-    }
-
-    void compare(String query, String expected) {
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement("CREATE VIEW VV AS " + query);
-        compiler.optimize();
-        DBSPCircuit circuit = getCircuit(compiler);
-        DBSPType outputType = circuit.getOutputType(0);
-        DBSPZSetLiteral.Contents result = this.parseTable(expected, outputType);
-        InputOutputPair streams = new InputOutputPair(
-                new DBSPZSetLiteral.Contents[0],
-                new DBSPZSetLiteral.Contents[] { result }
-        );
-        this.addRustTestCase(query, compiler, circuit, streams);
+        this.testTwoViews(intermediate, last);
     }
 
     @Test

@@ -31,9 +31,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.junit.Test;
 
 public class TimeTests extends BaseSQLTests {
-    @Override
-    public DBSPCompiler compileQuery(String query, boolean incremental, boolean optimize, boolean jit) {
-        DBSPCompiler compiler = testCompiler(incremental, optimize, jit);
+    public DBSPCompiler compileQuery(String query) {
+        DBSPCompiler compiler = this.testCompiler();
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 TIMESTAMP NOT NULL" +
                 ")";
@@ -45,14 +44,13 @@ public class TimeTests extends BaseSQLTests {
     public void testQuery(String query, DBSPExpression... fields) {
         // T contains a date with timestamp '100'.
         query = "CREATE VIEW V AS " + query;
-        DBSPCompiler compiler = this.compileQuery(query, false, true, false);
+        DBSPCompiler compiler = this.compileQuery(query);
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPZSetLiteral.Contents expectedOutput = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(fields));
         InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
         this.addRustTestCase(query, compiler, circuit, streams);
     }
 
-    @Override
     public DBSPZSetLiteral.Contents createInput() {
         return new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPTimestampLiteral(100)));
     }

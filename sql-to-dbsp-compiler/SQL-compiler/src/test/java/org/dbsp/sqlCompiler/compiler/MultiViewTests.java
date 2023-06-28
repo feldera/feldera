@@ -35,16 +35,7 @@ import org.junit.Test;
 /**
  * Tests where multiple views are defined in the same circuit.
  */
-public class MultiViewTests extends BaseSQLTests {
-    static final String ddl = "CREATE TABLE T (\n" +
-            "COL1 INT NOT NULL" +
-            ", COL2 DOUBLE NOT NULL" +
-            ", COL3 BOOLEAN NOT NULL" +
-            ", COL4 VARCHAR NOT NULL" +
-            ", COL5 INT" +
-            ", COL6 DOUBLE" +
-            ")";
-
+public class MultiViewTests extends EndToEndTests {
     /**
      * Two output views.
      */
@@ -54,7 +45,7 @@ public class MultiViewTests extends BaseSQLTests {
         String query2 = "CREATE VIEW V2 as SELECT T.COL2 FROM T";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement(ddl);
+        compiler.compileStatement(E2E_TABLE);
         compiler.compileStatement(query1);
         compiler.compileStatement(query2);
 
@@ -82,7 +73,7 @@ public class MultiViewTests extends BaseSQLTests {
         String query2 = "CREATE VIEW V2 as SELECT * FROM V1";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement(ddl);
+        compiler.compileStatement(E2E_TABLE);
         compiler.compileStatement(query1);
         compiler.compileStatement(query2);
 
@@ -110,7 +101,7 @@ public class MultiViewTests extends BaseSQLTests {
         String query2 = "CREATE VIEW V2 as SELECT DISTINCT COL1 FROM (SELECT * FROM V1 JOIN T ON V1.COL3 = T.COL3)";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement(ddl);
+        compiler.compileStatement(E2E_TABLE);
         compiler.compileStatement(query1);
         compiler.compileStatement(query2);
 

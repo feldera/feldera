@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
+import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -38,8 +39,14 @@ import java.math.BigDecimal;
 // Runs the EndToEnd tests but on an input stream with 3 elements each and
 // using an incremental non-optimized circuit.
 public class NaiveIncrementalTests extends EndToEndTests {
+    @Override
+    public DBSPCompiler testCompiler() {
+        CompilerOptions options = this.testOptions(true, false, false);
+        return new DBSPCompiler(options);
+    }
+
     public void invokeTestQueryBase(String query, InputOutputPair... streams) {
-        super.testQueryBase(query, true, false, false, streams);
+        super.testQueryBase(query, streams);
     }
 
     @Override

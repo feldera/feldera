@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.nio.charset.Charset;
@@ -68,13 +69,13 @@ public class DBSPStringLiteral extends DBSPLiteral {
     }
 
     public DBSPStringLiteral(@Nullable String value, Charset charset, boolean nullable) {
-        this(CalciteObject.EMPTY, DBSPTypeString.INSTANCE.setMayBeNull(nullable), value, charset);
+        this(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_INSTANCE.setMayBeNull(nullable), value, charset);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
 
     public DBSPStringLiteral(@Nullable String value, boolean nullable) {
-        this(CalciteObject.EMPTY, DBSPTypeString.INSTANCE.setMayBeNull(nullable), value, StandardCharsets.UTF_8);
+        this(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_INSTANCE.setMayBeNull(nullable), value, StandardCharsets.UTF_8);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
@@ -99,6 +100,6 @@ public class DBSPStringLiteral extends DBSPLiteral {
                     .append(this.type)
                     .append(")null");
         else
-            return builder.append(this.value);
+            return builder.append(Utilities.doubleQuote(this.value));
     }
 }

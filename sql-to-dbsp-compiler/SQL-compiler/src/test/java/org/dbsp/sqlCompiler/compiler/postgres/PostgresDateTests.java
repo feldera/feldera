@@ -24,59 +24,29 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.InputOutputPair;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
-import org.dbsp.util.Linq;
 import org.junit.Ignore;
 import org.junit.Test;
-
-import javax.annotation.Nullable;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 
 /**
  * Tests manually adapted from
  * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/date.out
  */
 @SuppressWarnings("JavadocLinkAsPlainText")
-public class PostgresDateTests extends BaseSQLTests {
+public class PostgresDateTests extends PostgresBaseTest {
     static final DBSPType nullableDate = DBSPTypeDate.NULLABLE_INSTANCE;
     
-    // CREATE TABLE DATE_TBL (f1 date);
-    //INSERT INTO DATE_TBL VALUES ('1957-04-09');
-    //INSERT INTO DATE_TBL VALUES ('1957-06-13');
-    //INSERT INTO DATE_TBL VALUES ('1996-02-28');
-    //INSERT INTO DATE_TBL VALUES ('1996-02-29');
-    //INSERT INTO DATE_TBL VALUES ('1996-03-01');
-    //INSERT INTO DATE_TBL VALUES ('1996-03-02');
-    //INSERT INTO DATE_TBL VALUES ('1997-02-28');
-    //INSERT INTO DATE_TBL VALUES ('1997-02-29');
-    //ERROR:  date/time field value out of range: "1997-02-29"
-    //LINE 1: INSERT INTO DATE_TBL VALUES ('1997-02-29');
-    //                                     ^
-    //INSERT INTO DATE_TBL VALUES ('1997-03-01');
-    //INSERT INTO DATE_TBL VALUES ('1997-03-02');
-    //INSERT INTO DATE_TBL VALUES ('2000-04-01');
-    //INSERT INTO DATE_TBL VALUES ('2000-04-02');
-    //INSERT INTO DATE_TBL VALUES ('2000-04-03');
-    //INSERT INTO DATE_TBL VALUES ('2038-04-08');
-    //INSERT INTO DATE_TBL VALUES ('2039-04-09');
-    //INSERT INTO DATE_TBL VALUES ('2040-04-10');
-    //INSERT INTO DATE_TBL VALUES ('2040-04-10 BC');
-
-    public DBSPCompiler compileQuery(String query, int optimizationLevel) {
+    @Override
+    public void prepareData(DBSPCompiler compiler) {
         String data = "CREATE TABLE DATE_TBL (f1 date);\n" +
                 "INSERT INTO DATE_TBL VALUES ('1957-04-09');\n" +
                 "INSERT INTO DATE_TBL VALUES ('1957-06-13');\n" +
@@ -95,14 +65,18 @@ public class PostgresDateTests extends BaseSQLTests {
                 "INSERT INTO DATE_TBL VALUES ('2038-04-08');\n" +
                 "INSERT INTO DATE_TBL VALUES ('2039-04-09');\n" +
                 "INSERT INTO DATE_TBL VALUES ('2040-04-10');\n";
-                // Calcite does not seem to support dates BC
-                //"INSERT INTO DATE_TBL VALUES ('2040-04-10 BC');";
+        // Calcite does not seem to support dates BC
+        //"INSERT INTO DATE_TBL VALUES ('2040-04-10 BC');";
+        compiler.compileStatements(data);
+    }
+
+    public DBSPCompiler compileQuery(String query, int optimizationLevel) {
         CompilerOptions options = new CompilerOptions();
         options.optimizerOptions.optimizationLevel = optimizationLevel;
         options.optimizerOptions.generateInputForEveryTable = true;
         options.optimizerOptions.throwOnError = true;
         DBSPCompiler compiler = new DBSPCompiler(options);
-        compiler.compileStatements(data);
+        this.prepareData(compiler);
         compiler.compileStatement(query);
         return compiler;
     }
@@ -124,100 +98,60 @@ public class PostgresDateTests extends BaseSQLTests {
         this.testQuery(query, zset, true);
     }
 
-    static final SimpleDateFormat inputFormat = new SimpleDateFormat("MM-dd-yyyy");
-    static final SimpleDateFormat outputFormats = new SimpleDateFormat("yyyy-MM-dd");
-
-    /**
-     * Convert a date from the MM-DD-YYYY format (which is used in the Postgres output)
-     * to YYYY-MM-DD
-     */
-    static DBSPExpression reformatDate(@Nullable String date) {
-        if (date == null)
-            return DBSPLiteral.none(DBSPTypeTimestamp.NULLABLE_INSTANCE);
-        try {
-            Date converted = inputFormat.parse(date);
-            String out = outputFormats.format(converted);
-            return new DBSPDateLiteral(out, true);
-        } catch (ParseException ex) {
-            throw new RuntimeException("Could not parse " + date);
-        }
-    }
-
-    static DBSPZSetLiteral.Contents makeSet(String[] data) {
-        DBSPType type = nullableDate;
-        DBSPZSetLiteral.Contents result = DBSPZSetLiteral.Contents.emptyWithElementType(
-                new DBSPTypeTuple(type));
-        for (String s: data) {
-            DBSPExpression value;
-            if (s == null)
-                value = DBSPLiteral.none(type);
-            else
-                value = reformatDate(s);
-            result.add(new DBSPTupleExpression(value));
-        }
-        return result;
-    }
-    
     @Test
     public void testSelect() {
-        // SELECT f1 FROM DATE_TBL;
         String query = "SELECT f1 FROM DATE_TBL";
-        String[] results = {
-                "04-09-1957",
-                "06-13-1957",
-                "02-28-1996",
-                "02-29-1996",
-                "03-01-1996",
-                "03-02-1996",
-                "02-28-1997",
-                "03-01-1997",
-                "03-02-1997",
-                "04-01-2000",
-                "04-02-2000",
-                "04-03-2000",
-                "04-08-2038",
-                "04-09-2039",
-                "04-10-2040",
-                //"04-10-2040 BC",
-                null
-        };
-        DBSPZSetLiteral.Contents result = makeSet(results);
-        this.testQuery(query, result, true);
+        String expected=
+                "f1\n" +
+                "---------------\n" +
+                "04-09-1957\n" +
+                "06-13-1957\n" +
+                "02-28-1996\n" +
+                "02-29-1996\n" +
+                "03-01-1996\n" +
+                "03-02-1996\n" +
+                "02-28-1997\n" +
+                "03-01-1997\n" +
+                "03-02-1997\n" +
+                "04-01-2000\n" +
+                "04-02-2000\n" +
+                "04-03-2000\n" +
+                "04-08-2038\n" +
+                "04-09-2039\n" +
+                "04-10-2040\n" +
+                "null";  // The invalid date
+        this.compare(query, expected);
     }
 
     @Test
     public void testLt() {
-        // SELECT f1 FROM DATE_TBL WHERE f1 < '2000-01-01';
         String query = "SELECT f1 FROM DATE_TBL WHERE f1 < '2000-01-01'";
-        String[] results = {
-                "04-09-1957",
-                "06-13-1957",
-                "02-28-1996",
-                "02-29-1996",
-                "03-01-1996",
-                "03-02-1996",
-                "02-28-1997",
-                "03-01-1997",
-                "03-02-1997",
-                //" 04-10-2040 BC",
-        };
-        DBSPZSetLiteral.Contents result = makeSet(results);
-        this.testQuery(query, result, true);
+        String expected = " f1       \n" +
+                "---------------\n" +
+                " 04-09-1957\n" +
+                " 06-13-1957\n" +
+                " 02-28-1996\n" +
+                " 02-29-1996\n" +
+                " 03-01-1996\n" +
+                " 03-02-1996\n" +
+                " 02-28-1997\n" +
+                " 03-01-1997\n" +
+                " 03-02-1997\n";
+                //" 04-10-2040 BC";
+        this.compare(query, expected);
     }
 
     @Test
     public void testBetween() {
-        // SELECT f1 FROM DATE_TBL
-        //  WHERE f1 BETWEEN '2000-01-01' AND '2001-01-01';
         String query = "SELECT f1 FROM DATE_TBL\n" +
                 "  WHERE f1 BETWEEN '2000-01-01' AND '2001-01-01'";
-        String[] results = {
-                "04-01-2000",
-                "04-02-2000",
-                "04-03-2000"
-        };
-        DBSPZSetLiteral.Contents result = makeSet(results);
-        this.testQuery(query, result, true);
+        String expected =
+                " f1\n" +
+                "----------------\n" +
+                "04-01-2000\n" +
+                "04-02-2000\n" +
+                "04-03-2000";
+        this.compare(query, expected);
     }
 
     // SELECT date '1999-01-08';
@@ -1015,33 +949,27 @@ public class PostgresDateTests extends BaseSQLTests {
 
     @Test
     public void testDiff() {
-        // SELECT f1 - date '2000-01-01' AS "Days From 2K" FROM DATE_TBL;
         String query = "SELECT (f1 - date '2000-01-01') day AS \"Days From 2K\" FROM DATE_TBL";
-        Long[] results = {
-                -15607L,
-                -15542L,
-                -1403L,
-                -1402L,
-                -1401L,
-                -1400L,
-                -1037L,
-                -1036L,
-                -1035L,
-                91L,
-                92L,
-                93L,
-                13977L,
-                14343L,
-                14710L,
-                //-1475115L
-        };
-        DBSPZSetLiteral.Contents result =
-                new DBSPZSetLiteral.Contents(Linq.map(results,
-                        l -> new DBSPTupleExpression(new DBSPIntervalMillisLiteral(
-                                l * 86400 * 1000, true)), DBSPExpression.class));
-        result.add(new DBSPTupleExpression(DBSPLiteral.none(
-                DBSPTypeMillisInterval.NULLABLE_INSTANCE)));
-        this.testQuery(query, result, true);
+        String expected = " Days From 2K \n" +
+                "--------------\n" +
+                "       -15607\n" +
+                "       -15542\n" +
+                "        -1403\n" +
+                "        -1402\n" +
+                "        -1401\n" +
+                "        -1400\n" +
+                "        -1037\n" +
+                "        -1036\n" +
+                "        -1035\n" +
+                "           91\n" +
+                "           92\n" +
+                "           93\n" +
+                "        13977\n" +
+                "        14343\n" +
+                "        14710\n" +
+                "null";
+                //"     -1475115";
+        this.compare(query, expected);
     }
 
     // There is no 'epoch' date in Calcite
@@ -1161,7 +1089,7 @@ public class PostgresDateTests extends BaseSQLTests {
         for (int i = 0; i < data.length; i++) {
             Object[] row = data[i];
             DBSPTupleExpression tuple = new DBSPTupleExpression(
-                    reformatDate((String)row[0]),
+                    convertDate((String)row[0]),
                     new DBSPI64Literal((Integer)row[1], true),
                     new DBSPI64Literal((Integer)row[2], true),
                     new DBSPI64Literal((Integer)row[3], true),

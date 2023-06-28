@@ -125,14 +125,14 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPCircuit circuit = getCircuit(compiler);
         String str = circuit.toString();
         String expected = "Circuit circuit0 {\n" +
-                "    // DBSPSourceOperator 13\n" +
+                "    // DBSPSourceOperator 15\n" +
                 "    // CREATE TABLE T (\n" +
                 "    // COL1 INT NOT NULL, COL2 DOUBLE NOT NULL, COL3 BOOLEAN NOT NULL, COL4 VARCHAR NOT NULL, COL5 INT, COL6 DOUBLE)\n" +
                 "    let T = T();\n" +
-                "    // DBSPMapOperator 60\n" +
+                "    // DBSPMapOperator 63\n" +
                 "    let stream1: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2))));\n" +
                 "    // CREATE VIEW V AS SELECT T.COL3 FROM T\n" +
-                "    // DBSPSinkOperator 64\n" +
+                "    // DBSPSinkOperator 67\n" +
                 "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream1;\n" +
                 "}";
         Assert.assertEquals(expected, str);
@@ -232,7 +232,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void toCsvTest() {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetLiteral s = new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, BaseSQLTests.e0, BaseSQLTests.e1);
+        DBSPZSetLiteral s = new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, EndToEndTests.e0, EndToEndTests.e1);
         StringBuilder builder = new StringBuilder();
         ToCsvVisitor visitor = new ToCsvVisitor(compiler, builder, () -> "");
         visitor.traverse(s);
@@ -247,7 +247,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void rustCsvTest() throws IOException, InterruptedException {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetLiteral data = new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, BaseSQLTests.e0, BaseSQLTests.e1);
+        DBSPZSetLiteral data = new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, EndToEndTests.e0, EndToEndTests.e1);
         String fileName = BaseSQLTests.rustDirectory + "/" + "test.csv";
         File file = ToCsvVisitor.toCsv(compiler, fileName, data);
         List<DBSPStatement> list = new ArrayList<>();
@@ -286,14 +286,14 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPCompiler compiler = testCompiler();
 
         DBSPZSetLiteral data = new DBSPZSetLiteral(
-                DBSPTypeWeight.INSTANCE, BaseSQLTests.e0NoDouble, BaseSQLTests.e1NoDouble);
+                DBSPTypeWeight.INSTANCE, EndToEndTests.e0NoDouble, EndToEndTests.e1NoDouble);
         List<DBSPStatement> list = new ArrayList<>();
 
         String connectionString = "sqlite://" + filepath;
         // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
         DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, "AnyRow", false);
         DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType);
-        DBSPExpression[] fields = BaseSQLTests.e0NoDouble.fields; // Should be the same for e1NoDouble too
+        DBSPExpression[] fields = EndToEndTests.e0NoDouble.fields; // Should be the same for e1NoDouble too
         final List<DBSPExpression> rowGets = new ArrayList<>(fields.length);
         for (int i = 0; i < fields.length; i++) {
             DBSPApplyMethodExpression rowGet =
