@@ -15,39 +15,23 @@ import org.junit.Test;
  * <a href="https://github.com/postgres/postgres/blob/master/src/test/regress/expected/boolean.out">boolean.out</a>
  */
 public class PostgresBoolTests extends PostgresBaseTest {
-    public DBSPCompiler compileQuery(String query, boolean optimize) {
-        CompilerOptions options = new CompilerOptions();
-        options.optimizerOptions.optimizationLevel = optimize ? 2 : 1;
-        options.optimizerOptions.generateInputForEveryTable = true;
-        options.optimizerOptions.throwOnError = true;
-        DBSPCompiler compiler = new DBSPCompiler(options);
-        compiler.compileStatement(query);
-        return compiler;
-    }
-
-    @SuppressWarnings("SameParameterValue")
-    void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput, boolean optimize) {
-        query = "CREATE VIEW V AS " + query;
-        DBSPCompiler compiler = this.compileQuery(query, optimize);
-        DBSPCircuit circuit = getCircuit(compiler);
-        InputOutputPair streams = new InputOutputPair(
-                new DBSPZSetLiteral.Contents[0],
-                new DBSPZSetLiteral.Contents[] { expectedOutput });
-        this.addRustTestCase(query, compiler, circuit, streams);
-    }
-
     @Test
     public void testOne() {
-        String query = "SELECT 1 as 'one'";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(new DBSPI32Literal(1))), true);
+        this.queryWithOutput("SELECT 1 as 'one';\n" + " one \n" +
+                "-----\n" +
+                "   1");
     }
 
     @Test
     public void testFalse() {
-        String query = "SELECT false as 'false'";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(DBSPBoolLiteral.FALSE)), true);
+        this.queryWithOutput("SELECT true AS true;\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT false AS false;\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
     }
 
     // SELECT bool 't' as 'true'

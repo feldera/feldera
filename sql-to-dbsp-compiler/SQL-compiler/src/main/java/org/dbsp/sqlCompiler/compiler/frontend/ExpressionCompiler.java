@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.*;
@@ -240,8 +241,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         return accumulator.cast(type);
     }
 
+    @SuppressWarnings("unused")
     public static boolean needCommonType(DBSPType result, DBSPType left, DBSPType right) {
-        return !left.is(IsDateType.class) && !right.is(IsDateType.class);
+        // Dates can be mixed with other types in a binary operation
+        if (left.is(IsDateType.class)) return false;
+        if (right.is(IsDateType.class)) return false;
+        // Allow mixing different string types in an operation
+        if (left.is(DBSPTypeString.class) && right.is(DBSPTypeString.class))
+            return false;
+        return true;
     }
 
     public static DBSPExpression makeBinaryExpression(
@@ -490,7 +498,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                             throw new UnimplementedException(node);
                         DBSPExpression left = ops.get(0);
                         DBSPExpression right = ops.get(1);
-                        String function = "st_distance_" + left.getType().nullableSuffix() +
+                        String function = opName + "_" + left.getType().nullableSuffix() +
                                 "_" + right.getType().nullableSuffix();
                         return new DBSPApplyExpression(node, function, DBSPTypeDouble.INSTANCE.setMayBeNull(anyNull), left, right);
                     }
@@ -517,9 +525,22 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                             throw new UnimplementedException(node);
                         DBSPType leftType = ops.get(0).getType();
                         DBSPType rightType = ops.get(1).getType();
-                        String functionName = "power_" + leftType.baseTypeWithSuffix() +
+                        String functionName = opName + "_" + leftType.baseTypeWithSuffix() +
                                 "_" + rightType.baseTypeWithSuffix();
                         return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1));
+                    }
+                    case "substring": {
+                        DBSPType baseType = ops.get(0).getType();
+                        String functionName = opName + baseType.nullableSuffix();
+                        if (call.operands.size() == 3) {
+                            functionName += "3";
+                            return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1), ops.get(2));
+                        } else if (call.operands.size() == 2) {
+                            functionName += "2";
+                            return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1));
+                        } else {
+                            throw new UnimplementedException(node);
+                        }
                     }
                 }
                 throw new UnimplementedException(node);
@@ -569,6 +590,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     throw new UnimplementedException(node);
                 return new DBSPIndexExpression(node, ops.get(0), ops.get(1).cast(DBSPTypeUSize.INSTANCE), true);
             }
+            case TRIM:
+                if (call.operands.size() != 3)
+                    throw new UnsupportedException(node);
+                DBSPKeywordLiteral keyword = ops.get(0).to(DBSPKeywordLiteral.class);
+                String functionName = call.getKind().toString().toLowerCase() + "_" +
+                        keyword + type.nullableSuffix();
+                return new DBSPApplyExpression(node, functionName, type, ops.get(1), ops.get(2));
             case DOT:
             default:
                 throw new UnimplementedException(node);

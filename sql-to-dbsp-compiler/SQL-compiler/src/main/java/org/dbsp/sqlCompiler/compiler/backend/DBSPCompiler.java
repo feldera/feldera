@@ -37,7 +37,6 @@ import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
@@ -53,7 +52,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import javax.annotation.Nullable;
@@ -230,12 +228,24 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             }
         } catch (SqlParseException e) {
             this.messages.reportError(e);
+            if (this.options.optimizerOptions.throwOnError) {
+                throw new RuntimeException(e);
+            }
         } catch (CalciteContextException e) {
             this.messages.reportError(e);
+            if (this.options.optimizerOptions.throwOnError) {
+                throw new RuntimeException(e);
+            }
         } catch (BaseCompilerException e) {
             this.messages.reportError(e);
+            if (this.options.optimizerOptions.throwOnError) {
+                throw new RuntimeException(e);
+            }
         } catch (Throwable e) {
             this.messages.reportError(e);
+            if (this.options.optimizerOptions.throwOnError) {
+                throw new RuntimeException(e);
+            }
         }
     }
 

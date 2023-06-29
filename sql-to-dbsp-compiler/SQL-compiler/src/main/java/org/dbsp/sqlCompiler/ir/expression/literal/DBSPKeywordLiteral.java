@@ -68,6 +68,9 @@ public class DBSPKeywordLiteral extends DBSPLiteral {
             case "microsecond":
             case "nanosecond":
             case "null_on_null":
+            case "both":
+            case "leading":
+            case "trailing":
                 break;
             default:
                 if (node.isEmpty())

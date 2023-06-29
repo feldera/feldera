@@ -50,15 +50,17 @@ public class CompilerMessages {
         }
 
         public void format(SourceFileContents contents, StringBuilder output) {
-            String sourceFile = contents.getSourceFileName(this.range.start);
-            output.append(sourceFile)
-                    .append(": ")
-                    .append(this.errorType)
-                    .append(SourceFileContents.newline());
-            output.append(sourceFile)
-                    .append(":")
-                    .append(this.range.start)
-                    .append(":");
+            if (this.range.isValid()) {
+                String sourceFile = contents.getSourceFileName(this.range.start);
+                output.append(sourceFile)
+                        .append(": ")
+                        .append(this.errorType)
+                        .append(SourceFileContents.newline());
+                output.append(sourceFile)
+                        .append(":")
+                        .append(this.range.start)
+                        .append(":");
+            }
             if (this.warning)
                 output.append(" warning");
             else
@@ -106,9 +108,6 @@ public class CompilerMessages {
         this.messages.add(message);
         if (!message.warning) {
             this.setExitCode(1);
-            if (this.compiler.options.optimizerOptions.throwOnError) {
-                throw new RuntimeException(message.toString());
-            }
         }
     }
 

@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
@@ -25,12 +26,12 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeStr;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 
@@ -52,7 +53,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         CompilerOptions options = new CompilerOptions();
         options.ioOptions.lexicalRules = Lex.ORACLE;
         options.optimizerOptions.throwOnError = true;
-        options.optimizerOptions.optimizationLevel = optimize ? 2 : 1;
+        options.optimizerOptions.optimizationLevel = optimize ? 2 : 0;
         options.optimizerOptions.generateInputForEveryTable = true;
         options.optimizerOptions.incrementalize = false;
         return new DBSPCompiler(options);
@@ -177,6 +178,9 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
                 } else if (fieldType.is(DBSPTypeString.class)) {
                     // No trim
                     columnValue = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, columns[i], StandardCharsets.UTF_8);
+                } else if (fieldType.is(DBSPTypeBool.class)) {
+                    boolean value = column.equalsIgnoreCase("t") || column.equalsIgnoreCase("true");
+                    columnValue = new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, value);
                 } else {
                     throw new UnimplementedException(fieldType);
                 }
@@ -200,8 +204,8 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         return inputs;
     }
 
-    void compare(String query, String expected) {
-        DBSPCompiler compiler = this.testCompiler(true);
+    void compare(String query, String expected, boolean optimize) {
+        DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareData(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
         compiler.optimize();
@@ -213,5 +217,21 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
                 new DBSPZSetLiteral.Contents[] { result }
         );
         this.addRustTestCase(query, compiler, circuit, streams);
+    }
+
+    /**
+     * Test a query followed by the expected output.
+     * The query ends at the semicolon.
+     * Runs two test cases, one with optimizations and one without.
+     * This makes sure that constant queries still exercise the runtime.
+     */
+    void queryWithOutput(String queryAndOutput) {
+        int semicolon = queryAndOutput.indexOf(';');
+        if (semicolon < 0)
+            throw new RuntimeException("Could not parse query and output");
+        String query = queryAndOutput.substring(0, semicolon);
+        String expected = queryAndOutput.substring(semicolon + 1);
+        this.compare(query, expected, true);
+        this.compare(query, expected, false);
     }
 }

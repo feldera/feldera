@@ -684,15 +684,15 @@ public class PostgresNumericTests extends PostgresBaseTest {
     @Test
     public void testSpecialValues() {
         // This test was written with NUMERIC values, but was converted to FP
-        String query =
+        this.queryWithOutput(
                 "WITH v(x) AS (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE))," +
                         "(CAST ('-Infinity' AS DOUBLE)),(CAST ('nan' AS DOUBLE)))\n" +
                 "SELECT x1, x2,\n" +
                 "  x1 + x2 AS s,\n" +
                 "  x1 - x2 AS diff,\n" +
                 "  x1 * x2 AS prod\n" +
-                "FROM v AS v1(x1), v AS v2(x2)";
-        String expected = "    x1     |    x2     |    sum    |   diff    |   prod    \n" +
+                "FROM v AS v1(x1), v AS v2(x2);\n" +
+                "    x1     |    x2     |    sum    |   diff    |   prod    \n" +
                 "-----------+-----------+-----------+-----------+-----------\n" +
                 "         0 |         0 |         0 |         0 |         0\n" +
                 "         0 |         1 |         1 |        -1 |         0\n" +
@@ -742,32 +742,29 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "       NaN |       4.2 |       NaN |       NaN |       NaN\n" +
                 "       NaN |  Infinity |       NaN |       NaN |       NaN\n" +
                 "       NaN | -Infinity |       NaN |       NaN |       NaN\n" +
-                "       NaN |       NaN |       NaN |       NaN |       NaN";
-        this.compare(query, expected);
+                "       NaN |       NaN |       NaN |       NaN |       NaN");
     }
 
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5795")
     public void testCast() {
-        String query = "WITH v(x) AS (VALUES(0::numeric),(4.2)) SELECT x FROM v as v1(x)";
-        String expected =
+        this.queryWithOutput(
+                "WITH v(x) AS (VALUES(0::numeric),(4.2)) SELECT x FROM v as v1(x);\n" +
                 "    x1     \n" +
                 "-----------\n" +
                 "         0 \n" +
-                "       4.2 \n";
-        this.compare(query, expected);
+                "       4.2 \n");
     }
 
     @Test
     public void testSpecialValuesNumeric() {
         // Removed unsupported numeric values inf, nan, etc.
-        String query =
+        this.queryWithOutput(
                 "WITH v(x) AS (VALUES('0'::numeric),(1),(-1),('4.2'::numeric))\n" +
                         "SELECT x1, x2,\n" +
                         "  x1 + x2 AS s,\n" +
                         "  x1 - x2 AS diff,\n" +
                         "  x1 * x2 AS prod\n" +
-                        "FROM v AS v1(x1), v AS v2(x2)";
-        String expected =
+                        "FROM v AS v1(x1), v AS v2(x2);\n" +
                 "    x1     |    x2     |    sum    |   diff    |   prod    \n" +
                 "-----------+-----------+-----------+-----------+-----------\n" +
                 "         0 |         0 |         0 |         0 |         0\n" +
@@ -785,22 +782,20 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "       4.2 |         0 |       4.2 |       4.2 |       0.0\n" +
                 "       4.2 |         1 |       5.2 |       3.2 |       4.2\n" +
                 "       4.2 |        -1 |       3.2 |       5.2 |      -4.2\n" +
-                "       4.2 |       4.2 |       8.4 |       0.0 |     17.64\n";
-        this.compare(query, expected);
+                "       4.2 |       4.2 |       8.4 |       0.0 |     17.64\n");
     }
 
     @Test
     public void testSpecialValues2() {
         // no div or mod defined for fp, so I removed these
-        String query = "WITH v(x) AS\n" +
+        this.queryWithOutput("WITH v(x) AS\n" +
                 "  (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE)),(CAST ('-Infinity' AS DOUBLE))," +
                 "(CAST ('nan' AS DOUBLE)))\n" +
                 "SELECT x1, x2,\n" +
                 "  x1 / x2 AS quot\n" +
                 //"  x1 % x2 AS m,\n" +
                 //"  div(x1, x2) AS div\n" +
-                "FROM v AS v1(x1), v AS v2(x2) WHERE x2 != 0E0";
-        String expected =
+                "FROM v AS v1(x1), v AS v2(x2) WHERE x2 != 0E0;\n" +
                 "    x1     |    x2     |          quot            \n" +
                 "-----------+-----------+--------------------------\n" +
                 "         0 |         1 |  0.00000000000000000000 \n" +
@@ -844,15 +839,14 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "       4.2 |       NaN |                     NaN \n" +
                 "  Infinity |       NaN |                     NaN \n" +
                 " -Infinity |       NaN |                     NaN \n" +
-                "       NaN |       NaN |                     NaN ";
-        this.compare(query, expected);
+                "       NaN |       NaN |                     NaN ");
     }
 
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5651")
     public void testSpecialValues2Numeric() {
         // Removed unsupported numeric values inf, nan, etc.
         // No div function known, so I removed this one
-        String query = "WITH v(x) AS\n" +
+        this.queryWithOutput("WITH v(x) AS\n" +
                 "  (VALUES(CAST(0 AS NUMERIC(" + width + ", 20))),\n" +
                 "         (CAST(1 AS NUMERIC(" + width + ", 20))),\n" +
                 "         (CAST(-1 AS NUMERIC(" + width + ",20))),\n" +
@@ -861,8 +855,7 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "  x1 / x2 AS quot,\n" +
                 "  x1 % x2 AS m\n" +
                 // "  div(x1, x2) AS div\n" +
-                "FROM v AS v1(x1), v AS v2(x2) WHERE x2 != 0";
-        String expected =
+                "FROM v AS v1(x1), v AS v2(x2) WHERE x2 != 0;\n" +
                 "    x1     |    x2     |          quot           | mod  \n" +
                 "-----------+-----------+-------------------------+------\n" +
                 "         0 |         1 |  0.00000000000000000000 |    0\n" +
@@ -876,8 +869,7 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "         0 |       4.2 |  0.00000000000000000000 |  0.0\n" +
                 "         1 |       4.2 |  0.23809523809523809524 |  1.0\n" +
                 "        -1 |       4.2 | -0.23809523809523809524 | -1.0\n" +
-                "       4.2 |       4.2 |  1.00000000000000000000 |  0.0\n";
-        this.compare(query, expected);
+                "       4.2 |       4.2 |  1.00000000000000000000 |  0.0\n");
     }
 
     // We don't support 'Infinity' for Decimal
@@ -912,11 +904,10 @@ public class PostgresNumericTests extends PostgresBaseTest {
     @Test
     public void testFunctions0() {
         // TODO: this test was written with NUMERIC values, but was converted to FP
-        String query = "WITH v(x) AS\n" +
+        this.queryWithOutput("WITH v(x) AS\n" +
                 "  (VALUES(0E0),(1E0),(-1E0),(4.2E0),(-7.777E0),(CAST('inf' AS DOUBLE)),(CAST('-inf' AS DOUBLE)),(CAST('nan' AS DOUBLE)))\n" +
                 "SELECT x, -x as minusx, abs(x), floor(x), ceil(x), sign(x)\n" +
-                "FROM v";
-        String expected =
+                "FROM v;\n" +
                 "     x     |  minusx   |   abs    |   floor   |   ceil    | sign  \n" +
                 "-----------+-----------+----------+-----------+-----------+-------\n" +
                 "         0 |         0 |        0 |         0 |         0 |    0 \n" +
@@ -926,26 +917,23 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1 \n" +
                 "  Infinity | -Infinity | Infinity |  Infinity |  Infinity |    1 \n" +
                 " -Infinity |  Infinity | Infinity | -Infinity | -Infinity |   -1 \n" +
-                "       NaN |       NaN |      NaN |       NaN |       NaN |  NaN ";
-        this.compare(query, expected);
+                "       NaN |       NaN |      NaN |       NaN |       NaN |  NaN ");
     }
 
     @Test
     public void testFunctionsNumeric0() {
         // dropped unsupported values inf, nan, etc.
-        String query = "WITH v(x) AS\n" +
+        this.queryWithOutput("WITH v(x) AS\n" +
                 "  (VALUES(0),(1),(-1),(4.2),(-7.777))\n" +
                 "SELECT x, -x as minusx, abs(x), floor(x), ceil(x), sign(x)\n" +
-                "FROM v";
-        String expected =
+                "FROM v;\n" +
                 "     x     |  minusx   |   abs    |   floor   |   ceil    | sign \n" +
                 "-----------+-----------+----------+-----------+-----------+------\n" +
                 "         0 |         0 |        0 |         0 |         0 |    0\n" +
                 "         1 |        -1 |        1 |         1 |         1 |    1\n" +
                 "        -1 |         1 |        1 |        -1 |        -1 |   -1\n" +
                 "       4.2 |      -4.2 |      4.2 |         4 |         5 |    1\n" +
-                "    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1\n";
-        this.compare(query, expected);
+                "    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1\n");
     }
 
     @Test
@@ -953,19 +941,17 @@ public class PostgresNumericTests extends PostgresBaseTest {
         // Removed the unsupported inf, nan, etc. values
         // This test makes not sense for FP
         // 'trunc' has been renamed to 'truncate'
-        String query = "WITH v(x) AS\n" +
+        this.queryWithOutput("WITH v(x) AS\n" +
                 "  (VALUES(0),(1),(-1),(4.2),(-7.777))\n" +
                 "SELECT x, round(x), round(x,1) as round1, truncate(x), truncate(x,1) as trunc1\n" +
-                "FROM v";
-        String expected =
+                "FROM v;\n" +
                 "     x     |   round   |  round1   |   trunc   |  trunc1   \n" +
                 "-----------+-----------+-----------+-----------+-----------\n" +
                 "         0 |         0 |       0.0 |         0 |       0.0\n" +
                 "         1 |         1 |       1.0 |         1 |       1.0\n" +
                 "        -1 |        -1 |      -1.0 |        -1 |      -1.0\n" +
                 "       4.2 |         4 |       4.2 |         4 |       4.2\n" +
-                "    -7.777 |        -8 |      -7.8 |        -7 |      -7.7\n";
-        this.compare(query, expected);
+                "    -7.777 |        -8 |      -7.8 |        -7 |      -7.7\n");
     }
 
     // -- the large values fall into the numeric abbreviation code's maximal classes
@@ -996,17 +982,15 @@ public class PostgresNumericTests extends PostgresBaseTest {
     public void testSqrt() {
         // Removed 'inf' and 'nan'.
         // Interestingly, sqrt in Calcite returns a FP value.
-        String query = "WITH v(x) AS\n" +
+        this.queryWithOutput("WITH v(x) AS\n" +
                 "  (VALUES(0),(1),(4.2))\n" +
                 "SELECT x, sqrt(x)\n" +
-                "FROM v";
-        String expected =
+                "FROM v;\n" +
                 "    x     |       sqrt        \n" +
                 "----------+-------------------\n" +
                 "        0 | 0.000000000000000\n" +
                 "        1 | 1.000000000000000\n" +
-                "      4.2 | 2.049390153191920\n";
-        this.compare(query, expected);
+                "      4.2 | 2.049390153191920\n");
     }
 
     // TODO: Calcite thinks that sqrt(-1) should produce a runtime error
@@ -1017,18 +1001,16 @@ public class PostgresNumericTests extends PostgresBaseTest {
     public void testLog() {
         // Removed 'inf' and 'nan'
         // Calcite does not have log
-        String query = "WITH v(x) AS\n" +
+        this.queryWithOutput("WITH v(x) AS\n" +
                 "  (VALUES(1),(CAST(4.2 AS NUMERIC(" + width + ", 22))))\n" +
                 "SELECT x,\n" +
                 //"  log(x),\n" +
                 "  log10(x),\n" +
                 "  ln(x)\n" +
-                "FROM v";
-        String expected =
+                "FROM v;\n" +
                 "    x     |        log         |         ln         \n" +
                 "----------+--------------------+--------------------\n" +
                 "        1 | 0.0000000000000000 | 0.0000000000000000\n" +
-                "      4.2 | 0.6232492903979005 | 1.4350845252893226";
-        this.compare(query, expected);
+                "      4.2 | 0.6232492903979005 | 1.4350845252893226");
     }
 }
