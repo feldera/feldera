@@ -39,7 +39,7 @@ use actix_web::{
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
-use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use auth::JwkCache;
 use clap::Parser;
 use colored::Colorize;
@@ -444,6 +444,13 @@ where
 
 fn http_resp_from_db_error(error: &DBError) -> HttpResponse {
     match error {
+        DBError::PostgresError { .. } => HttpResponse::InternalServerError(),
+        DBError::PostgresPoolError { .. } => HttpResponse::InternalServerError(),
+        DBError::PostgresMigrationError { .. } => HttpResponse::InternalServerError(),
+        #[cfg(feature = "pg-embed")]
+        DBError::PgEmbedError { .. } => HttpResponse::InternalServerError(),
+        DBError::InvalidData { .. } => HttpResponse::InternalServerError(),
+        DBError::InvalidStatus { .. } => HttpResponse::InternalServerError(),
         DBError::UnknownProgram { .. } => HttpResponse::NotFound(),
         DBError::DuplicateName => HttpResponse::Conflict(),
         DBError::OutdatedProgramVersion { .. } => HttpResponse::Conflict(),
@@ -608,22 +615,22 @@ fn example_invalid_pipeline_action() -> ErrorResponse {
     })
 }
 
-fn parse_uuid_param(req: &HttpRequest, param_name: &'static str) -> AnyResult<Uuid> {
+fn parse_uuid_param(req: &HttpRequest, param_name: &'static str) -> Result<Uuid, ApiError> {
     match req.match_info().get(param_name) {
-        None => bail!(ApiError::MissingUrlEncodedParam { param: param_name }),
+        None => Err(ApiError::MissingUrlEncodedParam { param: param_name }),
         Some(id) => match id.parse::<Uuid>() {
-            Err(e) => bail!(ApiError::InvalidUuidParam {
+            Err(e) => Err(ApiError::InvalidUuidParam {
                 value: id.to_string(),
-                error: e.to_string()
+                error: e.to_string(),
             }),
             Ok(uuid) => Ok(uuid),
         },
     }
 }
 
-fn parse_pipeline_action(req: &HttpRequest) -> AnyResult<&str> {
+fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ApiError> {
     match req.match_info().get("action") {
-        None => bail!(ApiError::MissingUrlEncodedParam { param: "action" }),
+        None => Err(ApiError::MissingUrlEncodedParam { param: "action" }),
         Some(action) => Ok(action),
     }
 }
@@ -651,7 +658,7 @@ async fn list_programs(
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(programs)
         })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Response to a program code request.
@@ -689,7 +696,7 @@ async fn program_code(
 ) -> impl Responder {
     let program_id = match parse_uuid_param(&req, "program_id") {
         Err(e) => {
-            return http_resp_from_error(&e);
+            return http_resp_from_api_error(&e);
         }
         Ok(program_id) => ProgramId(program_id),
     };
@@ -705,7 +712,7 @@ async fn program_code(
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(&ProgramCodeResponse { program, code })
         })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Returns program descriptor, including current program version and
@@ -760,7 +767,7 @@ async fn program_status(
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .json(&descr)
     })
-    .unwrap_or_else(|e| http_resp_from_error(&e))
+    .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Request to create a new DBSP program.
@@ -815,14 +822,14 @@ async fn new_program(
 ) -> impl Responder {
     do_new_program(state, tenant_id, request)
         .await
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 async fn do_new_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: web::Json<NewProgramRequest>,
-) -> AnyResult<HttpResponse> {
+) -> Result<HttpResponse, DBError> {
     if request.overwrite_existing {
         let descr = {
             let db = state.db.lock().await;
@@ -924,7 +931,7 @@ async fn update_program(
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(&UpdateProgramResponse { version })
         })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Request to queue a program for compilation.
@@ -968,7 +975,7 @@ async fn compile_program(
         .set_program_pending(*tenant_id, request.program_id, request.version)
         .await
         .map(|_| HttpResponse::Accepted().finish())
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Request to cancel ongoing program compilation.
@@ -1012,7 +1019,7 @@ async fn cancel_program(
         .cancel_program(*tenant_id, request.program_id, request.version)
         .await
         .map(|_| HttpResponse::Accepted().finish())
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Delete a program.
@@ -1043,21 +1050,21 @@ async fn delete_program(
 ) -> impl Responder {
     let program_id = match parse_uuid_param(&req, "program_id") {
         Err(e) => {
-            return http_resp_from_error(&e);
+            return http_resp_from_api_error(&e);
         }
         Ok(program_id) => ProgramId(program_id),
     };
 
     do_delete_program(state, *tenant_id, program_id)
         .await
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 async fn do_delete_program(
     state: WebData<ServerState>,
     tenant_id: TenantId,
     program_id: ProgramId,
-) -> AnyResult<HttpResponse> {
+) -> Result<HttpResponse, DBError> {
     let db = state.db.lock().await;
     db.delete_program(tenant_id, program_id)
         .await
@@ -1129,7 +1136,7 @@ async fn new_pipeline(
                     version,
                 })
         })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Request to update an existing program configuration.
@@ -1206,7 +1213,7 @@ async fn update_pipeline(
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(&UpdatePipelineResponse { version })
         })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// List pipelines.
@@ -1232,7 +1239,7 @@ async fn list_pipelines(
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(pipelines)
         })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Retrieve pipeline metrics and performance counters.
@@ -1263,7 +1270,7 @@ async fn pipeline_stats(
 ) -> impl Responder {
     let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
         Err(e) => {
-            return http_resp_from_error(&e);
+            return http_resp_from_api_error(&e);
         }
         Ok(pipeline_id) => PipelineId(pipeline_id),
     };
@@ -1308,7 +1315,7 @@ async fn pipeline_status(
     tenant_id: ReqData<TenantId>,
     req: web::Query<IdOrNameQuery>,
 ) -> impl Responder {
-    let resp: Result<db::PipelineDescr, AnyError> = if let Some(id) = req.id {
+    let resp: Result<db::PipelineDescr, DBError> = if let Some(id) = req.id {
         state
             .db
             .lock()
@@ -1331,7 +1338,7 @@ async fn pipeline_status(
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .json(&descr)
     })
-    .unwrap_or_else(|e| http_resp_from_error(&e))
+    .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Perform action on a pipeline.
@@ -1390,13 +1397,13 @@ async fn pipeline_action(
 ) -> impl Responder {
     let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
         Err(e) => {
-            return http_resp_from_error(&e);
+            return http_resp_from_api_error(&e);
         }
         Ok(pipeline_id) => PipelineId(pipeline_id),
     };
     let action = match parse_pipeline_action(&req) {
         Err(e) => {
-            return http_resp_from_error(&e);
+            return http_resp_from_api_error(&e);
         }
         Ok(action) => action,
     };
@@ -1451,7 +1458,7 @@ async fn pipeline_delete(
 ) -> impl Responder {
     let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
         Err(e) => {
-            return http_resp_from_error(&e);
+            return http_resp_from_api_error(&e);
         }
         Ok(pipeline_id) => PipelineId(pipeline_id),
     };
@@ -1488,7 +1495,7 @@ async fn list_connectors(
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(connectors)
         })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Request to create a new connector.
@@ -1540,7 +1547,7 @@ async fn new_connector(
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(&NewConnectorResponse { connector_id })
         })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Request to update an existing data-connector.
@@ -1598,7 +1605,7 @@ async fn update_connector(
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(&UpdateConnectorResponse {})
         })
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Delete existing connector.
@@ -1627,7 +1634,7 @@ async fn delete_connector(
 ) -> impl Responder {
     let connector_id = match parse_uuid_param(&req, "connector_id") {
         Err(e) => {
-            return http_resp_from_error(&e);
+            return http_resp_from_api_error(&e);
         }
         Ok(connector_id) => ConnectorId(connector_id),
     };
@@ -1639,7 +1646,7 @@ async fn delete_connector(
         .delete_connector(*tenant_id, connector_id)
         .await
         .map(|_| HttpResponse::Ok().finish())
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1681,7 +1688,7 @@ async fn connector_status(
     tenant_id: ReqData<TenantId>,
     req: web::Query<IdOrNameQuery>,
 ) -> impl Responder {
-    let resp: Result<db::ConnectorDescr, AnyError> = if let Some(id) = req.id {
+    let resp: Result<db::ConnectorDescr, DBError> = if let Some(id) = req.id {
         state
             .db
             .lock()
@@ -1704,7 +1711,7 @@ async fn connector_status(
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .json(&descr)
     })
-    .unwrap_or_else(|e| http_resp_from_error(&e))
+    .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Push data to a SQL table.
@@ -1768,7 +1775,7 @@ async fn http_input(
 
     let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
         Err(e) => {
-            return http_resp_from_error(&e);
+            return http_resp_from_api_error(&e);
         }
         Ok(pipeline_id) => PipelineId(pipeline_id),
     };
@@ -1856,7 +1863,7 @@ async fn http_output(
 
     let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
         Err(e) => {
-            return http_resp_from_error(&e);
+            return http_resp_from_api_error(&e);
         }
         Ok(pipeline_id) => PipelineId(pipeline_id),
     };

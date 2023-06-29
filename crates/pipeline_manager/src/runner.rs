@@ -305,7 +305,7 @@ impl LocalRunner {
                     .await
                 {
                     let _ = pipeline_process.kill().await;
-                    return Err(e);
+                    bail!(e);
                 };
                 Ok(HttpResponse::Ok().json("Pipeline successfully deployed."))
             }
@@ -336,8 +336,9 @@ impl LocalRunner {
         pipeline_id: PipelineId,
     ) -> AnyResult<bool> {
         let db = self.db.lock().await;
-        db.set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Paused)
-            .await
+        Ok(db
+            .set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Paused)
+            .await?)
     }
 
     pub(crate) async fn start_pipeline(
@@ -346,8 +347,9 @@ impl LocalRunner {
         pipeline_id: PipelineId,
     ) -> AnyResult<bool> {
         let db = self.db.lock().await;
-        db.set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Running)
-            .await
+        Ok(db
+            .set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Running)
+            .await?)
     }
 
     pub(crate) async fn delete_pipeline(

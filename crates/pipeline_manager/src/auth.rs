@@ -63,7 +63,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
-    db::{storage::Storage, ApiPermission, ProjectDB},
+    db::{storage::Storage, ApiPermission, DBError, ProjectDB},
     ServerState,
 };
 
@@ -547,7 +547,7 @@ fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
 async fn validate_api_keys(
     db: &ProjectDB,
     api_key: &str,
-) -> Result<(TenantId, Vec<ApiPermission>), anyhow::Error> {
+) -> Result<(TenantId, Vec<ApiPermission>), DBError> {
     db.validate_api_key(api_key.to_owned()).await
 }
 

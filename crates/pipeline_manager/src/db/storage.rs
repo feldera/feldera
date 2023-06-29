@@ -3,7 +3,6 @@ use super::{
     PipelineId, PipelineStatus, ProgramDescr, ProgramId, Version,
 };
 use crate::{auth::TenantId, ProgramStatus};
-use anyhow::{anyhow, Result as AnyResult};
 use async_trait::async_trait;
 use uuid::Uuid;
 
@@ -13,9 +12,9 @@ use uuid::Uuid;
 /// We use a trait so we can mock the storage layer in tests.
 #[async_trait]
 pub(crate) trait Storage {
-    async fn reset_program_status(&self) -> AnyResult<()>;
+    async fn reset_program_status(&self) -> Result<(), DBError>;
 
-    async fn list_programs(&self, tenant_id: TenantId) -> AnyResult<Vec<ProgramDescr>>;
+    async fn list_programs(&self, tenant_id: TenantId) -> Result<Vec<ProgramDescr>, DBError>;
 
     /// Retrieve program descriptor.
     ///
@@ -25,10 +24,10 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
-    ) -> AnyResult<ProgramDescr> {
+    ) -> Result<ProgramDescr, DBError> {
         self.get_program_if_exists(tenant_id, program_id)
             .await?
-            .ok_or_else(|| anyhow!(DBError::UnknownProgram { program_id }))
+            .ok_or(DBError::UnknownProgram { program_id })
     }
 
     /// Retrieve program descriptor.
@@ -39,10 +38,10 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         name: &str,
-    ) -> AnyResult<ProgramDescr> {
+    ) -> Result<ProgramDescr, DBError> {
         self.lookup_program(tenant_id, name)
             .await?
-            .ok_or_else(|| anyhow!(DBError::UnknownName { name: name.into() }))
+            .ok_or_else(|| DBError::UnknownName { name: name.into() })
     }
 
     /// Validate program version and retrieve program descriptor.
@@ -55,12 +54,10 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         program_id: ProgramId,
         expected_version: Version,
-    ) -> AnyResult<ProgramDescr> {
+    ) -> Result<ProgramDescr, DBError> {
         let descr = self.get_program_by_id(tenant_id, program_id).await?;
         if descr.version != expected_version {
-            return Err(anyhow!(DBError::OutdatedProgramVersion {
-                expected_version
-            }));
+            return Err(DBError::OutdatedProgramVersion { expected_version });
         }
 
         Ok(descr)
@@ -75,7 +72,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         program_id: ProgramId,
         expected_version: Version,
-    ) -> AnyResult<()> {
+    ) -> Result<(), DBError> {
         let descr = self
             .get_program_guarded(tenant_id, program_id, expected_version)
             .await?;
@@ -102,7 +99,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         program_id: ProgramId,
         expected_version: Version,
-    ) -> AnyResult<()> {
+    ) -> Result<(), DBError> {
         let descr = self
             .get_program_guarded(tenant_id, program_id, expected_version)
             .await?;
@@ -123,7 +120,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
-    ) -> AnyResult<(ProgramDescr, String)>;
+    ) -> Result<(ProgramDescr, String), DBError>;
 
     /// Create a new program.
     async fn new_program(
@@ -133,7 +130,7 @@ pub(crate) trait Storage {
         program_name: &str,
         program_description: &str,
         program_code: &str,
-    ) -> AnyResult<(ProgramId, Version)>;
+    ) -> Result<(ProgramId, Version), DBError>;
 
     /// Update program name, description and, optionally, code.
     /// XXX: Description should be optional too
@@ -144,7 +141,7 @@ pub(crate) trait Storage {
         program_name: &str,
         program_description: &str,
         program_code: &Option<String>,
-    ) -> AnyResult<Version>;
+    ) -> Result<Version, DBError>;
 
     /// Retrieve program descriptor.
     ///
@@ -153,14 +150,14 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
-    ) -> AnyResult<Option<ProgramDescr>>;
+    ) -> Result<Option<ProgramDescr>, DBError>;
 
     /// Lookup program by name.
     async fn lookup_program(
         &self,
         tenant_id: TenantId,
         program_name: &str,
-    ) -> AnyResult<Option<ProgramDescr>>;
+    ) -> Result<Option<ProgramDescr>, DBError>;
 
     /// Update program status.
     ///
@@ -172,7 +169,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         program_id: ProgramId,
         status: ProgramStatus,
-    ) -> AnyResult<()>;
+    ) -> Result<(), DBError>;
 
     /// Update program status after a version check.
     ///
@@ -190,7 +187,7 @@ pub(crate) trait Storage {
         program_id: ProgramId,
         expected_version: Version,
         status: ProgramStatus,
-    ) -> AnyResult<()>;
+    ) -> Result<(), DBError>;
 
     /// Update program schema.
     ///
@@ -202,18 +199,22 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         program_id: ProgramId,
         schema: String,
-    ) -> AnyResult<()>;
+    ) -> Result<(), DBError>;
 
     /// Delete program from the database.
     ///
     /// This will delete all program configs and pipelines.
-    async fn delete_program(&self, tenant_id: TenantId, program_id: ProgramId) -> AnyResult<()>;
+    async fn delete_program(
+        &self,
+        tenant_id: TenantId,
+        program_id: ProgramId,
+    ) -> Result<(), DBError>;
 
     /// Retrieves the first pending program from the queue.
     ///
     /// Returns a pending program with the most recent `status_since` or `None`
     /// if there are no pending programs in the DB.
-    async fn next_job(&self) -> AnyResult<Option<(TenantId, ProgramId, Version)>>;
+    async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version)>, DBError>;
 
     /// Create a new config.
     #[allow(clippy::too_many_arguments)]
@@ -226,7 +227,7 @@ pub(crate) trait Storage {
         pipeline_description: &str,
         config: &str,
         connectors: &Option<Vec<AttachedConnector>>,
-    ) -> AnyResult<(PipelineId, Version)>;
+    ) -> Result<(PipelineId, Version), DBError>;
 
     /// Update existing config.
     ///
@@ -241,10 +242,14 @@ pub(crate) trait Storage {
         pipeline_description: &str,
         config: &Option<String>,
         connectors: &Option<Vec<AttachedConnector>>,
-    ) -> AnyResult<Version>;
+    ) -> Result<Version, DBError>;
 
     /// Delete config.
-    async fn delete_config(&self, tenant_id: TenantId, pipeline_id: PipelineId) -> AnyResult<()>;
+    async fn delete_config(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<(), DBError>;
 
     /// Get input/output status for an attached connector.
     async fn attached_connector_is_input(
@@ -252,14 +257,14 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         name: &str,
-    ) -> AnyResult<bool>;
+    ) -> Result<bool, DBError>;
 
     async fn set_pipeline_deployed(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         port: u16,
-    ) -> AnyResult<()>;
+    ) -> Result<(), DBError>;
 
     /// Set `shutdown` flag to `true`.
     async fn set_pipeline_status(
@@ -267,31 +272,31 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         status: PipelineStatus,
-    ) -> AnyResult<bool>;
+    ) -> Result<bool, DBError>;
 
     /// Delete `pipeline` from the DB.
     async fn delete_pipeline(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<bool>;
+    ) -> Result<bool, DBError>;
 
     /// Retrieve pipeline for a given id.
     async fn get_pipeline_by_id(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<PipelineDescr>;
+    ) -> Result<PipelineDescr, DBError>;
 
     /// Retrieve pipeline for a given name.
     async fn get_pipeline_by_name(
         &self,
         tenant_id: TenantId,
         name: String,
-    ) -> AnyResult<PipelineDescr>;
+    ) -> Result<PipelineDescr, DBError>;
 
     /// List pipelines associated with `program_id`.
-    async fn list_pipelines(&self, tenant_id: TenantId) -> AnyResult<Vec<PipelineDescr>>;
+    async fn list_pipelines(&self, tenant_id: TenantId) -> Result<Vec<PipelineDescr>, DBError>;
 
     /// Create a new connector.
     async fn new_connector(
@@ -301,24 +306,24 @@ pub(crate) trait Storage {
         name: &str,
         description: &str,
         config: &str,
-    ) -> AnyResult<ConnectorId>;
+    ) -> Result<ConnectorId, DBError>;
 
     /// Retrieve connectors list from the DB.
-    async fn list_connectors(&self, tenant_id: TenantId) -> AnyResult<Vec<ConnectorDescr>>;
+    async fn list_connectors(&self, tenant_id: TenantId) -> Result<Vec<ConnectorDescr>, DBError>;
 
     /// Retrieve connector descriptor for the given `connector_id`.
     async fn get_connector_by_id(
         &self,
         tenant_id: TenantId,
         connector_id: ConnectorId,
-    ) -> AnyResult<ConnectorDescr>;
+    ) -> Result<ConnectorDescr, DBError>;
 
     /// Retrieve connector descriptor for the given `name`.
     async fn get_connector_by_name(
         &self,
         tenant_id: TenantId,
         name: String,
-    ) -> AnyResult<ConnectorDescr>;
+    ) -> Result<ConnectorDescr, DBError>;
 
     /// Update existing connector config.
     ///
@@ -330,7 +335,7 @@ pub(crate) trait Storage {
         connector_name: &str,
         description: &str,
         config: &Option<String>,
-    ) -> AnyResult<()>;
+    ) -> Result<(), DBError>;
 
     /// Delete connector from the database.
     ///
@@ -339,7 +344,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         connector_id: ConnectorId,
-    ) -> AnyResult<()>;
+    ) -> Result<(), DBError>;
 
     /// Persist a hash of API key in the database
     async fn store_api_key_hash(
@@ -347,10 +352,13 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         key: String,
         permissions: Vec<ApiPermission>,
-    ) -> AnyResult<()>;
+    ) -> Result<(), DBError>;
 
     /// Validate an API key against the database
-    async fn validate_api_key(&self, key: String) -> AnyResult<(TenantId, Vec<ApiPermission>)>;
+    async fn validate_api_key(
+        &self,
+        key: String,
+    ) -> Result<(TenantId, Vec<ApiPermission>), DBError>;
 
     /// Get the tenant ID from the database for a given tenant name and provider,
     /// else create a new tenant ID
@@ -358,7 +366,7 @@ pub(crate) trait Storage {
         &self,
         tenant_name: String,
         provider: String,
-    ) -> AnyResult<TenantId>;
+    ) -> Result<TenantId, DBError>;
 
     /// Create a new tenant ID for a given tenant name and provider
     async fn create_tenant_if_not_exists(
@@ -366,5 +374,5 @@ pub(crate) trait Storage {
         tenant_id: Uuid,
         tenant_name: String,
         provider: String,
-    ) -> AnyResult<TenantId>;
+    ) -> Result<TenantId, DBError>;
 }

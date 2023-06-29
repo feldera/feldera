@@ -3,8 +3,8 @@
 //! It caches the downloaded binaries as well. Check the `pg_embed` crate for
 //! more details.
 
-use crate::AnyResult;
 use pg_embed::pg_enums::PgAuthMethod;
+use pg_embed::pg_errors::PgEmbedError;
 use pg_embed::pg_fetch::{PgFetchSettings, PG_V15};
 use pg_embed::postgres::{PgEmbed, PgSettings};
 use std::path::PathBuf;
@@ -22,7 +22,7 @@ pub(crate) async fn install(
     database_dir: PathBuf,
     persistent: bool,
     port: Option<u16>,
-) -> AnyResult<PgEmbed> {
+) -> Result<PgEmbed, PgEmbedError> {
     let pg_settings = PgSettings {
         database_dir,
         port: port.unwrap_or(5432),

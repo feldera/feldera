@@ -3,19 +3,19 @@ use crate::{
     config::ManagerConfig,
     ProgramStatus,
 };
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use dbsp_adapters::DetailedError;
-use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
+use deadpool_postgres::{Manager, Pool, PoolError, RecyclingMethod, Transaction};
 use futures_util::TryFutureExt;
 use log::{debug, error};
 use openssl::sha;
-use serde::{Deserialize, Serialize};
+use refinery::Error as RefineryError;
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
 use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display};
 use storage::Storage;
-use tokio_postgres::NoTls;
+use tokio_postgres::{error::Error as PgError, NoTls};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -122,6 +122,31 @@ impl Display for Version {
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub(crate) enum DBError {
+    #[serde(serialize_with = "serialize_pg_error")]
+    PostgresError {
+        error: Box<PgError>,
+    },
+    #[serde(serialize_with = "serialize_pgpool_error")]
+    PostgresPoolError {
+        error: Box<PoolError>,
+    },
+    #[serde(serialize_with = "serialize_refinery_error")]
+    PostgresMigrationError {
+        error: Box<RefineryError>,
+    },
+    #[cfg(feature = "pg-embed")]
+    #[serde(serialize_with = "serialize_pgembed_error")]
+    PgEmbedError {
+        error: Box<pg_embed::pg_errors::PgEmbedError>,
+    },
+    // Catch-all error for unexpected invalid data extracted from DB.
+    // We can split it into several separate error variants if needed.
+    InvalidData {
+        error: String,
+    },
+    InvalidStatus {
+        status: String,
+    },
     UnknownProgram {
         program_id: ProgramId,
     },
@@ -153,9 +178,93 @@ pub(crate) enum DBError {
     UnknownPipelineStatus,
 }
 
+fn serialize_pg_error<S>(error: &PgError, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&error.to_string())
+}
+
+fn serialize_pgpool_error<S>(error: &PoolError, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&error.to_string())
+}
+
+fn serialize_refinery_error<S>(error: &RefineryError, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&error.to_string())
+}
+
+#[cfg(feature = "pg-embed")]
+fn serialize_pgembed_error<S>(
+    error: &pg_embed::pg_errors::PgEmbedError,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&error.to_string())
+}
+
+impl From<PgError> for DBError {
+    fn from(error: PgError) -> Self {
+        Self::PostgresError {
+            error: Box::new(error),
+        }
+    }
+}
+
+impl From<PoolError> for DBError {
+    fn from(error: PoolError) -> Self {
+        Self::PostgresPoolError {
+            error: Box::new(error),
+        }
+    }
+}
+
+impl From<RefineryError> for DBError {
+    fn from(error: RefineryError) -> Self {
+        Self::PostgresMigrationError {
+            error: Box::new(error),
+        }
+    }
+}
+
+#[cfg(feature = "pg-embed")]
+impl From<pg_embed::pg_errors::PgEmbedError> for DBError {
+    fn from(error: pg_embed::pg_errors::PgEmbedError) -> Self {
+        Self::PgEmbedError {
+            error: Box::new(error),
+        }
+    }
+}
+
 impl Display for DBError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            DBError::PostgresError { error } => {
+                write!(f, "Unexpected Postgres error: '{error}'")
+            }
+            DBError::PostgresPoolError { error } => {
+                write!(f, "Postgres connection pool error: '{error}'")
+            }
+            DBError::PostgresMigrationError { error } => {
+                write!(f, "DB schema migration error: '{error}'")
+            }
+            #[cfg(feature = "pg-embed")]
+            DBError::PgEmbedError { error } => {
+                write!(f, "PG-embed error: '{error}'")
+            }
+            DBError::InvalidData { error } => {
+                write!(f, "Invalid DB data '{error}'")
+            }
+            DBError::InvalidStatus { status } => {
+                write!(f, "Invalid status string '{status}'")
+            }
             DBError::UnknownProgram { program_id } => {
                 write!(f, "Unknown program id '{program_id}'")
             }
@@ -203,6 +312,13 @@ impl Display for DBError {
 impl DetailedError for DBError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
+            Self::PostgresError { .. } => Cow::from("PostgresError"),
+            Self::PostgresPoolError { .. } => Cow::from("PostgresPoolError"),
+            Self::PostgresMigrationError { .. } => Cow::from("PostgresMigrationError"),
+            #[cfg(feature = "pg-embed")]
+            Self::PgEmbedError { .. } => Cow::from("PgEmbedError"),
+            Self::InvalidData { .. } => Cow::from("InvalidData"),
+            Self::InvalidStatus { .. } => Cow::from("InvalidStatus"),
             Self::UnknownProgram { .. } => Cow::from("UnknownProgram"),
             Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
@@ -226,7 +342,10 @@ impl StdError for DBError {}
 /// one of `"sql_error"` or `"rust_error"`.
 impl ProgramStatus {
     /// Decode `ProgramStatus` from the values of `error` and `status` columns.
-    fn from_columns(status_string: Option<&str>, error_string: Option<String>) -> AnyResult<Self> {
+    fn from_columns(
+        status_string: Option<&str>,
+        error_string: Option<String>,
+    ) -> Result<Self, DBError> {
         match status_string {
             None => Ok(Self::None),
             Some("success") => Ok(Self::Success),
@@ -244,7 +363,9 @@ impl ProgramStatus {
             }
             Some("rust_error") => Ok(Self::RustError(error_string.unwrap_or_default())),
             Some("system_error") => Ok(Self::SystemError(error_string.unwrap_or_default())),
-            Some(status) => Err(AnyError::msg(format!("invalid status string '{status}'"))),
+            Some(status) => Err(DBError::InvalidStatus {
+                status: status.to_string(),
+            }),
         }
     }
     fn to_columns(&self) -> (Option<String>, Option<String>) {
@@ -401,29 +522,15 @@ pub(crate) enum ApiPermission {
     Write,
 }
 
-// Helper type for composable error handling when dealing
-// with DB errors
-enum EitherError {
-    Tokio(tokio_postgres::Error),
-    Any(AnyError),
-}
-
-impl std::convert::From<EitherError> for AnyError {
-    fn from(value: EitherError) -> Self {
-        match value {
-            EitherError::Tokio(e) => anyhow!(e),
-            EitherError::Any(e) => e,
-        }
-    }
-}
-
-fn convert_bigint_to_time(created_secs: Option<i64>) -> Result<Option<DateTime<Utc>>, AnyError> {
+fn convert_bigint_to_time(created_secs: Option<i64>) -> Result<Option<DateTime<Utc>>, DBError> {
     if let Some(created_secs) = created_secs {
         let created_naive =
             NaiveDateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
-                AnyError::msg(format!(
-                    "Invalid timestamp in 'pipeline.created' column: {created_secs}"
-                ))
+                DBError::InvalidData {
+                    error: format!(
+                        "Invalid timestamp in 'pipeline.created' column: {created_secs}"
+                    ),
+                }
             })?;
 
         Ok(Some(DateTime::<Utc>::from_utc(created_naive, Utc)))
@@ -436,7 +543,7 @@ fn convert_bigint_to_time(created_secs: Option<i64>) -> Result<Option<DateTime<U
 // possible and if not, use transactions
 #[async_trait]
 impl Storage for ProjectDB {
-    async fn reset_program_status(&self) -> AnyResult<()> {
+    async fn reset_program_status(&self) -> Result<(), DBError> {
         self.pool
             .get()
             .await?
@@ -448,7 +555,7 @@ impl Storage for ProjectDB {
         Ok(())
     }
 
-    async fn list_programs(&self, tenant_id: TenantId) -> AnyResult<Vec<ProgramDescr>> {
+    async fn list_programs(&self, tenant_id: TenantId) -> Result<Vec<ProgramDescr>, DBError> {
         let rows = self
             .pool
             .get()
@@ -483,7 +590,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
-    ) -> AnyResult<(ProgramDescr, String)> {
+    ) -> Result<(ProgramDescr, String), DBError> {
         let row = self.pool.get().await?.query_opt(
             "SELECT name, description, version, status, error, code, schema FROM program WHERE id = $1 AND tenant_id = $2", &[&program_id.0, &tenant_id.0]
         )
@@ -519,7 +626,7 @@ impl Storage for ProjectDB {
         program_name: &str,
         program_description: &str,
         program_code: &str,
-    ) -> AnyResult<(ProgramId, Version)> {
+    ) -> Result<(ProgramId, Version), DBError> {
         debug!("new_program {program_name} {program_description} {program_code}");
         self.pool.get().await?.execute(
                     "INSERT INTO program (id, version, tenant_id, name, description, code, schema, status, error, status_since)
@@ -527,7 +634,7 @@ impl Storage for ProjectDB {
                 &[&id, &tenant_id.0, &program_name, &program_description, &program_code]
             )
             .await
-            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))
+            .map_err(ProjectDB::maybe_unique_violation)
             .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None))?;
 
         Ok((ProgramId(id), Version(1)))
@@ -542,7 +649,7 @@ impl Storage for ProjectDB {
         program_name: &str,
         program_description: &str,
         program_code: &Option<String>,
-    ) -> AnyResult<Version> {
+    ) -> Result<Version, DBError> {
         let row = match program_code {
             Some(code) => {
                 // Only increment `version` if new code actually differs from the
@@ -570,7 +677,7 @@ impl Storage for ProjectDB {
                         ],
                     )
                     .await
-                    .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))?
+                    .map_err(ProjectDB::maybe_unique_violation)?
             }
             _ => {
                 self.pool.get().await?
@@ -579,14 +686,14 @@ impl Storage for ProjectDB {
                         &[&program_name, &program_description, &program_id.0, &tenant_id.0],
                     )
                     .await
-                    .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))?
+                    .map_err(ProjectDB::maybe_unique_violation)?
             }
         };
 
         if let Some(row) = row {
             Ok(Version(row.get(0)))
         } else {
-            Err(DBError::UnknownProgram { program_id }.into())
+            Err(DBError::UnknownProgram { program_id })
         }
     }
 
@@ -597,7 +704,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
-    ) -> AnyResult<Option<ProgramDescr>> {
+    ) -> Result<Option<ProgramDescr>, DBError> {
         let row = self.pool.get().await?.query_opt(
                 "SELECT name, description, version, status, error, schema FROM program WHERE id = $1 AND tenant_id = $2",
                 &[&program_id.0, &tenant_id.0],
@@ -630,7 +737,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         program_name: &str,
-    ) -> AnyResult<Option<ProgramDescr>> {
+    ) -> Result<Option<ProgramDescr>, DBError> {
         let row = self.pool.get().await?.query_opt(
                 "SELECT id, description, version, status, error, schema, tenant_id FROM program WHERE name = $1 AND tenant_id = $2",
                 &[&program_name, &tenant_id.0],
@@ -663,7 +770,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         program_id: ProgramId,
         status: ProgramStatus,
-    ) -> AnyResult<()> {
+    ) -> Result<(), DBError> {
         let (status, error) = status.to_columns();
         self.pool.get().await?.execute(
                 "UPDATE program SET status = $1, error = $2, schema = '', status_since = now() WHERE id = $3 AND tenant_id = $4",
@@ -679,7 +786,7 @@ impl Storage for ProjectDB {
         program_id: ProgramId,
         expected_version: Version,
         status: ProgramStatus,
-    ) -> AnyResult<()> {
+    ) -> Result<(), DBError> {
         let (status, error) = status.to_columns();
         // We could perform the guard in the WHERE clause, but that does not
         // tell us whether the ID existed or not.
@@ -705,7 +812,7 @@ impl Storage for ProjectDB {
             )
             .await?;
         if row.is_none() {
-            Err(anyhow!(DBError::UnknownProgram { program_id }))
+            Err(DBError::UnknownProgram { program_id })
         } else {
             Ok(())
         }
@@ -716,7 +823,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         program_id: ProgramId,
         schema: String,
-    ) -> AnyResult<()> {
+    ) -> Result<(), DBError> {
         self.pool
             .get()
             .await?
@@ -729,7 +836,11 @@ impl Storage for ProjectDB {
         Ok(())
     }
 
-    async fn delete_program(&self, tenant_id: TenantId, program_id: ProgramId) -> AnyResult<()> {
+    async fn delete_program(
+        &self,
+        tenant_id: TenantId,
+        program_id: ProgramId,
+    ) -> Result<(), DBError> {
         let res = self
             .pool
             .get()
@@ -743,11 +854,11 @@ impl Storage for ProjectDB {
         if res > 0 {
             Ok(())
         } else {
-            Err(anyhow!(DBError::UnknownProgram { program_id }))
+            Err(DBError::UnknownProgram { program_id })
         }
     }
 
-    async fn next_job(&self) -> AnyResult<Option<(TenantId, ProgramId, Version)>> {
+    async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version)>, DBError> {
         // Find the oldest pending project.
         let res = self.pool.get().await?.query("SELECT id, version, tenant_id FROM program WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM program WHERE status = 'pending')", &[])
             .await?;
@@ -762,7 +873,7 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn list_pipelines(&self, tenant_id: TenantId) -> AnyResult<Vec<PipelineDescr>> {
+    async fn list_pipelines(&self, tenant_id: TenantId) -> Result<Vec<PipelineDescr>, DBError> {
         let rows = self
             .pool
             .get()
@@ -813,7 +924,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<PipelineDescr> {
+    ) -> Result<PipelineDescr, DBError> {
         let row = self
             .pool
             .get()
@@ -855,7 +966,7 @@ impl Storage for ProjectDB {
 
             Ok(descr)
         } else {
-            Err(DBError::UnknownPipeline { pipeline_id }.into())
+            Err(DBError::UnknownPipeline { pipeline_id })
         }
     }
 
@@ -863,7 +974,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         name: String,
-    ) -> AnyResult<PipelineDescr> {
+    ) -> Result<PipelineDescr, DBError> {
         let row = self
             .pool
             .get()
@@ -906,7 +1017,7 @@ impl Storage for ProjectDB {
 
             Ok(descr)
         } else {
-            Err(DBError::UnknownName { name }.into())
+            Err(DBError::UnknownName { name })
         }
     }
 
@@ -920,7 +1031,7 @@ impl Storage for ProjectDB {
         pipeline_description: &str,
         config: &str,
         connectors: &Option<Vec<AttachedConnector>>,
-    ) -> AnyResult<(PipelineId, Version)> {
+    ) -> Result<(PipelineId, Version), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         txn.execute(
@@ -931,7 +1042,7 @@ impl Storage for ProjectDB {
             &config,
             &tenant_id.0])
             .await
-            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))
+            .map_err(ProjectDB::maybe_unique_violation)
             .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, program_id.map(|e| e.0)))
             .map_err(|e| ProjectDB::maybe_program_id_foreign_key_constraint_err(e, program_id))?;
         let pipeline_id = PipelineId(id);
@@ -958,7 +1069,7 @@ impl Storage for ProjectDB {
         pipeline_description: &str,
         config: &Option<String>,
         connectors: &Option<Vec<AttachedConnector>>,
-    ) -> AnyResult<Version> {
+    ) -> Result<Version, DBError> {
         log::trace!(
             "Updating config {} {} {} {} {:?} {:?}",
             pipeline_id.0,
@@ -982,7 +1093,7 @@ impl Storage for ProjectDB {
             )
             .await?;
         if row.is_none() {
-            return Err(anyhow!(DBError::UnknownPipeline { pipeline_id }));
+            return Err(DBError::UnknownPipeline { pipeline_id });
         }
         if let Some(connectors) = connectors {
             // Delete all existing attached connectors.
@@ -1001,16 +1112,20 @@ impl Storage for ProjectDB {
         let row = txn.query_opt("UPDATE pipeline SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), program_id = $4 WHERE id = $5 AND tenant_id = $6 RETURNING version",
             &[&pipline_name, &pipeline_description, &config, &program_id.map(|id| id.0), &pipeline_id.0, &tenant_id.0])
             .await
-            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))
+            .map_err(ProjectDB::maybe_unique_violation)
             .map_err(|e| ProjectDB::maybe_program_id_foreign_key_constraint_err(e, program_id))?;
         txn.commit().await?;
         match row {
             Some(row) => Ok(Version(row.get(0))),
-            None => Err(DBError::UnknownPipeline { pipeline_id }.into()),
+            None => Err(DBError::UnknownPipeline { pipeline_id }),
         }
     }
 
-    async fn delete_config(&self, tenant_id: TenantId, pipeline_id: PipelineId) -> AnyResult<()> {
+    async fn delete_config(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<(), DBError> {
         let res = self
             .pool
             .get()
@@ -1023,7 +1138,7 @@ impl Storage for ProjectDB {
         if res > 0 {
             Ok(())
         } else {
-            Err(anyhow!(DBError::UnknownPipeline { pipeline_id }))
+            Err(DBError::UnknownPipeline { pipeline_id })
         }
     }
 
@@ -1033,7 +1148,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         name: &str,
-    ) -> AnyResult<bool> {
+    ) -> Result<bool, DBError> {
         let row = self
             .pool
             .get()
@@ -1046,10 +1161,10 @@ impl Storage for ProjectDB {
 
         match row {
             Some(row) => Ok(row.get(0)),
-            None => Err(anyhow!(DBError::UnknownAttachedConnector {
+            None => Err(DBError::UnknownAttachedConnector {
                 pipeline_id,
-                name: name.to_string()
-            })),
+                name: name.to_string(),
+            }),
         }
     }
 
@@ -1058,7 +1173,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         port: u16,
-    ) -> AnyResult<()> {
+    ) -> Result<(), DBError> {
         let status: &'static str = PipelineStatus::Deployed.into();
 
         let res = self
@@ -1074,7 +1189,7 @@ impl Storage for ProjectDB {
         if res > 0 {
             Ok(())
         } else {
-            Err(DBError::UnknownPipeline { pipeline_id }.into())
+            Err(DBError::UnknownPipeline { pipeline_id })
         }
     }
 
@@ -1083,7 +1198,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         status: PipelineStatus,
-    ) -> AnyResult<bool> {
+    ) -> Result<bool, DBError> {
         let status: &str = status.into();
 
         let res = self
@@ -1102,7 +1217,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<bool> {
+    ) -> Result<bool, DBError> {
         let res = self
             .pool
             .get()
@@ -1122,7 +1237,7 @@ impl Storage for ProjectDB {
         name: &str,
         description: &str,
         config: &str,
-    ) -> AnyResult<ConnectorId> {
+    ) -> Result<ConnectorId, DBError> {
         debug!("new_connector {name} {description} {config}");
         self.pool
             .get()
@@ -1132,12 +1247,12 @@ impl Storage for ProjectDB {
                 &[&id, &name, &description, &config, &tenant_id.0],
             )
             .await
-            .map_err(|e| ProjectDB::maybe_unique_violation(EitherError::Tokio(e)))
+            .map_err(ProjectDB::maybe_unique_violation)
             .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None))?;
         Ok(ConnectorId(id))
     }
 
-    async fn list_connectors(&self, tenant_id: TenantId) -> AnyResult<Vec<ConnectorDescr>> {
+    async fn list_connectors(&self, tenant_id: TenantId) -> Result<Vec<ConnectorDescr>, DBError> {
         let rows = self
             .pool
             .get()
@@ -1166,7 +1281,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         name: String,
-    ) -> AnyResult<ConnectorDescr> {
+    ) -> Result<ConnectorDescr, DBError> {
         let row = self
             .pool
             .get()
@@ -1189,7 +1304,7 @@ impl Storage for ProjectDB {
                 config,
             })
         } else {
-            Err(DBError::UnknownName { name }.into())
+            Err(DBError::UnknownName { name })
         }
     }
 
@@ -1197,7 +1312,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         connector_id: ConnectorId,
-    ) -> AnyResult<ConnectorDescr> {
+    ) -> Result<ConnectorDescr, DBError> {
         let row = self
             .pool
             .get()
@@ -1220,7 +1335,7 @@ impl Storage for ProjectDB {
                 config,
             })
         } else {
-            Err(DBError::UnknownConnector { connector_id }.into())
+            Err(DBError::UnknownConnector { connector_id })
         }
     }
 
@@ -1231,7 +1346,7 @@ impl Storage for ProjectDB {
         connector_name: &str,
         description: &str,
         config: &Option<String>,
-    ) -> AnyResult<()> {
+    ) -> Result<(), DBError> {
         let descr = self.get_connector_by_id(tenant_id, connector_id).await?;
         let config = config.clone().unwrap_or(descr.config);
 
@@ -1248,7 +1363,6 @@ impl Storage for ProjectDB {
                 ],
             )
             .await
-            .map_err(EitherError::Tokio)
             .map_err(Self::maybe_unique_violation)?;
 
         Ok(())
@@ -1258,7 +1372,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         connector_id: ConnectorId,
-    ) -> AnyResult<()> {
+    ) -> Result<(), DBError> {
         let res = self
             .pool
             .get()
@@ -1272,7 +1386,7 @@ impl Storage for ProjectDB {
         if res > 0 {
             Ok(())
         } else {
-            Err(anyhow!(DBError::UnknownConnector { connector_id }))
+            Err(DBError::UnknownConnector { connector_id })
         }
     }
 
@@ -1281,7 +1395,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         key: String,
         scopes: Vec<ApiPermission>,
-    ) -> AnyResult<()> {
+    ) -> Result<(), DBError> {
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
@@ -1304,7 +1418,6 @@ impl Storage for ProjectDB {
                 ],
             )
             .await
-            .map_err(EitherError::Tokio)
             .map_err(Self::maybe_unique_violation)
             .map_err(|e| {
                 ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None)
@@ -1312,11 +1425,14 @@ impl Storage for ProjectDB {
         if res > 0 {
             Ok(())
         } else {
-            Err(anyhow!(DBError::DuplicateKey))
+            Err(DBError::DuplicateKey)
         }
     }
 
-    async fn validate_api_key(&self, api_key: String) -> AnyResult<(TenantId, Vec<ApiPermission>)> {
+    async fn validate_api_key(
+        &self,
+        api_key: String,
+    ) -> Result<(TenantId, Vec<ApiPermission>), DBError> {
         let mut hasher = sha::Sha256::new();
         hasher.update(api_key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
@@ -1329,7 +1445,7 @@ impl Storage for ProjectDB {
                 &[&hash],
             )
             .await
-            .map_err(|_| anyhow!(DBError::InvalidKey))?;
+            .map_err(|_| DBError::InvalidKey)?;
         let tenant_id = TenantId(res.get(0));
         let vec: Vec<String> = res.get(1);
         let vec = vec
@@ -1349,7 +1465,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_name: String,
         provider: String,
-    ) -> AnyResult<TenantId> {
+    ) -> Result<TenantId, DBError> {
         let conn = self.pool.get().await?;
         let res = conn
             .query_opt(
@@ -1371,7 +1487,7 @@ impl Storage for ProjectDB {
         tenant_id: Uuid,
         tenant_name: String,
         provider: String,
-    ) -> AnyResult<TenantId> {
+    ) -> Result<TenantId, DBError> {
         let conn = self.pool.get().await?;
         // Unfortunately, doing a read-if-exists-else-insert is not very ergonomic. To
         // do so in a single query requires us to do a redundant UPDATE on conflict,
@@ -1388,7 +1504,7 @@ impl Storage for ProjectDB {
 }
 
 impl ProjectDB {
-    pub(crate) async fn connect(config: &ManagerConfig) -> AnyResult<Self> {
+    pub(crate) async fn connect(config: &ManagerConfig) -> Result<Self, DBError> {
         let connection_str = config.database_connection_string();
         let initial_sql = &config.initial_sql;
 
@@ -1423,7 +1539,7 @@ impl ProjectDB {
     async fn with_config(
         config: tokio_postgres::Config,
         initial_sql: &Option<String>,
-    ) -> AnyResult<Self> {
+    ) -> Result<Self, DBError> {
         let db = ProjectDB::initialize(
             config,
             initial_sql,
@@ -1450,7 +1566,7 @@ impl ProjectDB {
         connection_str: &str,
         initial_sql: &Option<String>,
         #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>,
-    ) -> AnyResult<Self> {
+    ) -> Result<Self, DBError> {
         if !connection_str.starts_with("postgres") {
             panic!("Unsupported connection string {}", connection_str)
         }
@@ -1483,7 +1599,7 @@ impl ProjectDB {
         config: tokio_postgres::Config,
         initial_sql: &Option<String>,
         #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>,
-    ) -> AnyResult<Self> {
+    ) -> Result<Self, DBError> {
         let mgr_config = deadpool_postgres::ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         };
@@ -1517,7 +1633,7 @@ impl ProjectDB {
         txn: &Transaction<'_>,
         pipeline_id: PipelineId,
         ac: &AttachedConnector,
-    ) -> AnyResult<()> {
+    ) -> Result<(), DBError> {
         let rows = txn
             .execute(
                 "INSERT INTO attached_connector (name, pipeline_id, connector_id, is_input, config, tenant_id)
@@ -1533,14 +1649,13 @@ impl ProjectDB {
                     &ac.config,
                 ],
             )
-            .map_err(EitherError::Tokio)
-            .map_err(|e| Self::maybe_pipeline_id_foreign_key_constraint_err(e, pipeline_id))
             .map_err(Self::maybe_unique_violation)
+            .map_err(|e| Self::maybe_pipeline_id_foreign_key_constraint_err(e, pipeline_id))
             .await?;
         if rows == 0 {
-            Err(anyhow!(DBError::UnknownConnector {
-                connector_id: ac.connector_id
-            }))
+            Err(DBError::UnknownConnector {
+                connector_id: ac.connector_id,
+            })
         } else {
             Ok(())
         }
@@ -1549,7 +1664,7 @@ impl ProjectDB {
     async fn json_to_attached_connectors(
         &self,
         connectors_json: Value,
-    ) -> AnyResult<Vec<AttachedConnector>> {
+    ) -> Result<Vec<AttachedConnector>, DBError> {
         let connector_arr = connectors_json.as_array().unwrap();
         let mut attached_connectors = Vec::with_capacity(connector_arr.len());
         for connector in connector_arr {
@@ -1557,7 +1672,10 @@ impl ProjectDB {
             let is_input: bool = obj.get("is_input").unwrap().as_bool().unwrap();
 
             let uuid_str = obj.get("connector_id").unwrap().as_str().unwrap();
-            let connector_id = ConnectorId(Uuid::parse_str(uuid_str)?);
+            let connector_id =
+                ConnectorId(Uuid::parse_str(uuid_str).map_err(|e| DBError::InvalidData {
+                    error: format!("error parsing connector id '{uuid_str}': {e}"),
+                })?);
 
             attached_connectors.push(AttachedConnector {
                 name: obj.get("name").unwrap().as_str().unwrap().to_owned(),
@@ -1571,109 +1689,101 @@ impl ProjectDB {
 
     /// Helper to convert postgres error into a `DBError` if the underlying
     /// low-level error thrown by the database matches.
-    fn maybe_unique_violation(err: EitherError) -> EitherError {
-        if let EitherError::Tokio(e) = &err {
-            if let Some(dberr) = e.as_db_error() {
-                if dberr.code() == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION {
-                    match dberr.constraint() {
-                        Some("program_pkey") => {
-                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation {
-                                constraint: "program_pkey"
-                            }))
-                        }
-                        Some("connector_pkey") => {
-                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation {
-                                constraint: "connector_pkey"
-                            }))
-                        }
-                        Some("pipeline_pkey") => {
-                            return EitherError::Any(anyhow!(DBError::UniqueKeyViolation {
-                                constraint: "pipeline_pkey"
-                            }))
-                        }
-                        Some("api_key_pkey") => {
-                            return EitherError::Any(anyhow!(DBError::DuplicateKey))
-                        }
-                        Some(_constraint) => {
-                            return EitherError::Any(anyhow!(DBError::DuplicateName));
-                        }
-                        None => {
-                            return EitherError::Any(anyhow!(DBError::DuplicateName));
-                        }
-                    }
+    fn maybe_unique_violation(err: PgError) -> DBError {
+        if let Some(dberr) = err.as_db_error() {
+            if dberr.code() == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION {
+                match dberr.constraint() {
+                    Some("program_pkey") => DBError::UniqueKeyViolation {
+                        constraint: "program_pkey",
+                    },
+                    Some("connector_pkey") => DBError::UniqueKeyViolation {
+                        constraint: "connector_pkey",
+                    },
+                    Some("pipeline_pkey") => DBError::UniqueKeyViolation {
+                        constraint: "pipeline_pkey",
+                    },
+                    Some("api_key_pkey") => DBError::DuplicateKey,
+                    Some(_constraint) => DBError::DuplicateName,
+                    None => DBError::DuplicateName,
                 }
+            } else {
+                DBError::from(err)
             }
+        } else {
+            DBError::from(err)
         }
-        err
     }
 
     /// Helper to convert program_id foreign key constraint error into an
     /// user-friendly error message.
     fn maybe_program_id_foreign_key_constraint_err(
-        err: EitherError,
+        err: DBError,
         program_id: Option<ProgramId>,
-    ) -> EitherError {
-        if let EitherError::Tokio(e) = &err {
-            let db_err = e.as_db_error();
+    ) -> DBError {
+        if let DBError::PostgresError { error } = &err {
+            let db_err = error.as_db_error();
             if let Some(db_err) = db_err {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
                     && db_err.constraint() == Some("pipeline_program_id_tenant_id_fkey")
                 {
                     if let Some(program_id) = program_id {
-                        return EitherError::Any(anyhow!(DBError::UnknownProgram { program_id }));
+                        return DBError::UnknownProgram { program_id };
                     } else {
                         unreachable!("program_id cannot be none");
                     }
                 }
             }
         }
+
         err
     }
 
     /// Helper to convert pipeline_id foreign key constraint error into an
     /// user-friendly error message.
     fn maybe_pipeline_id_foreign_key_constraint_err(
-        err: EitherError,
+        err: DBError,
         pipeline_id: PipelineId,
-    ) -> EitherError {
-        if let EitherError::Tokio(e) = &err {
-            let db_err = e.as_db_error();
+    ) -> DBError {
+        if let DBError::PostgresError { error } = &err {
+            let db_err = error.as_db_error();
             if let Some(db_err) = db_err {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
                     && (db_err.constraint() == Some("pipeline_pipeline_id_fkey")
                         || db_err.constraint() == Some("attached_connector_pipeline_id_fkey"))
                 {
-                    return EitherError::Any(anyhow!(DBError::UnknownPipeline { pipeline_id }));
+                    return DBError::UnknownPipeline { pipeline_id };
                 }
             }
         }
+
         err
     }
 
     /// Helper to convert tenant_id foreign key constraint error into an
     /// user-friendly error message.
     fn maybe_tenant_id_foreign_key_constraint_err(
-        err: EitherError,
+        err: DBError,
         tenant_id: TenantId,
         missing_id: Option<Uuid>,
-    ) -> EitherError {
-        if let EitherError::Tokio(e) = &err {
-            let db_err = e.as_db_error();
+    ) -> DBError {
+        if let DBError::PostgresError { error } = &err {
+            let db_err = error.as_db_error();
             if let Some(db_err) = db_err {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION {
                     if let Some(constraint_name) = db_err.constraint() {
                         if constraint_name.ends_with("pipeline_program_id_tenant_id_fkey") {
-                            return EitherError::Any(anyhow!(DBError::UnknownProgram {
-                                program_id: ProgramId(missing_id.unwrap())
-                            }));
+                            return DBError::UnknownProgram {
+                                program_id: ProgramId(missing_id.unwrap()),
+                            };
                         }
                         if constraint_name.ends_with("tenant_id_fkey") {
-                            return EitherError::Any(anyhow!(DBError::UnknownTenant { tenant_id }));
+                            return DBError::UnknownTenant { tenant_id };
                         }
                     }
                 }
             }
         }
+
         err
     }
 }
