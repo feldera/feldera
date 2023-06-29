@@ -853,7 +853,7 @@ impl ControllerInner {
 
         let parser = format
             .new_parser(input_stream, format_config)
-            .map_err(|e| ControllerError::parse_error(endpoint_name, &e))?;
+            .map_err(|e| ControllerError::parse_error(endpoint_name, e))?;
 
         // Create probe.
         let endpoint_id = inputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
@@ -1153,7 +1153,7 @@ impl ControllerInner {
 
     fn parse_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: AnyError) {
         self.status.parse_error(endpoint_id);
-        self.error(ControllerError::parse_error(endpoint_name, &error));
+        self.error(ControllerError::parse_error(endpoint_name, error));
     }
 
     fn encode_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: AnyError) {
@@ -1268,8 +1268,10 @@ impl InputConsumer for InputProbe {
             Err(error) => {
                 let error = Arc::new(error);
                 self.parser.clear();
-                self.controller
-                    .error(ControllerError::parse_error(&self.endpoint_name, &error));
+                self.controller.error(ControllerError::parse_error(
+                    &self.endpoint_name,
+                    anyhow!(error.clone()),
+                ));
                 Err(anyhow!(error))
             }
         }

@@ -1,8 +1,9 @@
 use crate::DetailedError;
 use anyhow::Error as AnyError;
 use dbsp::Error as DBSPError;
-use serde::Serialize;
+use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
+    backtrace::Backtrace,
     borrow::Cow,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
@@ -160,13 +161,12 @@ impl ConfigError {
 #[serde(untagged)]
 pub enum ControllerError {
     /// I/O error.
+    #[serde(serialize_with = "serialize_io_error")]
     IoError {
         /// Describes the context where the error occurred.
         context: String,
-        /// Error kind (e.g., "PermissionDenied").
-        kind: String,
-        /// Error code returned by the OS.
-        os_error: Option<i32>,
+        io_error: IOError,
+        backtrace: Backtrace,
     },
 
     /// Error parsing CLI arguments.
@@ -180,9 +180,10 @@ pub enum ControllerError {
     /// Error parsing the last input batch.  Parser errors are expected to be
     /// recoverable, i.e., the parser should be able to successfully parse
     /// new valid inputs after an error.
+    #[serde(serialize_with = "serialize_parse_error")]
     ParseError {
         endpoint_name: String,
-        error: String,
+        error: AnyError,
     },
 
     /// Encode error.
@@ -190,23 +191,26 @@ pub enum ControllerError {
     /// Error encoding the last output batch.  Encoder errors are expected to
     /// be recoverable, i.e., the encoder should be able to successfully parse
     /// new valid inputs after an error.
+    #[serde(serialize_with = "serialize_encode_error")]
     EncodeError {
         endpoint_name: String,
-        error: String,
+        error: AnyError,
     },
 
     /// Input transport endpoint error.
+    #[serde(serialize_with = "serialize_input_transport_error")]
     InputTransportError {
         endpoint_name: String,
         fatal: bool,
-        error: String,
+        error: AnyError,
     },
 
     /// Output transport endpoint error.
+    #[serde(serialize_with = "serialize_output_transport_error")]
     OutputTransportError {
         endpoint_name: String,
         fatal: bool,
-        error: String,
+        error: AnyError,
     },
 
     /// Operation failed to complete because the pipeline is shutting down.
@@ -224,6 +228,87 @@ pub enum ControllerError {
 
     /// Panic inside the DBSP controller.
     ControllerPanic,
+}
+
+fn serialize_io_error<S>(
+    context: &String,
+    io_error: &IOError,
+    backtrace: &Backtrace,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut ser = serializer.serialize_struct("IOError", 4)?;
+    ser.serialize_field("context", context)?;
+    ser.serialize_field("kind", &io_error.kind().to_string())?;
+    ser.serialize_field("os_error", &io_error.raw_os_error())?;
+    ser.serialize_field("backtrace", &backtrace.to_string())?;
+    ser.end()
+}
+
+fn serialize_parse_error<S>(
+    endpoint: &String,
+    error: &AnyError,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut ser = serializer.serialize_struct("ParseError", 3)?;
+    ser.serialize_field("endpoint_name", endpoint)?;
+    ser.serialize_field("error", &error.to_string())?;
+    ser.serialize_field("backtrace", &error.backtrace().to_string())?;
+    ser.end()
+}
+
+fn serialize_encode_error<S>(
+    endpoint: &String,
+    error: &AnyError,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut ser = serializer.serialize_struct("EncodeError", 3)?;
+    ser.serialize_field("endpoint_name", endpoint)?;
+    ser.serialize_field("error", &error.to_string())?;
+    ser.serialize_field("backtrace", &error.backtrace().to_string())?;
+    ser.end()
+}
+
+fn serialize_input_transport_error<S>(
+    endpoint: &String,
+    fatal: &bool,
+    error: &AnyError,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut ser = serializer.serialize_struct("InputTransportError", 4)?;
+    ser.serialize_field("endpoint_name", endpoint)?;
+    ser.serialize_field("fatal", fatal)?;
+    ser.serialize_field("error", &error.to_string())?;
+    ser.serialize_field("backtrace", &error.backtrace().to_string())?;
+    ser.end()
+}
+
+fn serialize_output_transport_error<S>(
+    endpoint: &String,
+    fatal: &bool,
+    error: &AnyError,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut ser = serializer.serialize_struct("OutputTransportError", 4)?;
+    ser.serialize_field("endpoint_name", endpoint)?;
+    ser.serialize_field("fatal", fatal)?;
+    ser.serialize_field("error", &error.to_string())?;
+    ser.serialize_field("backtrace", &error.backtrace().to_string())?;
+    ser.end()
 }
 
 impl DetailedError for ControllerError {
@@ -254,18 +339,9 @@ impl Display for ControllerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
             Self::IoError {
-                context,
-                kind,
-                os_error,
+                context, io_error, ..
             } => {
-                write!(
-                    f,
-                    "I/O error {context}: {}({kind}",
-                    os_error
-                        .as_ref()
-                        .map(ToString::to_string)
-                        .unwrap_or_default()
-                )
+                write!(f, "I/O error {context}: {io_error}")
             }
             Self::CliArgsError { error } => {
                 write!(f, "Error parsing command line arguments: '{error}'")
@@ -333,11 +409,11 @@ impl Display for ControllerError {
 }
 
 impl ControllerError {
-    pub fn io_error(context: String, error: &IOError) -> Self {
+    pub fn io_error(context: String, io_error: IOError) -> Self {
         Self::IoError {
             context,
-            kind: error.kind().to_string(),
-            os_error: error.raw_os_error(),
+            io_error,
+            backtrace: Backtrace::capture(),
         }
     }
 
@@ -411,7 +487,7 @@ impl ControllerError {
         Self::InputTransportError {
             endpoint_name: endpoint_name.to_owned(),
             fatal,
-            error: error.to_string(),
+            error,
         }
     }
 
@@ -419,24 +495,21 @@ impl ControllerError {
         Self::OutputTransportError {
             endpoint_name: endpoint_name.to_owned(),
             fatal,
-            error: error.to_string(),
+            error,
         }
     }
 
-    pub fn parse_error<E>(endpoint_name: &str, error: &E) -> Self
-    where
-        E: ToString,
-    {
+    pub fn parse_error(endpoint_name: &str, error: AnyError) -> Self {
         Self::ParseError {
             endpoint_name: endpoint_name.to_owned(),
-            error: error.to_string(),
+            error,
         }
     }
 
     pub fn encode_error(endpoint_name: &str, error: AnyError) -> Self {
         Self::EncodeError {
             endpoint_name: endpoint_name.to_owned(),
-            error: error.to_string(),
+            error,
         }
     }
 
