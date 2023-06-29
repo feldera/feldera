@@ -1,11 +1,10 @@
 // What happens when we select a program in the sqlPlaceholder node.
 
 import { NodeProps, useReactFlow } from 'reactflow'
-import { ProjectWithSchema } from 'src/types/program'
 import { useBuilderState } from '../useBuilderState'
 import useDebouncedSave from './useDebouncedSave'
 import { useQueryClient } from '@tanstack/react-query'
-import { PipelineDescr } from 'src/types/manager'
+import { PipelineDescr, ProgramDescr } from 'src/types/manager'
 import { useCallback } from 'react'
 
 // Replaces the program placeholder node with a sqlProgram node
@@ -13,7 +12,7 @@ export function useReplacePlaceholder() {
   const { getNode, setNodes } = useReactFlow()
 
   const replacePlaceholder = useCallback(
-    (program: ProjectWithSchema) => {
+    (program: ProgramDescr) => {
       console.log(program)
       const parentNode = getNode('sql')
       if (!parentNode) {
@@ -64,7 +63,7 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
   const queryClient = useQueryClient()
 
   const onClick = useCallback(
-    (_event: any, project: ProjectWithSchema) => {
+    (_event: any, project: ProgramDescr) => {
       const parentNode = getNode(id)
       if (!parentNode) {
         return

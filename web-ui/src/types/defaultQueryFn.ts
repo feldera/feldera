@@ -125,9 +125,23 @@ export const defaultQueryFn = async (context: QueryFunctionContext) => {
         throw new Error('Invalid query key, pipeline_id should be a string')
       }
     })
+    .with(['pipelineConfig', { pipeline_id: P.select() }], pipeline_id => {
+      if (typeof pipeline_id == 'string') {
+        return PipelineService.pipelineStatus(pipeline_id, undefined, true)
+      } else {
+        throw new Error('Invalid query key, pipeline_id should be a string')
+      }
+    })
     .with(['pipelineStats', { pipeline_id: P.select() }], pipeline_id => {
       if (typeof pipeline_id == 'string') {
         return PipelineService.pipelineStats(pipeline_id)
+      } else {
+        throw new Error('Invalid query key, pipeline_id should be a string')
+      }
+    })
+    .with(['pipelineLastRevision', { pipeline_id: P.select() }], pipeline_id => {
+      if (typeof pipeline_id == 'string') {
+        return PipelineService.pipelineCommitted(pipeline_id)
       } else {
         throw new Error('Invalid query key, pipeline_id should be a string')
       }

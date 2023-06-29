@@ -28,8 +28,8 @@ import {
   PipelineDescr,
   ConnectorDescr,
   PipelineService,
-  ProgramDescr,
-  PipelineStatus
+  PipelineStatus,
+  PipelineRevision
 } from 'src/types/manager'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ErrorOverlay } from 'src/components/table/ErrorOverlay'
@@ -41,6 +41,7 @@ import { ConnectorStatus, GlobalMetrics, InputConnectorMetrics, OutputConnectorM
 import { humanSize } from 'src/utils'
 import { format } from 'd3-format'
 import { pipelineStatusQueryCacheUpdate } from 'src/types/defaultQueryFn'
+import { PipelineRevisionStatusChip } from 'src/streaming/RevisionStatus'
 
 interface ConnectorData {
   ac: AttachedConnector
@@ -50,36 +51,36 @@ interface ConnectorData {
 const DetailPanelContent = (props: { row: PipelineDescr }) => {
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
-  const projectQuery = useQuery<ProgramDescr>(['programStatus', { program_id: props.row.program_id }], {
-    enabled: props.row.program_id !== undefined
-  })
-
-  const connectorQuery = useQuery<ConnectorDescr[]>(['connector'])
+  const pipelineRevisionQuery = useQuery<PipelineRevision>([
+    'pipelineLastRevision',
+    { pipeline_id: props.row.pipeline_id }
+  ])
   useEffect(() => {
-    if (!connectorQuery.isLoading && !connectorQuery.isError) {
+    if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
+      const connectors = pipelineRevisionQuery.data.connectors
+      const attachedConnectors = pipelineRevisionQuery.data.pipeline.attached_connectors
       setInputs(
-        props.row.attached_connectors
+        attachedConnectors
           .filter(ac => ac.is_input)
           .map(ac => {
-            return { ac, c: connectorQuery.data.find(c => c.connector_id === ac.connector_id) }
+            return { ac, c: connectors.find(c => c.connector_id === ac.connector_id) }
           })
       )
 
       setOutputs(
-        props.row.attached_connectors
+        attachedConnectors
           .filter(ac => !ac.is_input)
           .map(ac => {
-            return { ac, c: connectorQuery.data.find(c => c.connector_id === ac.connector_id) }
+            return { ac, c: connectors.find(c => c.connector_id === ac.connector_id) }
           })
       )
     }
   }, [
-    connectorQuery.isLoading,
-    connectorQuery.isError,
-    connectorQuery.data,
+    pipelineRevisionQuery.isLoading,
+    pipelineRevisionQuery.isError,
+    pipelineRevisionQuery.data,
     setInputs,
-    setOutputs,
-    props.row.attached_connectors
+    setOutputs
   ])
 
   const [globalMetrics, setGlobalMetrics] = useState<GlobalMetrics[]>([])
@@ -116,7 +117,7 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
     }
   }, [pipelineStatsQuery.isLoading, pipelineStatsQuery.isError, pipelineStatsQuery.data, props.row.status])
 
-  return !connectorQuery.isLoading && !connectorQuery.isError && !projectQuery.isLoading && !projectQuery.isError ? (
+  return !pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError ? (
     <Box display='flex' sx={{ m: 2 }} justifyContent='center'>
       <Grid container spacing={3} sx={{ height: 1, width: '95%' }} alignItems='stretch'>
         <Grid item xs={4}>
@@ -126,7 +127,7 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
                 <ListItemIcon>
                   <Icon icon='bi:filetype-sql' fontSize={20} />
                 </ListItemIcon>
-                <ListItemText primary={projectQuery.data?.name || 'not set'} />
+                <ListItemText primary={pipelineRevisionQuery.data?.program.name || 'not set'} />
               </ListItem>
               {props.row.status == PipelineStatus.RUNNING && (
                 <>
@@ -404,6 +405,7 @@ export default function PipelineTable() {
                 },
                 {
                   onSettled: () => {
+                    queryClient.invalidateQueries(['pipelineLastRevision', { pipeline_id: curRow.pipeline_id }])
                     queryClient.invalidateQueries(['pipeline'])
                     queryClient.invalidateQueries(['pipelineStatus', { pipeline_id: curRow.pipeline_id }])
                   },
@@ -556,6 +558,14 @@ export default function PipelineTable() {
   const columns: GridColumns = [
     { field: 'name', headerName: 'Name', editable: true, flex: 2 },
     { field: 'description', headerName: 'Description', editable: true, flex: 3 },
+    {
+      field: 'modification',
+      headerName: 'Changes',
+      flex: 1,
+      renderCell: (params: GridRenderCellParams) => {
+        return <PipelineRevisionStatusChip pipeline={params.row} />
+      }
+    },
     {
       field: 'status',
       headerName: 'Status',

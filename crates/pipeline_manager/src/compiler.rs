@@ -2,7 +2,8 @@ use crate::auth::TenantId;
 use crate::db::storage::Storage;
 use crate::{ManagerConfig, ProgramId, ProjectDB, Version};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
-use log::{debug, error, trace};
+use log::warn;
+use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
 use std::{
     process::{ExitStatus, Stdio},
@@ -24,6 +25,14 @@ use uuid::Uuid;
 /// The frequency with which the compiler polls the project database
 /// for new compilation requests.
 const COMPILER_POLL_INTERVAL: Duration = Duration::from_millis(1000);
+
+/// The frequency with which the GC task checks for no longer used binaries
+/// against the database and removes the orphans.
+///
+/// # TODO
+/// Artifcially low limit at the moment since this is new code. Increase in the
+/// future.
+const GC_POLL_INTERVAL: Duration = Duration::from_secs(3);
 
 /// A SQL compiler error.
 ///
@@ -69,6 +78,7 @@ pub(crate) enum ProgramStatus {
     /// Compiling Rust -> executable in progress
     CompilingRust,
     /// Compilation succeeded.
+    #[cfg_attr(test, proptest(weight = 2))]
     Success,
     /// SQL compiler returned an error.
     SqlError(Vec<SqlCompilerMessage>),
@@ -79,6 +89,21 @@ pub(crate) enum ProgramStatus {
 }
 
 impl ProgramStatus {
+    /// Return true if program is not yet compiled but might be in the future.
+    pub(crate) fn is_not_yet_compiled(&self) -> bool {
+        *self == ProgramStatus::None || *self == ProgramStatus::Pending
+    }
+
+    /// Return true if the program has failed to compile (for any reason).
+    pub(crate) fn has_failed_to_compile(&self) -> bool {
+        matches!(
+            self,
+            ProgramStatus::SqlError(_)
+                | ProgramStatus::RustError(_)
+                | ProgramStatus::SystemError(_)
+        )
+    }
+
     /// Return true if program is currently compiling.
     pub(crate) fn is_compiling(&self) -> bool {
         *self == ProgramStatus::CompilingRust || *self == ProgramStatus::CompilingSql
@@ -87,11 +112,13 @@ impl ProgramStatus {
 
 pub struct Compiler {
     compiler_task: JoinHandle<AnyResult<()>>,
+    gc_task: JoinHandle<AnyResult<()>>,
 }
 
 impl Drop for Compiler {
     fn drop(&mut self) {
         self.compiler_task.abort();
+        self.gc_task.abort();
     }
 }
 
@@ -108,8 +135,12 @@ fn main() {
 impl Compiler {
     pub(crate) async fn new(config: &ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<Self> {
         Self::create_working_directory(config).await?;
-        let compiler_task = spawn(Self::compiler_task(config.clone(), db));
-        Ok(Self { compiler_task })
+        let compiler_task = spawn(Self::compiler_task(config.clone(), db.clone()));
+        let gc_task = spawn(Self::gc_task(config.clone(), db));
+        Ok(Self {
+            compiler_task,
+            gc_task,
+        })
     }
 
     async fn create_working_directory(config: &ManagerConfig) -> AnyResult<()> {
@@ -203,6 +234,24 @@ impl Compiler {
             .map_err(|e| AnyError::msg(format!("failed to start 'cargo': '{e}'")))
     }
 
+    async fn version_binary(
+        config: &ManagerConfig,
+        program_id: ProgramId,
+        version: Version,
+    ) -> AnyResult<()> {
+        info!(
+            "Preserve binary {:?} as {:?}",
+            config.target_executable(program_id),
+            config.versioned_executable(program_id, version)
+        );
+        fs::copy(
+            config.target_executable(program_id),
+            config.versioned_executable(program_id, version),
+        )
+        .await?;
+        Ok(())
+    }
+
     /// Generate workspace-level `Cargo.toml`.
     async fn write_workspace_toml(config: &ManagerConfig, program_id: ProgramId) -> AnyResult<()> {
         let workspace_toml_code = format!(
@@ -256,6 +305,89 @@ impl Compiler {
             })?;
 
         Ok(())
+    }
+
+    async fn gc_task(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<()> {
+        Self::do_gc_task(config, db).await.map_err(|e| {
+            error!("gc task failed; error: '{e}'");
+            e
+        })
+    }
+
+    /// A task that wakes up periodically and removes stale binaries.
+    ///
+    /// Helps to keep the binaries directory clean and not run out of space if
+    /// this runs for a very long time.
+    ///
+    /// Note that this task handles all errors internally and does not propagate
+    /// them up so it can run forever and never aborts.
+    async fn do_gc_task(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<()> {
+        loop {
+            sleep(GC_POLL_INTERVAL).await;
+            let read_dir = fs::read_dir(config.binaries_dir()).await;
+            match read_dir {
+                Ok(mut paths) => loop {
+                    let entry = paths.next_entry().await;
+                    match entry {
+                        Ok(Some(path)) => {
+                            let file_name = path.file_name();
+                            let file_name = file_name.to_str().unwrap_or("invalid utf8");
+
+                            if file_name.starts_with("project") {
+                                let parts: Vec<&str> = file_name.split('_').collect();
+                                if parts.len() != 3
+                                    || parts.first() != Some(&"project")
+                                    || parts.get(2).map(|p| p.len()) <= Some(1)
+                                {
+                                    warn!("GC task found invalid file: {}", file_name);
+                                    continue;
+                                }
+                                if let (Ok(program_uuid), Ok(program_version)) =
+                                    // parse file name with the following format:
+                                    // project_{uuid}_v{version}
+                                    (Uuid::parse_str(parts[1]), parts[2][1..].parse::<i64>())
+                                {
+                                    if let Ok(is_used) = db
+                                        .lock()
+                                        .await
+                                        .is_program_version_in_use(program_uuid, program_version)
+                                        .await
+                                    {
+                                        if !is_used {
+                                            error!("about to remove file: {}", file_name);
+                                            let r = fs::remove_file(path.path()).await;
+                                            if let Err(e) = r {
+                                                error!(
+                                                    "GC task failed to remove file '{}': {}",
+                                                    file_name, e
+                                                );
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    warn!(
+                                        "GC task found invalid file in {:?}: {}",
+                                        config.binaries_dir(),
+                                        file_name
+                                    );
+                                }
+                            }
+                        }
+                        // We are done with the directory
+                        Ok(None) => break,
+                        Err(e) => {
+                            warn!("GC task unable to read an entry: {}", e);
+                            // Not clear from docs if an error during iteration
+                            // is recoverable and we could just `continue;` here
+                            break;
+                        }
+                    }
+                },
+                Err(e) => {
+                    error!("GC task couldn't read binaries directory: {}", e)
+                }
+            }
+        }
     }
 
     async fn compiler_task(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<()> {
@@ -326,13 +458,15 @@ impl Compiler {
                             // - We hold the db lock so we are executing this
                             // update in the same transaction as the program
                             // status above.
+
                             let schema_json = fs::read_to_string(config.schema_path(program_id)).await?;
-                            db.set_program_schema(tenant_id, program_id, schema_json).await?;
+                            db.set_program_schema(tenant_id, program_id, serde_json::from_str(&schema_json)?).await?;
 
                             debug!("Set ProgramStatus::CompilingRust '{program_id}', version '{version}'");
                             job = Some(CompilationJob::rust(tenant_id, &config, program_id, version).await?);
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
+                            Self::version_binary(&config, program_id, version).await?;
                             // Rust compiler succeeded -- declare victory.
                             db.set_program_status_guarded(tenant_id, program_id, version, ProgramStatus::Success).await?;
                             debug!("Set ProgramStatus::Success '{program_id}', version '{version}'");

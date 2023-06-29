@@ -27,7 +27,6 @@ import { ReactFlowProvider, useReactFlow } from 'reactflow'
 import { useDebouncedCallback } from 'use-debounce'
 import { removePrefix } from 'src/utils'
 import { useReplacePlaceholder } from 'src/streaming/builder/hooks/useSqlPlaceholderClick'
-import { parseProjectSchema } from 'src/types/program'
 import { connectorConnects, useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
 import MissingSchemaDialog from 'src/streaming/builder/NoSchemaDialog'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
@@ -120,24 +119,23 @@ export const PipelineWithProvider = (props: {
         if (pipelineQuery.data.program_id) {
           const foundProject = projects.data.find(p => p.program_id === pipelineQuery.data.program_id)
           if (foundProject) {
-            if (foundProject.schema == null) {
+            if (!foundProject.schema) {
               setMissingSchemaDialog(true)
             } else {
               setMissingSchemaDialog(false)
             }
 
-            const programWithSchema = parseProjectSchema(foundProject)
             if (attachedConnectors) {
               invalidConnections = attachedConnectors.filter(attached_connector => {
-                return !connectorConnects(attached_connector, programWithSchema.schema)
+                return !connectorConnects(attached_connector, foundProject.schema)
               })
               validConnections = attachedConnectors.filter(attached_connector => {
-                return connectorConnects(attached_connector, programWithSchema.schema)
+                return connectorConnects(attached_connector, foundProject.schema)
               })
             }
 
-            setProject(programWithSchema)
-            replacePlaceholder(programWithSchema)
+            setProject(foundProject)
+            replacePlaceholder(foundProject)
           }
         }
 

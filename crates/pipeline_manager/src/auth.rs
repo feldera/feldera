@@ -67,7 +67,8 @@ use crate::{
     ServerState,
 };
 
-// Used when no auth is configured, so we tag the request with the default user and passthrough
+// Used when no auth is configured, so we tag the request with the default user
+// and passthrough
 pub(crate) fn tag_with_default_tenant_id(req: ServiceRequest) -> ServiceRequest {
     req.extensions_mut().insert(DEFAULT_TENANT_ID);
     req.extensions_mut()

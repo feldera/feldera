@@ -77,7 +77,7 @@ pub(crate) use compiler::{Compiler, ProgramStatus};
 pub(crate) use config::ManagerConfig;
 use db::{
     storage::Storage, AttachedConnector, AttachedConnectorId, ConnectorId, DBError, PipelineId,
-    ProgramDescr, ProgramId, ProjectDB, Version,
+    PipelineRevision, ProgramDescr, ProgramId, ProjectDB, Version,
 };
 use runner::{LocalRunner, Runner, RunnerError, STARTUP_TIMEOUT};
 
@@ -184,6 +184,7 @@ observed by the user is outdated, so the request is rejected."
         pipeline_stats,
         pipeline_status,
         pipeline_action,
+        pipeline_committed,
         pipeline_delete,
         list_connectors,
         new_connector,
@@ -197,8 +198,13 @@ observed by the user is outdated, so the request is rejected."
         compiler::SqlCompilerMessage,
         db::AttachedConnector,
         db::ProgramDescr,
+        db::ProgramSchema,
+        db::Relation,
+        db::Field,
         db::ConnectorDescr,
         db::PipelineDescr,
+        db::PipelineRevision,
+        db::Revision,
         db::PipelineStatus,
         dbsp_adapters::EgressMode,
         dbsp_adapters::PipelineConfig,
@@ -430,6 +436,7 @@ where
         .service(pipeline_stats)
         .service(pipeline_status)
         .service(pipeline_action)
+        .service(pipeline_committed)
         .service(pipeline_delete)
         .service(list_connectors)
         .service(new_connector)
@@ -463,10 +470,17 @@ fn http_resp_from_db_error(error: &DBError) -> HttpResponse {
         DBError::DuplicateKey => HttpResponse::InternalServerError(),
         DBError::InvalidKey => HttpResponse::Unauthorized(),
         DBError::UnknownName { .. } => HttpResponse::NotFound(),
+        DBError::ProgramNotCompiled => HttpResponse::ServiceUnavailable(),
+        DBError::ProgramFailedToCompile => HttpResponse::BadRequest(),
+        DBError::ProgramNotSet => HttpResponse::BadRequest(),
         // should in practice not happen, e.g., would mean a Uuid conflict:
         DBError::UniqueKeyViolation { .. } => HttpResponse::InternalServerError(),
         // should in practice not happen, e.g., would mean invalid status in db:
         DBError::UnknownPipelineStatus => HttpResponse::InternalServerError(),
+        DBError::NoRevisionAvailable { .. } => HttpResponse::NotFound(),
+        DBError::RevisionNotChanged => HttpResponse::BadRequest(),
+        DBError::TablesNotInSchema { .. } => HttpResponse::BadRequest(),
+        DBError::ViewsNotInSchema { .. } => HttpResponse::BadRequest(),
     }
     .json(ErrorResponse::from_error(error))
 }
@@ -477,8 +491,6 @@ fn http_resp_from_runner_error(error: &RunnerError) -> HttpResponse {
         RunnerError::HttpForwardError { .. } => HttpResponse::InternalServerError(),
         RunnerError::PortFileParseError { .. } => HttpResponse::InternalServerError(),
         RunnerError::PipelineInitializationTimeout { .. } => HttpResponse::InternalServerError(),
-        RunnerError::ProgramNotSet { .. } => HttpResponse::BadRequest(),
-        RunnerError::ProgramNotCompiled { .. } => HttpResponse::ServiceUnavailable(),
         RunnerError::PipelineStartupError { .. } => HttpResponse::InternalServerError(),
     }
     .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -510,6 +522,48 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
 }
 
 // Example errors for use in OpenApi docs.
+
+fn example_pipeline_toml() -> String {
+    let input_connector = db::ConnectorDescr {
+        connector_id: ConnectorId(uuid!("01890c99-376f-743e-ac30-87b6c0ce74ef")),
+        name: "Input".into(),
+        description: "My Input Connector".into(),
+        config: "format: csv\n".into(),
+    };
+    let input = db::AttachedConnector {
+        name: "Input-To-Table".into(),
+        is_input: true,
+        connector_id: input_connector.connector_id,
+        config: "my_input_table".into(),
+    };
+    let output_connector = db::ConnectorDescr {
+        connector_id: ConnectorId(uuid!("01890c99-3734-7052-9e97-55c0679a5adb")),
+        name: "Output ".into(),
+        description: "My Output Connector".into(),
+        config: "format: csv\n".into(),
+    };
+    let output = db::AttachedConnector {
+        name: "Output-To-View".into(),
+        is_input: false,
+        connector_id: output_connector.connector_id,
+        config: "my_output_view".into(),
+    };
+    let pipeline = db::PipelineDescr {
+        pipeline_id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
+        program_id: Some(ProgramId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0"))),
+        name: "My Pipeline".into(),
+        description: "My Description".into(),
+        config: "workers: 8\n".into(),
+        attached_connectors: vec![input, output],
+        version: Version(1),
+        port: 0,
+        created: None,
+        status: db::PipelineStatus::Running,
+    };
+
+    let connectors = vec![input_connector, output_connector];
+    PipelineRevision::generate_toml_config(&pipeline, &connectors).unwrap()
+}
 
 fn example_unknown_program() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::UnknownProgram {
@@ -575,14 +629,26 @@ fn example_pipeline_shutdown() -> ErrorResponse {
 }
 
 fn example_program_not_set() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&RunnerError::ProgramNotSet {
-        pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
-    })
+    ErrorResponse::from_error_nolog(&DBError::ProgramNotSet)
 }
 
 fn example_program_not_compiled() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&RunnerError::ProgramNotCompiled {
-        pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
+    ErrorResponse::from_error_nolog(&DBError::ProgramNotCompiled)
+}
+
+fn example_program_has_errors() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::ProgramFailedToCompile)
+}
+
+fn example_pipline_invalid_input_ac() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::TablesNotInSchema {
+        missing: vec![("ac_name".to_string(), "my_table".to_string())],
+    })
+}
+
+fn example_pipline_invalid_output_ac() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::ViewsNotInSchema {
+        missing: vec![("ac_name".to_string(), "my_view".to_string())],
     })
 }
 
@@ -1242,6 +1308,59 @@ async fn list_pipelines(
         .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
+/// Return the last committed (and running, if pipeline is started)
+/// configuration of the pipeline.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Last committed configuration of the pipeline retrieved successfully (returns null if pipeline was never deployed yet).", body = Option<PipelineRevision>),
+        (status = NOT_FOUND
+            , description = "Specified `pipeline_id` does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_pipeline())),
+    ),
+    params(
+        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
+    ),
+    tag = "Pipeline"
+)]
+#[get("/v0/pipelines/{pipeline_id}/committed")]
+async fn pipeline_committed(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> impl Responder {
+    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
+        Err(e) => {
+            return http_resp_from_api_error(&e);
+        }
+        Ok(pipeline_id) => PipelineId(pipeline_id),
+    };
+
+    let resp: Result<Option<db::PipelineRevision>, DBError> = match state
+        .db
+        .lock()
+        .await
+        .get_last_committed_pipeline_revision(*tenant_id, pipeline_id)
+        .await
+    {
+        Ok(revision) => Ok(Some(revision)),
+        Err(e) => {
+            if matches!(e, DBError::NoRevisionAvailable { .. }) {
+                Ok(None)
+            } else {
+                Err(e)
+            }
+        }
+    };
+
+    resp.map(|descr| {
+        HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&descr)
+    })
+    .unwrap_or_else(|e| http_resp_from_db_error(&e))
+}
+
 /// Retrieve pipeline metrics and performance counters.
 #[utoipa::path(
     responses(
@@ -1285,7 +1404,10 @@ async fn pipeline_stats(
 /// Retrieve pipeline metadata.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Pipeline descriptor retrieved successfully.", body = PipelineDescr),
+        (status = OK, description = "Pipeline descriptor retrieved successfully.",content(
+            ("text/toml" = String, example = json!(example_pipeline_toml())),
+            ("text/json" = PipelineDescr),
+        )),
         (status = BAD_REQUEST
             , description = "Pipeline not specified. Use ?id or ?name query strings in the URL."
             , body = ErrorResponse
@@ -1305,7 +1427,8 @@ async fn pipeline_stats(
     ),
     params(
         ("id" = Option<Uuid>, Query, description = "Unique pipeline identifier"),
-        ("name" = Option<String>, Query, description = "Unique pipeline name")
+        ("name" = Option<String>, Query, description = "Unique pipeline name"),
+        ("toml" = Option<bool>, Query, description = "Set to true to request the configuration of the pipeline as a toml file."),
     ),
     tag = "Pipeline"
 )]
@@ -1313,41 +1436,70 @@ async fn pipeline_stats(
 async fn pipeline_status(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: web::Query<IdOrNameQuery>,
+    req: web::Query<IdOrNameTomlQuery>,
 ) -> impl Responder {
-    let resp: Result<db::PipelineDescr, DBError> = if let Some(id) = req.id {
-        state
-            .db
-            .lock()
-            .await
-            .get_pipeline_by_id(*tenant_id, PipelineId(id))
-            .await
-    } else if let Some(name) = req.name.clone() {
-        state
-            .db
-            .lock()
-            .await
-            .get_pipeline_by_name(*tenant_id, name)
-            .await
-    } else {
-        return http_resp_from_api_error(&ApiError::PipelineNotSpecified);
-    };
+    if req.toml.unwrap_or(false) {
+        let resp: Result<String, DBError> = if let Some(id) = req.id {
+            state
+                .db
+                .lock()
+                .await
+                .pipeline_to_toml(*tenant_id, PipelineId(id))
+                .await
+        } else if let Some(name) = req.name.clone() {
+            let db: tokio::sync::MutexGuard<'_, ProjectDB> = state.db.lock().await;
+            let pipeline_resp = db.get_pipeline_by_name(*tenant_id, name).await;
+            if let Ok(pipeline) = pipeline_resp {
+                db.pipeline_to_toml(*tenant_id, pipeline.pipeline_id).await
+            } else {
+                Err(pipeline_resp.err().unwrap())
+            }
+        } else {
+            return http_resp_from_api_error(&ApiError::PipelineNotSpecified);
+        };
 
-    resp.map(|descr| {
-        HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(&descr)
-    })
-    .unwrap_or_else(|e| http_resp_from_db_error(&e))
+        resp.map(|toml: String| {
+            HttpResponse::Ok()
+                .content_type("text/toml")
+                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+                .body(toml)
+        })
+        .unwrap_or_else(|e: DBError| http_resp_from_db_error(&e))
+    } else {
+        let resp: Result<db::PipelineDescr, DBError> = if let Some(id) = req.id {
+            state
+                .db
+                .lock()
+                .await
+                .get_pipeline_by_id(*tenant_id, PipelineId(id))
+                .await
+        } else if let Some(name) = req.name.clone() {
+            state
+                .db
+                .lock()
+                .await
+                .get_pipeline_by_name(*tenant_id, name)
+                .await
+        } else {
+            return http_resp_from_api_error(&ApiError::PipelineNotSpecified);
+        };
+
+        resp.map(|descr: db::PipelineDescr| {
+            HttpResponse::Ok()
+                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+                .json(&descr)
+        })
+        .unwrap_or_else(|e: DBError| http_resp_from_db_error(&e))
+    }
 }
 
 /// Perform action on a pipeline.
 ///
-/// - 'deploy': Run a new pipeline. Deploy a pipeline for the specified program
-/// and configuration. This is a synchronous endpoint, which sends a response
-/// once the pipeline has been initialized.
+/// - 'deploy': Deploy a pipeline for the specified program and configuration.
+/// This is a synchronous endpoint, which sends a response once the pipeline has
+/// been initialized.
+/// - 'start': Start a pipeline.
 /// - 'pause': Pause the pipeline.
-/// - 'start': Resume the paused pipeline.
 /// - 'shutdown': Terminate the execution of a pipeline. Sends a termination
 /// request to the pipeline process. Returns immediately, without waiting for
 /// the pipeline to terminate (which can take several seconds). The pipeline is
@@ -1378,6 +1530,18 @@ async fn pipeline_status(
             , description = "Unable to start the pipeline before its program has been compiled."
             , body = ErrorResponse
             , example = json!(example_program_not_compiled())),
+        (status = BAD_REQUEST
+            , description = "Unable to start the pipeline before its program has been compiled successfully."
+            , body = ErrorResponse
+            , example = json!(example_program_has_errors())),
+        (status = BAD_REQUEST
+            , description = "The connectors in the config referenced a table that doesn't exist."
+            , body = ErrorResponse
+            , example = json!(example_pipline_invalid_input_ac())),
+        (status = BAD_REQUEST
+            , description = "The connectors in the config referenced a view that doesn't exist."
+            , body = ErrorResponse
+            , example = json!(example_pipline_invalid_output_ac())),
         (status = INTERNAL_SERVER_ERROR
             , description = "Timeout waiting for the pipeline to initialize. Indicates an internal system error."
             , body = ErrorResponse
@@ -1385,7 +1549,7 @@ async fn pipeline_status(
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
-        ("action" = String, Path, description = "Pipeline action [run, start, pause, shutdown]")
+        ("action" = String, Path, description = "Pipeline action [deploy, start, pause, shutdown]")
     ),
     tag = "Pipeline"
 )]
@@ -1655,6 +1819,13 @@ pub struct IdOrNameQuery {
     name: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct IdOrNameTomlQuery {
+    id: Option<Uuid>,
+    name: Option<String>,
+    toml: Option<bool>,
+}
+
 /// Returns connector descriptor.
 #[utoipa::path(
     responses(
@@ -1803,11 +1974,11 @@ async fn http_input(
 /// Subscribe to a stream of updates to a SQL view or table.
 ///
 /// The pipeline responds with a continuous stream of changes to the specified
-/// table or view, encoded using the format specified in the `?format=` parameter.
-/// Updates are split into `Chunk`'s.
+/// table or view, encoded using the format specified in the `?format=`
+/// parameter. Updates are split into `Chunk`'s.
 ///
-/// The pipeline continuous sending updates until the client closes the connection or the
-/// pipeline is shut down.
+/// The pipeline continuous sending updates until the client closes the
+/// connection or the pipeline is shut down.
 #[utoipa::path(
     responses(
         (status = OK

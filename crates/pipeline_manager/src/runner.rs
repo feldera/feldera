@@ -1,7 +1,5 @@
-use crate::{
-    auth::TenantId, db::storage::Storage, db::AttachedConnector, db::PipelineDescr,
-    db::PipelineStatus, ManagerConfig, PipelineId, ProgramId, ProgramStatus, ProjectDB, Version,
-};
+use crate::db::{storage::Storage, DBError, PipelineRevision, PipelineStatus};
+use crate::{auth::TenantId, ManagerConfig, PipelineId, ProjectDB};
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
 use anyhow::{anyhow, bail, Result as AnyResult};
 use awc::Client;
@@ -17,6 +15,7 @@ use tokio::{
     sync::Mutex,
     time::{sleep, Duration, Instant},
 };
+use uuid::Uuid;
 
 pub(crate) const STARTUP_TIMEOUT: Duration = Duration::from_millis(10_000);
 const PORT_FILE_LOG_QUIET_PERIOD: Duration = Duration::from_millis(2_000);
@@ -39,12 +38,6 @@ pub(crate) enum RunnerError {
         pipeline_id: PipelineId,
         timeout: Duration,
     },
-    ProgramNotSet {
-        pipeline_id: PipelineId,
-    },
-    ProgramNotCompiled {
-        pipeline_id: PipelineId,
-    },
     PipelineStartupError {
         pipeline_id: PipelineId,
         // TODO: This should be IOError, so we can serialize the error code
@@ -62,8 +55,6 @@ impl DetailedError for RunnerError {
             Self::PipelineInitializationTimeout { .. } => {
                 Cow::from("PipelineInitializationTimeout")
             }
-            Self::ProgramNotSet { .. } => Cow::from("ProgramNotSet"),
-            Self::ProgramNotCompiled { .. } => Cow::from("ProgramNotCompiled"),
             Self::PipelineStartupError { .. } => Cow::from("PipelineStartupError"),
         }
     }
@@ -91,15 +82,6 @@ impl Display for RunnerError {
                 write!(
                     f,
                     "Could not parse port for pipeline '{pipeline_id}' from port file: '{error}'"
-                )
-            }
-            Self::ProgramNotSet { pipeline_id } => {
-                write!(f, "Pipeline '{pipeline_id}' does not have a program set")
-            }
-            Self::ProgramNotCompiled { pipeline_id } => {
-                write!(
-                    f,
-                    "Program hasn't been compiled for pipeline '{pipeline_id}' yet"
                 )
             }
             Self::PipelineStartupError { pipeline_id, error } => {
@@ -136,23 +118,6 @@ pub(crate) enum Runner {
 pub struct LocalRunner {
     db: Arc<Mutex<ProjectDB>>,
     config: ManagerConfig,
-}
-
-/// Pipeline metadata.
-///
-/// A pipeline is initialized with a static metadata string (supplied via
-/// file read on startup).  This metadata is accessed via pipeline's
-/// `/metadata` endpoint.  The pipeline doesn't enforce any particular
-/// format, schema, or semantics of the metadata string, but various tools
-/// and UIs may.
-#[derive(Serialize)]
-struct PipelineMetadata {
-    /// Program id.
-    program_id: ProgramId,
-    /// Program version.
-    version: Version,
-    /// Program code.
-    code: String,
 }
 
 impl Runner {
@@ -268,31 +233,45 @@ impl LocalRunner {
         })
     }
 
+    /// Retrieves the last revision for a pipeline.
+    ///
+    /// Tries to create a new revision if this pipeline never had a revision
+    /// created before.
+    async fn get_last_revision(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> AnyResult<PipelineRevision> {
+        let db = self.db.lock().await;
+        let pipeline_revision = loop {
+            match db
+                .get_last_committed_pipeline_revision(tenant_id, pipeline_id)
+                .await
+            {
+                Ok(pipeline_revision) => {
+                    break pipeline_revision;
+                }
+                Err(e) => match e {
+                    DBError::NoRevisionAvailable { .. } => {
+                        db.create_pipeline_revision(Uuid::now_v7(), tenant_id, pipeline_id)
+                            .await?;
+                        continue;
+                    }
+                    _ => Err(e)?,
+                },
+            };
+        };
+
+        Ok(pipeline_revision)
+    }
+
     pub(crate) async fn deploy_pipeline(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> AnyResult<HttpResponse> {
-        let db = self.db.lock().await;
-
-        // Read and validate config.
-        let pipeline_descr = db.get_pipeline_by_id(tenant_id, pipeline_id).await?;
-        if pipeline_descr.program_id.is_none() {
-            bail!(RunnerError::ProgramNotSet { pipeline_id });
-        }
-        let program_version = pipeline_descr.program_id.unwrap();
-
-        // Check: program exists, version = current version, compilation completed.
-        let program_descr = db.get_program_by_id(tenant_id, program_version).await?;
-        if program_descr.status != ProgramStatus::Success {
-            bail!(RunnerError::ProgramNotCompiled { pipeline_id });
-        };
-
-        // Run the pipeline executable.
-        let mut pipeline_process = self.start(tenant_id, &db, &pipeline_descr).await?;
-
-        // Unlock db -- the next part can be slow.
-        drop(db);
+        let pipeline_revision = self.get_last_revision(tenant_id, pipeline_id).await?;
+        let mut pipeline_process = self.start(pipeline_revision).await?;
 
         match Self::wait_for_startup(pipeline_id, &self.config.port_file_path(pipeline_id)).await {
             Ok(port) => {
@@ -484,80 +463,25 @@ impl LocalRunner {
         Ok(builder.streaming(response))
     }
 
-    async fn start(
-        &self,
-        tenant_id: TenantId,
-        db: &ProjectDB,
-        pipeline_descr: &PipelineDescr,
-    ) -> AnyResult<Child> {
-        assert!(
-            pipeline_descr.program_id.is_some(),
-            "pre-condition for start(): config.program_id is set"
-        );
-        let pipeline_id = pipeline_descr.pipeline_id;
-        let program_id = pipeline_descr.program_id.unwrap();
+    async fn start(&self, pr: PipelineRevision) -> AnyResult<Child> {
+        let pipeline_id = pr.pipeline.pipeline_id;
+        let program_id = pr.pipeline.program_id.unwrap();
 
-        // Assemble the final config by including all attached connectors.
-        async fn generate_attached_connector_config(
-            tenant_id: TenantId,
-            db: &ProjectDB,
-            config: &mut String,
-            ac: &AttachedConnector,
-        ) -> AnyResult<()> {
-            let ident = 4;
-            config.push_str(format!("{:ident$}{}:\n", "", ac.name.as_str()).as_str());
-            let ident = 8;
-            config.push_str(format!("{:ident$}stream: {}\n", "", ac.config.as_str()).as_str());
-            let connector = db.get_connector_by_id(tenant_id, ac.connector_id).await?;
-            for config_line in connector.config.lines() {
-                config.push_str(format!("{:ident$}{config_line}\n", "").as_str());
-            }
-            Ok(())
-        }
-
-        let mut config = pipeline_descr.config.clone();
-        config.push_str(format!("name: pipeline-{pipeline_id}\n").as_str());
-        config.push_str("inputs:\n");
-        for ac in pipeline_descr
-            .attached_connectors
-            .iter()
-            .filter(|ac| ac.is_input)
-        {
-            generate_attached_connector_config(tenant_id, db, &mut config, ac).await?;
-        }
-        config.push_str("outputs:\n");
-        for ac in pipeline_descr
-            .attached_connectors
-            .iter()
-            .filter(|ac| !ac.is_input)
-        {
-            generate_attached_connector_config(tenant_id, db, &mut config, ac).await?;
-        }
-        log::debug!("Pipeline config is '{}'", config);
+        log::debug!("Pipeline config is '{}'", pr.config);
 
         // Create pipeline directory (delete old directory if exists); write metadata
         // and config files to it.
         let pipeline_dir = self.config.pipeline_dir(pipeline_id);
         create_dir_all(&pipeline_dir).await?;
         let config_file_path = self.config.config_file_path(pipeline_id);
-        fs::write(&config_file_path, config.as_str()).await?;
-
-        let (_version, code) = db.program_code(tenant_id, program_id).await?;
-
-        let metadata = PipelineMetadata {
-            program_id,
-            version: pipeline_descr.version,
-            code,
-        };
+        fs::write(&config_file_path, &pr.config).await?;
         let metadata_file_path = self.config.metadata_file_path(pipeline_id);
-        fs::write(
-            &metadata_file_path,
-            serde_json::to_string(&metadata).unwrap(),
-        )
-        .await?;
+        fs::write(&metadata_file_path, serde_json::to_string(&pr).unwrap()).await?;
 
         // Locate project executable.
-        let executable = self.config.project_executable(program_id);
+        let executable = self
+            .config
+            .versioned_executable(program_id, pr.program.version);
 
         // Run executable, set current directory to pipeline directory, pass metadata
         // file and config as arguments.

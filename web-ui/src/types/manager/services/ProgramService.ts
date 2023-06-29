@@ -33,8 +33,8 @@ export class ProgramService {
         name: name
       },
       errors: {
-        400: `Missing or invalid \`program_id\` parameter.`,
-        404: `Specified \`program_id\` does not exist in the database.`
+        400: `Program not specified. Use ?id or ?name query strings in the URL.`,
+        404: `Specified program id does not exist in the database.`
       }
     })
   }
@@ -54,8 +54,8 @@ export class ProgramService {
         program_id: programId
       },
       errors: {
-        400: `Missing or invalid \`program_id\` parameter.`,
-        404: `Specified \`program_id\` does not exist in the database.`
+        400: `Specified program id is not a valid uuid.`,
+        404: `Specified program id does not exist in the database.`
       }
     })
   }
@@ -115,7 +115,7 @@ export class ProgramService {
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `Specified \`program_id\` does not exist in the database.`,
+        404: `Specified program id does not exist in the database.`,
         409: `A program with this name already exists in the database.`
       }
     })
@@ -138,7 +138,7 @@ export class ProgramService {
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `Specified \`program_id\` does not exist in the database.`,
+        404: `Specified program id does not exist in the database.`,
         409: `Program version specified in the request doesn't match the latest program version in the database.`
       }
     })
@@ -161,7 +161,7 @@ export class ProgramService {
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `Specified \`program_id\` does not exist in the database.`,
+        404: `Specified program id does not exist in the database.`,
         409: `Program version specified in the request doesn't match the latest program version in the database.`
       }
     })
@@ -184,7 +184,8 @@ export class ProgramService {
         program_id: programId
       },
       errors: {
-        404: `Specified \`program_id\` does not exist in the database.`
+        400: `Specified program id is not a valid uuid.`,
+        404: `Specified program id does not exist in the database.`
       }
     })
   }

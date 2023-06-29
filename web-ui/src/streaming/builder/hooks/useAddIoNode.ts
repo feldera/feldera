@@ -2,17 +2,18 @@
 
 import { useCallback } from 'react'
 import { useReactFlow, getConnectedEdges } from 'reactflow'
-import { AttachedConnector } from 'src/types/manager'
+import { AttachedConnector, ProgramSchema } from 'src/types/manager'
 import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
-import { Schema } from 'src/types/program'
 import { randomString } from 'src/utils'
 import { useRedoLayout } from './useAutoLayout'
 
 const HEIGHT_OFFSET = 120
 
 // Checks if the connector can connect to a give schema
-export function connectorConnects(ac: AttachedConnector, schema: Schema): boolean {
-  console.log('connectorConnects', ac, schema)
+export function connectorConnects(ac: AttachedConnector, schema: ProgramSchema | null | undefined): boolean {
+  if (!schema) {
+    return false
+  }
   if (ac.is_input) {
     return schema.inputs.some(table => table.name === ac.config)
   } else {

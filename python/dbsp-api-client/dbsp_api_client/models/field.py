@@ -2,32 +2,58 @@ from typing import Any, Dict, List, Type, TypeVar
 
 import attr
 
-T = TypeVar("T", bound="ErrorResponseDetails")
+T = TypeVar("T", bound="Field")
 
 
 @attr.s(auto_attribs=True)
-class ErrorResponseDetails:
-    """Detailed error metadata.
-    The contents of this field is determined by `error_code`.
+class Field:
+    """A SQL field.
 
+    Attributes:
+        name (str):
+        nullable (bool):
+        type (str):
     """
 
+    name: str
+    nullable: bool
+    type: str
     additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        name = self.name
+        nullable = self.nullable
+        type = self.type
+
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({})
+        field_dict.update(
+            {
+                "name": name,
+                "nullable": nullable,
+                "type": type,
+            }
+        )
 
         return field_dict
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        error_response_details = cls()
+        name = d.pop("name")
 
-        error_response_details.additional_properties = d
-        return error_response_details
+        nullable = d.pop("nullable")
+
+        type = d.pop("type")
+
+        field = cls(
+            name=name,
+            nullable=nullable,
+            type=type,
+        )
+
+        field.additional_properties = d
+        return field
 
     @property
     def additional_keys(self) -> List[str]:

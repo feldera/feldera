@@ -2,9 +2,13 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { Chunk } from '../models/Chunk'
+import type { EgressMode } from '../models/EgressMode'
+import type { NeighborhoodQuery } from '../models/NeighborhoodQuery'
 import type { NewPipelineRequest } from '../models/NewPipelineRequest'
 import type { NewPipelineResponse } from '../models/NewPipelineResponse'
+import type { OutputQuery } from '../models/OutputQuery'
 import type { PipelineDescr } from '../models/PipelineDescr'
+import type { PipelineRevision } from '../models/PipelineRevision'
 import type { UpdatePipelineRequest } from '../models/UpdatePipelineRequest'
 import type { UpdatePipelineResponse } from '../models/UpdatePipelineResponse'
 
@@ -18,20 +22,26 @@ export class PipelineService {
    * Retrieve pipeline metadata.
    * @param id Unique pipeline identifier
    * @param name Unique pipeline name
+   * @param toml Set to true to request the configuration of the pipeline as a toml file.
    * @returns PipelineDescr Pipeline descriptor retrieved successfully.
    * @throws ApiError
    */
-  public static pipelineStatus(id?: string | null, name?: string | null): CancelablePromise<PipelineDescr> {
+  public static pipelineStatus(
+    id?: string | null,
+    name?: string | null,
+    toml?: boolean | null
+  ): CancelablePromise<PipelineDescr> {
     return __request(OpenAPI, {
       method: 'GET',
       url: '/v0/pipeline',
       query: {
         id: id,
-        name: name
+        name: name,
+        toml: toml
       },
       errors: {
-        400: `Specified \`pipeline_id\` is not a valid uuid.`,
-        404: `Specified \`pipeline_id\` does not exist in the database.`
+        400: `Pipeline not specified. Use ?id or ?name query strings in the URL.`,
+        404: `Specified pipeline name does not exist in the database.`
       }
     })
   }
@@ -63,7 +73,7 @@ export class PipelineService {
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `Specified \`program_id\` does not exist in the database.`
+        404: `Specified program id does not exist in the database.`
       }
     })
   }
@@ -85,7 +95,7 @@ export class PipelineService {
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `A connector ID in \`connectors\` does not exist in the database.`
+        404: `Specified connector id does not exist in the database.`
       }
     })
   }
@@ -108,8 +118,29 @@ export class PipelineService {
         pipeline_id: pipelineId
       },
       errors: {
-        404: `Specified \`pipeline_id\` does not exist in the database.`,
-        500: `Request failed.`
+        400: `Specified pipeline id is not a valid uuid.`,
+        404: `Specified pipeline id does not exist in the database.`
+      }
+    })
+  }
+
+  /**
+   * Return the last committed (and running, if pipeline is started)
+   * Return the last committed (and running, if pipeline is started)
+   * configuration of the pipeline.
+   * @param pipelineId Unique pipeline identifier
+   * @returns any Last committed configuration of the pipeline retrieved successfully (returns null if pipeline was never deployed yet).
+   * @throws ApiError
+   */
+  public static pipelineCommitted(pipelineId: string): CancelablePromise<PipelineRevision | null> {
+    return __request(OpenAPI, {
+      method: 'GET',
+      url: '/v0/pipelines/{pipeline_id}/committed',
+      path: {
+        pipeline_id: pipelineId
+      },
+      errors: {
+        404: `Specified \`pipeline_id\` does not exist in the database.`
       }
     })
   }
@@ -119,18 +150,28 @@ export class PipelineService {
    * Subscribe to a stream of updates to a SQL view or table.
    *
    * The pipeline responds with a continuous stream of changes to the specified
-   * table or view, encoded using the format specified in the `?format=` parameter.
-   * Updates are split into `Chunk`'s.
+   * table or view, encoded using the format specified in the `?format=`
+   * parameter. Updates are split into `Chunk`'s.
    *
-   * The pipeline continuous sending updates until the client closes the connection or the
-   * pipeline is shut down.
+   * The pipeline continuous sending updates until the client closes the
+   * connection or the pipeline is shut down.
    * @param pipelineId Unique pipeline identifier.
-   * @param tableName SQL table name.
+   * @param tableName SQL table or view name.
    * @param format Output data format, e.g., 'csv' or 'json'.
+   * @param query Query to execute on the table. Must be one of 'table', 'neighborhood', or 'quantiles'. The default value is 'table'
+   * @param mode Output mode. Must be one of 'watch' or 'snapshot'. The default value is 'watch'
+   * @param requestBody When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.
    * @returns Chunk Connection to the endpoint successfully established. The body of the response contains a stream of data chunks.
    * @throws ApiError
    */
-  public static httpOutput(pipelineId: string, tableName: string, format: string): CancelablePromise<Chunk> {
+  public static httpOutput(
+    pipelineId: string,
+    tableName: string,
+    format: string,
+    query?: OutputQuery | null,
+    mode?: EgressMode | null,
+    requestBody?: NeighborhoodQuery | null
+  ): CancelablePromise<Chunk> {
     return __request(OpenAPI, {
       method: 'GET',
       url: '/v0/pipelines/{pipeline_id}/egress/{table_name}',
@@ -139,8 +180,12 @@ export class PipelineService {
         table_name: tableName
       },
       query: {
-        format: format
+        format: format,
+        query: query,
+        mode: mode
       },
+      body: requestBody,
+      mediaType: 'application/json',
       errors: {
         400: `Unknown data format specified in the '?format=' argument.`,
         404: `Specified table or view does not exist.`,
@@ -180,9 +225,8 @@ export class PipelineService {
       },
       errors: {
         400: `Unknown data format specified in the '?format=' argument.`,
-        404: `Specified table does not exist.`,
-        410: `Pipeline is not currently running because it has been shutdown or not yet started.`,
-        422: `The pipeline an invalid`,
+        404: `Pipeline is not currently running because it has been shutdown or not yet started.`,
+        422: `Error parsing input data.`,
         500: `Request failed.`
       }
     })
@@ -203,8 +247,8 @@ export class PipelineService {
         pipeline_id: pipelineId
       },
       errors: {
-        400: `Specified \`pipeline_id\` is not a valid uuid.`,
-        404: `Specified \`pipeline_id\` does not exist in the database.`
+        400: `Specified pipeline id is not a valid uuid.`,
+        404: `Specified pipeline id does not exist in the database.`
       }
     })
   }
@@ -213,17 +257,17 @@ export class PipelineService {
    * Perform action on a pipeline.
    * Perform action on a pipeline.
    *
-   * - 'deploy': Run a new pipeline. Deploy a pipeline for the specified program
-   * and configuration. This is a synchronous endpoint, which sends a response
-   * once the pipeline has been initialized.
+   * - 'deploy': Deploy a pipeline for the specified program and configuration.
+   * This is a synchronous endpoint, which sends a response once the pipeline has
+   * been initialized.
+   * - 'start': Start a pipeline.
    * - 'pause': Pause the pipeline.
-   * - 'start': Resume the paused pipeline.
    * - 'shutdown': Terminate the execution of a pipeline. Sends a termination
    * request to the pipeline process. Returns immediately, without waiting for
    * the pipeline to terminate (which can take several seconds). The pipeline is
    * not deleted from the database, but its `status` is set to `shutdown`.
    * @param pipelineId Unique pipeline identifier
-   * @param action Pipeline action [run, start, pause, shutdown]
+   * @param action Pipeline action [deploy, start, pause, shutdown]
    * @returns string Performed a Pipeline action.
    * @throws ApiError
    */
@@ -236,8 +280,10 @@ export class PipelineService {
         action: action
       },
       errors: {
-        400: `Specified \`pipeline_id\` is not a valid uuid.`,
-        404: `Specified \`pipeline_id\` does not exist in the database.`
+        400: `The connectors in the config referenced a view that doesn't exist.`,
+        404: `Specified pipeline id does not exist in the database.`,
+        500: `Timeout waiting for the pipeline to initialize. Indicates an internal system error.`,
+        503: `Unable to start the pipeline before its program has been compiled.`
       }
     })
   }

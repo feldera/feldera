@@ -11,12 +11,13 @@ T = TypeVar("T", bound="ErrorResponse")
 
 @attr.s(auto_attribs=True)
 class ErrorResponse:
-    """Pipeline manager error response.
+    """Information returned by REST API endpoints on error.
 
     Attributes:
-        details (ErrorResponseDetails):
-        error_code (str):  Example: UnknownInputFormat.
-        message (str):  Example: Unknown input format 'xml'..
+        details (ErrorResponseDetails): Detailed error metadata.
+            The contents of this field is determined by `error_code`.
+        error_code (str): Error code is a string that specifies this error type. Example: UnknownInputFormat.
+        message (str): Human-readable error message. Example: Unknown input format 'xml'..
     """
 
     details: "ErrorResponseDetails"

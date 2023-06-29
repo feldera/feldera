@@ -4,9 +4,8 @@ import Card from '@mui/material/Card'
 import { DataGridPro, GridColumns, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { PipelineDescr, ProgramDescr, PipelineStatus, OpenAPI } from 'src/types/manager'
+import { PipelineDescr, PipelineStatus, OpenAPI, PipelineRevision } from 'src/types/manager'
 import { parse } from 'csv-parse'
-import { parseProjectSchema } from 'src/types/program'
 
 export type IntrospectionTableProps = {
   pipelineDescr: PipelineDescr | undefined
@@ -17,22 +16,27 @@ export const IntrospectionTable = ({ pipelineDescr, name }: IntrospectionTablePr
   const apiRef = useGridApiRef()
   const [headers, setHeaders] = useState<GridColumns | undefined>(undefined)
 
-  // Lookup the schema of the program
-  const projectQuery = useQuery<ProgramDescr>(['programStatus', { program_id: pipelineDescr?.program_id }], {
-    enabled: pipelineDescr !== undefined && pipelineDescr.program_id !== undefined
-  })
+  const pipelineRevisionQuery = useQuery<PipelineRevision>(
+    ['pipelineLastRevision', { pipeline_id: pipelineDescr?.pipeline_id }],
+    {
+      enabled: pipelineDescr !== undefined && pipelineDescr.program_id !== undefined
+    }
+  )
   useEffect(() => {
-    if (!projectQuery.isLoading && !projectQuery.isError && name) {
-      if (projectQuery.data && projectQuery.data.schema) {
-        const program = parseProjectSchema(projectQuery.data)
-        const view = program.schema['outputs'].find(v => v.name === name)
+    if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && name) {
+      if (pipelineRevisionQuery.data && pipelineRevisionQuery.data.program.schema) {
+        const pipelineRevision = pipelineRevisionQuery.data
+        const program = pipelineRevision.program
+        const tables = program.schema?.inputs.find(v => v.name === name)
+        const views = program.schema?.outputs.find(v => v.name === name)
+        const relation = tables || views // name is unique in the schema
 
-        if (view) {
+        if (relation) {
           const id = [{ field: 'genId', headerName: 'genId' }]
           setHeaders(
             id
               .concat(
-                view.fields.map((col: any) => {
+                relation.fields.map((col: any) => {
                   return { field: col.name, headerName: col.name, flex: 1 }
                 })
               )
@@ -41,7 +45,7 @@ export const IntrospectionTable = ({ pipelineDescr, name }: IntrospectionTablePr
         }
       }
     }
-  }, [projectQuery.isLoading, projectQuery.isError, projectQuery.data, setHeaders, name])
+  }, [pipelineRevisionQuery.isLoading, pipelineRevisionQuery.isError, pipelineRevisionQuery.data, setHeaders, name])
 
   // Stream changes from backend and update the table
   useEffect(() => {

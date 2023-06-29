@@ -3,6 +3,7 @@
 /* eslint-disable */
 
 import type { ProgramId } from './ProgramId'
+import type { ProgramSchema } from './ProgramSchema'
 import type { ProgramStatus } from './ProgramStatus'
 import type { Version } from './Version'
 
@@ -19,38 +20,7 @@ export type ProgramDescr = {
    */
   name: string
   program_id: ProgramId
-  /**
-   * A JSON description of the SQL tables and view declarations including
-   * field names and types.
-   *
-   * The schema is set/updated whenever the `status` field reaches >=
-   * `ProgramStatus::CompilingRust`.
-   *
-   * # Example
-   *
-   * The given SQL program:
-   *
-   * ```no_run
-   * CREATE TABLE USERS ( name varchar );
-   * CREATE VIEW OUTPUT_USERS as SELECT * FROM USERS;
-   * ```
-   *
-   * Would lead the following JSON string in `schema`:
-   *
-   * ```no_run
-   * {
-   * "inputs": [{
-   * "name": "USERS",
-   * "fields": [{ "name": "NAME", "type": "VARCHAR", "nullable": true }]
-   * }],
-   * "outputs": [{
-   * "name": "OUTPUT_USERS",
-   * "fields": [{ "name": "NAME", "type": "VARCHAR", "nullable": true }]
-   * }]
-   * }
-   * ```
-   */
-  schema?: string | null
+  schema?: ProgramSchema | null
   status: ProgramStatus
   version: Version
 }
