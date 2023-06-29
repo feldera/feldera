@@ -2,6 +2,8 @@
 
 #![allow(non_snake_case)]
 
+use like::{Like, Escape};
+
 pub fn concat_s_s(left: String, right: String) -> String {
     let result = format!("{}{}", left, right);
     result
@@ -62,4 +64,13 @@ pub fn trim_trailing(remove: String, value: String) -> String {
     // 'remove' always has exactly 1 character
     let chr = remove.chars().next().unwrap();
     value.trim_end_matches(chr).to_string()
+}
+
+pub fn like2(value: String, pattern: String) -> bool {
+    Like::<false>::like(value.as_str(), pattern.as_str()).unwrap()
+}
+
+pub fn like3(value: String, pattern: String, escape: String) -> bool {
+    let escaped = pattern.as_str().escape(escape.as_str()).unwrap();
+    Like::<true>::like(value.as_str(), escaped.as_str()).unwrap()
 }

@@ -38,13 +38,13 @@ SELECT 'foo'
 
 is equivalent to:
 
-```
+```sql
 SELECT 'foobar'
 ```
 
 but:
 
-```
+```sql
 SELECT 'foo'      'bar'
 ```
 
@@ -86,12 +86,50 @@ addition to the normal way of `''`.
     <td>String concatenation (infix)</td>
   </tr>
   <tr>
-    <td><code>trim ( [ LEADING | TRAILING | BOTH ]</code>` characters <code>FROM</code> string <code>)</code></td>
+    <td><code>trim ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
     <td>Remove the specified characters from the specified ends of the string argument</td>
   </tr>
   <tr>
     <td><code>substring (</code> string <code>[ FROM</code> start <code>] [ FOR</code> count<code> ] )</code></td>
     <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "count" characters if the value is specified. At least one of "start" or "count" must be provided.  If "start" is negative, it is replaced with 1.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
   </tr>
+  <tr>
+    <td><code>string LIKE pattern [ESCAPE escape-character]</code> and
+        <code>string NOT LIKE pattern [ESCAPE escape-character]</code></td>
+    <td>The LIKE expression returns true if the string matches the supplied pattern. (As expected, the NOT LIKE expression returns false if LIKE returns true.  See below for details.
+    </td>
+  </tr>
 </table>
 
+## `LIKE`
+
+string `LIKE` pattern [`ESCAPE` escape-character]
+
+string `NOT LIKE` pattern [`ESCAPE` escape-character]
+
+If pattern does not contain percent signs or underscores, then the
+pattern only represents the string itself; in that case `LIKE` acts
+like the equals operator. An underscore (`_`) in pattern stands for
+(matches) any single character; a percent sign (`%`) matches any
+sequence of zero or more characters.
+
+Some examples:
+
+```sql
+'abc' LIKE 'abc'    true
+'abc' LIKE 'a%'     true
+'abc' LIKE '_b_'    true
+'abc' LIKE 'c'      false
+```
+
+`LIKE` pattern matching always covers the entire string. Therefore, if
+it's desired to match a sequence anywhere within a string, the pattern
+must start and end with a percent sign.
+
+To match a literal underscore or percent sign without matching other
+characters, the respective character in pattern must be preceded by
+the escape character. The default escape character is the backslash
+but a different one can be selected by using the ESCAPE clause. To
+match the escape character itself, write two escape characters.  The
+escape character cannot be one of the special pattern characters `_`
+or `%`.

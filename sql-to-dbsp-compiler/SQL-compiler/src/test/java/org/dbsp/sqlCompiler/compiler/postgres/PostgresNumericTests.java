@@ -782,7 +782,7 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "       4.2 |         0 |       4.2 |       4.2 |       0.0\n" +
                 "       4.2 |         1 |       5.2 |       3.2 |       4.2\n" +
                 "       4.2 |        -1 |       3.2 |       5.2 |      -4.2\n" +
-                "       4.2 |       4.2 |       8.4 |       0.0 |     17.64\n");
+                "       4.2 |       4.2 |       8.4 |       0.0 |     17.64");
     }
 
     @Test
@@ -933,7 +933,7 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "         1 |        -1 |        1 |         1 |         1 |    1\n" +
                 "        -1 |         1 |        1 |        -1 |        -1 |   -1\n" +
                 "       4.2 |      -4.2 |      4.2 |         4 |         5 |    1\n" +
-                "    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1\n");
+                "    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1");
     }
 
     @Test
@@ -951,7 +951,7 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "         1 |         1 |       1.0 |         1 |       1.0\n" +
                 "        -1 |        -1 |      -1.0 |        -1 |      -1.0\n" +
                 "       4.2 |         4 |       4.2 |         4 |       4.2\n" +
-                "    -7.777 |        -8 |      -7.8 |        -7 |      -7.7\n");
+                "    -7.777 |        -8 |      -7.8 |        -7 |      -7.7");
     }
 
     // -- the large values fall into the numeric abbreviation code's maximal classes
@@ -990,7 +990,7 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "----------+-------------------\n" +
                 "        0 | 0.000000000000000\n" +
                 "        1 | 1.000000000000000\n" +
-                "      4.2 | 2.049390153191920\n");
+                "      4.2 | 2.049390153191920");
     }
 
     // TODO: Calcite thinks that sqrt(-1) should produce a runtime error

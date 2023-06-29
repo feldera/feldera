@@ -564,6 +564,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         "_" + keyword + type1.nullableSuffix();
                 return new DBSPApplyExpression(node, functionName, type, ops.get(1));
             }
+            case LIKE:
+            case SIMILAR: {
+                String functionName = call.getKind().toString().toLowerCase() + ops.size();
+                if (call.operands.size() == 2) {
+                    return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1));
+                } else if (call.operands.size() == 3) {
+                    return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1), ops.get(2));
+                } else {
+                    throw new UnimplementedException(node);
+                }
+            }
             case FLOOR:
             case CEIL: {
                 if (call.operands.size() == 2) {
@@ -590,13 +601,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     throw new UnimplementedException(node);
                 return new DBSPIndexExpression(node, ops.get(0), ops.get(1).cast(DBSPTypeUSize.INSTANCE), true);
             }
-            case TRIM:
+            case TRIM: {
                 if (call.operands.size() != 3)
                     throw new UnsupportedException(node);
                 DBSPKeywordLiteral keyword = ops.get(0).to(DBSPKeywordLiteral.class);
                 String functionName = call.getKind().toString().toLowerCase() + "_" +
                         keyword + type.nullableSuffix();
                 return new DBSPApplyExpression(node, functionName, type, ops.get(1), ops.get(2));
+            }
             case DOT:
             default:
                 throw new UnimplementedException(node);

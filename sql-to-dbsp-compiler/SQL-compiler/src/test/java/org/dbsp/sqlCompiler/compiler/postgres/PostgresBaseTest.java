@@ -122,7 +122,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         DBSPZSetLiteral.Contents result = DBSPZSetLiteral.Contents.emptyWithElementType(zset.elementType);
         DBSPTypeTuple tuple = zset.elementType.to(DBSPTypeTuple.class);
 
-        String[] lines = table.split("\n");
+        String[] lines = table.split("\n", -1);
         boolean inHeader = true;
         for (String line: lines) {
             if (line.startsWith("---")) {
