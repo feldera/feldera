@@ -7,12 +7,15 @@ use crate::{
     InputEndpointConfig, OutputEndpoint, OutputEndpointConfig, OutputQuery, PipelineConfig,
 };
 use actix_web::{
+    body::BoxBody,
     dev::{Server, ServiceFactory, ServiceRequest},
     get,
+    http::StatusCode,
     middleware::Logger,
     post, rt, web,
     web::{Data as WebData, Json, Payload, Query},
-    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
+    App, Error as ActixError, HttpRequest, HttpResponse, HttpResponseBuilder, HttpServer,
+    Responder, ResponseError,
 };
 use actix_web_static_files::ResourceFiles;
 use anyhow::Error as AnyError;
@@ -116,6 +119,25 @@ impl DetailedError for ApiError {
     }
 }
 
+impl ResponseError for ApiError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::PrometheusError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::MissingUrlEncodedParam { .. } => StatusCode::BAD_REQUEST,
+            Self::ApiConnectionLimit => StatusCode::TOO_MANY_REQUESTS,
+            Self::QuantileStreamingNotSupported => StatusCode::METHOD_NOT_ALLOWED,
+            Self::TableSnapshotNotImplemented => StatusCode::NOT_IMPLEMENTED,
+            Self::MissingNeighborhoodSpec => StatusCode::BAD_REQUEST,
+            Self::NumQuantilesOutOfRange { .. } => StatusCode::RANGE_NOT_SATISFIABLE,
+            Self::InvalidNeighborhoodSpec { .. } => StatusCode::BAD_REQUEST,
+        }
+    }
+
+    fn error_response(&self) -> HttpResponse<BoxBody> {
+        HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
+    }
+}
+
 struct ServerState {
     metadata: String,
     controller: Mutex<Option<Controller>>,
@@ -191,34 +213,25 @@ impl ErrorResponse {
     }
 }
 
-fn http_resp_from_controller_error(error: &ControllerError) -> HttpResponse {
-    match error {
-        ControllerError::Config {
-            config_error: ConfigError::UnknownInputStream { .. },
-        } => HttpResponse::NotFound(),
-        ControllerError::Config {
-            config_error: ConfigError::UnknownOutputStream { .. },
-        } => HttpResponse::NotFound(),
-        ControllerError::Config { .. } => HttpResponse::BadRequest(),
-        ControllerError::ParseError { .. } => HttpResponse::BadRequest(),
-        ControllerError::PipelineTerminating { .. } => HttpResponse::NotFound(),
-        _ => HttpResponse::InternalServerError(),
+impl ResponseError for ControllerError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::Config {
+                config_error: ConfigError::UnknownInputStream { .. },
+            } => StatusCode::NOT_FOUND,
+            Self::Config {
+                config_error: ConfigError::UnknownOutputStream { .. },
+            } => StatusCode::NOT_FOUND,
+            Self::Config { .. } => StatusCode::BAD_REQUEST,
+            Self::ParseError { .. } => StatusCode::BAD_REQUEST,
+            Self::PipelineTerminating { .. } => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
     }
-    .json(ErrorResponse::from_error(error))
-}
 
-fn http_resp_from_api_error(error: &ApiError) -> HttpResponse {
-    match error {
-        ApiError::PrometheusError { .. } => HttpResponse::InternalServerError(),
-        ApiError::MissingUrlEncodedParam { .. } => HttpResponse::BadRequest(),
-        ApiError::ApiConnectionLimit => HttpResponse::TooManyRequests(),
-        ApiError::QuantileStreamingNotSupported => HttpResponse::MethodNotAllowed(),
-        ApiError::TableSnapshotNotImplemented => HttpResponse::NotImplemented(),
-        ApiError::MissingNeighborhoodSpec => HttpResponse::BadRequest(),
-        ApiError::NumQuantilesOutOfRange { .. } => HttpResponse::RangeNotSatisfiable(),
-        ApiError::InvalidNeighborhoodSpec { .. } => HttpResponse::BadRequest(),
+    fn error_response(&self) -> HttpResponse<BoxBody> {
+        HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
     }
-    .json(ErrorResponse::from_error(error))
 }
 
 #[derive(Parser, Debug)]
@@ -265,7 +278,7 @@ where
     let yaml_config = std::fs::read(&args.config_file).map_err(|e| {
         ControllerError::io_error(
             format!("reading configuration file '{}'", args.config_file),
-            &e,
+            e,
         )
     })?;
     let yaml_config = String::from_utf8(yaml_config)
@@ -295,7 +308,7 @@ where
         None => String::new(),
         Some(metadata_file) => {
             let meta = std::fs::read(&metadata_file).map_err(|e| {
-                ControllerError::io_error(format!("reading metadata file '{}'", metadata_file), &e)
+                ControllerError::io_error(format!("reading metadata file '{}'", metadata_file), e)
             })?;
             String::from_utf8(meta).map_err(|e| {
                 ControllerError::config_parse_error(&format!(
@@ -337,10 +350,10 @@ where
         info!("Started HTTP server on port {port}");
         tokio::fs::write(SERVER_PORT_FILE, format!("{}\n", port))
             .await
-            .map_err(|e| ControllerError::io_error("writing server port file".to_string(), &e))?;
+            .map_err(|e| ControllerError::io_error("writing server port file".to_string(), e))?;
         server
             .await
-            .map_err(|e| ControllerError::io_error("in the HTTP server".to_string(), &e))
+            .map_err(|e| ControllerError::io_error("in the HTTP server".to_string(), e))
     })?;
     Ok(())
 }
@@ -369,9 +382,9 @@ where
     let listener = match default_port {
         Some(port) => TcpListener::bind(("127.0.0.1", port))
             .or_else(|_| TcpListener::bind(("127.0.0.1", 0)))
-            .map_err(|e| ControllerError::io_error(format!("binding to TCP port {port}"), &e))?,
+            .map_err(|e| ControllerError::io_error(format!("binding to TCP port {port}"), e))?,
         None => TcpListener::bind(("127.0.0.1", 0))
-            .map_err(|e| ControllerError::io_error("binding to TCP port".to_string(), &e))?,
+            .map_err(|e| ControllerError::io_error("binding to TCP port".to_string(), e))?,
     };
 
     let port = listener
@@ -379,7 +392,7 @@ where
         .map_err(|e| {
             ControllerError::io_error(
                 "retrieving local socket address of the TCP listener".to_string(),
-                &e,
+                e,
             )
         })?
         .port();
@@ -396,7 +409,7 @@ where
             .workers(1)
             .listen(listener)
             .map_err(|e| {
-                ControllerError::io_error("binding server to the listener".to_string(), &e)
+                ControllerError::io_error("binding server to the listener".to_string(), e)
             })?
             .run();
 
@@ -443,9 +456,9 @@ async fn start(state: WebData<ServerState>) -> impl Responder {
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
             controller.start();
-            HttpResponse::Ok().json("The pipeline is running")
+            Ok(HttpResponse::Ok().json("The pipeline is running"))
         }
-        None => http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
+        None => Err(ControllerError::pipeline_terminating()),
     }
 }
 
@@ -454,9 +467,9 @@ async fn pause(state: WebData<ServerState>) -> impl Responder {
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
             controller.pause();
-            HttpResponse::Ok().json("Pipeline paused")
+            Ok(HttpResponse::Ok().json("Pipeline paused"))
         }
-        None => http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
+        None => Err(ControllerError::pipeline_terminating()),
     }
 }
 
@@ -465,11 +478,11 @@ async fn stats(state: WebData<ServerState>) -> impl Responder {
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
             let json_string = serde_json::to_string(controller.status()).unwrap();
-            HttpResponse::Ok()
+            Ok(HttpResponse::Ok()
                 .content_type(mime::APPLICATION_JSON)
-                .body(json_string)
+                .body(json_string))
         }
-        None => http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
+        None => Err(ControllerError::pipeline_terminating()),
     }
 }
 
@@ -481,11 +494,12 @@ async fn metrics(state: WebData<ServerState>) -> impl Responder {
             Ok(metrics) => HttpResponse::Ok()
                 .content_type(mime::TEXT_PLAIN)
                 .body(metrics),
-            Err(e) => http_resp_from_api_error(&ApiError::PrometheusError {
+            Err(e) => ApiError::PrometheusError {
                 error: e.to_string(),
-            }),
+            }
+            .error_response(),
         },
-        None => http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
+        None => ControllerError::pipeline_terminating().error_response(),
     }
 }
 
@@ -501,9 +515,9 @@ async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
             controller.dump_profile();
-            HttpResponse::Ok().json("Profile dump initiated")
+            Ok(HttpResponse::Ok().json("Profile dump initiated"))
         }
-        None => http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
+        None => Err(ControllerError::pipeline_terminating()),
     }
 }
 
@@ -519,12 +533,12 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
                 if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
                     warn!("Failed to remove server port file: {e}");
                 }
-                HttpResponse::Ok().json("Pipeline terminated")
+                Ok(HttpResponse::Ok().json("Pipeline terminated"))
             }
-            Err(e) => http_resp_from_controller_error(&e),
+            Err(e) => Err(e),
         }
     } else {
-        HttpResponse::Ok().json("Pipeline already terminated")
+        Ok(HttpResponse::Ok().json("Pipeline already terminated"))
     }
 }
 
@@ -546,9 +560,10 @@ async fn input_endpoint(
     debug!("{req:?}");
     let table_name = match req.match_info().get("table_name") {
         None => {
-            return http_resp_from_api_error(&ApiError::MissingUrlEncodedParam {
+            return ApiError::MissingUrlEncodedParam {
                 param: "table_name",
-            })
+            }
+            .error_response()
         }
         Some(table_name) => table_name.to_string(),
     };
@@ -575,7 +590,7 @@ async fn input_endpoint(
     let endpoint_id = match &*state.controller.lock().unwrap() {
         Some(controller) => {
             if controller.register_api_connection().is_err() {
-                return http_resp_from_api_error(&ApiError::ApiConnectionLimit);
+                return ApiError::ApiConnectionLimit.error_response();
             }
 
             match controller.add_input_endpoint(
@@ -590,12 +605,12 @@ async fn input_endpoint(
                 Err(e) => {
                     controller.unregister_api_connection();
                     debug!("Failed to create API endpoint: '{e}'");
-                    return http_resp_from_controller_error(&e);
+                    return e.error_response();
                 }
             }
         }
         None => {
-            return http_resp_from_controller_error(&ControllerError::pipeline_terminating());
+            return ControllerError::pipeline_terminating().error_response();
         }
     };
 
@@ -603,7 +618,7 @@ async fn input_endpoint(
     let response = endpoint
         .complete_request(payload)
         .await
-        .unwrap_or_else(|e| http_resp_from_controller_error(&e));
+        .unwrap_or_else(|e| e.error_response());
     drop(endpoint);
 
     // Delete endpoint on completion/error.
@@ -677,9 +692,10 @@ async fn output_endpoint(
 
     let table_name = match req.match_info().get("table_name") {
         None => {
-            return http_resp_from_api_error(&ApiError::MissingUrlEncodedParam {
+            return ApiError::MissingUrlEncodedParam {
                 param: "table_name",
-            })
+            }
+            .error_response()
         }
         Some(table_name) => table_name.to_string(),
     };
@@ -687,24 +703,25 @@ async fn output_endpoint(
     // Check for unsupported combinations.
     match (args.mode, args.query) {
         (EgressMode::Watch, OutputQuery::Quantiles) => {
-            return http_resp_from_api_error(&ApiError::QuantileStreamingNotSupported);
+            return ApiError::QuantileStreamingNotSupported.error_response();
         }
         (EgressMode::Snapshot, OutputQuery::Table) => {
-            return http_resp_from_api_error(&ApiError::TableSnapshotNotImplemented);
+            return ApiError::TableSnapshotNotImplemented.error_response();
         }
         _ => {}
     };
 
     if args.query == OutputQuery::Neighborhood {
         if body.is_none() {
-            return http_resp_from_api_error(&ApiError::MissingNeighborhoodSpec);
+            return ApiError::MissingNeighborhoodSpec.error_response();
         }
     } else if args.query == OutputQuery::Quantiles
         && (args.quantiles as usize > MAX_QUANTILES || args.quantiles == 0)
     {
-        return http_resp_from_api_error(&ApiError::NumQuantilesOutOfRange {
+        return ApiError::NumQuantilesOutOfRange {
             quantiles: args.quantiles,
-        });
+        }
+        .error_response();
     }
 
     // Generate endpoint name depending on the query and output mode.
@@ -749,7 +766,7 @@ async fn output_endpoint(
     match &*state.controller.lock().unwrap() {
         Some(controller) => {
             if controller.register_api_connection().is_err() {
-                return http_resp_from_api_error(&ApiError::ApiConnectionLimit);
+                return ApiError::ApiConnectionLimit.error_response();
             }
 
             let endpoint_id = match controller.add_output_endpoint(
@@ -763,7 +780,7 @@ async fn output_endpoint(
                 Ok(endpoint_id) => endpoint_id,
                 Err(e) => {
                     controller.unregister_api_connection();
-                    return http_resp_from_controller_error(&e);
+                    return e.error_response();
                 }
             };
 
@@ -815,10 +832,11 @@ async fn output_endpoint(
                     {
                         // Dropping `response` triggers the finalizer closure, which will
                         // disconnect this endpoint.
-                        return http_resp_from_api_error(&ApiError::InvalidNeighborhoodSpec {
+                        return ApiError::InvalidNeighborhoodSpec {
                             spec: body.into_inner(),
                             parse_error: e.to_string(),
-                        });
+                        }
+                        .error_response();
                     }
                     controller.request_step();
                 }
@@ -837,7 +855,7 @@ async fn output_endpoint(
                 OutputQuery::Table => {}
             }
         }
-        None => return http_resp_from_controller_error(&ControllerError::pipeline_terminating()),
+        None => return ControllerError::pipeline_terminating().error_response(),
     };
 
     response
