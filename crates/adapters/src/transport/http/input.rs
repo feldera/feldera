@@ -153,7 +153,7 @@ impl HttpInputEndpoint {
                         Ok(Some(Ok(bytes))) => {
                             num_bytes += bytes.len();
                             if let Err(e) = self.push_bytes(&bytes) {
-                                return Err(ControllerError::parse_error(self.name(), &e));
+                                return Err(ControllerError::parse_error(self.name(), e));
                             }
                         }
                         Ok(Some(Err(e))) => {
@@ -166,7 +166,7 @@ impl HttpInputEndpoint {
                         }
                         Ok(None) => {
                             if let Err(e) = self.eoi() {
-                                return Err(ControllerError::parse_error(self.name(), &e));
+                                return Err(ControllerError::parse_error(self.name(), e));
                             }
                             break;
                         }
