@@ -4,7 +4,6 @@ use super::{
 };
 use super::{ApiPermission, PipelineDescr};
 use crate::auth::{self, TenantId, TenantRecord};
-use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use openssl::sha::{self};
 use pretty_assertions::assert_eq;
@@ -18,6 +17,8 @@ use std::time::SystemTime;
 use std::vec;
 use tokio::sync::Mutex;
 use uuid::Uuid;
+
+type DBResult<T> = Result<T, DBError>;
 
 struct DbHandle {
     db: ProjectDB,
@@ -204,7 +205,7 @@ async fn duplicate_program() {
         )
         .await
         .expect_err("Expecting unique violation");
-    let expected = anyhow::anyhow!(DBError::DuplicateName);
+    let expected = DBError::DuplicateName;
     assert_eq!(format!("{}", res), format!("{}", expected));
 }
 
@@ -535,9 +536,8 @@ async fn save_api_key() {
         assert_eq!(&ApiPermission::Write, scopes.1.get(1).unwrap());
 
         let api_key_2 = auth::generate_api_key();
-        let failure = handle.db.validate_api_key(api_key_2).await.unwrap_err();
-        let err = failure.downcast_ref::<DBError>();
-        assert!(matches!(err, Some(DBError::InvalidKey)));
+        let err = handle.db.validate_api_key(api_key_2).await.unwrap_err();
+        assert!(matches!(err, DBError::InvalidKey));
     }
 }
 
@@ -654,7 +654,7 @@ enum StorageAction {
     ValidateApiKey(TenantId, String),
 }
 
-fn check_responses<T: Debug + PartialEq>(step: usize, model: AnyResult<T>, impl_: AnyResult<T>) {
+fn check_responses<T: Debug + PartialEq>(step: usize, model: DBResult<T>, impl_: DBResult<T>) {
     match (model, impl_) {
         (Ok(mr), Ok(ir)) => assert_eq!(mr, ir),
         (Err(me), Ok(ir)) => {
@@ -674,7 +674,7 @@ fn check_responses<T: Debug + PartialEq>(step: usize, model: AnyResult<T>, impl_
 }
 
 // Compare everything except the `created` field which gets set inside the DB..
-fn compare_pipeline(step: usize, model: AnyResult<PipelineDescr>, impl_: AnyResult<PipelineDescr>) {
+fn compare_pipeline(step: usize, model: DBResult<PipelineDescr>, impl_: DBResult<PipelineDescr>) {
     match (model, impl_) {
         (Ok(mut mr), Ok(mut ir)) => {
             mr.created = None;
@@ -718,7 +718,7 @@ async fn create_tenants_if_not_exists(
     model: &Mutex<DbModel>,
     handle: &DbHandle,
     tenant_id: TenantId,
-) -> AnyResult<()> {
+) -> DBResult<()> {
     let mut m = model.lock().await;
     if !m.tenants.contains_key(&tenant_id) {
         let rec = TenantRecord {
@@ -1016,7 +1016,7 @@ struct DbModel {
 
 #[async_trait]
 impl Storage for Mutex<DbModel> {
-    async fn reset_program_status(&self) -> anyhow::Result<()> {
+    async fn reset_program_status(&self) -> Result<(), DBError> {
         self.lock()
             .await
             .programs
@@ -1029,7 +1029,7 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn list_programs(&self, tenant_id: TenantId) -> anyhow::Result<Vec<ProgramDescr>> {
+    async fn list_programs(&self, tenant_id: TenantId) -> DBResult<Vec<ProgramDescr>> {
         let s = self.lock().await;
         Ok(s.programs
             .iter()
@@ -1042,12 +1042,12 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         program_id: super::ProgramId,
-    ) -> anyhow::Result<(ProgramDescr, String)> {
+    ) -> DBResult<(ProgramDescr, String)> {
         let s = self.lock().await;
         s.programs
             .get(&(tenant_id, program_id))
             .map(|(p, c, _e)| (p.clone(), c.clone()))
-            .ok_or(anyhow::anyhow!(DBError::UnknownProgram { program_id }))
+            .ok_or(DBError::UnknownProgram { program_id })
     }
 
     async fn new_program(
@@ -1057,12 +1057,12 @@ impl Storage for Mutex<DbModel> {
         program_name: &str,
         program_description: &str,
         program_code: &str,
-    ) -> anyhow::Result<(super::ProgramId, super::Version)> {
+    ) -> DBResult<(super::ProgramId, super::Version)> {
         let mut s = self.lock().await;
         if s.programs.keys().any(|k| k.1 == ProgramId(id)) {
-            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation {
-                constraint: "program_pkey"
-            }));
+            return Err(DBError::UniqueKeyViolation {
+                constraint: "program_pkey",
+            });
         }
         if s.programs
             .iter()
@@ -1070,7 +1070,7 @@ impl Storage for Mutex<DbModel> {
             .map(|k| k.1 .0.clone())
             .any(|p| p.name == program_name)
         {
-            return Err(anyhow::anyhow!(DBError::DuplicateName));
+            return Err(DBError::DuplicateName);
         }
 
         let program_id = ProgramId(id);
@@ -1102,10 +1102,10 @@ impl Storage for Mutex<DbModel> {
         program_name: &str,
         program_description: &str,
         program_code: &Option<String>,
-    ) -> anyhow::Result<super::Version> {
+    ) -> DBResult<super::Version> {
         let mut s = self.lock().await;
         if !s.programs.contains_key(&(tenant_id, program_id)) {
-            return Err(anyhow::anyhow!(DBError::UnknownProgram { program_id }));
+            return Err(DBError::UnknownProgram { program_id });
         }
 
         if s.programs
@@ -1114,7 +1114,7 @@ impl Storage for Mutex<DbModel> {
             .map(|k| k.1 .0.clone())
             .any(|p| p.name == program_name && p.program_id != program_id)
         {
-            return Err(anyhow::anyhow!(DBError::DuplicateName));
+            return Err(DBError::DuplicateName);
         }
 
         s.programs
@@ -1132,14 +1132,14 @@ impl Storage for Mutex<DbModel> {
                 }
                 p.version
             })
-            .ok_or(anyhow::anyhow!(DBError::UnknownProgram { program_id }))
+            .ok_or(DBError::UnknownProgram { program_id })
     }
 
     async fn get_program_if_exists(
         &self,
         tenant_id: TenantId,
         program_id: super::ProgramId,
-    ) -> anyhow::Result<Option<ProgramDescr>> {
+    ) -> DBResult<Option<ProgramDescr>> {
         let s = self.lock().await;
         Ok(s.programs
             .get(&(tenant_id, program_id))
@@ -1150,7 +1150,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         program_name: &str,
-    ) -> anyhow::Result<Option<ProgramDescr>> {
+    ) -> DBResult<Option<ProgramDescr>> {
         let s = self.lock().await;
         Ok(s.programs
             .iter()
@@ -1168,7 +1168,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         program_id: super::ProgramId,
         status: ProgramStatus,
-    ) -> anyhow::Result<()> {
+    ) -> DBResult<()> {
         let mut s = self.lock().await;
         let _r = s
             .programs
@@ -1189,7 +1189,7 @@ impl Storage for Mutex<DbModel> {
         program_id: super::ProgramId,
         expected_version: super::Version,
         status: ProgramStatus,
-    ) -> anyhow::Result<()> {
+    ) -> DBResult<()> {
         let mut s = self.lock().await;
         s.programs
             .get_mut(&(tenant_id, program_id))
@@ -1199,7 +1199,7 @@ impl Storage for Mutex<DbModel> {
                     *t = SystemTime::now();
                 }
             })
-            .ok_or(anyhow::anyhow!(DBError::UnknownProgram { program_id }))
+            .ok_or(DBError::UnknownProgram { program_id })
     }
 
     async fn set_program_schema(
@@ -1207,7 +1207,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         program_id: super::ProgramId,
         schema: String,
-    ) -> anyhow::Result<()> {
+    ) -> DBResult<()> {
         let mut s = self.lock().await;
         let _r = s
             .programs
@@ -1223,12 +1223,12 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         program_id: super::ProgramId,
-    ) -> anyhow::Result<()> {
+    ) -> DBResult<()> {
         let mut s = self.lock().await;
         s.programs
             .remove(&(tenant_id, program_id))
             .map(|_| ())
-            .ok_or(anyhow::anyhow!(DBError::UnknownProgram { program_id }))?;
+            .ok_or(DBError::UnknownProgram { program_id })?;
         // Foreign key delete:
         s.pipelines.retain(|_, c| c.program_id != Some(program_id));
 
@@ -1237,7 +1237,7 @@ impl Storage for Mutex<DbModel> {
 
     async fn next_job(
         &self,
-    ) -> anyhow::Result<Option<(super::TenantId, super::ProgramId, super::Version)>> {
+    ) -> DBResult<Option<(super::TenantId, super::ProgramId, super::Version)>> {
         let s = self.lock().await;
         let mut values: Vec<(&(TenantId, ProgramId), &(ProgramDescr, String, SystemTime))> =
             Vec::from_iter(s.programs.iter());
@@ -1260,15 +1260,15 @@ impl Storage for Mutex<DbModel> {
         config: &str,
         // TODO: not clear why connectors is an option here
         connectors: &Option<Vec<AttachedConnector>>,
-    ) -> anyhow::Result<(super::PipelineId, super::Version)> {
+    ) -> DBResult<(super::PipelineId, super::Version)> {
         let mut s = self.lock().await;
         let db_connectors = s.connectors.clone();
 
         // UUIDs are global
         if s.pipelines.keys().any(|k| k.1 == PipelineId(id)) {
-            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation {
-                constraint: "pipeline_pkey"
-            }));
+            return Err(DBError::UniqueKeyViolation {
+                constraint: "pipeline_pkey",
+            });
         }
         // UNIQUE constraint on name
         if s.pipelines
@@ -1282,7 +1282,7 @@ impl Storage for Mutex<DbModel> {
         // Model the foreign key constraint on `program_id`
         if let Some(program_id) = program_id {
             if !s.programs.contains_key(&(tenant_id, program_id)) {
-                return Err(anyhow::anyhow!(DBError::UnknownProgram { program_id }));
+                return Err(DBError::UnknownProgram { program_id });
             }
         }
 
@@ -1290,7 +1290,7 @@ impl Storage for Mutex<DbModel> {
         if let Some(connectors) = connectors {
             for ac in connectors {
                 if new_acs.iter().any(|nac| nac.name == ac.name) {
-                    return Err(anyhow::anyhow!(DBError::DuplicateName));
+                    return Err(DBError::DuplicateName);
                 }
 
                 // We ensure that in all pipelines there is no attached
@@ -1302,15 +1302,15 @@ impl Storage for Mutex<DbModel> {
                     .iter()
                     .any(|eac| eac.name == ac.name)
                 {
-                    return Err(anyhow::anyhow!(DBError::DuplicateName));
+                    return Err(DBError::DuplicateName);
                 }
 
                 // Check that all attached connectors point to a valid
                 // connector_id
                 if !db_connectors.contains_key(&(tenant_id, ac.connector_id)) {
-                    return Err(anyhow::anyhow!(DBError::UnknownConnector {
-                        connector_id: ac.connector_id
-                    }));
+                    return Err(DBError::UnknownConnector {
+                        connector_id: ac.connector_id,
+                    });
                 }
 
                 new_acs.push(ac.clone());
@@ -1347,7 +1347,7 @@ impl Storage for Mutex<DbModel> {
         pipeline_description: &str,
         config: &Option<String>,
         connectors: &Option<Vec<AttachedConnector>>,
-    ) -> anyhow::Result<Version> {
+    ) -> DBResult<Version> {
         let mut s = self.lock().await;
         let db_connectors = s.connectors.clone();
         let db_programs = s.programs.clone();
@@ -1355,7 +1355,7 @@ impl Storage for Mutex<DbModel> {
         // pipeline must exist
         s.pipelines
             .get_mut(&(tenant_id, pipeline_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline { pipeline_id }))?;
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
         // UNIQUE constraint on name
         if let Some(c) = s
             .pipelines
@@ -1373,7 +1373,7 @@ impl Storage for Mutex<DbModel> {
         if let Some(connectors) = connectors {
             for ac in connectors {
                 if new_acs.iter().any(|nac| nac.name == ac.name) {
-                    return Err(anyhow::anyhow!(DBError::DuplicateName));
+                    return Err(DBError::DuplicateName);
                 }
 
                 // We ensure that in all pipelines there is no attached
@@ -1385,15 +1385,15 @@ impl Storage for Mutex<DbModel> {
                     .iter()
                     .any(|eac| eac.name == ac.name)
                 {
-                    return Err(anyhow::anyhow!(DBError::DuplicateName));
+                    return Err(DBError::DuplicateName);
                 }
 
                 // Check that all attached connectors point to a valid
                 // connector_id
                 if !db_connectors.contains_key(&(tenant_id, ac.connector_id)) {
-                    return Err(anyhow::anyhow!(DBError::UnknownConnector {
-                        connector_id: ac.connector_id
-                    }));
+                    return Err(DBError::UnknownConnector {
+                        connector_id: ac.connector_id,
+                    });
                 }
 
                 new_acs.push(ac.clone());
@@ -1402,21 +1402,21 @@ impl Storage for Mutex<DbModel> {
         // Check program exists foreign key constraint
         if let Some(program_id) = program_id {
             if !db_programs.contains_key(&(tenant_id, program_id)) {
-                return Err(anyhow::anyhow!(DBError::UnknownProgram { program_id }));
+                return Err(DBError::UnknownProgram { program_id });
             }
         }
 
         let c = s
             .pipelines
             .get_mut(&(tenant_id, pipeline_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline { pipeline_id }))?;
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
 
         // Foreign key constraint on `program_id`
         if let Some(program_id) = program_id {
             if db_programs.contains_key(&(tenant_id, program_id)) {
                 c.program_id = Some(program_id);
             } else {
-                return Err(anyhow::anyhow!(DBError::UnknownProgram { program_id }));
+                return Err(DBError::UnknownProgram { program_id });
             }
         } else {
             c.program_id = None;
@@ -1437,11 +1437,11 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         pipeline_id: super::PipelineId,
-    ) -> anyhow::Result<()> {
+    ) -> DBResult<()> {
         let mut s = self.lock().await;
         s.pipelines
             .remove(&(tenant_id, pipeline_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline { pipeline_id }))?;
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
 
         Ok(())
     }
@@ -1451,7 +1451,7 @@ impl Storage for Mutex<DbModel> {
         _tenant_id: TenantId,
         _pipeline_id: PipelineId,
         _name: &str,
-    ) -> anyhow::Result<bool> {
+    ) -> DBResult<bool> {
         todo!()
     }
 
@@ -1460,12 +1460,12 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: super::PipelineId,
         port: u16,
-    ) -> anyhow::Result<()> {
+    ) -> DBResult<()> {
         let mut s = self.lock().await;
         let p = s
             .pipelines
             .get_mut(&(tenant_id, pipeline_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline { pipeline_id }))?;
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
 
         p.port = port;
         p.status = PipelineStatus::Deployed;
@@ -1478,7 +1478,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: super::PipelineId,
         status: PipelineStatus,
-    ) -> anyhow::Result<bool> {
+    ) -> DBResult<bool> {
         let mut s = self.lock().await;
         Ok(s.pipelines
             .get_mut(&(tenant_id, pipeline_id))
@@ -1493,7 +1493,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         pipeline_id: super::PipelineId,
-    ) -> anyhow::Result<bool> {
+    ) -> DBResult<bool> {
         let mut s = self.lock().await;
         // TODO: Our APIs sometimes are not consistent we return a bool here but
         // other calls fail silently on delete/lookups
@@ -1507,32 +1507,29 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         pipeline_id: super::PipelineId,
-    ) -> anyhow::Result<super::PipelineDescr> {
+    ) -> DBResult<super::PipelineDescr> {
         let s = self.lock().await;
         s.pipelines
             .get(&(tenant_id, pipeline_id))
             .cloned()
-            .ok_or(anyhow::anyhow!(DBError::UnknownPipeline { pipeline_id }))
+            .ok_or(DBError::UnknownPipeline { pipeline_id })
     }
 
     async fn get_pipeline_by_name(
         &self,
         tenant_id: TenantId,
         name: String,
-    ) -> anyhow::Result<super::PipelineDescr> {
+    ) -> DBResult<super::PipelineDescr> {
         let s = self.lock().await;
         s.pipelines
             .iter()
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
             .find(|p| p.name == name)
-            .ok_or(anyhow::anyhow!(DBError::UnknownName { name }))
+            .ok_or(DBError::UnknownName { name })
     }
 
-    async fn list_pipelines(
-        &self,
-        tenant_id: TenantId,
-    ) -> anyhow::Result<Vec<super::PipelineDescr>> {
+    async fn list_pipelines(&self, tenant_id: TenantId) -> DBResult<Vec<super::PipelineDescr>> {
         Ok(self
             .lock()
             .await
@@ -1550,12 +1547,12 @@ impl Storage for Mutex<DbModel> {
         name: &str,
         description: &str,
         config: &str,
-    ) -> anyhow::Result<super::ConnectorId> {
+    ) -> DBResult<super::ConnectorId> {
         let mut s = self.lock().await;
         if s.connectors.keys().any(|k| k.1 == ConnectorId(id)) {
-            return Err(anyhow::anyhow!(DBError::UniqueKeyViolation {
-                constraint: "connector_pkey"
-            }));
+            return Err(DBError::UniqueKeyViolation {
+                constraint: "connector_pkey",
+            });
         }
         if s.connectors
             .iter()
@@ -1579,7 +1576,7 @@ impl Storage for Mutex<DbModel> {
         Ok(connector_id)
     }
 
-    async fn list_connectors(&self, tenant_id: TenantId) -> anyhow::Result<Vec<ConnectorDescr>> {
+    async fn list_connectors(&self, tenant_id: TenantId) -> DBResult<Vec<ConnectorDescr>> {
         let s = self.lock().await;
         Ok(s.connectors
             .iter()
@@ -1592,26 +1589,26 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         connector_id: super::ConnectorId,
-    ) -> anyhow::Result<ConnectorDescr> {
+    ) -> DBResult<ConnectorDescr> {
         let s = self.lock().await;
         s.connectors
             .get(&(tenant_id, connector_id))
             .cloned()
-            .ok_or(anyhow::anyhow!(DBError::UnknownConnector { connector_id }))
+            .ok_or(DBError::UnknownConnector { connector_id })
     }
 
     async fn get_connector_by_name(
         &self,
         tenant_id: TenantId,
         name: String,
-    ) -> anyhow::Result<ConnectorDescr> {
+    ) -> DBResult<ConnectorDescr> {
         let s = self.lock().await;
         s.connectors
             .iter()
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
             .find(|c| c.name == name)
-            .ok_or(anyhow::anyhow!(DBError::UnknownName { name }))
+            .ok_or(DBError::UnknownName { name })
     }
 
     async fn update_connector(
@@ -1621,7 +1618,7 @@ impl Storage for Mutex<DbModel> {
         connector_name: &str,
         description: &str,
         config: &Option<String>,
-    ) -> anyhow::Result<()> {
+    ) -> DBResult<()> {
         let mut s = self.lock().await;
         // `connector_id` needs to exist
         if s.connectors.get(&(tenant_id, connector_id)).is_none() {
@@ -1644,7 +1641,7 @@ impl Storage for Mutex<DbModel> {
         let c = s
             .connectors
             .get_mut(&(tenant_id, connector_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownConnector { connector_id }))?;
+            .ok_or(DBError::UnknownConnector { connector_id })?;
         c.name = connector_name.to_owned();
         c.description = description.to_owned();
         if let Some(config) = config {
@@ -1657,11 +1654,11 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         connector_id: super::ConnectorId,
-    ) -> anyhow::Result<()> {
+    ) -> DBResult<()> {
         let mut s = self.lock().await;
         s.connectors
             .remove(&(tenant_id, connector_id))
-            .ok_or(anyhow::anyhow!(DBError::UnknownConnector { connector_id }))?;
+            .ok_or(DBError::UnknownConnector { connector_id })?;
         s.pipelines.values_mut().for_each(|c| {
             c.attached_connectors
                 .retain(|c| c.connector_id != connector_id);
@@ -1674,7 +1671,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         key: String,
         permissions: Vec<ApiPermission>,
-    ) -> AnyResult<()> {
+    ) -> DBResult<()> {
         let mut s = self.lock().await;
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
@@ -1683,11 +1680,11 @@ impl Storage for Mutex<DbModel> {
             e.insert((tenant_id, permissions));
             Ok(())
         } else {
-            Err(anyhow::anyhow!(DBError::DuplicateKey))
+            Err(DBError::DuplicateKey)
         }
     }
 
-    async fn validate_api_key(&self, key: String) -> AnyResult<(TenantId, Vec<ApiPermission>)> {
+    async fn validate_api_key(&self, key: String) -> DBResult<(TenantId, Vec<ApiPermission>)> {
         let s = self.lock().await;
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
@@ -1695,7 +1692,7 @@ impl Storage for Mutex<DbModel> {
         let record = s.api_keys.get(&hash);
         match record {
             Some(record) => Ok((record.0, record.1.clone())),
-            None => Err(anyhow::anyhow!(DBError::InvalidKey)),
+            None => Err(DBError::InvalidKey),
         }
     }
 
@@ -1703,7 +1700,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         _tenant_name: String,
         _provider: String,
-    ) -> AnyResult<TenantId> {
+    ) -> DBResult<TenantId> {
         todo!("For model-based tests, we generate the TenantID using proptest, as opposed to generating a claim that we then get or create an ID for");
     }
 
@@ -1712,7 +1709,7 @@ impl Storage for Mutex<DbModel> {
         _tenant_id: Uuid,
         _tenant_name: String,
         _provider: String,
-    ) -> AnyResult<TenantId> {
+    ) -> DBResult<TenantId> {
         todo!("For model-based tests, we generate the TenantID using proptest, as opposed to generating a claim that we then get or create an ID for");
     }
 }
