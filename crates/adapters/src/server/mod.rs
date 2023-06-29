@@ -200,15 +200,22 @@ impl ErrorResponse {
     {
         let message = error.to_string();
         let error_code = error.error_code();
+        let details = serde_json::to_value(error).unwrap_or_else(|e| {
+            JsonValue::String(format!("Failed to serialize error. Details: '{e}'"))
+        });
 
         error!("[HTTP error response] {error_code}: {message}");
+        // Uncomment this when all pipeline manager errors implement `ResponseError`
+        // if error.status_code() == StatusCode::INTERNAL_SERVER_ERROR {
+            if let Some(backtrace) = details.get("backtrace").and_then(JsonValue::as_str) {
+                error!("Error backtrace:\n{backtrace}");
+            }
+        // }
 
         Self {
             message,
             error_code,
-            details: serde_json::to_value(error).unwrap_or_else(|e| {
-                JsonValue::String(format!("Failed to serialize error. Details: '{e}'"))
-            }),
+            details,
         }
     }
 }
