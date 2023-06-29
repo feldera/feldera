@@ -4,6 +4,7 @@ pub mod casts;
 pub mod geopoint;
 pub mod interval;
 pub mod timestamp;
+pub mod string;
 
 use crate::interval::ShortInterval;
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
@@ -904,27 +905,6 @@ pub fn lte_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> O
     match (left, right) {
         (Some(l), Some(r)) => Some(l <= r),
         _ => None::<bool>,
-    }
-}
-
-pub fn concat_s_s(left: String, right: String) -> String {
-    let result = format!("{}{}", left, right);
-    result
-}
-
-pub fn concat_sN_s(left: Option<String>, right: String) -> Option<String> {
-    left.map(|v| concat_s_s(v, right))
-}
-
-pub fn concat_s_sN(left: String, right: Option<String>) -> Option<String> {
-    right.map(|v| concat_s_s(left, v))
-}
-
-pub fn concat_sN_sN(left: Option<String>, right: Option<String>) -> Option<String> {
-    match (left, right) {
-        (None, _) => None,
-        (_, None) => None,
-        (Some(l), Some(r)) => Some(concat_s_s(l, r)),
     }
 }
 

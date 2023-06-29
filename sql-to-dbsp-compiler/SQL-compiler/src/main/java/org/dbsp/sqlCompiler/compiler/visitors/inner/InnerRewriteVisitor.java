@@ -647,12 +647,12 @@ public abstract class InnerRewriteVisitor
     @Override
     public VisitDecision preorder(DBSPClosureExpression expression) {
         this.push(expression);
-        DBSPExpression body = this.transform(expression.body);
         DBSPParameter[] parameters = Linq.map(
                 expression.parameters, p -> {
                     p.accept(this);
                     return this.getResult().to(DBSPParameter.class);
                 }, DBSPParameter.class);
+        DBSPExpression body = this.transform(expression.body);
         this.pop(expression);
         DBSPExpression result = body.closure(parameters);
         this.map(expression, result);

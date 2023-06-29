@@ -51,7 +51,7 @@ public class UnimplementedException extends BaseCompilerException {
     }
 
     public UnimplementedException(String message) {
-        this(kind + message, null, CalciteObject.EMPTY);
+        this(kind + ": " + message, null, CalciteObject.EMPTY);
     }
 
     public UnimplementedException(IDBSPNode node) {

@@ -228,6 +228,16 @@ pub fn cast_to_bN_u(value: usize) -> Option<bool> {
 
 // TODO
 
+#[inline]
+pub fn cast_to_date_s(value: String) -> Date {
+    let dt = NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok();
+    match dt {
+        Some(value) => Date::new((value.and_hms_opt(0, 0, 0).unwrap().timestamp() / 86400) as i32),
+        None => Date::default(),
+    }
+}
+
+
 /////////// cast to dateN
 
 #[inline]
@@ -996,12 +1006,15 @@ pub fn truncate(value: String, size: usize) -> String {
 /// specified size.
 #[inline(always)]
 pub fn size_string(value: String, size: usize) -> String {
-    if size == 0 || value.len() == size {
+    if size == 0 {
+        value.trim_end().to_string()
+    } else if value.len() == size {
         value
     } else if value.len() > size {
         truncate(value, size)
-    } else {
-        format!("{value:>size$}")
+    }
+    else {
+        format!("{value:<size$}")
     }
 }
 
@@ -1009,11 +1022,13 @@ pub fn size_string(value: String, size: usize) -> String {
 /// the specified size.
 #[inline(always)]
 pub fn limit_string(value: String, size: usize) -> String {
-    if size == 0 || value.len() < size {
-        value
+    if size == 0 {
+        value.trim_end().to_string()
     }
-    // TODO: this is legal only of all excess characters are spaces
-    else {
+    else if value.len() < size {
+        value
+    } else {
+        // TODO: this is legal only of all excess characters are spaces
         truncate(value, size)
     }
 }
