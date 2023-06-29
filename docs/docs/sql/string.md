@@ -14,6 +14,11 @@ simply store the shorter string.
 In addition, we provides the `text`, or `varchar` type, which stores
 strings of any length.
 
+Trailing spaces are removed when converting a character value to one
+of the other string types.  Note that trailing spaces are semantically
+significant in character varying and text values, and when using
+pattern matching, that is LIKE and regular expressions.
+
 ## String constants (literals)
 
 A string constant in SQL is an arbitrary sequence of characters
@@ -71,4 +76,22 @@ addition to the normal way of `''`.
 
 ## Operations on string values
 
-`||` is string concatenation, written as an infix operator.
+<table>
+  <tr>
+    <th>Operation</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td><code>||</code></td>
+    <td>String concatenation (infix)</td>
+  </tr>
+  <tr>
+    <td><code>trim ( [ LEADING | TRAILING | BOTH ]</code>` characters <code>FROM</code> string <code>)</code></td>
+    <td>Remove the specified characters from the specified ends of the string argument</td>
+  </tr>
+  <tr>
+    <td><code>substring (</code> string <code>[ FROM</code> start <code>] [ FOR</code> count<code> ] )</code></td>
+    <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "count" characters if the value is specified. At least one of "start" or "count" must be provided.  If "start" is negative, it is replaced with 1.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
+  </tr>
+</table>
+

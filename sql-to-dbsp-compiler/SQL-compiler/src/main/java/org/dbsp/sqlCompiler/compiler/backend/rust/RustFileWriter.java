@@ -142,6 +142,7 @@ public class RustFileWriter implements ICompilerComponent {
             "    geopoint::*,\n" +
             "    timestamp::*,\n" +
             "    interval::*,\n" +
+            "    string::*,\n" +
             "};\n" +
             "#[cfg(test)]\n" +
             "use sqlvalue::*;\n" +

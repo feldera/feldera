@@ -73,7 +73,8 @@ public class CircuitOptimizer implements ICompilerComponent {
     }
 
     public DBSPCircuit optimize(DBSPCircuit input) {
-        return this.getOptimizer().apply(input);
+        CircuitTransform optimizer = this.getOptimizer();
+        return optimizer.apply(input);
     }
 
     @Override

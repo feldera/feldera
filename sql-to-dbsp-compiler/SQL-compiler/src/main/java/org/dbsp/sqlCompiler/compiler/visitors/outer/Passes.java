@@ -86,6 +86,6 @@ public class Passes implements IWritesLogs, CircuitTransform {
 
     @Override
     public String toString() {
-        return super.toString() + this.passes;
+        return "Passes" + this.passes;
     }
 }
