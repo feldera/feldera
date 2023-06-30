@@ -34,7 +34,6 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.*;
@@ -307,6 +306,115 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         return expression;
     }
 
+    void validateArgCount(CalciteObject node, int argCount, Integer... expectedArgCount) {
+        boolean legal = false;
+        for (int e: expectedArgCount) {
+            if (e == argCount) {
+                legal = true;
+                break;
+            }
+        }
+        if (!legal)
+            throw new UnimplementedException(node);
+    }
+
+    String getCallName(RexCall call) {
+        return call.op.getName().toLowerCase();
+    }
+
+    /**
+     * Compile a function call into a family of Rust functions,
+     * depending on the argument types.
+     * @param  call Operation that is compiled.
+     * @param  node CalciteObject holding the call.
+     * @param  resultType Type of result produced by call.
+     * @param  ops  Translated operands for the call.
+     * @param  expectedArgCount A list containing all known possible argument counts.
+     */
+    DBSPExpression compilePolymorphicFunction(RexCall call, CalciteObject node, DBSPType resultType,
+                                    List<DBSPExpression> ops, Integer... expectedArgCount) {
+        String opName = this.getCallName(call);
+        this.validateArgCount(node, ops.size(), expectedArgCount);
+        StringBuilder functionName = new StringBuilder(opName);
+        DBSPExpression[] operands = ops.toArray(new DBSPExpression[0]);
+        for (DBSPExpression op: ops) {
+            DBSPType type = op.getType();
+            // Form the function name from the argument types
+            functionName.append("_").append(type.baseTypeWithSuffix());
+        }
+        return new DBSPApplyExpression(node, functionName.toString(), resultType, operands);
+    }
+
+    /**
+     * Compile a function call into a Rust function.
+     *
+     * @param name             Name of the called function in Rust.
+     * @param node             CalciteObject holding the call.
+     * @param resultType       Type of result produced by call.
+     * @param ops              Translated operands for the call.
+     * @param expectedArgCount A list containing all known possible argument counts.
+     */
+    DBSPExpression compileFunction(String name, CalciteObject node,
+                                   DBSPType resultType, List<DBSPExpression> ops, Integer... expectedArgCount) {
+        this.validateArgCount(node, ops.size(), expectedArgCount);
+        DBSPExpression[] operands = ops.toArray(new DBSPExpression[0]);
+        if (expectedArgCount.length > 1)
+            // If the function can have a variable number of arguments, postfix with the argument count
+            name += operands.length;
+        return new DBSPApplyExpression(node, name, resultType, operands);
+    }
+
+    /**
+     * Compile a function call into a Rust function.
+     * @param  call Call that is being compiled.
+     * @param  node CalciteObject holding the call.
+     * @param  resultType Type of result produced by call.
+     * @param  ops  Translated operands for the call.
+     * @param  expectedArgCount A list containing all known possible argument counts.
+     */
+    DBSPExpression compileFunction(
+            RexCall call, CalciteObject node, DBSPType resultType,
+            List<DBSPExpression> ops, Integer... expectedArgCount) {
+        return this.compileFunction(this.getCallName(call), node, resultType, ops, expectedArgCount);
+    }
+
+    /**
+     * Compile a function call into a Rust function.
+     * One of the arguments is a keyword.
+     * @param  call Call operation that is translated.
+     * @param  node CalciteObject holding the call.
+     * @param  functionName Name to use for function; if not specified name is derived from call.
+     * @param  resultType Type of result produced by call.
+     * @param  ops  Translated operands for the call.
+     * @param  keywordIndex  Index in ops of the argument that is a keyword.
+     * @param  expectedArgCount A list containing all known possible argument counts.
+     */
+    DBSPExpression compileKeywordFunction(
+            RexCall call, CalciteObject node, @Nullable String functionName,
+            DBSPType resultType, List<DBSPExpression> ops,
+            int keywordIndex, Integer... expectedArgCount) {
+        this.validateArgCount(node, ops.size(), expectedArgCount);
+        if (ops.size() <= keywordIndex)
+            throw new UnimplementedException(node);
+        DBSPKeywordLiteral keyword = ops.get(keywordIndex).to(DBSPKeywordLiteral.class);
+        StringBuilder name = new StringBuilder();
+        String baseName = functionName != null ? functionName : this.getCallName(call);
+        name.append(baseName)
+                .append("_")
+                .append(keyword);
+        DBSPExpression[] operands = new DBSPExpression[ops.size() - 1];
+        int index = 0;
+        for (int i = 0; i < ops.size(); i++) {
+            DBSPExpression op = ops.get(i);
+            if (i == keywordIndex)
+                continue;
+            operands[index] = op;
+            index++;
+            name.append("_").append(op.getType().baseTypeWithSuffix());
+        }
+        return new DBSPApplyExpression(node, name.toString(), resultType, operands);
+    }
+
     @Override
     public DBSPExpression visitCall(RexCall call) {
         CalciteObject node = new CalciteObject(call);
@@ -320,7 +428,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             call = (RexCall)RexUtil.expandSearch(this.rexBuilder, null, call);
         }
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));
-        boolean anyNull = Linq.any(ops, o -> o.getType().mayBeNull);
         DBSPType type = this.typeCompiler.convertType(call.getType());
         switch (call.op.kind) {
             case TIMES:
@@ -456,8 +563,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 DBSPExpression left = ops.get(0);
                 DBSPExpression right = ops.get(1);
                 String functionName = "make_geopoint" + type.nullableSuffix() +
-                        "_d" + left.getType().nullableSuffix() +
-                        "_d" + right.getType().nullableSuffix();
+                        "_" + left.getType().baseTypeWithSuffix() +
+                        "_" + right.getType().baseTypeWithSuffix();
                 return new DBSPApplyExpression(node, functionName, type, left, right);
             }
             case OTHER_FUNCTION: {
@@ -486,29 +593,23 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "log10":
                     case "ln":
                     case "abs": {
-                        if (call.operands.size() != 1)
-                            throw new UnimplementedException(node);
-                        DBSPExpression arg = ops.get(0);
-                        DBSPType argType = arg.getType();
-                        String function = opName + "_" + argType.baseTypeWithSuffix();
-                        return new DBSPApplyExpression(node, function, type, arg);
+                        return this.compilePolymorphicFunction(call, node, type,
+                                ops, 1);
                     }
-                    case "st_distance": {
-                        if (call.operands.size() != 2)
-                            throw new UnimplementedException(node);
-                        DBSPExpression left = ops.get(0);
-                        DBSPExpression right = ops.get(1);
-                        String function = opName + "_" + left.getType().nullableSuffix() +
-                                "_" + right.getType().nullableSuffix();
-                        return new DBSPApplyExpression(node, function, DBSPTypeDouble.INSTANCE.setMayBeNull(anyNull), left, right);
+                    case "st_distance":
+                    case "power": {
+                        return this.compilePolymorphicFunction(call, node, type,
+                                ops, 2);
                     }
+                    case "char_length":
+                        return this.compileFunction(call, node, type, ops, 1);
                     case "division":
                         return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
                     case "cardinality": {
                         if (call.operands.size() != 1)
                             throw new UnimplementedException(node);
-                        DBSPExpression arg = ops.get(0);
-                        DBSPExpression len = new DBSPApplyMethodExpression(node, "len", DBSPTypeUSize.INSTANCE, arg);
+                        // Direct method call on vector
+                        DBSPExpression len = new DBSPApplyMethodExpression(node, "len", DBSPTypeUSize.INSTANCE, ops.get(0));
                         return len.cast(type);
                     }
                     case "element": {
@@ -520,27 +621,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                             method += "N";
                         return new DBSPApplyExpression(node, method, type, arg);
                     }
-                    case "power": {
-                        if (call.operands.size() != 2)
-                            throw new UnimplementedException(node);
-                        DBSPType leftType = ops.get(0).getType();
-                        DBSPType rightType = ops.get(1).getType();
-                        String functionName = opName + "_" + leftType.baseTypeWithSuffix() +
-                                "_" + rightType.baseTypeWithSuffix();
-                        return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1));
-                    }
                     case "substring": {
+                        if (ops.size() < 1)
+                            throw new UnimplementedException(node);
                         DBSPType baseType = ops.get(0).getType();
                         String functionName = opName + baseType.nullableSuffix();
-                        if (call.operands.size() == 3) {
-                            functionName += "3";
-                            return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1), ops.get(2));
-                        } else if (call.operands.size() == 2) {
-                            functionName += "2";
-                            return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1));
-                        } else {
-                            throw new UnimplementedException(node);
-                        }
+                        return this.compileFunction(functionName, node, type, ops, 2, 3);
                     }
                 }
                 throw new UnimplementedException(node);
@@ -556,44 +642,22 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 }
                 throw new UnimplementedException(node);
             case EXTRACT: {
-                if (call.operands.size() != 2)
-                    throw new UnimplementedException(node);
-                DBSPKeywordLiteral keyword = ops.get(0).to(DBSPKeywordLiteral.class);
-                DBSPType type1 = ops.get(1).getType();
-                String functionName = "extract_" + type1.to(IsNumericType.class).getRustString() +
-                        "_" + keyword + type1.nullableSuffix();
-                return new DBSPApplyExpression(node, functionName, type, ops.get(1));
+                // This is also hit for "date_part", which is an alias for "extract".
+                return this.compileKeywordFunction(call, node, "extract", type, ops, 0, 2);
             }
             case POSITION: {
-                String functionName = call.getKind().toString().toLowerCase();
-                if (call.operands.size() == 2) {
-                    return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1));
-                } else {
-                    throw new UnimplementedException(node);
-                }
+                return this.compileFunction(call, node, type, ops, 2);
             }
             case LIKE:
             case SIMILAR: {
-                String functionName = call.getKind().toString().toLowerCase() + ops.size();
-                if (call.operands.size() == 2) {
-                    return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1));
-                } else if (call.operands.size() == 3) {
-                    return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1), ops.get(2));
-                } else {
-                    throw new UnimplementedException(node);
-                }
+                return this.compileFunction(call, node, type, ops, 2, 3);
             }
             case FLOOR:
             case CEIL: {
                 if (call.operands.size() == 2) {
-                    DBSPKeywordLiteral keyword = ops.get(1).to(DBSPKeywordLiteral.class);
-                    String functionName = call.getKind().toString().toLowerCase() + "_" +
-                            type.to(DBSPTypeBaseType.class).shortName() + "_" + keyword + type.nullableSuffix();
-                    return new DBSPApplyExpression(node, functionName, type, ops.get(0));
+                    return this.compileKeywordFunction(call, node, null, type, ops, 1, 2);
                 } else if (call.operands.size() == 1) {
-                    String functionName = call.getKind().toString().toLowerCase() + "_" +
-                            type.to(DBSPTypeBaseType.class).shortName() + type.nullableSuffix();
-                    return new DBSPApplyExpression(node, functionName, type, ops.get(0));
+                    return this.compilePolymorphicFunction(call, node, type, ops, 1);
                 } else {
                     throw new UnimplementedException(node);
                 }
@@ -610,12 +674,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return new DBSPIndexExpression(node, ops.get(0), ops.get(1).cast(DBSPTypeUSize.INSTANCE), true);
             }
             case TRIM: {
-                if (call.operands.size() != 3)
-                    throw new UnsupportedException(node);
-                DBSPKeywordLiteral keyword = ops.get(0).to(DBSPKeywordLiteral.class);
-                String functionName = call.getKind().toString().toLowerCase() + "_" +
-                        keyword + type.nullableSuffix();
-                return new DBSPApplyExpression(node, functionName, type, ops.get(1), ops.get(2));
+                return this.compileKeywordFunction(call, node, null, type, ops, 0, 3);
             }
             case DOT:
             default:

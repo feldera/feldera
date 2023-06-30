@@ -1,7 +1,7 @@
 //! Implementation of various cast operations.
 // Map of type names
 // * Bool -> b
-// * Date -> date      (no implementation yet)
+// * Date -> Date
 // * Decimal -> decimal
 // * Double -> d
 // * Float -> f
@@ -229,7 +229,7 @@ pub fn cast_to_bN_u(value: usize) -> Option<bool> {
 // TODO
 
 #[inline]
-pub fn cast_to_date_s(value: String) -> Date {
+pub fn cast_to_Date_s(value: String) -> Date {
     let dt = NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok();
     match dt {
         Some(value) => Date::new((value.and_hms_opt(0, 0, 0).unwrap().timestamp() / 86400) as i32),
@@ -241,19 +241,19 @@ pub fn cast_to_date_s(value: String) -> Date {
 /////////// cast to dateN
 
 #[inline]
-pub fn cast_to_dateN_nullN(_value: Option<()>) -> Option<Date> {
+pub fn cast_to_DateN_nullN(_value: Option<()>) -> Option<Date> {
     None
 }
 
 #[inline]
-pub fn cast_to_dateN_s(value: String) -> Option<Date> {
+pub fn cast_to_DateN_s(value: String) -> Option<Date> {
     let dt = NaiveDate::parse_from_str(&value, "%Y-%m-%d");
     dt.ok()
         .map(|value| Date::new((value.and_hms_opt(0, 0, 0).unwrap().timestamp() / 86400) as i32))
 }
 
 #[inline]
-pub fn cast_to_dateN_date(value: Date) -> Option<Date> {
+pub fn cast_to_DateN_date(value: Date) -> Option<Date> {
     Some(value)
 }
 
@@ -1976,7 +1976,7 @@ pub fn cast_to_Timestamp_s(value: String) -> Timestamp {
 }
 
 #[inline]
-pub fn cast_to_Timestamp_date(value: Date) -> Timestamp {
+pub fn cast_to_Timestamp_Date(value: Date) -> Timestamp {
     value.to_timestamp()
 }
 
@@ -2027,8 +2027,8 @@ pub fn cast_to_TimestampN_Timestamp(value: Timestamp) -> Option<Timestamp> {
 }
 
 #[inline]
-pub fn cast_to_TimestampN_dateN(value: Option<Date>) -> Option<Timestamp> {
-    value.map(cast_to_Timestamp_date)
+pub fn cast_to_TimestampN_DateN(value: Option<Date>) -> Option<Timestamp> {
+    value.map(cast_to_Timestamp_Date)
 }
 
 /////////// cast to u

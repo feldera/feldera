@@ -512,8 +512,9 @@ public class PostgresStringTests extends PostgresBaseTest {
                 " t");
     }
 
-    @Test @Ignore("Postgres gives a different result from Calcite")
+    @Test
     public void testConcatConversions() {
+        // In Postgres concatenation converts to text, whereas Calcite does not.
         this.queryWithOutput("SELECT 'unknown' || ' and unknown' AS \"Concat unknown types\";\n" +
                 " Concat unknown types \n" +
                 "----------------------\n" +
@@ -525,11 +526,11 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.queryWithOutput("SELECT 'characters' ::char(20) || ' and text' AS \"Concat char to unknown type\";\n" +
                 " Concat char to unknown type \n" +
                 "-----------------------------\n" +
-                "characters and text");
+                "characters           and text");
         this.queryWithOutput("SELECT 'text'::text || ' and characters'::char(20) AS \"Concat text to char\";\n" +
                 " Concat text to char \n" +
                 "---------------------\n" +
-                "text and characters");
+                "text and characters     ");
         this.queryWithOutput("SELECT 'text'::text || ' and varchar'::varchar AS \"Concat text to varchar\";\n" +
                 " Concat text to varchar \n" +
                 "------------------------\n" +
@@ -537,7 +538,24 @@ public class PostgresStringTests extends PostgresBaseTest {
     }
 
     // TODO: repeat
-    // TODO: length
+
+    @Test
+    public void testLength() {
+        // length in postgres is equivalent to char_length
+        this.queryWithOutput("SELECT char_length('abcdef') AS \"length_6\";\n" +
+                " length_6 \n" +
+                "----------\n" +
+                "        6");
+        this.queryWithOutput("SELECT character_length('abcdef') AS \"length_6\";\n" +
+                " length_6 \n" +
+                "----------\n" +
+                "        6");
+        this.queryWithOutput("SELECT character_length('josé') AS \"length\";\n" +
+                " length \n" +
+                "--------\n" +
+                "       4");
+    }
+
     // TODO: strpos
     // TODO: replace
     // TODO: split_part

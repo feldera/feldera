@@ -78,7 +78,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
      * Convert a timestamp from a format like Sat Feb 16 17:32:01 1996 to
      * a format like 1996-02-16 17:32:01
      */
-    public static DBSPExpression convertTimestamp(@Nullable String timestamp) {
+    public static DBSPExpression convertTimestamp(@Nullable String timestamp, boolean mayBeNull) {
         if (timestamp == null)
             return DBSPLiteral.none(DBSPTypeTimestamp.NULLABLE_INSTANCE);
         for (SimpleDateFormat input: TIMESTAMP_INPUT_FORMAT) {
@@ -93,7 +93,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
             } catch (ParseException ignored) {
                 continue;
             }
-            return new DBSPTimestampLiteral(out, true);
+            return new DBSPTimestampLiteral(out, mayBeNull);
         }
         throw new RuntimeException("Could not parse " + timestamp);
     }
@@ -131,6 +131,9 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
             }
             if (inHeader)
                 continue;
+            int comment = line.indexOf("--");
+            if (comment >= 0)
+                line = line.substring(0, comment);
             String[] columns = line.split("[|]");
             if (columns.length != tuple.size())
                 throw new RuntimeException("Row has " + columns.length + " columns, but expected " + tuple.size());
@@ -154,7 +157,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
                     BigDecimal value = new BigDecimal(column);
                     columnValue = new DBSPDecimalLiteral(fieldType, value);
                 } else if (fieldType.is(DBSPTypeTimestamp.class)) {
-                    columnValue = convertTimestamp(column);
+                    columnValue = convertTimestamp(column, fieldType.mayBeNull);
                 } else if (fieldType.is(DBSPTypeDate.class)) {
                     columnValue = convertDate(column);
                 } else if (fieldType.is(DBSPTypeInteger.class)) {

@@ -218,8 +218,6 @@ public class CalciteCompiler implements IWritesLogs {
         rootSchema.add("STRING", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
         rootSchema.add("TEXT", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
         rootSchema.add("BOOL", factory -> factory.createSqlType(SqlTypeName.BOOLEAN));
-        // TODO: not entirely correct
-        rootSchema.add("UINT64", factory -> factory.createSqlType(SqlTypeName.BIGINT));
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
                 rootSchema, Collections.singletonList(catalog.schemaName), this.typeFactory, connectionConfig);
 

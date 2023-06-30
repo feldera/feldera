@@ -48,19 +48,19 @@ pub fn substringN2(value: Option<String>, left: i32) -> Option<String> {
     value.map(|x| substring2(x, left))
 }
 
-pub fn trim_both(remove: String, value: String) -> String {
+pub fn trim_both_s_s(remove: String, value: String) -> String {
     // 'remove' always has exactly 1 character
     let chr = remove.chars().next().unwrap();
     value.trim_matches(chr).to_string()
 }
 
-pub fn trim_leading(remove: String, value: String) -> String {
+pub fn trim_leading_s_s(remove: String, value: String) -> String {
     // 'remove' always has exactly 1 character
     let chr = remove.chars().next().unwrap();
     value.trim_start_matches(chr).to_string()
 }
 
-pub fn trim_trailing(remove: String, value: String) -> String {
+pub fn trim_trailing_s_s(remove: String, value: String) -> String {
     // 'remove' always has exactly 1 character
     let chr = remove.chars().next().unwrap();
     value.trim_end_matches(chr).to_string()
@@ -81,4 +81,8 @@ pub fn position(needle: String, haystack: String) -> i32 {
         None => 0,
         Some(i) => (i + 1) as i32,
     }
+}
+
+pub fn char_length(value: String) -> i32 {
+    value.chars().count() as i32
 }

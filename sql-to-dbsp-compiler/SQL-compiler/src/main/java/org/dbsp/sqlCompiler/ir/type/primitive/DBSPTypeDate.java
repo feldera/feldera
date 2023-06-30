@@ -45,7 +45,7 @@ public class DBSPTypeDate extends DBSPTypeBaseType implements IsNumericType, IsD
 
     @Override
     public String shortName() {
-        return "date";
+        return "Date";
     }
 
     @Override

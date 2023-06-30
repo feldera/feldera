@@ -172,165 +172,165 @@ pub fn minus_TimestampN_Timestamp_LongIntervalN(
     left.map(|l| minus_Timestamp_Timestamp_LongInterval(l, right))
 }
 
-pub fn extract_Timestamp_year(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    date.year().into()
+pub fn extract_year_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    Date.year().into()
 }
 
-pub fn extract_Timestamp_yearN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_year)
+pub fn extract_year_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_year_Timestamp)
 }
 
-pub fn extract_Timestamp_month(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    date.month().into()
+pub fn extract_month_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    Date.month().into()
 }
 
-pub fn extract_Timestamp_monthN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_month)
+pub fn extract_month_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_month_Timestamp)
 }
 
-pub fn extract_Timestamp_day(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    date.day().into()
+pub fn extract_day_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    Date.day().into()
 }
 
-pub fn extract_Timestamp_dayN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_day)
+pub fn extract_day_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_day_Timestamp)
 }
 
-pub fn extract_Timestamp_quarter(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    (date.month0() / 3 + 1).into()
+pub fn extract_quarter_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    (Date.month0() / 3 + 1).into()
 }
 
-pub fn extract_Timestamp_quarterN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_quarter)
+pub fn extract_quarter_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_quarter_Timestamp)
 }
 
-pub fn extract_Timestamp_decade(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    (date.year() / 10).into()
+pub fn extract_decade_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    (Date.year() / 10).into()
 }
 
-pub fn extract_Timestamp_decadeN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_decade)
+pub fn extract_decade_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_decade_Timestamp)
 }
 
-pub fn extract_Timestamp_century(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    ((date.year() + 99) / 100).into()
+pub fn extract_century_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    ((Date.year() + 99) / 100).into()
 }
 
-pub fn extract_Timestamp_centuryN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_century)
+pub fn extract_century_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_century_Timestamp)
 }
 
-pub fn extract_Timestamp_millennium(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    ((date.year() + 999) / 1000).into()
+pub fn extract_millennium_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    ((Date.year() + 999) / 1000).into()
 }
 
-pub fn extract_Timestamp_millenniumN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_millennium)
+pub fn extract_millennium_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_millennium_Timestamp)
 }
 
-pub fn extract_Timestamp_isoyear(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    date.iso_week().year().into()
+pub fn extract_isoyear_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    Date.iso_week().year().into()
 }
 
-pub fn extract_Timestamp_isoyearN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_isoyear)
+pub fn extract_isoyear_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_isoyear_Timestamp)
 }
 
-pub fn extract_Timestamp_week(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    date.iso_week().week().into()
+pub fn extract_week_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    Date.iso_week().week().into()
 }
 
-pub fn extract_Timestamp_weekN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_week)
+pub fn extract_week_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_week_Timestamp)
 }
 
-pub fn extract_Timestamp_dow(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    (date.weekday().num_days_from_sunday() as i64) + Date::first_day_of_week()
+pub fn extract_dow_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    (Date.weekday().num_days_from_sunday() as i64) + Date::first_day_of_week()
 }
 
-pub fn extract_Timestamp_dowN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_dow)
+pub fn extract_dow_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_dow_Timestamp)
 }
 
-pub fn extract_Timestamp_isodow(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    (date.weekday().num_days_from_monday() as i64) + 1
+pub fn extract_isodow_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    (Date.weekday().num_days_from_monday() as i64) + 1
 }
 
-pub fn extract_Timestamp_isodowN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_isodow)
+pub fn extract_isodow_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_isodow_Timestamp)
 }
 
-pub fn extract_Timestamp_doy(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    date.ordinal().into()
+pub fn extract_doy_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    Date.ordinal().into()
 }
 
-pub fn extract_Timestamp_doyN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_doy)
+pub fn extract_doy_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_doy_Timestamp)
 }
 
-pub fn extract_Timestamp_epoch(t: Timestamp) -> i64 {
+pub fn extract_epoch_Timestamp(t: Timestamp) -> i64 {
     t.milliseconds() / 1000
 }
 
-pub fn extract_Timestamp_epochN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_epoch)
+pub fn extract_epoch_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_epoch_Timestamp)
 }
 
-pub fn extract_Timestamp_millisecond(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    (date.second() * 1000 + date.timestamp_subsec_millis()).into()
+pub fn extract_millisecond_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    (Date.second() * 1000 + Date.timestamp_subsec_millis()).into()
 }
 
-pub fn extract_Timestamp_millisecondN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_millisecond)
+pub fn extract_millisecond_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_millisecond_Timestamp)
 }
 
-pub fn extract_Timestamp_microsecond(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    (date.second() * 1_000_000 + date.timestamp_subsec_micros()).into()
+pub fn extract_microsecond_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    (Date.second() * 1_000_000 + Date.timestamp_subsec_micros()).into()
 }
 
-pub fn extract_Timestamp_microsecondN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_microsecond)
+pub fn extract_microsecond_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_microsecond_Timestamp)
 }
 
-pub fn extract_Timestamp_second(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    date.second().into()
+pub fn extract_second_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    Date.second().into()
 }
 
-pub fn extract_Timestamp_secondN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_second)
+pub fn extract_second_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_second_Timestamp)
 }
 
-pub fn extract_Timestamp_minute(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    date.minute().into()
+pub fn extract_minute_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    Date.minute().into()
 }
 
-pub fn extract_Timestamp_minuteN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_minute)
+pub fn extract_minute_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_minute_Timestamp)
 }
 
-pub fn extract_Timestamp_hour(value: Timestamp) -> i64 {
-    let date = value.to_dateTime();
-    date.hour().into()
+pub fn extract_hour_Timestamp(value: Timestamp) -> i64 {
+    let Date = value.to_dateTime();
+    Date.hour().into()
 }
 
-pub fn extract_Timestamp_hourN(value: Option<Timestamp>) -> Option<i64> {
-    value.map(extract_Timestamp_hour)
+pub fn extract_hour_TimestampN(value: Option<Timestamp>) -> Option<i64> {
+    value.map(extract_hour_Timestamp)
 }
 
 pub fn lt_Timestamp_Timestamp(left: Timestamp, right: Timestamp) -> bool {
@@ -462,8 +462,8 @@ pub fn lte_TimestampN_TimestampN(
     }
 }
 
-pub fn floor_Timestamp_week(value: Timestamp) -> Timestamp {
-    let wd = extract_Timestamp_dow(value) - Date::first_day_of_week();
+pub fn floor_week_Timestamp(value: Timestamp) -> Timestamp {
+    let wd = extract_dow_Timestamp(value) - Date::first_day_of_week();
     let ts = value.to_dateTime();
     let notime = ts
         .with_hour(0)
@@ -480,8 +480,8 @@ pub fn floor_Timestamp_week(value: Timestamp) -> Timestamp {
     minus_Timestamp_ShortInterval_Timestamp(notimeTs, interval)
 }
 
-pub fn floor_TimestampN_week(value: Option<Timestamp>) -> Option<Timestamp> {
-    value.map(floor_Timestamp_week)
+pub fn floor_week_TimestampN(value: Option<Timestamp>) -> Option<Timestamp> {
+    value.map(floor_week_Timestamp)
 }
 
 ////////////////////////////
@@ -558,19 +558,19 @@ impl<'de> Deserialize<'de> for Date {
     }
 }
 
-pub fn lt_date_date(left: Date, right: Date) -> bool {
+pub fn lt_Date_Date(left: Date, right: Date) -> bool {
     left < right
 }
 
-pub fn lt_dateN_date(left: Option<Date>, right: Date) -> Option<bool> {
+pub fn lt_DateN_Date(left: Option<Date>, right: Date) -> Option<bool> {
     left.map(|l| l < right)
 }
 
-pub fn lt_date_dateN(left: Date, right: Option<Date>) -> Option<bool> {
+pub fn lt_Date_DateN(left: Date, right: Option<Date>) -> Option<bool> {
     right.map(|r| left < r)
 }
 
-pub fn lt_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
+pub fn lt_DateN_DateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
@@ -578,19 +578,19 @@ pub fn lt_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
     }
 }
 
-pub fn gt_date_date(left: Date, right: Date) -> bool {
+pub fn gt_Date_Date(left: Date, right: Date) -> bool {
     left > right
 }
 
-pub fn gt_dateN_date(left: Option<Date>, right: Date) -> Option<bool> {
+pub fn gt_DateN_Date(left: Option<Date>, right: Date) -> Option<bool> {
     left.map(|l| l > right)
 }
 
-pub fn gt_date_dateN(left: Date, right: Option<Date>) -> Option<bool> {
+pub fn gt_Date_DateN(left: Date, right: Option<Date>) -> Option<bool> {
     right.map(|r| left > r)
 }
 
-pub fn gt_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
+pub fn gt_DateN_DateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
@@ -598,19 +598,19 @@ pub fn gt_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
     }
 }
 
-pub fn eq_date_date(left: Date, right: Date) -> bool {
+pub fn eq_Date_Date(left: Date, right: Date) -> bool {
     left == right
 }
 
-pub fn eq_dateN_date(left: Option<Date>, right: Date) -> Option<bool> {
+pub fn eq_DateN_Date(left: Option<Date>, right: Date) -> Option<bool> {
     left.map(|l| l == right)
 }
 
-pub fn eq_date_dateN(left: Date, right: Option<Date>) -> Option<bool> {
+pub fn eq_Date_DateN(left: Date, right: Option<Date>) -> Option<bool> {
     right.map(|r| left == r)
 }
 
-pub fn eq_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
+pub fn eq_DateN_DateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
@@ -618,19 +618,19 @@ pub fn eq_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
     }
 }
 
-pub fn neq_date_date(left: Date, right: Date) -> bool {
+pub fn neq_Date_Date(left: Date, right: Date) -> bool {
     left != right
 }
 
-pub fn neq_dateN_date(left: Option<Date>, right: Date) -> Option<bool> {
+pub fn neq_DateN_Date(left: Option<Date>, right: Date) -> Option<bool> {
     left.map(|l| l != right)
 }
 
-pub fn neq_date_dateN(left: Date, right: Option<Date>) -> Option<bool> {
+pub fn neq_Date_DateN(left: Date, right: Option<Date>) -> Option<bool> {
     right.map(|r| left != r)
 }
 
-pub fn neq_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
+pub fn neq_DateN_DateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
@@ -638,19 +638,19 @@ pub fn neq_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> 
     }
 }
 
-pub fn gte_date_date(left: Date, right: Date) -> bool {
+pub fn gte_Date_Date(left: Date, right: Date) -> bool {
     left >= right
 }
 
-pub fn gte_dateN_date(left: Option<Date>, right: Date) -> Option<bool> {
+pub fn gte_DateN_Date(left: Option<Date>, right: Date) -> Option<bool> {
     left.map(|l| l >= right)
 }
 
-pub fn gte_date_dateN(left: Date, right: Option<Date>) -> Option<bool> {
+pub fn gte_Date_DateN(left: Date, right: Option<Date>) -> Option<bool> {
     right.map(|r| left >= r)
 }
 
-pub fn gte_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
+pub fn gte_DateN_DateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
@@ -658,19 +658,19 @@ pub fn gte_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> 
     }
 }
 
-pub fn lte_date_date(left: Date, right: Date) -> bool {
+pub fn lte_Date_Date(left: Date, right: Date) -> bool {
     left <= right
 }
 
-pub fn lte_dateN_date(left: Option<Date>, right: Date) -> Option<bool> {
+pub fn lte_DateN_Date(left: Option<Date>, right: Date) -> Option<bool> {
     left.map(|l| l <= right)
 }
 
-pub fn lte_date_dateN(left: Date, right: Option<Date>) -> Option<bool> {
+pub fn lte_Date_DateN(left: Date, right: Option<Date>) -> Option<bool> {
     right.map(|r| left <= r)
 }
 
-pub fn lte_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
+pub fn lte_DateN_DateN(left: Option<Date>, right: Option<Date>) -> Option<bool> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
@@ -678,7 +678,7 @@ pub fn lte_dateN_dateN(left: Option<Date>, right: Option<Date>) -> Option<bool> 
     }
 }
 
-pub fn minus_date_date_LongInterval(left: Date, right: Date) -> LongInterval {
+pub fn minus_Date_Date_LongInterval(left: Date, right: Date) -> LongInterval {
     let ld = left.to_dateTime();
     let rd = right.to_dateTime();
     let ly = ld.year();
@@ -688,15 +688,15 @@ pub fn minus_date_date_LongInterval(left: Date, right: Date) -> LongInterval {
     LongInterval::from((ly - ry) * 12 + lm - rm)
 }
 
-pub fn minus_dateN_date_LongIntervaNl(left: Option<Date>, right: Date) -> Option<LongInterval> {
+pub fn minus_DateN_Date_LongIntervaNl(left: Option<Date>, right: Date) -> Option<LongInterval> {
     left.map(|x| LongInterval::new(x.days() - right.days()))
 }
 
-pub fn minus_date_dateN_LongInterval(left: Date, right: Option<Date>) -> Option<LongInterval> {
+pub fn minus_Date_DateN_LongInterval(left: Date, right: Option<Date>) -> Option<LongInterval> {
     right.map(|x| LongInterval::new(left.days() - x.days()))
 }
 
-pub fn minus_dateN_dateN_LongIntervalN(
+pub fn minus_DateN_DateN_LongIntervalN(
     left: Option<Date>,
     right: Option<Date>,
 ) -> Option<LongInterval> {
@@ -707,183 +707,183 @@ pub fn minus_dateN_dateN_LongIntervalN(
     }
 }
 
-pub fn minus_date_date_ShortInterval(left: Date, right: Date) -> ShortInterval {
+pub fn minus_Date_Date_ShortInterval(left: Date, right: Date) -> ShortInterval {
     let ld = left.days() as i64;
     let rd = right.days() as i64;
     ShortInterval::new((ld - rd) * 86400 * 1000)
 }
 
-pub fn minus_dateN_date_ShortIntervalN(left: Option<Date>, right: Date) -> Option<ShortInterval> {
-    left.map(|x| minus_date_date_ShortInterval(x, right))
+pub fn minus_DateN_Date_ShortIntervalN(left: Option<Date>, right: Date) -> Option<ShortInterval> {
+    left.map(|x| minus_Date_Date_ShortInterval(x, right))
 }
 
-pub fn minus_date_dateN_ShortIntervalN(left: Date, right: Option<Date>) -> Option<ShortInterval> {
-    right.map(|x| minus_date_date_ShortInterval(left, x))
+pub fn minus_Date_DateN_ShortIntervalN(left: Date, right: Option<Date>) -> Option<ShortInterval> {
+    right.map(|x| minus_Date_Date_ShortInterval(left, x))
 }
 
-pub fn minus_dateN_dateN_ShortIntervalN(
+pub fn minus_DateN_DateN_ShortIntervalN(
     left: Option<Date>,
     right: Option<Date>,
 ) -> Option<ShortInterval> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
-        (Some(x), Some(y)) => Some(minus_date_date_ShortInterval(x, y)),
+        (Some(x), Some(y)) => Some(minus_Date_Date_ShortInterval(x, y)),
     }
 }
 
-pub fn extract_Date_year(value: Date) -> i64 {
+pub fn extract_year_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     date.year().into()
 }
 
-pub fn extract_Date_yearN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_year)
+pub fn extract_year_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_year_Date)
 }
 
-pub fn extract_Date_month(value: Date) -> i64 {
+pub fn extract_month_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     date.month().into()
 }
 
-pub fn extract_Date_monthN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_month)
+pub fn extract_month_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_month_Date)
 }
 
-pub fn extract_Date_day(value: Date) -> i64 {
+pub fn extract_day_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     date.day().into()
 }
 
-pub fn extract_Date_dayN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_day)
+pub fn extract_day_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_day_Date)
 }
 
-pub fn extract_Date_quarter(value: Date) -> i64 {
+pub fn extract_quarter_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     (date.month0() / 3 + 1).into()
 }
 
-pub fn extract_Date_quarterN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_quarter)
+pub fn extract_quarter_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_quarter_Date)
 }
 
-pub fn extract_Date_decade(value: Date) -> i64 {
+pub fn extract_decade_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     (date.year() / 10).into()
 }
 
-pub fn extract_Date_decadeN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_decade)
+pub fn extract_decade_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_decade_Date)
 }
 
-pub fn extract_Date_century(value: Date) -> i64 {
+pub fn extract_century_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     ((date.year() + 99) / 100).into()
 }
 
-pub fn extract_Date_centuryN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_century)
+pub fn extract_century_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_century_Date)
 }
 
-pub fn extract_Date_millennium(value: Date) -> i64 {
+pub fn extract_millennium_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     ((date.year() + 999) / 1000).into()
 }
 
-pub fn extract_Date_millenniumN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_millennium)
+pub fn extract_millennium_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_millennium_Date)
 }
 
-pub fn extract_Date_isoyear(value: Date) -> i64 {
+pub fn extract_isoyear_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     date.iso_week().year().into()
 }
 
-pub fn extract_Date_isoyearN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_isoyear)
+pub fn extract_isoyear_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_isoyear_Date)
 }
 
-pub fn extract_Date_week(value: Date) -> i64 {
+pub fn extract_week_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     date.iso_week().week().into()
 }
 
-pub fn extract_Date_weekN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_week)
+pub fn extract_week_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_week_Date)
 }
 
-pub fn extract_Date_dow(value: Date) -> i64 {
+pub fn extract_dow_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     (date.weekday().num_days_from_sunday() as i64) + Date::first_day_of_week()
 }
 
-pub fn extract_Date_dowN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_dow)
+pub fn extract_dow_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_dow_Date)
 }
 
-pub fn extract_Date_isodow(value: Date) -> i64 {
+pub fn extract_isodow_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     (date.weekday().num_days_from_monday() as i64) + 1
 }
 
-pub fn extract_Date_isodowN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_isodow)
+pub fn extract_isodow_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_isodow_Date)
 }
 
-pub fn extract_Date_doy(value: Date) -> i64 {
+pub fn extract_doy_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
     date.ordinal().into()
 }
 
-pub fn extract_Date_doyN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_doy)
+pub fn extract_doy_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_doy_Date)
 }
 
-pub fn extract_Date_epoch(value: Date) -> i64 {
+pub fn extract_epoch_Date(value: Date) -> i64 {
     (value.days() as i64) * 86400
 }
 
-pub fn extract_Date_epochN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_epoch)
+pub fn extract_epoch_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_epoch_Date)
 }
 
-pub fn extract_Date_second(_value: Date) -> i64 {
+pub fn extract_second_Date(_value: Date) -> i64 {
     0
 }
 
-pub fn extract_Date_secondN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_second)
+pub fn extract_second_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_second_Date)
 }
 
-pub fn extract_Date_minute(_value: Date) -> i64 {
+pub fn extract_minute_Date(_value: Date) -> i64 {
     0
 }
 
-pub fn extract_Date_minuteN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_minute)
+pub fn extract_minute_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_minute_Date)
 }
 
-pub fn extract_Date_hour(_value: Date) -> i64 {
+pub fn extract_hour_Date(_value: Date) -> i64 {
     0
 }
 
-pub fn extract_Date_hourN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_hour)
+pub fn extract_hour_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_hour_Date)
 }
 
-pub fn extract_Date_millisecond(_value: Date) -> i64 {
+pub fn extract_millisecond_Date(_value: Date) -> i64 {
     0
 }
 
-pub fn extract_Date_millisecondN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_millisecond)
+pub fn extract_millisecond_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_millisecond_Date)
 }
 
-pub fn extract_Date_microsecond(_value: Date) -> i64 {
+pub fn extract_microsecond_Date(_value: Date) -> i64 {
     0
 }
 
-pub fn extract_Date_microsecondN(value: Option<Date>) -> Option<i64> {
-    value.map(extract_Date_microsecond)
+pub fn extract_microsecond_DateN(value: Option<Date>) -> Option<i64> {
+    value.map(extract_microsecond_Date)
 }

@@ -83,7 +83,9 @@ addition to the normal way of `''`.
   </tr>
   <tr>
     <td><code>||</code></td>
-    <td>String concatenation (infix)</td>
+    <td>String concatenation (infix).  Note that concatenation does *not* strip trailing spaces
+        from CHAR(N) values, unlike other SQL dialects.  If such behavior is desired, an explicit
+        cast to `varchar` can be added.</td>
   </tr>
   <tr>
     <td><code>trim ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
@@ -96,11 +98,17 @@ addition to the normal way of `''`.
   <tr>
     <td><code>string LIKE pattern [ESCAPE escape-character]</code> and
         <code>string NOT LIKE pattern [ESCAPE escape-character]</code></td>
-    <td>The LIKE expression returns true if the string matches the supplied pattern. (As expected, the NOT LIKE expression returns false if LIKE returns true.  See below for details.</td>
+    <td>The LIKE expression returns true if the string matches the supplied pattern.
+     (As expected, the <code>NOT LIKE</code> expression returns false if LIKE returns true.
+     See below for details.</td>
   </tr>
   <tr>
     <td><code>POSITION(substring IN string)</code></td>
     <td>Returns first starting index of the specified substring within string, or zero if it's not present.  First character has index 1.</td>
+  </tr>
+  <tr>
+    <td><code>CHAR_LENGTH(string)</code> or <code>CHARACTER_LENGTH(string)</code></td>
+    <td>Returns number of characters in the string.</td>
   </tr>
 </table>
 
