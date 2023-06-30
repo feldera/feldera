@@ -505,105 +505,105 @@ fn http_resp_from_error(error: &AnyError) -> HttpResponse {
 // Example errors for use in OpenApi docs.
 
 fn example_unknown_program() -> ErrorResponse {
-    ErrorResponse::from_error(&DBError::UnknownProgram {
+    ErrorResponse::from_error_nolog(&DBError::UnknownProgram {
         program_id: ProgramId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
     })
 }
 
 fn example_duplicate_name() -> ErrorResponse {
-    ErrorResponse::from_error(&DBError::DuplicateName)
+    ErrorResponse::from_error_nolog(&DBError::DuplicateName)
 }
 
 fn example_outdated_program_version() -> ErrorResponse {
-    ErrorResponse::from_error(&DBError::OutdatedProgramVersion {
+    ErrorResponse::from_error_nolog(&DBError::OutdatedProgramVersion {
         expected_version: Version(5),
     })
 }
 
 fn example_unknown_pipeline() -> ErrorResponse {
-    ErrorResponse::from_error(&DBError::UnknownPipeline {
+    ErrorResponse::from_error_nolog(&DBError::UnknownPipeline {
         pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
     })
 }
 
 fn example_unknown_connector() -> ErrorResponse {
-    ErrorResponse::from_error(&DBError::UnknownConnector {
+    ErrorResponse::from_error_nolog(&DBError::UnknownConnector {
         connector_id: ConnectorId(uuid!("d764b9e2-19f2-4572-ba20-8b42641b07c4")),
     })
 }
 
 fn example_unknown_name() -> ErrorResponse {
-    ErrorResponse::from_error(&DBError::UnknownName {
+    ErrorResponse::from_error_nolog(&DBError::UnknownName {
         name: "unknown_name".to_string(),
     })
 }
 
 fn example_unknown_input_table(table: &str) -> ErrorResponse {
-    ErrorResponse::from_error(&ControllerError::unknown_input_stream(table))
+    ErrorResponse::from_error_nolog(&ControllerError::unknown_input_stream(table))
 }
 
 fn example_unknown_output_table(table: &str) -> ErrorResponse {
-    ErrorResponse::from_error(&ControllerError::unknown_output_stream(table))
+    ErrorResponse::from_error_nolog(&ControllerError::unknown_output_stream(table))
 }
 
 fn example_unknown_input_format() -> ErrorResponse {
-    ErrorResponse::from_error(&ControllerError::unknown_input_format("xml"))
+    ErrorResponse::from_error_nolog(&ControllerError::unknown_input_format("xml"))
 }
 
 fn example_parse_error() -> ErrorResponse {
-    ErrorResponse::from_error(&ControllerError::parse_error(
+    ErrorResponse::from_error_nolog(&ControllerError::parse_error(
         "api-ingress-my_table-d24e60a3-9058-4751-aa6b-b88f4ddfd7bd",
-        &"missing field 'column_name'",
+        anyhow::Error::msg("missing field 'column_name'"),
     ))
 }
 
 fn example_unknown_output_format() -> ErrorResponse {
-    ErrorResponse::from_error(&ControllerError::unknown_output_format("xml"))
+    ErrorResponse::from_error_nolog(&ControllerError::unknown_output_format("xml"))
 }
 
 fn example_pipeline_shutdown() -> ErrorResponse {
-    ErrorResponse::from_error(&RunnerError::PipelineShutdown {
+    ErrorResponse::from_error_nolog(&RunnerError::PipelineShutdown {
         pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
     })
 }
 
 fn example_program_not_set() -> ErrorResponse {
-    ErrorResponse::from_error(&RunnerError::ProgramNotSet {
+    ErrorResponse::from_error_nolog(&RunnerError::ProgramNotSet {
         pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
     })
 }
 
 fn example_program_not_compiled() -> ErrorResponse {
-    ErrorResponse::from_error(&RunnerError::ProgramNotCompiled {
+    ErrorResponse::from_error_nolog(&RunnerError::ProgramNotCompiled {
         pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
     })
 }
 
 fn example_pipeline_timeout() -> ErrorResponse {
-    ErrorResponse::from_error(&RunnerError::PipelineInitializationTimeout {
+    ErrorResponse::from_error_nolog(&RunnerError::PipelineInitializationTimeout {
         pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
         timeout: STARTUP_TIMEOUT,
     })
 }
 
 fn example_invalid_uuid_param() -> ErrorResponse {
-    ErrorResponse::from_error(&ApiError::InvalidUuidParam{value: "not_a_uuid".to_string(), error: "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1".to_string()})
+    ErrorResponse::from_error_nolog(&ApiError::InvalidUuidParam{value: "not_a_uuid".to_string(), error: "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1".to_string()})
 }
 
 fn example_program_not_specified() -> ErrorResponse {
-    ErrorResponse::from_error(&ApiError::ProgramNotSpecified)
+    ErrorResponse::from_error_nolog(&ApiError::ProgramNotSpecified)
 }
 
 fn example_pipeline_not_specified() -> ErrorResponse {
-    ErrorResponse::from_error(&ApiError::PipelineNotSpecified)
+    ErrorResponse::from_error_nolog(&ApiError::PipelineNotSpecified)
 }
 
 fn example_connector_not_specified() -> ErrorResponse {
-    ErrorResponse::from_error(&ApiError::ConnectorNotSpecified)
+    ErrorResponse::from_error_nolog(&ApiError::ConnectorNotSpecified)
 }
 
 fn example_invalid_pipeline_action() -> ErrorResponse {
-    ErrorResponse::from_error(&ApiError::InvalidPipelineAction {
+    ErrorResponse::from_error_nolog(&ApiError::InvalidPipelineAction {
         action: "my_action".to_string(),
     })
 }
