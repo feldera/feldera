@@ -74,3 +74,11 @@ pub fn like3(value: String, pattern: String, escape: String) -> bool {
     let escaped = pattern.as_str().escape(escape.as_str()).unwrap();
     Like::<true>::like(value.as_str(), escaped.as_str()).unwrap()
 }
+
+pub fn position(needle: String, haystack: String) -> i32 {
+    let pos = haystack.find(needle.as_str());
+    match pos {
+        None => 0,
+        Some(i) => (i + 1) as i32,
+    }
+}

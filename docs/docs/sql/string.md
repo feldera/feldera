@@ -96,8 +96,11 @@ addition to the normal way of `''`.
   <tr>
     <td><code>string LIKE pattern [ESCAPE escape-character]</code> and
         <code>string NOT LIKE pattern [ESCAPE escape-character]</code></td>
-    <td>The LIKE expression returns true if the string matches the supplied pattern. (As expected, the NOT LIKE expression returns false if LIKE returns true.  See below for details.
-    </td>
+    <td>The LIKE expression returns true if the string matches the supplied pattern. (As expected, the NOT LIKE expression returns false if LIKE returns true.  See below for details.</td>
+  </tr>
+  <tr>
+    <td><code>POSITION(substring IN string)</code></td>
+    <td>Returns first starting index of the specified substring within string, or zero if it's not present.  First character has index 1.</td>
   </tr>
 </table>
 

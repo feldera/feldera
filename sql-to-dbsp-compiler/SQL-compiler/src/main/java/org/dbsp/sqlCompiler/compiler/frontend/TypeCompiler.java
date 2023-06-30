@@ -102,10 +102,9 @@ public class TypeCompiler implements ICompilerComponent {
                 case CHAR:
                 case VARCHAR: {
                     int precision = dt.getPrecision();
-                    if (precision == 0)
-                        throw new UnsupportedException("0 size string", node);
                     if (precision == RelDataType.PRECISION_NOT_SPECIFIED)
-                        precision = 0;
+                        //noinspection ReassignedVariable
+                        precision = DBSPTypeString.UNLIMITED_PRECISION;
                     return new DBSPTypeString(node, precision, tn.equals(SqlTypeName.CHAR), nullable);
                 }
                 case NULL:

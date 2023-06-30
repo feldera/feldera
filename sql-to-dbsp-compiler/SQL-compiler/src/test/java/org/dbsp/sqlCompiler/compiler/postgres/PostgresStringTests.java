@@ -268,8 +268,34 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "");
     }
 
+    @Test
+    public void testPosition() {
+        this.queryWithOutput("SELECT POSITION('4' IN '1234567890') = '4' AS \"4\";\n" +
+                " 4 \n" +
+                "---\n" +
+                " t");
+        this.queryWithOutput("SELECT POSITION('5' IN '1234567890') = '5' AS \"5\";\n" +
+                " 5 \n" +
+                "---\n" +
+                " t");
+        this.queryWithOutput("SELECT POSITION('A' IN '1234567890') = '0' AS \"0\";\n" +
+                " 5 \n" +
+                "---\n" +
+                " t");
+    }
+
     // SUBSTRING ... SIMILAR syntax not supported
     // SELECT SUBSTRING('abcdefg' SIMILAR 'a#"(b_d)#"%' ESCAPE '#') AS "bcd";
+
+    // TODO: overlay
+    // TODO: regexp_replace
+    // TODO: regexp_count
+    // TODO: regexp_like
+    // TODO: regexp_instr
+    // TODO: regexp_substr
+    // TODO: regexp_matches
+    // TODO: regexp_split_to_array
+    // TODO: regexp_split_to_table
 
     @Test
     public void testLike2() {
@@ -459,4 +485,74 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "------\n" +
                 " t");
     }
+
+    // TODO ILIKE
+
+    @Test
+    public void testLikeCombinations() {
+        this.queryWithOutput("SELECT 'foo' LIKE '_%' as t, 'f' LIKE '_%' as t, '' LIKE '_%' as f;\n" +
+                " t | t | f \n" +
+                "---+---+---\n" +
+                " t | t | f");
+        this.queryWithOutput("SELECT 'foo' LIKE '%_' as t, 'f' LIKE '%_' as t, '' LIKE '%_' as f;\n" +
+                " t | t | f \n" +
+                "---+---+---\n" +
+                " t | t | f");
+        this.queryWithOutput("SELECT 'foo' LIKE '__%' as t, 'foo' LIKE '___%' as t, 'foo' LIKE '____%' as f;\n" +
+                " t | t | f \n" +
+                "---+---+---\n" +
+                " t | t | f");
+        this.queryWithOutput("SELECT 'foo' LIKE '%__' as t, 'foo' LIKE '%___' as t, 'foo' LIKE '%____' as f;\n" +
+                " t | t | f \n" +
+                "---+---+---\n" +
+                " t | t | f");
+        this.queryWithOutput("SELECT 'jack' LIKE '%____%' AS t;\n" +
+                " t \n" +
+                "---\n" +
+                " t");
+    }
+
+    @Test @Ignore("Postgres gives a different result from Calcite")
+    public void testConcatConversions() {
+        this.queryWithOutput("SELECT 'unknown' || ' and unknown' AS \"Concat unknown types\";\n" +
+                " Concat unknown types \n" +
+                "----------------------\n" +
+                "unknown and unknown");
+        this.queryWithOutput("SELECT 'text'::text || ' and unknown' AS \"Concat text to unknown type\";\n" +
+                " Concat text to unknown type \n" +
+                "-----------------------------\n" +
+                "text and unknown");
+        this.queryWithOutput("SELECT 'characters' ::char(20) || ' and text' AS \"Concat char to unknown type\";\n" +
+                " Concat char to unknown type \n" +
+                "-----------------------------\n" +
+                "characters and text");
+        this.queryWithOutput("SELECT 'text'::text || ' and characters'::char(20) AS \"Concat text to char\";\n" +
+                " Concat text to char \n" +
+                "---------------------\n" +
+                "text and characters");
+        this.queryWithOutput("SELECT 'text'::text || ' and varchar'::varchar AS \"Concat text to varchar\";\n" +
+                " Concat text to varchar \n" +
+                "------------------------\n" +
+                "text and varchar");
+    }
+
+    // TODO: repeat
+    // TODO: length
+    // TODO: strpos
+    // TODO: replace
+    // TODO: split_part
+    // TODO: to_hex
+    // TODO: sha, encode, decode
+
+    @Test
+    public void testConforming() {
+        this.queryWithOutput("select 'a\\bcd' as f1, 'a\\b''cd' as f2, 'a\\b''''cd' as f3, 'abcd\\'   as f4, 'ab\\''cd' as f5, '\\\\' as f6;\n" +
+                "  f1  |  f2   |   f3   | f4   |   f5  | f6 \n" +
+                "------+-------+--------+------+-------+----\n" +
+                "a\\bcd|a\\b'cd|a\\b''cd|abcd\\|ab\\'cd|\\\\");
+    }
+
+    // TODO: initcap, lpat, translate, ascii, chr
+    // TODO: bytea computations
+    // TODO unistr
 }

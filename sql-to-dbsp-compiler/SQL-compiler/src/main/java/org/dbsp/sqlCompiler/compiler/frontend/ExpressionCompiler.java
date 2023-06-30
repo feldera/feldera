@@ -564,6 +564,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         "_" + keyword + type1.nullableSuffix();
                 return new DBSPApplyExpression(node, functionName, type, ops.get(1));
             }
+            case POSITION: {
+                String functionName = call.getKind().toString().toLowerCase();
+                if (call.operands.size() == 2) {
+                    return new DBSPApplyExpression(node, functionName, type, ops.get(0), ops.get(1));
+                } else {
+                    throw new UnimplementedException(node);
+                }
+            }
             case LIKE:
             case SIMILAR: {
                 String functionName = call.getKind().toString().toLowerCase() + ops.size();

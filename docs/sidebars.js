@@ -45,6 +45,7 @@ const sidebars = {
       link: { type: "doc", id: "sql/intro" },
       items: [
           "sql/grammar",
+          "sql/identifiers",
           "sql/operators",
           "sql/aggregates",
           "sql/casts",
