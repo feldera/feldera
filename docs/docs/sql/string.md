@@ -110,6 +110,18 @@ addition to the normal way of `''`.
     <td><code>CHAR_LENGTH(string)</code> or <code>CHARACTER_LENGTH(string)</code></td>
     <td>Returns number of characters in the string.</td>
   </tr>
+  <tr>
+    <td><code>ASCII ( string )</code></td>
+    <td>Returns the numeric code of the first character of the argument. In UTF8 encoding, returns the Unicode code point of the character. In other multibyte encodings, the argument must be an ASCII character.  Returns 0 if the string is empty.</td>
+  </tr>
+  <tr>
+    <td><code>CHR ( integer )</code></td>
+    <td>Returns a string containing the character with the given code. If the code is incorrect (e.g., negative), the result is an empty string.</td>
+  </tr>
+  <tr>
+    <td><code>REPEAT ( stringm, count )</code></td>
+    <td>Repeats string the specified number of times.  The result is an empty string for a negative or 0 count.</td>
+  </tr>
 </table>
 
 ## `LIKE`

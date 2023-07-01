@@ -602,7 +602,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                                 ops, 2);
                     }
                     case "char_length":
+                    case "ascii":
+                    case "chr":
                         return this.compileFunction(call, node, type, ops, 1);
+                    case "repeat":
+                        return this.compileFunction(call, node, type, ops, 2);
                     case "division":
                         return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
                     case "cardinality": {

@@ -570,7 +570,44 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "a\\bcd|a\\b'cd|a\\b''cd|abcd\\|ab\\'cd|\\\\");
     }
 
-    // TODO: initcap, lpat, translate, ascii, chr
+    // TODO: initcap, lpat, translate,
+    
+    @Test
+    public void testAscii() {
+        this.queryWithOutput("SELECT ascii('x');\n" +
+                " ascii \n" +
+                "-------\n" +
+                "   120");
+        this.queryWithOutput("SELECT ascii('');\n" +
+                " ascii \n" +
+                "-------\n" +
+                "     0");
+    }
+
+    @Test
+    public void testChr() {
+        this.queryWithOutput("SELECT chr(65);\n" +
+                " chr \n" +
+                "-----\n" +
+                "A");
+        this.queryWithOutput("SELECT chr(0);\n" +
+                " chr \n" +
+                "-----\n" +
+                "\0");
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5813")
+    public void testRepeat() {
+        this.queryWithOutput("SELECT repeat('Pg', 4);\n" +
+                "  repeat  \n" +
+                "----------\n" +
+                "PgPgPgPg");
+        this.queryWithOutput("SELECT repeat('Pg', -4);\n" +
+                " repeat \n" +
+                "--------\n" +
+                "");
+    }
+
     // TODO: bytea computations
     // TODO unistr
 }

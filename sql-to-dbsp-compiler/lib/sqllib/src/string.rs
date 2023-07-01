@@ -86,3 +86,24 @@ pub fn position(needle: String, haystack: String) -> i32 {
 pub fn char_length(value: String) -> i32 {
     value.chars().count() as i32
 }
+
+pub fn ascii(value: String) -> i32 {
+    if value.is_empty() { 0 }
+    else { value.chars().next().unwrap() as u32 as i32 }
+}
+
+pub fn chr(code: i32) -> String {
+    if code < 0 { String::default() }
+    else {
+        let c = char::from_u32(code as u32);
+        match c {
+            None => String::default(),
+            Some(v) => String::from(v),
+        }
+    }
+}
+
+pub fn repeat(value: String, count: i32) -> String {
+    if count <= 0 { String::default() }
+    else { value.repeat(count as usize) }
+}
