@@ -38,8 +38,8 @@ pretty = { version = "0.12.1", features = ["termcolor"] }
 
 # JSON schema validation
 # TODO: Feature-gate schema support
-schemars = "0.8.12"
 jsonschema = "0.17.0"
+schemars = { version = "0.8.12", features = ["chrono"] }
 
 # FIXME: Better serialization protocol
 # TODO: Feature gate serde/json support
@@ -58,7 +58,7 @@ clap = { version = "4.1.8", features = ["derive"], optional = true }
     [dependencies.chrono]
     version = "0.4.23"
     default-features = false
-    features = ["std"]
+    features = ["std", "serde"]
 
     [dependencies.derive_more]
     version = "0.99.17"

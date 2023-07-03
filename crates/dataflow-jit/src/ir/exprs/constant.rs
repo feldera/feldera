@@ -2,6 +2,7 @@ use crate::ir::{
     pretty::{DocAllocator, DocBuilder, Pretty},
     ColumnType, RowLayoutCache,
 };
+use chrono::{NaiveDate, NaiveDateTime};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, mem};
@@ -24,7 +25,8 @@ pub enum Constant {
     F64(f64),
     Bool(bool),
     String(String),
-    // TODO: Date, Timestamp
+    Date(NaiveDate),
+    Timestamp(NaiveDateTime),
 }
 
 impl Constant {
@@ -80,6 +82,22 @@ impl Constant {
         self.column_type().is_unit()
     }
 
+    /// Returns `true` if the constant is a [`Date`].
+    ///
+    /// [`Date`]: Constant::Date
+    #[must_use]
+    pub const fn is_date(&self) -> bool {
+        matches!(self, Self::Date(..))
+    }
+
+    /// Returns `true` if the constant is a [`Timestamp`].
+    ///
+    /// [`Timestamp`]: Constant::Timestamp
+    #[must_use]
+    pub const fn is_timestamp(&self) -> bool {
+        matches!(self, Self::Timestamp(..))
+    }
+
     /// Returns the [`ColumnType`] of the current constant
     #[must_use]
     pub const fn column_type(&self) -> ColumnType {
@@ -99,6 +117,8 @@ impl Constant {
             Self::F64(_) => ColumnType::F64,
             Self::Bool(_) => ColumnType::Bool,
             Self::String(_) => ColumnType::String,
+            Self::Date(_) => ColumnType::Date,
+            Self::Timestamp(_) => ColumnType::Timestamp,
         }
     }
 }
@@ -128,6 +148,10 @@ where
             Constant::F64(f64) => format!("{f64}"),
             Constant::Bool(bool) => format!("{bool}"),
             Constant::String(string) => format!("{string:?}"),
+            // Formats as `2001-07-08`
+            Constant::Date(date) => format!("{}", date.format("%F")),
+            // Formats as `2001-07-08T00:34:60.026490+09:30`
+            Constant::Timestamp(timestamp) => format!("{}", timestamp.format("%+")),
             Constant::Unit => unreachable!("already handled unit"),
         };
 
@@ -167,6 +191,8 @@ impl PartialEq for Constant {
             }
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
+            (Self::Date(lhs), Self::Date(rhs)) => lhs == rhs,
+            (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs == rhs,
 
             _ => {
                 debug_assert_ne!(mem::discriminant(self), mem::discriminant(other));
@@ -221,6 +247,8 @@ impl PartialOrd for Constant {
             },
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs.cmp(rhs),
             (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
+            (Self::Date(lhs), Self::Date(rhs)) => lhs.cmp(rhs),
+            (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs.cmp(rhs),
 
             _ => {
                 debug_assert_ne!(mem::discriminant(self), mem::discriminant(other));
@@ -273,6 +301,8 @@ impl Ord for Constant {
             },
             (Self::Bool(lhs), Self::Bool(rhs)) => lhs.cmp(rhs),
             (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
+            (Self::Date(lhs), Self::Date(rhs)) => lhs.cmp(rhs),
+            (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs.cmp(rhs),
 
             _ => {
                 debug_assert_ne!(mem::discriminant(self), mem::discriminant(other));

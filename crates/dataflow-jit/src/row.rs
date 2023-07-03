@@ -12,6 +12,7 @@ use bincode::{
     error::{DecodeError, EncodeError},
     Decode, Encode,
 };
+use chrono::NaiveTime;
 use size_of::SizeOf;
 use std::{
     alloc::Layout,
@@ -452,7 +453,10 @@ unsafe fn write_constant_to(constant: &Constant, ptr: *mut u8) {
         Constant::Bool(value) => ptr.cast::<bool>().write(value),
 
         Constant::String(ref value) => ptr.cast::<ThinStr>().write(ThinStr::from(&**value)),
-        // Constant::Date(date) => ptr.cast::<i32>().write(date),
-        // Constant::Timestamp(timestamp) => ptr.cast::<i64>().write(timestamp),
+
+        Constant::Date(date) => ptr
+            .cast::<i32>()
+            .write((date.and_time(NaiveTime::MIN).timestamp_millis() / (86400 * 1000)) as i32),
+        Constant::Timestamp(timestamp) => ptr.cast::<i64>().write(timestamp.timestamp_millis()),
     }
 }

@@ -4848,6 +4848,7 @@ version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02c613288622e5f0c3fdc5dbd4db1c5fbe752746b1d1a56a0630b78fd00de44f"
 dependencies = [
+ "chrono",
  "dyn-clone",
  "schemars_derive",
  "serde",
