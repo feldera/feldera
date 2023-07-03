@@ -66,7 +66,7 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
     }
 
     void constant(String type, DBSPLiteral literal) {
-        this.constant(type, literal, literal.getNonNullable());
+        this.constant(type, literal, literal.isNull ? literal : literal.getNonNullable());
     }
 
     @Override
