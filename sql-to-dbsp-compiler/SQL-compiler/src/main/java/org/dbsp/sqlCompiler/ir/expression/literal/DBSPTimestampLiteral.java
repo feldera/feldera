@@ -87,6 +87,12 @@ public class DBSPTimestampLiteral extends DBSPLiteral {
         return new DBSPTimestampLiteral(this.getNode(), this.getType().setMayBeNull(false), this.value);
     }
 
+    @Nullable
+    public TimestampString getTimestampString() {
+        if (this.isNull)
+            return null;
+        return TimestampString.fromMillisSinceEpoch(Objects.requireNonNull(this.value));
+    }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {

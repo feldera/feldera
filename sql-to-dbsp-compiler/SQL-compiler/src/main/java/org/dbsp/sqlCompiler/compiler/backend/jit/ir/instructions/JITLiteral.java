@@ -32,14 +32,18 @@ import com.fasterxml.jackson.databind.node.LongNode;
 import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
+import org.apache.calcite.util.DateString;
+import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITScalarType;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
@@ -89,6 +93,24 @@ public class JITLiteral extends JITValue {
             return isNull ? new DoubleNode(0.0) : new DoubleNode(this.literal.to(DBSPDoubleLiteral.class).value);
         } else if (this.literal.is(DBSPFloatLiteral.class)) {
             return isNull ? new FloatNode(0.0F) : new FloatNode(this.literal.to(DBSPFloatLiteral.class).value);
+        } else if (this.literal.is(DBSPTimestampLiteral.class)) {
+            String value = "";
+            if (!isNull) {
+                TimestampString ts = this.literal.to(DBSPTimestampLiteral.class).getTimestampString();
+                value = ts.toString();
+                // The JIT expects the value with timezone
+                value = value.replace(" ", "T");
+                value += "+00:00";
+            }
+            return new TextNode(value);
+        } else if (this.literal.is(DBSPDateLiteral.class)) {
+            String value = "";
+            if (!isNull) {
+                DateString ts = this.literal.to(DBSPDateLiteral.class).getDateString();
+                value = ts.toString();
+                value = value.replace(" ", "T");
+            }
+            return new TextNode(value);
         } else {
             throw new UnimplementedException(this.literal);
         }

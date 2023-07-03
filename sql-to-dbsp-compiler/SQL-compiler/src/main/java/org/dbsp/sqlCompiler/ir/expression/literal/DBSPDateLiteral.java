@@ -73,6 +73,13 @@ public class DBSPDateLiteral extends DBSPLiteral {
         return new DBSPDateLiteral(this.getNode(), this.getType().setMayBeNull(false), this.value);
     }
 
+    @Nullable
+    public DateString getDateString() {
+        if (this.isNull)
+            return null;
+        return DateString.fromDaysSinceEpoch(Objects.requireNonNull(this.value));
+    }
+
     @Override
     public boolean sameValue(@Nullable DBSPLiteral o) {
         if (this == o) return true;

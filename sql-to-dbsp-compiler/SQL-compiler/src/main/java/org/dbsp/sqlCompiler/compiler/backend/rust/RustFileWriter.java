@@ -178,7 +178,9 @@ public class RustFileWriter implements ICompilerComponent {
             "    geopoint::*,\n" +
             "    timestamp::*,\n" +
             "    interval::*,\n" +
-            "};\n"
+            "};\n" +
+            "#[cfg(test)]\n" +
+            "use chrono::{NaiveDate, NaiveDateTime};\n"
             ;
 
     final DBSPCompiler compiler;
