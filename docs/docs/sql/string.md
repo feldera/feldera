@@ -133,3 +133,17 @@ but a different one can be selected by using the ESCAPE clause. To
 match the escape character itself, write two escape characters.  The
 escape character cannot be one of the special pattern characters `_`
 or `%`.
+
+Some examples where the escape character is changed to `#`:
+
+```sql
+SELECT 'hawkeye' LIKE 'h%' ESCAPE '#'          true
+SELECT 'hawkeye' NOT LIKE 'h%' ESCAPE '#'      false
+SELECT 'h%' LIKE 'h#%' ESCAPE '#'              true
+SELECT 'h%' NOT LIKE 'h#%' ESCAPE '#'          false
+SELECT 'h%wkeye' LIKE 'h#%' ESCAPE '#'         false
+SELECT 'h%wkeye' NOT LIKE 'h#%' ESCAPE '#'     true
+SELECT 'h%wkeye' LIKE 'h#%%' ESCAPE '#'        true
+SELECT 'h%wkeye' NOT LIKE 'h#%%' ESCAPE '#'    false
+SELECT 'h%awkeye' LIKE 'h#%a%k%e' ESCAPE '#'   true
+```
