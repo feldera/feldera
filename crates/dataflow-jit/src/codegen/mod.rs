@@ -10,6 +10,7 @@ mod timestamp;
 mod utils;
 mod vtable;
 
+use chrono::NaiveTime;
 pub use layout::{BitSetType, InvalidBitsetType, NativeLayout, NativeType};
 pub use layout_cache::NativeLayoutCache;
 pub use vtable::{LayoutVTable, VTable};
@@ -766,6 +767,13 @@ impl<'a> CodegenCtx<'a> {
             Constant::Usize(int) => int as i64,
             Constant::Isize(int) => int as i64,
             Constant::Bool(bool) => bool as i64,
+            Constant::Date(date) => {
+                date.and_time(NaiveTime::MIN).timestamp_millis()
+                    / (86400 * 1000)
+                    // Truncate to 32 bits
+                    as i32 as i64
+            }
+            Constant::Timestamp(timestamp) => timestamp.timestamp_millis(),
 
             Constant::Unit | Constant::F32(_) | Constant::F64(_) | Constant::String(_) => {
                 unreachable!()

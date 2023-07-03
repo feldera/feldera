@@ -5,7 +5,9 @@ use crate::{
     thin_str::ThinStrRef,
     ThinStr,
 };
-use chrono::{DateTime, Datelike, LocalResult, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
+use chrono::{
+    DateTime, Datelike, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc,
+};
 use cranelift::{
     codegen::ir::{FuncRef, Function},
     prelude::{types, AbiParam, FunctionBuilder, Signature as ClifSignature},
@@ -1168,7 +1170,7 @@ unsafe extern "C" fn csv_get_date(
     record
         .get(column)
         .and_then(|date| match NaiveDate::parse_from_str(date, format) {
-            Ok(date) => date.and_hms_opt(0, 0, 0),
+            Ok(date) => Some(date.and_time(NaiveTime::MIN)),
             Err(error) => {
                 tracing::error!("error parsing csv date from column {column}: {error}");
                 None
@@ -1189,7 +1191,7 @@ unsafe extern "C" fn csv_get_nullable_date(
         .get(column)
         .filter(|column| !column.trim().eq_ignore_ascii_case("null"))
         .and_then(|date| match NaiveDate::parse_from_str(date, format) {
-            Ok(date) => date.and_hms_opt(0, 0, 0),
+            Ok(date) => Some(date.and_time(NaiveTime::MIN)),
             Err(error) => {
                 tracing::error!("error parsing csv date from column {column}: {error}");
                 None
