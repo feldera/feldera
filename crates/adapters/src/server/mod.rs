@@ -936,7 +936,6 @@ inputs:
         transport:
             name: kafka
             config:
-                bootstrap.servers: "localhost"
                 auto.offset.reset: "earliest"
                 topics: [test_server_input_topic]
                 log_level: debug
@@ -948,7 +947,6 @@ outputs:
         transport:
             name: kafka
             config:
-                bootstrap.servers: "localhost"
                 topic: test_server_output_topic
                 max_inflight_messages: 0
         format:

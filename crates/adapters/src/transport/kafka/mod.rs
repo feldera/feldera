@@ -6,6 +6,7 @@ use rdkafka::{
     types::RDKafkaErrorCode,
 };
 use serde::Deserialize;
+use std::env;
 use utoipa::ToSchema;
 
 mod input;
@@ -16,6 +17,10 @@ pub mod test;
 
 pub use input::{KafkaInputConfig, KafkaInputTransport};
 pub use output::{KafkaOutputConfig, KafkaOutputTransport};
+
+pub(crate) fn default_redpanda_server() -> String {
+    env::var("REDPANDA_BROKERS").unwrap_or_else(|_| "localhost".to_string())
+}
 
 /// Kafka logging levels.
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ToSchema)]

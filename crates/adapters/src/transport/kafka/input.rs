@@ -1,4 +1,4 @@
-use super::{refine_kafka_error, KafkaLogLevel};
+use super::{default_redpanda_server, refine_kafka_error, KafkaLogLevel};
 use crate::{InputConsumer, InputEndpoint, InputTransport, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use log::debug;
@@ -14,7 +14,6 @@ use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
-    env,
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex, Weak,
@@ -155,10 +154,7 @@ impl KafkaInputConfig {
     /// Validate configuration, set default option values required by this
     /// adapter.
     fn validate(&mut self) -> AnyResult<()> {
-        self.set_option_if_missing(
-            "bootstrap.servers",
-            &env::var("REDPANDA_BROKERS").unwrap_or_else(|_| "localhost".to_string()),
-        );
+        self.set_option_if_missing("bootstrap.servers", &default_redpanda_server());
 
         // Commit automatically.
         // See https://docs.confluent.io/platform/current/clients/consumer.html#offset-management
