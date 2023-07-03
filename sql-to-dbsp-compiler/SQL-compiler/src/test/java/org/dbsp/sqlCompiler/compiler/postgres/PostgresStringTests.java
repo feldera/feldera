@@ -235,12 +235,12 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.queryWithOutput("SELECT SUBSTRING('1234567890' FROM 3) = '34567890' AS \"34567890\";\n" +
                 " 34567890 \n" +
                 "----------\n" +
-                " t\n");
+                " t");
         this.queryWithOutput(
                 "SELECT SUBSTRING('1234567890' FROM 4 FOR 3) = '456' AS \"456\";\n" +
                 " 456 \n" +
                 "-----\n" +
-                " t\n");
+                " t");
         this.queryWithOutput("SELECT SUBSTRING('string' FROM -10 FOR 2147483646) AS \"string\";\n" +
                 " string \n" +
                 "--------\n" +
@@ -253,6 +253,210 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "SELECT SUBSTRING('string' FROM 2 FOR 2147483646) AS \"tring\";\n" +
                         " tring \n" +
                         "-------\n" +
-                        "tring\n");
+                        "tring");
+    }
+
+    @Test
+    public void testNegativeSubstringLength() {
+        this.queryWithOutput("SELECT SUBSTRING('string' FROM -10 FOR -2147483646) AS \"error\";\n" +
+                "error\n" +
+                "------\n" +
+                "");
+        this.queryWithOutput("SELECT SUBSTRING('string' FROM 0 FOR -2) AS \"error\";\n" +
+                "error\n" +
+                "------\n" +
+                "");
+    }
+
+    // SUBSTRING ... SIMILAR syntax not supported
+    // SELECT SUBSTRING('abcdefg' SIMILAR 'a#"(b_d)#"%' ESCAPE '#') AS "bcd";
+
+    @Test
+    public void testLike2() {
+        this.queryWithOutput("SELECT 'hawkeye' LIKE 'h%' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'hawkeye' NOT LIKE 'h%' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'hawkeye' LIKE 'H%' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'hawkeye' NOT LIKE 'H%' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'hawkeye' LIKE 'indio%' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'hawkeye' NOT LIKE 'indio%' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'hawkeye' LIKE 'h%eye' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'hawkeye' NOT LIKE 'h%eye' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'indio' LIKE '_ndio' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'indio' NOT LIKE '_ndio' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'indio' LIKE 'in__o' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'indio' NOT LIKE 'in__o' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'indio' LIKE 'in_o' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'indio' NOT LIKE 'in_o' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+    }
+
+    @Test
+    public void testLike3() {
+        this.queryWithOutput("SELECT 'hawkeye' LIKE 'h%' ESCAPE '#' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'hawkeye' NOT LIKE 'h%' ESCAPE '#' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'indio' LIKE 'ind_o' ESCAPE '$' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'indio' NOT LIKE 'ind_o' ESCAPE '$' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'h%' LIKE 'h#%' ESCAPE '#' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'h%' NOT LIKE 'h#%' ESCAPE '#' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'h%wkeye' LIKE 'h#%' ESCAPE '#' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'h%wkeye' NOT LIKE 'h#%' ESCAPE '#' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'h%wkeye' LIKE 'h#%%' ESCAPE '#' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'h%wkeye' NOT LIKE 'h#%%' ESCAPE '#' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'h%awkeye' LIKE 'h#%a%k%e' ESCAPE '#' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'h%awkeye' NOT LIKE 'h#%a%k%e' ESCAPE '#' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'indio' LIKE '_ndio' ESCAPE '$' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'indio' NOT LIKE '_ndio' ESCAPE '$' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'i_dio' LIKE 'i$_d_o' ESCAPE '$' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'i_dio' NOT LIKE 'i$_d_o' ESCAPE '$' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'i_dio' LIKE 'i$_nd_o' ESCAPE '$' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'i_dio' NOT LIKE 'i$_nd_o' ESCAPE '$' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'i_dio' LIKE 'i$_d%o' ESCAPE '$' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'i_dio' NOT LIKE 'i$_d%o' ESCAPE '$' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+    }
+
+    @Test @Ignore("We do not allow escape characters that are % or _")
+    public void testLike3Pattern() {
+        // -- escape character same as pattern character\n"
+        this.queryWithOutput("SELECT 'maca' LIKE 'm%aca' ESCAPE '%' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'maca' NOT LIKE 'm%aca' ESCAPE '%' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'ma%a' LIKE 'm%a%%a' ESCAPE '%' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'ma%a' NOT LIKE 'm%a%%a' ESCAPE '%' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'bear' LIKE 'b_ear' ESCAPE '_' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'bear' NOT LIKE 'b_ear' ESCAPE '_' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'be_r' LIKE 'b_e__r' ESCAPE '_' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.queryWithOutput("SELECT 'be_r' NOT LIKE 'b_e__r' ESCAPE '_' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'be_r' LIKE '__e__r' ESCAPE '_' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.queryWithOutput("SELECT 'be_r' NOT LIKE '__e__r' ESCAPE '_' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
     }
 }
