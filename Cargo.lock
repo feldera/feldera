@@ -3318,6 +3318,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "like"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc7281e4b2b1a1fae03463a7c49dd21464de50251a450f6da9715c40c7b21a70"
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5254,6 +5260,7 @@ dependencies = [
  "dbsp",
  "geo",
  "geo-types",
+ "like",
  "num",
  "rust_decimal",
  "serde",

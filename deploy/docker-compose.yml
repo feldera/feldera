@@ -57,7 +57,7 @@ services:
       - --mode dev-container
       # enable logs for debugging.
       # - --default-log-level=debug
-    image: docker.redpanda.com/vectorized/redpanda:v22.3.11
+    image: docker.redpanda.com/vectorized/redpanda:v23.1.13
     ports:
       - 18081:18081
       - 18082:18082

@@ -10,7 +10,7 @@ export REDPANDA_BROKERS=localhost:9092
 
 docker kill redpanda || true
 docker rm redpanda || true
-docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v22.3.11
+docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.1.13
 
 ${ROOT}/scripts/start_manager.sh ${THIS_DIR}/pipeline_data
 
