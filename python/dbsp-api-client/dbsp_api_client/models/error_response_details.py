@@ -7,7 +7,10 @@ T = TypeVar("T", bound="ErrorResponseDetails")
 
 @attr.s(auto_attribs=True)
 class ErrorResponseDetails:
-    """ """
+    """Detailed error metadata.
+    The contents of this field is determined by `error_code`.
+
+    """
 
     additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
 
