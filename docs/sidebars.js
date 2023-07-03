@@ -41,6 +41,11 @@ const sidebars = {
     },
     {
       type: "category",
+      label: "Rust DBSP library Reference",
+      link: { type: "doc", id: "docs/rust" },
+    },
+    {
+      type: "category",
       label: "SQL Reference",
       link: { type: "doc", id: "sql/intro" },
       items: [
@@ -62,7 +67,7 @@ const sidebars = {
     {
       type: "category",
       label: "API Reference",
-      items: ["api/rest", "api/dbsp", "api/python"],
+      items: ["api/rest", "api/python"],
     },
     "papers",
     "contribute-to-dbsp",

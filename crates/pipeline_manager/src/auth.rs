@@ -9,7 +9,7 @@
 //!
 //! The expected workflow is for users to login via a browser to receive a JWT
 //! access token. Clients then issue pipeline manager APIs using an HTTP
-//! authorization header for bearer tokens (Authorization: Bearer <token>). With
+//! authorization header for bearer tokens (Authorization: Bearer \<token\>). With
 //! a bearer token, users may generate API keys that can be used for
 //! programmatic access (see below).
 //!
@@ -287,7 +287,7 @@ pub(crate) struct AuthConfiguration {
 /// The shape of a claim provided to clients by AwsCognito, following
 /// the guide below:
 ///
-/// https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html
+/// <https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct AwsCognitoClaim {
     /// The user pool app client that authenticated the client
@@ -366,8 +366,8 @@ impl From<jsonwebtoken::errors::ErrorKind> for AuthError {
 /// Follows the guidelines in the following links, except that JWK refreshes are
 /// not yet implemented
 ///
-/// https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html
-/// JWT claims: https://datatracker.ietf.org/doc/html/rfc7519#section-4
+/// <https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html>
+/// JWT claims: <https://datatracker.ietf.org/doc/html/rfc7519#section-4>
 async fn decode_aws_cognito_token(
     token: &str,
     req: &ServiceRequest,

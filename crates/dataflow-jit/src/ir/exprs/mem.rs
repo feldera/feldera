@@ -176,10 +176,10 @@ where
 /// Both the `src` and `dest` rows must have the same layout.
 ///
 /// Semantically equivalent to [`Load`]-ing each column within `src`, calling
-/// [`struct@Copy`] on the loaded value and then [`Store`]-ing the copied value
-/// to `dest` (along with any required [`IsNull`]/[`SetNull`] juggling that has
-/// to be done due to nullable columns)
-// TODO: We need to offer a drop operator of some kind so that rows can be deinitialized if needed
+/// [`trait@struct@Copy`] on the loaded value and then [`Store`]-ing the copied value
+/// to `dest` (along with any required [`crate::ir::exprs::IsNull`]/
+/// [`crate::ir::exprs::SetNull`]
+/// juggling that has to be done due to nullable columns)
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct CopyRowTo {
     src: ExprId,

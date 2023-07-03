@@ -324,11 +324,13 @@ install-docs-deps:
     COPY docs/package.json ./docs/package.json
     COPY docs/yarn.lock ./docs/yarn.lock
     RUN cd docs && yarn install
+    COPY target/doc/dbsp ./docs/rust
 
 build-docs:
     FROM +install-docs-deps
     COPY docs/ docs/
     COPY ( +build-manager/dbsp_pipeline_manager ) ./docs/dbsp_pipeline_manager
+    RUN cargo doc
     RUN cd docs && ./dbsp_pipeline_manager --dump-openapi
     RUN cd docs && yarn format:check
     RUN cd docs && yarn lint
