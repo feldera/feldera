@@ -551,6 +551,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
      * @param condition  Reference to instruction computing mux condition.
      * @param left       Reference to the left operand.
      * @param right      Reference to the right operand.
+     * @param valueType  Type of the value produced by the mux.
      * @return           A reference to the inserted mux.  If the mux condition
      *                   can be determined to be constant only one of the
      *                   operands may be returned.
@@ -558,7 +559,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     JITInstructionRef insertMux(
             JITInstructionRef condition,
             JITInstructionRef left, JITInstructionRef right,
-            String comment) {
+            JITType valueType, String comment) {
         condition.mustBeValid();
         left.mustBeValid();
         right.mustBeValid();
@@ -570,7 +571,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         if (condition.equals(True))
             return left;
         JITInstruction mux = this.add(new JITMuxInstruction(this.nextInstructionId(),
-                condition, left, right, comment));
+                condition, left, right, valueType, comment));
         return mux.getInstructionReference();
     }
 
@@ -687,10 +688,10 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 //                              : (b.is_null ? a.value : false)
 
                 // cond1 = (b.is_null ? true : b.value)
-                this.insertMux(rightNullId, True, rightId.value, "");
-                JITInstructionRef cond1 = this.insertMux(rightNullId, True, rightId.value, "");
+                this.insertMux(rightNullId, True, rightId.value, JITBoolType.INSTANCE, "");
+                JITInstructionRef cond1 = this.insertMux(rightNullId, True, rightId.value, JITBoolType.INSTANCE, "");
                 // cond2 = (b.is_null ? !a.value   : false)
-                JITInstructionRef cond2 = this.insertMux(rightNullId, leftId.value, False, "");
+                JITInstructionRef cond2 = this.insertMux(rightNullId, leftId.value, False, JITBoolType.INSTANCE, "");
 
                 // (a && b).value = a.is_null ? b.value
                 //                            : (b.is_null ? a.value : a.value && b.value)
@@ -700,11 +701,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                         JITBinaryInstruction.Operation.AND,
                         leftId.value, rightId.value, convertScalarType(expression.left), "");
                 // (b.is_null ? a.value : a.value && b.value)
-                JITInstructionRef secondBranch = this.insertMux(rightNullId, leftId.value, and, "");
+                JITInstructionRef secondBranch = this.insertMux(rightNullId, leftId.value, and, JITBoolType.INSTANCE, "");
                 // Final Mux
                 JITInstructionRef value = this.insertMux(
-                        leftNullId, rightId.value, secondBranch, expression.toString());
-                JITInstructionRef isNull = this.insertMux(leftNullId, cond1, cond2,
+                        leftNullId, rightId.value, secondBranch, JITBoolType.INSTANCE, expression.toString());
+                JITInstructionRef isNull = this.insertMux(leftNullId, cond1, cond2, JITBoolType.INSTANCE,
                         expression.is_null().toString());
                 this.map(expression, new JITInstructionPair(value, isNull));
             } else { // Boolean ||
@@ -717,12 +718,12 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 JITInstructionRef notB = this.insertUnary(
                         JITUnaryInstruction.Operation.NOT, rightId.value, JITBoolType.INSTANCE);
                 JITInstructionRef cond1 = this.insertMux(
-                        rightNullId, True, notB, "");
+                        rightNullId, True, notB, JITBoolType.INSTANCE, "");
                 // cond2 = (b.is_null ? !a.value : false)
                 // !a
                 JITInstructionRef notA = this.insertUnary(
                         JITUnaryInstruction.Operation.NOT, leftId.value, JITBoolType.INSTANCE);
-                JITInstructionRef cond2 = this.insertMux(rightNullId, notA, False, "");
+                JITInstructionRef cond2 = this.insertMux(rightNullId, notA, False, JITBoolType.INSTANCE, "");
 
                 // (a || b).value = a.is_null ? b.value
                 //                            : a.value || b.value
@@ -731,8 +732,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                                 JITBinaryInstruction.Operation.OR,
                                 leftId.value, rightId.value, convertScalarType(expression.left), "");
                 // Result
-                JITInstructionRef value = this.insertMux(leftNullId, cond1, cond2, expression.toString());
-                JITInstructionRef isNull = this.insertMux(leftNullId, rightId.value, or,
+                JITInstructionRef value = this.insertMux(leftNullId, cond1, cond2, JITBoolType.INSTANCE, expression.toString());
+                JITInstructionRef isNull = this.insertMux(leftNullId, rightId.value, or, JITBoolType.INSTANCE,
                         expression.is_null().toString());
                 this.map(expression, new JITInstructionPair(value, isNull));
             }
@@ -861,7 +862,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 break;
             case WRAP_BOOL: {
                 JITInstructionRef value = this.insertMux(
-                        source.isNull, False, source.value, expression.toString());
+                        source.isNull, False, source.value, JITBoolType.INSTANCE, expression.toString());
                 this.map(expression, new JITInstructionPair(value));
                 return VisitDecision.STOP;
             }
@@ -872,7 +873,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                     JITInstructionRef ni = this.insertUnary(
                         JITUnaryInstruction.Operation.NOT, source.value, convertScalarType(expression.source));
                     // result
-                    JITInstructionRef value = this.insertMux(source.isNull, False, ni, expression.toString());
+                    JITInstructionRef value = this.insertMux(
+                            source.isNull, False, ni, JITBoolType.INSTANCE, expression.toString());
                     this.map(expression, new JITInstructionPair(value));
                     return VisitDecision.STOP;
                 } else {
@@ -885,7 +887,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                     // result = left.is_null ? false : left.value
                     // result
                     JITInstructionRef value = this.insertMux(
-                        source.isNull, False, source.value, expression.toString());
+                        source.isNull, False, source.value, JITBoolType.INSTANCE, expression.toString());
                     this.map(expression, new JITInstructionPair(value));
                 } else {
                     this.map(expression, new JITInstructionPair(source.value));
@@ -900,7 +902,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                         JITUnaryInstruction.Operation.NOT, source.value, convertScalarType(expression.source));
                     JITInstructionRef True = this.constantBool(true);
                     // result
-                    JITInstructionRef value = this.insertMux(source.isNull, True, ni, expression.toString());
+                    JITInstructionRef value = this.insertMux(
+                            source.isNull, True, ni, JITBoolType.INSTANCE, expression.toString());
                     this.map(expression, new JITInstructionPair(value));
                     return VisitDecision.STOP;
                 } else {
@@ -914,7 +917,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                     JITInstructionRef True = this.constantBool(true);
                     // result
                     JITInstructionRef value = this.insertMux(
-                        source.isNull, True, source.value, expression.toString());
+                        source.isNull, True, source.value, JITBoolType.INSTANCE, expression.toString());
                     this.map(expression, new JITInstructionPair(value));
                 } else {
                     this.map(expression, new JITInstructionPair(source.value));

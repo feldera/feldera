@@ -128,4 +128,11 @@ public class JITRowType extends JITType implements IJITId, IJitKvOrRowType {
         ObjectNode set = parent.putObject(label);
         set.put("Set", this.getId());
     }
+
+    @Override
+    public BaseJsonNode asJsonReference() {
+        ObjectNode result = jsonFactory().createObjectNode();
+        result.put("row", this.getId());
+        return result;
+    }
 }

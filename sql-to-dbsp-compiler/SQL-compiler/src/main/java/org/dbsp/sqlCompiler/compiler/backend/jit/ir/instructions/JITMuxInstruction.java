@@ -25,21 +25,27 @@ package org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions;
 
 import com.fasterxml.jackson.databind.node.BaseJsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
 import org.dbsp.util.IIndentStream;
 
+/**
+ * This is called "Select" in the JIT IR.
+ */
 public class JITMuxInstruction extends JITInstruction {
     public final JITInstructionRef condition;
     public final JITInstructionRef left;
     public final JITInstructionRef right;
+    public final JITType valueType;
 
     public JITMuxInstruction(
             long id,
             JITInstructionRef condition, JITInstructionRef left, JITInstructionRef right,
-            String comment) {
+            JITType valueType, String comment) {
         super(id, "Select", comment);
         this.condition = condition;
         this.right = right;
         this.left = left;
+        this.valueType = valueType;
     }
 
     @Override
@@ -48,6 +54,7 @@ public class JITMuxInstruction extends JITInstruction {
         result.put("cond", this.condition.getId());
         result.put("if_true", this.left.getId());
         result.put("if_false", this.right.getId());
+        result.set("value_type", this.valueType.asJsonReference());
         return result;
     }
 

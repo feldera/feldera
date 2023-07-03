@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators;
 
+import com.fasterxml.jackson.databind.node.BaseJsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITRowType;
 
 import java.util.List;
@@ -30,5 +32,13 @@ import java.util.List;
 public class JITSubtractOperator extends JITOperator {
     public JITSubtractOperator(long id, JITRowType type, List<JITOperatorReference> inputs) {
         super(id, "Minus", "", type, inputs, null, null);
+    }
+
+    @Override
+    public BaseJsonNode asJson() {
+        BaseJsonNode result = super.asJson();
+        ObjectNode inner = this.getInnerObject(result);
+        this.type.addDescriptionTo(inner, "layout");
+        return result;
     }
 }
