@@ -10,6 +10,7 @@ use crate::{
     row::{row_from_literal, Row, UninitRow},
     thin_str::ThinStrRef,
 };
+use chrono::{TimeZone, Utc};
 use cranelift_module::FuncId;
 use csv::StringRecord;
 use dbsp::{
@@ -402,9 +403,16 @@ unsafe fn constant_from_column(
         ColumnType::F64 => Constant::F64(ptr.cast::<f64>().read()),
         ColumnType::Bool => Constant::Bool(ptr.cast::<bool>().read()),
 
-        // FIXME: Date & timestamp constants
-        ColumnType::Date => Constant::I32(ptr.cast::<i32>().read()),
-        ColumnType::Timestamp => Constant::I64(ptr.cast::<i64>().read()),
+        ColumnType::Date => Constant::Date(
+            Utc.timestamp_opt(ptr.cast::<i32>().read() as i64 * 86400, 0)
+                .unwrap()
+                .date_naive(),
+        ),
+        ColumnType::Timestamp => Constant::Timestamp(
+            Utc.timestamp_millis_opt(ptr.cast::<i64>().read())
+                .unwrap()
+                .naive_utc(),
+        ),
 
         ColumnType::String => Constant::String(ptr.cast::<ThinStrRef>().read().to_string()),
         ColumnType::Ptr => todo!(),
