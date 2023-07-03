@@ -1,4 +1,7 @@
-use crate::test::{wait, TestStruct};
+use crate::{
+    test::{wait, TestStruct},
+    transport::kafka::default_redpanda_server,
+};
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
 use futures::executor::block_on;
 use rdkafka::{
@@ -31,7 +34,7 @@ impl KafkaResources {
     pub fn create_topics(topics: &[(&str, i32)]) -> Self {
         let mut admin_config = ClientConfig::new();
         admin_config
-            .set("bootstrap.servers", "localhost")
+            .set("bootstrap.servers", &default_redpanda_server())
             .set_log_level(RDKafkaLogLevel::Debug);
         let admin_client = AdminClient::from_config(&admin_config).unwrap();
 
@@ -100,7 +103,7 @@ impl TestProducer {
     pub fn new() -> Self {
         let mut producer_config = ClientConfig::new();
         producer_config
-            .set("bootstrap.servers", "localhost")
+            .set("bootstrap.servers", &default_redpanda_server())
             .set("message.timeout.ms", "0") // infinite timeout
             .set_log_level(RDKafkaLogLevel::Debug);
         let producer = ThreadedProducer::from_config(&producer_config).unwrap();
@@ -171,7 +174,7 @@ impl BufferConsumer {
                 );
 
                 let kafka_consumer = ClientConfig::new()
-                    .set("bootstrap.servers", "localhost")
+                    .set("bootstrap.servers", &default_redpanda_server())
                     .set("enable.auto.commit", "true")
                     .set("enable.auto.offset.store", "true")
                     .set("auto.offset.reset", "earliest")

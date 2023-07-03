@@ -1,4 +1,4 @@
-use super::KafkaLogLevel;
+use super::{default_redpanda_server, KafkaLogLevel};
 use crate::{AsyncErrorCallback, OutputEndpoint, OutputEndpointConfig, OutputTransport};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
@@ -9,7 +9,7 @@ use rdkafka::{
     ClientConfig, ClientContext,
 };
 use serde::Deserialize;
-use std::{borrow::Cow, collections::BTreeMap, env, sync::RwLock, time::Duration};
+use std::{borrow::Cow, collections::BTreeMap, sync::RwLock, time::Duration};
 use utoipa::{
     openapi::{
         schema::{KnownFormat, Schema},
@@ -97,10 +97,7 @@ impl KafkaOutputConfig {
     /// Validate configuration, set default option values required by this
     /// adapter.
     fn validate(&mut self) -> AnyResult<()> {
-        self.set_option_if_missing(
-            "bootstrap.servers",
-            &env::var("REDPANDA_BROKERS").unwrap_or_else(|_| "localhost".to_string()),
-        );
+        self.set_option_if_missing("bootstrap.servers", &default_redpanda_server());
         Ok(())
     }
 }

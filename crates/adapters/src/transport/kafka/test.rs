@@ -67,7 +67,6 @@ stream: test_input
 transport:
     name: kafka
     config:
-        bootstrap.servers: "localhost"
         auto.offset.reset: "earliest"
         topics: [input_test_topic1, input_test_topic2]
         log_level: debug
@@ -159,7 +158,6 @@ inputs:
         transport:
             name: kafka
             config:
-                bootstrap.servers: "localhost"
                 auto.offset.reset: "earliest"
                 group.instance.id: "group0"
                 topics: [end_to_end_test_input_topic]
@@ -172,7 +170,6 @@ outputs:
         transport:
             name: kafka
             config:
-                bootstrap.servers: "localhost"
                 topic: end_to_end_test_output_topic
                 max_inflight_messages: 0
         format:

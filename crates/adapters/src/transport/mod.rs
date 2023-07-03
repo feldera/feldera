@@ -42,7 +42,7 @@ mod file;
 pub mod http;
 
 #[cfg(feature = "with-kafka")]
-mod kafka;
+pub(crate) mod kafka;
 
 pub use file::{FileInputConfig, FileInputTransport, FileOutputConfig, FileOutputTransport};
 
