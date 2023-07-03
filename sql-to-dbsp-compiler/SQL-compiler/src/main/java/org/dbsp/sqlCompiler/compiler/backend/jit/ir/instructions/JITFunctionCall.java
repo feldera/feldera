@@ -68,14 +68,9 @@ public class JITFunctionCall extends JITInstruction {
         ArrayNode argTypes = result.putArray("arg_types");
         int index = 0;
         for (JITInstructionRef arg: this.arguments) {
-            ObjectNode argTypeNode = argTypes.addObject();
             JITType argType = this.argumentTypes.get(index);
             args.add(arg.getId());
-            if (argType.isScalarType()) {
-                argTypeNode.put("Scalar", argType.toString());
-            } else {
-                argTypeNode.put("Row", argType.toString());
-            }
+            argTypes.add(argType.asJsonReference());
             index++;
         }
         result.put("ret_ty", this.returnType.toString());

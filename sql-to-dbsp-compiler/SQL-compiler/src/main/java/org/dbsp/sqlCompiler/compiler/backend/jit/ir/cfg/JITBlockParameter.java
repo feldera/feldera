@@ -25,11 +25,8 @@ package org.dbsp.sqlCompiler.compiler.backend.jit.ir.cfg;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.BaseJsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITReference;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITRowType;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITScalarType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
 import org.dbsp.util.IIndentStream;
 
@@ -46,14 +43,7 @@ public class JITBlockParameter extends JITNode {
     public BaseJsonNode asJson() {
         ArrayNode result = jsonFactory().createArrayNode();
         result.add(this.argument.getId());
-        ObjectNode type = result.addObject();
-        if (this.type.is(JITScalarType.class)) {
-            JITScalarType scalar = this.type.to(JITScalarType.class);
-            type.set("Column", scalar.asJson());
-        } else {
-            JITRowType row = this.type.to(JITRowType.class);
-            type.put("Row", row.getId());
-        }
+        result.add(this.type.asJsonReference());
         return result;
     }
 

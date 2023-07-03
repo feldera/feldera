@@ -24,7 +24,10 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.BaseJsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 
 /**
  * A pair type with two fields: a key type and a value type.
@@ -42,6 +45,11 @@ public class JITKVType extends JITType implements IJitKvOrRowType {
     @Override
     public boolean isScalarType() {
         return false;
+    }
+
+    @Override
+    public BaseJsonNode asJsonReference() {
+        throw new UnsupportedException(CalciteObject.EMPTY);
     }
 
     @Override

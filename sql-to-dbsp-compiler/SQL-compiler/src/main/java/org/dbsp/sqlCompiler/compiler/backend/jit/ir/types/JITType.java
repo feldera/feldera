@@ -23,12 +23,15 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
+import com.fasterxml.jackson.databind.node.BaseJsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode;
 import org.dbsp.util.IIndentStream;
 
 public abstract class JITType extends JITNode {
     protected JITType() {}
     public abstract boolean isScalarType();
+
+    public abstract BaseJsonNode asJsonReference();
 
     @Override
     public IIndentStream toString(IIndentStream builder) {

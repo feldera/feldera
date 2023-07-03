@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
 import com.fasterxml.jackson.databind.node.BaseJsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 
 public class JITScalarType extends JITType {
@@ -36,6 +37,13 @@ public class JITScalarType extends JITType {
     @Override
     public boolean isScalarType() {
         return true;
+    }
+
+    @Override
+    public BaseJsonNode asJsonReference() {
+        ObjectNode node = jsonFactory().createObjectNode();
+        node.put("Scalar", this.toString());
+        return node;
     }
 
     @Override
