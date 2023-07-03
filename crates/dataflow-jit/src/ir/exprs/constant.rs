@@ -4,8 +4,8 @@ use crate::ir::{
 };
 use chrono::{NaiveDate, NaiveDateTime};
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, mem};
+use serde::{de, Deserialize, Deserializer, Serialize};
+use std::{cmp::Ordering, fmt, mem};
 
 /// A constant value
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -26,6 +26,7 @@ pub enum Constant {
     Bool(bool),
     String(String),
     Date(NaiveDate),
+    #[serde(deserialize_with = "deserialize_timestamp")]
     Timestamp(NaiveDateTime),
 }
 
@@ -309,5 +310,29 @@ impl Ord for Constant {
                 panic!();
             }
         }
+    }
+}
+
+fn deserialize_timestamp<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_str(TimestampVisitor)
+}
+
+struct TimestampVisitor;
+
+impl<'de> de::Visitor<'de> for TimestampVisitor {
+    type Value = NaiveDateTime;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a formatted date and time string")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        NaiveDateTime::parse_from_str(value, "%+").map_err(E::custom)
     }
 }

@@ -207,11 +207,6 @@ const CIRCUIT: &str = r#"{
 fn issue_146() {
     utils::test_logger();
 
-    println!(
-        "{:?}",
-        Constant::F64(f64::NAN).cmp(&Constant::F64(f64::NAN)),
-    );
-
     let graph = serde_json::from_str::<SqlGraph>(CIRCUIT)
         .unwrap()
         .rematerialize();
