@@ -28,6 +28,7 @@ serde_json = { version = "1.0.89" }
 hashing = { path = "../lib/hashing" }
 readers = { path = "../lib/readers" }
 sqlx = { version = "0.6", features = [ "runtime-async-std-native-tls", "sqlite", "any" ] }
+chrono = { version = "0.4.23" }
 
 [lib]
 path = "src/lib.rs"
