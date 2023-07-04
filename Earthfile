@@ -401,6 +401,8 @@ test-adapters:
     WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.1.13
         RUN docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.1.13 \
             redpanda start --smp 2 && \
+            # Redpanda takes a few seconds to initialize.
+            sleep 10 && \
             cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters
     END
 
