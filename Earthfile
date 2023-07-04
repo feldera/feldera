@@ -18,7 +18,6 @@ install-deps:
                               hub numactl openjdk-19-jre-headless maven netcat jq \
                               libsasl2-dev docker.io libenchant-2-2 graphviz
     RUN curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash - && apt-get install -y nodejs
-    RUN apt-get install -y
     RUN npm install --global yarn
     RUN npm install --global openapi-typescript-codegen
 
