@@ -1286,7 +1286,7 @@ async fn pipeline_status(
         };
 
         Ok(HttpResponse::Ok()
-            .content_type("text/toml")
+            .content_type("text/plain")
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .body(toml))
     } else {
