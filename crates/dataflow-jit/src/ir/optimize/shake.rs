@@ -211,13 +211,10 @@ mod tests {
         );
 
         let empty = graph.empty_set(layout);
-        let null = graph.add_node(ConstantStream::new(
-            StreamLiteral::new(
-                StreamLayout::Set(layout),
-                StreamCollection::Set(vec![(RowLiteral::new(vec![NullableConstant::null()]), 1)]),
-            ),
+        let null = graph.add_node(ConstantStream::new(StreamLiteral::new(
             StreamLayout::Set(layout),
-        ));
+            StreamCollection::Set(vec![(RowLiteral::new(vec![NullableConstant::null()]), 1)]),
+        )));
 
         let sum = graph.add_node(Sum::new(vec![empty, null], StreamLayout::Set(layout)));
         let sink = graph.sink(sum, StreamLayout::Set(layout));

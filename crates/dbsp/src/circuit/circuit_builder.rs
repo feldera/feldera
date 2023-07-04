@@ -1294,8 +1294,9 @@ pub trait Circuit: WithClock + Clone + 'static {
         I2: Data,
         Op: BinarySinkOperator<I1, I2>;
 
-    /// Like [`Self::add_binary_sink`], but overrides the ownership preferences on
-    /// both input streams with `input_preference1` and `input_preference2`.
+    /// Like [`Self::add_binary_sink`], but overrides the ownership preferences
+    /// on both input streams with `input_preference1` and
+    /// `input_preference2`.
     fn add_binary_sink_with_preference<I1, I2, Op>(
         &self,
         operator: Op,

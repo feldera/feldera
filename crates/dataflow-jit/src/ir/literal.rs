@@ -2,7 +2,8 @@ use crate::ir::{
     exprs::Constant,
     nodes::StreamLayout,
     pretty::{DocAllocator, DocBuilder, Pretty},
-    RowLayoutCache,
+    validate::{ValidationError, ValidationResult},
+    NodeId, RowLayout, RowLayoutCache,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -71,6 +72,46 @@ impl StreamLiteral {
         Self {
             layout: self.layout,
             value: self.value.to_consolidated(),
+        }
+    }
+
+    pub(crate) fn validate_layout(
+        &self,
+        node_id: NodeId,
+        layout_cache: &RowLayoutCache,
+        errors: &mut Vec<ValidationError>,
+    ) {
+        match self.value() {
+            StreamCollection::Set(set) => {
+                let key_layout = self.layout().expect_set(
+                    "got a ConstantStream with a map layout that contains a set constant",
+                );
+                let key_layout = layout_cache.get(key_layout);
+
+                for (key, _diff) in set {
+                    if let Err(error) = key.validate_layout(node_id, &key_layout) {
+                        errors.push(error);
+                    }
+                }
+            }
+
+            StreamCollection::Map(map) => {
+                let (key_layout, value_layout) = self.layout().expect_map(
+                    "got a ConstantStream with a set layout that contains a map constant",
+                );
+                let (key_layout, value_layout) =
+                    (layout_cache.get(key_layout), layout_cache.get(value_layout));
+
+                for (key, value, _diff) in map {
+                    if let Err(error) = key.validate_layout(node_id, &key_layout) {
+                        errors.push(error);
+                    }
+
+                    if let Err(error) = value.validate_layout(node_id, &value_layout) {
+                        errors.push(error);
+                    }
+                }
+            }
         }
     }
 }
@@ -197,32 +238,84 @@ where
     }
 }
 
-impl NullableConstant {
-    pub const fn null() -> Self {
-        Self::Nullable(None)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
 pub struct RowLiteral {
     rows: Vec<NullableConstant>,
 }
 
 impl RowLiteral {
+    #[inline]
     pub fn new(rows: Vec<NullableConstant>) -> Self {
         Self { rows }
     }
 
+    #[inline]
     pub fn rows(&self) -> &[NullableConstant] {
         &self.rows
     }
 
+    #[inline]
+    pub fn iter(&self) -> <&[NullableConstant] as IntoIterator>::IntoIter {
+        self.into_iter()
+    }
+
+    #[inline]
     pub fn len(&self) -> usize {
         self.rows.len()
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
+    }
+
+    // FIXME: Return `ValidationError`s instead of panicking
+    #[track_caller]
+    pub(crate) fn validate_layout(&self, node_id: NodeId, layout: &RowLayout) -> ValidationResult {
+        assert_eq!(
+            layout.len(),
+            self.len(),
+            "mismatched column count in ConstantStream {node_id}, expected {} column{} but got {}",
+            layout.len(),
+            if layout.len() == 1 { "" } else { "s" },
+            self.len(),
+        );
+
+        for (idx, (column, (column_ty, nullable))) in self.iter().zip(layout.iter()).enumerate() {
+            assert_eq!(
+                column.is_nullable(),
+                nullable,
+                "column {idx} of ConstantStream {node_id} has mismatched nullability, \
+                column {idx} is{} nullable while the constant's {idx} column is{} nullable",
+                if nullable { "" } else { " not" },
+                if column.is_nullable() { "" } else { " not" },
+            );
+
+            match column {
+                NullableConstant::NonNull(value) => {
+                    assert_eq!(
+                        value.column_type(),
+                        column_ty,
+                        "column {idx} of constant stream should have type of {column_ty}, got {}",
+                        value.column_type(),
+                    );
+                }
+
+                NullableConstant::Nullable(Some(value)) => {
+                    assert_eq!(
+                        value.column_type(),
+                        column_ty,
+                        "column {idx} of constant stream should have type of {column_ty}, got {}",
+                        value.column_type(),
+                    );
+                }
+
+                // Null values have the correct type
+                NullableConstant::Nullable(None) => {}
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -242,10 +335,55 @@ where
     }
 }
 
+impl IntoIterator for RowLiteral {
+    type Item = NullableConstant;
+    type IntoIter = <Vec<NullableConstant> as IntoIterator>::IntoIter;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.rows.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a RowLiteral {
+    type Item = &'a NullableConstant;
+    type IntoIter = <&'a [NullableConstant] as IntoIterator>::IntoIter;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.rows().iter()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
 pub enum NullableConstant {
     NonNull(Constant),
     Nullable(Option<Constant>),
+}
+
+impl NullableConstant {
+    #[inline]
+    pub const fn null() -> Self {
+        Self::Nullable(None)
+    }
+
+    /// Returns `true` if the nullable constant is [`NonNull`].
+    ///
+    /// [`NonNull`]: NullableConstant::NonNull
+    #[must_use]
+    #[inline]
+    pub const fn is_non_null(&self) -> bool {
+        matches!(self, Self::NonNull(..))
+    }
+
+    /// Returns `true` if the nullable constant is [`Nullable`].
+    ///
+    /// [`Nullable`]: NullableConstant::Nullable
+    #[must_use]
+    #[inline]
+    pub const fn is_nullable(&self) -> bool {
+        matches!(self, Self::Nullable(..))
+    }
 }
 
 impl<'a, D, A> Pretty<'a, D, A> for &NullableConstant

@@ -860,7 +860,6 @@
 //!
 //! We need to adjust the `build_circuit` return type and value and make `main`
 //! print the new kind of output:
-//!
 //! ```ignore
 //! # use anyhow::Result;
 //! # use csv::Reader;
@@ -888,8 +887,8 @@
 //!     CollectionHandle<Record, isize>,
 //!     OutputHandle<OrdIndexedZSet<(String, i32, u8), (isize, isize), isize>>,
 //! )> {
-//!     let (input_stream, input_handle) = circuit.add_input_zset::<Record, isize>();
-//!     // ...
+//!     let (input_stream, input_handle) = circuit.add_input_zset::<Record,
+//! isize>();     // ...
 //! #     let subset = input_stream.filter(|r| {
 //! #         r.location == "England"
 //! #             || r.location == "Northern Ireland"
@@ -920,8 +919,8 @@
 //! }
 //!
 //! fn main() -> Result<()> {
-//!     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
-//! #     let path = format!(
+//!     let (circuit, (input_handle, output_handle)) =
+//! RootCircuit::build(build_circuit)?; #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
 //! #         env!("CARGO_MANIFEST_DIR")
 //! #     );
@@ -943,7 +942,7 @@
 //!     Ok(())
 //! }
 //! ```
-//!
+//! 
 //! The whole program is in `tutorial6.rs`.  If we run it, it prints both per-month
 //! vaccination numbers and 3-month moving averages:
 //!

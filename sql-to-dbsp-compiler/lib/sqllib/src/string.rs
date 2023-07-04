@@ -7,16 +7,17 @@ use crate::{
 
 use like::{Escape, Like};
 
-pub fn concat_s_s(left: String, right: String) -> String {
-    let result = format!("{}{}", left, right);
-    result
+pub fn concat_s_s(mut left: String, right: String) -> String {
+    left.reserve(right.len());
+    left.push_str(&right);
+    left
 }
 
 some_polymorphic_function2!(concat, s, String, s, String, String);
 
 pub fn substring3___(value: String, left: i32, count: i32) -> String {
     if count < 0 {
-        "".to_string()
+        String::new()
     } else {
         // character indexes in SQL start at 1
         let start = if left < 1 { 0 } else { left - 1 };

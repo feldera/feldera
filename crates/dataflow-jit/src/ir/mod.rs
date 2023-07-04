@@ -6,6 +6,7 @@ pub mod literal;
 pub mod nodes;
 pub mod pretty;
 pub mod row_layout;
+pub mod stream_layout;
 pub mod terminator;
 pub mod visit;
 

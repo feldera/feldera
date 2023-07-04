@@ -35,8 +35,8 @@ pub(crate) enum HttpIngressMode {
 pub(crate) struct HttpInputTransport;
 
 impl HttpInputTransport {
-    /// Default data format assumed by API endpoints when not explicit "?format="
-    /// argument provided.
+    /// Default data format assumed by API endpoints when not explicit
+    /// "?format=" argument provided.
     // TODO: json is a better default, once we support it.
     pub(crate) fn default_format() -> String {
         String::from("csv")

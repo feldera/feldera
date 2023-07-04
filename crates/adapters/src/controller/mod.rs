@@ -211,11 +211,11 @@ impl Controller {
     ///
     /// * `endpoint_name` - endpoint name unique within the pipeline.
     ///
-    /// * `endpoint_config` - (partial) endpoint config.  Only `format.name`
-    ///   and `stream` fields need to be initialized.
+    /// * `endpoint_config` - (partial) endpoint config.  Only `format.name` and
+    ///   `stream` fields need to be initialized.
     ///
     /// * `format_config` - a deserializer used to extract format-specific
-    ///    configuration.
+    ///   configuration.
     ///
     /// * `endpoint` - transport endpoint object.
     pub fn add_input_endpoint(
@@ -246,11 +246,11 @@ impl Controller {
     ///
     /// * `endpoint_name` - endpoint name unique within the pipeline.
     ///
-    /// * `endpoint_config` - (partial) endpoint config.  Only `format.name`
-    ///   and `stream` fields need to be initialized.
+    /// * `endpoint_config` - (partial) endpoint config.  Only `format.name` and
+    ///   `stream` fields need to be initialized.
     ///
     /// * `format_config` - a deserializer used to extract format-specific
-    ///    configuration.
+    ///   configuration.
     ///
     /// * `endpoint` - transport endpoint object.
     pub fn add_output_endpoint(
@@ -290,13 +290,13 @@ impl Controller {
     ///
     /// Can be used in two situations:
     ///
-    /// * To process scalar inputs, such as neighborhood or quantile querues that
-    ///   are not reflected in input buffer sizes.
+    /// * To process scalar inputs, such as neighborhood or quantile querues
+    ///   that are not reflected in input buffer sizes.
     ///
     /// * When input buffers are not completely empty, but contain fewer than
-    ///   `min_batch_size_records` records the circuit will normally wait for a small
-    ///   timeout before processing the data.  This function can be used to force
-    ///   immediate processing.
+    ///   `min_batch_size_records` records the circuit will normally wait for a
+    ///   small timeout before processing the data.  This function can be used
+    ///   to force immediate processing.
     pub fn request_step(&self) {
         self.inner.request_step();
     }
@@ -474,7 +474,8 @@ impl Controller {
                                     && output_handles.snapshot.is_some()
                                 {
                                     if snapshot_batch.is_some() {
-                                        // Increment stats first, so we don't end up with negative counts.
+                                        // Increment stats first, so we don't end up with negative
+                                        // counts.
                                         controller.status.enqueue_batch(
                                             *endpoint_id,
                                             num_snapshot_records.unwrap(),
@@ -487,9 +488,11 @@ impl Controller {
                                             snapshot_batch.as_ref().unwrap().clone()
                                         };
 
-                                        // Associate the input frontier with the batch.  Once the batch has
-                                        // been sent to the output endpoint, the endpoint will get labeled
-                                        // with this frontier.
+                                        // Associate the input frontier with the batch.  Once the
+                                        // batch has
+                                        // been sent to the output endpoint, the endpoint will get
+                                        // labeled with this
+                                        // frontier.
                                         endpoint.queue.push((batch, processed_records));
                                         endpoint.snapshot_sent.store(true, Ordering::Release);
                                     }
@@ -653,7 +656,8 @@ struct OutputEndpointDescr {
     /// of the query result.
     snapshot_sent: AtomicBool,
 
-    /// Used to notify the endpoint thread that the endpoint is being disconnected.
+    /// Used to notify the endpoint thread that the endpoint is being
+    /// disconnected.
     disconnect_flag: Arc<AtomicBool>,
 
     /// Unparker for the endpoint thread.
@@ -1229,8 +1233,8 @@ impl InputConsumer for InputProbe {
                 Ok(())
             }
             Err(error) => {
-                // Wrap it in Arc, so we can pass it to `parse_error` and return from this function
-                // as well.
+                // Wrap it in Arc, so we can pass it to `parse_error` and return from this
+                // function as well.
                 let error = Arc::new(error);
                 self.parser.clear();
                 self.controller.parse_error(

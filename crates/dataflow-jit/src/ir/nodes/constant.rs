@@ -12,23 +12,21 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
 pub struct ConstantStream {
     value: StreamLiteral,
-    layout: StreamLayout,
     #[serde(default)]
     consolidated: bool,
 }
 
 impl ConstantStream {
-    pub const fn new(value: StreamLiteral, layout: StreamLayout) -> Self {
+    pub const fn new(value: StreamLiteral) -> Self {
         Self {
             value,
-            layout,
             consolidated: false,
         }
     }
 
     /// Create an empty stream
     pub const fn empty(layout: StreamLayout) -> Self {
-        Self::new(StreamLiteral::empty(layout), layout)
+        Self::new(StreamLiteral::empty(layout))
     }
 
     pub const fn value(&self) -> &StreamLiteral {
@@ -40,7 +38,7 @@ impl ConstantStream {
     }
 
     pub const fn layout(&self) -> StreamLayout {
-        self.layout
+        self.value.layout()
     }
 
     pub const fn consolidated(&self) -> bool {
@@ -76,15 +74,10 @@ impl DataflowNode for ConstantStream {
     }
 
     fn output_stream(&self, _inputs: &[StreamLayout]) -> Option<StreamLayout> {
-        Some(self.layout)
+        Some(self.layout())
     }
 
-    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
-        // TODO: Ensure that the data matches the node's layout
-        // TODO: Ensure that the data's actually consolidated if `self.consolidated ==
-        // true`
-        assert_eq!(self.layout, self.value.layout());
-    }
+    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
 
     fn optimize(&mut self, _layout_cache: &RowLayoutCache) {
         self.consolidate();
@@ -94,12 +87,10 @@ impl DataflowNode for ConstantStream {
     where
         F: FnMut(LayoutId) + ?Sized,
     {
-        self.layout.map_layouts(map);
         self.value.layout().map_layouts(map);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
-        self.layout.remap_layouts(mappings);
         self.value.layout_mut().remap_layouts(mappings);
     }
 }
@@ -114,7 +105,7 @@ where
         alloc
             .text("constant")
             .append(alloc.space())
-            .append(self.layout.pretty(alloc, cache))
+            .append(self.layout().pretty(alloc, cache))
             .append(alloc.space())
             .append(self.value.value().pretty(alloc, cache))
     }

@@ -115,11 +115,8 @@ mod tests {
                 1,
             )]),
         );
-        let empty1 = graph.add_node(ConstantStream::new(
-            constant.clone(),
-            StreamLayout::Set(u32),
-        ));
-        let empty2 = graph.add_node(ConstantStream::new(constant, StreamLayout::Set(u32)));
+        let empty1 = graph.add_node(ConstantStream::new(constant.clone()));
+        let empty2 = graph.add_node(ConstantStream::new(constant));
         let sink3 = graph.sink(empty1, StreamLayout::Set(u32));
         let sink4 = graph.sink(empty2, StreamLayout::Set(u32));
 

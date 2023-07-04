@@ -9,6 +9,7 @@ mod join;
 mod subgraph;
 mod sum;
 
+pub use crate::ir::stream_layout::{StreamKind, StreamLayout};
 pub use crate::ir::NodeId;
 pub use aggregate::{Fold, Max, Min, PartitionedRollingFold};
 pub use constant::ConstantStream;
@@ -170,126 +171,6 @@ pub trait DataflowNode {
         F: FnMut(LayoutId) + ?Sized;
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>);
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Deserialize,
-    Serialize,
-    JsonSchema,
-    IsVariant,
-    Unwrap,
-)]
-pub enum StreamLayout {
-    Set(LayoutId),
-    Map(LayoutId, LayoutId),
-}
-
-impl StreamLayout {
-    pub const fn key_layout(self) -> LayoutId {
-        match self {
-            Self::Set(key) | Self::Map(key, _) => key,
-        }
-    }
-
-    pub const fn value_layout(self) -> Option<LayoutId> {
-        match self {
-            Self::Set(_) => None,
-            Self::Map(_, value) => Some(value),
-        }
-    }
-
-    pub const fn kind(self) -> StreamKind {
-        match self {
-            Self::Set(_) => StreamKind::Set,
-            Self::Map(_, _) => StreamKind::Map,
-        }
-    }
-
-    pub(crate) fn map_layouts<F>(self, map: &mut F)
-    where
-        F: FnMut(LayoutId) + ?Sized,
-    {
-        match self {
-            Self::Set(key) => map(key),
-            Self::Map(key, value) => {
-                map(key);
-                map(value);
-            }
-        }
-    }
-
-    pub(crate) fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
-        match self {
-            Self::Set(key) => *key = mappings[key],
-            Self::Map(key, value) => {
-                *key = mappings[key];
-                *value = mappings[value];
-            }
-        }
-    }
-}
-
-impl<'a, D, A> Pretty<'a, D, A> for StreamLayout
-where
-    A: 'a,
-    D: DocAllocator<'a, A> + ?Sized,
-{
-    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
-        alloc.text(match self {
-            Self::Set(key) => format!("set[{}]", cache.get(key)),
-            Self::Map(key, value) => {
-                format!("map[{}, {}]", cache.get(key), cache.get(value))
-            }
-        })
-    }
-}
-
-impl From<LayoutId> for StreamLayout {
-    #[inline]
-    fn from(key: LayoutId) -> Self {
-        Self::Set(key)
-    }
-}
-
-impl From<(LayoutId, LayoutId)> for StreamLayout {
-    #[inline]
-    fn from((key, value): (LayoutId, LayoutId)) -> Self {
-        Self::Map(key, value)
-    }
-}
-
-impl From<[LayoutId; 2]> for StreamLayout {
-    #[inline]
-    fn from([key, value]: [LayoutId; 2]) -> Self {
-        Self::Map(key, value)
-    }
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Deserialize,
-    Serialize,
-    JsonSchema,
-    IsVariant,
-)]
-pub enum StreamKind {
-    Set,
-    Map,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
