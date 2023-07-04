@@ -101,7 +101,8 @@ pub trait OutputFormat: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `config` - Deserializer object to extract format-specific configuration.
+    /// * `config` - Deserializer object to extract format-specific
+    ///   configuration.
     ///
     /// * `consumer` - Consumer to send encoded data batches to.
     fn new_encoder(

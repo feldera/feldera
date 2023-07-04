@@ -664,9 +664,10 @@ async fn output_endpoint(
         max_buffered_records: HttpOutputTransport::default_max_buffered_records(),
     };
 
-    // Declare `response` in this scope, before we lock `state.controller`.  This makes
-    // sure that on error the finalizer for `response` also runs in this scope, preventing
-    // the deadlock caused by the finalizer trying to lock the controller.
+    // Declare `response` in this scope, before we lock `state.controller`.  This
+    // makes sure that on error the finalizer for `response` also runs in this
+    // scope, preventing the deadlock caused by the finalizer trying to lock the
+    // controller.
     let response: HttpResponse;
 
     // Connect endpoint.
@@ -691,13 +692,13 @@ async fn output_endpoint(
                 }
             };
 
-            // We need to pass a callback to `request` to disconnect the endpoint when the request
-            // completes.  Use a donwgraded reference to `state`, so this closure doesn't prevent
-            // the controller from shutting down.
+            // We need to pass a callback to `request` to disconnect the endpoint when the
+            // request completes.  Use a donwgraded reference to `state`, so
+            // this closure doesn't prevent the controller from shutting down.
             let weak_state = Arc::downgrade(&state);
 
-            // Call endpoint to create a response with a streaming body, which will be evaluated
-            // after we return the response object to actix.
+            // Call endpoint to create a response with a streaming body, which will be
+            // evaluated after we return the response object to actix.
             response = endpoint.request(Box::new(move || {
                 // Delete endpoint on completion/error.
                 // We don't control the lifetime of the reponse object after
@@ -728,8 +729,8 @@ async fn output_endpoint(
                         .lock()
                         .unwrap()
                         .output_handles(&config.stream)
-                        // The following `unwrap` is safe because `table_name` was previously validated
-                        // by `add_output_endpoint`.
+                        // The following `unwrap` is safe because `table_name` was previously
+                        // validated by `add_output_endpoint`.
                         .unwrap()
                         .neighborhood_descr_handle
                         .set_for_all(&mut <dyn ErasedDeserializer>::erase(json!([
@@ -980,7 +981,8 @@ outputs:
         let body = serde_json::from_slice::<JsonValue>(&body.unwrap()).unwrap();
         println!("Quantiles: {body}");
 
-        // Request quantiles for the input collection -- inputs must also behave as outputs.
+        // Request quantiles for the input collection -- inputs must also behave as
+        // outputs.
         let mut input_quantiles = server
             .get("/egress/test_input1?mode=snapshot&query=quantiles")
             .send()

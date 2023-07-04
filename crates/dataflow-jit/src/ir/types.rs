@@ -87,9 +87,9 @@ column_type! {
     /// A 64 bit floating point value
     F64 = ("f64", F64),
 
-    /// Represents the days since Jan 1 1970 as an `i32`
+    /// Represents the days since January 1, 1970 as an `i32`
     Date = ("date", I32),
-    /// Represents the milliseconds since Jan 1 1970 as an `i64`
+    /// Represents the milliseconds since January 1, 1970 as an `i64`
     Timestamp = ("timestamp", I64),
 
     /// A string encoded as UTF-8

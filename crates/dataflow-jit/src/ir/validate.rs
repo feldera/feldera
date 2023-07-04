@@ -3,8 +3,8 @@ use crate::{
     ir::{
         exprs::RowOrScalar,
         exprs::{
-            BinaryOp, BinaryOpKind, Cast, Constant, Expr, ExprId, IsNull, Load, NullRow, RValue,
-            SetNull, Store, UnaryOpKind, Uninit, UninitRow,
+            BinaryOp, BinaryOpKind, Cast, Constant, Drop, Expr, ExprId, IsNull, Load, NullRow,
+            RValue, SetNull, Store, UnaryOpKind, Uninit, UninitRow,
         },
         exprs::{Call, Select},
         graph::GraphExt,
@@ -26,11 +26,9 @@ use std::{
     error::Error,
 };
 
-use super::exprs::Drop;
-
 // TODO: Validate block parameters
 
-type ValidationResult<T = ()> = Result<T, ValidationError>;
+pub type ValidationResult<T = ()> = Result<T, ValidationError>;
 
 pub struct Validator {
     /// A set of all nodes that exist
@@ -279,6 +277,14 @@ impl NodeVisitor for MetaCollector<'_> {
             fold.output_layout(),
         );
         self.add_simple(node_id, fold.input(), output);
+
+        // FIXME: Move to `DataflowNode::validation()` impl
+        if let Err(error) = fold
+            .init()
+            .validate_layout(node_id, &self.layout_cache.get(fold.acc_layout()))
+        {
+            self.errors.push(error);
+        }
     }
 
     fn visit_partitioned_rolling_fold(
@@ -291,6 +297,14 @@ impl NodeVisitor for MetaCollector<'_> {
             rolling_fold.output_layout(),
         );
         self.add_simple(node_id, rolling_fold.input(), output);
+
+        // FIXME: Move to `DataflowNode::validation()` impl
+        if let Err(error) = rolling_fold
+            .init()
+            .validate_layout(node_id, &self.layout_cache.get(rolling_fold.acc_layout()))
+        {
+            self.errors.push(error);
+        }
     }
 
     fn visit_sink(&mut self, node_id: NodeId, sink: &Sink) {
@@ -301,9 +315,19 @@ impl NodeVisitor for MetaCollector<'_> {
         self.add_node(node_id);
         self.node_inputs
             .insert(node_id, vec![minus.lhs(), minus.rhs()]);
-        // TODO: Ensure lhs and rhs have the same types
-        self.node_outputs
-            .insert(node_id, self.node_outputs[&minus.lhs()]);
+
+        let lhs_layout = self.node_outputs[&minus.lhs()];
+        self.node_outputs.insert(node_id, lhs_layout);
+
+        if minus.lhs() != minus.rhs() {
+            self.errors.push(ValidationError::MismatchedOperatorInputs {
+                node_id,
+                expected: minus.lhs(),
+                expected_layout: lhs_layout,
+                received: minus.rhs(),
+                received_layout: self.node_outputs[&minus.rhs()],
+            });
+        }
     }
 
     fn visit_filter(&mut self, node_id: NodeId, filter: &Filter) {
@@ -398,6 +422,11 @@ impl NodeVisitor for MetaCollector<'_> {
         self.add_node(node_id);
         // TODO: Verify that the layout of the row matches its literal value
         self.node_outputs.insert(node_id, constant.layout());
+
+        // FIXME: Move to `DataflowNode::validation()` impl
+        constant
+            .value()
+            .validate_layout(node_id, &self.layout_cache, &mut self.errors);
     }
 
     fn visit_flat_map(&mut self, node_id: NodeId, flat_map: &FlatMap) {
@@ -1619,6 +1648,18 @@ pub enum ValidationError {
         lhs_ty: ColumnType,
         rhs: ExprId,
         rhs_ty: ColumnType,
+    },
+
+    #[display(
+        fmt = "mismatched inputs to operator {node_id} expected {received} to have the layout {expected_layout:?} \
+        but it has the layout {received_layout:?}"
+    )]
+    MismatchedOperatorInputs {
+        node_id: NodeId,
+        expected: NodeId,
+        expected_layout: StreamLayout,
+        received: NodeId,
+        received_layout: StreamLayout,
     },
 }
 

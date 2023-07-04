@@ -88,8 +88,8 @@ fn issue_288() {
 
     let result = circuit.consolidate_output(NodeId::new(2));
     assert!(must_equal_sc(
-        dbg!(&result),
-        dbg!(&StreamCollection::Set(vec![(
+        &result,
+        &StreamCollection::Set(vec![(
             RowLiteral::new(vec![
                 NullableConstant::NonNull(Constant::Date(
                     NaiveDate::parse_from_str("2001-07-08", "%F").unwrap(),
@@ -99,7 +99,7 @@ fn issue_288() {
                 )),
             ]),
             1,
-        )])),
+        )]),
     ));
 
     circuit.kill().unwrap();

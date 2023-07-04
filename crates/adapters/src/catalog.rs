@@ -30,34 +30,37 @@ pub struct OutputCollectionHandles {
 
     /// Input stream used to submit neighborhood queries.
     ///
-    /// The stream carries values of type `(bool, Option<NeighborhoodDescr<K, V>>)`,
-    /// where `K` and `V` are the key and value types of the collection.
+    /// The stream carries values of type `(bool, Option<NeighborhoodDescr<K,
+    /// V>>)`, where `K` and `V` are the key and value types of the
+    /// collection.
     ///
     /// The first component of the tuple is the `reset` flag, which instructs
     /// the circuit to start executing the neighborhood query specified in the
-    /// second component of the tuple.  The outputs of the neighborhood query are
-    /// emitted to [`neighborhood_handle`](`Self::neighborhood_handle`) and
+    /// second component of the tuple.  The outputs of the neighborhood query
+    /// are emitted to [`neighborhood_handle`](`Self::neighborhood_handle`)
+    /// and
     /// [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
     /// streams.  When the flag is `false`, this input is ignored.
     ///
-    /// In more detail, the circuit handles inputs written to this stream as follows:
+    /// In more detail, the circuit handles inputs written to this stream as
+    /// follows:
     ///
-    /// * `(true, Some(descr))` - Start monitoring the specified descriptor.  The
-    ///   circuit will output a complete snapshot of the neighborhood to the
+    /// * `(true, Some(descr))` - Start monitoring the specified descriptor.
+    ///   The circuit will output a complete snapshot of the neighborhood to the
     ///   [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
     ///   sstream at the end of the current clock cycle.  The
-    ///   [`neighborhood_handle`](`Self::neighborhood_handle`) stream will output
-    ///   the difference between the previous and the new neighborhoods at the end
-    ///   of the current clock cycle and will contain changes to the new neighborhood
-    ///   going forward.
+    ///   [`neighborhood_handle`](`Self::neighborhood_handle`) stream will
+    ///   output the difference between the previous and the new neighborhoods
+    ///   at the end of the current clock cycle and will contain changes to the
+    ///   new neighborhood going forward.
     ///
-    /// * `(true, None)` - Stop executing the neighborhood query.  This is equivalent
-    ///   to writing `(true, Some(descr))`, where `descr` specifies an empty
-    ///   neighborhood.
+    /// * `(true, None)` - Stop executing the neighborhood query.  This is
+    ///   equivalent to writing `(true, Some(descr))`, where `descr` specifies
+    ///   an empty neighborhood.
     ///
-    /// * `(false, _)` - This is a no-op. The circuit will continue monitoring the
-    ///   previously specified neighborhood if any.  Nothing is written to the
-    ///   [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
+    /// * `(false, _)` - This is a no-op. The circuit will continue monitoring
+    ///   the previously specified neighborhood if any.  Nothing is written to
+    ///   the [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
     ///   stream.
     pub neighborhood_descr_handle: Box<dyn DeScalarHandle>,
 
@@ -66,7 +69,7 @@ pub struct OutputCollectionHandles {
     pub neighborhood_handle: Box<dyn SerOutputBatchHandle>,
 
     /// A stream that contains the full snapshot of the neighborhood.  Only produces
-    /// an output whenever the `neighborhood_descr_handle` input is set to `Some(..)`.  
+    /// an output whenever the `neighborhood_descr_handle` input is set to `Some(..)`.
     pub neighborhood_snapshot_handle: Box<dyn SerOutputBatchHandle>,
 
     /// Input stream used to submit the quantiles query.
@@ -80,9 +83,9 @@ pub struct OutputCollectionHandles {
 
     /// Quantiles stream.
     ///
-    /// When the `num_quantiles_handle` input is set to `N`, `N>0`, this stream outputs
-    /// up to `N` quantiles of the input collection, computed using the
-    /// [`Stream::stream_key_quantiles`] operator.
+    /// When the `num_quantiles_handle` input is set to `N`, `N>0`, this stream
+    /// outputs up to `N` quantiles of the input collection, computed using
+    /// the [`Stream::stream_key_quantiles`] operator.
     pub quantiles_handle: Box<dyn SerOutputBatchHandle>,
 }
 

@@ -316,6 +316,13 @@ impl CompiledDataflow {
                         let finish_fn = codegen
                             .codegen_func(&format!("fold_finish_fn_{node_id}"), fold.finish_fn());
                         functions.insert(node_id, vec![step_fn, finish_fn]);
+
+                        for layout in [fold.acc_layout(), fold.step_layout(), fold.output_layout()]
+                        {
+                            vtables
+                                .entry(layout)
+                                .or_insert_with(|| codegen.vtable_for(layout));
+                        }
                     }
 
                     Node::PartitionedRollingFold(fold) => {
@@ -328,6 +335,13 @@ impl CompiledDataflow {
                             fold.finish_fn(),
                         );
                         functions.insert(node_id, vec![step_fn, finish_fn]);
+
+                        for layout in [fold.acc_layout(), fold.step_layout(), fold.output_layout()]
+                        {
+                            vtables
+                                .entry(layout)
+                                .or_insert_with(|| codegen.vtable_for(layout));
+                        }
                     }
 
                     Node::FlatMap(flat_map) => {

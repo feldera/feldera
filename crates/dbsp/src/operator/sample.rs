@@ -80,12 +80,12 @@ where
     /// into `num_quantiles + 1` approximately equal-size quantiles.
     ///
     /// Internally, this operator uses the
-    /// [`stream_sample_keys`](`Self::stream_sample_keys`) operator to compute a uniforn random
-    /// sample of size `num_quantiles ^ 2` and then picks every `num_quantile`'s element of the
-    /// sample.
+    /// [`stream_sample_keys`](`Self::stream_sample_keys`) operator to compute a
+    /// uniforn random sample of size `num_quantiles ^ 2` and then picks
+    /// every `num_quantile`'s element of the sample.
     ///
-    /// Maximal supported `num_quantiles` value is [`MAX_QUANTILES`].  If the operator
-    /// receives a larger `num_quantiles` value, it treats it as
+    /// Maximal supported `num_quantiles` value is [`MAX_QUANTILES`].  If the
+    /// operator receives a larger `num_quantiles` value, it treats it as
     /// `MAX_QUANTILES`.
     ///
     /// Outputs a Z-set containing `<=num_quantiles` keys.  Each key is output

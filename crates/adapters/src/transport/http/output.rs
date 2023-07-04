@@ -175,7 +175,8 @@ impl HttpOutputEndpoint {
 
 impl OutputEndpoint for HttpOutputEndpoint {
     fn connect(&self, _async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
-        // *self.inner.async_error_callback.write().unwrap() = Some(async_error_callback);
+        // *self.inner.async_error_callback.write().unwrap() =
+        // Some(async_error_callback);
         Ok(())
     }
 

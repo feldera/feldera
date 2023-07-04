@@ -304,6 +304,7 @@ where
             .append(self.value.pretty(alloc, cache))
             .append(alloc.space())
             .append(alloc.text("to"))
+            .append(alloc.space())
             .append(self.to.pretty(alloc, cache))
     }
 }

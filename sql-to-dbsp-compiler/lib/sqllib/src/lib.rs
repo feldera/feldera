@@ -3,9 +3,9 @@
 pub mod casts;
 pub mod geopoint;
 pub mod interval;
-pub mod timestamp;
-pub mod string;
 pub mod operators;
+pub mod string;
+pub mod timestamp;
 
 use crate::interval::ShortInterval;
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
@@ -32,7 +32,7 @@ macro_rules! some_function1 {
                 Some([<$func_name _>](arg))
             }
         }
-    }
+    };
 }
 
 // Macro to create variants of a function with 1 argument
@@ -48,7 +48,7 @@ macro_rules! some_polymorphic_function1 {
                 Some([<$func_name _ $type_name >](arg))
             }
         }
-    }
+    };
 }
 
 // Macro to create variants of a function with 2 arguments
@@ -335,7 +335,7 @@ macro_rules! for_all_int_compare {
         some_operator!($func_name, i16, i16, bool);
         some_operator!($func_name, i32, i32, bool);
         some_operator!($func_name, i64, i64, bool);
-    }
+    };
 }
 
 #[macro_export]
@@ -345,7 +345,7 @@ macro_rules! for_all_numeric_compare {
         some_operator!($func_name, f, F32, bool);
         some_operator!($func_name, d, F64, bool);
         some_operator!($func_name, decimal, Decimal, bool);
-    }
+    };
 }
 
 #[macro_export]
@@ -354,7 +354,7 @@ macro_rules! for_all_compare {
         for_all_numeric_compare!($func_name, bool);
         some_operator!($func_name, b, bool, bool);
         some_operator!($func_name, s, String, bool);
-    }
+    };
 }
 
 #[macro_export]
@@ -363,7 +363,7 @@ macro_rules! for_all_int_operator {
         some_operator!($func_name, i16, i16, i16);
         some_operator!($func_name, i32, i32, i32);
         some_operator!($func_name, i64, i64, i64);
-    }
+    };
 }
 
 #[macro_export]
@@ -373,7 +373,7 @@ macro_rules! for_all_numeric_operator {
         some_operator!($func_name, f, F32, F32);
         some_operator!($func_name, d, F64, F64);
         some_operator!($func_name, decimal, Decimal, Decimal);
-    }
+    };
 }
 
 impl<T> Semigroup<Option<T>> for DefaultOptSemigroup<T>
