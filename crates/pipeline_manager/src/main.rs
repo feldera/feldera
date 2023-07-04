@@ -35,31 +35,26 @@ use actix_web::{
     patch, post, rt,
     web::Data as WebData,
     web::{self, ReqData},
-    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
+    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, ResponseError,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use anyhow::{Error as AnyError, Result as AnyResult};
 use auth::JwkCache;
 use clap::Parser;
 use colored::Colorize;
 #[cfg(unix)]
 use daemonize::Daemonize;
-use dbsp_adapters::{ControllerError, DetailedError, ErrorResponse};
+use dbsp_adapters::{ControllerError, ErrorResponse};
 use env_logger::Env;
-
 use log::debug;
 use serde::{Deserialize, Serialize};
-
+use std::{env, io::Write};
 use std::{
-    borrow::Cow,
-    error::Error as StdError,
-    fmt::{Display, Error as FmtError, Formatter},
     fs::{read, write},
     net::TcpListener,
     sync::Arc,
 };
-use std::{env, io::Write};
 use tokio::sync::Mutex;
 use utoipa::{openapi::OpenApi as OpenApiDoc, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
@@ -69,72 +64,22 @@ mod auth;
 mod compiler;
 mod config;
 mod db;
+mod error;
 #[cfg(test)]
 #[cfg(feature = "integration-test")]
 mod integration_test;
 mod runner;
+
 pub(crate) use compiler::{Compiler, ProgramStatus};
 pub(crate) use config::ManagerConfig;
 use db::{
     storage::Storage, AttachedConnector, AttachedConnectorId, ConnectorId, DBError, PipelineId,
     PipelineRevision, ProgramDescr, ProgramId, ProjectDB, Version,
 };
+pub use error::ManagerError;
 use runner::{LocalRunner, Runner, RunnerError, STARTUP_TIMEOUT};
 
 use crate::auth::TenantId;
-
-/// Errors validating API endpoint parameters.
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-pub enum ApiError {
-    ProgramNotSpecified,
-    PipelineNotSpecified,
-    ConnectorNotSpecified,
-    // I don't think this can ever happen.
-    MissingUrlEncodedParam { param: &'static str },
-    InvalidUuidParam { value: String, error: String },
-    InvalidPipelineAction { action: String },
-}
-
-impl StdError for ApiError {}
-
-impl Display for ApiError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
-        match self {
-            Self::ProgramNotSpecified => {
-                f.write_str("Program not specified. Use ?id or ?name query strings in the URL.")
-            }
-            Self::PipelineNotSpecified => {
-                f.write_str("Pipeline not specified. Use ?id or ?name query strings in the URL.")
-            }
-            Self::ConnectorNotSpecified => {
-                f.write_str("Connector not specified. Use ?id or ?name query strings in the URL.")
-            }
-            Self::MissingUrlEncodedParam { param } => {
-                write!(f, "Missing URL-encoded parameter '{param}'")
-            }
-            Self::InvalidUuidParam { value, error } => {
-                write!(f, "Invalid UUID string '{value}': '{error}'")
-            }
-            Self::InvalidPipelineAction { action } => {
-                write!(f, "Invalid pipeline action '{action}'; valid actions are: 'deploy', 'start', 'pause', or 'shutdown'")
-            }
-        }
-    }
-}
-
-impl DetailedError for ApiError {
-    fn error_code(&self) -> Cow<'static, str> {
-        match self {
-            Self::ProgramNotSpecified => Cow::from("ProgramNotSpecified"),
-            Self::PipelineNotSpecified => Cow::from("PipelineNotSpecified"),
-            Self::ConnectorNotSpecified => Cow::from("ConnectorNotSpecified"),
-            Self::MissingUrlEncodedParam { .. } => Cow::from("MissingUrlEncodedParam"),
-            Self::InvalidUuidParam { .. } => Cow::from("InvalidUuidParam"),
-            Self::InvalidPipelineAction { .. } => Cow::from("InvalidPipelineAction"),
-        }
-    }
-}
 
 #[derive(OpenApi)]
 #[openapi(
@@ -451,78 +396,6 @@ where
         .service(ResourceFiles::new("/", generated))
 }
 
-fn http_resp_from_db_error(error: &DBError) -> HttpResponse {
-    match error {
-        DBError::PostgresError { .. } => HttpResponse::InternalServerError(),
-        DBError::PostgresPoolError { .. } => HttpResponse::InternalServerError(),
-        DBError::PostgresMigrationError { .. } => HttpResponse::InternalServerError(),
-        #[cfg(feature = "pg-embed")]
-        DBError::PgEmbedError { .. } => HttpResponse::InternalServerError(),
-        DBError::InvalidData { .. } => HttpResponse::InternalServerError(),
-        DBError::InvalidStatus { .. } => HttpResponse::InternalServerError(),
-        DBError::UnknownProgram { .. } => HttpResponse::NotFound(),
-        DBError::DuplicateName => HttpResponse::Conflict(),
-        DBError::OutdatedProgramVersion { .. } => HttpResponse::Conflict(),
-        DBError::UnknownPipeline { .. } => HttpResponse::NotFound(),
-        DBError::UnknownConnector { .. } => HttpResponse::NotFound(),
-        // TODO: should we report not found instead?
-        DBError::UnknownTenant { .. } => HttpResponse::Unauthorized(),
-        DBError::UnknownAttachedConnector { .. } => HttpResponse::NotFound(),
-        // This error should never bubble up till here
-        DBError::DuplicateKey => HttpResponse::InternalServerError(),
-        DBError::InvalidKey => HttpResponse::Unauthorized(),
-        DBError::UnknownName { .. } => HttpResponse::NotFound(),
-        DBError::ProgramNotCompiled => HttpResponse::ServiceUnavailable(),
-        DBError::ProgramFailedToCompile => HttpResponse::BadRequest(),
-        DBError::ProgramNotSet => HttpResponse::BadRequest(),
-        // should in practice not happen, e.g., would mean a Uuid conflict:
-        DBError::UniqueKeyViolation { .. } => HttpResponse::InternalServerError(),
-        // should in practice not happen, e.g., would mean invalid status in db:
-        DBError::UnknownPipelineStatus => HttpResponse::InternalServerError(),
-        DBError::NoRevisionAvailable { .. } => HttpResponse::NotFound(),
-        DBError::RevisionNotChanged => HttpResponse::BadRequest(),
-        DBError::TablesNotInSchema { .. } => HttpResponse::BadRequest(),
-        DBError::ViewsNotInSchema { .. } => HttpResponse::BadRequest(),
-    }
-    .json(ErrorResponse::from_error(error))
-}
-
-fn http_resp_from_runner_error(error: &RunnerError) -> HttpResponse {
-    match error {
-        RunnerError::PipelineShutdown { .. } => HttpResponse::NotFound(),
-        RunnerError::HttpForwardError { .. } => HttpResponse::InternalServerError(),
-        RunnerError::PortFileParseError { .. } => HttpResponse::InternalServerError(),
-        RunnerError::PipelineInitializationTimeout { .. } => HttpResponse::InternalServerError(),
-        RunnerError::PipelineStartupError { .. } => HttpResponse::InternalServerError(),
-    }
-    .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-    .json(ErrorResponse::from_error(error))
-}
-
-fn http_resp_from_api_error(error: &ApiError) -> HttpResponse {
-    match error {
-        ApiError::ProgramNotSpecified => HttpResponse::BadRequest(),
-        ApiError::PipelineNotSpecified => HttpResponse::BadRequest(),
-        ApiError::ConnectorNotSpecified => HttpResponse::BadRequest(),
-        ApiError::MissingUrlEncodedParam { .. } => HttpResponse::BadRequest(),
-        ApiError::InvalidUuidParam { .. } => HttpResponse::BadRequest(),
-        ApiError::InvalidPipelineAction { .. } => HttpResponse::BadRequest(),
-    }
-    .json(ErrorResponse::from_error(error))
-}
-
-fn http_resp_from_error(error: &AnyError) -> HttpResponse {
-    if let Some(db_error) = error.downcast_ref::<DBError>() {
-        http_resp_from_db_error(db_error)
-    } else if let Some(runner_error) = error.downcast_ref::<RunnerError>() {
-        http_resp_from_runner_error(runner_error)
-    } else if let Some(api_error) = error.downcast_ref::<ApiError>() {
-        http_resp_from_api_error(api_error)
-    } else {
-        HttpResponse::InternalServerError().json(ErrorResponse::from_anyerror(error))
-    }
-}
-
 // Example errors for use in OpenApi docs.
 
 fn example_pipeline_toml() -> String {
@@ -662,32 +535,32 @@ fn example_pipeline_timeout() -> ErrorResponse {
 }
 
 fn example_invalid_uuid_param() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ApiError::InvalidUuidParam{value: "not_a_uuid".to_string(), error: "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1".to_string()})
+    ErrorResponse::from_error_nolog(&ManagerError::InvalidUuidParam{value: "not_a_uuid".to_string(), error: "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1".to_string()})
 }
 
 fn example_program_not_specified() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ApiError::ProgramNotSpecified)
+    ErrorResponse::from_error_nolog(&ManagerError::ProgramNotSpecified)
 }
 
 fn example_pipeline_not_specified() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ApiError::PipelineNotSpecified)
+    ErrorResponse::from_error_nolog(&ManagerError::PipelineNotSpecified)
 }
 
 fn example_connector_not_specified() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ApiError::ConnectorNotSpecified)
+    ErrorResponse::from_error_nolog(&ManagerError::ConnectorNotSpecified)
 }
 
 fn example_invalid_pipeline_action() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ApiError::InvalidPipelineAction {
+    ErrorResponse::from_error_nolog(&ManagerError::InvalidPipelineAction {
         action: "my_action".to_string(),
     })
 }
 
-fn parse_uuid_param(req: &HttpRequest, param_name: &'static str) -> Result<Uuid, ApiError> {
+fn parse_uuid_param(req: &HttpRequest, param_name: &'static str) -> Result<Uuid, ManagerError> {
     match req.match_info().get(param_name) {
-        None => Err(ApiError::MissingUrlEncodedParam { param: param_name }),
+        None => Err(ManagerError::MissingUrlEncodedParam { param: param_name }),
         Some(id) => match id.parse::<Uuid>() {
-            Err(e) => Err(ApiError::InvalidUuidParam {
+            Err(e) => Err(ManagerError::InvalidUuidParam {
                 value: id.to_string(),
                 error: e.to_string(),
             }),
@@ -696,9 +569,9 @@ fn parse_uuid_param(req: &HttpRequest, param_name: &'static str) -> Result<Uuid,
     }
 }
 
-fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ApiError> {
+fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
     match req.match_info().get("action") {
-        None => Err(ApiError::MissingUrlEncodedParam { param: "action" }),
+        None => Err(ManagerError::MissingUrlEncodedParam { param: "action" }),
         Some(action) => Ok(action),
     }
 }
@@ -714,7 +587,7 @@ fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ApiError> {
 async fn list_programs(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-) -> impl Responder {
+) -> Result<HttpResponse, DBError> {
     state
         .db
         .lock()
@@ -726,7 +599,6 @@ async fn list_programs(
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(programs)
         })
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
 }
 
 /// Response to a program code request.
@@ -761,15 +633,10 @@ async fn program_code(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
-) -> impl Responder {
-    let program_id = match parse_uuid_param(&req, "program_id") {
-        Err(e) => {
-            return http_resp_from_api_error(&e);
-        }
-        Ok(program_id) => ProgramId(program_id),
-    };
+) -> Result<HttpResponse, ManagerError> {
+    let program_id = ProgramId(parse_uuid_param(&req, "program_id")?);
 
-    state
+    Ok(state
         .db
         .lock()
         .await
@@ -779,8 +646,7 @@ async fn program_code(
             HttpResponse::Ok()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(&ProgramCodeResponse { program, code })
-        })
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+        })?)
 }
 
 /// Returns program descriptor, including current program version and
@@ -812,30 +678,28 @@ async fn program_status(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: web::Query<IdOrNameQuery>,
-) -> impl Responder {
-    let resp = if let Some(id) = req.id {
+) -> Result<HttpResponse, ManagerError> {
+    let descr = if let Some(id) = req.id {
         state
             .db
             .lock()
             .await
             .get_program_by_id(*tenant_id, ProgramId(id))
-            .await
+            .await?
     } else if let Some(name) = req.name.clone() {
         state
             .db
             .lock()
             .await
             .get_program_by_name(*tenant_id, &name)
-            .await
+            .await?
     } else {
-        return http_resp_from_api_error(&ApiError::ProgramNotSpecified);
+        return Err(ManagerError::ProgramNotSpecified);
     };
-    resp.map(|descr| {
-        HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(&descr)
-    })
-    .unwrap_or_else(|e| http_resp_from_db_error(&e))
+
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&descr))
 }
 
 /// Request to create a new DBSP program.
@@ -887,10 +751,8 @@ async fn new_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: web::Json<NewProgramRequest>,
-) -> impl Responder {
-    do_new_program(state, tenant_id, request)
-        .await
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+) -> Result<HttpResponse, DBError> {
+    do_new_program(state, tenant_id, request).await
 }
 
 async fn do_new_program(
@@ -981,8 +843,8 @@ async fn update_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: web::Json<UpdateProgramRequest>,
-) -> impl Responder {
-    state
+) -> Result<HttpResponse, DBError> {
+    let version = state
         .db
         .lock()
         .await
@@ -993,13 +855,11 @@ async fn update_program(
             &request.description,
             &request.code,
         )
-        .await
-        .map(|version| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&UpdateProgramResponse { version })
-        })
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+        .await?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&UpdateProgramResponse { version }))
 }
 
 /// Request to queue a program for compilation.
@@ -1035,15 +895,15 @@ async fn compile_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: web::Json<CompileProgramRequest>,
-) -> impl Responder {
+) -> Result<HttpResponse, DBError> {
     state
         .db
         .lock()
         .await
         .set_program_pending(*tenant_id, request.program_id, request.version)
-        .await
-        .map(|_| HttpResponse::Accepted().finish())
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+        .await?;
+
+    Ok(HttpResponse::Accepted().finish())
 }
 
 /// Request to cancel ongoing program compilation.
@@ -1079,15 +939,15 @@ async fn cancel_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: web::Json<CancelProgramRequest>,
-) -> impl Responder {
+) -> Result<HttpResponse, DBError> {
     state
         .db
         .lock()
         .await
         .cancel_program(*tenant_id, request.program_id, request.version)
-        .await
-        .map(|_| HttpResponse::Accepted().finish())
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+        .await?;
+
+    Ok(HttpResponse::Accepted().finish())
 }
 
 /// Delete a program.
@@ -1115,17 +975,10 @@ async fn delete_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
-) -> impl Responder {
-    let program_id = match parse_uuid_param(&req, "program_id") {
-        Err(e) => {
-            return http_resp_from_api_error(&e);
-        }
-        Ok(program_id) => ProgramId(program_id),
-    };
+) -> Result<HttpResponse, ManagerError> {
+    let program_id = ProgramId(parse_uuid_param(&req, "program_id")?);
 
-    do_delete_program(state, *tenant_id, program_id)
-        .await
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+    Ok(do_delete_program(state, *tenant_id, program_id).await?)
 }
 
 async fn do_delete_program(
@@ -1180,9 +1033,9 @@ async fn new_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: web::Json<NewPipelineRequest>,
-) -> impl Responder {
+) -> Result<HttpResponse, DBError> {
     debug!("Received new-pipeline request: {request:?}");
-    state
+    let (pipeline_id, version) = state
         .db
         .lock()
         .await
@@ -1195,16 +1048,14 @@ async fn new_pipeline(
             &request.config,
             &request.connectors,
         )
-        .await
-        .map(|(pipeline_id, version)| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&NewPipelineResponse {
-                    pipeline_id,
-                    version,
-                })
-        })
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+        .await?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&NewPipelineResponse {
+            pipeline_id,
+            version,
+        }))
 }
 
 /// Request to update an existing program configuration.
@@ -1261,8 +1112,8 @@ async fn update_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: web::Json<UpdatePipelineRequest>,
-) -> impl Responder {
-    state
+) -> Result<HttpResponse, DBError> {
+    let version = state
         .db
         .lock()
         .await
@@ -1275,13 +1126,11 @@ async fn update_pipeline(
             &request.config,
             &request.connectors,
         )
-        .await
-        .map(|version| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&UpdatePipelineResponse { version })
-        })
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+        .await?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&UpdatePipelineResponse { version }))
 }
 
 /// List pipelines.
@@ -1295,19 +1144,12 @@ async fn update_pipeline(
 async fn list_pipelines(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-) -> impl Responder {
-    state
-        .db
-        .lock()
-        .await
-        .list_pipelines(*tenant_id)
-        .await
-        .map(|pipelines| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(pipelines)
-        })
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+) -> Result<HttpResponse, DBError> {
+    let pipelines = state.db.lock().await.list_pipelines(*tenant_id).await?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(pipelines))
 }
 
 /// Return the last committed (and running, if pipeline is started)
@@ -1330,37 +1172,29 @@ async fn pipeline_committed(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
-) -> impl Responder {
-    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
-        Err(e) => {
-            return http_resp_from_api_error(&e);
-        }
-        Ok(pipeline_id) => PipelineId(pipeline_id),
-    };
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
 
-    let resp: Result<Option<db::PipelineRevision>, DBError> = match state
+    let descr: Option<db::PipelineRevision> = match state
         .db
         .lock()
         .await
         .get_last_committed_pipeline_revision(*tenant_id, pipeline_id)
         .await
     {
-        Ok(revision) => Ok(Some(revision)),
+        Ok(revision) => Some(revision),
         Err(e) => {
             if matches!(e, DBError::NoRevisionAvailable { .. }) {
-                Ok(None)
+                None
             } else {
-                Err(e)
+                Err(e)?
             }
         }
     };
 
-    resp.map(|descr| {
-        HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(&descr)
-    })
-    .unwrap_or_else(|e| http_resp_from_db_error(&e))
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&descr))
 }
 
 /// Retrieve pipeline metrics and performance counters.
@@ -1388,19 +1222,13 @@ async fn pipeline_stats(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
-) -> impl Responder {
-    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
-        Err(e) => {
-            return http_resp_from_api_error(&e);
-        }
-        Ok(pipeline_id) => PipelineId(pipeline_id),
-    };
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
 
     state
         .runner
         .forward_to_pipeline(*tenant_id, pipeline_id, Method::GET, "stats")
         .await
-        .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 /// Retrieve pipeline metadata.
@@ -1439,59 +1267,50 @@ async fn pipeline_status(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: web::Query<IdOrNameTomlQuery>,
-) -> impl Responder {
+) -> Result<HttpResponse, ManagerError> {
     if req.toml.unwrap_or(false) {
-        let resp: Result<String, DBError> = if let Some(id) = req.id {
+        let toml: String = if let Some(id) = req.id {
             state
                 .db
                 .lock()
                 .await
                 .pipeline_to_toml(*tenant_id, PipelineId(id))
-                .await
+                .await?
         } else if let Some(name) = req.name.clone() {
             let db: tokio::sync::MutexGuard<'_, ProjectDB> = state.db.lock().await;
-            let pipeline_resp = db.get_pipeline_by_name(*tenant_id, name).await;
-            if let Ok(pipeline) = pipeline_resp {
-                db.pipeline_to_toml(*tenant_id, pipeline.pipeline_id).await
-            } else {
-                Err(pipeline_resp.err().unwrap())
-            }
+            let pipeline = db.get_pipeline_by_name(*tenant_id, name).await?;
+            db.pipeline_to_toml(*tenant_id, pipeline.pipeline_id)
+                .await?
         } else {
-            return http_resp_from_api_error(&ApiError::PipelineNotSpecified);
+            Err(ManagerError::PipelineNotSpecified)?
         };
 
-        resp.map(|toml: String| {
-            HttpResponse::Ok()
-                .content_type("text/toml")
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .body(toml)
-        })
-        .unwrap_or_else(|e: DBError| http_resp_from_db_error(&e))
+        Ok(HttpResponse::Ok()
+            .content_type("text/toml")
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .body(toml))
     } else {
-        let resp: Result<db::PipelineDescr, DBError> = if let Some(id) = req.id {
+        let descr: db::PipelineDescr = if let Some(id) = req.id {
             state
                 .db
                 .lock()
                 .await
                 .get_pipeline_by_id(*tenant_id, PipelineId(id))
-                .await
+                .await?
         } else if let Some(name) = req.name.clone() {
             state
                 .db
                 .lock()
                 .await
                 .get_pipeline_by_name(*tenant_id, name)
-                .await
+                .await?
         } else {
-            return http_resp_from_api_error(&ApiError::PipelineNotSpecified);
+            Err(ManagerError::PipelineNotSpecified)?
         };
 
-        resp.map(|descr: db::PipelineDescr| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&descr)
-        })
-        .unwrap_or_else(|e: DBError| http_resp_from_db_error(&e))
+        Ok(HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&descr))
     }
 }
 
@@ -1625,19 +1444,9 @@ async fn pipeline_action(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
-) -> impl Responder {
-    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
-        Err(e) => {
-            return http_resp_from_api_error(&e);
-        }
-        Ok(pipeline_id) => PipelineId(pipeline_id),
-    };
-    let action = match parse_pipeline_action(&req) {
-        Err(e) => {
-            return http_resp_from_api_error(&e);
-        }
-        Ok(action) => action,
-    };
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
+    let action = parse_pipeline_action(&req)?;
 
     match action {
         "deploy" => state.runner.deploy_pipeline(*tenant_id, pipeline_id).await,
@@ -1649,11 +1458,10 @@ async fn pipeline_action(
                 .shutdown_pipeline(*tenant_id, pipeline_id)
                 .await
         }
-        _ => Err(anyhow!(ApiError::InvalidPipelineAction {
-            action: action.to_string()
-        })),
+        _ => Err(ManagerError::InvalidPipelineAction {
+            action: action.to_string(),
+        }),
     }
-    .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 /// Terminate and delete a pipeline.
@@ -1686,13 +1494,8 @@ async fn pipeline_delete(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
-) -> impl Responder {
-    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
-        Err(e) => {
-            return http_resp_from_api_error(&e);
-        }
-        Ok(pipeline_id) => PipelineId(pipeline_id),
-    };
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
 
     let db = state.db.lock().await;
 
@@ -1700,7 +1503,6 @@ async fn pipeline_delete(
         .runner
         .delete_pipeline(*tenant_id, &db, pipeline_id)
         .await
-        .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 /// Enumerate the connector database.
@@ -1714,19 +1516,12 @@ async fn pipeline_delete(
 async fn list_connectors(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-) -> impl Responder {
-    state
-        .db
-        .lock()
-        .await
-        .list_connectors(*tenant_id)
-        .await
-        .map(|connectors| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(connectors)
-        })
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+) -> Result<HttpResponse, DBError> {
+    let connectors = state.db.lock().await.list_connectors(*tenant_id).await?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(connectors))
 }
 
 /// Request to create a new connector.
@@ -1760,8 +1555,8 @@ async fn new_connector(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: web::Json<NewConnectorRequest>,
-) -> impl Responder {
-    state
+) -> Result<HttpResponse, DBError> {
+    let connector_id = state
         .db
         .lock()
         .await
@@ -1772,13 +1567,11 @@ async fn new_connector(
             &request.description,
             &request.config,
         )
-        .await
-        .map(|connector_id| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&NewConnectorResponse { connector_id })
-        })
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+        .await?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&NewConnectorResponse { connector_id }))
 }
 
 /// Request to update an existing data-connector.
@@ -1818,7 +1611,7 @@ async fn update_connector(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: web::Json<UpdateConnectorRequest>,
-) -> impl Responder {
+) -> Result<HttpResponse, DBError> {
     state
         .db
         .lock()
@@ -1830,13 +1623,11 @@ async fn update_connector(
             &request.description,
             &request.config,
         )
-        .await
-        .map(|_r| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&UpdateConnectorResponse {})
-        })
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+        .await?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&UpdateConnectorResponse {}))
 }
 
 /// Delete existing connector.
@@ -1862,22 +1653,17 @@ async fn delete_connector(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
-) -> impl Responder {
-    let connector_id = match parse_uuid_param(&req, "connector_id") {
-        Err(e) => {
-            return http_resp_from_api_error(&e);
-        }
-        Ok(connector_id) => ConnectorId(connector_id),
-    };
+) -> Result<HttpResponse, ManagerError> {
+    let connector_id = ConnectorId(parse_uuid_param(&req, "connector_id")?);
 
     state
         .db
         .lock()
         .await
         .delete_connector(*tenant_id, connector_id)
-        .await
-        .map(|_| HttpResponse::Ok().finish())
-        .unwrap_or_else(|e| http_resp_from_db_error(&e))
+        .await?;
+
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[derive(Debug, Deserialize)]
@@ -1925,31 +1711,28 @@ async fn connector_status(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: web::Query<IdOrNameQuery>,
-) -> impl Responder {
-    let resp: Result<db::ConnectorDescr, DBError> = if let Some(id) = req.id {
+) -> Result<HttpResponse, ManagerError> {
+    let descr: db::ConnectorDescr = if let Some(id) = req.id {
         state
             .db
             .lock()
             .await
             .get_connector_by_id(*tenant_id, ConnectorId(id))
-            .await
+            .await?
     } else if let Some(name) = req.name.clone() {
         state
             .db
             .lock()
             .await
             .get_connector_by_name(*tenant_id, name)
-            .await
+            .await?
     } else {
-        return http_resp_from_api_error(&ApiError::ConnectorNotSpecified);
+        Err(ManagerError::ConnectorNotSpecified)?
     };
 
-    resp.map(|descr| {
-        HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(&descr)
-    })
-    .unwrap_or_else(|e| http_resp_from_db_error(&e))
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&descr))
 }
 
 /// Push data to a SQL table.
@@ -2008,22 +1791,17 @@ async fn http_input(
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
     body: web::Payload,
-) -> impl Responder {
+) -> Result<HttpResponse, ManagerError> {
     debug!("Received {req:?}");
 
-    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
-        Err(e) => {
-            return http_resp_from_api_error(&e);
-        }
-        Ok(pipeline_id) => PipelineId(pipeline_id),
-    };
+    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
     debug!("Pipeline_id {:?}", pipeline_id);
 
     let table_name = match req.match_info().get("table_name") {
         None => {
-            return http_resp_from_error(&anyhow!(ApiError::MissingUrlEncodedParam {
-                param: "table_name"
-            }))
+            return Err(ManagerError::MissingUrlEncodedParam {
+                param: "table_name",
+            });
         }
         Some(table_name) => table_name,
     };
@@ -2035,7 +1813,6 @@ async fn http_input(
         .runner
         .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, &endpoint, req, body)
         .await
-        .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 /// Subscribe to a stream of updates to a SQL view or table.
@@ -2096,22 +1873,17 @@ async fn http_output(
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
     body: web::Payload,
-) -> impl Responder {
+) -> Result<HttpResponse, ManagerError> {
     debug!("Received {req:?}");
 
-    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
-        Err(e) => {
-            return http_resp_from_api_error(&e);
-        }
-        Ok(pipeline_id) => PipelineId(pipeline_id),
-    };
+    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
     debug!("Pipeline_id {:?}", pipeline_id);
 
     let table_name = match req.match_info().get("table_name") {
         None => {
-            return http_resp_from_error(&anyhow!(ApiError::MissingUrlEncodedParam {
-                param: "table_name"
-            }))
+            return Err(ManagerError::MissingUrlEncodedParam {
+                param: "table_name",
+            });
         }
         Some(table_name) => table_name,
     };
@@ -2123,5 +1895,4 @@ async fn http_output(
         .runner
         .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, &endpoint, req, body)
         .await
-        .unwrap_or_else(|e| http_resp_from_error(&e))
 }

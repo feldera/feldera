@@ -1337,9 +1337,7 @@ impl Storage for Mutex<DbModel> {
     ) -> DBResult<(super::ProgramId, super::Version)> {
         let mut s = self.lock().await;
         if s.programs.keys().any(|k| k.1 == ProgramId(id)) {
-            return Err(DBError::UniqueKeyViolation {
-                constraint: "program_pkey",
-            });
+            return Err(DBError::unique_key_violation("program_pkey"));
         }
         if s.programs
             .iter()
@@ -1645,9 +1643,7 @@ impl Storage for Mutex<DbModel> {
 
         // UUIDs are global
         if s.pipelines.keys().any(|k| k.1 == PipelineId(id)) {
-            return Err(DBError::UniqueKeyViolation {
-                constraint: "pipeline_pkey",
-            });
+            return Err(DBError::unique_key_violation("pipeline_pkey"));
         }
         // Model the foreign key constraint on `program_id`
         if let Some(program_id) = program_id {
@@ -1902,9 +1898,7 @@ impl Storage for Mutex<DbModel> {
     ) -> DBResult<super::ConnectorId> {
         let mut s = self.lock().await;
         if s.connectors.keys().any(|k| k.1 == ConnectorId(id)) {
-            return Err(DBError::UniqueKeyViolation {
-                constraint: "connector_pkey",
-            });
+            return Err(DBError::unique_key_violation("connector_pkey"));
         }
         if s.connectors
             .iter()
@@ -2032,7 +2026,7 @@ impl Storage for Mutex<DbModel> {
             e.insert((tenant_id, permissions));
             Ok(())
         } else {
-            Err(DBError::DuplicateKey)
+            Err(DBError::duplicate_key())
         }
     }
 
