@@ -42,7 +42,9 @@ const sidebars = {
     {
       type: "category",
       label: "Rust DBSP library Reference",
-      link: { type: "doc", id: "docs/rust" },
+      items: [
+          "rust"
+      ],
     },
     {
       type: "category",
