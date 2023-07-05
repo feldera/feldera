@@ -1363,20 +1363,14 @@ async fn pipeline_validate(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
-) -> impl Responder {
-    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
-        Err(e) => {
-            return http_resp_from_api_error(&e);
-        }
-        Ok(pipeline_id) => PipelineId(pipeline_id),
-    };
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
 
     let db = state.db.lock().await;
-    db.pipeline_is_committable(*tenant_id, pipeline_id)
+    Ok(db
+        .pipeline_is_committable(*tenant_id, pipeline_id)
         .await
-        .map(|_| HttpResponse::Ok().json("Pipeline successfully validated."))
-        .map_err(|e| anyhow!(e))
-        .unwrap_or_else(|e| http_resp_from_error(&e))
+        .map(|_| HttpResponse::Ok().json("Pipeline successfully validated."))?)
 }
 
 /// Perform action on a pipeline.

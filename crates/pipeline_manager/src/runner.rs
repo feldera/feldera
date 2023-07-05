@@ -277,7 +277,7 @@ impl LocalRunner {
         {
             Ok(_revision) => (),
             Err(DBError::RevisionNotChanged) => (),
-            Err(e) => return Err(e),
+            Err(e) => return Err(e.into()),
         };
 
         // This should normally succeed (because we just created a revision)
