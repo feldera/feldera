@@ -217,7 +217,7 @@ pub(crate) struct TenantRecord {
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, ToSchema)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub(crate) struct TenantId(
+pub struct TenantId(
     #[cfg_attr(test, proptest(strategy = "crate::db::test::limited_uuid()"))] pub Uuid,
 );
 impl Display for TenantId {

@@ -5,15 +5,13 @@ use crate::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use dbsp_adapters::DetailedError;
-use deadpool_postgres::{Manager, Pool, PoolError, RecyclingMethod, Transaction};
+use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use futures_util::TryFutureExt;
 use log::{debug, error};
 use openssl::sha;
-use refinery::Error as RefineryError;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{borrow::Cow, collections::HashSet, error::Error as StdError, fmt, fmt::Display};
+use std::{collections::HashSet, fmt, fmt::Display};
 use storage::Storage;
 use tokio_postgres::{error::Error as PgError, NoTls, Row};
 use utoipa::ToSchema;
@@ -29,6 +27,9 @@ pub(crate) mod test;
 #[cfg(feature = "pg-embed")]
 mod pg_setup;
 pub(crate) mod storage;
+
+mod error;
+pub use error::DBError;
 
 mod embedded {
     use refinery::embed_migrations;
@@ -60,9 +61,7 @@ pub(crate) struct ProjectDB {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(transparent)]
 #[serde(transparent)]
-pub(crate) struct ProgramId(
-    #[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid,
-);
+pub struct ProgramId(#[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid);
 impl Display for ProgramId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -74,9 +73,7 @@ impl Display for ProgramId {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(transparent)]
 #[serde(transparent)]
-pub(crate) struct PipelineId(
-    #[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid,
-);
+pub struct PipelineId(#[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid);
 impl Display for PipelineId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -88,9 +85,7 @@ impl Display for PipelineId {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(transparent)]
 #[serde(transparent)]
-pub(crate) struct ConnectorId(
-    #[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid,
-);
+pub struct ConnectorId(#[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid);
 impl Display for ConnectorId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -116,7 +111,7 @@ impl Display for AttachedConnectorId {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(transparent)]
 #[serde(transparent)]
-pub(crate) struct Version(#[cfg_attr(test, proptest(strategy = "1..3i64"))] pub i64);
+pub struct Version(#[cfg_attr(test, proptest(strategy = "1..3i64"))] pub i64);
 impl Display for Version {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -133,280 +128,6 @@ impl Display for Revision {
         self.0.fmt(f)
     }
 }
-
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-pub(crate) enum DBError {
-    #[serde(serialize_with = "serialize_pg_error")]
-    PostgresError {
-        error: Box<PgError>,
-    },
-    #[serde(serialize_with = "serialize_pgpool_error")]
-    PostgresPoolError {
-        error: Box<PoolError>,
-    },
-    #[serde(serialize_with = "serialize_refinery_error")]
-    PostgresMigrationError {
-        error: Box<RefineryError>,
-    },
-    #[cfg(feature = "pg-embed")]
-    #[serde(serialize_with = "serialize_pgembed_error")]
-    PgEmbedError {
-        error: Box<pg_embed::pg_errors::PgEmbedError>,
-    },
-    // Catch-all error for unexpected invalid data extracted from DB.
-    // We can split it into several separate error variants if needed.
-    InvalidData {
-        error: String,
-    },
-    InvalidStatus {
-        status: String,
-    },
-    UnknownProgram {
-        program_id: ProgramId,
-    },
-    OutdatedProgramVersion {
-        expected_version: Version,
-    },
-    UnknownPipeline {
-        pipeline_id: PipelineId,
-    },
-    UnknownConnector {
-        connector_id: ConnectorId,
-    },
-    UnknownTenant {
-        tenant_id: TenantId,
-    },
-    UnknownAttachedConnector {
-        pipeline_id: PipelineId,
-        name: String,
-    },
-    UnknownName {
-        name: String,
-    },
-    DuplicateName,
-    DuplicateKey,
-    InvalidKey,
-    UniqueKeyViolation {
-        constraint: &'static str,
-    },
-    UnknownPipelineStatus,
-    ProgramNotSet,
-    ProgramNotCompiled,
-    ProgramFailedToCompile,
-    NoRevisionAvailable {
-        pipeline_id: PipelineId,
-    },
-    RevisionNotChanged,
-    TablesNotInSchema {
-        missing: Vec<(String, String)>,
-    },
-    ViewsNotInSchema {
-        missing: Vec<(String, String)>,
-    },
-}
-
-fn serialize_pg_error<S>(error: &PgError, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&error.to_string())
-}
-
-fn serialize_pgpool_error<S>(error: &PoolError, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&error.to_string())
-}
-
-fn serialize_refinery_error<S>(error: &RefineryError, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&error.to_string())
-}
-
-#[cfg(feature = "pg-embed")]
-fn serialize_pgembed_error<S>(
-    error: &pg_embed::pg_errors::PgEmbedError,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&error.to_string())
-}
-
-impl From<PgError> for DBError {
-    fn from(error: PgError) -> Self {
-        Self::PostgresError {
-            error: Box::new(error),
-        }
-    }
-}
-
-impl From<PoolError> for DBError {
-    fn from(error: PoolError) -> Self {
-        Self::PostgresPoolError {
-            error: Box::new(error),
-        }
-    }
-}
-
-impl From<RefineryError> for DBError {
-    fn from(error: RefineryError) -> Self {
-        Self::PostgresMigrationError {
-            error: Box::new(error),
-        }
-    }
-}
-
-#[cfg(feature = "pg-embed")]
-impl From<pg_embed::pg_errors::PgEmbedError> for DBError {
-    fn from(error: pg_embed::pg_errors::PgEmbedError) -> Self {
-        Self::PgEmbedError {
-            error: Box::new(error),
-        }
-    }
-}
-
-impl Display for DBError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DBError::PostgresError { error } => {
-                write!(f, "Unexpected Postgres error: '{error}'")
-            }
-            DBError::PostgresPoolError { error } => {
-                write!(f, "Postgres connection pool error: '{error}'")
-            }
-            DBError::PostgresMigrationError { error } => {
-                write!(f, "DB schema migration error: '{error}'")
-            }
-            #[cfg(feature = "pg-embed")]
-            DBError::PgEmbedError { error } => {
-                write!(f, "PG-embed error: '{error}'")
-            }
-            DBError::InvalidData { error } => {
-                write!(f, "Invalid DB data '{error}'")
-            }
-            DBError::InvalidStatus { status } => {
-                write!(f, "Invalid status string '{status}'")
-            }
-            DBError::UnknownProgram { program_id } => {
-                write!(f, "Unknown program id '{program_id}'")
-            }
-            DBError::OutdatedProgramVersion { expected_version } => {
-                write!(
-                    f,
-                    "Outdated program version. Expected version: '{expected_version}'"
-                )
-            }
-            DBError::UnknownPipeline { pipeline_id } => {
-                write!(f, "Unknown pipeline id '{pipeline_id}'")
-            }
-            DBError::UnknownAttachedConnector { pipeline_id, name } => {
-                write!(
-                    f,
-                    "Pipeline '{pipeline_id}' does not have a connector named '{name}'"
-                )
-            }
-            DBError::UnknownConnector { connector_id } => {
-                write!(f, "Unknown connector id '{connector_id}'")
-            }
-            DBError::UnknownTenant { tenant_id } => {
-                write!(f, "Unknown tenant id '{tenant_id}'")
-            }
-            DBError::DuplicateName => {
-                write!(f, "An entity with this name already exists")
-            }
-            DBError::DuplicateKey => {
-                write!(f, "A key with the same hash already exists")
-            }
-            DBError::InvalidKey => {
-                write!(f, "Could not validate API")
-            }
-            DBError::UnknownName { name } => {
-                write!(f, "An entity with name {name} was not found")
-            }
-            DBError::UniqueKeyViolation { constraint } => {
-                write!(f, "Unique key violation for '{constraint}'")
-            }
-            DBError::UnknownPipelineStatus => write!(f, "Unknown pipeline status encountered"),
-            DBError::ProgramNotSet => write!(f, "The pipeline does not have a program attached"),
-            DBError::ProgramNotCompiled => {
-                write!(
-                    f,
-                    "The program attached to the pipeline hasn't been compiled yet."
-                )
-            }
-            DBError::ProgramFailedToCompile => {
-                write!(
-                    f,
-                    "The program attached to the pipeline did not compile successfully"
-                )
-            }
-            DBError::NoRevisionAvailable { pipeline_id } => {
-                write!(
-                    f,
-                    "The pipeline {pipeline_id} does not have a committed revision"
-                )
-            }
-            DBError::RevisionNotChanged => {
-                write!(f, "There is no change to commit for pipeline")
-            }
-            DBError::TablesNotInSchema { missing } => {
-                write!(
-                    f,
-                    "Pipeline configuration specifies invalid connector->table pairs '{}': The table(s) don't exist in the program",
-                    missing.iter().map(|(ac, t)| format!("{} -> {}", ac, t)).collect::<Vec<String>>().join(", ").trim_end_matches(", ")
-                )
-            }
-            DBError::ViewsNotInSchema { missing } => {
-                write!(
-                    f,
-                    "Pipeline configuration specifies invalid connector->view pairs '{}': The view(s) don't exist in the program",
-                    missing.iter().map(|(ac, v)| format!("{} -> {}", ac, v)).collect::<Vec<String>>().join(", ").trim_end_matches(", ")
-                )
-            }
-        }
-    }
-}
-
-impl DetailedError for DBError {
-    fn error_code(&self) -> Cow<'static, str> {
-        match self {
-            Self::PostgresError { .. } => Cow::from("PostgresError"),
-            Self::PostgresPoolError { .. } => Cow::from("PostgresPoolError"),
-            Self::PostgresMigrationError { .. } => Cow::from("PostgresMigrationError"),
-            #[cfg(feature = "pg-embed")]
-            Self::PgEmbedError { .. } => Cow::from("PgEmbedError"),
-            Self::InvalidData { .. } => Cow::from("InvalidData"),
-            Self::InvalidStatus { .. } => Cow::from("InvalidStatus"),
-            Self::UnknownProgram { .. } => Cow::from("UnknownProgram"),
-            Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
-            Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
-            Self::UnknownConnector { .. } => Cow::from("UnknownConnector"),
-            Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
-            Self::UnknownAttachedConnector { .. } => Cow::from("UnknownAttachedConnector"),
-            Self::UnknownName { .. } => Cow::from("UnknownName"),
-            Self::DuplicateName => Cow::from("DuplicateName"),
-            Self::DuplicateKey => Cow::from("DuplicateKey"),
-            Self::InvalidKey => Cow::from("InvalidKey"),
-            Self::UniqueKeyViolation { .. } => Cow::from("UniqueKeyViolation"),
-            Self::UnknownPipelineStatus => Cow::from("UnknownPipelineStatus"),
-            Self::ProgramNotSet => Cow::from("ProgramNotSet"),
-            Self::ProgramNotCompiled => Cow::from("ProgramNotCompiled"),
-            Self::ProgramFailedToCompile => Cow::from("ProgramFailedToCompile"),
-            Self::NoRevisionAvailable { .. } => Cow::from("NoRevisionAvailable"),
-            Self::RevisionNotChanged => Cow::from("RevisionNotChanged"),
-            Self::TablesNotInSchema { .. } => Cow::from("TablesNotInSchema"),
-            Self::ViewsNotInSchema { .. } => Cow::from("ViewsNotInSchema"),
-        }
-    }
-}
-
-impl StdError for DBError {}
 
 /// The database encodes program status using two columns: `status`, which has
 /// type `string`, but acts as an enum, and `error`, only used if `status` is
@@ -434,9 +155,7 @@ impl ProgramStatus {
             }
             Some("rust_error") => Ok(Self::RustError(error_string.unwrap_or_default())),
             Some("system_error") => Ok(Self::SystemError(error_string.unwrap_or_default())),
-            Some(status) => Err(DBError::InvalidStatus {
-                status: status.to_string(),
-            }),
+            Some(status) => Err(DBError::invalid_status(status.to_string())),
         }
     }
     fn to_columns(&self) -> (Option<String>, Option<String>) {
@@ -561,7 +280,7 @@ impl TryFrom<String> for PipelineStatus {
             "running" => Ok(Self::Running),
             "paused" => Ok(Self::Paused),
             "failed" => Ok(Self::Failed),
-            _ => Err(DBError::UnknownPipelineStatus),
+            _ => Err(DBError::unknown_pipeline_status(value)),
         }
     }
 }
@@ -811,11 +530,9 @@ fn convert_bigint_to_time(created_secs: Option<i64>) -> Result<Option<DateTime<U
     if let Some(created_secs) = created_secs {
         let created_naive =
             NaiveDateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
-                DBError::InvalidData {
-                    error: format!(
-                        "Invalid timestamp in 'pipeline.created' column: {created_secs}"
-                    ),
-                }
+                DBError::invalid_data(format!(
+                    "Invalid timestamp in 'pipeline.created' column: {created_secs}"
+                ))
             })?;
 
         Ok(Some(DateTime::<Utc>::from_utc(created_naive, Utc)))
@@ -860,9 +577,7 @@ impl Storage for ProjectDB {
                 .get::<_, Option<String>>(6)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
-                .map_err(|e| DBError::InvalidData {
-                    error: format!("Error parsing program schema: {e}"),
-                })?;
+                .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
 
             result.push(ProgramDescr {
                 program_id: ProgramId(row.get(0)),
@@ -898,9 +613,7 @@ impl Storage for ProjectDB {
             .get::<_, Option<String>>(6)
             .map(|s| serde_json::from_str(&s))
             .transpose()
-            .map_err(|e| DBError::InvalidData {
-                error: format!("Error parsing program schema: {e}"),
-            })?;
+            .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
 
         let status = ProgramStatus::from_columns(status.as_deref(), error)?;
         Ok((
@@ -1018,9 +731,7 @@ impl Storage for ProjectDB {
                 .get::<_, Option<String>>(5)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
-                .map_err(|e| DBError::InvalidData {
-                    error: format!("Error parsing program schema: {e}"),
-                })?;
+                .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
 
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
             Ok(Some(ProgramDescr {
@@ -1058,9 +769,7 @@ impl Storage for ProjectDB {
                 .get::<_, Option<String>>(5)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
-                .map_err(|e| DBError::InvalidData {
-                    error: format!("Error parsing program schema: {e}"),
-                })?;
+                .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
 
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
             Ok(Some(ProgramDescr {
@@ -1144,8 +853,10 @@ impl Storage for ProjectDB {
         program_id: ProgramId,
         schema: ProgramSchema,
     ) -> Result<(), DBError> {
-        let schema = serde_json::to_string(&schema).map_err(|e| DBError::InvalidData {
-            error: format!("Error serializing program schema '{schema:?}'.\nError: {e}"),
+        let schema = serde_json::to_string(&schema).map_err(|e| {
+            DBError::invalid_data(format!(
+                "Error serializing program schema '{schema:?}'.\nError: {e}"
+            ))
         })?;
         self.pool
             .get()
@@ -1892,7 +1603,7 @@ impl Storage for ProjectDB {
         if res > 0 {
             Ok(())
         } else {
-            Err(DBError::DuplicateKey)
+            Err(DBError::duplicate_key())
         }
     }
 
@@ -2207,9 +1918,7 @@ impl ProjectDB {
                 .get::<_, Option<String>>(5)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
-                .map_err(|e| DBError::InvalidData {
-                    error: format!("Error parsing program schema: {e}"),
-                })?;
+                .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
             Ok((
                 ProgramDescr {
@@ -2381,10 +2090,9 @@ impl ProjectDB {
             let is_input: bool = obj.get("is_input").unwrap().as_bool().unwrap();
 
             let uuid_str = obj.get("connector_id").unwrap().as_str().unwrap();
-            let connector_id =
-                ConnectorId(Uuid::parse_str(uuid_str).map_err(|e| DBError::InvalidData {
-                    error: format!("error parsing connector id '{uuid_str}': {e}"),
-                })?);
+            let connector_id = ConnectorId(Uuid::parse_str(uuid_str).map_err(|e| {
+                DBError::invalid_data(format!("error parsing connector id '{uuid_str}': {e}"))
+            })?);
 
             attached_connectors.push(AttachedConnector {
                 name: obj.get("name").unwrap().as_str().unwrap().to_owned(),
@@ -2402,16 +2110,10 @@ impl ProjectDB {
         if let Some(dberr) = err.as_db_error() {
             if dberr.code() == &tokio_postgres::error::SqlState::UNIQUE_VIOLATION {
                 match dberr.constraint() {
-                    Some("program_pkey") => DBError::UniqueKeyViolation {
-                        constraint: "program_pkey",
-                    },
-                    Some("connector_pkey") => DBError::UniqueKeyViolation {
-                        constraint: "connector_pkey",
-                    },
-                    Some("pipeline_pkey") => DBError::UniqueKeyViolation {
-                        constraint: "pipeline_pkey",
-                    },
-                    Some("api_key_pkey") => DBError::DuplicateKey,
+                    Some("program_pkey") => DBError::unique_key_violation("program_pkey"),
+                    Some("connector_pkey") => DBError::unique_key_violation("connector_pkey"),
+                    Some("pipeline_pkey") => DBError::unique_key_violation("pipeline_pkey"),
+                    Some("api_key_pkey") => DBError::duplicate_key(),
                     Some(_constraint) => DBError::DuplicateName,
                     None => DBError::DuplicateName,
                 }
@@ -2429,7 +2131,7 @@ impl ProjectDB {
         err: DBError,
         program_id: Option<ProgramId>,
     ) -> DBError {
-        if let DBError::PostgresError { error } = &err {
+        if let DBError::PostgresError { error, .. } = &err {
             let db_err = error.as_db_error();
             if let Some(db_err) = db_err {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
@@ -2453,7 +2155,7 @@ impl ProjectDB {
         err: DBError,
         pipeline_id: PipelineId,
     ) -> DBError {
-        if let DBError::PostgresError { error } = &err {
+        if let DBError::PostgresError { error, .. } = &err {
             let db_err = error.as_db_error();
             if let Some(db_err) = db_err {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
@@ -2475,7 +2177,7 @@ impl ProjectDB {
         tenant_id: TenantId,
         missing_id: Option<Uuid>,
     ) -> DBError {
-        if let DBError::PostgresError { error } = &err {
+        if let DBError::PostgresError { error, .. } = &err {
             let db_err = error.as_db_error();
             if let Some(db_err) = db_err {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION {

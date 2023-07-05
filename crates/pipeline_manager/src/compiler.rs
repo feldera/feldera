@@ -1,7 +1,6 @@
 use crate::auth::TenantId;
 use crate::db::storage::Storage;
-use crate::{ManagerConfig, ProgramId, ProjectDB, Version};
-use anyhow::{bail, Error as AnyError, Result as AnyResult};
+use crate::{ManagerConfig, ManagerError, ProgramId, ProjectDB, Version};
 use log::warn;
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
@@ -111,8 +110,8 @@ impl ProgramStatus {
 }
 
 pub struct Compiler {
-    compiler_task: JoinHandle<AnyResult<()>>,
-    gc_task: JoinHandle<AnyResult<()>>,
+    compiler_task: JoinHandle<Result<(), ManagerError>>,
+    gc_task: JoinHandle<Result<(), ManagerError>>,
 }
 
 impl Drop for Compiler {
@@ -133,7 +132,10 @@ fn main() {
 }"#;
 
 impl Compiler {
-    pub(crate) async fn new(config: &ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<Self> {
+    pub(crate) async fn new(
+        config: &ManagerConfig,
+        db: Arc<Mutex<ProjectDB>>,
+    ) -> Result<Self, ManagerError> {
         Self::create_working_directory(config).await?;
         let compiler_task = spawn(Self::compiler_task(config.clone(), db.clone()));
         let gc_task = spawn(Self::gc_task(config.clone(), db));
@@ -143,14 +145,17 @@ impl Compiler {
         })
     }
 
-    async fn create_working_directory(config: &ManagerConfig) -> AnyResult<()> {
+    async fn create_working_directory(config: &ManagerConfig) -> Result<(), ManagerError> {
         fs::create_dir_all(&config.workspace_dir())
             .await
             .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to create Rust workspace directory '{}': {e}",
-                    config.workspace_dir().display()
-                ))
+                ManagerError::io_error(
+                    format!(
+                        "creating Rust workspace directory '{}'",
+                        config.workspace_dir().display()
+                    ),
+                    e,
+                )
             })
     }
 
@@ -161,7 +166,9 @@ impl Compiler {
     /// compilation job completes quickly.  Also creates the `Cargo.lock`
     /// file, making sure that subsequent `cargo` runs do not access the
     /// network.
-    pub(crate) async fn precompile_dependencies(config: &ManagerConfig) -> AnyResult<()> {
+    pub(crate) async fn precompile_dependencies(
+        config: &ManagerConfig,
+    ) -> Result<(), ManagerError> {
         let program_id = ProgramId(Uuid::nil());
 
         Self::create_working_directory(config).await?;
@@ -171,48 +178,90 @@ impl Compiler {
 
         // Create dummy package.
         let rust_file_path = config.rust_program_path(program_id);
-        fs::create_dir_all(rust_file_path.parent().unwrap()).await?;
+        let rust_src_dir = rust_file_path.parent().unwrap();
+        fs::create_dir_all(rust_src_dir).await.map_err(|e| {
+            ManagerError::io_error(
+                format!(
+                    "creating Rust source directory '{}'",
+                    rust_src_dir.display()
+                ),
+                e,
+            )
+        })?;
 
         Compiler::write_project_toml(config, program_id).await?;
 
         fs::write(&rust_file_path, "fn main() {}")
             .await
             .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to write '{}': '{e}'",
-                    rust_file_path.display()
-                ))
+                ManagerError::io_error(format!("writing '{}'", rust_file_path.display()), e)
             })?;
 
         // `cargo build`.
         let mut cargo_process = Compiler::run_cargo_build(config, program_id).await?;
-        let exit_status = cargo_process.wait().await?;
+        let exit_status = cargo_process
+            .wait()
+            .await
+            .map_err(|e| ManagerError::io_error("waiting for 'cargo build'".to_string(), e))?;
 
         if !exit_status.success() {
-            let stdout = fs::read_to_string(config.compiler_stdout_path(program_id)).await?;
-            let stderr = fs::read_to_string(config.compiler_stderr_path(program_id)).await?;
-            bail!("Failed to precompile Rust dependencies\nstdout:\n{stdout}\nstderr:\n{stderr}");
+            let stdout = fs::read_to_string(config.compiler_stdout_path(program_id))
+                .await
+                .map_err(|e| {
+                    ManagerError::io_error(
+                        format!(
+                            "reading '{}'",
+                            config.compiler_stdout_path(program_id).display()
+                        ),
+                        e,
+                    )
+                })?;
+            let stderr = fs::read_to_string(config.compiler_stderr_path(program_id))
+                .await
+                .map_err(|e| {
+                    ManagerError::io_error(
+                        format!(
+                            "reading '{}'",
+                            config.compiler_stderr_path(program_id).display()
+                        ),
+                        e,
+                    )
+                })?;
+            return Err(ManagerError::RustCompilerError {
+                error: format!(
+                    "Failed to precompile Rust dependencies\nstdout:\n{stdout}\nstderr:\n{stderr}"
+                ),
+            });
         }
 
         Ok(())
     }
 
-    async fn run_cargo_build(config: &ManagerConfig, program_id: ProgramId) -> AnyResult<Child> {
+    async fn run_cargo_build(
+        config: &ManagerConfig,
+        program_id: ProgramId,
+    ) -> Result<Child, ManagerError> {
         let err_file = File::create(&config.compiler_stderr_path(program_id))
             .await
             .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to create '{}': '{e}'",
-                    config.compiler_stderr_path(program_id).display()
-                ))
+                ManagerError::io_error(
+                    format!(
+                        "creating '{}'",
+                        config.compiler_stderr_path(program_id).display()
+                    ),
+                    e,
+                )
             })?;
         let out_file = File::create(&config.compiler_stdout_path(program_id))
             .await
             .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to create '{}': '{e}'",
-                    config.compiler_stdout_path(program_id).display()
-                ))
+                ManagerError::io_error(
+                    format!(
+                        "creating '{}'",
+                        config.compiler_stdout_path(program_id).display()
+                    ),
+                    e,
+                )
             })?;
 
         let mut command = Command::new("cargo");
@@ -231,55 +280,60 @@ impl Compiler {
 
         command
             .spawn()
-            .map_err(|e| AnyError::msg(format!("failed to start 'cargo': '{e}'")))
+            .map_err(|e| ManagerError::io_error("starting 'cargo'".to_string(), e))
     }
 
     async fn version_binary(
         config: &ManagerConfig,
         program_id: ProgramId,
         version: Version,
-    ) -> AnyResult<()> {
+    ) -> Result<(), ManagerError> {
         info!(
             "Preserve binary {:?} as {:?}",
             config.target_executable(program_id),
             config.versioned_executable(program_id, version)
         );
-        fs::copy(
-            config.target_executable(program_id),
-            config.versioned_executable(program_id, version),
-        )
-        .await?;
+        let source = config.target_executable(program_id);
+        let destination = config.versioned_executable(program_id, version);
+        fs::copy(&source, &destination).await.map_err(|e| {
+            ManagerError::io_error(
+                format!(
+                    "copying '{}' to '{}'",
+                    source.display(),
+                    destination.display()
+                ),
+                e,
+            )
+        })?;
         Ok(())
     }
 
     /// Generate workspace-level `Cargo.toml`.
-    async fn write_workspace_toml(config: &ManagerConfig, program_id: ProgramId) -> AnyResult<()> {
+    async fn write_workspace_toml(
+        config: &ManagerConfig,
+        program_id: ProgramId,
+    ) -> Result<(), ManagerError> {
         let workspace_toml_code = format!(
             "[workspace]\nmembers = [ \"{}\" ]\n",
             ManagerConfig::crate_name(program_id),
         );
-        fs::write(&config.workspace_toml_path(), workspace_toml_code)
+        let toml_path = config.workspace_toml_path();
+        fs::write(&toml_path, workspace_toml_code)
             .await
-            .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to write '{}': '{e}'",
-                    config.workspace_toml_path().display()
-                ))
-            })?;
+            .map_err(|e| ManagerError::io_error(format!("writing '{}'", toml_path.display()), e))?;
 
         Ok(())
     }
 
     /// Generate project-level `Cargo.toml`.
-    async fn write_project_toml(config: &ManagerConfig, program_id: ProgramId) -> AnyResult<()> {
-        let template_toml = fs::read_to_string(&config.project_toml_template_path())
-            .await
-            .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to read template '{}': '{e}'",
-                    config.project_toml_template_path().display()
-                ))
-            })?;
+    async fn write_project_toml(
+        config: &ManagerConfig,
+        program_id: ProgramId,
+    ) -> Result<(), ManagerError> {
+        let template_path = config.project_toml_template_path();
+        let template_toml = fs::read_to_string(&template_path).await.map_err(|e| {
+            ManagerError::io_error(format!("reading template '{}'", template_path.display()), e)
+        })?;
         let program_name = format!("name = \"{}\"", ManagerConfig::crate_name(program_id));
         let mut project_toml_code = template_toml
             .replace("name = \"temp\"", &program_name)
@@ -295,19 +349,15 @@ impl Compiler {
         };
         debug!("TOML:\n{project_toml_code}");
 
-        fs::write(&config.project_toml_path(program_id), project_toml_code)
+        let toml_path = config.project_toml_path(program_id);
+        fs::write(&toml_path, project_toml_code)
             .await
-            .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to write '{}': '{e}'",
-                    config.project_toml_path(program_id).display()
-                ))
-            })?;
+            .map_err(|e| ManagerError::io_error(format!("writing '{}'", toml_path.display()), e))?;
 
         Ok(())
     }
 
-    async fn gc_task(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<()> {
+    async fn gc_task(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> Result<(), ManagerError> {
         Self::do_gc_task(config, db).await.map_err(|e| {
             error!("gc task failed; error: '{e}'");
             e
@@ -321,7 +371,10 @@ impl Compiler {
     ///
     /// Note that this task handles all errors internally and does not propagate
     /// them up so it can run forever and never aborts.
-    async fn do_gc_task(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<()> {
+    async fn do_gc_task(
+        config: ManagerConfig,
+        db: Arc<Mutex<ProjectDB>>,
+    ) -> Result<(), ManagerError> {
         loop {
             sleep(GC_POLL_INTERVAL).await;
             let read_dir = fs::read_dir(config.binaries_dir()).await;
@@ -390,7 +443,10 @@ impl Compiler {
         }
     }
 
-    async fn compiler_task(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<()> {
+    async fn compiler_task(
+        config: ManagerConfig,
+        db: Arc<Mutex<ProjectDB>>,
+    ) -> Result<(), ManagerError> {
         Self::do_compiler_task(config, db).await.map_err(|e| {
             error!("compiler task failed; error: '{e}'");
             e
@@ -400,7 +456,7 @@ impl Compiler {
     async fn do_compiler_task(
         /* command_receiver: Receiver<CompilerCommand>, */ config: ManagerConfig,
         db: Arc<Mutex<ProjectDB>>,
-    ) -> AnyResult<()> {
+    ) -> Result<(), ManagerError> {
         let mut job: Option<CompilationJob> = None;
 
         loop {
@@ -459,8 +515,15 @@ impl Compiler {
                             // update in the same transaction as the program
                             // status above.
 
-                            let schema_json = fs::read_to_string(config.schema_path(program_id)).await?;
-                            db.set_program_schema(tenant_id, program_id, serde_json::from_str(&schema_json)?).await?;
+                            let schema_path = config.schema_path(program_id);
+                            let schema_json = fs::read_to_string(&schema_path).await
+                                .map_err(|e| {
+                                    ManagerError::io_error(format!("reading '{}'", schema_path.display()), e)
+                                })?;
+
+                            let schema = serde_json::from_str(&schema_json)
+                                .map_err(|e| { ManagerError::invalid_program_schema(e.to_string()) })?;
+                            db.set_program_schema(tenant_id, program_id, schema).await?;
 
                             debug!("Set ProgramStatus::CompilingRust '{program_id}', version '{version}'");
                             job = Some(CompilationJob::rust(tenant_id, &config, program_id, version).await?);
@@ -564,39 +627,44 @@ impl CompilationJob {
         code: &str,
         program_id: ProgramId,
         version: Version,
-    ) -> AnyResult<Self> {
+    ) -> Result<Self, ManagerError> {
         debug!("Running SQL compiler on program '{program_id}', version '{version}'");
 
         // Create project directory.
         let sql_file_path = config.sql_file_path(program_id);
         let project_directory = sql_file_path.parent().unwrap();
         fs::create_dir_all(&project_directory).await.map_err(|e| {
-            AnyError::msg(format!(
-                "failed to create project directory '{}': '{e}'",
-                project_directory.display()
-            ))
+            ManagerError::io_error(
+                format!(
+                    "creating project directory '{}'",
+                    project_directory.display()
+                ),
+                e,
+            )
         })?;
 
         // Write SQL code to file.
-        fs::write(&sql_file_path, code).await?;
+        fs::write(&sql_file_path, code).await.map_err(|e| {
+            ManagerError::io_error(format!("writing '{}'", sql_file_path.display()), e)
+        })?;
 
         let rust_file_path = config.rust_program_path(program_id);
-        fs::create_dir_all(rust_file_path.parent().unwrap()).await?;
+        let rust_source_dir = rust_file_path.parent().unwrap();
+        fs::create_dir_all(&rust_source_dir).await.map_err(|e| {
+            ManagerError::io_error(format!("creating '{}'", rust_source_dir.display()), e)
+        })?;
 
         let stderr_path = config.compiler_stderr_path(program_id);
         let err_file = File::create(&stderr_path).await.map_err(|e| {
-            AnyError::msg(format!(
-                "failed to create error log '{}': '{e}'",
-                stderr_path.display()
-            ))
+            ManagerError::io_error(format!("creating error log '{}'", stderr_path.display()), e)
         })?;
 
         // `main.rs` file.
         let rust_file = File::create(&rust_file_path).await.map_err(|e| {
-            AnyError::msg(format!(
-                "failed to create '{}': '{e}'",
-                rust_file_path.display()
-            ))
+            ManagerError::io_error(
+                format!("failed to create '{}'", rust_file_path.display()),
+                e,
+            )
         })?;
 
         // Run compiler, direct output to `main.rs`.
@@ -612,10 +680,10 @@ impl CompilationJob {
             .stdout(Stdio::from(rust_file.into_std().await))
             .spawn()
             .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to start SQL compiler '{}': '{e}'",
-                    sql_file_path.display()
-                ))
+                ManagerError::io_error(
+                    format!("starting SQL compiler '{}'", sql_file_path.display()),
+                    e,
+                )
             })?;
 
         Ok(Self {
@@ -633,14 +701,20 @@ impl CompilationJob {
         config: &ManagerConfig,
         program_id: ProgramId,
         version: Version,
-    ) -> AnyResult<Self> {
+    ) -> Result<Self, ManagerError> {
         debug!("Running Rust compiler on program '{program_id}', version '{version}'");
 
+        let rust_path = config.rust_program_path(program_id);
         let mut main_rs = OpenOptions::new()
             .append(true)
-            .open(&config.rust_program_path(program_id))
-            .await?;
-        main_rs.write_all(MAIN_FUNCTION.as_bytes()).await?;
+            .open(&rust_path)
+            .await
+            .map_err(|e| ManagerError::io_error(format!("opening '{}'", rust_path.display()), e))?;
+
+        main_rs
+            .write_all(MAIN_FUNCTION.as_bytes())
+            .await
+            .map_err(|e| ManagerError::io_error(format!("writing '{}'", rust_path.display()), e))?;
         drop(main_rs);
 
         // Write `project/Cargo.toml`.
@@ -663,21 +737,32 @@ impl CompilationJob {
     }
 
     /// Async-wait for the compiler to terminate.
-    async fn wait(&mut self) -> AnyResult<ExitStatus> {
-        let exit_status = self.compiler_process.wait().await?;
+    async fn wait(&mut self) -> Result<ExitStatus, ManagerError> {
+        let exit_status = self.compiler_process.wait().await.map_err(|e| {
+            ManagerError::io_error("waiting for the compiler process".to_string(), e)
+        })?;
         Ok(exit_status)
         // doesn't update status
     }
 
     /// Read error output of (Rust or SQL) compiler.
-    async fn error_output(&self, config: &ManagerConfig) -> AnyResult<String> {
+    async fn error_output(&self, config: &ManagerConfig) -> Result<String, ManagerError> {
         let output = match self.stage {
-            Stage::Sql => fs::read_to_string(config.compiler_stderr_path(self.program_id)).await?,
+            Stage::Sql => {
+                let stderr_path = config.compiler_stderr_path(self.program_id);
+                fs::read_to_string(&stderr_path).await.map_err(|e| {
+                    ManagerError::io_error(format!("reading '{}'", stderr_path.display()), e)
+                })?
+            }
             Stage::Rust => {
-                let stdout =
-                    fs::read_to_string(config.compiler_stdout_path(self.program_id)).await?;
-                let stderr =
-                    fs::read_to_string(config.compiler_stderr_path(self.program_id)).await?;
+                let stdout_path = config.compiler_stdout_path(self.program_id);
+                let stdout = fs::read_to_string(&stdout_path).await.map_err(|e| {
+                    ManagerError::io_error(format!("reading '{}'", stdout_path.display()), e)
+                })?;
+                let stderr_path = config.compiler_stderr_path(self.program_id);
+                let stderr = fs::read_to_string(&stderr_path).await.map_err(|e| {
+                    ManagerError::io_error(format!("reading '{}'", stderr_path.display()), e)
+                })?;
                 format!("stdout:\n{stdout}\nstderr:\n{stderr}")
             }
         };

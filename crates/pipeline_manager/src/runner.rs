@@ -1,7 +1,14 @@
-use crate::db::{storage::Storage, DBError, PipelineRevision, PipelineStatus};
-use crate::{auth::TenantId, ManagerConfig, PipelineId, ProjectDB};
-use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
-use anyhow::{anyhow, bail, Result as AnyResult};
+use crate::{
+    auth::TenantId,
+    db::{storage::Storage, DBError, PipelineRevision, PipelineStatus},
+    ErrorResponse, ManagerConfig, ManagerError, PipelineId, ProjectDB, ResponseError,
+};
+use actix_web::{
+    body::BoxBody,
+    http::{Method, StatusCode},
+    web::Payload,
+    HttpRequest, HttpResponse, HttpResponseBuilder,
+};
 use awc::Client;
 use dbsp_adapters::DetailedError;
 use serde::Serialize;
@@ -22,7 +29,7 @@ const PORT_FILE_LOG_QUIET_PERIOD: Duration = Duration::from_millis(2_000);
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
-pub(crate) enum RunnerError {
+pub enum RunnerError {
     PipelineShutdown {
         pipeline_id: PipelineId,
     },
@@ -93,6 +100,22 @@ impl Display for RunnerError {
 
 impl StdError for RunnerError {}
 
+impl ResponseError for RunnerError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::PipelineShutdown { .. } => StatusCode::NOT_FOUND,
+            Self::HttpForwardError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PortFileParseError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineInitializationTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineStartupError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    fn error_response(&self) -> HttpResponse<BoxBody> {
+        HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
+    }
+}
+
 /// A runner component responsible for running and interacting with
 /// pipelines at runtime.
 pub(crate) enum Runner {
@@ -129,7 +152,7 @@ impl Runner {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         match self {
             Self::Local(local) => local.deploy_pipeline(tenant_id, pipeline_id).await,
         }
@@ -147,7 +170,7 @@ impl Runner {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         match self {
             Self::Local(local) => local.shutdown_pipeline(tenant_id, pipeline_id).await,
         }
@@ -162,7 +185,7 @@ impl Runner {
         tenant_id: TenantId,
         db: &ProjectDB,
         pipeline_id: PipelineId,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         match self {
             Self::Local(local) => local.delete_pipeline(tenant_id, db, pipeline_id).await,
         }
@@ -172,7 +195,7 @@ impl Runner {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         match self {
             Self::Local(local) => local.pause_pipeline(tenant_id, pipeline_id).await?,
         };
@@ -184,7 +207,7 @@ impl Runner {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         match self {
             Self::Local(local) => local.start_pipeline(tenant_id, pipeline_id).await?,
         };
@@ -198,7 +221,7 @@ impl Runner {
         pipeline_id: PipelineId,
         method: Method,
         endpoint: &str,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         match self {
             Self::Local(local) => {
                 local
@@ -215,7 +238,7 @@ impl Runner {
         endpoint: &str,
         req: HttpRequest,
         body: Payload,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         match self {
             Self::Local(r) => {
                 r.forward_to_pipeline_as_stream(tenant_id, pipeline_id, endpoint, req, body)
@@ -226,7 +249,10 @@ impl Runner {
 }
 
 impl LocalRunner {
-    pub(crate) fn new(db: Arc<Mutex<ProjectDB>>, config: &ManagerConfig) -> AnyResult<Self> {
+    pub(crate) fn new(
+        db: Arc<Mutex<ProjectDB>>,
+        config: &ManagerConfig,
+    ) -> Result<Self, ManagerError> {
         Ok(Self {
             db,
             config: config.clone(),
@@ -241,7 +267,7 @@ impl LocalRunner {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<PipelineRevision> {
+    ) -> Result<PipelineRevision, ManagerError> {
         let db = self.db.lock().await;
 
         // Make sure we create a revision by updating to latest config state
@@ -251,7 +277,7 @@ impl LocalRunner {
         {
             Ok(_revision) => (),
             Err(DBError::RevisionNotChanged) => (),
-            Err(e) => return Err(anyhow!(e)),
+            Err(e) => return Err(e.into()),
         };
 
         // This should normally succeed (because we just created a revision)
@@ -264,7 +290,7 @@ impl LocalRunner {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         let pipeline_revision = self
             .commit_and_fetch_revision(tenant_id, pipeline_id)
             .await?;
@@ -281,7 +307,7 @@ impl LocalRunner {
                     .await
                 {
                     let _ = pipeline_process.kill().await;
-                    bail!(e);
+                    Err(e)?
                 };
                 Ok(HttpResponse::Ok().json("Pipeline successfully deployed."))
             }
@@ -301,7 +327,7 @@ impl LocalRunner {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         let db = self.db.lock().await;
         self.do_shutdown_pipeline(tenant_id, &db, pipeline_id).await
     }
@@ -310,7 +336,7 @@ impl LocalRunner {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<bool> {
+    ) -> Result<bool, ManagerError> {
         let db = self.db.lock().await;
         Ok(db
             .set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Paused)
@@ -321,7 +347,7 @@ impl LocalRunner {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> AnyResult<bool> {
+    ) -> Result<bool, ManagerError> {
         let db = self.db.lock().await;
         Ok(db
             .set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Running)
@@ -333,7 +359,7 @@ impl LocalRunner {
         tenant_id: TenantId,
         db: &ProjectDB,
         pipeline_id: PipelineId,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         // Kill pipeline.
         let response = self
             .do_shutdown_pipeline(tenant_id, db, pipeline_id)
@@ -364,7 +390,7 @@ impl LocalRunner {
         pipeline_id: PipelineId,
         method: Method,
         endpoint: &str,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         let pipeline_descr = self
             .db
             .lock()
@@ -373,7 +399,7 @@ impl LocalRunner {
             .await?;
 
         if pipeline_descr.status == PipelineStatus::Shutdown {
-            bail!(RunnerError::PipelineShutdown { pipeline_id });
+            Err(RunnerError::PipelineShutdown { pipeline_id })?
         }
 
         let client = Client::default();
@@ -393,7 +419,13 @@ impl LocalRunner {
                 error: e.to_string(),
             })?;
 
-        let response_body = response.body().await?;
+        let response_body = response
+            .body()
+            .await
+            .map_err(|e| RunnerError::HttpForwardError {
+                pipeline_id,
+                error: e.to_string(),
+            })?;
 
         let mut response_builder = HttpResponse::build(response.status());
         // Remove `Connection` as per
@@ -416,7 +448,7 @@ impl LocalRunner {
         endpoint: &str,
         req: HttpRequest,
         body: Payload,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         let pipeline_descr = self
             .db
             .lock()
@@ -424,7 +456,7 @@ impl LocalRunner {
             .get_pipeline_by_id(tenant_id, pipeline_id)
             .await?;
         if pipeline_descr.status == PipelineStatus::Shutdown {
-            bail!(RunnerError::PipelineShutdown { pipeline_id });
+            Err(RunnerError::PipelineShutdown { pipeline_id })?
         }
         let port = pipeline_descr.port;
 
@@ -460,7 +492,7 @@ impl LocalRunner {
         Ok(builder.streaming(response))
     }
 
-    async fn start(&self, pr: PipelineRevision) -> AnyResult<Child> {
+    async fn start(&self, pr: PipelineRevision) -> Result<Child, ManagerError> {
         let pipeline_id = pr.pipeline.pipeline_id;
         let program_id = pr.pipeline.program_id.unwrap();
 
@@ -469,11 +501,30 @@ impl LocalRunner {
         // Create pipeline directory (delete old directory if exists); write metadata
         // and config files to it.
         let pipeline_dir = self.config.pipeline_dir(pipeline_id);
-        create_dir_all(&pipeline_dir).await?;
+        create_dir_all(&pipeline_dir).await.map_err(|e| {
+            ManagerError::io_error(
+                format!("creating pipeline directory '{}'", pipeline_dir.display()),
+                e,
+            )
+        })?;
         let config_file_path = self.config.config_file_path(pipeline_id);
-        fs::write(&config_file_path, &pr.config).await?;
+        fs::write(&config_file_path, &pr.config)
+            .await
+            .map_err(|e| {
+                ManagerError::io_error(
+                    format!("writing config file '{}'", config_file_path.display()),
+                    e,
+                )
+            })?;
         let metadata_file_path = self.config.metadata_file_path(pipeline_id);
-        fs::write(&metadata_file_path, serde_json::to_string(&pr).unwrap()).await?;
+        fs::write(&metadata_file_path, serde_json::to_string(&pr).unwrap())
+            .await
+            .map_err(|e| {
+                ManagerError::io_error(
+                    format!("writing metadata file '{}'", metadata_file_path.display()),
+                    e,
+                )
+            })?;
 
         // Locate project executable.
         let executable = self
@@ -490,11 +541,9 @@ impl LocalRunner {
             .arg(&metadata_file_path)
             .stdin(Stdio::null())
             .spawn()
-            .map_err(|e| {
-                anyhow!(RunnerError::PipelineStartupError {
-                    pipeline_id,
-                    error: e.to_string()
-                })
+            .map_err(|e| RunnerError::PipelineStartupError {
+                pipeline_id,
+                error: e.to_string(),
             })?;
 
         Ok(pipeline_process)
@@ -502,7 +551,10 @@ impl LocalRunner {
 
     /// Monitor pipeline log until either port number or error shows up or
     /// the child process exits.
-    async fn wait_for_startup(pipeline_id: PipelineId, port_file_path: &Path) -> AnyResult<u16> {
+    async fn wait_for_startup(
+        pipeline_id: PipelineId,
+        port_file_path: &Path,
+    ) -> Result<u16, ManagerError> {
         let start = Instant::now();
         let mut count = 0;
         loop {
@@ -510,20 +562,20 @@ impl LocalRunner {
             match res {
                 Ok(port) => {
                     let parse = port.trim().parse::<u16>();
-                    return match parse {
-                        Ok(port) => Ok(port),
-                        Err(e) => Err(anyhow!(RunnerError::PortFileParseError {
+                    match parse {
+                        Ok(port) => return Ok(port),
+                        Err(e) => Err(RunnerError::PortFileParseError {
                             pipeline_id,
-                            error: e.to_string()
-                        })),
+                            error: e.to_string(),
+                        })?,
                     };
                 }
                 Err(e) => {
                     if start.elapsed() > STARTUP_TIMEOUT {
-                        return Err(anyhow!(RunnerError::PipelineInitializationTimeout {
+                        Err(RunnerError::PipelineInitializationTimeout {
                             pipeline_id,
-                            timeout: STARTUP_TIMEOUT
-                        }));
+                            timeout: STARTUP_TIMEOUT,
+                        })?
                     }
                     if start.elapsed() > PORT_FILE_LOG_QUIET_PERIOD && (count % 10) == 0 {
                         log::info!("Could not read runner port file yet. Retrying\n{}", e);
@@ -540,7 +592,7 @@ impl LocalRunner {
         tenant_id: TenantId,
         db: &ProjectDB,
         pipeline_id: PipelineId,
-    ) -> AnyResult<HttpResponse> {
+    ) -> Result<HttpResponse, ManagerError> {
         let pipeline_descr = db.get_pipeline_by_id(tenant_id, pipeline_id).await?;
 
         if pipeline_descr.status == PipelineStatus::Shutdown {
@@ -573,7 +625,15 @@ impl LocalRunner {
             for header in response.headers().into_iter() {
                 builder.append_header(header);
             }
-            Ok(builder.body(response.body().await?))
+            Ok(builder.body(
+                response
+                    .body()
+                    .await
+                    .map_err(|e| RunnerError::HttpForwardError {
+                        pipeline_id,
+                        error: e.to_string(),
+                    })?,
+            ))
         }
     }
 }
