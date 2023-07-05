@@ -32,7 +32,7 @@ import { Alert, AlertTitle, useTheme } from '@mui/material'
 import { Icon } from '@iconify/react'
 import { useQuery } from '@tanstack/react-query'
 import { DiffEditor, MonacoDiffEditor } from '@monaco-editor/react'
-import diff from 'fast-diff'
+import { diffLines, Change } from 'diff'
 
 import { ApiError, ErrorResponse, PipelineDescr, PipelineRevision, ProgramCodeResponse } from 'src/types/manager'
 import useStartPipeline from './hooks/useStartPipeline'
@@ -72,8 +72,30 @@ interface DialogProps {
   newConfig: string
   origProgram: string
   newProgram: string
-  diffCount: { config: number; program: number }
+  diffCount: { config: Change[]; program: Change[] }
   validationError: ErrorResponse | undefined
+}
+
+const countDiff = (diff: Change[], additions: boolean, removals: boolean): number => {
+  return diff
+    .filter(line => (additions && line.added) || (removals && line.removed))
+    .map(line => line.count || 0)
+    .reduce((partialSum, a) => partialSum + a, 0)
+}
+
+const TabLabel = (props: { label: string; diff: Change[] }) => {
+  const additions = countDiff(props.diff, true, false)
+  const deletions = countDiff(props.diff, false, true)
+  return (
+    <Box sx={{ display: 'flex' }}>
+      {props.label}&nbsp;
+      <Box>(</Box>
+      <Box sx={{ color: 'success.main' }}>+{additions}</Box>
+      <Box>&nbsp;/&nbsp;</Box>
+      <Box sx={{ color: 'error.main' }}>-{deletions}</Box>
+      <Box>)</Box>
+    </Box>
+  )
 }
 
 export const PipelineConfigDiffDialog = (props: DialogProps) => {
@@ -85,7 +107,7 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
   const diffSqlEditorRef = useRef(null)
 
   // Switch to SQL tab if config doesn't have changes:
-  const initialTab = diffCount.config == 0 && diffCount.program > 0 ? '2' : '1'
+  const initialTab = diffCount.config.length == 0 && diffCount.program.length > 0 ? '2' : '1'
   const [value, setValue] = useState<string>(initialTab)
 
   const startPipelineClick = useStartPipeline()
@@ -138,8 +160,8 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
           <Grid item xs={12}>
             <TabContext value={value}>
               <TabList centered onChange={handleChange} aria-label='tabs with diffs'>
-                <Tab value='1' label={'Pipeline Config (' + diffCount.config + ')'} />
-                <Tab value='2' label={'SQL Code (' + diffCount.program + ')'} />
+                <Tab value='1' label={<TabLabel label='Pipeline Config' diff={diffCount.config} />} />
+                <Tab value='2' label={<TabLabel label='SQL Code' diff={diffCount.program} />} />
               </TabList>
               <TabPanel value='1'>
                 <DiffEditor
@@ -187,7 +209,9 @@ export interface Props {
 
 export const PipelineRevisionStatusChip = (props: Props) => {
   const pipeline = props.pipeline
-  const [diffCount, setDiffCount] = useState<{ config: number; program: number } | undefined>(undefined)
+  // note: for diffCount we only keep the added and removed lines in the
+  // Change[] arrays and throw out the unchanged entries, see `diffLines` below.
+  const [diffCount, setDiffCount] = useState<{ config: Change[]; program: Change[] } | undefined>(undefined)
   const [label, setLabel] = useState<string | undefined>(undefined)
   const [show, setShow] = useState<boolean>(false)
   const [validationError, setValidationError] = useState<ErrorResponse | undefined>(undefined)
@@ -204,7 +228,9 @@ export const PipelineRevisionStatusChip = (props: Props) => {
   }, [pipeline.pipeline_id, pipelineValidateQuery])
 
   const curPipelineConfigQuery = useQuery<string>(['pipelineConfig', { pipeline_id: pipeline.pipeline_id }])
-  const curProgramQuery = useQuery<ProgramCodeResponse>(['programCode', { program_id: pipeline.program_id }])
+  const curProgramQuery = useQuery<ProgramCodeResponse>(['programCode', { program_id: pipeline.program_id }], {
+    enabled: pipeline.program_id != null
+  })
   const pipelineRevisionQuery = useQuery<PipelineRevision>([
     'pipelineLastRevision',
     { pipeline_id: pipeline.pipeline_id }
@@ -213,24 +239,24 @@ export const PipelineRevisionStatusChip = (props: Props) => {
     if (
       !pipelineRevisionQuery.isLoading &&
       !pipelineRevisionQuery.isError &&
+      pipelineRevisionQuery.data &&
       !curPipelineConfigQuery.isLoading &&
-      !curPipelineConfigQuery.isError &&
-      !curProgramQuery.isLoading &&
-      !curProgramQuery.isError &&
-      curProgramQuery.data
+      !curPipelineConfigQuery.isError
     ) {
-      if (pipelineRevisionQuery.data != null) {
-        const configDiffResult = diff(pipelineRevisionQuery.data.config, curPipelineConfigQuery.data).filter(
-          d => d[0] != diff.EQUAL
-        )
-        const programDiffResult = diff(pipelineRevisionQuery.data.code, curProgramQuery.data.code).filter(
-          d => d[0] != diff.EQUAL
-        )
-        // -1 because 1 means no diff, >1 means differences
-        setDiffCount({ config: configDiffResult.length, program: programDiffResult.length })
-        if (configDiffResult.length > 0 || programDiffResult.length > 0) {
-          setLabel('Modified')
-        }
+      const configDiffResult = diffLines(pipelineRevisionQuery.data.config, curPipelineConfigQuery.data).filter(
+        line => line.added || line.removed
+      )
+      // Distinguish the case where the program is not set in the pipeline
+      const programDiffResult =
+        !curProgramQuery.isLoading && !curProgramQuery.isError && curProgramQuery.data
+          ? diffLines(pipelineRevisionQuery.data.code, curProgramQuery.data.code).filter(
+              line => line.added || line.removed
+            )
+          : diffLines(pipelineRevisionQuery.data.code, '')
+
+      setDiffCount({ config: configDiffResult, program: programDiffResult })
+      if (configDiffResult.length > 0 || programDiffResult.length > 0) {
+        setLabel('Modified')
       }
     }
   }, [
@@ -247,8 +273,8 @@ export const PipelineRevisionStatusChip = (props: Props) => {
     setLabel
   ])
 
-  return diffCount && diffCount.program + diffCount.config > 0 ? (
-    <Badge badgeContent={diffCount.config + diffCount.program} color={color}>
+  return diffCount && diffCount.program.length + diffCount.config.length > 0 ? (
+    <Badge badgeContent={countDiff(diffCount.config.concat(diffCount.program), true, true)} color={color}>
       <Button onClick={() => setShow(true)} size='small' variant='outlined' color={color}>
         {label}
       </Button>
