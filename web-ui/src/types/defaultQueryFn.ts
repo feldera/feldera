@@ -102,6 +102,14 @@ export const pipelineStatusQueryCacheUpdate = (
   })
 }
 
+export const invalidatePipeline = (queryClient: QueryClient, pipeline_id: PipelineId) => {
+  queryClient.invalidateQueries(['pipelineLastRevision', { pipeline_id: pipeline_id }])
+  queryClient.invalidateQueries(['pipelineStatus', { pipeline_id: pipeline_id }])
+  queryClient.invalidateQueries(['pipelineConfig', { pipeline_id: pipeline_id }])
+  queryClient.invalidateQueries(['pipelineValidate', { pipeline_id: pipeline_id }])
+  queryClient.invalidateQueries(['pipeline'])
+}
+
 export const defaultQueryFn = async (context: QueryFunctionContext) => {
   return match(context.queryKey)
     .with(['programCode', { program_id: P.select() }], program_id => {
@@ -142,6 +150,13 @@ export const defaultQueryFn = async (context: QueryFunctionContext) => {
     .with(['pipelineLastRevision', { pipeline_id: P.select() }], pipeline_id => {
       if (typeof pipeline_id == 'string') {
         return PipelineService.pipelineCommitted(pipeline_id)
+      } else {
+        throw new Error('Invalid query key, pipeline_id should be a string')
+      }
+    })
+    .with(['pipelineValidate', { pipeline_id: P.select() }], pipeline_id => {
+      if (typeof pipeline_id == 'string') {
+        return PipelineService.pipelineValidate(pipeline_id)
       } else {
         throw new Error('Invalid query key, pipeline_id should be a string')
       }

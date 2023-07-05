@@ -30,6 +30,7 @@ import { useReplacePlaceholder } from 'src/streaming/builder/hooks/useSqlPlaceho
 import { connectorConnects, useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
 import MissingSchemaDialog from 'src/streaming/builder/NoSchemaDialog'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
+import { invalidatePipeline } from 'src/types/defaultQueryFn'
 
 const stateToSaveLabel = (state: SaveIndicatorState): string =>
   match(state)
@@ -259,7 +260,7 @@ export const PipelineWithProvider = (props: {
         updatePipelineMutate(updateRequest, {
           onSettled: () => {
             assert(pipelineId !== undefined)
-            queryClient.invalidateQueries(['pipelineStatus', { pipeline_id: pipelineId }])
+            invalidatePipeline(queryClient, pipelineId)
           },
           onError: (error: CancelError) => {
             pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })

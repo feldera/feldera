@@ -183,6 +183,7 @@ observed by the user is outdated, so the request is rejected."
         list_pipelines,
         pipeline_stats,
         pipeline_status,
+        pipeline_validate,
         pipeline_action,
         pipeline_committed,
         pipeline_delete,
@@ -436,6 +437,7 @@ where
         .service(pipeline_stats)
         .service(pipeline_status)
         .service(pipeline_action)
+        .service(pipeline_validate)
         .service(pipeline_committed)
         .service(pipeline_delete)
         .service(list_connectors)
@@ -1405,8 +1407,8 @@ async fn pipeline_stats(
 #[utoipa::path(
     responses(
         (status = OK, description = "Pipeline descriptor retrieved successfully.",content(
-            ("text/toml" = String, example = json!(example_pipeline_toml())),
-            ("text/json" = PipelineDescr),
+            ("text/plain" = String, example = json!(example_pipeline_toml())),
+            ("application/json" = PipelineDescr),
         )),
         (status = BAD_REQUEST
             , description = "Pipeline not specified. Use ?id or ?name query strings in the URL."
@@ -1491,6 +1493,71 @@ async fn pipeline_status(
         })
         .unwrap_or_else(|e: DBError| http_resp_from_db_error(&e))
     }
+}
+
+/// Validate the configuration of a  a pipeline.
+///
+/// Validate configuration, usable as a pre-cursor for deploy to
+/// check if pipeline configuration is valid and can be deployed.
+#[utoipa::path(
+    responses(
+        (status = OK
+            , description = "Validate a Pipeline config."
+            , content_type = "application/json"
+            , body = String),
+        (status = BAD_REQUEST
+            , description = "Specified pipeline id is not a valid uuid."
+            , body = ErrorResponse
+            , example = json!(example_invalid_uuid_param())),
+        (status = NOT_FOUND
+            , description = "Specified pipeline id does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_pipeline())),
+        (status = BAD_REQUEST
+            , description = "Pipeline does not have a program set."
+            , body = ErrorResponse
+            , example = json!(example_program_not_set())),
+        (status = SERVICE_UNAVAILABLE
+            , description = "Unable to start the pipeline before its program has been compiled."
+            , body = ErrorResponse
+            , example = json!(example_program_not_compiled())),
+        (status = BAD_REQUEST
+            , description = "Unable to start the pipeline before its program has been compiled successfully."
+            , body = ErrorResponse
+            , example = json!(example_program_has_errors())),
+        (status = BAD_REQUEST
+            , description = "The connectors in the config referenced a table that doesn't exist."
+            , body = ErrorResponse
+            , example = json!(example_pipline_invalid_input_ac())),
+        (status = BAD_REQUEST
+            , description = "The connectors in the config referenced a view that doesn't exist."
+            , body = ErrorResponse
+            , example = json!(example_pipline_invalid_output_ac())),
+    ),
+    params(
+        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
+    ),
+    tag = "Pipeline"
+)]
+#[get("/v0/pipelines/{pipeline_id}/validate")]
+async fn pipeline_validate(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> impl Responder {
+    let pipeline_id = match parse_uuid_param(&req, "pipeline_id") {
+        Err(e) => {
+            return http_resp_from_api_error(&e);
+        }
+        Ok(pipeline_id) => PipelineId(pipeline_id),
+    };
+
+    let db = state.db.lock().await;
+    db.pipeline_is_committable(*tenant_id, pipeline_id)
+        .await
+        .map(|_| HttpResponse::Ok().json("Pipeline successfully validated."))
+        .map_err(|e| anyhow!(e))
+        .unwrap_or_else(|e| http_resp_from_error(&e))
 }
 
 /// Perform action on a pipeline.

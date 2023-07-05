@@ -254,6 +254,31 @@ export class PipelineService {
   }
 
   /**
+   * Validate the configuration of a  a pipeline.
+   * Validate the configuration of a  a pipeline.
+   *
+   * Validate configuration, usable as a pre-cursor for deploy to
+   * check if pipeline configuration is valid and can be deployed.
+   * @param pipelineId Unique pipeline identifier
+   * @returns string Validate a Pipeline config.
+   * @throws ApiError
+   */
+  public static pipelineValidate(pipelineId: string): CancelablePromise<string> {
+    return __request(OpenAPI, {
+      method: 'GET',
+      url: '/v0/pipelines/{pipeline_id}/validate',
+      path: {
+        pipeline_id: pipelineId
+      },
+      errors: {
+        400: `The connectors in the config referenced a view that doesn't exist.`,
+        404: `Specified pipeline id does not exist in the database.`,
+        503: `Unable to start the pipeline before its program has been compiled.`
+      }
+    })
+  }
+
+  /**
    * Perform action on a pipeline.
    * Perform action on a pipeline.
    *

@@ -1231,26 +1231,45 @@ impl Storage for ProjectDB {
         // used by the pipeline configuration, e.g., what the `start` function
         // uses in `runner.rs` to write the config/metadata:
         if prev_revision.is_some() {
+            // SQL is stupid
+            // https://stackoverflow.com/questions/5727882/check-if-two-selects-are-equivalent
             let change = txn.query_one(
-                "SELECT count(*) FROM
-                (
-                    SELECT progh.code, ch.config, ach.name, ach.config, ach.is_input, ph.config
-                    FROM pipeline_history ph, program_history progh, attached_connector_history ach, connector_history ch
-                    WHERE ph.id = $1
-                        AND ph.program_id = progh.id
-                        AND ach.pipeline_id = ph.id
-                        AND ach.connector_id = ch.id
-                        AND ach.revision = $2
-                        AND progh.revision = $2
-                        AND ph.revision = $2
-                        AND ch.revision = $2
+                "SELECT count(*) FROM (
+                    (SELECT progh.code, ch.config, ach.name, ach.config, ach.is_input, ph.config
+                                        FROM pipeline_history ph, program_history progh, attached_connector_history ach, connector_history ch
+                                        WHERE ph.id = $1
+                                            AND ph.program_id = progh.id
+                                            AND ach.pipeline_id = ph.id
+                                            AND ach.connector_id = ch.id
+                                            AND ach.revision = $2
+                                            AND progh.revision = $2
+                                            AND ph.revision = $2
+                                            AND ch.revision = $2
                     EXCEPT
                     SELECT prog.code, c.config, ac.name, ac.config, ac.is_input, p.config
-                    FROM pipeline p, program prog, attached_connector ac, connector c
-                    WHERE p.id = $1
-                        AND p.program_id = prog.id
-                        AND ac.pipeline_id = p.id
-                        AND ac.connector_id = c.id
+                                        FROM pipeline p, program prog, attached_connector ac, connector c
+                                        WHERE p.id = $1
+                                            AND p.program_id = prog.id
+                                            AND ac.pipeline_id = p.id
+                                            AND ac.connector_id = c.id)
+                UNION ALL
+                    (SELECT prog.code, c.config, ac.name, ac.config, ac.is_input, p.config
+                                        FROM pipeline p, program prog, attached_connector ac, connector c
+                                        WHERE p.id = $1
+                                            AND p.program_id = prog.id
+                                            AND ac.pipeline_id = p.id
+                                            AND ac.connector_id = c.id
+                    EXCEPT
+                    SELECT progh.code, ch.config, ach.name, ach.config, ach.is_input, ph.config
+                                        FROM pipeline_history ph, program_history progh, attached_connector_history ach, connector_history ch
+                                        WHERE ph.id = $1
+                                            AND ph.program_id = progh.id
+                                            AND ach.pipeline_id = ph.id
+                                            AND ach.connector_id = ch.id
+                                            AND ach.revision = $2
+                                            AND progh.revision = $2
+                                            AND ph.revision = $2
+                                            AND ch.revision = $2)
                 ) as x",
                 &[&pipeline_id.0, &prev_revision],
             )
@@ -1283,7 +1302,7 @@ impl Storage for ProjectDB {
         )
         .await?;
         txn.execute(
-            "INSERT INTO attached_connector_history SELECT $1 as revision, * FROM attached_connector ac WHERE pipeline_id = $2",
+            "INSERT INTO attached_connector_history SELECT $1 as revision, * FROM attached_connector ac WHERE ac.pipeline_id = $2",
             &[&revision, &pipeline_id.0],
         ).await?;
 
@@ -2132,7 +2151,7 @@ impl ProjectDB {
         Ok(row.get(0))
     }
 
-    async fn pipeline_is_committable(
+    pub(crate) async fn pipeline_is_committable(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
@@ -2228,7 +2247,7 @@ impl ProjectDB {
                                 FILTER (WHERE ach.name IS NOT NULL),
                         '[]')
                 FROM pipeline_history p
-                LEFT JOIN attached_connector_history ach on p.id = ach.pipeline_id
+                LEFT JOIN attached_connector_history ach on p.id = ach.pipeline_id AND ach.revision = $3
                 WHERE p.id = $1 AND p.tenant_id = $2 AND p.revision = $3
                 GROUP BY p.id, p.version, p.name, p.description, p.config, p.program_id, p.created, p.port, p.status
                 ",

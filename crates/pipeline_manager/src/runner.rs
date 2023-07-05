@@ -237,32 +237,27 @@ impl LocalRunner {
     ///
     /// Tries to create a new revision if this pipeline never had a revision
     /// created before.
-    async fn get_last_revision(
+    async fn commit_and_fetch_revision(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> AnyResult<PipelineRevision> {
         let db = self.db.lock().await;
-        let pipeline_revision = loop {
-            match db
-                .get_last_committed_pipeline_revision(tenant_id, pipeline_id)
-                .await
-            {
-                Ok(pipeline_revision) => {
-                    break pipeline_revision;
-                }
-                Err(e) => match e {
-                    DBError::NoRevisionAvailable { .. } => {
-                        db.create_pipeline_revision(Uuid::now_v7(), tenant_id, pipeline_id)
-                            .await?;
-                        continue;
-                    }
-                    _ => Err(e)?,
-                },
-            };
+
+        // Make sure we create a revision by updating to latest config state
+        match db
+            .create_pipeline_revision(Uuid::now_v7(), tenant_id, pipeline_id)
+            .await
+        {
+            Ok(_revision) => (),
+            Err(DBError::RevisionNotChanged) => (),
+            Err(e) => return Err(anyhow!(e)),
         };
 
-        Ok(pipeline_revision)
+        // This should normally succeed (because we just created a revision)
+        Ok(db
+            .get_last_committed_pipeline_revision(tenant_id, pipeline_id)
+            .await?)
     }
 
     pub(crate) async fn deploy_pipeline(
@@ -270,7 +265,9 @@ impl LocalRunner {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> AnyResult<HttpResponse> {
-        let pipeline_revision = self.get_last_revision(tenant_id, pipeline_id).await?;
+        let pipeline_revision = self
+            .commit_and_fetch_revision(tenant_id, pipeline_id)
+            .await?;
         let mut pipeline_process = self.start(pipeline_revision).await?;
 
         match Self::wait_for_startup(pipeline_id, &self.config.port_file_path(pipeline_id)).await {

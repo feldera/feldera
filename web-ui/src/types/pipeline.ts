@@ -38,3 +38,8 @@ export interface ConnectorStatus {
   metrics: InputConnectorMetrics | OutputConnectorMetrics
   fatal_error: string | null
 }
+
+export type PipelineAction = {
+  command: 'deploy' | 'pause' | 'start' | 'shutdown'
+  pipeline_id: string
+}
