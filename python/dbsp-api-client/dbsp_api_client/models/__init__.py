@@ -11,6 +11,7 @@ from .csv_parser_config import CsvParserConfig
 from .egress_mode import EgressMode
 from .error_response import ErrorResponse
 from .error_response_details import ErrorResponseDetails
+from .field import Field
 from .file_input_config import FileInputConfig
 from .file_output_config import FileOutputConfig
 from .format_config import FormatConfig
@@ -35,10 +36,12 @@ from .pipeline_config import PipelineConfig
 from .pipeline_config_inputs import PipelineConfigInputs
 from .pipeline_config_outputs import PipelineConfigOutputs
 from .pipeline_descr import PipelineDescr
+from .pipeline_revision import PipelineRevision
 from .pipeline_stats_response_200 import PipelineStatsResponse200
 from .pipeline_status import PipelineStatus
 from .program_code_response import ProgramCodeResponse
 from .program_descr import ProgramDescr
+from .program_schema import ProgramSchema
 from .program_status_type_0 import ProgramStatusType0
 from .program_status_type_1 import ProgramStatusType1
 from .program_status_type_2 import ProgramStatusType2
@@ -47,6 +50,7 @@ from .program_status_type_4 import ProgramStatusType4
 from .program_status_type_5 import ProgramStatusType5
 from .program_status_type_6 import ProgramStatusType6
 from .program_status_type_7 import ProgramStatusType7
+from .relation import Relation
 from .sql_compiler_message import SqlCompilerMessage
 from .transport_config import TransportConfig
 from .transport_config_config import TransportConfigConfig
@@ -69,6 +73,7 @@ __all__ = (
     "EgressMode",
     "ErrorResponse",
     "ErrorResponseDetails",
+    "Field",
     "FileInputConfig",
     "FileOutputConfig",
     "FormatConfig",
@@ -93,10 +98,12 @@ __all__ = (
     "PipelineConfigInputs",
     "PipelineConfigOutputs",
     "PipelineDescr",
+    "PipelineRevision",
     "PipelineStatsResponse200",
     "PipelineStatus",
     "ProgramCodeResponse",
     "ProgramDescr",
+    "ProgramSchema",
     "ProgramStatusType0",
     "ProgramStatusType1",
     "ProgramStatusType2",
@@ -105,6 +112,7 @@ __all__ = (
     "ProgramStatusType5",
     "ProgramStatusType6",
     "ProgramStatusType7",
+    "Relation",
     "SqlCompilerMessage",
     "TransportConfig",
     "TransportConfigConfig",

@@ -1,4 +1,4 @@
-use crate::{PipelineId, ProgramId};
+use crate::{PipelineId, ProgramId, Version};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
 use serde::Deserialize;
@@ -161,8 +161,14 @@ impl ManagerConfig {
     pub(crate) fn canonicalize(mut self) -> AnyResult<Self> {
         create_dir_all(&self.working_directory).map_err(|e| {
             AnyError::msg(format!(
-                "unable to create or open working directry '{}': {e}",
+                "unable to create or open working directory '{}': {e}",
                 self.working_directory
+            ))
+        })?;
+        create_dir_all(self.binaries_dir()).map_err(|e| {
+            AnyError::msg(format!(
+                "unable to create or open binaries directory '{:?}': {e}",
+                self.binaries_dir()
             ))
         })?;
 
@@ -235,18 +241,40 @@ impl ManagerConfig {
         format!("project{program_id}")
     }
 
+    /// Binary name for a project and version.
+    ///
+    /// Note: we rely on the program id and not name, so projects can
+    /// be renamed without recompiling.
+    pub(crate) fn binary_name(program_id: ProgramId, version: Version) -> String {
+        format!("project_{program_id}_v{version}")
+    }
+
     /// Directory where the manager maintains the generated cargo workspace.
+    ///
+    /// e.g., `<working-directory>/cargo_workspace`
     pub(crate) fn workspace_dir(&self) -> PathBuf {
         Path::new(&self.working_directory).join("cargo_workspace")
     }
 
+    /// Directory where the manager stores binary artefacts needed to
+    /// run versioned pipeline configurations.
+    ///
+    /// e.g., `<working-directory>/binaries`
+    pub(crate) fn binaries_dir(&self) -> PathBuf {
+        Path::new(&self.working_directory).join("binaries")
+    }
+
     /// Where Postgres embed stores the database.
+    ///
+    /// e.g., `<working-directory>/data`
     #[cfg(feature = "pg-embed")]
     pub(crate) fn postgres_embed_data_dir(&self) -> PathBuf {
         Path::new(&self.working_directory).join("data")
     }
 
     /// Manager pid file.
+    ///
+    /// e.g., `<working-directory>/manager.pid`
     #[cfg(unix)]
     pub(crate) fn manager_pid_file_path(&self) -> PathBuf {
         Path::new(&self.working_directory).join("manager.pid")
@@ -262,7 +290,10 @@ impl ManagerConfig {
         }
     }
 
-    /// Directory where the manager generates Rust crate for the project.
+    /// Directory where the manager generates the rust crate for the project.
+    ///
+    /// e.g., `<working-directory>/cargo_workspace/
+    /// project0188e0cd-d8b0-71d5-bb5a-2f66c7b07dfb`
     pub(crate) fn project_dir(&self, program_id: ProgramId) -> PathBuf {
         self.workspace_dir().join(Self::crate_name(program_id))
     }
@@ -317,8 +348,19 @@ impl ManagerConfig {
         self.workspace_dir().join("Cargo.toml")
     }
 
-    /// Location of the compiled executable for the project.
-    pub(crate) fn project_executable(&self, program_id: ProgramId) -> PathBuf {
+    /// Location of the versioned executable.
+    ///
+    /// e.g., `<working-directory>/binaries/
+    /// project0188e0cd-d8b0-71d5-bb5a-2f66c7b07dfb-v11`
+    pub(crate) fn versioned_executable(&self, program_id: ProgramId, version: Version) -> PathBuf {
+        Path::new(&self.binaries_dir()).join(Self::binary_name(program_id, version))
+    }
+
+    /// Location of the compiled executable for the project in the cargo target
+    /// dir.
+    ///
+    /// Note: This is generally not an executable that's run as a pipeline.
+    pub(crate) fn target_executable(&self, program_id: ProgramId) -> PathBuf {
         Path::new(&self.workspace_dir())
             .join("target")
             .join(if self.debug { "debug" } else { "release" })

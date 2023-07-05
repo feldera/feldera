@@ -75,11 +75,11 @@ def sync_detailed(
 
      Perform action on a pipeline.
 
-    - 'deploy': Run a new pipeline. Deploy a pipeline for the specified program
-    and configuration. This is a synchronous endpoint, which sends a response
-    once the pipeline has been initialized.
+    - 'deploy': Deploy a pipeline for the specified program and configuration.
+    This is a synchronous endpoint, which sends a response once the pipeline has
+    been initialized.
+    - 'start': Start a pipeline.
     - 'pause': Pause the pipeline.
-    - 'start': Resume the paused pipeline.
     - 'shutdown': Terminate the execution of a pipeline. Sends a termination
     request to the pipeline process. Returns immediately, without waiting for
     the pipeline to terminate (which can take several seconds). The pipeline is
@@ -121,11 +121,11 @@ def sync(
 
      Perform action on a pipeline.
 
-    - 'deploy': Run a new pipeline. Deploy a pipeline for the specified program
-    and configuration. This is a synchronous endpoint, which sends a response
-    once the pipeline has been initialized.
+    - 'deploy': Deploy a pipeline for the specified program and configuration.
+    This is a synchronous endpoint, which sends a response once the pipeline has
+    been initialized.
+    - 'start': Start a pipeline.
     - 'pause': Pause the pipeline.
-    - 'start': Resume the paused pipeline.
     - 'shutdown': Terminate the execution of a pipeline. Sends a termination
     request to the pipeline process. Returns immediately, without waiting for
     the pipeline to terminate (which can take several seconds). The pipeline is
@@ -160,11 +160,11 @@ async def asyncio_detailed(
 
      Perform action on a pipeline.
 
-    - 'deploy': Run a new pipeline. Deploy a pipeline for the specified program
-    and configuration. This is a synchronous endpoint, which sends a response
-    once the pipeline has been initialized.
+    - 'deploy': Deploy a pipeline for the specified program and configuration.
+    This is a synchronous endpoint, which sends a response once the pipeline has
+    been initialized.
+    - 'start': Start a pipeline.
     - 'pause': Pause the pipeline.
-    - 'start': Resume the paused pipeline.
     - 'shutdown': Terminate the execution of a pipeline. Sends a termination
     request to the pipeline process. Returns immediately, without waiting for
     the pipeline to terminate (which can take several seconds). The pipeline is
@@ -204,11 +204,11 @@ async def asyncio(
 
      Perform action on a pipeline.
 
-    - 'deploy': Run a new pipeline. Deploy a pipeline for the specified program
-    and configuration. This is a synchronous endpoint, which sends a response
-    once the pipeline has been initialized.
+    - 'deploy': Deploy a pipeline for the specified program and configuration.
+    This is a synchronous endpoint, which sends a response once the pipeline has
+    been initialized.
+    - 'start': Start a pipeline.
     - 'pause': Pause the pipeline.
-    - 'start': Resume the paused pipeline.
     - 'shutdown': Terminate the execution of a pipeline. Sends a termination
     request to the pipeline process. Returns immediately, without waiting for
     the pipeline to terminate (which can take several seconds). The pipeline is

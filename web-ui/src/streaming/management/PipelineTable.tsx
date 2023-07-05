@@ -20,27 +20,23 @@ import ListItemIcon from '@mui/material/ListItemIcon'
 import ListSubheader from '@mui/material/ListSubheader'
 import Tooltip from '@mui/material/Tooltip'
 
-import AnalyticsPipelineTput from 'src/streaming/AnalyticsPipelineTput'
+import AnalyticsPipelineTput from 'src/streaming/management/AnalyticsPipelineTput'
 import QuickSearchToolbar from 'src/components/table/QuickSearchToolbar'
-import {
-  AttachedConnector,
-  CancelError,
-  PipelineDescr,
-  ConnectorDescr,
-  PipelineService,
-  ProgramDescr,
-  PipelineStatus
-} from 'src/types/manager'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { AttachedConnector, PipelineDescr, ConnectorDescr, PipelineStatus, PipelineRevision } from 'src/types/manager'
+import { useQuery } from '@tanstack/react-query'
 import { ErrorOverlay } from 'src/components/table/ErrorOverlay'
 import { escapeRegExp } from 'src/utils'
 import { match } from 'ts-pattern'
 import router from 'next/router'
-import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { ConnectorStatus, GlobalMetrics, InputConnectorMetrics, OutputConnectorMetrics } from 'src/types/pipeline'
 import { humanSize } from 'src/utils'
 import { format } from 'd3-format'
-import { pipelineStatusQueryCacheUpdate } from 'src/types/defaultQueryFn'
+import { PipelineRevisionStatusChip } from 'src/streaming/management/RevisionStatus'
+import { ClientPipelineStatus, usePipelineStateStore } from './StatusContext'
+import useStartPipeline from './hooks/useStartPipeline'
+import usePausePipeline from './hooks/usePausePipeline'
+import useShutdownPipeline from './hooks/useShutdownPipeline'
+import useDeletePipeline from './hooks/useDeletePipeline'
 
 interface ConnectorData {
   ac: AttachedConnector
@@ -50,36 +46,36 @@ interface ConnectorData {
 const DetailPanelContent = (props: { row: PipelineDescr }) => {
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
-  const projectQuery = useQuery<ProgramDescr>(['programStatus', { program_id: props.row.program_id }], {
-    enabled: props.row.program_id !== undefined
-  })
-
-  const connectorQuery = useQuery<ConnectorDescr[]>(['connector'])
+  const pipelineRevisionQuery = useQuery<PipelineRevision>([
+    'pipelineLastRevision',
+    { pipeline_id: props.row.pipeline_id }
+  ])
   useEffect(() => {
-    if (!connectorQuery.isLoading && !connectorQuery.isError) {
+    if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
+      const connectors = pipelineRevisionQuery.data.connectors
+      const attachedConnectors = pipelineRevisionQuery.data.pipeline.attached_connectors
       setInputs(
-        props.row.attached_connectors
+        attachedConnectors
           .filter(ac => ac.is_input)
           .map(ac => {
-            return { ac, c: connectorQuery.data.find(c => c.connector_id === ac.connector_id) }
+            return { ac, c: connectors.find(c => c.connector_id === ac.connector_id) }
           })
       )
 
       setOutputs(
-        props.row.attached_connectors
+        attachedConnectors
           .filter(ac => !ac.is_input)
           .map(ac => {
-            return { ac, c: connectorQuery.data.find(c => c.connector_id === ac.connector_id) }
+            return { ac, c: connectors.find(c => c.connector_id === ac.connector_id) }
           })
       )
     }
   }, [
-    connectorQuery.isLoading,
-    connectorQuery.isError,
-    connectorQuery.data,
+    pipelineRevisionQuery.isLoading,
+    pipelineRevisionQuery.isError,
+    pipelineRevisionQuery.data,
     setInputs,
-    setOutputs,
-    props.row.attached_connectors
+    setOutputs
   ])
 
   const [globalMetrics, setGlobalMetrics] = useState<GlobalMetrics[]>([])
@@ -116,7 +112,7 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
     }
   }, [pipelineStatsQuery.isLoading, pipelineStatsQuery.isError, pipelineStatsQuery.data, props.row.status])
 
-  return !connectorQuery.isLoading && !connectorQuery.isError && !projectQuery.isLoading && !projectQuery.isError ? (
+  return !pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError ? (
     <Box display='flex' sx={{ m: 2 }} justifyContent='center'>
       <Grid container spacing={3} sx={{ height: 1, width: '95%' }} alignItems='stretch'>
         <Grid item xs={4}>
@@ -126,7 +122,7 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
                 <ListItemIcon>
                   <Icon icon='bi:filetype-sql' fontSize={20} />
                 </ListItemIcon>
-                <ListItemText primary={projectQuery.data?.name || 'not set'} />
+                <ListItemText primary={pipelineRevisionQuery.data?.program.name || 'not set'} />
               </ListItem>
               {props.row.status == PipelineStatus.RUNNING && (
                 <>
@@ -281,27 +277,6 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
   )
 }
 
-enum ClientPipelineStatus {
-  // Shouldn't happen, means we haven't put it in the map
-  UNKNOWN = 'Unknown',
-  // Maps to PipelineStatus.SHUTDOWN
-  INACTIVE = 'Inactive',
-  CREATING = 'Creating ...',
-  CREATE_FAILURE = 'Failed to deploy',
-  // Maps to PipelineStatus.DEPLOYED
-  DEPLOYED = 'Deployed',
-  STARTING = 'Starting ...',
-  STARTUP_FAILURE = 'Failed to start',
-  // PipelineStatus.RUNNING
-  RUNNING = 'Running',
-  PAUSING = 'Pausing ...',
-  // PipelineStatus.PAUSED
-  PAUSED = 'Paused',
-  // PipelineStatus.FAILED
-  FAILED = 'Failed',
-  SHUTTING_DOWN = 'Shutting down ...'
-}
-
 const statusToChip = (status: ClientPipelineStatus | undefined) => {
   return match(status)
     .with(undefined, () => <CustomChip rounded size='small' skin='light' label='Unknown' />)
@@ -350,183 +325,28 @@ const pipelineStatusToClientStatus = (status: PipelineStatus) => {
     .exhaustive()
 }
 
-type PipelineAction = {
-  command: 'deploy' | 'pause' | 'start' | 'shutdown'
-  pipeline_id: string
-}
-
 export default function PipelineTable() {
-  const queryClient = useQueryClient()
-  const { pushMessage } = useStatusNotification()
-
   const [pageSize, setPageSize] = useState<number>(7)
   const [searchText, setSearchText] = useState<string>('')
   const [rows, setRows] = useState<PipelineDescr[]>([])
   const [filteredData, setFilteredData] = useState<PipelineDescr[]>([])
-  const [isLaunching, setIsLaunching] = useState(new Map<string, ClientPipelineStatus>())
+  const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
+  const setPipelineStatus = usePipelineStateStore(state => state.setStatus)
 
   const { isLoading, isError, data, error } = useQuery<PipelineDescr[]>(['pipeline'])
   useEffect(() => {
     if (!isLoading && !isError) {
       setRows(data)
       for (const row of data) {
-        setIsLaunching(map => new Map(map.set(row.pipeline_id, pipelineStatusToClientStatus(row.status))))
+        setPipelineStatus(row.pipeline_id, pipelineStatusToClientStatus(row.status))
       }
     }
-  }, [isLoading, isError, data, setRows])
+  }, [isLoading, isError, data, setRows, setPipelineStatus])
 
-  const { mutate: piplineAction, isLoading: pipelineActionLoading } = useMutation<string, CancelError, PipelineAction>({
-    mutationFn: (action: PipelineAction) => {
-      return PipelineService.pipelineAction(action.pipeline_id, action.command)
-    }
-  })
-
-  const startPipelineClick = useCallback(
-    (curRow: PipelineDescr) => {
-      if (
-        !pipelineActionLoading &&
-        (isLaunching.get(curRow.pipeline_id) != ClientPipelineStatus.PAUSED ||
-          isLaunching.get(curRow.pipeline_id) != ClientPipelineStatus.DEPLOYED)
-      ) {
-        setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.CREATING)))
-        piplineAction(
-          {
-            pipeline_id: curRow.pipeline_id,
-            command: 'deploy' as const
-          },
-          {
-            onSuccess: () => {
-              setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.STARTING)))
-              piplineAction(
-                {
-                  pipeline_id: curRow.pipeline_id,
-                  command: 'start' as const
-                },
-                {
-                  onSettled: () => {
-                    queryClient.invalidateQueries(['pipeline'])
-                    queryClient.invalidateQueries(['pipelineStatus', { pipeline_id: curRow.pipeline_id }])
-                  },
-                  onSuccess: () => {
-                    setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.RUNNING)))
-                    pipelineStatusQueryCacheUpdate(queryClient, curRow.pipeline_id, PipelineStatus.RUNNING)
-                  },
-                  onError: error => {
-                    pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-                    setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.STARTUP_FAILURE)))
-                  }
-                }
-              )
-            },
-            onSettled: () => {
-              queryClient.invalidateQueries(['pipeline'])
-              queryClient.invalidateQueries(['pipelineStatus', { pipeline_id: curRow.pipeline_id }])
-            },
-            onError: error => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.CREATE_FAILURE)))
-            }
-          }
-        )
-      } else if (!pipelineActionLoading && isLaunching.get(curRow.pipeline_id) != ClientPipelineStatus.INACTIVE) {
-        // Pipeline already exists, we just need to start it
-        setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.STARTING)))
-        piplineAction(
-          {
-            pipeline_id: curRow.pipeline_id,
-            command: 'start' as const
-          },
-          {
-            onSettled: () => {
-              queryClient.invalidateQueries(['pipeline'])
-              queryClient.invalidateQueries(['pipelineStatus', { pipeline_id: curRow.pipeline_id }])
-            },
-            onSuccess: () => {
-              setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.RUNNING)))
-              pipelineStatusQueryCacheUpdate(queryClient, curRow.pipeline_id, PipelineStatus.RUNNING)
-            },
-            onError: error => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.STARTUP_FAILURE)))
-            }
-          }
-        )
-      }
-    },
-    [piplineAction, pipelineActionLoading, queryClient, pushMessage, setIsLaunching, isLaunching]
-  )
-
-  const pausePipelineClick = useCallback(
-    (curRow: PipelineDescr) => {
-      if (!pipelineActionLoading && isLaunching.get(curRow.pipeline_id) == ClientPipelineStatus.RUNNING) {
-        setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.PAUSING)))
-        piplineAction(
-          { pipeline_id: curRow.pipeline_id, command: 'pause' },
-          {
-            onSettled: () => {
-              queryClient.invalidateQueries(['pipeline'])
-              queryClient.invalidateQueries(['pipelineStatus', { pipeline_id: curRow.pipeline_id }])
-            },
-            onSuccess: () => {
-              setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.PAUSED)))
-              pipelineStatusQueryCacheUpdate(queryClient, curRow.pipeline_id, PipelineStatus.PAUSED)
-            },
-            onError: error => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.RUNNING)))
-            }
-          }
-        )
-      }
-    },
-    [pipelineActionLoading, pushMessage, queryClient, piplineAction, isLaunching]
-  )
-
-  const shutdownPipelineClick = useCallback(
-    (curRow: PipelineDescr) => {
-      if (!pipelineActionLoading && isLaunching.get(curRow.pipeline_id) == ClientPipelineStatus.PAUSED) {
-        setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.SHUTTING_DOWN)))
-        piplineAction(
-          { pipeline_id: curRow.pipeline_id, command: 'shutdown' as const },
-          {
-            onSettled: () => {
-              queryClient.invalidateQueries(['pipeline'])
-              queryClient.invalidateQueries(['pipelineStatus', { pipeline_id: curRow.pipeline_id }])
-            },
-            onSuccess: () => {
-              setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.INACTIVE)))
-              pipelineStatusQueryCacheUpdate(queryClient, curRow.pipeline_id, PipelineStatus.SHUTDOWN)
-            },
-            onError: error => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              setIsLaunching(map => new Map(map.set(curRow.pipeline_id, ClientPipelineStatus.PAUSED)))
-            }
-          }
-        )
-      }
-    },
-    [pipelineActionLoading, pushMessage, queryClient, piplineAction, isLaunching]
-  )
-
-  const { mutate: deletePipeline, isLoading: deletePipelineLoading } = useMutation<string, CancelError, string>(
-    PipelineService.pipelineDelete
-  )
-  const deletePipelineClick = useCallback(
-    (curRow: PipelineDescr) => {
-      if (!deletePipelineLoading && isLaunching.get(curRow.pipeline_id) == ClientPipelineStatus.INACTIVE) {
-        deletePipeline(curRow.pipeline_id, {
-          onSettled: () => {
-            queryClient.invalidateQueries(['pipeline'])
-            queryClient.invalidateQueries(['pipelineStatus', { pipeline_id: curRow.pipeline_id }])
-          },
-          onError: error => {
-            pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-          }
-        })
-      }
-    },
-    [deletePipelineLoading, pushMessage, queryClient, deletePipeline, isLaunching]
-  )
+  const startPipelineClick = useStartPipeline()
+  const pausePipelineClick = usePausePipeline()
+  const shutdownPipelineClick = useShutdownPipeline()
+  const deletePipelineClick = useDeletePipeline()
 
   const getDetailPanelContent = useCallback<NonNullable<DataGridProProps['getDetailPanelContent']>>(
     ({ row }) => <DetailPanelContent row={row} />,
@@ -557,11 +377,19 @@ export default function PipelineTable() {
     { field: 'name', headerName: 'Name', editable: true, flex: 2 },
     { field: 'description', headerName: 'Description', editable: true, flex: 3 },
     {
+      field: 'modification',
+      headerName: 'Changes',
+      flex: 1,
+      renderCell: (params: GridRenderCellParams) => {
+        return <PipelineRevisionStatusChip pipeline={params.row} />
+      }
+    },
+    {
       field: 'status',
       headerName: 'Status',
       flex: 1,
       renderCell: (params: GridRenderCellParams) => {
-        const status = statusToChip(isLaunching.get(params.row.pipeline_id))
+        const status = statusToChip(pipelineStatus.get(params.row.pipeline_id))
 
         return (
           <Badge badgeContent={params.row.warn_cnt} color='warning'>
@@ -577,44 +405,52 @@ export default function PipelineTable() {
       headerName: 'Actions',
       flex: 1.0,
       renderCell: (params: GridRenderCellParams) => {
-        const needsPause = isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.RUNNING
+        const needsPause = pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.RUNNING
         const needsStart =
-          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE ||
-          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSED ||
-          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.DEPLOYED
+          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE ||
+          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSED ||
+          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.DEPLOYED
         const needsShutdown =
-          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSED ||
-          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.DEPLOYED
-        const needsDelete = isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE
-        const needsEdit = isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE
-        const needsInspect = isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.RUNNING
+          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSED ||
+          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.DEPLOYED
+        const needsDelete = pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE
+        const needsEdit = pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE
+        const needsInspect = pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.RUNNING
         const needsSpinner =
-          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.CREATING ||
-          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.STARTING ||
-          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSING ||
-          isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.SHUTTING_DOWN
+          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.CREATING ||
+          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.STARTING ||
+          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSING ||
+          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.SHUTTING_DOWN
 
         return (
           <>
             {/* the className attributes are used by webui-tester */}
             {needsPause && (
               <Tooltip title='Pause Pipeline'>
-                <IconButton className='pauseButton' size='small' onClick={() => pausePipelineClick(params.row)}>
+                <IconButton
+                  className='pauseButton'
+                  size='small'
+                  onClick={() => pausePipelineClick(params.row.pipeline_id)}
+                >
                   <Icon icon='bx:pause-circle' fontSize={20} />
                 </IconButton>
               </Tooltip>
             )}
             {needsStart && (
               <Tooltip title='Start Pipeline'>
-                <IconButton className='startButton' size='small' onClick={() => startPipelineClick(params.row)}>
+                <IconButton
+                  className='startButton'
+                  size='small'
+                  onClick={() => startPipelineClick(params.row.pipeline_id)}
+                >
                   <Icon icon='bx:play-circle' fontSize={20} />
                 </IconButton>
               </Tooltip>
             )}
             {needsSpinner &&
-              (isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.STARTING ||
-                isLaunching.get(params.row.pipeline_id) === ClientPipelineStatus.CREATING) && (
-                <Tooltip title={isLaunching.get(params.row.pipeline_id)}>
+              (pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.STARTING ||
+                pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.CREATING) && (
+                <Tooltip title={pipelineStatus.get(params.row.pipeline_id)}>
                   <IconButton size='small'>
                     <Icon icon='svg-spinners:270-ring-with-bg' fontSize={20} />
                   </IconButton>
@@ -637,14 +473,22 @@ export default function PipelineTable() {
             )}
             {needsShutdown && (
               <Tooltip title='Shutdown Pipeline'>
-                <IconButton className='shutdownButton' size='small' onClick={() => shutdownPipelineClick(params.row)}>
+                <IconButton
+                  className='shutdownButton'
+                  size='small'
+                  onClick={() => shutdownPipelineClick(params.row.pipeline_id)}
+                >
                   <Icon icon='bx:stop-circle' fontSize={20} />
                 </IconButton>
               </Tooltip>
             )}
             {needsDelete && (
               <Tooltip title='Delete Pipeline'>
-                <IconButton className='deleteButton' size='small' onClick={() => deletePipelineClick(params.row)}>
+                <IconButton
+                  className='deleteButton'
+                  size='small'
+                  onClick={() => deletePipelineClick(params.row.pipeline_id)}
+                >
                   <Icon icon='bx:trash-alt' fontSize={20} />
                 </IconButton>
               </Tooltip>

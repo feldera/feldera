@@ -29,8 +29,8 @@ export class ConnectorService {
         name: name
       },
       errors: {
-        400: `Missing or invalid \`connector_id\` parameter.`,
-        404: `Specified \`connector_id\` does not exist in the database.`
+        400: `Connector not specified. Use ?id or ?name query strings in the URL.`,
+        404: `Specified connector name does not exist in the database.`
       }
     })
   }
@@ -81,7 +81,7 @@ export class ConnectorService {
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `Specified \`connector_id\` does not exist in the database.`
+        404: `Specified connector id does not exist in the database.`
       }
     })
   }
@@ -101,7 +101,8 @@ export class ConnectorService {
         connector_id: connectorId
       },
       errors: {
-        404: `Specified \`connector_id\` does not exist in the database.`
+        400: `Specified connector id is not a valid uuid.`,
+        404: `Specified connector id does not exist in the database.`
       }
     })
   }

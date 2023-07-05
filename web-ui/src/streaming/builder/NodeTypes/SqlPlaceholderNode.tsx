@@ -7,12 +7,11 @@ import { Autocomplete, CardContent, TextField, Typography } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
 
 import { PlaceholderNode } from '../NodeTypes'
-import { parseProjectSchema, ProjectWithSchema } from 'src/types/program'
 import useSqlPlaceholderClick from '../hooks/useSqlPlaceholderClick'
 import { ProgramDescr } from 'src/types/manager'
 
 const SqlPlaceHolderNode = (props: NodeProps) => {
-  const [programs, setPrograms] = useState<ProjectWithSchema[]>([])
+  const [programs, setPrograms] = useState<ProgramDescr[]>([])
   const placeHolderReplace = useSqlPlaceholderClick(props.id)
   const onProgramSelected = (e: any, v: string) => {
     const program = programs.find(p => p.name == v)
@@ -24,7 +23,7 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
   const { isLoading, isError, data } = useQuery<ProgramDescr[]>(['program'])
   useEffect(() => {
     if (!isLoading && !isError) {
-      setPrograms(data.filter(p => p.schema).map(parseProjectSchema))
+      setPrograms(data)
     }
   }, [isLoading, isError, data])
 

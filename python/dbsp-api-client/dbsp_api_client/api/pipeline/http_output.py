@@ -112,11 +112,11 @@ def sync_detailed(
      Subscribe to a stream of updates to a SQL view or table.
 
     The pipeline responds with a continuous stream of changes to the specified
-    table or view, encoded using the format specified in the `?format=` parameter.
-    Updates are split into `Chunk`'s.
+    table or view, encoded using the format specified in the `?format=`
+    parameter. Updates are split into `Chunk`'s.
 
-    The pipeline continuous sending updates until the client closes the connection or the
-    pipeline is shut down.
+    The pipeline continuous sending updates until the client closes the
+    connection or the pipeline is shut down.
 
     Args:
         pipeline_id (str):
@@ -173,11 +173,11 @@ def sync(
      Subscribe to a stream of updates to a SQL view or table.
 
     The pipeline responds with a continuous stream of changes to the specified
-    table or view, encoded using the format specified in the `?format=` parameter.
-    Updates are split into `Chunk`'s.
+    table or view, encoded using the format specified in the `?format=`
+    parameter. Updates are split into `Chunk`'s.
 
-    The pipeline continuous sending updates until the client closes the connection or the
-    pipeline is shut down.
+    The pipeline continuous sending updates until the client closes the
+    connection or the pipeline is shut down.
 
     Args:
         pipeline_id (str):
@@ -227,11 +227,11 @@ async def asyncio_detailed(
      Subscribe to a stream of updates to a SQL view or table.
 
     The pipeline responds with a continuous stream of changes to the specified
-    table or view, encoded using the format specified in the `?format=` parameter.
-    Updates are split into `Chunk`'s.
+    table or view, encoded using the format specified in the `?format=`
+    parameter. Updates are split into `Chunk`'s.
 
-    The pipeline continuous sending updates until the client closes the connection or the
-    pipeline is shut down.
+    The pipeline continuous sending updates until the client closes the
+    connection or the pipeline is shut down.
 
     Args:
         pipeline_id (str):
@@ -286,11 +286,11 @@ async def asyncio(
      Subscribe to a stream of updates to a SQL view or table.
 
     The pipeline responds with a continuous stream of changes to the specified
-    table or view, encoded using the format specified in the `?format=` parameter.
-    Updates are split into `Chunk`'s.
+    table or view, encoded using the format specified in the `?format=`
+    parameter. Updates are split into `Chunk`'s.
 
-    The pipeline continuous sending updates until the client closes the connection or the
-    pipeline is shut down.
+    The pipeline continuous sending updates until the client closes the
+    connection or the pipeline is shut down.
 
     Args:
         pipeline_id (str):

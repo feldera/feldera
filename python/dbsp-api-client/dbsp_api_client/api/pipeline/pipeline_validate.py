@@ -1,35 +1,23 @@
 from http import HTTPStatus
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, cast
 
 import httpx
 
 from ... import errors
 from ...client import Client
 from ...models.error_response import ErrorResponse
-from ...models.pipeline_descr import PipelineDescr
-from ...types import UNSET, Response, Unset
+from ...types import Response
 
 
 def _get_kwargs(
+    pipeline_id: str,
     *,
     client: Client,
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-    toml: Union[Unset, None, bool] = UNSET,
 ) -> Dict[str, Any]:
-    url = "{}/v0/pipeline".format(client.base_url)
+    url = "{}/v0/pipelines/{pipeline_id}/validate".format(client.base_url, pipeline_id=pipeline_id)
 
     headers: Dict[str, str] = client.get_headers()
     cookies: Dict[str, Any] = client.get_cookies()
-
-    params: Dict[str, Any] = {}
-    params["id"] = id
-
-    params["name"] = name
-
-    params["toml"] = toml
-
-    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     return {
         "method": "get",
@@ -38,14 +26,12 @@ def _get_kwargs(
         "cookies": cookies,
         "timeout": client.get_timeout(),
         "follow_redirects": client.follow_redirects,
-        "params": params,
     }
 
 
-def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[ErrorResponse, PipelineDescr]]:
+def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[ErrorResponse, str]]:
     if response.status_code == HTTPStatus.OK:
-        response_200 = PipelineDescr.from_dict(response.json())
-
+        response_200 = cast(str, response.json())
         return response_200
     if response.status_code == HTTPStatus.BAD_REQUEST:
         response_400 = ErrorResponse.from_dict(response.json())
@@ -55,13 +41,17 @@ def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Uni
         response_404 = ErrorResponse.from_dict(response.json())
 
         return response_404
+    if response.status_code == HTTPStatus.SERVICE_UNAVAILABLE:
+        response_503 = ErrorResponse.from_dict(response.json())
+
+        return response_503
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
         return None
 
 
-def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[ErrorResponse, PipelineDescr]]:
+def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[ErrorResponse, str]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -71,34 +61,31 @@ def _build_response(*, client: Client, response: httpx.Response) -> Response[Uni
 
 
 def sync_detailed(
+    pipeline_id: str,
     *,
     client: Client,
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-    toml: Union[Unset, None, bool] = UNSET,
-) -> Response[Union[ErrorResponse, PipelineDescr]]:
-    """Retrieve pipeline metadata.
+) -> Response[Union[ErrorResponse, str]]:
+    """Validate the configuration of a  a pipeline.
 
-     Retrieve pipeline metadata.
+     Validate the configuration of a  a pipeline.
+
+    Validate configuration, usable as a pre-cursor for deploy to
+    check if pipeline configuration is valid and can be deployed.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
-        toml (Union[Unset, None, bool]):
+        pipeline_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, PipelineDescr]]
+        Response[Union[ErrorResponse, str]]
     """
 
     kwargs = _get_kwargs(
+        pipeline_id=pipeline_id,
         client=client,
-        id=id,
-        name=name,
-        toml=toml,
     )
 
     response = httpx.request(
@@ -110,66 +97,60 @@ def sync_detailed(
 
 
 def sync(
+    pipeline_id: str,
     *,
     client: Client,
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-    toml: Union[Unset, None, bool] = UNSET,
-) -> Optional[Union[ErrorResponse, PipelineDescr]]:
-    """Retrieve pipeline metadata.
+) -> Optional[Union[ErrorResponse, str]]:
+    """Validate the configuration of a  a pipeline.
 
-     Retrieve pipeline metadata.
+     Validate the configuration of a  a pipeline.
+
+    Validate configuration, usable as a pre-cursor for deploy to
+    check if pipeline configuration is valid and can be deployed.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
-        toml (Union[Unset, None, bool]):
+        pipeline_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, PipelineDescr]
+        Union[ErrorResponse, str]
     """
 
     return sync_detailed(
+        pipeline_id=pipeline_id,
         client=client,
-        id=id,
-        name=name,
-        toml=toml,
     ).parsed
 
 
 async def asyncio_detailed(
+    pipeline_id: str,
     *,
     client: Client,
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-    toml: Union[Unset, None, bool] = UNSET,
-) -> Response[Union[ErrorResponse, PipelineDescr]]:
-    """Retrieve pipeline metadata.
+) -> Response[Union[ErrorResponse, str]]:
+    """Validate the configuration of a  a pipeline.
 
-     Retrieve pipeline metadata.
+     Validate the configuration of a  a pipeline.
+
+    Validate configuration, usable as a pre-cursor for deploy to
+    check if pipeline configuration is valid and can be deployed.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
-        toml (Union[Unset, None, bool]):
+        pipeline_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, PipelineDescr]]
+        Response[Union[ErrorResponse, str]]
     """
 
     kwargs = _get_kwargs(
+        pipeline_id=pipeline_id,
         client=client,
-        id=id,
-        name=name,
-        toml=toml,
     )
 
     async with httpx.AsyncClient(verify=client.verify_ssl) as _client:
@@ -179,34 +160,31 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    pipeline_id: str,
     *,
     client: Client,
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-    toml: Union[Unset, None, bool] = UNSET,
-) -> Optional[Union[ErrorResponse, PipelineDescr]]:
-    """Retrieve pipeline metadata.
+) -> Optional[Union[ErrorResponse, str]]:
+    """Validate the configuration of a  a pipeline.
 
-     Retrieve pipeline metadata.
+     Validate the configuration of a  a pipeline.
+
+    Validate configuration, usable as a pre-cursor for deploy to
+    check if pipeline configuration is valid and can be deployed.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
-        toml (Union[Unset, None, bool]):
+        pipeline_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, PipelineDescr]
+        Union[ErrorResponse, str]
     """
 
     return (
         await asyncio_detailed(
+            pipeline_id=pipeline_id,
             client=client,
-            id=id,
-            name=name,
-            toml=toml,
         )
     ).parsed

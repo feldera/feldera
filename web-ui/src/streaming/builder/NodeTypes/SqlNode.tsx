@@ -96,6 +96,9 @@ function SqlViewNode(props: { name: string }) {
 function SqlNode({ id, data }: NodeProps) {
   const onDelete = useNodeDelete(id)
 
+  const inputs = data.program.schema?.inputs || []
+  const outputs = data.program.schema?.outputs || []
+
   return (
     <Node>
       <CardHeader
@@ -113,7 +116,7 @@ function SqlNode({ id, data }: NodeProps) {
       />
 
       <CardContent sx={{ textAlign: 'center', '& svg': { mb: 2 } }}>
-        {zip(data.program.schema.inputs, data.program.schema.outputs).map((e, idx) => {
+        {zip(inputs, outputs).map((e, idx) => {
           const input = e[0]
           const output = e[1]
 

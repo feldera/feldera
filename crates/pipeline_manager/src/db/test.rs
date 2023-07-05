@@ -1,9 +1,11 @@
 use super::{
     storage::Storage, AttachedConnector, ConnectorDescr, ConnectorId, DBError, PipelineId,
-    PipelineStatus, ProgramDescr, ProgramId, ProgramStatus, ProjectDB, Version,
+    PipelineRevision, PipelineStatus, ProgramDescr, ProgramId, ProgramStatus, ProjectDB, Revision,
+    Version,
 };
-use super::{ApiPermission, PipelineDescr};
+use super::{ApiPermission, PipelineDescr, ProgramSchema};
 use crate::auth::{self, TenantId, TenantRecord};
+use crate::db::Relation;
 use async_trait::async_trait;
 use openssl::sha::{self};
 use pretty_assertions::assert_eq;
@@ -570,7 +572,254 @@ async fn create_tenant() {
     assert_eq!(tenant_id_3, tenant_id_4);
 }
 
-/// Generate uuids but limits the the randomess to the first 8 bytes.
+#[tokio::test]
+async fn versioning() {
+    let _r = env_logger::try_init();
+
+    /// A Function that commits twice and checks the second time errors, returns
+    /// revision of first commit.
+    async fn commit_check(
+        handle: &DbHandle,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Revision {
+        let new_revision_id = Uuid::now_v7();
+        let r = handle
+            .db
+            .create_pipeline_revision(new_revision_id, tenant_id, pipeline_id)
+            .await
+            .unwrap();
+        // We get an error the 2nd time since nothing changed
+        let _e = handle
+            .db
+            .create_pipeline_revision(new_revision_id, tenant_id, pipeline_id)
+            .await
+            .unwrap_err();
+        assert_eq!(r.0, new_revision_id);
+        r
+    }
+
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+
+    let (program_id, _) = handle
+        .db
+        .new_program(
+            tenant_id,
+            Uuid::now_v7(),
+            "test1",
+            "program desc",
+            "only schema matters--this isn't compiled",
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_program_status_guarded(tenant_id, program_id, Version(1), ProgramStatus::Success)
+        .await
+        .unwrap();
+    let _r = handle
+        .db
+        .set_program_schema(
+            tenant_id,
+            program_id,
+            ProgramSchema {
+                inputs: vec![Relation {
+                    name: "t1".into(),
+                    fields: vec![],
+                }],
+                outputs: vec![Relation {
+                    name: "v1".into(),
+                    fields: vec![],
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    let connector_id1: ConnectorId = handle
+        .db
+        .new_connector(tenant_id, Uuid::now_v7(), "a", "b", "c")
+        .await
+        .unwrap();
+    let mut ac1 = AttachedConnector {
+        name: "ac1".to_string(),
+        is_input: true,
+        connector_id: connector_id1,
+        config: "t1".to_string(),
+    };
+    let connector_id2 = handle
+        .db
+        .new_connector(tenant_id, Uuid::now_v7(), "d", "e", "f")
+        .await
+        .unwrap();
+    let mut ac2 = AttachedConnector {
+        name: "ac2".to_string(),
+        is_input: false,
+        connector_id: connector_id2,
+        config: "v1".to_string(),
+    };
+    let (pipeline_id, _version) = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            Some(program_id),
+            "1",
+            "2",
+            "3",
+            &Some(vec![ac1.clone(), ac2.clone()]),
+        )
+        .await
+        .unwrap();
+    let r1: Revision = commit_check(&handle, tenant_id, pipeline_id).await;
+
+    // If we change the program we need to adjust the connectors before we can
+    // commit again:
+    let new_version = handle
+        .db
+        .update_program(
+            tenant_id,
+            program_id,
+            "test1",
+            "program desc",
+            &Some("only schema matters--this isn't compiled2".to_string()),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_program_status_guarded(tenant_id, program_id, new_version, ProgramStatus::Success)
+        .await
+        .unwrap();
+    let _r = handle
+        .db
+        .set_program_schema(
+            tenant_id,
+            program_id,
+            ProgramSchema {
+                inputs: vec![Relation {
+                    name: "tnew1".into(),
+                    fields: vec![],
+                }],
+                outputs: vec![Relation {
+                    name: "vnew1".into(),
+                    fields: vec![],
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    // This doesn't work because the connectors reference (now invalid) tables:
+    assert!(handle
+        .db
+        .create_pipeline_revision(Uuid::now_v7(), tenant_id, pipeline_id)
+        .await
+        .is_err());
+    ac1.is_input = true;
+    ac1.config = "tnew1".into();
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            pipeline_id,
+            Some(program_id),
+            "1",
+            "2",
+            &Some("3".into()),
+            &Some(vec![ac1.clone(), ac2.clone()]),
+        )
+        .await
+        .unwrap();
+    // This doesn't work because the ac2 still references a wrong table
+    assert!(handle
+        .db
+        .create_pipeline_revision(Uuid::now_v7(), tenant_id, pipeline_id)
+        .await
+        .is_err());
+    // Let's fix ac2
+    ac2.is_input = false;
+    ac2.config = "vnew1".into();
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            pipeline_id,
+            Some(program_id),
+            "1",
+            "2",
+            &Some("3".into()),
+            &Some(vec![ac1.clone(), ac2.clone()]),
+        )
+        .await
+        .unwrap();
+
+    // Now we can commit again
+    let r2 = commit_check(&handle, tenant_id, pipeline_id).await;
+    assert_ne!(r1, r2, "we got a new revision");
+
+    // If we change the connector we can commit again:
+    handle
+        .db
+        .update_connector(tenant_id, connector_id1, "a", "b", &Some("x".into()))
+        .await
+        .unwrap();
+    let r3 = commit_check(&handle, tenant_id, pipeline_id).await;
+    assert_ne!(r2, r3, "we got a new revision");
+
+    // If we change the attached connectors we can commit again:
+    ac1.name = "xxx".into();
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            pipeline_id,
+            Some(program_id),
+            "1",
+            "2",
+            &Some("3".into()),
+            &Some(vec![ac1.clone(), ac2.clone()]),
+        )
+        .await
+        .unwrap();
+    let r4: Revision = commit_check(&handle, tenant_id, pipeline_id).await;
+    assert_ne!(r3, r4, "we got a new revision");
+
+    // If we remove an ac that's also a change:
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            pipeline_id,
+            Some(program_id),
+            "1",
+            "2",
+            &Some("3".into()),
+            &Some(vec![ac1.clone()]),
+        )
+        .await
+        .unwrap();
+    let r5 = commit_check(&handle, tenant_id, pipeline_id).await;
+    assert_ne!(r4, r5, "we got a new revision");
+
+    // And if we change the pipeline config itself that's a change:
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            pipeline_id,
+            Some(program_id),
+            "1",
+            "2",
+            &Some("test".into()),
+            &Some(vec![ac1.clone()]),
+        )
+        .await
+        .unwrap();
+    let r6 = commit_check(&handle, tenant_id, pipeline_id).await;
+    assert_ne!(r5, r6, "we got a new revision");
+}
+
+/// Generate uuids but limits the the randomess to the first bits.
 ///
 /// This ensures that we have a good chance of generating a uuid that is already
 /// in the database -- useful for testing error conditions.
@@ -579,9 +828,9 @@ pub(crate) fn limited_uuid() -> impl Strategy<Value = Uuid> {
         // prepend a bunch of zero bytes so the buffer is big enough for
         // building a uuid
         bytes.resize(16, 0);
-        // restrict the any::<u8> (0..255) to 1..16 this enforces more
+        // restrict the any::<u8> (0..255) to 1..4 this enforces more
         // interesting scenarios for testing (and we start at 1 because shaving
-        bytes[0] &= 0b1111;
+        bytes[0] &= 0b11;
         // a uuid of 0 is invalid and postgres will treat it as NULL
         bytes[0] |= 0b1;
         Uuid::from_bytes(
@@ -611,7 +860,7 @@ enum StorageAction {
     LookupProgram(TenantId, String),
     SetProgramStatus(TenantId, ProgramId, ProgramStatus),
     SetProgramStatusGuarded(TenantId, ProgramId, Version, ProgramStatus),
-    SetProgramSchema(TenantId, ProgramId, String),
+    SetProgramSchema(TenantId, ProgramId, ProgramSchema),
     DeleteProgram(TenantId, ProgramId),
     NextJob,
     NewPipeline(
@@ -652,11 +901,20 @@ enum StorageAction {
     DeleteConnector(TenantId, ConnectorId),
     StoreApiKeyHash(TenantId, String, Vec<ApiPermission>),
     ValidateApiKey(TenantId, String),
+    CreatePipelineRevision(
+        #[proptest(strategy = "limited_uuid()")] Uuid,
+        TenantId,
+        PipelineId,
+    ),
+    GetCommittedPipeline(TenantId, PipelineId),
 }
 
 fn check_responses<T: Debug + PartialEq>(step: usize, model: DBResult<T>, impl_: DBResult<T>) {
     match (model, impl_) {
-        (Ok(mr), Ok(ir)) => assert_eq!(mr, ir),
+        (Ok(mr), Ok(ir)) => assert_eq!(
+            mr, ir,
+            "mismatch detected with model (left) and right (impl)"
+        ),
         (Err(me), Ok(ir)) => {
             panic!("Step({step}): model returned error: {me:?}, but impl returned result: {ir:?}");
         }
@@ -679,7 +937,10 @@ fn compare_pipeline(step: usize, model: DBResult<PipelineDescr>, impl_: DBResult
         (Ok(mut mr), Ok(mut ir)) => {
             mr.created = None;
             ir.created = None;
-            assert_eq!(mr, ir);
+            assert_eq!(
+                mr, ir,
+                "mismatch detected with model (left) and right (impl)"
+            );
         }
         (Err(me), Ok(ir)) => {
             panic!("Step({step}): model returned error: {me:?}, but impl returned result: {ir:?}");
@@ -991,6 +1252,18 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.validate_api_key(key.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             }
+                            StorageAction::CreatePipelineRevision(new_revision_id, tenant_id, pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.create_pipeline_revision(new_revision_id, tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.create_pipeline_revision(new_revision_id, tenant_id, pipeline_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::GetCommittedPipeline(tenant_id, pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_last_committed_pipeline_revision(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.get_last_committed_pipeline_revision(tenant_id, pipeline_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
                         }
                     }
                 });
@@ -1003,12 +1276,16 @@ fn db_impl_behaves_like_model() {
     }
 }
 
+/// The program data
+type ProgramData = (ProgramDescr, String, SystemTime);
+
 /// Our model of the database (uses btrees for tables).
 #[derive(Debug, Default)]
 struct DbModel {
     // `programs` Format is: (program, code, created)
-    pub programs: BTreeMap<(TenantId, ProgramId), (ProgramDescr, String, SystemTime)>,
+    pub programs: BTreeMap<(TenantId, ProgramId), ProgramData>,
     pub pipelines: BTreeMap<(TenantId, PipelineId), PipelineDescr>,
+    pub history: BTreeMap<(TenantId, PipelineId), PipelineRevision>,
     pub api_keys: BTreeMap<String, (TenantId, Vec<ApiPermission>)>,
     pub connectors: BTreeMap<(TenantId, ConnectorId), ConnectorDescr>,
     pub tenants: BTreeMap<TenantId, TenantRecord>,
@@ -1154,11 +1431,7 @@ impl Storage for Mutex<DbModel> {
         let s = self.lock().await;
         Ok(s.programs
             .iter()
-            .filter(
-                |k: &(&(TenantId, ProgramId), &(ProgramDescr, String, SystemTime))| {
-                    k.0 .0 == tenant_id
-                },
-            )
+            .filter(|k: &(&(TenantId, ProgramId), &ProgramData)| k.0 .0 == tenant_id)
             .map(|k| k.1 .0.clone())
             .find(|p| p.name == program_name))
     }
@@ -1177,7 +1450,7 @@ impl Storage for Mutex<DbModel> {
                 p.status = status;
                 *t = SystemTime::now();
                 // TODO: It's a bit odd that this function also resets the schema
-                p.schema = Some("".to_string());
+                p.schema = None;
             });
 
         Ok(())
@@ -1206,7 +1479,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         program_id: super::ProgramId,
-        schema: String,
+        schema: ProgramSchema,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
         let _r = s
@@ -1239,7 +1512,7 @@ impl Storage for Mutex<DbModel> {
         &self,
     ) -> DBResult<Option<(super::TenantId, super::ProgramId, super::Version)>> {
         let s = self.lock().await;
-        let mut values: Vec<(&(TenantId, ProgramId), &(ProgramDescr, String, SystemTime))> =
+        let mut values: Vec<(&(TenantId, ProgramId), &ProgramData)> =
             Vec::from_iter(s.programs.iter());
         values.sort_by(|(_, t1), (_, t2)| t1.2.cmp(&t2.2));
 
@@ -1248,6 +1521,112 @@ impl Storage for Mutex<DbModel> {
             .find(|(_, v)| v.0.status == ProgramStatus::Pending)
             .map(|(k, v)| Ok(Some((k.0, v.0.program_id, v.0.version))))
             .unwrap_or(Ok(None))
+    }
+
+    async fn create_pipeline_revision(
+        &self,
+        new_revision_id: Uuid,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> DBResult<Revision> {
+        let mut s = self.lock().await;
+
+        let pipeline = s
+            .pipelines
+            .get(&(tenant_id, pipeline_id))
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
+
+        if let Some(program_id) = pipeline.program_id {
+            let program_data = s
+                .programs
+                .get(&(tenant_id, program_id))
+                .ok_or(DBError::UnknownProgram { program_id })?;
+            let connectors = s
+                .connectors
+                .values()
+                .filter(|c| {
+                    pipeline
+                        .attached_connectors
+                        .iter()
+                        .any(|ac| ac.connector_id == c.connector_id)
+                })
+                .cloned()
+                .collect::<Vec<ConnectorDescr>>();
+
+            let pipeline = pipeline.clone();
+            let connectors = connectors.clone();
+            let program_data = program_data.clone();
+            PipelineRevision::validate(&pipeline, &connectors, &program_data.0)?;
+
+            // Gives an answer if the relevant configuration state for the
+            // pipeline has changed since our last commit.
+            fn detect_changes(
+                cur_pipeline: &PipelineDescr,
+                cur_sql: &str,
+                cur_connectors: &Vec<ConnectorDescr>,
+                prev: &PipelineRevision,
+            ) -> bool {
+                cur_sql != &prev.code
+                    || cur_pipeline.config != prev.pipeline.config
+                    || cur_pipeline
+                        .attached_connectors
+                        .iter()
+                        .map(|ac| (&ac.name, ac.is_input, &ac.config))
+                        .ne(prev
+                            .pipeline
+                            .attached_connectors
+                            .iter()
+                            .map(|ach| (&ach.name, ach.is_input, &ach.config)))
+                    || cur_connectors
+                        .iter()
+                        .map(|c| &c.config)
+                        .ne(prev.connectors.iter().map(|c| &c.config))
+            }
+
+            let prev = s.history.get(&(tenant_id, pipeline_id));
+            let (has_changed, next_revision) = match prev {
+                Some(prev) => (
+                    detect_changes(&pipeline, &program_data.1, &connectors, prev),
+                    prev.revision,
+                ),
+                None => (true, Revision(new_revision_id)),
+            };
+
+            if has_changed {
+                s.history.insert(
+                    (tenant_id, pipeline_id),
+                    PipelineRevision::new(
+                        next_revision,
+                        pipeline,
+                        connectors,
+                        program_data.0,
+                        program_data.1,
+                    ),
+                );
+                Ok(next_revision)
+            } else {
+                Err(DBError::RevisionNotChanged)
+            }
+        } else {
+            return Err(DBError::ProgramNotSet);
+        }
+    }
+
+    async fn get_last_committed_pipeline_revision(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> DBResult<PipelineRevision> {
+        let s = self.lock().await;
+        let _p = s
+            .pipelines
+            .get(&(tenant_id, pipeline_id))
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
+        let history = s
+            .history
+            .get(&(tenant_id, pipeline_id))
+            .ok_or(DBError::NoRevisionAvailable { pipeline_id })?;
+        Ok(history.clone())
     }
 
     async fn new_pipeline(
@@ -1270,15 +1649,6 @@ impl Storage for Mutex<DbModel> {
                 constraint: "pipeline_pkey",
             });
         }
-        // UNIQUE constraint on name
-        if s.pipelines
-            .iter()
-            .filter(|k| k.0 .0 == tenant_id)
-            .map(|k| k.1.clone())
-            .any(|c| c.name == pipline_name)
-        {
-            return Err(DBError::DuplicateName.into());
-        }
         // Model the foreign key constraint on `program_id`
         if let Some(program_id) = program_id {
             if !s.programs.contains_key(&(tenant_id, program_id)) {
@@ -1289,28 +1659,15 @@ impl Storage for Mutex<DbModel> {
         let mut new_acs: Vec<AttachedConnector> = vec![];
         if let Some(connectors) = connectors {
             for ac in connectors {
-                if new_acs.iter().any(|nac| nac.name == ac.name) {
-                    return Err(DBError::DuplicateName);
-                }
-
-                // We ensure that in all pipelines there is no attached
-                // connector with this name UNIQUE constraint on table
-                let pipelines = s.pipelines.values().clone();
-                if pipelines
-                    .flat_map(|p| p.attached_connectors.clone())
-                    .collect::<Vec<_>>()
-                    .iter()
-                    .any(|eac| eac.name == ac.name)
-                {
-                    return Err(DBError::DuplicateName);
-                }
-
                 // Check that all attached connectors point to a valid
                 // connector_id
                 if !db_connectors.contains_key(&(tenant_id, ac.connector_id)) {
                     return Err(DBError::UnknownConnector {
                         connector_id: ac.connector_id,
                     });
+                }
+                if new_acs.iter().any(|nac| nac.name == ac.name) {
+                    return Err(DBError::DuplicateName);
                 }
 
                 new_acs.push(ac.clone());
@@ -1372,22 +1729,6 @@ impl Storage for Mutex<DbModel> {
         let mut new_acs: Vec<AttachedConnector> = vec![];
         if let Some(connectors) = connectors {
             for ac in connectors {
-                if new_acs.iter().any(|nac| nac.name == ac.name) {
-                    return Err(DBError::DuplicateName);
-                }
-
-                // We ensure that in all pipelines there is no attached
-                // connector with this name UNIQUE constraint on table
-                let pipelines = s.pipelines.values().clone();
-                if pipelines
-                    .flat_map(|p| p.attached_connectors.clone())
-                    .collect::<Vec<_>>()
-                    .iter()
-                    .any(|eac| eac.name == ac.name)
-                {
-                    return Err(DBError::DuplicateName);
-                }
-
                 // Check that all attached connectors point to a valid
                 // connector_id
                 if !db_connectors.contains_key(&(tenant_id, ac.connector_id)) {
@@ -1395,9 +1736,19 @@ impl Storage for Mutex<DbModel> {
                         connector_id: ac.connector_id,
                     });
                 }
+                if new_acs.iter().any(|nac| nac.name == ac.name) {
+                    return Err(DBError::DuplicateName);
+                }
 
                 new_acs.push(ac.clone());
             }
+        } else {
+            new_acs = s
+                .pipelines
+                .get(&(tenant_id, pipeline_id))
+                .ok_or(DBError::UnknownPipeline { pipeline_id })?
+                .attached_connectors
+                .clone();
         }
         // Check program exists foreign key constraint
         if let Some(program_id) = program_id {
@@ -1495,6 +1846,7 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: super::PipelineId,
     ) -> DBResult<bool> {
         let mut s = self.lock().await;
+        let _r = s.history.remove(&(tenant_id, pipeline_id));
         // TODO: Our APIs sometimes are not consistent we return a bool here but
         // other calls fail silently on delete/lookups
         Ok(s.pipelines

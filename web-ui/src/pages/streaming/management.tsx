@@ -1,7 +1,7 @@
 import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
 import PageHeader from 'src/layouts/components/page-header'
-import PipelineTable from 'src/streaming/PipelineTable'
+import PipelineTable from 'src/streaming/management/PipelineTable'
 
 const PipelineManagement = () => {
   return (
@@ -11,8 +11,8 @@ const PipelineManagement = () => {
         subtitle={<Typography variant='body2'>Manage existing streaming pipelines.</Typography>}
       />
 
+      {/* id referenced by webui-tester */}
       <Grid item xs={12} id='pipeline-management-content'>
-        {/* id referenced by webui-tester */}
         <PipelineTable />
       </Grid>
     </Grid>
