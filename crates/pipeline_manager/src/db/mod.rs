@@ -463,15 +463,29 @@ impl PipelineRevision {
         let mut config = pipeline.config.clone();
         config.push_str(format!("name: pipeline-{pipeline_id}\n").as_str());
         config.push_str("inputs:\n");
-        for ac in pipeline.attached_connectors.iter().filter(|ac| ac.is_input) {
+
+        let mut inputs: Vec<AttachedConnector> = pipeline
+            .attached_connectors
+            .iter()
+            .filter(|ac| ac.is_input)
+            .cloned()
+            .collect();
+        inputs
+            .sort_unstable_by(|ac1, ac2| ac1.name.cmp(&ac2.name).then(ac1.config.cmp(&ac2.config)));
+        for ac in inputs.iter() {
             generate_attached_connector_config(&mut config, ac)?;
         }
+
         config.push_str("outputs:\n");
-        for ac in pipeline
+        let mut outputs: Vec<AttachedConnector> = pipeline
             .attached_connectors
             .iter()
             .filter(|ac| !ac.is_input)
-        {
+            .cloned()
+            .collect();
+        outputs
+            .sort_unstable_by(|ac1, ac2| ac1.name.cmp(&ac2.name).then(ac1.config.cmp(&ac2.config)));
+        for ac in outputs.iter() {
             generate_attached_connector_config(&mut config, ac)?;
         }
 
