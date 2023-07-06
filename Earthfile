@@ -329,7 +329,7 @@ install-docs-deps:
     COPY docs/package.json ./docs/package.json
     COPY docs/yarn.lock ./docs/yarn.lock
     RUN cd docs && yarn install
-    COPY docs/rust-api ./docs/rust-api
+    COPY ( +docs/rust-api ) ./docs/rust-api
 
 build-docs:
     FROM +install-docs-deps
