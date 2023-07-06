@@ -239,10 +239,15 @@ build-dbsp:
     RUN cd crates/dbsp && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
+    # Normally this should be in the build-docs section, but here we
+    # take advantage that the target directory has been built to save some time
+    RUN cargo doc
+
     # Update target folder for future tasks, the whole --keep-ts,
     # args were an attempt in fixing the dependency problem (see build-cache)
     # but it doesn't seem to make a difference.
     SAVE ARTIFACT --keep-ts ./target/* ./target
+    SAVE ARTIFACT target/doc/dbsp AS LOCAL docs/rust-api
 
 build-adapters:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -324,17 +329,17 @@ install-docs-deps:
     COPY docs/package.json ./docs/package.json
     COPY docs/yarn.lock ./docs/yarn.lock
     RUN cd docs && yarn install
-    COPY target/doc/dbsp ./docs/rust
+    COPY docs/rust-api ./docs/rust-api
 
 build-docs:
     FROM +install-docs-deps
     COPY docs/ docs/
     COPY ( +build-manager/dbsp_pipeline_manager ) ./docs/dbsp_pipeline_manager
-    RUN cargo doc
     RUN cd docs && ./dbsp_pipeline_manager --dump-openapi
     RUN cd docs && yarn format:check
     RUN cd docs && yarn lint
     RUN cd docs && yarn build --no-minify
+    # More docs built during 'build-dbsp' stage
     SAVE ARTIFACT docs/out AS LOCAL docs/out
 
 build-nexmark:
