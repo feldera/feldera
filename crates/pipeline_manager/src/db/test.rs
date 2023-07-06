@@ -1632,7 +1632,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         id: Uuid,
         program_id: Option<super::ProgramId>,
-        pipline_name: &str,
+        pipeline_name: &str,
         pipeline_description: &str,
         config: &str,
         // TODO: not clear why connectors is an option here
@@ -1644,6 +1644,16 @@ impl Storage for Mutex<DbModel> {
         // UUIDs are global
         if s.pipelines.keys().any(|k| k.1 == PipelineId(id)) {
             return Err(DBError::unique_key_violation("pipeline_pkey"));
+        }
+        // UNIQUE constraint on name
+        if let Some(c) = s
+            .pipelines
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1)
+            .find(|c| c.name == pipeline_name)
+        {
+            return Err(DBError::DuplicateName.into());
         }
         // Model the foreign key constraint on `program_id`
         if let Some(program_id) = program_id {
@@ -1677,7 +1687,7 @@ impl Storage for Mutex<DbModel> {
             PipelineDescr {
                 pipeline_id,
                 program_id,
-                name: pipline_name.to_owned(),
+                name: pipeline_name.to_owned(),
                 description: pipeline_description.to_owned(),
                 config: config.to_owned(),
                 attached_connectors: new_acs,
