@@ -23,8 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
@@ -62,9 +60,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.*;
 
 import javax.annotation.Nullable;
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.*;
 
 /**
@@ -200,7 +195,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
             type = ref.type;
         DBSPTypeBaseType base = type.as(DBSPTypeBaseType.class);
         if (base == null)
-            throw new InternalCompilerError("Expected a base type", type);
+            throw new InternalCompilerError("Expected a base type " + type, type);
         switch (base.shortName()) {
             case "b":
                 return JITBoolType.INSTANCE;
@@ -438,7 +433,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                     closure.parameters.length, operator);
         JITFunction finishFn = this.convertFunction(closure, false);
 
-        JITRowType accLayout = this.getTypeCatalog().convertTupleType(aggregate.defaultZeroType(), this);
+        JITRowType accLayout = this.getTypeCatalog().convertTupleType(zeroValue.type, this);
         JITRowType stepLayout = this.getTypeCatalog().convertTupleType(
                 aggregate.getIncrement().parameters[1].getType(), this);
         JITOperator result = new JITAggregateOperator(
@@ -498,37 +493,5 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
         ToJitVisitor visitor = new ToJitVisitor(compiler);
         visitor.apply(circuit);
         return visitor.program;
-    }
-
-    /**
-     * Generate JSON for a circuit and validate it.
-     * @param compiler Compiler used to compile the code.
-     * @param circuit  Circuit to generate JSON for.
-     * @param compile  If true invoke the DBSP JIT compiler on the generated JSON.
-     */
-    public static void validateJson(DBSPCompiler compiler, DBSPCircuit circuit, boolean compile) {
-        try {
-            JITProgram program = ToJitVisitor.circuitToJIT(compiler, circuit);
-            Logger.INSTANCE.belowLevel("ToJitVisitor", 2)
-                    .append(program.toAssembly())
-                    .newline();
-            String json = program.asJson().toPrettyString();
-            Logger.INSTANCE.belowLevel("ToJitVisitor", 2)
-                    .append(json);
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode root = mapper.readTree(json);
-            if (root == null)
-                throw new RuntimeException("No JSON produced from circuit");
-            File jsonFile = File.createTempFile("out", ".json", new File("."));
-            PrintWriter writer = new PrintWriter(jsonFile);
-            writer.println(json);
-            writer.close();
-            if (compile)
-                Utilities.compileAndTestJit("../../dbsp", jsonFile);
-            // If we don't reach this point the file will survive for debugging
-            jsonFile.deleteOnExit();
-        } catch (IOException | InterruptedException ex) {
-            throw new RuntimeException(ex);
-        }
     }
 }

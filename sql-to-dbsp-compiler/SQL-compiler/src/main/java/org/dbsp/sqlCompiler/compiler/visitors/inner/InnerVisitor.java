@@ -510,6 +510,11 @@ public abstract class InnerVisitor implements IRTransform {
         else return VisitDecision.CONTINUE;
     }
 
+    public VisitDecision preorder(DBSPBaseTupleExpression node) {
+        if (this.visitSuper) return this.preorder((DBSPExpression) node);
+        else return VisitDecision.CONTINUE;
+    }
+
     public VisitDecision preorder(DBSPTupleExpression node) {
         if (this.visitSuper) return this.preorder((DBSPBaseTupleExpression) node);
         else return VisitDecision.CONTINUE;
@@ -997,6 +1002,10 @@ public abstract class InnerVisitor implements IRTransform {
     }
 
     public void postorder(DBSPUnaryExpression node) {
+        if (this.visitSuper) this.postorder((DBSPExpression) node);
+    }
+
+    public void postorder(DBSPBaseTupleExpression node) {
         if (this.visitSuper) this.postorder((DBSPExpression) node);
     }
 

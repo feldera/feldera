@@ -23,12 +23,12 @@ geo = { version = "0.23" }
 geo-types = { version = "0.7" }
 rust_decimal = { version = "1.29" }
 serde_json = { version = "1.0.89" }
+chrono = { version = "0.4.23" }
 
 [dev-dependencies]
 hashing = { path = "../lib/hashing" }
 readers = { path = "../lib/readers" }
 sqlx = { version = "0.6", features = [ "runtime-async-std-native-tls", "sqlite", "any" ] }
-chrono = { version = "0.4.23" }
 
 [lib]
 path = "src/lib.rs"

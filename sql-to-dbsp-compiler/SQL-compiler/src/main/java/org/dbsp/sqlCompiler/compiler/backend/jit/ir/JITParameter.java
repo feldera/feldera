@@ -50,13 +50,19 @@ public class JITParameter extends JITReference {
     public final Direction direction;
     public final JITRowType type;
     public final boolean mayBeNull;    // not used in code generation
+    /**
+     * If true this is a field of a flattened Tuple type.
+     */
+    public final boolean flattenedType;
 
-    public JITParameter(long id, String name, Direction direction, JITRowType type, boolean mayBeNull) {
+    public JITParameter(long id, String name, Direction direction, JITRowType type,
+                        boolean mayBeNull, boolean flattenedType) {
         super(id);
         this.direction = direction;
         this.originalName = name;
         this.type = type;
         this.mayBeNull = mayBeNull;
+        this.flattenedType = flattenedType;
     }
 
     @Override
@@ -70,7 +76,8 @@ public class JITParameter extends JITReference {
 
     @Override
     public String toString() {
-        return this.originalName + " " + this.id + " " + this.direction + ":" + this.type;
+        return this.originalName + " " + this.id + " " +
+                this.direction + ":" + this.type + (this.flattenedType ? " (flattened)" : "");
     }
 
     @Override

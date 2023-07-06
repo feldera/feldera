@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
@@ -47,7 +48,8 @@ public class DBSPBlockExpression extends DBSPExpression {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         this.type.accept(visitor);
         for (DBSPStatement stat: this.contents)
@@ -73,10 +75,13 @@ public class DBSPBlockExpression extends DBSPExpression {
         builder.append("{")
                 .increase()
                 .joinI(System.lineSeparator(), this.contents);
-        if (this.lastExpression != null)
-            builder.newline()
-                    .append(this.lastExpression);
-        return builder.decrease()
+        if (this.lastExpression != null) {
+            if (!this.contents.isEmpty())
+                builder.newline();
+            builder.append(this.lastExpression);
+        }
+        return builder.newline()
+                .decrease()
                 .append("}");
     }
 }

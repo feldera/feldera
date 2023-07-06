@@ -63,32 +63,6 @@ public class JITParameterMapping {
     }
 
     /**
-     * We are given a type that is a Tuple or RawTuple.
-     * Expand it into a list of Tuple types as follows:
-     * - if the type is a Tuple, just return a singleton list.
-     * - if the type is a RawTuple, add all its components to the list.
-     * Each component is expected to be a Tuple.
-     * This is used for functions like stream.index_with, which
-     * take a closure that returns a tuple of values.  The JIT does
-     * not support nested tuples.
-     */
-    public static List<DBSPTypeTuple> expandToTuples(DBSPType type) {
-        List<DBSPTypeTuple> types = new ArrayList<>();
-        if (type.is(DBSPTypeRawTuple.class)) {
-            for (DBSPType field : type.to(DBSPTypeRawTuple.class).tupFields) {
-                DBSPTypeTuple tuple = makeTupleType(field);
-                types.add(tuple);
-            }
-        } else {
-            DBSPTypeRef ref = type.as(DBSPTypeRef.class);
-            if (ref != null)
-                type = ref.type;
-            types.add(type.to(DBSPTypeTuple.class));
-        }
-        return types;
-    }
-
-    /**
      * Each input parameter is mapped to a
      */
     final TypeCatalog typeCatalog;
@@ -104,7 +78,7 @@ public class JITParameterMapping {
         DBSPType paramType = param.getType();
         boolean mayBeNull = paramType.mayBeNull;
         JITRowType t = this.typeCatalog.convertTupleType(paramType, jitVisitor);
-        JITParameter p = new JITParameter(this.parameterIndex, param.name, direction, t, mayBeNull);
+        JITParameter p = new JITParameter(this.parameterIndex, param.name, direction, t, mayBeNull, false);
         this.parameters.add(p);
         this.parameterIndex++;
     }
@@ -114,6 +88,7 @@ public class JITParameterMapping {
      * The JIT only supports returning scalar values, so a closure that returns a
      * tuple actually receives an additional parameter that is "output" (equivalent to a "mut").
      * Moreover, a closure that returns a RawTuple will return one value for each field of the raw tuple.
+     * This name is never looked up.
      */
     private static final String RETURN_PARAMETER_PREFIX = "$retval";
 
@@ -133,17 +108,38 @@ public class JITParameterMapping {
                 return jitVisitor.scalarType(returnType);
             }
         }
-        // The result could be a tuple of tuples, then make each of
-        // the fields a separate parameter.
+        /*
+         * The result could be a tuple of tuples: then make each of
+         * the fields a separate parameter.
+         * Expand the return type into a list of Tuple types as follows:
+         * - if the type is a Tuple, create one Tuple-typed out parameter.
+         * - if the type is a RawTuple, create one Tuple-typed out parameter for each field.
+         * Each component is expected to be a Tuple.
+         * This is used for functions like stream.index_with, which
+         * take a closure that returns a tuple of values.  The JIT does
+         * not support nested tuples, so each field becomes a separate 'out' parameter.
+         */
         Objects.requireNonNull(returnType);
-        List<DBSPTypeTuple> types = expandToTuples(returnType);
-        for (DBSPTypeTuple type: types) {
-            JITRowType t = this.typeCatalog.convertTupleType(type, jitVisitor);
+        if (returnType.is(DBSPTypeRawTuple.class)) {
+            for (DBSPType field : returnType.to(DBSPTypeRawTuple.class).tupFields) {
+                DBSPTypeTuple tuple = makeTupleType(field);
+                JITRowType t = this.typeCatalog.convertTupleType(tuple, jitVisitor);
+                String varName = RETURN_PARAMETER_PREFIX + "_" + this.parameters.size();
+                JITParameter p = new JITParameter(this.parameterIndex, varName, JITParameter.Direction.OUT,
+                        t, false, true);
+                this.parameterIndex++;
+                this.parameters.add(p);
+            }
+        } else {
+            DBSPTypeTuple tuple = returnType.derefIfNeeded().to(DBSPTypeTuple.class);
+            JITRowType t = this.typeCatalog.convertTupleType(tuple, jitVisitor);
             String varName = RETURN_PARAMETER_PREFIX + "_" + this.parameters.size();
-            JITParameter p = new JITParameter(this.parameterIndex, varName, JITParameter.Direction.OUT, t, type.mayBeNull);
+            JITParameter p = new JITParameter(this.parameterIndex, varName, JITParameter.Direction.OUT,
+                    t, false, false);
             this.parameterIndex++;
             this.parameters.add(p);
         }
+
         return JITUnitType.INSTANCE;
     }
 }

@@ -52,6 +52,10 @@ public class InternalCompilerError extends BaseCompilerException {
         this(message, node, null, null);
     }
 
+    public InternalCompilerError(String message) {
+        this(message, CalciteObject.EMPTY, null, null);
+    }
+
     public InternalCompilerError(String message, IDBSPNode node) {
         this(message, CalciteObject.EMPTY, node, null);
     }

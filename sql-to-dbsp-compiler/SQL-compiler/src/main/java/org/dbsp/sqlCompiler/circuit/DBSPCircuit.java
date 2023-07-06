@@ -114,6 +114,7 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
                 .increase()
                 .append(this.circuit)
                 .decrease()
-                .append("}");
+                .append("}")
+                .newline();
     }
 }
