@@ -33,7 +33,7 @@ public class JitTests extends EndToEndTests {
 
     // All the @Ignore-ed tests below should eventually pass.
 
-    @Test @Override @Ignore("Average not yet implemented")
+    @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/241")
     public void averageTest() {
         Logger.INSTANCE.setLoggingLevel(ToJitVisitor.class, 4);
         String query = "SELECT AVG(T.COL1) FROM T";
@@ -42,7 +42,7 @@ public class JitTests extends EndToEndTests {
                         new DBSPI32Literal(10, true))));
     }
 
-    @Test @Override @Ignore("Average not yet implemented")
+    @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/241")
     public void constAggregateExpression2() {
         Logger.INSTANCE.setLoggingLevel(ToJitVisitor.class, 4);
         String query = "SELECT 34 / AVG (1) FROM T GROUP BY COL1";
@@ -51,7 +51,7 @@ public class JitTests extends EndToEndTests {
                         new DBSPI32Literal(34, true))));
     }
 
-    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
+    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT https://github.com/feldera/dbsp/issues/158")
     public void divZero() {
         String query = "SELECT 'Infinity' / 0";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
@@ -60,7 +60,7 @@ public class JitTests extends EndToEndTests {
                                 null))));
     }
 
-    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
+    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT https://github.com/feldera/dbsp/issues/158")
     public void correlatedAggregate() {
         String query = "SELECT Sum(r.COL1 * r.COL5) FROM T r\n" +
                 "WHERE\n" +
@@ -70,7 +70,7 @@ public class JitTests extends EndToEndTests {
                 DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
     }
 
-    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
+    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT https://github.com/feldera/dbsp/issues/158")
     public void decimalParse() {
         String query = "SELECT CAST('0.5' AS DECIMAL)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
@@ -79,7 +79,7 @@ public class JitTests extends EndToEndTests {
                                 new BigDecimal("0.5")))));
     }
 
-    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT")
+    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT https://github.com/feldera/dbsp/issues/158")
     public void decimalParseFail() {
         String query = "SELECT CAST('blah' AS DECIMAL)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
@@ -87,21 +87,21 @@ public class JitTests extends EndToEndTests {
                         new DBSPDecimalLiteral(DBSPTypeDecimal.DEFAULT, new BigDecimal(0)))));
     }
 
-    @Test @Override @Ignore("WINDOWS not yet implemented")
+    @Test @Override @Ignore("WINDOWS not yet implemented https://github.com/feldera/dbsp/issues/158")
     public void overTest() {
         DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPI64Literal(2));
         String query = "SELECT T.COL1, COUNT(*) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(t, t));
     }
 
-    @Test @Override @Ignore("WINDOWS not yet implemented")
+    @Test @Override @Ignore("WINDOWS not yet implemented https://github.com/feldera/dbsp/issues/158")
     public void overSumTest() {
         DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPDoubleLiteral(13.0));
         String query = "SELECT T.COL1, SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(t, t));
     }
 
-    @Test @Override @Ignore("WINDOWS not yet implemented")
+    @Test @Override @Ignore("WINDOWS not yet implemented https://github.com/feldera/dbsp/issues/158")
     public void overTwiceTest() {
         DBSPExpression t = new DBSPTupleExpression(
                 new DBSPI32Literal(10),
@@ -113,7 +113,7 @@ public class JitTests extends EndToEndTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(t, t));
     }
 
-    @Test @Override @Ignore("WINDOWS not yet implemented")
+    @Test @Override @Ignore("WINDOWS not yet implemented https://github.com/feldera/dbsp/issues/158")
     public void overConstantWindowTest() {
         DBSPExpression t = new DBSPTupleExpression(
                 new DBSPI32Literal(10),
@@ -123,7 +123,7 @@ public class JitTests extends EndToEndTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(t, t));
     }
 
-    @Test @Override @Ignore("WINDOWS not yet implemented")
+    @Test @Override @Ignore("WINDOWS not yet implemented https://github.com/feldera/dbsp/issues/158")
     public void overTwiceDifferentTest() {
         DBSPExpression t = new DBSPTupleExpression(
                 new DBSPI32Literal(10),
@@ -135,7 +135,7 @@ public class JitTests extends EndToEndTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(t, t));
     }
 
-    @Test @Override @Ignore("ORDER BY not yet implemented")
+    @Test @Override @Ignore("ORDER BY not yet implemented https://github.com/feldera/dbsp/issues/158")
     public void orderbyTest() {
         String query = "SELECT * FROM T ORDER BY T.COL2";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
@@ -143,7 +143,7 @@ public class JitTests extends EndToEndTests {
         ));
     }
 
-    @Test @Override @Ignore("ORDER BY not yet implemented")
+    @Test @Override @Ignore("ORDER BY not yet implemented https://github.com/feldera/dbsp/issues/158")
     public void orderbyDescendingTest() {
         String query = "SELECT * FROM T ORDER BY T.COL2 DESC";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
@@ -151,7 +151,7 @@ public class JitTests extends EndToEndTests {
         ));
     }
 
-    @Test @Override @Ignore("ORDER BY not yet implemented")
+    @Test @Override @Ignore("ORDER BY not yet implemented https://github.com/feldera/dbsp/issues/158")
     public void orderby2Test() {
         String query = "SELECT * FROM T ORDER BY T.COL2, T.COL1";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
@@ -159,7 +159,7 @@ public class JitTests extends EndToEndTests {
         ));
     }
 
-    @Test @Override @Ignore("GEO POINT not yet implemented")
+    @Test @Override @Ignore("GEO POINT not yet implemented https://github.com/feldera/dbsp/issues/158")
     public void geoPointTest() {
         String query = "SELECT ST_POINT(0, 0)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
@@ -168,7 +168,7 @@ public class JitTests extends EndToEndTests {
                                 new DBSPDoubleLiteral(0), new DBSPDoubleLiteral(0)).some())));
     }
 
-    @Test @Override @Ignore("GEO POINT not yet implemented")
+    @Test @Override @Ignore("GEO POINT not yet implemented https://github.com/feldera/dbsp/issues/158")
     public void geoDistanceTest() {
         String query = "SELECT ST_DISTANCE(ST_POINT(0, 0), ST_POINT(0,1))";
         this.testQuery(query, new DBSPZSetLiteral.Contents(

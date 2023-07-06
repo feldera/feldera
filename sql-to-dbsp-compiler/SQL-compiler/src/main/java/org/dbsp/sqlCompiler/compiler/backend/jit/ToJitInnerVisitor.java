@@ -48,10 +48,14 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITStoreInstruc
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITUnaryInstruction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JitUninitInstruction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITBoolType;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITDateType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITI64Type;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITRowType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITScalarType;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITStringType;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITTimestampType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITUnitType;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -65,6 +69,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
+import org.dbsp.util.ICastable;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
@@ -78,6 +83,62 @@ import java.util.*;
  * Handles InnerNodes - i.e., expressions, closures, statements.
  */
 public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
+    /**
+     * Represents the target of an assignment.
+     * Could represent either a variable or a set of "out" or "inout" parameters.
+     */
+    abstract static class AssignmentTarget implements ICastable { }
+
+    /**
+     * Can be either a scalar or a tuple variable.
+     */
+    static class VariableAssignmentTarget extends AssignmentTarget {
+        public final String varName;
+        public final JITType type;
+        public final JITInstructionPair storage;
+
+        VariableAssignmentTarget(String varName, JITType type, JITInstructionPair storage) {
+            this.varName = varName;
+            this.type = type;
+            this.storage = storage;
+        }
+
+        @Override
+        public String toString() {
+            return this.varName + "(" + storage + ")";
+        }
+    }
+
+    /**
+     * Represents a sequence of out or inout parameters.
+     */
+    static class OutParamsAssignmentTarget extends AssignmentTarget {
+        private final List<AssignmentTarget> fields = new ArrayList<>();
+
+        public boolean isEmpty() {
+            return this.fields.isEmpty();
+        }
+
+        public void addField(AssignmentTarget field) {
+            this.fields.add(field);
+        }
+
+        public AssignmentTarget getField(int index) {
+            if (this.fields.size() <= index)
+                throw new InternalCompilerError("Index out of bounds " + index, CalciteObject.EMPTY);
+            return this.fields.get(index);
+        }
+
+        @Override
+        public String toString() {
+            return this.fields.toString();
+        }
+
+        public int size() {
+            return this.fields.size();
+        }
+    }
+
     /**
      * Contexts keep track of variables defined.
      * Variable names can be redefined, as in Rust, and a context
@@ -155,11 +216,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
      */
     public final TypeCatalog typeCatalog;
     /**
-     * The names of the variables currently being assigned.
+     * The LHS of the assignments currently under execution.
      * This is a stack, because we can have nested blocks:
      * let var1 = { let v2 = 1 + 2; v2 + 1 }
      */
-    final List<String> variableAssigned;
+    final List<AssignmentTarget> variablesAssigned;
     /**
      * A description how closure parameters are mapped to JIT parameters.
      */
@@ -177,7 +238,18 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         this.declarations = new ArrayList<>();
         this.currentBlock = null;
         this.mapping = mapping;
-        this.variableAssigned = new ArrayList<>();
+        this.variablesAssigned = new ArrayList<>();
+    }
+
+    void popVariable(AssignmentTarget target) {
+        AssignmentTarget last = Utilities.removeLast(this.variablesAssigned);
+        if (!last.equals(target))
+            throw new InternalCompilerError(
+                    "Popping wrong item from assignment stack:" + target + " vs " + last, CalciteObject.EMPTY);
+    }
+
+    void pushVariable(AssignmentTarget target) {
+        this.variablesAssigned.add(target);
     }
 
     long nextInstructionId() {
@@ -280,11 +352,18 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         return Objects.requireNonNull(this.currentBlock);
     }
 
+    /**
+     * Insert a function call operation.
+     * The function call is applied only when all arguments are non-null,
+     * otherwise the result is immediately null.
+     * @param name           Name of function to call.
+     * @param expression     Operations which is being translated.
+     *                       Usually an ApplyExpression, but not always.
+     * @param arguments      Arguments to supply to the function call.
+     */
     void createFunctionCall(String name,
-                            DBSPExpression expression,  // usually an ApplyExpression, but not always
+                            DBSPExpression expression,
                             DBSPExpression... arguments) {
-        // This assumes that the function is called only if no argument is nullable,
-        // and that if any argument IS nullable the result is NULL.
         List<JITInstructionRef> nullableArgs = new ArrayList<>();
         List<JITType> argumentTypes = new ArrayList<>();
         List<JITInstructionRef> args = new ArrayList<>();
@@ -468,9 +547,17 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
-        JITInstructionPair sourceId = this.accept(expression.source);
         JITScalarType sourceType = convertScalarType(expression.source);
         JITScalarType destinationType = convertScalarType(expression);
+        if (destinationType.is(JITStringType.class) &&
+                (sourceType.is(JITDateType.class) || sourceType.is(JITTimestampType.class))) {
+            // These are implemented using function calls.
+            DBSPExpression empty = new DBSPStringLiteral("").applyClone();
+            // Write appends the argument to the supplied string
+            this.createFunctionCall("dbsp.str.write", expression, empty, expression.source);
+            return VisitDecision.STOP;
+        }
+        JITInstructionPair sourceId = this.accept(expression.source);
         JITInstructionRef cast = this.insertCast(sourceId.value, sourceType, destinationType, expression.toString());
         JITInstructionRef isNull = JITInstructionRef.INVALID;
         if (needsNull(expression)) {
@@ -556,6 +643,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
      *                   can be determined to be constant only one of the
      *                   operands may be returned.
      */
+    @SuppressWarnings("SameParameterValue")
     JITInstructionRef insertMux(
             JITInstructionRef condition,
             JITInstructionRef left, JITInstructionRef right,
@@ -576,7 +664,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     }
 
     JITInstructionRef insertUnary(JITUnaryInstruction.Operation opcode,
-                               JITInstructionRef operand, JITType type) {
+                                  JITInstructionRef operand, JITType type) {
         operand.mustBeValid();
         JITInstruction result = this.add(new JITUnaryInstruction(this.nextInstructionId(), opcode, operand, type));
         return result.getInstructionReference();
@@ -946,49 +1034,57 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     @Override
     public VisitDecision preorder(DBSPVariablePath expression) {
         JITInstructionPair pair = this.resolve(expression.variable);
-        this.expressionToValues.put(expression, pair);
         // may already be there, but this may be a new variable with the same name,
         // and then we overwrite with the new definition.
+        this.expressionToValues.put(expression, pair);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPClosureExpression closure) {
+        OutParamsAssignmentTarget target = new OutParamsAssignmentTarget();
         for (JITParameter param: this.mapping.parameters) {
-            this.declare(param.originalName, param.mayBeNull);
+            JITInstructionPair dest = this.declare(param.originalName, param.mayBeNull);
+            VariableAssignmentTarget var = new VariableAssignmentTarget(param.originalName, param.type, dest);
             if (param.direction != JITParameter.Direction.IN) {
-                String varName = param.originalName;
-                this.variableAssigned.add(varName);
+                target.addField(var);
             }
         }
+        if (!target.isEmpty())
+            this.pushVariable(target);
 
         closure.body.accept(this);
 
-        for (JITParameter param: this.mapping.parameters) {
-            if (param.direction != JITParameter.Direction.IN)
-                Utilities.removeLast(this.variableAssigned);
-        }
+        if (!target.isEmpty())
+            this.popVariable(target);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPLetStatement statement) {
         boolean isTuple = statement.type.is(DBSPTypeTupleBase.class);
-        this.variableAssigned.add(statement.variable);
+        JITType type = this.convertType(statement.type);
+        VariableAssignmentTarget var = null;
         if (isTuple) {
-            JITInstructionPair ids = this.declare(statement.variable, needsNull(statement.type));
-            JITType type = this.convertType(statement.type);
-            this.add(new JitUninitInstruction(ids.value.getId(), type.to(JITRowType.class), statement.variable));
+            // Do not declare scalar variables, just substitute them with the
+            // expression that the RHS produces.
+            JITInstructionPair declaration = this.declare(statement.variable, needsNull(statement.type));
+            var = new VariableAssignmentTarget(statement.variable, type, declaration);
+            this.pushVariable(var);
+            this.add(new JitUninitInstruction(declaration.value.getId(), type.to(JITRowType.class), statement.variable));
         }
         if (statement.initializer != null) {
             statement.initializer.accept(this);
             if (!isTuple) {
                 // Only if the expression produces a scalar value will there be an init.
+                // Otherwise, the tuple expression will directly write into the variable
                 JITInstructionPair init = this.getExpressionValues(statement.initializer);
                 this.getCurrentContext().addVariable(statement.variable, init);
             }
         }
-        Utilities.removeLast(this.variableAssigned);
+
+        if (isTuple)
+            this.popVariable(Objects.requireNonNull(var));
         return VisitDecision.STOP;
     }
 
@@ -1109,44 +1205,96 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     }
 
     @Override
-    public VisitDecision preorder(DBSPRawTupleExpression expression) {
-        // Each field is assigned to a different variable.
-        // Remove the last n variables
-        List<String> tail = new ArrayList<>();
-        for (DBSPExpression ignored: expression.fields)
-            tail.add(Utilities.removeLast(this.variableAssigned));
-        for (DBSPExpression field: expression.fields) {
-            // Add each variable and process the corresponding field.
-            this.variableAssigned.add(Utilities.removeLast(tail));
-            // Convert RawTuples inside RawTuples to regular Tuples
-            if (field.is(DBSPRawTupleExpression.class))
-                field = new DBSPTupleExpression(field.to(DBSPRawTupleExpression.class).fields);
-            field.accept(this);
-        }
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTupleExpression expression) {
-        // Compile this as an assignment to the currently assigned variable
-        String variableAssigned = this.variableAssigned.get(this.variableAssigned.size() - 1);
-        JITInstructionPair retValId = this.resolve(variableAssigned);
-        JITRowType tupleTypeId = this.typeCatalog.convertTupleType(expression.getType(), this.jitVisitor);
+    public VisitDecision preorder(DBSPBaseTupleExpression expression) {
+        // Compile this as an assignment to the currently assigned variables.
+        // We have several cases:
+        // var v = Tuple::new(x, y)  (Tuple-typed)
+        // var v = (x, y);           (RawTuple-typed, but non-tuple fields)
+        // return Tuple::new(x, y)   (Tuple-typed, last expression in outermost block of a closure).
+        // return (x, y);            (RowTuple-typed, last expression in outermost block).
+        AssignmentTarget target = Utilities.last(this.variablesAssigned);
+        VariableAssignmentTarget varTarget = target.as(VariableAssignmentTarget.class);
+        OutParamsAssignmentTarget paramsTarget = target.as(OutParamsAssignmentTarget.class);
         int index = 0;
-        for (DBSPExpression field: expression.fields) {
-            // Generates 1 or 2 instructions for each field (depending on nullability)
-            JITInstructionPair fieldId = this.accept(field);
-            this.add(new JITStoreInstruction(this.nextInstructionId(),
-                    retValId.value, tupleTypeId, index, fieldId.value,
-                    this.jitVisitor.scalarType(field.getType()),
-                    "into " + expression + "." + index));
-            if (fieldId.hasNull()) {
-                this.add(new JITSetNullInstruction(this.nextInstructionId(),
-                        retValId.value, tupleTypeId, index, fieldId.isNull));
+
+        if (varTarget != null) {
+            for (DBSPExpression field: expression.fields) {
+                JITType jitType = this.convertType(field.getType());
+                if (jitType.is(JITUnitType.class)) {
+                    // No code needs to be generated for unit values
+                    index++;
+                    continue;
+                }
+
+                // The variable was declared as an Uninit instruction, and we write
+                // to fields of that uninit instruction.
+                JITRowType tupleTypeId = this.typeCatalog.convertTupleType(expression.getType(), this.jitVisitor);
+                JITScalarType fieldType = jitType.to(JITScalarType.class);
+                JITInstructionPair fieldId = this.accept(field);
+                VariableAssignmentTarget v = target.to(VariableAssignmentTarget.class);
+                this.add(new JITStoreInstruction(this.nextInstructionId(),
+                        v.storage.value, tupleTypeId, index, fieldId.value,
+                        fieldType, "into " + expression + "." + index));
+                if (fieldId.hasNull()) {
+                    this.add(new JITSetNullInstruction(this.nextInstructionId(),
+                            v.storage.value, tupleTypeId, index, fieldId.isNull));
+                }
+                index++;
             }
-            index++;
+        } else {
+            if (paramsTarget == null)
+                throw new InternalCompilerError("Unexpected target of assignment " + target);
+
+            // We are returning from the function.
+            // We have to treat this code as if it is assigning to the
+            // 'out' parameters of the function.
+            // However, the out parameters may have been flattened...
+            if (expression.type.is(DBSPTypeTuple.class)) {
+                // If the return result of the function is a Tuple,
+                // there should be exactly one out parameter with the same Tuple type.
+                if (paramsTarget.size() != 1)
+                    throw new InternalCompilerError("Expected just one output parameter not " + paramsTarget.size());
+                VariableAssignmentTarget v = paramsTarget.getField(index).to(VariableAssignmentTarget.class);
+                this.pushVariable(v);
+                expression.accept(this);
+                this.popVariable(v);
+            } else {
+                // If the return result of the function is a RawTuple,
+                // then it has been "flattened" into multiple out parameters,
+                // one for each field of the tuple.
+                for (DBSPExpression field : expression.fields) {
+                    JITType jitType = this.convertType(field.getType());
+                    if (jitType.is(JITUnitType.class)) {
+                        // No code needs to be generated for unit values
+                        index++;
+                        continue;
+                    }
+
+                    VariableAssignmentTarget v = paramsTarget.getField(index).to(VariableAssignmentTarget.class);
+                    if (jitType.isScalarType()) {
+                        // The out param is treated as a tuple with 1 element
+                        JITInstructionPair fieldId = this.accept(field);
+                        JITRowType varType = v.type.to(JITRowType.class);
+                        this.add(new JITStoreInstruction(this.nextInstructionId(),
+                                v.storage.value, varType, 0, fieldId.value,
+                                jitType.to(JITScalarType.class), "into " + expression + "." + index));
+                        if (fieldId.hasNull()) {
+                            this.add(new JITSetNullInstruction(this.nextInstructionId(),
+                                    v.storage.value, varType, 0, fieldId.isNull));
+                        }
+                    } else {
+                        // Process this as a separate assignment to each out parameter.
+                        // This handles nested tuples.  Nested tuples can only
+                        // occur in the last expression in the generated code, where
+                        // we may "return" something like ( (a), Tuple2::new(x, y) ).
+                        this.pushVariable(v);
+                        field.accept(this);
+                        this.popVariable(v);
+                    }
+                    index++;
+                }
+            }
         }
-        this.map(expression, retValId);
         return VisitDecision.STOP;
     }
 

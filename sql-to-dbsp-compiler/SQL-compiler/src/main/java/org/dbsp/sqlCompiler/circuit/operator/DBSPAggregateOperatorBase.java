@@ -5,6 +5,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
+import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -45,5 +47,25 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
 
     public DBSPAggregate getAggregate() {
         return Objects.requireNonNull(this.aggregate);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        DBSPType streamType = new DBSPTypeStream(this.outputType);
+        this.writeComments(builder)
+                .append("let ")
+                .append(this.getName())
+                .append(": ")
+                .append(streamType)
+                .append(" = ")
+                .append(this.input().getName())
+                .append(".")
+                .append(this.operation)
+                .append("(");
+        if (this.function != null)
+            builder.append(this.function);
+        else if (this.aggregate != null)
+            builder.append(this.aggregate);
+        return builder.append(");");
     }
 }

@@ -175,12 +175,15 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
 
         @Override
         public IIndentStream toString(IIndentStream builder) {
+            boolean first = true;
             for (Map.Entry<DBSPExpression, Long> e: this.data.entrySet()) {
+                if (!first)
+                    builder.newline();
+                first = false;
                 builder.append(e.getKey());
                 builder.append(" => ")
                         .append(e.getValue())
-                        .append(",")
-                        .newline();
+                        .append(",");
             }
             return builder;
         }

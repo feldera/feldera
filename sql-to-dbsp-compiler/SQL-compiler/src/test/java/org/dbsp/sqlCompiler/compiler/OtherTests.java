@@ -134,7 +134,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    // CREATE VIEW V AS SELECT T.COL3 FROM T\n" +
                 "    // DBSPSinkOperator 67\n" +
                 "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream1;\n" +
-                "}";
+                "}\n";
         Assert.assertEquals(expected, str);
     }
 
