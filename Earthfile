@@ -8,7 +8,7 @@ ENV RUSTUP_HOME=$HOME/.rustup
 ENV CARGO_HOME=$HOME/.cargo
 # Adds python and rust binaries to thep path
 ENV PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH
-ENV RUST_VERSION=1.69.0
+ENV RUST_VERSION=1.70.0
 ENV RUST_BUILD_MODE='' # set to --release for release builds
 
 install-deps:
@@ -34,11 +34,11 @@ install-rust:
         --component clippy \
         --component rustfmt \
         --component llvm-tools-preview
-    RUN cargo install --force --version 0.5.0 cargo-machete
-    RUN cargo install --force --version 0.17.6 cargo-audit
-    RUN cargo install --force --version 0.36.7 cargo-make
-    RUN cargo install --force --version 0.5.19 cargo-llvm-cov
-    RUN cargo install --force  --version 0.1.61 cargo-chef
+    RUN cargo install --locked --force --version 0.5.0 cargo-machete
+    RUN cargo install --locked --force --version 0.17.6 cargo-audit
+    RUN cargo install --locked --force --version 0.36.11 cargo-make
+    RUN cargo install --locked --force --version 0.5.22 cargo-llvm-cov
+    RUN cargo install --locked --force --version 0.1.61 cargo-chef
     RUN rustup --version
     RUN cargo --version
     RUN rustc --version
@@ -362,7 +362,7 @@ CARGO_TEST:
     ARG test_args
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package $package \
         $(if [ -z $features ]; then printf -- --features $features; fi) \
-        -- -Z unstable-options --report-time $test_args
+        -- $test_args
 
 test-dbsp:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -426,7 +426,7 @@ test-manager:
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
-    RUN cp `cargo test --features integration-test --no-run --package dbsp_pipeline_manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable'` test_binary
+    RUN cp `cargo test --features integration-test --no-run --package dbsp_pipeline_manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable' | grep -v null` test_binary
     SAVE ARTIFACT test_binary
 
 test-python:
