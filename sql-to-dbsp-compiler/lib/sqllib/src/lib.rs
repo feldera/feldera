@@ -35,6 +35,22 @@ macro_rules! some_function1 {
     }
 }
 
+// Macro to create variants of a function with 1 argument
+// If there exists a function is f_type(x: T) -> S, this creates a function
+// f_typeN(x: Option<T>) -> Option<S>, defined as
+// f_typeN(x) { let x = x?; Some(f_type(x)) }.
+#[macro_export]
+macro_rules! some_polymorphic_function1 {
+    ($func_name:ident, $type_name: ident, $arg_type:ty, $ret_type:ty) => {
+        ::paste::paste! {
+            pub fn [<$func_name _ $type_name N>]( arg: Option<$arg_type> ) -> Option<$ret_type> {
+                let arg = arg?;
+                Some([<$func_name _ $type_name >](arg))
+            }
+        }
+    }
+}
+
 // Macro to create variants of a function with 2 arguments
 // If there exists a function is f__(x: T, y: S) -> U, this creates
 // three functions:
@@ -60,6 +76,90 @@ macro_rules! some_function2 {
             pub fn [<$func_name N_>]( arg0: Option<$arg_type0>, arg1: $arg_type1 ) -> Option<$ret_type> {
                 let arg0 = arg0?;
                 Some([<$func_name __>](arg0, arg1))
+            }
+        }
+    }
+}
+
+// Macro to create variants of a polymorphic function with 2 arguments
+// If there exists a function is f_type1_type2(x: T, y: S) -> U, this creates
+// three functions:
+// - f_type1_type2N(x: T, y: Option<S>) -> Option<U>
+// - f_type1N_type2(x: Option<T>, y: S) -> Option<U>
+// - f_type1N_type2N(x: Option<T>, y: Option<S>) -> Option<U>
+// The resulting functions return Some only if all arguments are 'Some'.
+#[macro_export]
+macro_rules! some_polymorphic_function2 {
+    ($func_name:ident, $type_name0: ident, $arg_type0:ty, $type_name1: ident, $arg_type1:ty, $ret_type:ty) => {
+        ::paste::paste! {
+            pub fn [<$func_name _$type_name0 _ $type_name1 N>]( arg0: $arg_type0, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                Some([<$func_name _ $type_name0 _ $type_name1>](arg0, arg1))
+            }
+
+            pub fn [<$func_name _ $type_name0 N _ $type_name1>]( arg0: Option<$arg_type0>, arg1: $arg_type1 ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                Some([<$func_name _ $type_name0 _ $type_name1>](arg0, arg1))
+            }
+
+            pub fn [<$func_name _ $type_name0 N _ $type_name1 N>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                Some([<$func_name _ $type_name0 _ $type_name1>](arg0, arg1))
+            }
+        }
+    }
+}
+
+// Macro to create variants of a function with 3 arguments
+// If there exists a function is f___(x: T, y: S, z: V) -> U, this creates
+// seven functions:
+// - f__N(x: T, y: S, z: Option<V>) -> Option<U>
+// - f_N_(x: T, y: Option<S>, z: V) -> Option<U>
+// - etc.
+// The resulting functions return Some only if all arguments are 'Some'.
+#[macro_export]
+macro_rules! some_function3 {
+    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $arg_type2: ty, $ret_type:ty) => {
+        ::paste::paste! {
+            pub fn [<$func_name __N>]( arg0: $arg_type0, arg1: $arg_type1, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
+                let arg2 = arg2?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name _N_>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: $arg_type2 ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name _NN>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                let arg2 = arg2?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name N__>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: $arg_type2 ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name N_N>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg2 = arg2?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name NN_>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: $arg_type2 ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name NNN>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                let arg2 = arg2?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
             }
         }
     }
@@ -172,69 +272,16 @@ macro_rules! some_function4 {
     }
 }
 
-// Macro to create variants of a function with 3 arguments
-// If there exists a function is f___(x: T, y: S, z: V) -> U, this creates
-// seven functions:
-// - f__N(x: T, y: S, z: Option<V>) -> Option<U>
-// - f_N_(x: T, y: Option<S>, z: V) -> Option<U>
-// - etc.
-// The resulting functions return Some only if all arguments are 'Some'.
-#[macro_export]
-macro_rules! some_function3 {
-    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $arg_type2: ty, $ret_type:ty) => {
-        ::paste::paste! {
-            pub fn [<$func_name __N>]( arg0: $arg_type0, arg1: $arg_type1, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
-                let arg2 = arg2?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            pub fn [<$func_name _N_>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: $arg_type2 ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            pub fn [<$func_name _NN>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            pub fn [<$func_name N__>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: $arg_type2 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            pub fn [<$func_name N_N>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg2 = arg2?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            pub fn [<$func_name NN_>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: $arg_type2 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            pub fn [<$func_name NNN>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-        }
-    }
-}
-
 // Macro to create variants of a function with 2 arguments
-// If there exists a function is f_t_t(x: T, y: T) -> U, this creates
+// optimized for the implementation of arithmetic operators.
+// Assuming there exists a function is f__(x: T, y: T) -> U, this creates
 // three functions:
 // - f_tN_t(x: T, y: Option<T>) -> Option<U>
 // - f_t_tN(x: Option<T>, y: T) -> Option<U>
 // - f_tN_tN(x: Option<T>, y: Option<T>) -> Option<U>
 // The resulting functions return Some only if all arguments are 'Some'.
 #[macro_export]
-macro_rules! some_operator {
+macro_rules! some_existing_operator {
     ($func_name: ident, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
         ::paste::paste! {
             #[inline(always)]
@@ -259,6 +306,29 @@ macro_rules! some_operator {
     }
 }
 
+// Macro to create variants of a function with 2 arguments
+// optimized for the implementation of arithmetic operators.
+// Assuming there exists a function is f(x: T, y: T) -> U, this creates
+// four functions:
+// - f_t_t(x: T, y: T) -> U
+// - f_tN_t(x: T, y: Option<T>) -> Option<U>
+// - f_t_tN(x: Option<T>, y: T) -> Option<U>
+// - f_tN_tN(x: Option<T>, y: Option<T>) -> Option<U>
+// The resulting functions return Some only if all arguments are 'Some'.
+#[macro_export]
+macro_rules! some_operator {
+    ($func_name: ident, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
+        ::paste::paste! {
+            #[inline(always)]
+            pub fn [<$func_name _ $short_name _ $short_name >]( arg0: $arg_type, arg1: $arg_type ) -> $ret_type {
+                $func_name(arg0, arg1)
+            }
+
+            some_existing_operator!($func_name, $short_name, $arg_type, $ret_type);
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! for_all_int_compare {
     ($func_name: ident, $ret_type: ty) => {
@@ -274,6 +344,7 @@ macro_rules! for_all_numeric_compare {
         for_all_int_compare!($func_name, bool);
         some_operator!($func_name, f, F32, bool);
         some_operator!($func_name, d, F64, bool);
+        some_operator!($func_name, decimal, Decimal, bool);
     }
 }
 
@@ -287,7 +358,7 @@ macro_rules! for_all_compare {
 }
 
 #[macro_export]
-macro_rules! for_all_int {
+macro_rules! for_all_int_operator {
     ($func_name: ident) => {
         some_operator!($func_name, i16, i16, i16);
         some_operator!($func_name, i32, i32, i32);
@@ -296,11 +367,12 @@ macro_rules! for_all_int {
 }
 
 #[macro_export]
-macro_rules! for_all_numeric {
+macro_rules! for_all_numeric_operator {
     ($func_name: ident) => {
-        for_all_int!($func_name);
+        for_all_int_operator!($func_name);
         some_operator!($func_name, f, F32, F32);
         some_operator!($func_name, d, F64, F64);
+        some_operator!($func_name, decimal, Decimal, Decimal);
     }
 }
 
@@ -373,6 +445,8 @@ pub fn or_bN_bN(left: Option<bool>, right: Option<bool>) -> Option<bool> {
         (_, _) => None::<bool>,
     }
 }
+
+// OR and AND are special, they can't be generated by rules
 
 #[inline(always)]
 pub fn and_b_b(left: bool, right: bool) -> bool {
@@ -515,159 +589,6 @@ where
 }
 
 #[inline(always)]
-pub fn div_i16_i16(left: i16, right: i16) -> Option<i16> {
-    match right {
-        0 => None,
-        _ => Some(left / right),
-    }
-}
-
-#[inline(always)]
-pub fn div_i32_i32(left: i32, right: i32) -> Option<i32> {
-    match right {
-        0 => None,
-        _ => Some(left / right),
-    }
-}
-
-#[inline(always)]
-pub fn div_i64_i64(left: i64, right: i64) -> Option<i64> {
-    match right {
-        0 => None,
-        _ => Some(left / right),
-    }
-}
-
-#[inline(always)]
-pub fn div_i16N_i16(left: Option<i16>, right: i16) -> Option<i16> {
-    match (left, right) {
-        (_, 0) => None,
-        (Some(l), r) => Some(l / r),
-        (_, _) => None::<i16>,
-    }
-}
-
-#[inline(always)]
-pub fn div_i32N_i32(left: Option<i32>, right: i32) -> Option<i32> {
-    match (left, right) {
-        (_, 0) => None,
-        (Some(l), r) => Some(l / r),
-        (_, _) => None::<i32>,
-    }
-}
-
-#[inline(always)]
-pub fn div_i64N_i64(left: Option<i64>, right: i64) -> Option<i64> {
-    match (left, right) {
-        (_, 0) => None,
-        (Some(l), r) => Some(l / r),
-        (_, _) => None::<i64>,
-    }
-}
-
-#[inline(always)]
-pub fn div_i16_i16N(left: i16, right: Option<i16>) -> Option<i16> {
-    match (left, right) {
-        (_, Some(0)) => None,
-        (l, Some(r)) => Some(l / r),
-        (_, _) => None::<i16>,
-    }
-}
-
-#[inline(always)]
-pub fn div_i32_i32N(left: i32, right: Option<i32>) -> Option<i32> {
-    match (left, right) {
-        (_, Some(0)) => None,
-        (l, Some(r)) => Some(l / r),
-        (_, _) => None::<i32>,
-    }
-}
-
-#[inline(always)]
-pub fn div_i64_i64N(left: i64, right: Option<i64>) -> Option<i64> {
-    match (left, right) {
-        (_, Some(0)) => None,
-        (l, Some(r)) => Some(l / r),
-        (_, _) => None::<i64>,
-    }
-}
-
-#[inline(always)]
-pub fn div_i16N_i16N(left: Option<i16>, right: Option<i16>) -> Option<i16> {
-    match (left, right) {
-        (_, Some(0)) => None,
-        (Some(l), Some(r)) => Some(l / r),
-        (_, _) => None::<i16>,
-    }
-}
-
-#[inline(always)]
-pub fn div_i32N_i32N(left: Option<i32>, right: Option<i32>) -> Option<i32> {
-    match (left, right) {
-        (_, Some(0)) => None,
-        (Some(l), Some(r)) => Some(l / r),
-        (_, _) => None::<i32>,
-    }
-}
-
-#[inline(always)]
-pub fn div_i64N_i64N(left: Option<i64>, right: Option<i64>) -> Option<i64> {
-    match (left, right) {
-        (_, Some(0)) => None,
-        (Some(l), Some(r)) => Some(l / r),
-        (_, _) => None::<i64>,
-    }
-}
-
-#[inline(always)]
-pub fn div_f_f(left: F32, right: F32) -> Option<F32> {
-    Some(F32::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_f_fN(left: F32, right: Option<F32>) -> Option<F32> {
-    right.map(|right| F32::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_fN_f(left: Option<F32>, right: F32) -> Option<F32> {
-    left.map(|left| F32::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_fN_fN(left: Option<F32>, right: Option<F32>) -> Option<F32> {
-    match (left, right) {
-        (None, _) => None,
-        (_, None) => None,
-        (Some(left), Some(right)) => Some(F32::new(left.into_inner() / right.into_inner())),
-    }
-}
-
-#[inline(always)]
-pub fn div_d_d(left: F64, right: F64) -> Option<F64> {
-    Some(F64::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_d_dN(left: F64, right: Option<F64>) -> Option<F64> {
-    right.map(|right| F64::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_dN_d(left: Option<F64>, right: F64) -> Option<F64> {
-    left.map(|left| F64::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<F64> {
-    match (left, right) {
-        (None, _) => None,
-        (_, None) => None,
-        (Some(left), Some(right)) => Some(F64::new(left.into_inner() / right.into_inner())),
-    }
-}
-
-#[inline(always)]
 pub fn abs_i16(left: i16) -> i16 {
     left.abs()
 }
@@ -683,28 +604,8 @@ pub fn abs_i64(left: i64) -> i64 {
 }
 
 #[inline(always)]
-pub fn abs_i16N(left: Option<i16>) -> Option<i16> {
-    left.map(|l| l.abs())
-}
-
-#[inline(always)]
-pub fn abs_i32N(left: Option<i32>) -> Option<i32> {
-    left.map(|l| l.abs())
-}
-
-#[inline(always)]
-pub fn abs_i64N(left: Option<i64>) -> Option<i64> {
-    left.map(|l| l.abs())
-}
-
-#[inline(always)]
 pub fn abs_f(left: F32) -> F32 {
     left.abs()
-}
-
-#[inline(always)]
-pub fn abs_fN(left: Option<F32>) -> Option<F32> {
-    left.map(|l| l.abs())
 }
 
 #[inline(always)]
@@ -713,39 +614,30 @@ pub fn abs_d(left: F64) -> F64 {
 }
 
 #[inline(always)]
-pub fn abs_dN(left: Option<F64>) -> Option<F64> {
-    left.map(|l| l.abs())
-}
-
-#[inline(always)]
 pub fn abs_decimal(left: Decimal) -> Decimal {
     left.abs()
 }
 
-#[inline(always)]
-pub fn abs_decimalN(left: Option<Decimal>) -> Option<Decimal> {
-    left.map(abs_decimal)
-}
+some_polymorphic_function1!(abs, i16, i16, i16);
+some_polymorphic_function1!(abs, i32, i32, i32);
+some_polymorphic_function1!(abs, i64, i64, i64);
+some_polymorphic_function1!(abs, f, F32, F32);
+some_polymorphic_function1!(abs, d, F64, F64);
+some_polymorphic_function1!(abs, decimal, Decimal, Decimal);
 
 #[inline(always)]
 pub fn ln_decimal(left: Decimal) -> F64 {
     F64::new(left.ln().to_f64().unwrap())
 }
 
-#[inline(always)]
-pub fn ln_decimalN(left: Option<Decimal>) -> Option<F64> {
-    left.map(ln_decimal)
-}
+some_polymorphic_function1!(ln, decimal, Decimal, F64);
 
 #[inline(always)]
 pub fn log10_decimal(left: Decimal) -> F64 {
     F64::new(left.log10().to_f64().unwrap())
 }
 
-#[inline(always)]
-pub fn log10_decimalN(left: Option<Decimal>) -> Option<F64> {
-    left.map(log10_decimal)
-}
+some_polymorphic_function1!(log10, decimal, Decimal, F64);
 
 #[inline(always)]
 pub fn is_true_b_(left: bool) -> bool {
@@ -854,44 +746,13 @@ pub fn st_distance_geopoint_geopoint(left: GeoPoint, right: GeoPoint) -> F64 {
     left.distance(&right)
 }
 
-pub fn st_distance_geopointN_geopoint(left: Option<GeoPoint>, right: GeoPoint) -> Option<F64> {
-    left.map(|x| st_distance_geopoint_geopoint(x, right))
-}
-
-pub fn st_distance_geopoint_geopointN(left: GeoPoint, right: Option<GeoPoint>) -> Option<F64> {
-    right.map(|x| st_distance_geopoint_geopoint(left, x))
-}
-
-pub fn st_distance_geopointN_geopointN(left: Option<GeoPoint>, right: Option<GeoPoint>) -> Option<F64> {
-    match (left, right) {
-        (None, _) => None,
-        (_, None) => None,
-        (Some(x), Some(y)) => Some(st_distance_geopoint_geopoint(x, y)),
-    }
-}
+some_polymorphic_function2!(st_distance, geopoint, GeoPoint, geopoint, GeoPoint, F64);
 
 pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
     left * right
 }
 
-pub fn times_ShortIntervalN_i64(left: Option<ShortInterval>, right: i64) -> Option<ShortInterval> {
-    left.map(|x| x * right)
-}
-
-pub fn times_ShortInterval_i64N(left: ShortInterval, right: Option<i64>) -> Option<ShortInterval> {
-    right.map(|x| left * x)
-}
-
-pub fn times_ShortIntervalN_i64N(
-    left: Option<ShortInterval>,
-    right: Option<i64>,
-) -> Option<ShortInterval> {
-    match (left, right) {
-        (None, _) => None,
-        (_, None) => None,
-        (Some(x), Some(y)) => Some(x * y),
-    }
-}
+some_polymorphic_function2!(times, ShortInterval, ShortInterval, i64, i64, ShortInterval);
 
 /***** decimals ***** */
 
@@ -932,29 +793,6 @@ where
 }
 
 #[inline(always)]
-pub fn times_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
-    left * right
-}
-
-#[inline(always)]
-pub fn times_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    left.map(|l| l * right)
-}
-
-#[inline(always)]
-pub fn times_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    right.map(|r| left * r)
-}
-
-#[inline(always)]
-pub fn times_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l * r),
-        _ => None::<Decimal>,
-    }
-}
-
-#[inline(always)]
 pub fn div_decimal_decimal(left: Decimal, right: Decimal) -> Option<Decimal> {
     if right.is_zero() {
         None
@@ -965,234 +803,29 @@ pub fn div_decimal_decimal(left: Decimal, right: Decimal) -> Option<Decimal> {
 
 #[inline(always)]
 pub fn div_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    match left {
-        None => None,
-        Some(l) => div_decimal_decimal(l, right),
-    }
+    let left = left?;
+    div_decimal_decimal(left, right)
 }
 
 #[inline(always)]
 pub fn div_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    match right {
-        Some(r) => div_decimal_decimal(left, r),
-        _ => None::<Decimal>,
-    }
+    let right = right?;
+    div_decimal_decimal(left, right)
 }
 
 #[inline(always)]
 pub fn div_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
-    match (left, right) {
-        (Some(l), Some(r)) => div_decimal_decimal(l, r),
-        _ => None::<Decimal>,
-    }
+    let left = left?;
+    let right = right?;
+    div_decimal_decimal(left, right)
 }
 
 #[inline(always)]
-pub fn plus_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
-    left + right
-}
-
-#[inline(always)]
-pub fn plus_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    left.map(|l| l + right)
-}
-
-#[inline(always)]
-pub fn plus_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    right.map(|r| left + r)
-}
-
-#[inline(always)]
-pub fn plus_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l + r),
-        _ => None::<Decimal>,
-    }
-}
-
-#[inline(always)]
-pub fn minus_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
-    left - right
-}
-
-#[inline(always)]
-pub fn minus_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    left.map(|l| l - right)
-}
-
-#[inline(always)]
-pub fn minus_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    right.map(|r| left - r)
-}
-
-#[inline(always)]
-pub fn minus_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l - r),
-        _ => None::<Decimal>,
-    }
-}
-
-#[inline(always)]
-pub fn mod_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
+pub fn modulo_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
     left % right
 }
 
-#[inline(always)]
-pub fn mod_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    left.map(|l| l % right)
-}
-
-#[inline(always)]
-pub fn mod_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    right.map(|r| left % r)
-}
-
-#[inline(always)]
-pub fn mod_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l % r),
-        _ => None::<Decimal>,
-    }
-}
-
-#[inline(always)]
-pub fn lt_decimal_decimal(left: Decimal, right: Decimal) -> bool {
-    left < right
-}
-
-#[inline(always)]
-pub fn lt_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    left.map(|l| l < right)
-}
-
-#[inline(always)]
-pub fn lt_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    right.map(|r| left < r)
-}
-
-#[inline(always)]
-pub fn lt_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<bool> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l < r),
-        _ => None::<bool>,
-    }
-}
-
-#[inline(always)]
-pub fn eq_decimal_decimal(left: Decimal, right: Decimal) -> bool {
-    left == right
-}
-
-#[inline(always)]
-pub fn eq_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    left.map(|l| l == right)
-}
-
-#[inline(always)]
-pub fn eq_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    right.map(|r| left == r)
-}
-
-#[inline(always)]
-pub fn eq_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<bool> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l == r),
-        _ => None::<bool>,
-    }
-}
-
-#[inline(always)]
-pub fn gt_decimal_decimal(left: Decimal, right: Decimal) -> bool {
-    left > right
-}
-
-#[inline(always)]
-pub fn gt_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    left.map(|l| l > right)
-}
-
-#[inline(always)]
-pub fn gt_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    right.map(|r| left > r)
-}
-
-#[inline(always)]
-pub fn gt_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<bool> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l > r),
-        _ => None::<bool>,
-    }
-}
-
-#[inline(always)]
-pub fn gte_decimal_decimal(left: Decimal, right: Decimal) -> bool {
-    left >= right
-}
-
-#[inline(always)]
-pub fn gte_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    left.map(|l| l >= right)
-}
-
-#[inline(always)]
-pub fn gte_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    right.map(|r| left >= r)
-}
-
-#[inline(always)]
-pub fn gte_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<bool> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l >= r),
-        _ => None::<bool>,
-    }
-}
-
-#[inline(always)]
-pub fn neq_decimal_decimal(left: Decimal, right: Decimal) -> bool {
-    left != right
-}
-
-#[inline(always)]
-pub fn neq_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    left.map(|l| l != right)
-}
-
-#[inline(always)]
-pub fn neq_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    right.map(|r| left != r)
-}
-
-#[inline(always)]
-pub fn neq_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<bool> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l != r),
-        _ => None::<bool>,
-    }
-}
-
-#[inline(always)]
-pub fn lte_decimal_decimal(left: Decimal, right: Decimal) -> bool {
-    left <= right
-}
-
-#[inline(always)]
-pub fn lte_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<bool> {
-    left.map(|l| l <= right)
-}
-
-#[inline(always)]
-pub fn lte_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<bool> {
-    right.map(|r| left <= r)
-}
-
-#[inline(always)]
-pub fn lte_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<bool> {
-    match (left, right) {
-        (Some(l), Some(r)) => Some(l <= r),
-        _ => None::<bool>,
-    }
-}
+some_polymorphic_function2!(modulo, decimal, Decimal, decimal, Decimal, Decimal);
 
 pub fn element<T>(array: Vec<T>) -> Option<T>
 where
@@ -1220,9 +853,7 @@ pub fn power_i32_d(left: i32, right: F64) -> F64 {
     F64::new((left as f64).powf(right.into_inner()))
 }
 
-pub fn power_i32_dN(left: i32, right: Option<F64>) -> Option<F64> {
-    right.map(|r| power_i32_d(left, r))
-}
+some_polymorphic_function2!(power, i32, i32, d, F64, F64);
 
 pub fn power_d_d(left: F64, right: F64) -> F64 {
     F64::new(left.into_inner().powf(right.into_inner()))
@@ -1237,24 +868,7 @@ pub fn power_decimal_decimal(left: Decimal, right: Decimal) -> F64 {
     }
 }
 
-pub fn power_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<F64> {
-    left.map(|l| power_decimal_decimal(l, right))
-}
-
-pub fn power_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<F64> {
-    right.map(|r| power_decimal_decimal(left, r))
-}
-
-pub fn power_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<F64> {
-    match (left, right) {
-        (_, None) => None,
-        (l, Some(r)) => power_decimalN_decimal(l, r),
-    }
-}
-
-pub fn plus_u_u(left: usize, right: usize) -> usize {
-    left + right
-}
+some_polymorphic_function2!(power, decimal, Decimal, decimal, Decimal, F64);
 
 //////////////////// floor /////////////////////
 
@@ -1264,18 +878,8 @@ pub fn floor_d(value: F64) -> F64 {
 }
 
 #[inline(always)]
-pub fn floor_dN(value: Option<F64>) -> Option<F64> {
-    value.map(|x| F64::new(x.into_inner().floor()))
-}
-
-#[inline(always)]
 pub fn floor_f(value: F32) -> F32 {
     F32::new(value.into_inner().floor())
-}
-
-#[inline(always)]
-pub fn floor_fN(value: Option<F32>) -> Option<F32> {
-    value.map(|x| F32::new(x.into_inner().floor()))
 }
 
 #[inline(always)]
@@ -1283,10 +887,9 @@ pub fn floor_decimal(value: Decimal) -> Decimal {
     value.floor()
 }
 
-#[inline(always)]
-pub fn floor_decimalN(value: Option<Decimal>) -> Option<Decimal> {
-    value.map(floor_decimal)
-}
+some_polymorphic_function1!(floor, f, F32, F32);
+some_polymorphic_function1!(floor, d, F64, F64);
+some_polymorphic_function1!(floor, decimal, Decimal, Decimal);
 
 //////////////////// ceil /////////////////////
 
@@ -1296,18 +899,8 @@ pub fn ceil_d(value: F64) -> F64 {
 }
 
 #[inline(always)]
-pub fn ceil_dN(value: Option<F64>) -> Option<F64> {
-    value.map(ceil_d)
-}
-
-#[inline(always)]
 pub fn ceil_f(value: F32) -> F32 {
     F32::new(value.into_inner().ceil())
-}
-
-#[inline(always)]
-pub fn ceil_fN(value: Option<F32>) -> Option<F32> {
-    value.map(ceil_f)
 }
 
 #[inline(always)]
@@ -1315,10 +908,9 @@ pub fn ceil_decimal(value: Decimal) -> Decimal {
     value.ceil()
 }
 
-#[inline(always)]
-pub fn ceil_decimalN(value: Option<Decimal>) -> Option<Decimal> {
-    value.map(ceil_decimal)
-}
+some_polymorphic_function1!(ceil, f, F32, F32);
+some_polymorphic_function1!(ceil, d, F64, F64);
+some_polymorphic_function1!(ceil, decimal, Decimal, Decimal);
 
 ///////////////////// sign //////////////////////
 
@@ -1334,11 +926,6 @@ pub fn sign_d(value: F64) -> F64 {
 }
 
 #[inline(always)]
-pub fn sign_dN(value: Option<F64>) -> Option<F64> {
-    value.map(sign_d)
-}
-
-#[inline(always)]
 pub fn sign_f(value: F32) -> F32 {
     // Rust signum never returns 0
     let x = value.into_inner();
@@ -1350,16 +937,10 @@ pub fn sign_f(value: F32) -> F32 {
 }
 
 #[inline(always)]
-pub fn sign_fN(value: Option<F32>) -> Option<F32> {
-    value.map(sign_f)
-}
-
-#[inline(always)]
 pub fn sign_decimal(value: Decimal) -> Decimal {
     value.signum()
 }
 
-#[inline(always)]
-pub fn sign_decimalN(value: Option<Decimal>) -> Option<Decimal> {
-    value.map(sign_decimal)
-}
+some_polymorphic_function1!(sign, f, F32, F32);
+some_polymorphic_function1!(sign, d, F64, F64);
+some_polymorphic_function1!(sign, decimal, Decimal, Decimal);

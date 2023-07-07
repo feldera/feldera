@@ -134,6 +134,10 @@ addition to the normal way of `''`.
     <td><code>LOWER ( string )</code></td>
     <td>Converts the string to all lower case.</td>
   </tr>
+  <tr>
+    <td><code>INITCAP ( string )</code></td>
+    <td>Converts the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.</td>
+  </tr>
 </table>
 
 ## `LIKE`

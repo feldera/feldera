@@ -627,7 +627,7 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "a\\bcd|a\\b'cd|a\\b''cd|abcd\\|ab\\'cd|\\\\");
     }
 
-    // TODO: initcap, lpat, translate,
+    // TODO: lpat, translate,
     
     @Test
     public void testAscii() {
