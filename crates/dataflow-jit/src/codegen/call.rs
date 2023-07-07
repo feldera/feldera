@@ -638,7 +638,8 @@ impl CodegenCtx<'_> {
             | ColumnType::F32
             | ColumnType::F64
             | ColumnType::Date
-            | ColumnType::Timestamp) => {
+            | ColumnType::Timestamp
+            | ColumnType::Decimal) => {
                 let intrinsic = match ty {
                     ColumnType::U8 => "write_i8_to_string",
                     ColumnType::I8 => "write_u8_to_string",
@@ -667,7 +668,11 @@ impl CodegenCtx<'_> {
                     ColumnType::Date => "write_date_to_string",
                     ColumnType::Timestamp => "write_timestamp_to_string",
 
-                    ColumnType::Bool | ColumnType::String | ColumnType::Unit | ColumnType::Ptr => {
+                    ColumnType::Decimal
+                    | ColumnType::Bool
+                    | ColumnType::String
+                    | ColumnType::Unit
+                    | ColumnType::Ptr => {
                         unreachable!()
                     }
                 };
@@ -1288,6 +1293,7 @@ impl CodegenCtx<'_> {
 
             ColumnType::Date
             | ColumnType::Timestamp
+            | ColumnType::Decimal
             | ColumnType::String
             | ColumnType::Unit
             | ColumnType::Ptr => todo!(),

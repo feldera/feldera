@@ -25,7 +25,7 @@ impl Codegen {
         layout_id: LayoutId,
         csv_layout: &[(CsvIndex, ColumnIndex, Option<&str>)],
     ) -> FuncId {
-        tracing::info!("creating from csv vtable function for {layout_id}");
+        tracing::trace!("creating from csv vtable function for {layout_id}");
 
         // fn(*mut u8, *const StringRecord)
         let ptr_ty = self.module.isa().pointer_type();
@@ -178,6 +178,8 @@ impl Codegen {
                             ColumnType::F32 => "csv_get_nullable_f32",
                             ColumnType::F64 => "csv_get_nullable_f64",
 
+                            ColumnType::Decimal => todo!(),
+
                             ColumnType::Timestamp
                             | ColumnType::Date
                             | ColumnType::String
@@ -231,6 +233,7 @@ impl Codegen {
                         ColumnType::Date => "csv_get_date",
                         ColumnType::Timestamp => "csv_get_timestamp",
                         ColumnType::String => "csv_get_str",
+                        ColumnType::Decimal => todo!(),
                         ColumnType::Unit | ColumnType::Ptr => unreachable!(),
                     };
 

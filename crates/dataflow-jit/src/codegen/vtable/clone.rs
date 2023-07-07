@@ -25,7 +25,7 @@ impl Codegen {
     /// Generates a function cloning the given layout
     #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_clone(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating clone vtable function for {layout_id}");
+        tracing::trace!("creating clone vtable function for {layout_id}");
 
         // fn(*const u8, *mut u8)
         let func_id = self.create_function([self.module.isa().pointer_type(); 2], None);
@@ -118,7 +118,7 @@ impl Codegen {
     /// Generates a function cloning a slice of the given layout
     #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_clone_into_slice(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating clone_into_slice vtable function for {layout_id}");
+        tracing::trace!("creating clone_into_slice vtable function for {layout_id}");
 
         // fn(*const u8, *mut u8, usize)
         let ptr_ty = self.module.isa().pointer_type();
@@ -411,7 +411,8 @@ fn clone_layout(
             | ColumnType::F32
             | ColumnType::F64
             | ColumnType::Date
-            | ColumnType::Timestamp => src_value,
+            | ColumnType::Timestamp
+            | ColumnType::Decimal => src_value,
 
             // Strings need their clone function called
             ColumnType::String => {

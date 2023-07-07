@@ -10,7 +10,7 @@ use cranelift_module::{FuncId, Module};
 
 impl Codegen {
     pub(super) fn codegen_layout_default(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating default vtable function for {layout_id}");
+        tracing::trace!("creating default vtable function for {layout_id}");
 
         // fn(*mut u8)
         let func_id = self.create_function([self.module.isa().pointer_type()], None);
@@ -96,6 +96,7 @@ impl Codegen {
                                         | NativeType::Isize => builder.ins().iconst(native, 0),
                                         NativeType::F32 => builder.ins().f32const(0.0),
                                         NativeType::F64 => builder.ins().f64const(0.0),
+                                        NativeType::U128 => builder.const_u128(0),
                                     }
                                 };
 

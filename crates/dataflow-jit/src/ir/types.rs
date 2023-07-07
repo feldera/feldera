@@ -100,6 +100,9 @@ column_type! {
 
     /// A raw pointer value
     Ptr = ("ptr", Ptr),
+
+    /// A decimal value
+    Decimal = ("decimal", U128),
 }
 
 impl ColumnType {

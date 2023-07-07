@@ -216,7 +216,7 @@ pub struct Codegen {
 impl Codegen {
     pub fn new(layout_cache: RowLayoutCache, config: CodegenConfig) -> Self {
         let target = Self::target_isa();
-        tracing::info!(
+        tracing::debug!(
             config = ?config,
             flags = %target.flags(),
             "creating code generator for {} {}",
@@ -266,6 +266,7 @@ impl Codegen {
             ("enable_jump_tables", "true"),
             ("enable_alias_analysis", "true"),
             ("use_colocated_libcalls", "false"),
+            ("enable_llvm_abi_extensions", "true"),
             // FIXME: Set back to true once the x64 backend supports it.
             ("is_pic", "false"),
         ];
@@ -749,37 +750,47 @@ impl<'a> CodegenCtx<'a> {
     }
 
     fn iconst(&mut self, constant: &Constant, builder: &mut FunctionBuilder<'_>) -> Value {
-        let ty = constant
-            .column_type()
-            .native_type()
-            .expect("invalid constant type")
-            .native_type(&self.frontend_config());
+        if let Constant::Decimal(decimal) = constant {
+            builder.const_u128(u128::from_le_bytes(decimal.serialize()))
 
-        let val = match *constant {
-            Constant::U8(int) => int as i64,
-            Constant::I8(int) => int as i64,
-            Constant::U16(int) => int as i64,
-            Constant::I16(int) => int as i64,
-            Constant::U32(int) => int as i64,
-            Constant::I32(int) => int as i64,
-            Constant::U64(int) => int as i64,
-            Constant::I64(int) => int,
-            Constant::Usize(int) => int as i64,
-            Constant::Isize(int) => int as i64,
-            Constant::Bool(bool) => bool as i64,
-            Constant::Date(date) => {
-                (date.and_time(NaiveTime::MIN).timestamp_millis() / (86400 * 1000))
+        // Other integer-like constants
+        } else {
+            let ty = constant
+                .column_type()
+                .native_type()
+                .expect("invalid constant type")
+                .native_type(&self.frontend_config());
+
+            let val = match *constant {
+                Constant::U8(int) => int as i64,
+                Constant::I8(int) => int as i64,
+                Constant::U16(int) => int as i64,
+                Constant::I16(int) => int as i64,
+                Constant::U32(int) => int as i64,
+                Constant::I32(int) => int as i64,
+                Constant::U64(int) => int as i64,
+                Constant::I64(int) => int,
+                Constant::Usize(int) => int as i64,
+                Constant::Isize(int) => int as i64,
+                Constant::Bool(bool) => bool as i64,
+                Constant::Date(date) => {
+                    (date.and_time(NaiveTime::MIN).timestamp_millis() / (86400 * 1000))
                     // Truncate to 32 bits
                     as i32 as i64
-            }
-            Constant::Timestamp(timestamp) => timestamp.timestamp_millis(),
+                }
+                Constant::Timestamp(timestamp) => timestamp.timestamp_millis(),
 
-            Constant::Unit | Constant::F32(_) | Constant::F64(_) | Constant::String(_) => {
-                unreachable!()
-            }
-        };
+                Constant::Unit
+                | Constant::F32(_)
+                | Constant::F64(_)
+                | Constant::String(_)
+                | Constant::Decimal(_) => {
+                    unreachable!()
+                }
+            };
 
-        builder.ins().iconst(ty, val)
+            builder.ins().iconst(ty, val)
+        }
     }
 
     fn add_expr<T, L>(&mut self, expr_id: ExprId, value: Value, ty: T, layout: L)
@@ -2263,6 +2274,7 @@ impl<'a> CodegenCtx<'a> {
                     | ColumnType::Ptr
                     | ColumnType::Date
                     | ColumnType::Timestamp
+                    | ColumnType::Decimal
                     | ColumnType::String => builder.ins().iconst(ty, 0),
                     ColumnType::F32 => builder.ins().f32const(0.0),
                     ColumnType::F64 => builder.ins().f64const(0.0),

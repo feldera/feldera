@@ -15,6 +15,7 @@ use cranelift::{
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use csv::StringRecord;
+use rust_decimal::Decimal;
 use std::{
     alloc::Layout,
     cell::RefCell,
@@ -360,6 +361,8 @@ impl Intrinsic {
 }
 */
 
+// FIXME: Allow the macro to take paths, e.g. `i64::debug` or
+// `decimal::write_to_string`
 intrinsics! {
     alloc = fn(usize, usize) -> ptr,
     dealloc = fn(ptr: mutable, usize, usize),
@@ -375,6 +378,7 @@ intrinsics! {
     f64_debug = fn(f64, ptr: mutable) -> bool,
     date_debug = fn(date, ptr: mutable) -> bool,
     timestamp_debug = fn(timestamp, ptr: mutable) -> bool,
+    decimal_debug = fn(u64, u64, ptr: mutable) -> bool,
 
     // Hash functions
     u8_hash = fn(ptr: mutable, u8),
@@ -386,6 +390,7 @@ intrinsics! {
     u64_hash = fn(ptr: mutable, u64),
     i64_hash = fn(ptr: mutable, i64),
     string_hash = fn(ptr: mutable, str),
+    decimal_hash = fn(ptr: mutable, u64, u64),
 
     // Write functions
     write_i8_to_string = fn(str: consume, i8) -> str,
@@ -400,6 +405,7 @@ intrinsics! {
     write_f64_to_string = fn(str: consume, f64) -> str,
     write_timestamp_to_string = fn(str: consume, timestamp) -> str,
     write_date_to_string = fn(str: consume, date) -> str,
+    write_decimal_to_string = fn(str: consume, u64, u64) -> str,
 
     // String functions
     string_eq = fn(str, str) -> bool,
@@ -557,6 +563,10 @@ intrinsics! {
 
     // IO
     print_str = fn(ptr, usize),
+
+    // Decimal functions
+    decimal_lt = fn(u64, u64, u64, u64) -> bool,
+    decimal_cmp = fn(u64, u64, u64, u64) -> i8,
 }
 
 /// Allocates memory with the given size and alignment
@@ -1008,7 +1018,7 @@ macro_rules! hash {
     ($($name:ident = $ty:ty),+ $(,)?) => {
         paste::paste! {
             $(
-                unsafe extern "C" fn [< $name _hash>](hasher: &mut &mut dyn Hasher, value: $ty) {
+                unsafe extern "C" fn [<$name _hash>](hasher: &mut &mut dyn Hasher, value: $ty) {
                     value.hash(hasher);
                 }
             )+
@@ -1330,7 +1340,7 @@ unsafe extern "C" fn print_str(ptr: *const u8, len: usize) {
     }
 }
 
-unsafe extern "C" fn round_sql_float_with_string_f32(float: f32, digits: i32) -> f32 {
+extern "C" fn round_sql_float_with_string_f32(float: f32, digits: i32) -> f32 {
     let digits = digits as usize;
     let formatted = format!("{float:.digits$}");
     match lexical::parse(formatted) {
@@ -1342,7 +1352,7 @@ unsafe extern "C" fn round_sql_float_with_string_f32(float: f32, digits: i32) ->
     }
 }
 
-unsafe extern "C" fn round_sql_float_with_string_f64(float: f32, digits: i32) -> f64 {
+extern "C" fn round_sql_float_with_string_f64(float: f32, digits: i32) -> f64 {
     let digits = digits as usize;
     let formatted = format!("{float:.digits$}");
     match lexical::parse(formatted) {
@@ -1352,4 +1362,47 @@ unsafe extern "C" fn round_sql_float_with_string_f64(float: f32, digits: i32) ->
             f64::NAN
         }
     }
+}
+
+#[inline]
+fn decimal_from_parts(lo: u64, hi: u64) -> Decimal {
+    let decimal = lo as u128 | (hi as u128) << 64;
+    Decimal::deserialize(decimal.to_le_bytes())
+}
+
+extern "C" fn write_decimal_to_string(mut string: ThinStr, lo: u64, hi: u64) -> ThinStr {
+    let decimal = decimal_from_parts(lo, hi);
+    if let Err(error) = write!(string, "{decimal}") {
+        tracing::error!("error while writing decimal {decimal} to string: {error}");
+    }
+
+    string
+}
+
+unsafe extern "C" fn decimal_debug(lo: u64, hi: u64, fmt: *mut fmt::Formatter<'_>) -> bool {
+    debug_assert!(!fmt.is_null());
+
+    let decimal = decimal_from_parts(lo, hi);
+    Debug::fmt(&decimal, &mut *fmt).is_ok()
+}
+
+extern "C" fn decimal_lt(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) -> bool {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+    lhs < rhs
+}
+
+extern "C" fn decimal_cmp(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) -> Ordering {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+    lhs.cmp(&rhs)
+}
+
+extern "C" fn decimal_hash(hasher: &mut &mut dyn Hasher, lo: u64, hi: u64) {
+    let decimal = decimal_from_parts(lo, hi);
+    decimal.hash(hasher);
 }

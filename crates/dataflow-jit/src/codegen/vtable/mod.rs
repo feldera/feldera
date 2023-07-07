@@ -178,7 +178,7 @@ vtable! {
 impl Codegen {
     #[tracing::instrument(skip(self))]
     fn codegen_layout_type_name(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating type_name vtable function for {layout_id}");
+        tracing::trace!("creating type_name vtable function for {layout_id}");
 
         // fn(*mut usize) -> *const u8
         let ptr_ty = self.module.isa().pointer_type();
@@ -238,7 +238,7 @@ impl Codegen {
 
     #[tracing::instrument(skip(self))]
     fn codegen_layout_size_of_children(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating size_of_children vtable function for {layout_id}");
+        tracing::trace!("creating size_of_children vtable function for {layout_id}");
 
         // fn(*const u8, *mut Context)
         let func_id = self.create_function([self.module.isa().pointer_type(); 2], None);

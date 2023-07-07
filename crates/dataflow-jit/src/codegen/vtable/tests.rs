@@ -399,6 +399,7 @@ mod proptests {
         strategy::Strategy, test_runner::TestCaseResult,
     };
     use proptest_derive::Arbitrary;
+    use rust_decimal::Decimal;
     use size_of::SizeOf;
     use std::{
         cmp::Ordering,
@@ -427,6 +428,7 @@ mod proptests {
         Date(i32),
         #[proptest(strategy = "timestamp().prop_map(|date| Column::Timestamp(date.timestamp()))")]
         Timestamp(i64),
+        Decimal(Decimal),
     }
 
     prop_compose! {
@@ -467,6 +469,7 @@ mod proptests {
                 Self::String(_) => ColumnType::String,
                 Self::Date(_) => ColumnType::Date,
                 Self::Timestamp(_) => ColumnType::Timestamp,
+                Self::Decimal(_) => ColumnType::Decimal,
             }
         }
 
@@ -542,6 +545,12 @@ mod proptests {
                     prop_assert_eq!(ptr as usize % align_of::<i64>(), 0);
                     ptr.cast::<i64>().write(timestamp);
                 }
+
+                Self::Decimal(decimal) => {
+                    prop_assert_eq!(ptr as usize % align_of::<u128>(), 0);
+                    ptr.cast::<u128>()
+                        .write(u128::from_le_bytes(decimal.serialize()));
+                }
             }
 
             Ok(())
@@ -551,14 +560,14 @@ mod proptests {
     impl PartialEq for Column {
         fn eq(&self, other: &Self) -> bool {
             match (self, other) {
-                (Self::U8(l0), Self::U8(r0)) => l0 == r0,
-                (Self::I8(l0), Self::I8(r0)) => l0 == r0,
-                (Self::U16(l0), Self::U16(r0)) => l0 == r0,
-                (Self::I16(l0), Self::I16(r0)) => l0 == r0,
-                (Self::U32(l0), Self::U32(r0)) => l0 == r0,
-                (Self::I32(l0), Self::I32(r0)) => l0 == r0,
-                (Self::U64(l0), Self::U64(r0)) => l0 == r0,
-                (Self::I64(l0), Self::I64(r0)) => l0 == r0,
+                (Self::U8(lhs), Self::U8(rhs)) => lhs == rhs,
+                (Self::I8(lhs), Self::I8(rhs)) => lhs == rhs,
+                (Self::U16(lhs), Self::U16(rhs)) => lhs == rhs,
+                (Self::I16(lhs), Self::I16(rhs)) => lhs == rhs,
+                (Self::U32(lhs), Self::U32(rhs)) => lhs == rhs,
+                (Self::I32(lhs), Self::I32(rhs)) => lhs == rhs,
+                (Self::U64(lhs), Self::U64(rhs)) => lhs == rhs,
+                (Self::I64(lhs), Self::I64(rhs)) => lhs == rhs,
                 (Self::F32(lhs), Self::F32(rhs)) => {
                     if lhs.is_nan() {
                         rhs.is_nan()
@@ -573,11 +582,12 @@ mod proptests {
                         lhs == rhs
                     }
                 }
-                (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
+                (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
                 // (Self::Usize(l0), Self::Usize(r0)) => l0 == r0,
-                (Self::String(l0), Self::String(r0)) => l0 == r0,
-                (Self::Date(l0), Self::Date(r0)) => l0 == r0,
-                (Self::Timestamp(l0), Self::Timestamp(r0)) => l0 == r0,
+                (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
+                (Self::Date(lhs), Self::Date(rhs)) => lhs == rhs,
+                (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs == rhs,
+                (Self::Decimal(lhs), Self::Decimal(rhs)) => lhs == rhs,
                 _ => unreachable!(),
             }
         }
@@ -594,14 +604,14 @@ mod proptests {
     impl Ord for Column {
         fn cmp(&self, other: &Self) -> Ordering {
             match (self, other) {
-                (Self::U8(l0), Self::U8(r0)) => l0.cmp(r0),
-                (Self::I8(l0), Self::I8(r0)) => l0.cmp(r0),
-                (Self::U16(l0), Self::U16(r0)) => l0.cmp(r0),
-                (Self::I16(l0), Self::I16(r0)) => l0.cmp(r0),
-                (Self::U32(l0), Self::U32(r0)) => l0.cmp(r0),
-                (Self::I32(l0), Self::I32(r0)) => l0.cmp(r0),
-                (Self::U64(l0), Self::U64(r0)) => l0.cmp(r0),
-                (Self::I64(l0), Self::I64(r0)) => l0.cmp(r0),
+                (Self::U8(lhs), Self::U8(rhs)) => lhs.cmp(rhs),
+                (Self::I8(lhs), Self::I8(rhs)) => lhs.cmp(rhs),
+                (Self::U16(lhs), Self::U16(rhs)) => lhs.cmp(rhs),
+                (Self::I16(lhs), Self::I16(rhs)) => lhs.cmp(rhs),
+                (Self::U32(lhs), Self::U32(rhs)) => lhs.cmp(rhs),
+                (Self::I32(lhs), Self::I32(rhs)) => lhs.cmp(rhs),
+                (Self::U64(lhs), Self::U64(rhs)) => lhs.cmp(rhs),
+                (Self::I64(lhs), Self::I64(rhs)) => lhs.cmp(rhs),
                 (Self::F32(lhs), Self::F32(rhs)) => match lhs.partial_cmp(rhs) {
                     Some(ordering) => ordering,
                     None => {
@@ -630,11 +640,12 @@ mod proptests {
                         }
                     }
                 },
-                (Self::Bool(l0), Self::Bool(r0)) => l0.cmp(r0),
+                (Self::Bool(lhs), Self::Bool(rhs)) => lhs.cmp(rhs),
                 // (Self::Usize(l0), Self::Usize(r0)) => l0.cmp(r0),
-                (Self::String(l0), Self::String(r0)) => l0.cmp(r0),
-                (Self::Date(l0), Self::Date(r0)) => l0.cmp(r0),
-                (Self::Timestamp(l0), Self::Timestamp(r0)) => l0.cmp(r0),
+                (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
+                (Self::Date(lhs), Self::Date(rhs)) => lhs.cmp(rhs),
+                (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs.cmp(rhs),
+                (Self::Decimal(lhs), Self::Decimal(rhs)) => lhs.cmp(rhs),
                 _ => unreachable!(),
             }
         }
@@ -758,9 +769,19 @@ mod proptests {
         prop_assert_eq!(row_hash_1, clone_hash);
 
         // TODO: Assert that these are correct
-        let _debug = format!("{row:?}");
-        let _size_of = row.size_of();
-        let _type_name = row.type_name();
+        let debug1 = format!("{row:?}");
+        let debug2 = format!("{row:?}");
+        prop_assert_eq!(debug1, debug2);
+
+        // TODO: Assert that these are correct
+        let size_of1 = row.size_of();
+        let size_of2 = row.size_of();
+        prop_assert_eq!(size_of1, size_of2);
+
+        // TODO: Assert that these are correct
+        let type_name1 = row.type_name();
+        let type_name2 = row.type_name();
+        prop_assert_eq!(type_name1, type_name2);
 
         // TODO: Test clone_into_slice and drop_slice
 
@@ -777,7 +798,12 @@ mod proptests {
     proptest! {
         #[test]
         fn vtables(value in any::<PropLayout>()) {
+            // crate::utils::test_logger();
+
+            tracing::debug!("testing layout in debug mode");
             test_layout(&value, true)?;
+
+            tracing::debug!("testing layout in release mode");
             test_layout(&value, false)?;
         }
     }
@@ -786,6 +812,7 @@ mod proptests {
         ($($test:ident = [$($column:expr),* $(,)?]),+ $(,)?) => {
             mod corpus {
                 use super::{test_layout, Column::*, MaybeColumn::*, PropLayout};
+                use std::str::FromStr;
 
                 $(
                     #[test]
@@ -861,5 +888,6 @@ mod proptests {
             Nonnull(U16(40022)), Nullable(I64(6376951496006352246), true), Nonnull(F32(-8.540973e-39)), Nullable(String("\"*wⷎ".to_owned()), false),
             Nullable(F64(0.0), false),
         ],
+        decimal = [Nullable(Decimal(rust_decimal::Decimal::from_str("-418972098951.06177358336234255").unwrap()), false)],
     }
 }
