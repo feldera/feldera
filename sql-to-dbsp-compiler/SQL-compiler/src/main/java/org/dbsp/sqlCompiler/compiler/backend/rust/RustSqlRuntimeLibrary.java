@@ -39,28 +39,14 @@ import java.util.*;
  */
 @SuppressWarnings({"FieldCanBeLocal", "MismatchedQueryAndUpdateOfCollection", "SpellCheckingInspection"})
 public class RustSqlRuntimeLibrary {
-    private final LinkedHashSet<String> aggregateFunctions = new LinkedHashSet<>();
     private final LinkedHashMap<String, DBSPOpcode> arithmeticFunctions = new LinkedHashMap<>();
     private final LinkedHashMap<String, DBSPOpcode> dateFunctions = new LinkedHashMap<>();
-    private final LinkedHashMap<String, DBSPOpcode> doubleFunctions = new LinkedHashMap<>();
     private final LinkedHashMap<String, DBSPOpcode> stringFunctions = new LinkedHashMap<>();
     private final LinkedHashMap<String, DBSPOpcode> booleanFunctions = new LinkedHashMap<>();
-    private final Set<DBSPOpcode> handWritten = new HashSet<>();
 
-    public static final RustSqlRuntimeLibrary INSTANCE =new RustSqlRuntimeLibrary();
+    public static final RustSqlRuntimeLibrary INSTANCE = new RustSqlRuntimeLibrary();
 
     protected RustSqlRuntimeLibrary() {
-        this.aggregateFunctions.add("count");
-        this.aggregateFunctions.add("sum");
-        this.aggregateFunctions.add("avg");
-        this.aggregateFunctions.add("agg_min");
-        this.aggregateFunctions.add("agg_max");
-        this.aggregateFunctions.add("some");
-        this.aggregateFunctions.add("any");
-        this.aggregateFunctions.add("every");
-        this.aggregateFunctions.add("array_agg");
-        this.aggregateFunctions.add("set_agg");
-
         this.arithmeticFunctions.put("eq", DBSPOpcode.EQ);
         this.arithmeticFunctions.put("neq", DBSPOpcode.NEQ);
         this.arithmeticFunctions.put("lt", DBSPOpcode.LT);
@@ -84,34 +70,6 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
         this.arithmeticFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
         this.arithmeticFunctions.put("mul_by_ref", DBSPOpcode.MUL_WEIGHT);
-
-        this.handWritten.add(DBSPOpcode.IS_FALSE);
-        this.handWritten.add(DBSPOpcode.IS_NOT_TRUE);
-        this.handWritten.add(DBSPOpcode.IS_NOT_FALSE);
-        this.handWritten.add(DBSPOpcode.IS_TRUE);
-        this.handWritten.add(DBSPOpcode.AND);
-        this.handWritten.add(DBSPOpcode.CONCAT);
-        this.handWritten.add(DBSPOpcode.OR);
-        this.handWritten.add(DBSPOpcode.MIN);
-        this.handWritten.add(DBSPOpcode.MAX);
-        this.handWritten.add(DBSPOpcode.DIV);
-        this.handWritten.add(DBSPOpcode.IS_DISTINCT);
-        this.handWritten.add(DBSPOpcode.IS_NOT_DISTINCT);
-        this.handWritten.add(DBSPOpcode.AGG_MAX);
-        this.handWritten.add(DBSPOpcode.AGG_ADD);
-        this.handWritten.add(DBSPOpcode.AGG_MIN);
-        this.handWritten.add(DBSPOpcode.MUL_WEIGHT);
-
-        this.doubleFunctions.put("eq", DBSPOpcode.EQ);
-        this.doubleFunctions.put("neq", DBSPOpcode.NEQ);
-        this.doubleFunctions.put("lt", DBSPOpcode.LT);
-        this.doubleFunctions.put("gt", DBSPOpcode.GT);
-        this.doubleFunctions.put("lte", DBSPOpcode.LTE);
-        this.doubleFunctions.put("gte", DBSPOpcode.GTE);
-        this.doubleFunctions.put("plus", DBSPOpcode.ADD);
-        this.doubleFunctions.put("minus", DBSPOpcode.SUB);
-        this.doubleFunctions.put("times", DBSPOpcode.MUL);
-        this.doubleFunctions.put("div", DBSPOpcode.DIV);
 
         this.dateFunctions.put("plus", DBSPOpcode.ADD);
         this.dateFunctions.put("minus", DBSPOpcode.SUB);
