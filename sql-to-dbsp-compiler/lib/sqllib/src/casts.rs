@@ -1,7 +1,7 @@
 //! Implementation of various cast operations.
 // Map of type names
 // * Bool -> b
-// * Date -> date      (no implementation yet)
+// * Date -> Date
 // * Decimal -> decimal
 // * Double -> d
 // * Float -> f
@@ -229,7 +229,7 @@ pub fn cast_to_bN_u(value: usize) -> Option<bool> {
 // TODO
 
 #[inline]
-pub fn cast_to_date_s(value: String) -> Date {
+pub fn cast_to_Date_s(value: String) -> Date {
     let dt = NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok();
     match dt {
         Some(value) => Date::new((value.and_hms_opt(0, 0, 0).unwrap().timestamp() / 86400) as i32),
@@ -241,19 +241,19 @@ pub fn cast_to_date_s(value: String) -> Date {
 /////////// cast to dateN
 
 #[inline]
-pub fn cast_to_dateN_nullN(_value: Option<()>) -> Option<Date> {
+pub fn cast_to_DateN_nullN(_value: Option<()>) -> Option<Date> {
     None
 }
 
 #[inline]
-pub fn cast_to_dateN_s(value: String) -> Option<Date> {
+pub fn cast_to_DateN_s(value: String) -> Option<Date> {
     let dt = NaiveDate::parse_from_str(&value, "%Y-%m-%d");
     dt.ok()
         .map(|value| Date::new((value.and_hms_opt(0, 0, 0).unwrap().timestamp() / 86400) as i32))
 }
 
 #[inline]
-pub fn cast_to_dateN_date(value: Date) -> Option<Date> {
+pub fn cast_to_DateN_date(value: Date) -> Option<Date> {
     Some(value)
 }
 
@@ -984,6 +984,11 @@ pub fn cast_to_geopointN_geopoint(value: GeoPoint) -> Option<GeoPoint> {
 
 /////////// cast to String
 
+// True if the size means "unlimited"
+fn is_unlimited_size(size: i32) -> bool {
+    size < 0
+}
+
 #[inline]
 pub fn s_helper<T>(value: Option<T>) -> String
 where
@@ -1005,36 +1010,40 @@ pub fn truncate(value: String, size: usize) -> String {
 /// Make sure the specified string has exactly the
 /// specified size.
 #[inline(always)]
-pub fn size_string(value: String, size: usize) -> String {
-    if size == 0 {
+pub fn size_string(value: String, size: i32) -> String {
+    if is_unlimited_size(size) {
         value.trim_end().to_string()
-    } else if value.len() == size {
-        value
-    } else if value.len() > size {
-        truncate(value, size)
-    }
-    else {
-        format!("{value:<size$}")
+    } else {
+        let sz = size as usize;
+        if value.len() == sz {
+            value
+        } else if value.len() > sz {
+            truncate(value, sz)
+        } else {
+            format!("{value:<sz$}")
+        }
     }
 }
 
 /// Make sure that the specified string does not exceed
 /// the specified size.
 #[inline(always)]
-pub fn limit_string(value: String, size: usize) -> String {
-    if size == 0 {
+pub fn limit_string(value: String, size: i32) -> String {
+    if is_unlimited_size(size) {
         value.trim_end().to_string()
-    }
-    else if value.len() < size {
-        value
     } else {
-        // TODO: this is legal only of all excess characters are spaces
-        truncate(value, size)
+        let sz = size as usize;
+        if value.len() < sz {
+            value
+        } else {
+            // TODO: this is legal only of all excess characters are spaces
+            truncate(value, sz)
+        }
     }
 }
 
 #[inline(always)]
-pub fn limit_or_size_string(value: String, size: usize, fixed: bool) -> String {
+pub fn limit_or_size_string(value: String, size: i32, fixed: bool) -> String {
     if fixed {
         size_string(value, size)
     } else {
@@ -1043,67 +1052,67 @@ pub fn limit_or_size_string(value: String, size: usize, fixed: bool) -> String {
 }
 
 #[inline]
-pub fn cast_to_s_b(value: bool, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_b(value: bool, size: i32, fixed: bool) -> String {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_bN(value: Option<bool>, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_bN(value: Option<bool>, size: i32, fixed: bool) -> String {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_decimal(value: Decimal, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_decimal(value: Decimal, size: i32, fixed: bool) -> String {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_decimalN(value: Option<Decimal>, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_decimalN(value: Option<Decimal>, size: i32, fixed: bool) -> String {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_d(value: F64, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_d(value: F64, size: i32, fixed: bool) -> String {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_dN(value: Option<F64>, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_dN(value: Option<F64>, size: i32, fixed: bool) -> String {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_f(value: F32, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_f(value: F32, size: i32, fixed: bool) -> String {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_fN(value: Option<F32>, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_fN(value: Option<F32>, size: i32, fixed: bool) -> String {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_s(value: String, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_s(value: String, size: i32, fixed: bool) -> String {
     let result = value;
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_sN(value: Option<String>, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_sN(value: Option<String>, size: i32, fixed: bool) -> String {
     let result = value.unwrap();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_Timestamp(value: Timestamp, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_Timestamp(value: Timestamp, size: i32, fixed: bool) -> String {
     let dt = value.to_dateTime();
     let month = dt.month();
     let day = dt.day();
@@ -1119,49 +1128,49 @@ pub fn cast_to_s_Timestamp(value: Timestamp, size: usize, fixed: bool) -> String
 }
 
 #[inline]
-pub fn cast_to_s_i(value: isize, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_i(value: isize, size: i32, fixed: bool) -> String {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i16(value: i16, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_i16(value: i16, size: i32, fixed: bool) -> String {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i16N(value: Option<i16>, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_i16N(value: Option<i16>, size: i32, fixed: bool) -> String {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i32(value: i32, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_i32(value: i32, size: i32, fixed: bool) -> String {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i32N(value: Option<i32>, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_i32N(value: Option<i32>, size: i32, fixed: bool) -> String {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i64(value: i64, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_i64(value: i64, size: i32, fixed: bool) -> String {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i64N(value: Option<i64>, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_i64N(value: Option<i64>, size: i32, fixed: bool) -> String {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_u(value: usize, size: usize, fixed: bool) -> String {
+pub fn cast_to_s_u(value: usize, size: i32, fixed: bool) -> String {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
@@ -1169,12 +1178,12 @@ pub fn cast_to_s_u(value: usize, size: usize, fixed: bool) -> String {
 /////////// cast to StringN
 
 #[inline]
-pub fn cast_to_sN_nullN(_value: Option<()>, _size: usize, _fixed: bool) -> Option<String> {
+pub fn cast_to_sN_nullN(_value: Option<()>, _size: i32, _fixed: bool) -> Option<String> {
     None
 }
 
 #[inline]
-pub fn sN_helper<T>(value: Option<T>, size: usize, fixed: bool) -> Option<String>
+pub fn sN_helper<T>(value: Option<T>, size: i32, fixed: bool) -> Option<String>
 where
     T: ToString,
 {
@@ -1182,100 +1191,100 @@ where
 }
 
 #[inline]
-pub fn cast_to_sN_b(value: bool, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_b(value: bool, size: i32, fixed: bool) -> Option<String> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_bN(value: Option<bool>, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_bN(value: Option<bool>, size: i32, fixed: bool) -> Option<String> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_decimal(value: Decimal, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_decimal(value: Decimal, size: i32, fixed: bool) -> Option<String> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_decimalN(value: Option<Decimal>, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_decimalN(value: Option<Decimal>, size: i32, fixed: bool) -> Option<String> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_d(value: F64, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_d(value: F64, size: i32, fixed: bool) -> Option<String> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_dN(value: Option<F64>, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_dN(value: Option<F64>, size: i32, fixed: bool) -> Option<String> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_f(value: F32, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_f(value: F32, size: i32, fixed: bool) -> Option<String> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_fN(value: Option<F32>, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_fN(value: Option<F32>, size: i32, fixed: bool) -> Option<String> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_s(value: String, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_s(value: String, size: i32, fixed: bool) -> Option<String> {
     Some(limit_or_size_string(value, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_sN(value: Option<String>, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_sN(value: Option<String>, size: i32, fixed: bool) -> Option<String> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_i(value: isize, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i(value: isize, size: i32, fixed: bool) -> Option<String> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_i16(value: i16, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i16(value: i16, size: i32, fixed: bool) -> Option<String> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_i16N(value: Option<i16>, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i16N(value: Option<i16>, size: i32, fixed: bool) -> Option<String> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_i32(value: i32, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i32(value: i32, size: i32, fixed: bool) -> Option<String> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_i32N(value: Option<i32>, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i32N(value: Option<i32>, size: i32, fixed: bool) -> Option<String> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_i64(value: i64, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i64(value: i64, size: i32, fixed: bool) -> Option<String> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_i64N(value: Option<i64>, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i64N(value: Option<i64>, size: i32, fixed: bool) -> Option<String> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_u(value: usize, size: usize, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_u(value: usize, size: i32, fixed: bool) -> Option<String> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
@@ -1967,7 +1976,7 @@ pub fn cast_to_Timestamp_s(value: String) -> Timestamp {
 }
 
 #[inline]
-pub fn cast_to_Timestamp_date(value: Date) -> Timestamp {
+pub fn cast_to_Timestamp_Date(value: Date) -> Timestamp {
     value.to_timestamp()
 }
 
@@ -2018,8 +2027,8 @@ pub fn cast_to_TimestampN_Timestamp(value: Timestamp) -> Option<Timestamp> {
 }
 
 #[inline]
-pub fn cast_to_TimestampN_dateN(value: Option<Date>) -> Option<Timestamp> {
-    value.map(cast_to_Timestamp_date)
+pub fn cast_to_TimestampN_DateN(value: Option<Date>) -> Option<Timestamp> {
+    value.map(cast_to_Timestamp_Date)
 }
 
 /////////// cast to u

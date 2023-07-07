@@ -34,11 +34,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 public class DBSPTypeString extends DBSPTypeBaseType {
+    public static final int UNLIMITED_PRECISION = -1;
+
     /**
      * Strings with unlimited precision.
      */
     public static final DBSPTypeString UNLIMITED_INSTANCE =
-            new DBSPTypeString(CalciteObject.EMPTY,0, false, false);
+            new DBSPTypeString(CalciteObject.EMPTY, UNLIMITED_PRECISION, false, false);
 
     /**
      * If true the width is fixed, i.e., this is a CHAR type.
@@ -46,7 +48,7 @@ public class DBSPTypeString extends DBSPTypeBaseType {
      */
     public final boolean fixed;
     /**
-     * Number of characters.  If 0 it means "unlimited".
+     * Number of characters.  If UNLIMITED_PRECISION it means "unlimited".
      * This is the size specified by CHAR or VARCHAR.
      */
     public final int precision;
@@ -107,7 +109,7 @@ public class DBSPTypeString extends DBSPTypeBaseType {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        if (this.precision == 0)
+        if (this.precision == UNLIMITED_PRECISION)
             return super.toString(builder);
         return builder.append(this.shortName())
                 .append("(")

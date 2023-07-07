@@ -83,7 +83,9 @@ addition to the normal way of `''`.
   </tr>
   <tr>
     <td><code>||</code></td>
-    <td>String concatenation (infix)</td>
+    <td>String concatenation (infix).  Note that concatenation does *not* strip trailing spaces
+        from CHAR(N) values, unlike other SQL dialects.  If such behavior is desired, an explicit
+        cast to `varchar` can be added.</td>
   </tr>
   <tr>
     <td><code>trim ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
@@ -96,8 +98,41 @@ addition to the normal way of `''`.
   <tr>
     <td><code>string LIKE pattern [ESCAPE escape-character]</code> and
         <code>string NOT LIKE pattern [ESCAPE escape-character]</code></td>
-    <td>The LIKE expression returns true if the string matches the supplied pattern. (As expected, the NOT LIKE expression returns false if LIKE returns true.  See below for details.
-    </td>
+    <td>The LIKE expression returns true if the string matches the supplied pattern.
+     (As expected, the <code>NOT LIKE</code> expression returns false if LIKE returns true.
+     See below for details.</td>
+  </tr>
+  <tr>
+    <td><code>POSITION(substring IN string)</code></td>
+    <td>Returns first starting index of the specified substring within string, or zero if it's not present.  First character has index 1.</td>
+  </tr>
+  <tr>
+    <td><code>CHAR_LENGTH(string)</code> or <code>CHARACTER_LENGTH(string)</code></td>
+    <td>Returns number of characters in the string.</td>
+  </tr>
+  <tr>
+    <td><code>ASCII ( string )</code></td>
+    <td>Returns the numeric code of the first character of the argument. In UTF8 encoding, returns the Unicode code point of the character. In other multibyte encodings, the argument must be an ASCII character.  Returns 0 if the string is empty.</td>
+  </tr>
+  <tr>
+    <td><code>CHR ( integer )</code></td>
+    <td>Returns a string containing the character with the given code. If the code is incorrect (e.g., negative), the result is an empty string.</td>
+  </tr>
+  <tr>
+    <td><code>REPEAT ( string, count )</code></td>
+    <td>Repeats string the specified number of times.  The result is an empty string for a negative or 0 count.</td>
+  </tr>
+  <tr>
+    <td><code>OVERLAY ( string PLACING newsubstring FROM start [ FOR remove ] )</code></td>
+    <td>Replaces the substring of string that starts at the start'th character and extends for remove characters with newsubstring. If count is omitted, it defaults to the length of newsubstring.  If 'start' is nott positive, the original string is unchanged.  If 'start' is bigger than the length of 'string', the result is the concatenation of the two strings.  If 'remove' is negative it is considered 0.</td>
+  </tr>
+  <tr>
+    <td><code>UPPER ( string )</code></td>
+    <td>Converts the string to all upper case.</td>
+  </tr>
+  <tr>
+    <td><code>LOWER ( string )</code></td>
+    <td>Converts the string to all lower case.</td>
   </tr>
 </table>
 

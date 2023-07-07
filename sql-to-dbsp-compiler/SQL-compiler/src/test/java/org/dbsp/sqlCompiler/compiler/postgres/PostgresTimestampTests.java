@@ -25,14 +25,12 @@ package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.InputOutputPair;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
-import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.regex.Matcher;
@@ -142,9 +140,9 @@ public class PostgresTimestampTests extends PostgresBaseTest {
         compiler.compileStatements(data);
     }
 
-    void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput, boolean optimize) {
+    void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
         query = "CREATE VIEW V AS " + query;
-        DBSPCompiler compiler = this.compileQuery(query, optimize);
+        DBSPCompiler compiler = this.compileQuery(query, true);
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPZSetLiteral.Contents input = compiler.getTableContents().getTableContents("TIMESTAMP_TBL");
         InputOutputPair streams = new InputOutputPair(input, expectedOutput);
@@ -153,76 +151,75 @@ public class PostgresTimestampTests extends PostgresBaseTest {
 
     @Test
     public void testTS() {
-        String[] data = {
-                //"Tue Feb 16 17:32:01 0097 BC",
-                "Thu Jan 01 00:00:00 1970",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:02 1997",
-                "Mon Feb 10 17:32:01.4 1997",
-                "Mon Feb 10 17:32:01.5 1997",
-                "Mon Feb 10 17:32:01.6 1997",
-                "Thu Jan 02 00:00:00 1997",
-                "Thu Jan 02 03:04:05 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Jun 10 17:32:01 1997",
-                "Sat Sep 22 18:19:20 2001",
-                "Wed Mar 15 08:14:01 2000",
-                "Wed Mar 15 13:14:02 2000",
-                "Wed Mar 15 12:14:03 2000",
-                "Wed Mar 15 03:14:04 2000",
-                "Wed Mar 15 02:14:05 2000",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:00 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Jun 10 18:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Feb 11 17:32:01 1997",
-                "Wed Feb 12 17:32:01 1997",
-                "Thu Feb 13 17:32:01 1997",
-                "Fri Feb 14 17:32:01 1997",
-                "Sat Feb 15 17:32:01 1997",
-                "Sun Feb 16 17:32:01 1997",
-                "Sat Feb 16 17:32:01 0097",
-                "Thu Feb 16 17:32:01 0597",
-                "Tue Feb 16 17:32:01 1097",
-                "Sat Feb 16 17:32:01 1697",
-                "Thu Feb 16 17:32:01 1797",
-                "Tue Feb 16 17:32:01 1897",
-                "Sun Feb 16 17:32:01 1997",
-                "Sat Feb 16 17:32:01 2097",
-                "Wed Feb 28 17:32:01 1996",
-                "Thu Feb 29 17:32:01 1996",
-                "Fri Mar 01 17:32:01 1996",
-                "Mon Dec 30 17:32:01 1996",
-                "Tue Dec 31 17:32:01 1996",
-                "Wed Jan 01 17:32:01 1997",
-                "Fri Feb 28 17:32:01 1997",
-                "Sat Mar 01 17:32:01 1997",
-                "Tue Dec 30 17:32:01 1997",
-                "Wed Dec 31 17:32:01 1997",
-                "Fri Dec 31 17:32:01 1999",
-                "Sat Jan 01 17:32:01 2000",
-                "Sun Dec 31 17:32:01 2000",
-                "Mon Jan 01 17:32:01 2001",
-                null
-        };
-        String query = "SELECT d1 FROM TIMESTAMP_TBL";
-        DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
-        this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
+        this.queryWithOutput("SELECT d1 FROM TIMESTAMP_TBL;\n" +
+                "             d1              \n" +
+                "-----------------------------\n" +
+                //" -infinity\n" +
+                //" infinity\n" +
+                " Thu Jan 01 00:00:00 1970\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:02 1997\n" +
+                " Mon Feb 10 17:32:01.4 1997\n" +
+                " Mon Feb 10 17:32:01.5 1997\n" +
+                " Mon Feb 10 17:32:01.6 1997\n" +
+                " Thu Jan 02 00:00:00 1997\n" +
+                " Thu Jan 02 03:04:05 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Tue Jun 10 17:32:01 1997\n" +
+                " Sat Sep 22 18:19:20 2001\n" +
+                " Wed Mar 15 08:14:01 2000\n" +
+                " Wed Mar 15 13:14:02 2000\n" +
+                " Wed Mar 15 12:14:03 2000\n" +
+                " Wed Mar 15 03:14:04 2000\n" +
+                " Wed Mar 15 02:14:05 2000\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:00 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Tue Jun 10 18:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Tue Feb 11 17:32:01 1997\n" +
+                " Wed Feb 12 17:32:01 1997\n" +
+                " Thu Feb 13 17:32:01 1997\n" +
+                " Fri Feb 14 17:32:01 1997\n" +
+                " Sat Feb 15 17:32:01 1997\n" +
+                " Sun Feb 16 17:32:01 1997\n" +
+                //" Tue Feb 16 17:32:01 0097 BC\n" +
+                " Sat Feb 16 17:32:01 0097\n" +
+                " Thu Feb 16 17:32:01 0597\n" +
+                " Tue Feb 16 17:32:01 1097\n" +
+                " Sat Feb 16 17:32:01 1697\n" +
+                " Thu Feb 16 17:32:01 1797\n" +
+                " Tue Feb 16 17:32:01 1897\n" +
+                " Sun Feb 16 17:32:01 1997\n" +
+                " Sat Feb 16 17:32:01 2097\n" +
+                " Wed Feb 28 17:32:01 1996\n" +
+                " Thu Feb 29 17:32:01 1996\n" +
+                " Fri Mar 01 17:32:01 1996\n" +
+                " Mon Dec 30 17:32:01 1996\n" +
+                " Tue Dec 31 17:32:01 1996\n" +
+                " Wed Jan 01 17:32:01 1997\n" +
+                " Fri Feb 28 17:32:01 1997\n" +
+                " Sat Mar 01 17:32:01 1997\n" +
+                " Tue Dec 30 17:32:01 1997\n" +
+                " Wed Dec 31 17:32:01 1997\n" +
+                " Fri Dec 31 17:32:01 1999\n" +
+                " Sat Jan 01 17:32:01 2000\n" +
+                " Sun Dec 31 17:32:01 2000\n" +
+                " Mon Jan 01 17:32:01 2001\n" +
+                "");
     }
 
     // BC: not supported by Calcite
@@ -248,267 +245,252 @@ public class PostgresTimestampTests extends PostgresBaseTest {
         // Calcite does not support 'without time zone'.
         // SELECT d1 FROM TIMESTAMP_TBL
         //   WHERE d1 > timestamp without time zone '1997-01-02';
-        String[] data = {
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:02 1997",
-                "Mon Feb 10 17:32:01.4 1997",
-                "Mon Feb 10 17:32:01.5 1997",
-                "Mon Feb 10 17:32:01.6 1997",
-                "Thu Jan 02 03:04:05 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Jun 10 17:32:01 1997",
-                "Sat Sep 22 18:19:20 2001",
-                "Wed Mar 15 08:14:01 2000",
-                "Wed Mar 15 13:14:02 2000",
-                "Wed Mar 15 12:14:03 2000",
-                "Wed Mar 15 03:14:04 2000",
-                "Wed Mar 15 02:14:05 2000",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:00 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Jun 10 18:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Feb 11 17:32:01 1997",
-                "Wed Feb 12 17:32:01 1997",
-                "Thu Feb 13 17:32:01 1997",
-                "Fri Feb 14 17:32:01 1997",
-                "Sat Feb 15 17:32:01 1997",
-                "Sun Feb 16 17:32:01 1997",
-                "Sun Feb 16 17:32:01 1997",
-                "Sat Feb 16 17:32:01 2097",
-                "Fri Feb 28 17:32:01 1997",
-                "Sat Mar 01 17:32:01 1997",
-                "Tue Dec 30 17:32:01 1997",
-                "Wed Dec 31 17:32:01 1997",
-                "Fri Dec 31 17:32:01 1999",
-                "Sat Jan 01 17:32:01 2000",
-                "Sun Dec 31 17:32:01 2000",
-                "Mon Jan 01 17:32:01 2001"
-        };
-        DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
-        String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
-                "   WHERE d1 > timestamp '1997-01-02'";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
+        this.queryWithOutput("SELECT d1 FROM TIMESTAMP_TBL\n" +
+                "   WHERE d1 > timestamp '1997-01-02';\n" +
+                "             d1             \n" +
+                "----------------------------\n" +
+                //" infinity\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:02 1997\n" +
+                " Mon Feb 10 17:32:01.4 1997\n" +
+                " Mon Feb 10 17:32:01.5 1997\n" +
+                " Mon Feb 10 17:32:01.6 1997\n" +
+                " Thu Jan 02 03:04:05 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Tue Jun 10 17:32:01 1997\n" +
+                " Sat Sep 22 18:19:20 2001\n" +
+                " Wed Mar 15 08:14:01 2000\n" +
+                " Wed Mar 15 13:14:02 2000\n" +
+                " Wed Mar 15 12:14:03 2000\n" +
+                " Wed Mar 15 03:14:04 2000\n" +
+                " Wed Mar 15 02:14:05 2000\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:00 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Tue Jun 10 18:32:01 1997\n" +
+                " Mon Feb 10 17:32:01 1997\n" +
+                " Tue Feb 11 17:32:01 1997\n" +
+                " Wed Feb 12 17:32:01 1997\n" +
+                " Thu Feb 13 17:32:01 1997\n" +
+                " Fri Feb 14 17:32:01 1997\n" +
+                " Sat Feb 15 17:32:01 1997\n" +
+                " Sun Feb 16 17:32:01 1997\n" +
+                " Sun Feb 16 17:32:01 1997\n" +
+                " Sat Feb 16 17:32:01 2097\n" +
+                " Fri Feb 28 17:32:01 1997\n" +
+                " Sat Mar 01 17:32:01 1997\n" +
+                " Tue Dec 30 17:32:01 1997\n" +
+                " Wed Dec 31 17:32:01 1997\n" +
+                " Fri Dec 31 17:32:01 1999\n" +
+                " Sat Jan 01 17:32:01 2000\n" +
+                " Sun Dec 31 17:32:01 2000\n" +
+                " Mon Jan 01 17:32:01 2001");
     }
     
     @Test
     public void testLt() {
         // SELECT d1 FROM TIMESTAMP_TBL
-        //   WHERE d1 < timestamp without time zone '1997-01-02';
-        String[] data = {
-                "Thu Jan 01 00:00:00 1970",
-                //"Tue Feb 16 17:32:01 0097 BC",
-                "Sat Feb 16 17:32:01 0097",
-                "Thu Feb 16 17:32:01 0597",
-                "Tue Feb 16 17:32:01 1097",
-                "Sat Feb 16 17:32:01 1697",
-                "Thu Feb 16 17:32:01 1797",
-                "Tue Feb 16 17:32:01 1897",
-                "Wed Feb 28 17:32:01 1996",
-                "Thu Feb 29 17:32:01 1996",
-                "Fri Mar 01 17:32:01 1996",
-                "Mon Dec 30 17:32:01 1996",
-                "Tue Dec 31 17:32:01 1996",
-                "Wed Jan 01 17:32:01 1997"
-        };
-        DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
-        String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
-                "   WHERE d1 < timestamp '1997-01-02'";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
+        this.queryWithOutput("SELECT d1 FROM TIMESTAMP_TBL\n" +
+                "   WHERE d1 < timestamp '1997-01-02';\n" +
+                "             d1              \n" +
+                "-----------------------------\n" +
+              //" -infinity\n" +
+                " Thu Jan 01 00:00:00 1970\n" +
+              //" Tue Feb 16 17:32:01 0097 BC\n" +
+                " Sat Feb 16 17:32:01 0097\n" +
+                " Thu Feb 16 17:32:01 0597\n" +
+                " Tue Feb 16 17:32:01 1097\n" +
+                " Sat Feb 16 17:32:01 1697\n" +
+                " Thu Feb 16 17:32:01 1797\n" +
+                " Tue Feb 16 17:32:01 1897\n" +
+                " Wed Feb 28 17:32:01 1996\n" +
+                " Thu Feb 29 17:32:01 1996\n" +
+                " Fri Mar 01 17:32:01 1996\n" +
+                " Mon Dec 30 17:32:01 1996\n" +
+                " Tue Dec 31 17:32:01 1996\n" +
+                " Wed Jan 01 17:32:01 1997");
     }
 
     @Test
     public void testEq() {
         // SELECT d1 FROM TIMESTAMP_TBL
         //   WHERE d1 = timestamp without time zone '1997-01-02';
-        String[] data = {
-                "Thu Jan 02 00:00:00 1997"
-        };
-        DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
-        String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
-                "   WHERE d1 = timestamp '1997-01-02'";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
+        this.queryWithOutput("SELECT d1 FROM TIMESTAMP_TBL\n" +
+                "   WHERE d1 = timestamp '1997-01-02';\n" +
+                "             d1              \n" +
+                "-----------------------------\n" +
+                "Thu Jan 02 00:00:00 1997");
     }
 
     @Test
     public void testNe() {
         // SELECT d1 FROM TIMESTAMP_TBL
         //   WHERE d1 != timestamp without time zone '1997-01-02';
-        String[] data = {
-                "Thu Jan 01 00:00:00 1970",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:02 1997",
-                "Mon Feb 10 17:32:01.4 1997",
-                "Mon Feb 10 17:32:01.5 1997",
-                "Mon Feb 10 17:32:01.6 1997",
-                "Thu Jan 02 03:04:05 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Jun 10 17:32:01 1997",
-                "Sat Sep 22 18:19:20 2001",
-                "Wed Mar 15 08:14:01 2000",
-                "Wed Mar 15 13:14:02 2000",
-                "Wed Mar 15 12:14:03 2000",
-                "Wed Mar 15 03:14:04 2000",
-                "Wed Mar 15 02:14:05 2000",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:00 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Jun 10 18:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Feb 11 17:32:01 1997",
-                "Wed Feb 12 17:32:01 1997",
-                "Thu Feb 13 17:32:01 1997",
-                "Fri Feb 14 17:32:01 1997",
-                "Sat Feb 15 17:32:01 1997",
-                "Sun Feb 16 17:32:01 1997",
-                //"Tue Feb 16 17:32:01 0097 BC",
-                "Sat Feb 16 17:32:01 0097",
-                "Thu Feb 16 17:32:01 0597",
-                "Tue Feb 16 17:32:01 1097",
-                "Sat Feb 16 17:32:01 1697",
-                "Thu Feb 16 17:32:01 1797",
-                "Tue Feb 16 17:32:01 1897",
-                "Sun Feb 16 17:32:01 1997",
-                "Sat Feb 16 17:32:01 2097",
-                "Wed Feb 28 17:32:01 1996",
-                "Thu Feb 29 17:32:01 1996",
-                "Fri Mar 01 17:32:01 1996",
-                "Mon Dec 30 17:32:01 1996",
-                "Tue Dec 31 17:32:01 1996",
-                "Wed Jan 01 17:32:01 1997",
-                "Fri Feb 28 17:32:01 1997",
-                "Sat Mar 01 17:32:01 1997",
-                "Tue Dec 30 17:32:01 1997",
-                "Wed Dec 31 17:32:01 1997",
-                "Fri Dec 31 17:32:01 1999",
-                "Sat Jan 01 17:32:01 2000",
-                "Sun Dec 31 17:32:01 2000",
-                "Mon Jan 01 17:32:01 2001",
-        };
-        DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
-        String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
-                "   WHERE d1 != timestamp '1997-01-02'";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
+        this.queryWithOutput("SELECT d1 FROM TIMESTAMP_TBL\n" +
+                "   WHERE d1 != timestamp '1997-01-02';\n" +
+                "             d1              \n" +
+                "-----------------------------\n" +
+                "Thu Jan 01 00:00:00 1970\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:02 1997\n" +
+                "Mon Feb 10 17:32:01.4 1997\n" +
+                "Mon Feb 10 17:32:01.5 1997\n" +
+                "Mon Feb 10 17:32:01.6 1997\n" +
+                "Thu Jan 02 03:04:05 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Tue Jun 10 17:32:01 1997\n" +
+                "Sat Sep 22 18:19:20 2001\n" +
+                "Wed Mar 15 08:14:01 2000\n" +
+                "Wed Mar 15 13:14:02 2000\n" +
+                "Wed Mar 15 12:14:03 2000\n" +
+                "Wed Mar 15 03:14:04 2000\n" +
+                "Wed Mar 15 02:14:05 2000\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:00 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Tue Jun 10 18:32:01 1997\n" +
+                "Mon Feb 10 17:32:01 1997\n" +
+                "Tue Feb 11 17:32:01 1997\n" +
+                "Wed Feb 12 17:32:01 1997\n" +
+                "Thu Feb 13 17:32:01 1997\n" +
+                "Fri Feb 14 17:32:01 1997\n" +
+                "Sat Feb 15 17:32:01 1997\n" +
+                "Sun Feb 16 17:32:01 1997\n" +
+                //"Tue Feb 16 17:32:01 0097 BC\n" +
+                "Sat Feb 16 17:32:01 0097\n" +
+                "Thu Feb 16 17:32:01 0597\n" +
+                "Tue Feb 16 17:32:01 1097\n" +
+                "Sat Feb 16 17:32:01 1697\n" +
+                "Thu Feb 16 17:32:01 1797\n" +
+                "Tue Feb 16 17:32:01 1897\n" +
+                "Sun Feb 16 17:32:01 1997\n" +
+                "Sat Feb 16 17:32:01 2097\n" +
+                "Wed Feb 28 17:32:01 1996\n" +
+                "Thu Feb 29 17:32:01 1996\n" +
+                "Fri Mar 01 17:32:01 1996\n" +
+                "Mon Dec 30 17:32:01 1996\n" +
+                "Tue Dec 31 17:32:01 1996\n" +
+                "Wed Jan 01 17:32:01 1997\n" +
+                "Fri Feb 28 17:32:01 1997\n" +
+                "Sat Mar 01 17:32:01 1997\n" +
+                "Tue Dec 30 17:32:01 1997\n" +
+                "Wed Dec 31 17:32:01 1997\n" +
+                "Fri Dec 31 17:32:01 1999\n" +
+                "Sat Jan 01 17:32:01 2000\n" +
+                "Sun Dec 31 17:32:01 2000\n" +
+                "Mon Jan 01 17:32:01 2001");
     }
 
     @Test
     public void testLeq() {
         // SELECT d1 FROM TIMESTAMP_TBL
         //   WHERE d1 <= timestamp without time zone '1997-01-02';
-        String[] data = {
-                "Thu Jan 01 00:00:00 1970",
-                "Thu Jan 02 00:00:00 1997",
-                //"Tue Feb 16 17:32:01 0097 BC",
-                "Sat Feb 16 17:32:01 0097",
-                "Thu Feb 16 17:32:01 0597",
-                "Tue Feb 16 17:32:01 1097",
-                "Sat Feb 16 17:32:01 1697",
-                "Thu Feb 16 17:32:01 1797",
-                "Tue Feb 16 17:32:01 1897",
-                "Wed Feb 28 17:32:01 1996",
-                "Thu Feb 29 17:32:01 1996",
-                "Fri Mar 01 17:32:01 1996",
-                "Mon Dec 30 17:32:01 1996",
-                "Tue Dec 31 17:32:01 1996",
-                "Wed Jan 01 17:32:01 1997"
-        };
-        DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
-        String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
-                "   WHERE d1 <= timestamp '1997-01-02'";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
+       this.queryWithOutput("SELECT d1 FROM TIMESTAMP_TBL\n" +
+                "   WHERE d1 <= timestamp '1997-01-02';\n" +
+               "             d1              \n" +
+               "-----------------------------\n" +
+               //" -infinity\n" +
+               " Thu Jan 01 00:00:00 1970\n" +
+               " Thu Jan 02 00:00:00 1997\n" +
+               //" Tue Feb 16 17:32:01 0097 BC\n" +
+               " Sat Feb 16 17:32:01 0097\n" +
+               " Thu Feb 16 17:32:01 0597\n" +
+               " Tue Feb 16 17:32:01 1097\n" +
+               " Sat Feb 16 17:32:01 1697\n" +
+               " Thu Feb 16 17:32:01 1797\n" +
+               " Tue Feb 16 17:32:01 1897\n" +
+               " Wed Feb 28 17:32:01 1996\n" +
+               " Thu Feb 29 17:32:01 1996\n" +
+               " Fri Mar 01 17:32:01 1996\n" +
+               " Mon Dec 30 17:32:01 1996\n" +
+               " Tue Dec 31 17:32:01 1996\n" +
+               " Wed Jan 01 17:32:01 1997");
     }
 
     @Test
     public void testGte() {
         // SELECT d1 FROM TIMESTAMP_TBL
         //   WHERE d1 >= timestamp without time zone '1997-01-02';
-        String[] data = {
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:02 1997",
-                "Mon Feb 10 17:32:01.4 1997",
-                "Mon Feb 10 17:32:01.5 1997",
-                "Mon Feb 10 17:32:01.6 1997",
-                "Thu Jan 02 00:00:00 1997",
-                "Thu Jan 02 03:04:05 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Jun 10 17:32:01 1997",
-                "Sat Sep 22 18:19:20 2001",
-                "Wed Mar 15 08:14:01 2000",
-                "Wed Mar 15 13:14:02 2000",
-                "Wed Mar 15 12:14:03 2000",
-                "Wed Mar 15 03:14:04 2000",
-                "Wed Mar 15 02:14:05 2000",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:00 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Jun 10 18:32:01 1997",
-                "Mon Feb 10 17:32:01 1997",
-                "Tue Feb 11 17:32:01 1997",
-                "Wed Feb 12 17:32:01 1997",
-                "Thu Feb 13 17:32:01 1997",
-                "Fri Feb 14 17:32:01 1997",
-                "Sat Feb 15 17:32:01 1997",
-                "Sun Feb 16 17:32:01 1997",
-                "Sun Feb 16 17:32:01 1997",
-                "Sat Feb 16 17:32:01 2097",
-                "Fri Feb 28 17:32:01 1997",
-                "Sat Mar 01 17:32:01 1997",
-                "Tue Dec 30 17:32:01 1997",
-                "Wed Dec 31 17:32:01 1997",
-                "Fri Dec 31 17:32:01 1999",
-                "Sat Jan 01 17:32:01 2000",
-                "Sun Dec 31 17:32:01 2000",
-                "Mon Jan 01 17:32:01 2001"
-        };
-        DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(convertTimestamp(d)), DBSPExpression.class);
-        String query = "SELECT d1 FROM TIMESTAMP_TBL\n" +
-                "   WHERE d1 >= timestamp '1997-01-02'";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
+       this.queryWithOutput("SELECT d1 FROM TIMESTAMP_TBL\n" +
+                "   WHERE d1 >= timestamp '1997-01-02';\n" +
+               "             d1             \n" +
+               "----------------------------\n" +
+             //" infinity\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:02 1997\n" +
+               " Mon Feb 10 17:32:01.4 1997\n" +
+               " Mon Feb 10 17:32:01.5 1997\n" +
+               " Mon Feb 10 17:32:01.6 1997\n" +
+               " Thu Jan 02 00:00:00 1997\n" +
+               " Thu Jan 02 03:04:05 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Tue Jun 10 17:32:01 1997\n" +
+               " Sat Sep 22 18:19:20 2001\n" +
+               " Wed Mar 15 08:14:01 2000\n" +
+               " Wed Mar 15 13:14:02 2000\n" +
+               " Wed Mar 15 12:14:03 2000\n" +
+               " Wed Mar 15 03:14:04 2000\n" +
+               " Wed Mar 15 02:14:05 2000\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:00 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Tue Jun 10 18:32:01 1997\n" +
+               " Mon Feb 10 17:32:01 1997\n" +
+               " Tue Feb 11 17:32:01 1997\n" +
+               " Wed Feb 12 17:32:01 1997\n" +
+               " Thu Feb 13 17:32:01 1997\n" +
+               " Fri Feb 14 17:32:01 1997\n" +
+               " Sat Feb 15 17:32:01 1997\n" +
+               " Sun Feb 16 17:32:01 1997\n" +
+               " Sun Feb 16 17:32:01 1997\n" +
+               " Sat Feb 16 17:32:01 2097\n" +
+               " Fri Feb 28 17:32:01 1997\n" +
+               " Sat Mar 01 17:32:01 1997\n" +
+               " Tue Dec 30 17:32:01 1997\n" +
+               " Wed Dec 31 17:32:01 1997\n" +
+               " Fri Dec 31 17:32:01 1999\n" +
+               " Sat Jan 01 17:32:01 2000\n" +
+               " Sun Dec 31 17:32:01 2000\n" +
+               " Mon Jan 01 17:32:01 2001");
     }
 
     static int intervalToSeconds(String interval) {
@@ -631,28 +613,18 @@ public class PostgresTimestampTests extends PostgresBaseTest {
                         new DBSPI32Literal(-intervalToSeconds(d) / 60, true)), DBSPExpression.class);
         String query = "SELECT TIMESTAMPDIFF(MINUTE, d1, timestamp '1997-01-02') AS diff\n" +
                 "   FROM TIMESTAMP_TBL WHERE d1 BETWEEN '1902-01-01' AND '2038-01-01'";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
-    }
-
-    /**
-     * Run query with and without optimizations.
-     * By running with optimizations disabled we test runtime evaluation of constant expressions,
-     * which should give the same result as the Calcite evaluation.
-     */
-    void testQueryTwice(String query, DBSPTimestampLiteral expectedValue) {
-        DBSPZSetLiteral.Contents zset = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(expectedValue));
-        this.testQuery(query, zset, false);
-        this.testQuery(query, zset, true);
+        this.testQuery(query, new DBSPZSetLiteral.Contents(results));
     }
 
     @Test
     public void testWeek() {
         // SELECT date_trunc( 'week', timestamp '2004-02-29 15:44:17.71393' ) AS week_trunc;
-        // Calcite DDL does not support date_trunc
-        // TODO: Postgres dives a different result from Calcite!
+        // Postgres gives a different result from Calcite!
         // This day was a Sunday.  Postgres returns 2004-02-23, the previous Monday.
-        String query = "SELECT FLOOR(timestamp '2004-02-29 15:44:17.71393' TO WEEK) AS week_trunc";
-        this.testQueryTwice(query, new DBSPTimestampLiteral("2004-02-29 00:00:00", false));
+        this.queryWithOutput("SELECT FLOOR(timestamp '2004-02-29 15:44:17.71393' TO WEEK) AS week_trunc;\n" +
+                "        week_trunc        \n" +
+                "--------------------------\n" +
+                " Mon Feb 29 00:00:00 2004");
     }
 
     // DATE_BIN not supported by Calcite.
@@ -742,7 +714,7 @@ public class PostgresTimestampTests extends PostgresBaseTest {
         DBSPExpression[] results = Linq.map(data, d ->
                 new DBSPTupleExpression(d == null ? DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32) :
                         new DBSPI32Literal(-intervalToSeconds(d), true)), DBSPExpression.class);
-        this.testQuery(query, new DBSPZSetLiteral.Contents(results), true);
+        this.testQuery(query, new DBSPZSetLiteral.Contents(results));
     }
 
     @Test
@@ -753,91 +725,79 @@ public class PostgresTimestampTests extends PostgresBaseTest {
         //   date_part( 'minute', d1) AS minute, date_part( 'second', d1) AS second
         //   FROM TIMESTAMP_TBL;
         // Postgres EXTRACT returns floats for seconds...
-        String query = "SELECT d1 as \"timestamp\",\n" +
+        this.queryWithOutput("SELECT d1 as \"timestamp\",\n" +
                 "EXTRACT(YEAR FROM d1) AS 'year', EXTRACT(month FROM d1) AS 'month',\n" +
                 "EXTRACT(day FROM d1) AS 'day', EXTRACT(hour FROM d1) AS 'hour',\n" +
                 "EXTRACT(minute FROM d1) AS 'minute', EXTRACT(second FROM d1) AS 'second'\n" +
-                "FROM TIMESTAMP_TBL";
-        String[] data = {
-            "Thu Jan 01 00:00:00 1970    |      1970 |     1 |   1 |    0 |      0 |      0",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:02 1997    |      1997 |     2 |  10 |   17 |     32 |      2",
-            "Mon Feb 10 17:32:01.4 1997  |      1997 |     2 |  10 |   17 |     32 |    1.4",
-            "Mon Feb 10 17:32:01.5 1997  |      1997 |     2 |  10 |   17 |     32 |    1.5",
-            "Mon Feb 10 17:32:01.6 1997  |      1997 |     2 |  10 |   17 |     32 |    1.6",
-            "Thu Jan 02 00:00:00 1997    |      1997 |     1 |   2 |    0 |      0 |      0",
-            "Thu Jan 02 03:04:05 1997    |      1997 |     1 |   2 |    3 |      4 |      5",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Tue Jun 10 17:32:01 1997    |      1997 |     6 |  10 |   17 |     32 |      1",
-            "Sat Sep 22 18:19:20 2001    |      2001 |     9 |  22 |   18 |     19 |     20",
-            "Wed Mar 15 08:14:01 2000    |      2000 |     3 |  15 |    8 |     14 |      1",
-            "Wed Mar 15 13:14:02 2000    |      2000 |     3 |  15 |   13 |     14 |      2",
-            "Wed Mar 15 12:14:03 2000    |      2000 |     3 |  15 |   12 |     14 |      3",
-            "Wed Mar 15 03:14:04 2000    |      2000 |     3 |  15 |    3 |     14 |      4",
-            "Wed Mar 15 02:14:05 2000    |      2000 |     3 |  15 |    2 |     14 |      5",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:00 1997    |      1997 |     2 |  10 |   17 |     32 |      0",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Tue Jun 10 18:32:01 1997    |      1997 |     6 |  10 |   18 |     32 |      1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1",
-            "Tue Feb 11 17:32:01 1997    |      1997 |     2 |  11 |   17 |     32 |      1",
-            "Wed Feb 12 17:32:01 1997    |      1997 |     2 |  12 |   17 |     32 |      1",
-            "Thu Feb 13 17:32:01 1997    |      1997 |     2 |  13 |   17 |     32 |      1",
-            "Fri Feb 14 17:32:01 1997    |      1997 |     2 |  14 |   17 |     32 |      1",
-            "Sat Feb 15 17:32:01 1997    |      1997 |     2 |  15 |   17 |     32 |      1",
-            "Sun Feb 16 17:32:01 1997    |      1997 |     2 |  16 |   17 |     32 |      1",
-            "Sat Feb 16 17:32:01 0097    |        97 |     2 |  16 |   17 |     32 |      1",
-            "Thu Feb 16 17:32:01 0597    |       597 |     2 |  16 |   17 |     32 |      1",
-            "Tue Feb 16 17:32:01 1097    |      1097 |     2 |  16 |   17 |     32 |      1",
-            "Sat Feb 16 17:32:01 1697    |      1697 |     2 |  16 |   17 |     32 |      1",
-            "Thu Feb 16 17:32:01 1797    |      1797 |     2 |  16 |   17 |     32 |      1",
-            "Tue Feb 16 17:32:01 1897    |      1897 |     2 |  16 |   17 |     32 |      1",
-            "Sun Feb 16 17:32:01 1997    |      1997 |     2 |  16 |   17 |     32 |      1",
-            "Sat Feb 16 17:32:01 2097    |      2097 |     2 |  16 |   17 |     32 |      1",
-            "Wed Feb 28 17:32:01 1996    |      1996 |     2 |  28 |   17 |     32 |      1",
-            "Thu Feb 29 17:32:01 1996    |      1996 |     2 |  29 |   17 |     32 |      1",
-            "Fri Mar 01 17:32:01 1996    |      1996 |     3 |   1 |   17 |     32 |      1",
-            "Mon Dec 30 17:32:01 1996    |      1996 |    12 |  30 |   17 |     32 |      1",
-            "Tue Dec 31 17:32:01 1996    |      1996 |    12 |  31 |   17 |     32 |      1",
-            "Wed Jan 01 17:32:01 1997    |      1997 |     1 |   1 |   17 |     32 |      1",
-            "Fri Feb 28 17:32:01 1997    |      1997 |     2 |  28 |   17 |     32 |      1",
-            "Sat Mar 01 17:32:01 1997    |      1997 |     3 |   1 |   17 |     32 |      1",
-            "Tue Dec 30 17:32:01 1997    |      1997 |    12 |  30 |   17 |     32 |      1",
-            "Wed Dec 31 17:32:01 1997    |      1997 |    12 |  31 |   17 |     32 |      1",
-            "Fri Dec 31 17:32:01 1999    |      1999 |    12 |  31 |   17 |     32 |      1",
-            "Sat Jan 01 17:32:01 2000    |      2000 |     1 |   1 |   17 |     32 |      1",
-            "Sun Dec 31 17:32:01 2000    |      2000 |    12 |  31 |   17 |     32 |      1",
-            "Mon Jan 01 17:32:01 2001    |      2001 |     1 |   1 |   17 |     32 |      1"      
-        };
-        int columns = 7;
-        DBSPExpression[] tuples = new DBSPExpression[data.length+1]; // last one with nulls.
-        for (int j = 0; j < data.length; j++) {
-            String d = data[j];
-            String[] fields = d.split("[|]");
-            Assert.assertEquals(columns, fields.length);
-            DBSPExpression[] expressions = new DBSPExpression[columns];
-            expressions[0] = convertTimestamp(fields[0].trim());
-            for (int i = 1; i < columns - 1; i++)
-                expressions[i] = new DBSPI64Literal(Long.parseLong(fields[i].trim()), true);
-            expressions[columns - 1] = new DBSPI64Literal((long)Double.parseDouble(fields[6].trim()), true);
-            tuples[j] = new DBSPTupleExpression(expressions);
-        }
-        DBSPExpression none = DBSPLiteral.none(DBSPTypeInteger.SIGNED_64.setMayBeNull(true));
-        tuples[data.length] = new DBSPTupleExpression(convertTimestamp(null), none, none, none, none, none, none);
-        this.testQuery(query, new DBSPZSetLiteral.Contents(tuples), true);
+                "FROM TIMESTAMP_TBL;\n" +
+                "          timestamp          |   year    | month | day | hour | minute | second \n" +
+                "-----------------------------+-----------+-------+-----+------+--------+--------\n" +
+              //" -infinity                   | -Infinity |       |     |      |        |       \n" +
+              //" infinity                    |  Infinity |       |     |      |        |       \n" +
+                " Thu Jan 01 00:00:00 1970    |      1970 |     1 |   1 |    0 |      0 |      0\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:02 1997    |      1997 |     2 |  10 |   17 |     32 |      2\n" +
+                " Mon Feb 10 17:32:01.4 1997  |      1997 |     2 |  10 |   17 |     32 |    1\n" + // 1.4
+                " Mon Feb 10 17:32:01.5 1997  |      1997 |     2 |  10 |   17 |     32 |    1\n" + // 1.5
+                " Mon Feb 10 17:32:01.6 1997  |      1997 |     2 |  10 |   17 |     32 |    1\n" + // 1.6
+                " Thu Jan 02 00:00:00 1997    |      1997 |     1 |   2 |    0 |      0 |      0\n" +
+                " Thu Jan 02 03:04:05 1997    |      1997 |     1 |   2 |    3 |      4 |      5\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Tue Jun 10 17:32:01 1997    |      1997 |     6 |  10 |   17 |     32 |      1\n" +
+                " Sat Sep 22 18:19:20 2001    |      2001 |     9 |  22 |   18 |     19 |     20\n" +
+                " Wed Mar 15 08:14:01 2000    |      2000 |     3 |  15 |    8 |     14 |      1\n" +
+                " Wed Mar 15 13:14:02 2000    |      2000 |     3 |  15 |   13 |     14 |      2\n" +
+                " Wed Mar 15 12:14:03 2000    |      2000 |     3 |  15 |   12 |     14 |      3\n" +
+                " Wed Mar 15 03:14:04 2000    |      2000 |     3 |  15 |    3 |     14 |      4\n" +
+                " Wed Mar 15 02:14:05 2000    |      2000 |     3 |  15 |    2 |     14 |      5\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:00 1997    |      1997 |     2 |  10 |   17 |     32 |      0\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Tue Jun 10 18:32:01 1997    |      1997 |     6 |  10 |   18 |     32 |      1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |     2 |  10 |   17 |     32 |      1\n" +
+                " Tue Feb 11 17:32:01 1997    |      1997 |     2 |  11 |   17 |     32 |      1\n" +
+                " Wed Feb 12 17:32:01 1997    |      1997 |     2 |  12 |   17 |     32 |      1\n" +
+                " Thu Feb 13 17:32:01 1997    |      1997 |     2 |  13 |   17 |     32 |      1\n" +
+                " Fri Feb 14 17:32:01 1997    |      1997 |     2 |  14 |   17 |     32 |      1\n" +
+                " Sat Feb 15 17:32:01 1997    |      1997 |     2 |  15 |   17 |     32 |      1\n" +
+                " Sun Feb 16 17:32:01 1997    |      1997 |     2 |  16 |   17 |     32 |      1\n" +
+              //" Tue Feb 16 17:32:01 0097 BC |       -97 |     2 |  16 |   17 |     32 |      1\n" +
+                " Sat Feb 16 17:32:01 0097    |        97 |     2 |  16 |   17 |     32 |      1\n" +
+                " Thu Feb 16 17:32:01 0597    |       597 |     2 |  16 |   17 |     32 |      1\n" +
+                " Tue Feb 16 17:32:01 1097    |      1097 |     2 |  16 |   17 |     32 |      1\n" +
+                " Sat Feb 16 17:32:01 1697    |      1697 |     2 |  16 |   17 |     32 |      1\n" +
+                " Thu Feb 16 17:32:01 1797    |      1797 |     2 |  16 |   17 |     32 |      1\n" +
+                " Tue Feb 16 17:32:01 1897    |      1897 |     2 |  16 |   17 |     32 |      1\n" +
+                " Sun Feb 16 17:32:01 1997    |      1997 |     2 |  16 |   17 |     32 |      1\n" +
+                " Sat Feb 16 17:32:01 2097    |      2097 |     2 |  16 |   17 |     32 |      1\n" +
+                " Wed Feb 28 17:32:01 1996    |      1996 |     2 |  28 |   17 |     32 |      1\n" +
+                " Thu Feb 29 17:32:01 1996    |      1996 |     2 |  29 |   17 |     32 |      1\n" +
+                " Fri Mar 01 17:32:01 1996    |      1996 |     3 |   1 |   17 |     32 |      1\n" +
+                " Mon Dec 30 17:32:01 1996    |      1996 |    12 |  30 |   17 |     32 |      1\n" +
+                " Tue Dec 31 17:32:01 1996    |      1996 |    12 |  31 |   17 |     32 |      1\n" +
+                " Wed Jan 01 17:32:01 1997    |      1997 |     1 |   1 |   17 |     32 |      1\n" +
+                " Fri Feb 28 17:32:01 1997    |      1997 |     2 |  28 |   17 |     32 |      1\n" +
+                " Sat Mar 01 17:32:01 1997    |      1997 |     3 |   1 |   17 |     32 |      1\n" +
+                " Tue Dec 30 17:32:01 1997    |      1997 |    12 |  30 |   17 |     32 |      1\n" +
+                " Wed Dec 31 17:32:01 1997    |      1997 |    12 |  31 |   17 |     32 |      1\n" +
+                " Fri Dec 31 17:32:01 1999    |      1999 |    12 |  31 |   17 |     32 |      1\n" +
+                " Sat Jan 01 17:32:01 2000    |      2000 |     1 |   1 |   17 |     32 |      1\n" +
+                " Sun Dec 31 17:32:01 2000    |      2000 |    12 |  31 |   17 |     32 |      1\n" +
+                " Mon Jan 01 17:32:01 2001    |      2001 |     1 |   1 |   17 |     32 |      1\n" +
+                "                             |           |       |     |      |        |       ");
     }
     
     @Test
@@ -846,91 +806,80 @@ public class PostgresTimestampTests extends PostgresBaseTest {
         //   date_part( 'quarter', d1) AS quarter, date_part( 'msec', d1) AS msec,
         //   date_part( 'usec', d1) AS usec
         //   FROM TIMESTAMP_TBL;
-        String query = "SELECT d1 as \"timestamp\",\n" +
+        this.queryWithOutput("SELECT d1 as \"timestamp\",\n" +
                 "   EXTRACT(quarter FROM d1) AS 'quarter', EXTRACT(MILLISECOND FROM d1) AS 'msec',\n" +
                 "   EXTRACT(MICROSECOND FROM d1) AS 'usec'\n" +
-                "   FROM TIMESTAMP_TBL";
-        String[] data = {
-                "Thu Jan 01 00:00:00 1970    |       1 |     0 |        0",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:02 1997    |       1 |  2000 |  2000000",
-                "Mon Feb 10 17:32:01.4 1997  |       1 |  1400 |  1400000",
-                "Mon Feb 10 17:32:01.5 1997  |       1 |  1500 |  1500000",
-                "Mon Feb 10 17:32:01.6 1997  |       1 |  1600 |  1600000",
-                "Thu Jan 02 00:00:00 1997    |       1 |     0 |        0",
-                "Thu Jan 02 03:04:05 1997    |       1 |  5000 |  5000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Tue Jun 10 17:32:01 1997    |       2 |  1000 |  1000000",
-                "Sat Sep 22 18:19:20 2001    |       3 | 20000 | 20000000",
-                "Wed Mar 15 08:14:01 2000    |       1 |  1000 |  1000000",
-                "Wed Mar 15 13:14:02 2000    |       1 |  2000 |  2000000",
-                "Wed Mar 15 12:14:03 2000    |       1 |  3000 |  3000000",
-                "Wed Mar 15 03:14:04 2000    |       1 |  4000 |  4000000",
-                "Wed Mar 15 02:14:05 2000    |       1 |  5000 |  5000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:00 1997    |       1 |     0 |        0",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Tue Jun 10 18:32:01 1997    |       2 |  1000 |  1000000",
-                "Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Tue Feb 11 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Wed Feb 12 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Thu Feb 13 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Fri Feb 14 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Sat Feb 15 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Sun Feb 16 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Sat Feb 16 17:32:01 0097    |       1 |  1000 |  1000000",
-                "Thu Feb 16 17:32:01 0597    |       1 |  1000 |  1000000",
-                "Tue Feb 16 17:32:01 1097    |       1 |  1000 |  1000000",
-                "Sat Feb 16 17:32:01 1697    |       1 |  1000 |  1000000",
-                "Thu Feb 16 17:32:01 1797    |       1 |  1000 |  1000000",
-                "Tue Feb 16 17:32:01 1897    |       1 |  1000 |  1000000",
-                "Sun Feb 16 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Sat Feb 16 17:32:01 2097    |       1 |  1000 |  1000000",
-                "Wed Feb 28 17:32:01 1996    |       1 |  1000 |  1000000",
-                "Thu Feb 29 17:32:01 1996    |       1 |  1000 |  1000000",
-                "Fri Mar 01 17:32:01 1996    |       1 |  1000 |  1000000",
-                "Mon Dec 30 17:32:01 1996    |       4 |  1000 |  1000000",
-                "Tue Dec 31 17:32:01 1996    |       4 |  1000 |  1000000",
-                "Wed Jan 01 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Fri Feb 28 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Sat Mar 01 17:32:01 1997    |       1 |  1000 |  1000000",
-                "Tue Dec 30 17:32:01 1997    |       4 |  1000 |  1000000",
-                "Wed Dec 31 17:32:01 1997    |       4 |  1000 |  1000000",
-                "Fri Dec 31 17:32:01 1999    |       4 |  1000 |  1000000",
-                "Sat Jan 01 17:32:01 2000    |       1 |  1000 |  1000000",
-                "Sun Dec 31 17:32:01 2000    |       4 |  1000 |  1000000",
-                "Mon Jan 01 17:32:01 2001    |       1 |  1000 |  1000000"
-        };
-        int columns = 4;
-        DBSPExpression[] tuples = new DBSPExpression[data.length+1]; // last one with nulls.
-        for (int j = 0; j < data.length; j++) {
-            String d = data[j];
-            String[] fields = d.split("[|]");
-            Assert.assertEquals(columns, fields.length);
-            DBSPExpression[] expressions = new DBSPExpression[columns];
-            expressions[0] = convertTimestamp(fields[0].trim());
-            for (int i = 1; i < columns; i++)
-                expressions[i] = new DBSPI64Literal(Long.parseLong(fields[i].trim()), true);
-            tuples[j] = new DBSPTupleExpression(expressions);
-        }
-        DBSPExpression none = DBSPLiteral.none(DBSPTypeInteger.SIGNED_64.setMayBeNull(true));
-        tuples[data.length] = new DBSPTupleExpression(convertTimestamp(null), none, none, none);
-        this.testQuery(query, new DBSPZSetLiteral.Contents(tuples), true);
+                "   FROM TIMESTAMP_TBL;\n" +
+                "          timestamp          | quarter | msec  |   usec   \n" +
+                "-----------------------------+---------+-------+----------\n" +
+              //" -infinity                   |         |       |         \n" +
+              //" infinity                    |         |       |         \n" +
+                " Thu Jan 01 00:00:00 1970    |       1 |     0 |        0\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:02 1997    |       1 |  2000 |  2000000\n" +
+                " Mon Feb 10 17:32:01.4 1997  |       1 |  1400 |  1400000\n" +
+                " Mon Feb 10 17:32:01.5 1997  |       1 |  1500 |  1500000\n" +
+                " Mon Feb 10 17:32:01.6 1997  |       1 |  1600 |  1600000\n" +
+                " Thu Jan 02 00:00:00 1997    |       1 |     0 |        0\n" +
+                " Thu Jan 02 03:04:05 1997    |       1 |  5000 |  5000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Tue Jun 10 17:32:01 1997    |       2 |  1000 |  1000000\n" +
+                " Sat Sep 22 18:19:20 2001    |       3 | 20000 | 20000000\n" +
+                " Wed Mar 15 08:14:01 2000    |       1 |  1000 |  1000000\n" +
+                " Wed Mar 15 13:14:02 2000    |       1 |  2000 |  2000000\n" +
+                " Wed Mar 15 12:14:03 2000    |       1 |  3000 |  3000000\n" +
+                " Wed Mar 15 03:14:04 2000    |       1 |  4000 |  4000000\n" +
+                " Wed Mar 15 02:14:05 2000    |       1 |  5000 |  5000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:00 1997    |       1 |     0 |        0\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Tue Jun 10 18:32:01 1997    |       2 |  1000 |  1000000\n" +
+                " Mon Feb 10 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Tue Feb 11 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Wed Feb 12 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Thu Feb 13 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Fri Feb 14 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Sat Feb 15 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Sun Feb 16 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+              //" Tue Feb 16 17:32:01 0097 BC |       1 |  1000 |  1000000\n" +
+                " Sat Feb 16 17:32:01 0097    |       1 |  1000 |  1000000\n" +
+                " Thu Feb 16 17:32:01 0597    |       1 |  1000 |  1000000\n" +
+                " Tue Feb 16 17:32:01 1097    |       1 |  1000 |  1000000\n" +
+                " Sat Feb 16 17:32:01 1697    |       1 |  1000 |  1000000\n" +
+                " Thu Feb 16 17:32:01 1797    |       1 |  1000 |  1000000\n" +
+                " Tue Feb 16 17:32:01 1897    |       1 |  1000 |  1000000\n" +
+                " Sun Feb 16 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Sat Feb 16 17:32:01 2097    |       1 |  1000 |  1000000\n" +
+                " Wed Feb 28 17:32:01 1996    |       1 |  1000 |  1000000\n" +
+                " Thu Feb 29 17:32:01 1996    |       1 |  1000 |  1000000\n" +
+                " Fri Mar 01 17:32:01 1996    |       1 |  1000 |  1000000\n" +
+                " Mon Dec 30 17:32:01 1996    |       4 |  1000 |  1000000\n" +
+                " Tue Dec 31 17:32:01 1996    |       4 |  1000 |  1000000\n" +
+                " Wed Jan 01 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Fri Feb 28 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Sat Mar 01 17:32:01 1997    |       1 |  1000 |  1000000\n" +
+                " Tue Dec 30 17:32:01 1997    |       4 |  1000 |  1000000\n" +
+                " Wed Dec 31 17:32:01 1997    |       4 |  1000 |  1000000\n" +
+                " Fri Dec 31 17:32:01 1999    |       4 |  1000 |  1000000\n" +
+                " Sat Jan 01 17:32:01 2000    |       1 |  1000 |  1000000\n" +
+                " Sun Dec 31 17:32:01 2000    |       4 |  1000 |  1000000\n" +
+                " Mon Jan 01 17:32:01 2001    |       1 |  1000 |  1000000\n" +
+                "                             |         |       |         ");
     }
-    
+
     @Test
     public void testDay() {
         // SELECT d1 as "timestamp",
@@ -938,95 +887,163 @@ public class PostgresTimestampTests extends PostgresBaseTest {
         //   date_part( 'isodow', d1) AS isodow, date_part( 'dow', d1) AS dow,
         //   date_part( 'doy', d1) AS doy
         //   FROM TIMESTAMP_TBL;
-        String query = "SELECT d1 as \"timestamp\",\n" +
+        // had to adjust column 4.
+        this.queryWithOutput("SELECT d1 as \"timestamp\",\n" +
                 "   extract(isoyear FROM d1) AS 'isoyear', extract(week FROM d1) AS 'week',\n" +
                 "   extract(isodow FROM d1) AS 'isodow', extract(dow FROM d1) AS 'dow',\n" +
                 "   extract(doy FROM d1) AS 'doy'\n" +
-                "   FROM TIMESTAMP_TBL";
-        String[] data = {
-            "Thu Jan 01 00:00:00 1970    |      1970 |    1 |      4 |   4 |   1",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:02 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01.4 1997  |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01.5 1997  |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01.6 1997  |      1997 |    7 |      1 |   1 |  41",
-            "Thu Jan 02 00:00:00 1997    |      1997 |    1 |      4 |   4 |   2",
-            "Thu Jan 02 03:04:05 1997    |      1997 |    1 |      4 |   4 |   2",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Tue Jun 10 17:32:01 1997    |      1997 |   24 |      2 |   2 | 161",
-            "Sat Sep 22 18:19:20 2001    |      2001 |   38 |      6 |   6 | 265",
-            "Wed Mar 15 08:14:01 2000    |      2000 |   11 |      3 |   3 |  75",
-            "Wed Mar 15 13:14:02 2000    |      2000 |   11 |      3 |   3 |  75",
-            "Wed Mar 15 12:14:03 2000    |      2000 |   11 |      3 |   3 |  75",
-            "Wed Mar 15 03:14:04 2000    |      2000 |   11 |      3 |   3 |  75",
-            "Wed Mar 15 02:14:05 2000    |      2000 |   11 |      3 |   3 |  75",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:00 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Tue Jun 10 18:32:01 1997    |      1997 |   24 |      2 |   2 | 161",
-            "Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   1 |  41",
-            "Tue Feb 11 17:32:01 1997    |      1997 |    7 |      2 |   2 |  42",
-            "Wed Feb 12 17:32:01 1997    |      1997 |    7 |      3 |   3 |  43",
-            "Thu Feb 13 17:32:01 1997    |      1997 |    7 |      4 |   4 |  44",
-            "Fri Feb 14 17:32:01 1997    |      1997 |    7 |      5 |   5 |  45",
-            "Sat Feb 15 17:32:01 1997    |      1997 |    7 |      6 |   6 |  46",
-            "Sun Feb 16 17:32:01 1997    |      1997 |    7 |      7 |   0 |  47",
-            //"Tue Feb 16 17:32:01 0097 BC |       -97 |    7 |      2 |   2 |  47",
-            "Sat Feb 16 17:32:01 0097    |        97 |    7 |      6 |   6 |  47",
-            "Thu Feb 16 17:32:01 0597    |       597 |    7 |      4 |   4 |  47",
-            "Tue Feb 16 17:32:01 1097    |      1097 |    7 |      2 |   2 |  47",
-            "Sat Feb 16 17:32:01 1697    |      1697 |    7 |      6 |   6 |  47",
-            "Thu Feb 16 17:32:01 1797    |      1797 |    7 |      4 |   4 |  47",
-            "Tue Feb 16 17:32:01 1897    |      1897 |    7 |      2 |   2 |  47",
-            "Sun Feb 16 17:32:01 1997    |      1997 |    7 |      7 |   0 |  47",
-            "Sat Feb 16 17:32:01 2097    |      2097 |    7 |      6 |   6 |  47",
-            "Wed Feb 28 17:32:01 1996    |      1996 |    9 |      3 |   3 |  59",
-            "Thu Feb 29 17:32:01 1996    |      1996 |    9 |      4 |   4 |  60",
-            "Fri Mar 01 17:32:01 1996    |      1996 |    9 |      5 |   5 |  61",
-            "Mon Dec 30 17:32:01 1996    |      1997 |    1 |      1 |   1 | 365",
-            "Tue Dec 31 17:32:01 1996    |      1997 |    1 |      2 |   2 | 366",
-            "Wed Jan 01 17:32:01 1997    |      1997 |    1 |      3 |   3 |   1",
-            "Fri Feb 28 17:32:01 1997    |      1997 |    9 |      5 |   5 |  59",
-            "Sat Mar 01 17:32:01 1997    |      1997 |    9 |      6 |   6 |  60",
-            "Tue Dec 30 17:32:01 1997    |      1998 |    1 |      2 |   2 | 364",
-            "Wed Dec 31 17:32:01 1997    |      1998 |    1 |      3 |   3 | 365",
-            "Fri Dec 31 17:32:01 1999    |      1999 |   52 |      5 |   5 | 365",
-            "Sat Jan 01 17:32:01 2000    |      1999 |   52 |      6 |   6 |   1",
-            "Sun Dec 31 17:32:01 2000    |      2000 |   52 |      7 |   0 | 366",
-            "Mon Jan 01 17:32:01 2001    |      2001 |    1 |      1 |   1 |   1"
-        };
-        int columns = 6;
-        DBSPExpression[] tuples = new DBSPExpression[data.length+1]; // last one with nulls.
-        for (int j = 0; j < data.length; j++) {
-            String d = data[j];
-            String[] fields = d.split("[|]");
-            Assert.assertEquals(columns, fields.length);
-            DBSPExpression[] expressions = new DBSPExpression[columns];
-            expressions[0] = convertTimestamp(fields[0].trim());
-            for (int i = 1; i < columns; i++) {
-                long adjust = (i == 4) ? CalciteToDBSPCompiler.firstDOW : 0;
-                expressions[i] = new DBSPI64Literal(Long.parseLong(fields[i].trim()) + adjust, true);
-            }
-            tuples[j] = new DBSPTupleExpression(expressions);
-        }
-        DBSPExpression none = DBSPLiteral.none(DBSPTypeInteger.SIGNED_64.setMayBeNull(true));
-        tuples[data.length] = new DBSPTupleExpression(convertTimestamp(null), none, none, none, none, none);
-        this.testQuery(query, new DBSPZSetLiteral.Contents(tuples), true);
+                "   FROM TIMESTAMP_TBL;\n" +
+                "          timestamp          |  isoyear  | week | isodow | dow | doy \n" +
+                "-----------------------------+-----------+------+--------+-----+-----\n" +
+              //" -infinity                   | -Infinity |      |        |     |    \n" +
+              //" infinity                    |  Infinity |      |        |     |    \n" +
+                " Thu Jan 01 00:00:00 1970    |      1970 |    1 |      4 |   5 |   1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:02 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01.4 1997  |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01.5 1997  |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01.6 1997  |      1997 |    7 |      1 |   2 |  41\n" +
+                " Thu Jan 02 00:00:00 1997    |      1997 |    1 |      4 |   5 |   2\n" +
+                " Thu Jan 02 03:04:05 1997    |      1997 |    1 |      4 |   5 |   2\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Tue Jun 10 17:32:01 1997    |      1997 |   24 |      2 |   3 | 161\n" +
+                " Sat Sep 22 18:19:20 2001    |      2001 |   38 |      6 |   7 | 265\n" +
+                " Wed Mar 15 08:14:01 2000    |      2000 |   11 |      3 |   4 |  75\n" +
+                " Wed Mar 15 13:14:02 2000    |      2000 |   11 |      3 |   4 |  75\n" +
+                " Wed Mar 15 12:14:03 2000    |      2000 |   11 |      3 |   4 |  75\n" +
+                " Wed Mar 15 03:14:04 2000    |      2000 |   11 |      3 |   4 |  75\n" +
+                " Wed Mar 15 02:14:05 2000    |      2000 |   11 |      3 |   4 |  75\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:00 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Tue Jun 10 18:32:01 1997    |      1997 |   24 |      2 |   3 | 161\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Tue Feb 11 17:32:01 1997    |      1997 |    7 |      2 |   3 |  42\n" +
+                " Wed Feb 12 17:32:01 1997    |      1997 |    7 |      3 |   4 |  43\n" +
+                " Thu Feb 13 17:32:01 1997    |      1997 |    7 |      4 |   5 |  44\n" +
+                " Fri Feb 14 17:32:01 1997    |      1997 |    7 |      5 |   6 |  45\n" +
+                " Sat Feb 15 17:32:01 1997    |      1997 |    7 |      6 |   7 |  46\n" +
+                " Sun Feb 16 17:32:01 1997    |      1997 |    7 |      7 |   1 |  47\n" +
+              //" Tue Feb 16 17:32:01 0097 BC |       -97 |    7 |      2 |   3 |  47\n" +
+                " Sat Feb 16 17:32:01 0097    |        97 |    7 |      6 |   7 |  47\n" +
+                " Thu Feb 16 17:32:01 0597    |       597 |    7 |      4 |   5 |  47\n" +
+                " Tue Feb 16 17:32:01 1097    |      1097 |    7 |      2 |   3 |  47\n" +
+                " Sat Feb 16 17:32:01 1697    |      1697 |    7 |      6 |   7 |  47\n" +
+                " Thu Feb 16 17:32:01 1797    |      1797 |    7 |      4 |   5 |  47\n" +
+                " Tue Feb 16 17:32:01 1897    |      1897 |    7 |      2 |   3 |  47\n" +
+                " Sun Feb 16 17:32:01 1997    |      1997 |    7 |      7 |   1 |  47\n" +
+                " Sat Feb 16 17:32:01 2097    |      2097 |    7 |      6 |   7 |  47\n" +
+                " Wed Feb 28 17:32:01 1996    |      1996 |    9 |      3 |   4 |  59\n" +
+                " Thu Feb 29 17:32:01 1996    |      1996 |    9 |      4 |   5 |  60\n" +
+                " Fri Mar 01 17:32:01 1996    |      1996 |    9 |      5 |   6 |  61\n" +
+                " Mon Dec 30 17:32:01 1996    |      1997 |    1 |      1 |   2 | 365\n" +
+                " Tue Dec 31 17:32:01 1996    |      1997 |    1 |      2 |   3 | 366\n" +
+                " Wed Jan 01 17:32:01 1997    |      1997 |    1 |      3 |   4 |   1\n" +
+                " Fri Feb 28 17:32:01 1997    |      1997 |    9 |      5 |   6 |  59\n" +
+                " Sat Mar 01 17:32:01 1997    |      1997 |    9 |      6 |   7 |  60\n" +
+                " Tue Dec 30 17:32:01 1997    |      1998 |    1 |      2 |   3 | 364\n" +
+                " Wed Dec 31 17:32:01 1997    |      1998 |    1 |      3 |   4 | 365\n" +
+                " Fri Dec 31 17:32:01 1999    |      1999 |   52 |      5 |   6 | 365\n" +
+                " Sat Jan 01 17:32:01 2000    |      1999 |   52 |      6 |   7 |   1\n" +
+                " Sun Dec 31 17:32:01 2000    |      2000 |   52 |      7 |   1 | 366\n" +
+                " Mon Jan 01 17:32:01 2001    |      2001 |    1 |      1 |   2 |   1\n" +
+                "                             |           |      |        |     |    ");
     }
-    
+
+    @Test
+    public void testDayDatePart() {
+        // date_part has arguments swapped in Calcite
+        // had to adjust column 4.
+        // had to change quoting
+        this.queryWithOutput("SELECT d1 as \"timestamp\",\n" +
+                "        date_part(isoyear, d1) AS 'isoyear', date_part(week, d1) AS 'week',\n" +
+                "        date_part(isodow, d1) AS 'isodow',\n" +
+                "        date_part(dow, d1) AS 'dow',\n" +
+                "        date_part(doy, d1) AS 'doy'\n" +
+                "        FROM TIMESTAMP_TBL;\n" +
+                "          timestamp          |  isoyear  | week | isodow | dow | doy \n" +
+                "-----------------------------+-----------+------+--------+-----+-----\n" +
+              //" -infinity                   | -Infinity |      |        |     |    \n" +
+              //" infinity                    |  Infinity |      |        |     |    \n" +
+                " Thu Jan 01 00:00:00 1970    |      1970 |    1 |      4 |   5 |   1\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:02 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01.4 1997  |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01.5 1997  |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01.6 1997  |      1997 |    7 |      1 |   2 |  41\n" +
+                " Thu Jan 02 00:00:00 1997    |      1997 |    1 |      4 |   5 |   2\n" +
+                " Thu Jan 02 03:04:05 1997    |      1997 |    1 |      4 |   5 |   2\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Tue Jun 10 17:32:01 1997    |      1997 |   24 |      2 |   3 | 161\n" +
+                " Sat Sep 22 18:19:20 2001    |      2001 |   38 |      6 |   7 | 265\n" +
+                " Wed Mar 15 08:14:01 2000    |      2000 |   11 |      3 |   4 |  75\n" +
+                " Wed Mar 15 13:14:02 2000    |      2000 |   11 |      3 |   4 |  75\n" +
+                " Wed Mar 15 12:14:03 2000    |      2000 |   11 |      3 |   4 |  75\n" +
+                " Wed Mar 15 03:14:04 2000    |      2000 |   11 |      3 |   4 |  75\n" +
+                " Wed Mar 15 02:14:05 2000    |      2000 |   11 |      3 |   4 |  75\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:00 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Tue Jun 10 18:32:01 1997    |      1997 |   24 |      2 |   3 | 161\n" +
+                " Mon Feb 10 17:32:01 1997    |      1997 |    7 |      1 |   2 |  41\n" +
+                " Tue Feb 11 17:32:01 1997    |      1997 |    7 |      2 |   3 |  42\n" +
+                " Wed Feb 12 17:32:01 1997    |      1997 |    7 |      3 |   4 |  43\n" +
+                " Thu Feb 13 17:32:01 1997    |      1997 |    7 |      4 |   5 |  44\n" +
+                " Fri Feb 14 17:32:01 1997    |      1997 |    7 |      5 |   6 |  45\n" +
+                " Sat Feb 15 17:32:01 1997    |      1997 |    7 |      6 |   7 |  46\n" +
+                " Sun Feb 16 17:32:01 1997    |      1997 |    7 |      7 |   1 |  47\n" +
+                //" Tue Feb 16 17:32:01 0097 BC |       -97 |    7 |      2 |   3 |  47\n" +
+                " Sat Feb 16 17:32:01 0097    |        97 |    7 |      6 |   7 |  47\n" +
+                " Thu Feb 16 17:32:01 0597    |       597 |    7 |      4 |   5 |  47\n" +
+                " Tue Feb 16 17:32:01 1097    |      1097 |    7 |      2 |   3 |  47\n" +
+                " Sat Feb 16 17:32:01 1697    |      1697 |    7 |      6 |   7 |  47\n" +
+                " Thu Feb 16 17:32:01 1797    |      1797 |    7 |      4 |   5 |  47\n" +
+                " Tue Feb 16 17:32:01 1897    |      1897 |    7 |      2 |   3 |  47\n" +
+                " Sun Feb 16 17:32:01 1997    |      1997 |    7 |      7 |   1 |  47\n" +
+                " Sat Feb 16 17:32:01 2097    |      2097 |    7 |      6 |   7 |  47\n" +
+                " Wed Feb 28 17:32:01 1996    |      1996 |    9 |      3 |   4 |  59\n" +
+                " Thu Feb 29 17:32:01 1996    |      1996 |    9 |      4 |   5 |  60\n" +
+                " Fri Mar 01 17:32:01 1996    |      1996 |    9 |      5 |   6 |  61\n" +
+                " Mon Dec 30 17:32:01 1996    |      1997 |    1 |      1 |   2 | 365\n" +
+                " Tue Dec 31 17:32:01 1996    |      1997 |    1 |      2 |   3 | 366\n" +
+                " Wed Jan 01 17:32:01 1997    |      1997 |    1 |      3 |   4 |   1\n" +
+                " Fri Feb 28 17:32:01 1997    |      1997 |    9 |      5 |   6 |  59\n" +
+                " Sat Mar 01 17:32:01 1997    |      1997 |    9 |      6 |   7 |  60\n" +
+                " Tue Dec 30 17:32:01 1997    |      1998 |    1 |      2 |   3 | 364\n" +
+                " Wed Dec 31 17:32:01 1997    |      1998 |    1 |      3 |   4 | 365\n" +
+                " Fri Dec 31 17:32:01 1999    |      1999 |   52 |      5 |   6 | 365\n" +
+                " Sat Jan 01 17:32:01 2000    |      1999 |   52 |      6 |   7 |   1\n" +
+                " Sun Dec 31 17:32:01 2000    |      2000 |   52 |      7 |   1 | 366\n" +
+                " Mon Jan 01 17:32:01 2001    |      2001 |    1 |      1 |   2 |   1\n" +
+                "                             |           |      |        |     |    ");
+    }
+
     @Test
     public void testCenturies() {
         // SELECT d1 as "timestamp",
@@ -1036,196 +1053,244 @@ public class PostgresTimestampTests extends PostgresBaseTest {
         //   round(date_part( 'julian', d1)) AS julian,
         //   date_part( 'epoch', d1) AS epoch
         //   FROM TIMESTAMP_TBL;
-        String query = "SELECT d1 as \"timestamp\",\n" +
+
+        // Postgres gives a float for epoch
+        this.queryWithOutput("SELECT d1 as \"timestamp\",\n" +
                 "   extract(decade FROM d1) AS 'decade',\n" +
                 "   extract(century FROM d1) AS 'century',\n" +
                 "   extract(millennium FROM d1) AS 'millennium',\n" +
                 "--   round(extract(julian FROM d1)) AS 'julian',\n" + // Julian is not supported
                 "   extract(epoch FROM d1) AS 'epoch'\n" +
-                "   FROM TIMESTAMP_TBL";
-        String[] data = {
-                "Thu Jan 01 00:00:00 1970    |       197 |        20 |          2 |   2440588 |            0",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:02 1997    |       199 |        20 |          2 |   2450491 |    855595922",
-                "Mon Feb 10 17:32:01.4 1997  |       199 |        20 |          2 |   2450491 |  855595921.4",
-                "Mon Feb 10 17:32:01.5 1997  |       199 |        20 |          2 |   2450491 |  855595921.5",
-                "Mon Feb 10 17:32:01.6 1997  |       199 |        20 |          2 |   2450491 |  855595921.6",
-                "Thu Jan 02 00:00:00 1997    |       199 |        20 |          2 |   2450451 |    852163200",
-                "Thu Jan 02 03:04:05 1997    |       199 |        20 |          2 |   2450451 |    852174245",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Tue Jun 10 17:32:01 1997    |       199 |        20 |          2 |   2450611 |    865963921",
-                "Sat Sep 22 18:19:20 2001    |       200 |        21 |          3 |   2452176 |   1001182760",
-                "Wed Mar 15 08:14:01 2000    |       200 |        20 |          2 |   2451619 |    953108041",
-                "Wed Mar 15 13:14:02 2000    |       200 |        20 |          2 |   2451620 |    953126042",
-                "Wed Mar 15 12:14:03 2000    |       200 |        20 |          2 |   2451620 |    953122443",
-                "Wed Mar 15 03:14:04 2000    |       200 |        20 |          2 |   2451619 |    953090044",
-                "Wed Mar 15 02:14:05 2000    |       200 |        20 |          2 |   2451619 |    953086445",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:00 1997    |       199 |        20 |          2 |   2450491 |    855595920",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Tue Jun 10 18:32:01 1997    |       199 |        20 |          2 |   2450611 |    865967521",
-                "Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |   2450491 |    855595921",
-                "Tue Feb 11 17:32:01 1997    |       199 |        20 |          2 |   2450492 |    855682321",
-                "Wed Feb 12 17:32:01 1997    |       199 |        20 |          2 |   2450493 |    855768721",
-                "Thu Feb 13 17:32:01 1997    |       199 |        20 |          2 |   2450494 |    855855121",
-                "Fri Feb 14 17:32:01 1997    |       199 |        20 |          2 |   2450495 |    855941521",
-                "Sat Feb 15 17:32:01 1997    |       199 |        20 |          2 |   2450496 |    856027921",
-                "Sun Feb 16 17:32:01 1997    |       199 |        20 |          2 |   2450497 |    856114321",
-                //"Tue Feb 16 17:32:01 0097 BC |       -10 |        -1 |         -1 |   1686043 | -65192711279",
-                "Sat Feb 16 17:32:01 0097    |         9 |         1 |          1 |   1756537 | -59102029679",
-                "Thu Feb 16 17:32:01 0597    |        59 |         6 |          1 |   1939158 | -43323575279",
-                "Tue Feb 16 17:32:01 1097    |       109 |        11 |          2 |   2121779 | -27545120879",
-                "Sat Feb 16 17:32:01 1697    |       169 |        17 |          2 |   2340925 |  -8610906479",
-                "Thu Feb 16 17:32:01 1797    |       179 |        18 |          2 |   2377449 |  -5455232879",
-                "Tue Feb 16 17:32:01 1897    |       189 |        19 |          2 |   2413973 |  -2299559279",
-                "Sun Feb 16 17:32:01 1997    |       199 |        20 |          2 |   2450497 |    856114321",
-                "Sat Feb 16 17:32:01 2097    |       209 |        21 |          3 |   2487022 |   4011874321",
-                "Wed Feb 28 17:32:01 1996    |       199 |        20 |          2 |   2450143 |    825528721",
-                "Thu Feb 29 17:32:01 1996    |       199 |        20 |          2 |   2450144 |    825615121",
-                "Fri Mar 01 17:32:01 1996    |       199 |        20 |          2 |   2450145 |    825701521",
-                "Mon Dec 30 17:32:01 1996    |       199 |        20 |          2 |   2450449 |    851967121",
-                "Tue Dec 31 17:32:01 1996    |       199 |        20 |          2 |   2450450 |    852053521",
-                "Wed Jan 01 17:32:01 1997    |       199 |        20 |          2 |   2450451 |    852139921",
-                "Fri Feb 28 17:32:01 1997    |       199 |        20 |          2 |   2450509 |    857151121",
-                "Sat Mar 01 17:32:01 1997    |       199 |        20 |          2 |   2450510 |    857237521",
-                "Tue Dec 30 17:32:01 1997    |       199 |        20 |          2 |   2450814 |    883503121",
-                "Wed Dec 31 17:32:01 1997    |       199 |        20 |          2 |   2450815 |    883589521",
-                "Fri Dec 31 17:32:01 1999    |       199 |        20 |          2 |   2451545 |    946661521",
-                "Sat Jan 01 17:32:01 2000    |       200 |        20 |          2 |   2451546 |    946747921",
-                "Sun Dec 31 17:32:01 2000    |       200 |        20 |          2 |   2451911 |    978283921",
-                "Mon Jan 01 17:32:01 2001    |       200 |        21 |          3 |   2451912 |    978370321"
-        };
-        int columns = 6;
-        DBSPExpression[] tuples = new DBSPExpression[data.length+1]; // last one with nulls.
-        for (int j = 0; j < data.length; j++) {
-            String d = data[j];
-            String[] fields = d.split("[|]");
-            Assert.assertEquals(columns, fields.length);
-            DBSPExpression[] expressions = new DBSPExpression[columns - 1]; // Skip the Julian unsupported column
-            expressions[0] = convertTimestamp(fields[0].trim());
-            for (int i = 1; i < columns - 2; i++)
-                expressions[i] = new DBSPI64Literal(Long.parseLong(fields[i].trim()), true);
-            // Postgres gives a float for epoch
-            expressions[4] = new DBSPI64Literal((long)Double.parseDouble(fields[5].trim()), true);
-            tuples[j] = new DBSPTupleExpression(expressions);
-        }
-        DBSPExpression none = DBSPLiteral.none(DBSPTypeInteger.SIGNED_64.setMayBeNull(true));
-        tuples[data.length] = new DBSPTupleExpression(convertTimestamp(null), none, none, none, none);
-        this.testQuery(query, new DBSPZSetLiteral.Contents(tuples), true);
+                "   FROM TIMESTAMP_TBL;\n" +
+                "          timestamp          |  decade   |  century  | millennium |    epoch     \n" +
+                "-----------------------------+-----------+-----------+------------+--------------\n" +
+              //" -infinity                   | -Infinity | -Infinity |  -Infinity |    -Infinity\n" +
+              //" infinity                    |  Infinity |  Infinity |   Infinity |     Infinity\n" +
+                " Thu Jan 01 00:00:00 1970    |       197 |        20 |          2 |            0\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:02 1997    |       199 |        20 |          2 |    855595922\n" +
+                " Mon Feb 10 17:32:01.4 1997  |       199 |        20 |          2 |  855595921  \n" + // .4
+                " Mon Feb 10 17:32:01.5 1997  |       199 |        20 |          2 |  855595921  \n" + // .5
+                " Mon Feb 10 17:32:01.6 1997  |       199 |        20 |          2 |  855595921  \n" + // .6
+                " Thu Jan 02 00:00:00 1997    |       199 |        20 |          2 |    852163200\n" +
+                " Thu Jan 02 03:04:05 1997    |       199 |        20 |          2 |    852174245\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Tue Jun 10 17:32:01 1997    |       199 |        20 |          2 |    865963921\n" +
+                " Sat Sep 22 18:19:20 2001    |       200 |        21 |          3 |   1001182760\n" +
+                " Wed Mar 15 08:14:01 2000    |       200 |        20 |          2 |    953108041\n" +
+                " Wed Mar 15 13:14:02 2000    |       200 |        20 |          2 |    953126042\n" +
+                " Wed Mar 15 12:14:03 2000    |       200 |        20 |          2 |    953122443\n" +
+                " Wed Mar 15 03:14:04 2000    |       200 |        20 |          2 |    953090044\n" +
+                " Wed Mar 15 02:14:05 2000    |       200 |        20 |          2 |    953086445\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:00 1997    |       199 |        20 |          2 |    855595920\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Tue Jun 10 18:32:01 1997    |       199 |        20 |          2 |    865967521\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Tue Feb 11 17:32:01 1997    |       199 |        20 |          2 |    855682321\n" +
+                " Wed Feb 12 17:32:01 1997    |       199 |        20 |          2 |    855768721\n" +
+                " Thu Feb 13 17:32:01 1997    |       199 |        20 |          2 |    855855121\n" +
+                " Fri Feb 14 17:32:01 1997    |       199 |        20 |          2 |    855941521\n" +
+                " Sat Feb 15 17:32:01 1997    |       199 |        20 |          2 |    856027921\n" +
+                " Sun Feb 16 17:32:01 1997    |       199 |        20 |          2 |    856114321\n" +
+              //" Tue Feb 16 17:32:01 0097 BC |       -10 |        -1 |         -1 | -65192711279\n" +
+                " Sat Feb 16 17:32:01 0097    |         9 |         1 |          1 | -59102029679\n" +
+                " Thu Feb 16 17:32:01 0597    |        59 |         6 |          1 | -43323575279\n" +
+                " Tue Feb 16 17:32:01 1097    |       109 |        11 |          2 | -27545120879\n" +
+                " Sat Feb 16 17:32:01 1697    |       169 |        17 |          2 |  -8610906479\n" +
+                " Thu Feb 16 17:32:01 1797    |       179 |        18 |          2 |  -5455232879\n" +
+                " Tue Feb 16 17:32:01 1897    |       189 |        19 |          2 |  -2299559279\n" +
+                " Sun Feb 16 17:32:01 1997    |       199 |        20 |          2 |    856114321\n" +
+                " Sat Feb 16 17:32:01 2097    |       209 |        21 |          3 |   4011874321\n" +
+                " Wed Feb 28 17:32:01 1996    |       199 |        20 |          2 |    825528721\n" +
+                " Thu Feb 29 17:32:01 1996    |       199 |        20 |          2 |    825615121\n" +
+                " Fri Mar 01 17:32:01 1996    |       199 |        20 |          2 |    825701521\n" +
+                " Mon Dec 30 17:32:01 1996    |       199 |        20 |          2 |    851967121\n" +
+                " Tue Dec 31 17:32:01 1996    |       199 |        20 |          2 |    852053521\n" +
+                " Wed Jan 01 17:32:01 1997    |       199 |        20 |          2 |    852139921\n" +
+                " Fri Feb 28 17:32:01 1997    |       199 |        20 |          2 |    857151121\n" +
+                " Sat Mar 01 17:32:01 1997    |       199 |        20 |          2 |    857237521\n" +
+                " Tue Dec 30 17:32:01 1997    |       199 |        20 |          2 |    883503121\n" +
+                " Wed Dec 31 17:32:01 1997    |       199 |        20 |          2 |    883589521\n" +
+                " Fri Dec 31 17:32:01 1999    |       199 |        20 |          2 |    946661521\n" +
+                " Sat Jan 01 17:32:01 2000    |       200 |        20 |          2 |    946747921\n" +
+                " Sun Dec 31 17:32:01 2000    |       200 |        20 |          2 |    978283921\n" +
+                " Mon Jan 01 17:32:01 2001    |       200 |        21 |          3 |    978370321\n" +
+                "                             |           |           |            |              ");
+    }
+
+    @Test
+    public void testCenturies1() {
+        // Postgres gives a float for epoch
+        // Had to change quoting
+        this.queryWithOutput("SELECT d1 as \"timestamp\",\n" +
+                "   date_part( decade, d1) AS 'decade',\n" +
+                "   date_part( century, d1) AS 'century',\n" +
+                "   date_part( millennium, d1) AS 'millennium',\n" +
+                "   -- round(date_part( 'julian', d1)) AS julian,\n" +
+                "   date_part( epoch, d1) AS 'epoch'\n" +
+                "   FROM TIMESTAMP_TBL;\n" +
+                "          timestamp          |  decade   |  century  | millennium |    epoch     \n" +
+                "-----------------------------+-----------+-----------+------------+--------------\n" +
+                //" -infinity                   | -Infinity | -Infinity |  -Infinity |    -Infinity\n" +
+                //" infinity                    |  Infinity |  Infinity |   Infinity |     Infinity\n" +
+                " Thu Jan 01 00:00:00 1970    |       197 |        20 |          2 |            0\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:02 1997    |       199 |        20 |          2 |    855595922\n" +
+                " Mon Feb 10 17:32:01.4 1997  |       199 |        20 |          2 |  855595921  \n" + // .4
+                " Mon Feb 10 17:32:01.5 1997  |       199 |        20 |          2 |  855595921  \n" + // .5
+                " Mon Feb 10 17:32:01.6 1997  |       199 |        20 |          2 |  855595921  \n" + // .6
+                " Thu Jan 02 00:00:00 1997    |       199 |        20 |          2 |    852163200\n" +
+                " Thu Jan 02 03:04:05 1997    |       199 |        20 |          2 |    852174245\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Tue Jun 10 17:32:01 1997    |       199 |        20 |          2 |    865963921\n" +
+                " Sat Sep 22 18:19:20 2001    |       200 |        21 |          3 |   1001182760\n" +
+                " Wed Mar 15 08:14:01 2000    |       200 |        20 |          2 |    953108041\n" +
+                " Wed Mar 15 13:14:02 2000    |       200 |        20 |          2 |    953126042\n" +
+                " Wed Mar 15 12:14:03 2000    |       200 |        20 |          2 |    953122443\n" +
+                " Wed Mar 15 03:14:04 2000    |       200 |        20 |          2 |    953090044\n" +
+                " Wed Mar 15 02:14:05 2000    |       200 |        20 |          2 |    953086445\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:00 1997    |       199 |        20 |          2 |    855595920\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Tue Jun 10 18:32:01 1997    |       199 |        20 |          2 |    865967521\n" +
+                " Mon Feb 10 17:32:01 1997    |       199 |        20 |          2 |    855595921\n" +
+                " Tue Feb 11 17:32:01 1997    |       199 |        20 |          2 |    855682321\n" +
+                " Wed Feb 12 17:32:01 1997    |       199 |        20 |          2 |    855768721\n" +
+                " Thu Feb 13 17:32:01 1997    |       199 |        20 |          2 |    855855121\n" +
+                " Fri Feb 14 17:32:01 1997    |       199 |        20 |          2 |    855941521\n" +
+                " Sat Feb 15 17:32:01 1997    |       199 |        20 |          2 |    856027921\n" +
+                " Sun Feb 16 17:32:01 1997    |       199 |        20 |          2 |    856114321\n" +
+                //" Tue Feb 16 17:32:01 0097 BC |       -10 |        -1 |         -1 | -65192711279\n" +
+                " Sat Feb 16 17:32:01 0097    |         9 |         1 |          1 | -59102029679\n" +
+                " Thu Feb 16 17:32:01 0597    |        59 |         6 |          1 | -43323575279\n" +
+                " Tue Feb 16 17:32:01 1097    |       109 |        11 |          2 | -27545120879\n" +
+                " Sat Feb 16 17:32:01 1697    |       169 |        17 |          2 |  -8610906479\n" +
+                " Thu Feb 16 17:32:01 1797    |       179 |        18 |          2 |  -5455232879\n" +
+                " Tue Feb 16 17:32:01 1897    |       189 |        19 |          2 |  -2299559279\n" +
+                " Sun Feb 16 17:32:01 1997    |       199 |        20 |          2 |    856114321\n" +
+                " Sat Feb 16 17:32:01 2097    |       209 |        21 |          3 |   4011874321\n" +
+                " Wed Feb 28 17:32:01 1996    |       199 |        20 |          2 |    825528721\n" +
+                " Thu Feb 29 17:32:01 1996    |       199 |        20 |          2 |    825615121\n" +
+                " Fri Mar 01 17:32:01 1996    |       199 |        20 |          2 |    825701521\n" +
+                " Mon Dec 30 17:32:01 1996    |       199 |        20 |          2 |    851967121\n" +
+                " Tue Dec 31 17:32:01 1996    |       199 |        20 |          2 |    852053521\n" +
+                " Wed Jan 01 17:32:01 1997    |       199 |        20 |          2 |    852139921\n" +
+                " Fri Feb 28 17:32:01 1997    |       199 |        20 |          2 |    857151121\n" +
+                " Sat Mar 01 17:32:01 1997    |       199 |        20 |          2 |    857237521\n" +
+                " Tue Dec 30 17:32:01 1997    |       199 |        20 |          2 |    883503121\n" +
+                " Wed Dec 31 17:32:01 1997    |       199 |        20 |          2 |    883589521\n" +
+                " Fri Dec 31 17:32:01 1999    |       199 |        20 |          2 |    946661521\n" +
+                " Sat Jan 01 17:32:01 2000    |       200 |        20 |          2 |    946747921\n" +
+                " Sun Dec 31 17:32:01 2000    |       200 |        20 |          2 |    978283921\n" +
+                " Mon Jan 01 17:32:01 2001    |       200 |        21 |          3 |    978370321\n" +
+                "                             |           |           |            |              ");
     }
 
     @Test
     public void testMicroseconds() {
-        // SELECT d1 as "timestamp",
-        //   extract(microseconds from d1) AS microseconds,
-        //   extract(milliseconds from d1) AS milliseconds,
-        //   extract(seconds from d1) AS seconds,
-        //   round(extract(julian from d1)) AS julian,
-        //   extract(epoch from d1) AS epoch
-        //   FROM TIMESTAMP_TBL;
-        // microsecond, second, epoch are all floats in Postgres
-        String query = "SELECT d1 as \"timestamp\",\n" +
+        // microsecond, second, epoch are all floats in Postgres, but long in Calcite
+        this.queryWithOutput("SELECT d1 as \"timestamp\",\n" +
                 "   extract(microsecond from d1) AS 'microseconds',\n" +
                 "   extract(millisecond from d1) AS 'milliseconds',\n" +
                 "   extract(second from d1) AS 'seconds',\n" +
                 "   -- round(extract(julian from d1)) AS julian,\n" +
                 "   extract(epoch from d1) AS 'epoch'\n" +
-                "   FROM TIMESTAMP_TBL";
-        String[] data = {
-            "Thu Jan 01 00:00:00 1970    |            0 |        0.000 |  0.000000 |   2440588 |            0.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:02 1997    |      2000000 |     2000.000 |  2.000000 |   2450491 |    855595922.000000",
-            "Mon Feb 10 17:32:01.4 1997  |      1400000 |     1400.000 |  1.400000 |   2450491 |    855595921.400000",
-            "Mon Feb 10 17:32:01.5 1997  |      1500000 |     1500.000 |  1.500000 |   2450491 |    855595921.500000",
-            "Mon Feb 10 17:32:01.6 1997  |      1600000 |     1600.000 |  1.600000 |   2450491 |    855595921.600000",
-            "Thu Jan 02 00:00:00 1997    |            0 |        0.000 |  0.000000 |   2450451 |    852163200.000000",
-            "Thu Jan 02 03:04:05 1997    |      5000000 |     5000.000 |  5.000000 |   2450451 |    852174245.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Tue Jun 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450611 |    865963921.000000",
-            "Sat Sep 22 18:19:20 2001    |     20000000 |    20000.000 | 20.000000 |   2452176 |   1001182760.000000",
-            "Wed Mar 15 08:14:01 2000    |      1000000 |     1000.000 |  1.000000 |   2451619 |    953108041.000000",
-            "Wed Mar 15 13:14:02 2000    |      2000000 |     2000.000 |  2.000000 |   2451620 |    953126042.000000",
-            "Wed Mar 15 12:14:03 2000    |      3000000 |     3000.000 |  3.000000 |   2451620 |    953122443.000000",
-            "Wed Mar 15 03:14:04 2000    |      4000000 |     4000.000 |  4.000000 |   2451619 |    953090044.000000",
-            "Wed Mar 15 02:14:05 2000    |      5000000 |     5000.000 |  5.000000 |   2451619 |    953086445.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:00 1997    |            0 |        0.000 |  0.000000 |   2450491 |    855595920.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Tue Jun 10 18:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450611 |    865967521.000000",
-            "Mon Feb 10 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450491 |    855595921.000000",
-            "Tue Feb 11 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450492 |    855682321.000000",
-            "Wed Feb 12 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450493 |    855768721.000000",
-            "Thu Feb 13 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450494 |    855855121.000000",
-            "Fri Feb 14 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450495 |    855941521.000000",
-            "Sat Feb 15 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450496 |    856027921.000000",
-            "Sun Feb 16 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450497 |    856114321.000000",
-            //"Tue Feb 16 17:32:01 0097 BC |      1000000 |     1000.000 |  1.000000 |   1686043 | -65192711279.000000",
-            "Sat Feb 16 17:32:01 0097    |      1000000 |     1000.000 |  1.000000 |   1756537 | -59102029679.000000",
-            "Thu Feb 16 17:32:01 0597    |      1000000 |     1000.000 |  1.000000 |   1939158 | -43323575279.000000",
-            "Tue Feb 16 17:32:01 1097    |      1000000 |     1000.000 |  1.000000 |   2121779 | -27545120879.000000",
-            "Sat Feb 16 17:32:01 1697    |      1000000 |     1000.000 |  1.000000 |   2340925 |  -8610906479.000000",
-            "Thu Feb 16 17:32:01 1797    |      1000000 |     1000.000 |  1.000000 |   2377449 |  -5455232879.000000",
-            "Tue Feb 16 17:32:01 1897    |      1000000 |     1000.000 |  1.000000 |   2413973 |  -2299559279.000000",
-            "Sun Feb 16 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450497 |    856114321.000000",
-            "Sat Feb 16 17:32:01 2097    |      1000000 |     1000.000 |  1.000000 |   2487022 |   4011874321.000000",
-            "Wed Feb 28 17:32:01 1996    |      1000000 |     1000.000 |  1.000000 |   2450143 |    825528721.000000",
-            "Thu Feb 29 17:32:01 1996    |      1000000 |     1000.000 |  1.000000 |   2450144 |    825615121.000000",
-            "Fri Mar 01 17:32:01 1996    |      1000000 |     1000.000 |  1.000000 |   2450145 |    825701521.000000",
-            "Mon Dec 30 17:32:01 1996    |      1000000 |     1000.000 |  1.000000 |   2450449 |    851967121.000000",
-            "Tue Dec 31 17:32:01 1996    |      1000000 |     1000.000 |  1.000000 |   2450450 |    852053521.000000",
-            "Wed Jan 01 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450451 |    852139921.000000",
-            "Fri Feb 28 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450509 |    857151121.000000",
-            "Sat Mar 01 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450510 |    857237521.000000",
-            "Tue Dec 30 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450814 |    883503121.000000",
-            "Wed Dec 31 17:32:01 1997    |      1000000 |     1000.000 |  1.000000 |   2450815 |    883589521.000000",
-            "Fri Dec 31 17:32:01 1999    |      1000000 |     1000.000 |  1.000000 |   2451545 |    946661521.000000",
-            "Sat Jan 01 17:32:01 2000    |      1000000 |     1000.000 |  1.000000 |   2451546 |    946747921.000000",
-            "Sun Dec 31 17:32:01 2000    |      1000000 |     1000.000 |  1.000000 |   2451911 |    978283921.000000",
-            "Mon Jan 01 17:32:01 2001    |      1000000 |     1000.000 |  1.000000 |   2451912 |    978370321.000000"
-        };
-        int columns = 6;
-        DBSPExpression[] tuples = new DBSPExpression[data.length+1]; // last one with nulls.
-        for (int j = 0; j < data.length; j++) {
-            String d = data[j];
-            String[] fields = d.split("[|]");
-            Assert.assertEquals(columns, fields.length);
-            DBSPExpression[] expressions = new DBSPExpression[columns - 1]; // Skip the Julian unsupported column
-            expressions[0] = convertTimestamp(fields[0].trim());
-            for (int i = 1; i < columns - 2; i++)
-                expressions[i] = new DBSPI64Literal((long)Double.parseDouble(fields[i].trim()), true);
-            // Postgres gives a float for epoch
-            expressions[4] = new DBSPI64Literal((long)Double.parseDouble(fields[5].trim()), true);
-            tuples[j] = new DBSPTupleExpression(expressions);
-        }
-        DBSPExpression none = DBSPLiteral.none(DBSPTypeInteger.SIGNED_64.setMayBeNull(true));
-        tuples[data.length] = new DBSPTupleExpression(convertTimestamp(null), none, none, none, none);
-        this.testQuery(query, new DBSPZSetLiteral.Contents(tuples), true);
+                "   FROM TIMESTAMP_TBL;\n" +
+                "          timestamp          | microseconds | milliseconds |  seconds  |    epoch   \n" +
+                "-----------------------------+--------------+--------------+-----------+------------\n" +
+              //" -infinity                   |              |              |           |    -Infinity\n" +
+              //" infinity                    |              |              |           |     Infinity\n" +
+                " Thu Jan 01 00:00:00 1970    |            0 |        0     |  0        |            0\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:02 1997    |      2000000 |     2000     |  2        |    855595922\n" +
+                " Mon Feb 10 17:32:01.4 1997  |      1400000 |     1400     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01.5 1997  |      1500000 |     1500     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01.6 1997  |      1600000 |     1600     |  1        |    855595921\n" +
+                " Thu Jan 02 00:00:00 1997    |            0 |        0     |  0        |    852163200\n" +
+                " Thu Jan 02 03:04:05 1997    |      5000000 |     5000     |  5        |    852174245\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Tue Jun 10 17:32:01 1997    |      1000000 |     1000     |  1        |    865963921\n" +
+                " Sat Sep 22 18:19:20 2001    |     20000000 |    20000     | 20        |   1001182760\n" +
+                " Wed Mar 15 08:14:01 2000    |      1000000 |     1000     |  1        |    953108041\n" +
+                " Wed Mar 15 13:14:02 2000    |      2000000 |     2000     |  2        |    953126042\n" +
+                " Wed Mar 15 12:14:03 2000    |      3000000 |     3000     |  3        |    953122443\n" +
+                " Wed Mar 15 03:14:04 2000    |      4000000 |     4000     |  4        |    953090044\n" +
+                " Wed Mar 15 02:14:05 2000    |      5000000 |     5000     |  5        |    953086445\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:00 1997    |            0 |        0     |  0        |    855595920\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Tue Jun 10 18:32:01 1997    |      1000000 |     1000     |  1        |    865967521\n" +
+                " Mon Feb 10 17:32:01 1997    |      1000000 |     1000     |  1        |    855595921\n" +
+                " Tue Feb 11 17:32:01 1997    |      1000000 |     1000     |  1        |    855682321\n" +
+                " Wed Feb 12 17:32:01 1997    |      1000000 |     1000     |  1        |    855768721\n" +
+                " Thu Feb 13 17:32:01 1997    |      1000000 |     1000     |  1        |    855855121\n" +
+                " Fri Feb 14 17:32:01 1997    |      1000000 |     1000     |  1        |    855941521\n" +
+                " Sat Feb 15 17:32:01 1997    |      1000000 |     1000     |  1        |    856027921\n" +
+                " Sun Feb 16 17:32:01 1997    |      1000000 |     1000     |  1        |    856114321\n" +
+              //" Tue Feb 16 17:32:01 0097 BC |      1000000 |     1000     |  1        | -65192711279\n" +
+                " Sat Feb 16 17:32:01 0097    |      1000000 |     1000     |  1        | -59102029679\n" +
+                " Thu Feb 16 17:32:01 0597    |      1000000 |     1000     |  1        | -43323575279\n" +
+                " Tue Feb 16 17:32:01 1097    |      1000000 |     1000     |  1        | -27545120879\n" +
+                " Sat Feb 16 17:32:01 1697    |      1000000 |     1000     |  1        |  -8610906479\n" +
+                " Thu Feb 16 17:32:01 1797    |      1000000 |     1000     |  1        |  -5455232879\n" +
+                " Tue Feb 16 17:32:01 1897    |      1000000 |     1000     |  1        |  -2299559279\n" +
+                " Sun Feb 16 17:32:01 1997    |      1000000 |     1000     |  1        |    856114321\n" +
+                " Sat Feb 16 17:32:01 2097    |      1000000 |     1000     |  1        |   4011874321\n" +
+                " Wed Feb 28 17:32:01 1996    |      1000000 |     1000     |  1        |    825528721\n" +
+                " Thu Feb 29 17:32:01 1996    |      1000000 |     1000     |  1        |    825615121\n" +
+                " Fri Mar 01 17:32:01 1996    |      1000000 |     1000     |  1        |    825701521\n" +
+                " Mon Dec 30 17:32:01 1996    |      1000000 |     1000     |  1        |    851967121\n" +
+                " Tue Dec 31 17:32:01 1996    |      1000000 |     1000     |  1        |    852053521\n" +
+                " Wed Jan 01 17:32:01 1997    |      1000000 |     1000     |  1        |    852139921\n" +
+                " Fri Feb 28 17:32:01 1997    |      1000000 |     1000     |  1        |    857151121\n" +
+                " Sat Mar 01 17:32:01 1997    |      1000000 |     1000     |  1        |    857237521\n" +
+                " Tue Dec 30 17:32:01 1997    |      1000000 |     1000     |  1        |    883503121\n" +
+                " Wed Dec 31 17:32:01 1997    |      1000000 |     1000     |  1        |    883589521\n" +
+                " Fri Dec 31 17:32:01 1999    |      1000000 |     1000     |  1        |    946661521\n" +
+                " Sat Jan 01 17:32:01 2000    |      1000000 |     1000     |  1        |    946747921\n" +
+                " Sun Dec 31 17:32:01 2000    |      1000000 |     1000     |  1        |    978283921\n" +
+                " Mon Jan 01 17:32:01 2001    |      1000000 |     1000     |  1        |    978370321\n" +
+                "                             |              |              |           |               ");
     }
 
     // Postgres supports the ::timestamp syntax for casts
@@ -1235,12 +1300,14 @@ public class PostgresTimestampTests extends PostgresBaseTest {
     @Test
     public void testLargeYear() {
         // Timestamp out of range to be represented using milliseconds
-        String query = "SELECT extract(epoch from TIMESTAMP '5000-01-01 00:00:00')\n";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPI64Literal(95617584000L))), true);
+        this.queryWithOutput("SELECT extract(epoch from TIMESTAMP '5000-01-01 00:00:00');\n" +
+                "epoch\n" +
+                "---------\n" +
+                "95617584000");
     }
 
     //-- TO_CHAR()
-    // Calcite does not support to_char
+    // TODO: Calcite seems to have 'to_char', but I can't get it to compile
     //SELECT to_char(d1, 'DAY Day day DY Dy dy MONTH Month month RM MON Mon mon')
     //   FROM TIMESTAMP_TBL;
 

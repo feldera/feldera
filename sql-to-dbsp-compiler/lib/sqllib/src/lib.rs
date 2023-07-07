@@ -564,23 +564,23 @@ where
     }
 }
 
-pub fn st_distance__(left: GeoPoint, right: GeoPoint) -> F64 {
+pub fn st_distance_geopoint_geopoint(left: GeoPoint, right: GeoPoint) -> F64 {
     left.distance(&right)
 }
 
-pub fn st_distance_N_(left: Option<GeoPoint>, right: GeoPoint) -> Option<F64> {
-    left.map(|x| st_distance__(x, right))
+pub fn st_distance_geopointN_geopoint(left: Option<GeoPoint>, right: GeoPoint) -> Option<F64> {
+    left.map(|x| st_distance_geopoint_geopoint(x, right))
 }
 
-pub fn st_distance__N(left: GeoPoint, right: Option<GeoPoint>) -> Option<F64> {
-    right.map(|x| st_distance__(left, x))
+pub fn st_distance_geopoint_geopointN(left: GeoPoint, right: Option<GeoPoint>) -> Option<F64> {
+    right.map(|x| st_distance_geopoint_geopoint(left, x))
 }
 
-pub fn st_distance_N_N(left: Option<GeoPoint>, right: Option<GeoPoint>) -> Option<F64> {
+pub fn st_distance_geopointN_geopointN(left: Option<GeoPoint>, right: Option<GeoPoint>) -> Option<F64> {
     match (left, right) {
         (None, _) => None,
         (_, None) => None,
-        (Some(x), Some(y)) => Some(st_distance__(x, y)),
+        (Some(x), Some(y)) => Some(st_distance_geopoint_geopoint(x, y)),
     }
 }
 

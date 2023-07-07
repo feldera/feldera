@@ -268,8 +268,53 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "");
     }
 
+    @Test
+    public void testPosition() {
+        this.queryWithOutput("SELECT POSITION('4' IN '1234567890') = '4' AS \"4\";\n" +
+                " 4 \n" +
+                "---\n" +
+                " t");
+        this.queryWithOutput("SELECT POSITION('5' IN '1234567890') = '5' AS \"5\";\n" +
+                " 5 \n" +
+                "---\n" +
+                " t");
+        this.queryWithOutput("SELECT POSITION('A' IN '1234567890') = '0' AS \"0\";\n" +
+                " 5 \n" +
+                "---\n" +
+                " t");
+    }
+
     // SUBSTRING ... SIMILAR syntax not supported
     // SELECT SUBSTRING('abcdefg' SIMILAR 'a#"(b_d)#"%' ESCAPE '#') AS "bcd";
+
+    @Test
+    public void testOverlay() {
+        this.queryWithOutput("SELECT OVERLAY('abcdef' PLACING '45' FROM 4) AS \"abc45f\";\n" +
+                " abc45f \n" +
+                "--------\n" +
+                "abc45f");
+        this.queryWithOutput("SELECT OVERLAY('yabadoo' PLACING 'daba' FROM 5) AS \"yabadaba\";\n" +
+                " yabadaba \n" +
+                "----------\n" +
+                "yabadaba");
+        this.queryWithOutput("SELECT OVERLAY('yabadoo' PLACING 'daba' FROM 5 FOR 0) AS \"yabadabadoo\";\n" +
+                " yabadabadoo \n" +
+                "-------------\n" +
+                "yabadabadoo");
+        this.queryWithOutput("SELECT OVERLAY('babosa' PLACING 'ubb' FROM 2 FOR 4) AS \"bubba\";\n" +
+                " bubba \n" +
+                "-------\n" +
+                "bubba");
+    }
+
+    // TODO: regexp_replace
+    // TODO: regexp_count
+    // TODO: regexp_like
+    // TODO: regexp_instr
+    // TODO: regexp_substr
+    // TODO: regexp_matches
+    // TODO: regexp_split_to_array
+    // TODO: regexp_split_to_table
 
     @Test
     public void testLike2() {
@@ -459,4 +504,167 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "------\n" +
                 " t");
     }
+
+    // TODO ILIKE
+
+    @Test
+    public void testLikeCombinations() {
+        this.queryWithOutput("SELECT 'foo' LIKE '_%' as t, 'f' LIKE '_%' as t, '' LIKE '_%' as f;\n" +
+                " t | t | f \n" +
+                "---+---+---\n" +
+                " t | t | f");
+        this.queryWithOutput("SELECT 'foo' LIKE '%_' as t, 'f' LIKE '%_' as t, '' LIKE '%_' as f;\n" +
+                " t | t | f \n" +
+                "---+---+---\n" +
+                " t | t | f");
+        this.queryWithOutput("SELECT 'foo' LIKE '__%' as t, 'foo' LIKE '___%' as t, 'foo' LIKE '____%' as f;\n" +
+                " t | t | f \n" +
+                "---+---+---\n" +
+                " t | t | f");
+        this.queryWithOutput("SELECT 'foo' LIKE '%__' as t, 'foo' LIKE '%___' as t, 'foo' LIKE '%____' as f;\n" +
+                " t | t | f \n" +
+                "---+---+---\n" +
+                " t | t | f");
+        this.queryWithOutput("SELECT 'jack' LIKE '%____%' AS t;\n" +
+                " t \n" +
+                "---\n" +
+                " t");
+    }
+
+    @Test
+    public void testConcatConversions() {
+        // In Postgres concatenation converts to text, whereas Calcite does not.
+        this.queryWithOutput("SELECT 'unknown' || ' and unknown' AS \"Concat unknown types\";\n" +
+                " Concat unknown types \n" +
+                "----------------------\n" +
+                "unknown and unknown");
+        this.queryWithOutput("SELECT 'text'::text || ' and unknown' AS \"Concat text to unknown type\";\n" +
+                " Concat text to unknown type \n" +
+                "-----------------------------\n" +
+                "text and unknown");
+        this.queryWithOutput("SELECT 'characters' ::char(20) || ' and text' AS \"Concat char to unknown type\";\n" +
+                " Concat char to unknown type \n" +
+                "-----------------------------\n" +
+                "characters           and text");
+        this.queryWithOutput("SELECT 'text'::text || ' and characters'::char(20) AS \"Concat text to char\";\n" +
+                " Concat text to char \n" +
+                "---------------------\n" +
+                "text and characters     ");
+        this.queryWithOutput("SELECT 'text'::text || ' and varchar'::varchar AS \"Concat text to varchar\";\n" +
+                " Concat text to varchar \n" +
+                "------------------------\n" +
+                "text and varchar");
+    }
+
+    @Test
+    public void testLength() {
+        // length in postgres is equivalent to char_length
+        this.queryWithOutput("SELECT char_length('abcdef') AS \"length_6\";\n" +
+                " length_6 \n" +
+                "----------\n" +
+                "        6");
+        this.queryWithOutput("SELECT character_length('abcdef') AS \"length_6\";\n" +
+                " length_6 \n" +
+                "----------\n" +
+                "        6");
+        this.queryWithOutput("SELECT character_length('josé') AS \"length\";\n" +
+                " length \n" +
+                "--------\n" +
+                "       4");
+    }
+
+    @Test
+    public void testStrpos() {
+        // No strpos in Calcite, replace with 'position' with arguments swapped
+        this.queryWithOutput("SELECT POSITION('cd' IN 'abcdef') AS \"pos_3\";\n" +
+                " pos_3 \n" +
+                "-------\n" +
+                "     3");
+        this.queryWithOutput("SELECT POSITION('xy' IN 'abcdef') AS \"pos_0\";\n" +
+                " pos_0 \n" +
+                "-------\n" +
+                "     0");
+        this.queryWithOutput("SELECT POSITION('' IN 'abcdef') AS \"pos_1\";\n" +
+                " pos_1 \n" +
+                "-------\n" +
+                "     1");
+        this.queryWithOutput("SELECT POSITION('xy' IN '') AS \"pos_0\";\n" +
+                " pos_0 \n" +
+                "-------\n" +
+                "     0");
+        this.queryWithOutput("SELECT POSITION('' IN '') AS \"pos_1\";\n" +
+                " pos_1 \n" +
+                "-------\n" +
+                "     1");
+    }
+
+    @Test @Ignore("No 'replace' yet in Calcite")
+    public void testReplace() {
+        this.queryWithOutput("SELECT replace('abcdef', 'de', '45') AS \"abc45f\";\n" +
+                " abc45f \n" +
+                "--------\n" +
+                " abc45f");
+        this.queryWithOutput("SELECT replace('yabadabadoo', 'ba', '123') AS \"ya123da123doo\";\n" +
+                " ya123da123doo \n" +
+                "---------------\n" +
+                " ya123da123doo");
+        this.queryWithOutput("SELECT replace('yabadoo', 'bad', '') AS \"yaoo\";\n" +
+                " yaoo \n" +
+                "------\n" +
+                " yaoo");
+    }
+
+    // TODO: replace
+    // TODO: split_part
+    // TODO: to_hex
+    // TODO: sha, encode, decode
+
+    @Test
+    public void testConforming() {
+        this.queryWithOutput("select 'a\\bcd' as f1, 'a\\b''cd' as f2, 'a\\b''''cd' as f3, 'abcd\\'   as f4, 'ab\\''cd' as f5, '\\\\' as f6;\n" +
+                "  f1  |  f2   |   f3   | f4   |   f5  | f6 \n" +
+                "------+-------+--------+------+-------+----\n" +
+                "a\\bcd|a\\b'cd|a\\b''cd|abcd\\|ab\\'cd|\\\\");
+    }
+
+    // TODO: initcap, lpat, translate,
+    
+    @Test
+    public void testAscii() {
+        this.queryWithOutput("SELECT ascii('x');\n" +
+                " ascii \n" +
+                "-------\n" +
+                "   120");
+        this.queryWithOutput("SELECT ascii('');\n" +
+                " ascii \n" +
+                "-------\n" +
+                "     0");
+    }
+
+    @Test
+    public void testChr() {
+        this.queryWithOutput("SELECT chr(65);\n" +
+                " chr \n" +
+                "-----\n" +
+                "A");
+        this.queryWithOutput("SELECT chr(0);\n" +
+                " chr \n" +
+                "-----\n" +
+                "\0");
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5813")
+    public void testRepeat() {
+        this.queryWithOutput("SELECT repeat('Pg', 4);\n" +
+                "  repeat  \n" +
+                "----------\n" +
+                "PgPgPgPg");
+        this.queryWithOutput("SELECT repeat('Pg', -4);\n" +
+                " repeat \n" +
+                "--------\n" +
+                "");
+    }
+
+    // TODO: bytea computations
+    // TODO unistr
 }
