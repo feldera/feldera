@@ -4,6 +4,7 @@ use crate::{
         literal::{NullableConstant, RowLiteral},
         Constant,
     },
+    utils::NativeRepr,
     ThinStr,
 };
 use bincode::{
@@ -458,8 +459,6 @@ unsafe fn write_constant_to(constant: &Constant, ptr: *mut u8) {
             .write((date.and_time(NaiveTime::MIN).timestamp_millis() / (86400 * 1000)) as i32),
         Constant::Timestamp(timestamp) => ptr.cast::<i64>().write(timestamp.timestamp_millis()),
 
-        Constant::Decimal(decimal) => ptr
-            .cast::<u128>()
-            .write(u128::from_le_bytes(decimal.serialize())),
+        Constant::Decimal(decimal) => ptr.cast::<u128>().write(decimal.to_repr()),
     }
 }

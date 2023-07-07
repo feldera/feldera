@@ -1588,6 +1588,8 @@ impl<'a> CodegenCtx<'a> {
                     builder.ins().fadd(lhs, rhs)
                 } else if lhs_ty.is_int() {
                     builder.ins().iadd(lhs, rhs)
+                } else if lhs_ty.is_decimal() {
+                    self.decimal_binop_output("decimal_add", lhs, rhs, builder)
                 } else {
                     todo!("unknown binop type: {lhs_ty} ({binop:?})")
                 }
@@ -1597,6 +1599,8 @@ impl<'a> CodegenCtx<'a> {
                     builder.ins().fsub(lhs, rhs)
                 } else if lhs_ty.is_int() {
                     builder.ins().isub(lhs, rhs)
+                } else if lhs_ty.is_decimal() {
+                    self.decimal_binop_output("decimal_sub", lhs, rhs, builder)
                 } else {
                     todo!("unknown binop type: {lhs_ty} ({binop:?})")
                 }
@@ -1606,6 +1610,8 @@ impl<'a> CodegenCtx<'a> {
                     builder.ins().fmul(lhs, rhs)
                 } else if lhs_ty.is_int() {
                     builder.ins().imul(lhs, rhs)
+                } else if lhs_ty.is_decimal() {
+                    self.decimal_binop_output("decimal_mul", lhs, rhs, builder)
                 } else {
                     todo!("unknown binop type: {lhs_ty} ({binop:?})")
                 }
@@ -1618,6 +1624,8 @@ impl<'a> CodegenCtx<'a> {
                     self.sdiv_checked(lhs, rhs, builder)
                 } else if lhs_ty.is_unsigned_int() {
                     builder.ins().udiv(lhs, rhs)
+                } else if lhs_ty.is_decimal() {
+                    self.decimal_binop_output("decimal_div", lhs, rhs, builder)
                 } else {
                     todo!("unknown binop type: {lhs_ty} ({binop:?})")
                 }
@@ -1628,6 +1636,8 @@ impl<'a> CodegenCtx<'a> {
             BinaryOpKind::Rem => {
                 if lhs_ty.is_float() {
                     self.fmod(lhs, rhs, builder)
+                } else if lhs_ty.is_decimal() {
+                    self.decimal_binop_output("decimal_rem", lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().srem(lhs, rhs)
                 } else if lhs_ty.is_unsigned_int() {
@@ -1665,6 +1675,8 @@ impl<'a> CodegenCtx<'a> {
 
                 if lhs_ty.is_float() {
                     self.float_lt(lhs, rhs, builder)
+                } else if lhs_ty.is_decimal() {
+                    self.decimal_binop("decimal_lt", lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
                 } else {
@@ -1677,6 +1689,8 @@ impl<'a> CodegenCtx<'a> {
 
                 if lhs_ty.is_float() {
                     self.float_gt(lhs, rhs, builder)
+                } else if lhs_ty.is_decimal() {
+                    self.decimal_binop("decimal_gt", lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
                 } else {
@@ -1689,6 +1703,8 @@ impl<'a> CodegenCtx<'a> {
 
                 if lhs_ty.is_float() {
                     self.float_le(lhs, rhs, builder)
+                } else if lhs_ty.is_decimal() {
+                    self.decimal_binop("decimal_le", lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs)
                 } else {
@@ -1701,6 +1717,8 @@ impl<'a> CodegenCtx<'a> {
 
                 if lhs_ty.is_float() {
                     self.float_ge(lhs, rhs, builder)
+                } else if lhs_ty.is_decimal() {
+                    self.decimal_binop("decimal_ge", lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() {
                     builder
                         .ins()
@@ -1716,6 +1734,8 @@ impl<'a> CodegenCtx<'a> {
             BinaryOpKind::Min => {
                 if lhs_ty.is_float() {
                     self.float_min(lhs, rhs, builder)
+                } else if lhs_ty.is_decimal() {
+                    todo!()
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().smin(lhs, rhs)
                 } else {
@@ -1726,6 +1746,8 @@ impl<'a> CodegenCtx<'a> {
             BinaryOpKind::Max => {
                 if lhs_ty.is_float() {
                     self.float_max(lhs, rhs, builder)
+                } else if lhs_ty.is_decimal() {
+                    todo!()
                 } else if lhs_ty.is_signed_int() {
                     builder.ins().smax(lhs, rhs)
                 } else {
@@ -1796,7 +1818,7 @@ impl<'a> CodegenCtx<'a> {
         } else if ty.is_float() {
             self.float_eq(lhs, rhs, builder)
 
-        // Other scalar types (integers, booleans, timestamps, etc.)
+        // Other scalar types (integers, booleans, timestamps, decimals, etc.)
         } else {
             builder.ins().icmp(IntCC::Equal, lhs, rhs)
         }
@@ -1853,10 +1875,54 @@ impl<'a> CodegenCtx<'a> {
         } else if ty.is_float() {
             self.float_neq(lhs, rhs, builder)
 
-        // Other scalar types (integers, booleans, timestamps, etc.)
+        // Other scalar types (integers, booleans, timestamps, decimals, etc.)
         } else {
             builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
         }
+    }
+
+    fn decimal_binop(
+        &mut self,
+        function: &str,
+        lhs: Value,
+        rhs: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        // Split the u128 values for the abi boundary
+        let (lhs_lo, lhs_hi) = builder.ins().isplit(lhs);
+        let (rhs_lo, rhs_hi) = builder.ins().isplit(rhs);
+
+        // Call the function and return the result
+        let func = self.imports.get(function, self.module, builder.func);
+        builder.call_fn(func, &[lhs_lo, lhs_hi, rhs_lo, rhs_hi])
+    }
+
+    fn decimal_binop_output(
+        &mut self,
+        function: &str,
+        lhs: Value,
+        rhs: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        // Split the u128 values for the abi boundary
+        let (lhs_lo, lhs_hi) = builder.ins().isplit(lhs);
+        let (rhs_lo, rhs_hi) = builder.ins().isplit(rhs);
+
+        // Create a stack slot to hold the binop's output
+        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            size_of::<u128>() as u32,
+        ));
+        let ptr = builder.ins().stack_addr(self.pointer_type(), slot, 0);
+
+        // Call the function, it writes its result to `ptr`
+        let func = self.imports.get(function, self.module, builder.func);
+        builder
+            .ins()
+            .call(func, &[lhs_lo, lhs_hi, rhs_lo, rhs_hi, ptr]);
+
+        // Load the result from the stack slot
+        builder.ins().stack_load(types::I128, slot, 0)
     }
 
     fn unary_op(&mut self, expr_id: ExprId, unary: &UnaryOp, builder: &mut FunctionBuilder<'_>) {
