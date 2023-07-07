@@ -12,7 +12,7 @@ use std::{fmt, mem::align_of};
 impl Codegen {
     #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_debug(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating debug vtable function for {layout_id}");
+        tracing::trace!("creating debug vtable function for {layout_id}");
 
         // fn(*const u8, *mut fmt::Formatter) -> bool
         let ptr_ty = self.module.isa().pointer_type();
@@ -162,47 +162,59 @@ impl Codegen {
                             );
                         }
 
-                        let debug_fn = match ty {
-                            // TODO: We can manually inline this
-                            ColumnType::Bool => "bool_debug",
+                        // We have to split decimals into high and low bits
+                        if ty.is_decimal() {
+                            let (lo, hi) = builder.ins().isplit(value);
+                            let debug_fn =
+                                ctx.imports.get("decimal_debug", ctx.module, builder.func);
+                            builder.call_fn(debug_fn, &[lo, hi, fmt])
 
-                            ColumnType::U8 | ColumnType::U16 | ColumnType::U32 => {
-                                value = builder.ins().uextend(types::I64, value);
-                                "u64_debug"
-                            }
-                            ColumnType::U64 => "u64_debug",
+                        // Other scalar values
+                        } else {
+                            let debug_fn = match ty {
+                                // TODO: We can manually inline this
+                                ColumnType::Bool => "bool_debug",
 
-                            ColumnType::Usize if ptr_ty == types::I64 => "u64_debug",
-                            ColumnType::Usize => {
-                                value = builder.ins().uextend(types::I64, value);
-                                "u64_debug"
-                            }
+                                ColumnType::U8 | ColumnType::U16 | ColumnType::U32 => {
+                                    value = builder.ins().uextend(types::I64, value);
+                                    "u64_debug"
+                                }
+                                ColumnType::U64 => "u64_debug",
 
-                            ColumnType::I8 | ColumnType::I16 | ColumnType::I32 => {
-                                value = builder.ins().sextend(types::I64, value);
-                                "i64_debug"
-                            }
-                            ColumnType::I64 => "i64_debug",
+                                ColumnType::Usize if ptr_ty == types::I64 => "u64_debug",
+                                ColumnType::Usize => {
+                                    value = builder.ins().uextend(types::I64, value);
+                                    "u64_debug"
+                                }
 
-                            ColumnType::Isize if ptr_ty == types::I64 => "i64_debug",
-                            ColumnType::Isize => {
-                                value = builder.ins().sextend(types::I64, value);
-                                "i64_debug"
-                            }
+                                ColumnType::I8 | ColumnType::I16 | ColumnType::I32 => {
+                                    value = builder.ins().sextend(types::I64, value);
+                                    "i64_debug"
+                                }
+                                ColumnType::I64 => "i64_debug",
 
-                            ColumnType::F32 => "f32_debug",
-                            ColumnType::F64 => "f64_debug",
+                                ColumnType::Isize if ptr_ty == types::I64 => "i64_debug",
+                                ColumnType::Isize => {
+                                    value = builder.ins().sextend(types::I64, value);
+                                    "i64_debug"
+                                }
 
-                            ColumnType::Date => "date_debug",
-                            ColumnType::Timestamp => "timestamp_debug",
+                                ColumnType::F32 => "f32_debug",
+                                ColumnType::F64 => "f64_debug",
 
-                            ColumnType::String => "string_debug",
+                                ColumnType::Date => "date_debug",
+                                ColumnType::Timestamp => "timestamp_debug",
 
-                            ColumnType::Ptr | ColumnType::Unit => unreachable!(),
-                        };
+                                ColumnType::String => "string_debug",
 
-                        let debug_fn = ctx.imports.get(debug_fn, ctx.module, builder.func);
-                        builder.call_fn(debug_fn, &[value, fmt])
+                                ColumnType::Decimal => "decimal_debug",
+
+                                ColumnType::Ptr | ColumnType::Unit => unreachable!(),
+                            };
+
+                            let debug_fn = ctx.imports.get(debug_fn, ctx.module, builder.func);
+                            builder.call_fn(debug_fn, &[value, fmt])
+                        }
                     };
 
                     // If writing the value failed, return an error

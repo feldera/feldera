@@ -383,7 +383,7 @@ impl Debug for Row {
                 debug: format!("{:?}", self),
                 bytes,
             };
-            write!(f, "{debug:#?}",)
+            write!(f, "{debug:#?}")
 
         // Otherwise debug normally
         } else if unsafe { (self.vtable().debug)(self.as_ptr(), f) } {
@@ -417,7 +417,6 @@ pub unsafe fn row_from_literal(
                 if let Some(constant) = constant {
                     unsafe {
                         let column_ptr = row.as_mut_ptr().add(layout.offset_of(idx) as usize);
-
                         write_constant_to(constant, column_ptr)
                     }
                 }
@@ -458,5 +457,9 @@ unsafe fn write_constant_to(constant: &Constant, ptr: *mut u8) {
             .cast::<i32>()
             .write((date.and_time(NaiveTime::MIN).timestamp_millis() / (86400 * 1000)) as i32),
         Constant::Timestamp(timestamp) => ptr.cast::<i64>().write(timestamp.timestamp_millis()),
+
+        Constant::Decimal(decimal) => ptr
+            .cast::<u128>()
+            .write(u128::from_le_bytes(decimal.serialize())),
     }
 }

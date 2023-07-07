@@ -17,6 +17,7 @@ use dbsp::{
     trace::{BatchReader, Cursor},
     DBSPHandle, Error, Runtime,
 };
+use rust_decimal::Decimal;
 use std::{collections::BTreeMap, mem::transmute, ops::Not, path::Path, thread, time::Instant};
 
 // TODO: A lot of this still needs fleshing out, mainly the little tweaks that
@@ -415,6 +416,11 @@ unsafe fn constant_from_column(
         ),
 
         ColumnType::String => Constant::String(ptr.cast::<ThinStrRef>().read().to_string()),
+
+        ColumnType::Decimal => Constant::Decimal(Decimal::deserialize(
+            ptr.cast::<u128>().read().to_le_bytes(),
+        )),
+
         ColumnType::Ptr => todo!(),
     }
 }

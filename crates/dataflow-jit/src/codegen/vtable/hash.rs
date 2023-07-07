@@ -11,7 +11,7 @@ use cranelift_module::{FuncId, Module};
 impl Codegen {
     #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_hash(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating hash vtable function for {layout_id}");
+        tracing::trace!("creating hash vtable function for {layout_id}");
 
         // fn(&mut &mut dyn Hasher, *const u8)
         let func_id = self.create_function([self.module.isa().pointer_type(); 2], None);
@@ -108,46 +108,57 @@ impl Codegen {
                         builder.ins().load(native_ty.as_int(), flags, ptr, offset)
                     };
 
-                    let hash_function = match ty {
-                        ColumnType::Bool | ColumnType::U8 => "u8_hash",
-                        ColumnType::I8 => "i8_hash",
-                        ColumnType::U16 => "u16_hash",
-                        ColumnType::I16 => "i16_hash",
-                        ColumnType::U32 => "u32_hash",
-                        ColumnType::I32 | ColumnType::Date => "i32_hash",
-                        ColumnType::U64 => "u64_hash",
-                        ColumnType::I64 | ColumnType::Timestamp => "i64_hash",
-                        ColumnType::Usize => {
-                            let ptr_ty = ctx.pointer_type();
-                            if ptr_ty == types::I64 {
-                                "u64_hash"
-                            } else if ptr_ty == types::I32 {
-                                "u32_hash"
-                            } else if ptr_ty == types::I16 {
-                                "u16_hash"
-                            } else {
-                                unreachable!("unsupported pointer width: {ptr_ty}")
+                    // Split decimals into low and high parts for abi
+                    if ty.is_decimal() {
+                        let (lo, hi) = builder.ins().isplit(value);
+                        let hash_function = imports.get("decimal_hash", ctx.module, builder.func);
+                        builder.ins().call(hash_function, &[hasher, lo, hi]);
+
+                    // Hash the normal-acting stuff
+                    } else {
+                        let hash_function = match ty {
+                            ColumnType::Bool | ColumnType::U8 => "u8_hash",
+                            ColumnType::I8 => "i8_hash",
+                            ColumnType::U16 => "u16_hash",
+                            ColumnType::I16 => "i16_hash",
+                            ColumnType::U32 => "u32_hash",
+                            ColumnType::I32 | ColumnType::Date => "i32_hash",
+                            ColumnType::U64 => "u64_hash",
+                            ColumnType::I64 | ColumnType::Timestamp => "i64_hash",
+                            ColumnType::Usize => {
+                                let ptr_ty = ctx.pointer_type();
+                                if ptr_ty == types::I64 {
+                                    "u64_hash"
+                                } else if ptr_ty == types::I32 {
+                                    "u32_hash"
+                                } else if ptr_ty == types::I16 {
+                                    "u16_hash"
+                                } else {
+                                    unreachable!("unsupported pointer width: {ptr_ty}")
+                                }
                             }
-                        }
-                        ColumnType::Isize => {
-                            let ptr_ty = ctx.pointer_type();
-                            if ptr_ty == types::I64 {
-                                "i64_hash"
-                            } else if ptr_ty == types::I32 {
-                                "i32_hash"
-                            } else if ptr_ty == types::I16 {
-                                "i16_hash"
-                            } else {
-                                unreachable!("unsupported pointer width: {ptr_ty}")
+                            ColumnType::Isize => {
+                                let ptr_ty = ctx.pointer_type();
+                                if ptr_ty == types::I64 {
+                                    "i64_hash"
+                                } else if ptr_ty == types::I32 {
+                                    "i32_hash"
+                                } else if ptr_ty == types::I16 {
+                                    "i16_hash"
+                                } else {
+                                    unreachable!("unsupported pointer width: {ptr_ty}")
+                                }
                             }
-                        }
-                        ColumnType::F32 => "u32_hash",
-                        ColumnType::F64 => "u64_hash",
-                        ColumnType::String => "string_hash",
-                        ColumnType::Ptr | ColumnType::Unit => unreachable!(),
-                    };
-                    let hash_function = imports.get(hash_function, ctx.module, builder.func);
-                    builder.ins().call(hash_function, &[hasher, value]);
+                            ColumnType::F32 => "u32_hash",
+                            ColumnType::F64 => "u64_hash",
+                            ColumnType::String => "string_hash",
+                            ColumnType::Decimal | ColumnType::Ptr | ColumnType::Unit => {
+                                unreachable!()
+                            }
+                        };
+                        let hash_function = imports.get(hash_function, ctx.module, builder.func);
+                        builder.ins().call(hash_function, &[hasher, value]);
+                    }
 
                     if let Some(next_clone) = next_hash {
                         builder.ins().jump(next_clone, &[]);

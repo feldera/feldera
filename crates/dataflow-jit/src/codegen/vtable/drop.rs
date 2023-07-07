@@ -13,7 +13,7 @@ use cranelift_module::{FuncId, Module};
 impl Codegen {
     #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_drop_in_place(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating drop_in_place vtable function for {layout_id}");
+        tracing::trace!("creating drop_in_place vtable function for {layout_id}");
 
         // fn(*mut u8)
         let func_id = self.create_function([self.module.isa().pointer_type()], None);
@@ -57,7 +57,7 @@ impl Codegen {
 
     #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_drop_slice_in_place(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating drop_slice_in_place vtable function for {layout_id}");
+        tracing::trace!("creating drop_slice_in_place vtable function for {layout_id}");
 
         // fn(*mut u8, usize)
         let ptr_ty = self.module.isa().pointer_type();

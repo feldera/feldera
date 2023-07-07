@@ -45,8 +45,8 @@ pub struct OutputCollectionHandles {
     /// In more detail, the circuit handles inputs written to this stream as
     /// follows:
     ///
-    /// * `(true, Some(descr))` - Start monitoring the specified descriptor.
-    ///   The circuit will output a complete snapshot of the neighborhood to the
+    /// * `(true, Some(descr))` - Start monitoring the specified descriptor. The
+    ///   circuit will output a complete snapshot of the neighborhood to the
     ///   [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
     ///   sstream at the end of the current clock cycle.  The
     ///   [`neighborhood_handle`](`Self::neighborhood_handle`) stream will

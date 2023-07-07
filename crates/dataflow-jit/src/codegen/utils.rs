@@ -37,6 +37,8 @@ pub(crate) trait FunctionBuilderExt {
     fn float_pi(&mut self, ty: Type) -> Value;
 
     fn float_nan(&mut self, ty: Type) -> Value;
+
+    fn const_u128(&mut self, value: u128) -> Value;
 }
 
 impl FunctionBuilderExt for FunctionBuilder<'_> {
@@ -110,6 +112,16 @@ impl FunctionBuilderExt for FunctionBuilder<'_> {
                 "called `FunctionBuilderExt::float_nan()` with the non-float type {other}",
             ),
         }
+    }
+
+    fn const_u128(&mut self, value: u128) -> Value {
+        let bytes = value.to_ne_bytes();
+        let low = u64::from_ne_bytes(bytes[..8].try_into().unwrap());
+        let high = u64::from_ne_bytes(bytes[8..].try_into().unwrap());
+
+        let low = self.ins().iconst(types::I64, low as i64);
+        let high = self.ins().iconst(types::I64, high as i64);
+        self.ins().iconcat(low, high)
     }
 }
 

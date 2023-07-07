@@ -3,7 +3,12 @@ use crate::ir::{
     ColumnType, RowLayoutCache,
 };
 use chrono::{NaiveDate, NaiveDateTime};
-use schemars::JsonSchema;
+use rust_decimal::Decimal;
+use schemars::{
+    gen::SchemaGenerator,
+    schema::{InstanceType, Schema, SchemaObject},
+    JsonSchema,
+};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::{cmp::Ordering, fmt, mem};
 
@@ -28,6 +33,8 @@ pub enum Constant {
     Date(NaiveDate),
     #[serde(deserialize_with = "deserialize_timestamp")]
     Timestamp(NaiveDateTime),
+    #[schemars(schema_with = "decimal_schema")]
+    Decimal(Decimal),
 }
 
 impl Constant {
@@ -99,6 +106,14 @@ impl Constant {
         matches!(self, Self::Timestamp(..))
     }
 
+    /// Returns `true` if the constant is a [`Decimal`].
+    ///
+    /// [`Decimal`]: Constant::Decimal
+    #[must_use]
+    pub const fn is_decimal(&self) -> bool {
+        matches!(self, Self::Decimal(..))
+    }
+
     /// Returns the [`ColumnType`] of the current constant
     #[must_use]
     pub const fn column_type(&self) -> ColumnType {
@@ -120,6 +135,7 @@ impl Constant {
             Self::String(_) => ColumnType::String,
             Self::Date(_) => ColumnType::Date,
             Self::Timestamp(_) => ColumnType::Timestamp,
+            Self::Decimal(_) => ColumnType::Decimal,
         }
     }
 }
@@ -150,9 +166,10 @@ where
             Constant::Bool(bool) => format!("{bool}"),
             Constant::String(string) => format!("{string:?}"),
             // Formats as `2001-07-08`
-            Constant::Date(date) => format!("{}", date.format("%F")),
+            Constant::Date(date) => format!("{date:?}"),
             // Formats as `2001-07-08T00:34:60.026490+09:30`
-            Constant::Timestamp(timestamp) => format!("{}", timestamp.format("%+")),
+            Constant::Timestamp(timestamp) => format!("{timestamp:?}"),
+            Constant::Decimal(decimal) => format!("{decimal}"),
             Constant::Unit => unreachable!("already handled unit"),
         };
 
@@ -335,4 +352,11 @@ impl<'de> de::Visitor<'de> for TimestampVisitor {
     {
         NaiveDateTime::parse_from_str(value, "%+").map_err(E::custom)
     }
+}
+
+fn decimal_schema(_gen: &mut SchemaGenerator) -> Schema {
+    Schema::Object(SchemaObject {
+        instance_type: Some(InstanceType::Number.into()),
+        ..Default::default()
+    })
 }

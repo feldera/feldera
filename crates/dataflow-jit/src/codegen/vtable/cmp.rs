@@ -19,7 +19,7 @@ impl Codegen {
     //        spuriously error
     #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_eq(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating eq vtable function for {layout_id}");
+        tracing::trace!("creating eq vtable function for {layout_id}");
 
         // fn(*const u8, *const u8) -> bool
         let ptr_ty = self.module.isa().pointer_type();
@@ -159,7 +159,9 @@ impl Codegen {
                         | ColumnType::I64
                         | ColumnType::Isize
                         | ColumnType::Date
-                        | ColumnType::Timestamp => builder.ins().icmp(IntCC::Equal, lhs, rhs),
+                        | ColumnType::Timestamp
+                        // Decimals are represented by a 128bit integer so bitwise equality should be correct
+                        | ColumnType::Decimal => builder.ins().icmp(IntCC::Equal, lhs, rhs),
 
                         // Compare floats
                         ColumnType::F32 | ColumnType::F64 => {
@@ -271,7 +273,7 @@ impl Codegen {
 
     #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_lt(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating lt vtable function for {layout_id}");
+        tracing::trace!("creating lt vtable function for {layout_id}");
 
         // fn(*const u8, *const u8) -> bool
         let func_id = self.create_function([self.module.isa().pointer_type(); 2], Some(types::I8));
@@ -469,6 +471,15 @@ impl Codegen {
                                 imports.get("string_lt", &mut self.module, builder.func);
                             builder.call_fn(string_lt, &[lhs, rhs])
                         }
+
+                        ColumnType::Decimal => {
+                            let (lhs_lo, lhs_hi) = builder.ins().isplit(lhs);
+                            let (rhs_lo, rhs_hi) = builder.ins().isplit(rhs);
+
+                            let decimal_lt =
+                                imports.get("decimal_lt", &mut self.module, builder.func);
+                            builder.call_fn(decimal_lt, &[lhs_lo, lhs_hi, rhs_lo, rhs_hi])
+                        }
                     };
 
                     let next = builder.create_block();
@@ -512,7 +523,7 @@ impl Codegen {
 
     #[tracing::instrument(skip(self))]
     pub(super) fn codegen_layout_cmp(&mut self, layout_id: LayoutId) -> FuncId {
-        tracing::info!("creating cmp vtable function for {layout_id}");
+        tracing::trace!("creating cmp vtable function for {layout_id}");
 
         // fn(*const u8, *const u8) -> Ordering
         // Ordering is represented as an i8 where -1 = Less, 0 = Equal and 1 = Greater
@@ -829,6 +840,24 @@ impl Codegen {
 
                             // -1 for less, 0 for equal, 1 for greater
                             let cmp = builder.call_fn(string_cmp, &[lhs, rhs]);
+
+                            // Zero is equal so if the value is non-zero we can return the ordering
+                            // directly
+                            builder
+                                .ins()
+                                .brif(cmp, return_block, &[cmp], next_compare, &[]);
+                        }
+
+                        ColumnType::Decimal => {
+                            let (lhs_lo, lhs_hi) = builder.ins().isplit(lhs);
+                            let (rhs_lo, rhs_hi) = builder.ins().isplit(rhs);
+
+                            let decimal_cmp =
+                                imports.get("decimal_cmp", &mut self.module, builder.func);
+
+                            // -1 for less, 0 for equal, 1 for greater
+                            let cmp =
+                                builder.call_fn(decimal_cmp, &[lhs_lo, lhs_hi, rhs_lo, rhs_hi]);
 
                             // Zero is equal so if the value is non-zero we can return the ordering
                             // directly

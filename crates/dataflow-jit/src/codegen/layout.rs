@@ -7,6 +7,7 @@ use std::{
     alloc::Layout as StdLayout,
     error::Error,
     fmt::{self, Debug, Display},
+    mem::align_of,
     ptr::NonNull,
 };
 use target_lexicon::PointerWidth;
@@ -26,6 +27,7 @@ pub enum NativeType {
     F64,
     Ptr,
     Bool,
+    U128,
     Usize,
     Isize,
 }
@@ -40,6 +42,7 @@ impl NativeType {
             Self::F32 => types::F32,
             Self::U16 | Self::I16 => types::I16,
             Self::U8 | Self::I8 | Self::Bool => types::I8,
+            Self::U128 => types::I128,
         }
     }
 
@@ -50,6 +53,7 @@ impl NativeType {
             Self::U32 | Self::I32 | Self::F32 => 4,
             Self::U16 | Self::I16 => 2,
             Self::U8 | Self::I8 | Self::Bool => 1,
+            Self::U128 => 16,
         }
     }
 
@@ -60,6 +64,7 @@ impl NativeType {
             Self::U32 | Self::I32 | Self::F32 => 4,
             Self::U16 | Self::I16 => 2,
             Self::U8 | Self::I8 | Self::Bool => 1,
+            Self::U128 => align_of::<u128>() as u32,
         }
     }
 
@@ -88,6 +93,7 @@ impl NativeType {
             Self::F32 => "f32",
             Self::F64 => "f64",
             Self::Ptr => "ptr",
+            Self::U128 => "u128",
             Self::Bool => "bool",
             Self::Usize => "usize",
             Self::Isize => "isize",
@@ -272,7 +278,8 @@ impl TryFrom<NativeType> for BitSetType {
             | NativeType::Ptr
             | NativeType::Usize
             | NativeType::Isize
-            | NativeType::Bool => return Err(InvalidBitsetType),
+            | NativeType::Bool
+            | NativeType::U128 => return Err(InvalidBitsetType),
         })
     }
 }

@@ -69,6 +69,10 @@ clap = { version = "4.1.8", features = ["derive"], optional = true }
     version = "1.6.0"
     features = ["std", "rustc_1_57"]
 
+    [dependencies.rust_decimal]
+    version = "1.29"
+    features = ["maths", "c-repr"]
+
 [target.'cfg(windows)'.dependencies.winapi]
 version = "0.3.9"
 features = ["winnt"]
@@ -84,3 +88,7 @@ tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
     version = "0.4.23"
     default-features = false
     features = ["std", "clock"]
+
+    [dev-dependencies.rust_decimal]
+    version = "1.29"
+    features = ["maths", "c-repr", "proptest"]
