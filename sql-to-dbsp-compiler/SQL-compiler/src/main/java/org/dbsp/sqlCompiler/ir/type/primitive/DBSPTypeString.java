@@ -31,7 +31,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Objects;
 
 public class DBSPTypeString extends DBSPTypeBaseType {
     public static final int UNLIMITED_PRECISION = -1;

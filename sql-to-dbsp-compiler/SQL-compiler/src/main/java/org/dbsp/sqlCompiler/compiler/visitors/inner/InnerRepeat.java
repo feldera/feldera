@@ -7,6 +7,7 @@ import org.dbsp.util.Logger;
 /**
  * Repeats another IRTransform until no changes happen anymore.
  */
+@SuppressWarnings("unused")
 public class InnerRepeat implements IWritesLogs, IRTransform {
     protected final IRTransform visitor;
 

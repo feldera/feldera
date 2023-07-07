@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 public class DBSPTypeVoid extends DBSPTypeBaseType {
     public static final DBSPTypeVoid INSTANCE = new DBSPTypeVoid();

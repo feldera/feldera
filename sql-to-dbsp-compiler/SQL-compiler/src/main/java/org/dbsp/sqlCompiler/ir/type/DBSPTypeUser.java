@@ -47,10 +47,6 @@ public class DBSPTypeUser extends DBSPType {
         return this.typeArgs[index];
     }
 
-    public String getName() {
-        return this.name;
-    }
-
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)

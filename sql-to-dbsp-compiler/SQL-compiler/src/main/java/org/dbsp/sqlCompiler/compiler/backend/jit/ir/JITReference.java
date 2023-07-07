@@ -24,7 +24,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.util.IIndentStream;
 
 /**

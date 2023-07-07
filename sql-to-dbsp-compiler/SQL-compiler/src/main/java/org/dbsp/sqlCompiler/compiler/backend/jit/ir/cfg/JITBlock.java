@@ -34,7 +34,6 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITInstruction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITInstructionRef;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.util.IIndentStream;
 

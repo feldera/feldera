@@ -5,9 +5,9 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 /**
- * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/collate.out
+ * <a href="https://github.com/postgres/postgres/blob/master/src/test/regress/expected/collate.out">...</a>
  */
-public class PostgresCollate extends PostgresBaseTest {
+public class PostgresCollateTests extends PostgresBaseTest {
     @Override
     public void prepareData(DBSPCompiler compiler) {
         // Per-column collation not supported in Calcite

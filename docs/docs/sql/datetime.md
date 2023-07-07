@@ -60,7 +60,7 @@ The following operations are available on dates:
 
 `EXTRACT(<unit> FROM date)` where `<unit>` is a time unit, as
 described above.  Result is always a `BIGINT` value.
-`DATE_PART` is a synonim for `EXTRACT`.
+`DATE_PART` is a synonym for `EXTRACT`.
 
 The following abbreviations can be used as well:
 

@@ -56,7 +56,7 @@ public class DBSPFieldComparatorExpression extends DBSPComparatorExpression {
     }
 
     public DBSPType tupleType() {
-        return source.tupleType();
+        return this.source.tupleType();
     }
 
     @Override

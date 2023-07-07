@@ -36,7 +36,7 @@ public class DBSPIntervalMillisLiteral extends DBSPLiteral {
     @Nullable public final Long value;
 
     public DBSPIntervalMillisLiteral() {
-        this(null, DBSPTypeMillisInterval.NULLABLE_INSTANCE, null);
+        this(CalciteObject.EMPTY, DBSPTypeMillisInterval.NULLABLE_INSTANCE, null);
     }
 
     public DBSPIntervalMillisLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {

@@ -46,7 +46,7 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITMuxInstructi
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITSetNullInstruction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITStoreInstruction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITUnaryInstruction;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JitUninitInstruction;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITUninitInstruction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITBoolType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITDateType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITI64Type;
@@ -115,6 +115,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     static class OutParamsAssignmentTarget extends AssignmentTarget {
         private final List<AssignmentTarget> fields = new ArrayList<>();
 
+        @SuppressWarnings("BooleanMethodIsAlwaysInverted")
         public boolean isEmpty() {
             return this.fields.isEmpty();
         }
@@ -1071,7 +1072,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             JITInstructionPair declaration = this.declare(statement.variable, needsNull(statement.type));
             var = new VariableAssignmentTarget(statement.variable, type, declaration);
             this.pushVariable(var);
-            this.add(new JitUninitInstruction(declaration.value.getId(), type.to(JITRowType.class), statement.variable));
+            this.add(new JITUninitInstruction(declaration.value.getId(), type.to(JITRowType.class), statement.variable));
         }
         if (statement.initializer != null) {
             statement.initializer.accept(this);
@@ -1136,7 +1137,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 this.getCurrentBlock().terminate(branch);
                 this.setCurrentBlock(isNull);
 
-                JITInstruction uninit = this.add(new JitUninitInstruction(
+                JITInstruction uninit = this.add(new JITUninitInstruction(
                         this.nextInstructionId(), scalarType, "if (" + expression + ").is_null"));
                 JITBlockDestination nextDestination = next.createDestination();
                 nextDestination.addArgument(uninit.getInstructionReference());

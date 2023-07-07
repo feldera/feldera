@@ -29,10 +29,10 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITRowType;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
 import org.dbsp.util.IIndentStream;
 
-public class JitUninitInstruction extends JITInstruction {
+public class JITUninitInstruction extends JITInstruction {
     public final JITType type;
 
-    public JitUninitInstruction(long id, JITType type, String comment) {
+    public JITUninitInstruction(long id, JITType type, String comment) {
         super(id, "Uninit", comment);
         this.type = type;
     }

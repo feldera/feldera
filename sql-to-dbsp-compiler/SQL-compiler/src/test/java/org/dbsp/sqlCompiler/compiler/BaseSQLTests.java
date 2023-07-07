@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.util.Utilities;
@@ -52,8 +51,7 @@ public class BaseSQLTests {
     static final List<TestCase> testsToRun = new ArrayList<>();
 
     @BeforeClass
-    public static void prepareTests() throws IOException {
-        generateLib();
+    public static void prepareTests() {
         testsToRun.clear();
     }
 
@@ -93,10 +91,6 @@ public class BaseSQLTests {
         writer.writeAndClose();
         Utilities.compileAndTestRust(rustDirectory, false, extraArgs);
         testsToRun.clear();
-    }
-
-    public static void generateLib() throws IOException {
-        RustSqlRuntimeLibrary.INSTANCE.writeSqlLibrary( "../lib/genlib/src/lib.rs");
     }
 
     protected void addRustTestCase(String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {

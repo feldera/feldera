@@ -24,26 +24,16 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.dbsp.sqlCompiler.ir.DBSPFunction;
-import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.*;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.pattern.*;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
-import org.dbsp.util.Linq;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.io.*;
 import java.util.*;
 
 /**
- * This class generates Rust sources for the SQL
+ * This class manages the interface to the SQL
  * runtime library: support functions that implement the
  * SQL semantics.
  */
@@ -58,7 +48,6 @@ public class RustSqlRuntimeLibrary {
     private final Set<DBSPOpcode> handWritten = new HashSet<>();
 
     public static final RustSqlRuntimeLibrary INSTANCE =new RustSqlRuntimeLibrary();
-    final LinkedHashMap<String, IDBSPDeclaration> declarations = new LinkedHashMap<>();
 
     protected RustSqlRuntimeLibrary() {
         this.aggregateFunctions.add("count");
@@ -228,133 +217,5 @@ public class RustSqlRuntimeLibrary {
             }
         }
         throw new UnimplementedException("Could not find `" + opcode + "` for type " + ltype);
-    }
-
-    void generateProgram() {
-        this.declarations.clear();
-        DBSPType[] numericTypes = new DBSPType[] {
-                DBSPTypeInteger.SIGNED_16,
-                DBSPTypeInteger.SIGNED_32,
-                DBSPTypeInteger.SIGNED_64,
-        };
-        DBSPType[] boolTypes = new DBSPType[] {
-                DBSPTypeBool.INSTANCE
-        };
-        DBSPType[] stringTypes = new DBSPType[] {
-                DBSPTypeString.UNLIMITED_INSTANCE
-        };
-        DBSPType[] fpTypes = new DBSPType[] {
-                DBSPTypeDouble.INSTANCE,
-                DBSPTypeFloat.INSTANCE
-        };
-
-        for (HashMap<String, DBSPOpcode> h: Arrays.asList(
-                this.arithmeticFunctions, this.booleanFunctions, this.stringFunctions, this.doubleFunctions)) {
-            for (String f : h.keySet()) {
-                DBSPOpcode op = h.get(f);
-                if (this.handWritten.contains(op))
-                    // Handwritten rules in a separate library
-                    continue;
-                for (int i = 0; i < 4; i++) {
-                    DBSPType leftType;
-                    DBSPType rightType;
-                    DBSPType[] raw;
-                    DBSPType withNull;
-                    if (h.equals(this.stringFunctions)) {
-                        raw = stringTypes;
-                    } else if (h == this.booleanFunctions) {
-                        raw = boolTypes;
-                    } else if (h == this.doubleFunctions) {
-                        raw = fpTypes;
-                    } else {
-                        raw = numericTypes;
-                    }
-                    for (DBSPType rawType: raw) {
-                        if (op.equals(DBSPOpcode.MOD) && rawType.is(DBSPTypeFP.class))
-                            continue;
-                        withNull = rawType.setMayBeNull(true);
-                        DBSPPattern leftMatch = new DBSPIdentifierPattern("l");
-                        DBSPPattern rightMatch = new DBSPIdentifierPattern("r");
-                        if ((i & 1) == 1) {
-                            leftType = withNull;
-                            leftMatch = DBSPTupleStructPattern.somePattern(leftMatch);
-                        } else {
-                            leftType = rawType;
-                        }
-                        if ((i & 2) == 2) {
-                            rightType = withNull;
-                            rightMatch = DBSPTupleStructPattern.somePattern(rightMatch);
-                        } else {
-                            rightType = rawType;
-                        }
-                        /*
-                        fn add_i32N_i32N(left: Option<i32>, right: Option<i32>): Option<i32> =
-                        match ((left, right)) {
-                            (Some{a}, Some{b}) -> Some{a + b},
-                            (_, _)             -> None
-                        }
-                        */
-
-                        // The general rule is: if any operand is NULL, the result is NULL.
-                        FunctionDescription function = this.getImplementation(
-                                op, null, leftType, rightType);
-                        DBSPParameter left = new DBSPParameter("left", leftType);
-                        DBSPParameter right = new DBSPParameter("right", rightType);
-                        DBSPType type = function.returnType;
-                        DBSPExpression def;
-                        if (i == 0) {
-                            DBSPExpression leftVar = rawType.var("left");
-                            DBSPExpression rightVar = rawType.var("right");
-                            def = new DBSPBinaryExpression(type, op, leftVar, rightVar, true);
-                        } else {
-                            def = new DBSPBinaryExpression(type, op,
-                                    rawType.var("l"),
-                                    rawType.var("r"), true);
-                            def = new DBSPMatchExpression(
-                                    new DBSPRawTupleExpression(
-                                            leftType.var("left"),
-                                            rightType.var("right")),
-                                    Arrays.asList(
-                                            new DBSPMatchExpression.Case(
-                                                    new DBSPTuplePattern(leftMatch, rightMatch),
-                                                    def.some()),
-                                            new DBSPMatchExpression.Case(
-                                                    new DBSPTuplePattern(
-                                                            DBSPWildcardPattern.INSTANCE,
-                                                            DBSPWildcardPattern.INSTANCE),
-                                                    DBSPLiteral.none(type))),
-                                    type);
-                        }
-                        DBSPFunction func = new DBSPFunction(
-                                function.function, Arrays.asList(left, right), type, def,
-                                Linq.list("#[inline(always)]"));
-                        Utilities.putNew(this.declarations, func.name, func);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Writes in the specified file the Rust code for the SQL runtime.
-     * @param filename   File to write the code to.
-     */
-    public void writeSqlLibrary(String filename) throws IOException {
-        // The generated library should be really independent on the compiler used.
-        DBSPCompiler fakeCompiler = new DBSPCompiler(new CompilerOptions());
-        this.generateProgram();
-        File file = new File(filename);
-        FileWriter writer = new FileWriter(file, false);
-        writer.append("// Automatically-generated file\n");
-        writer.append("#![allow(clippy::all)]\n");
-        writer.append("#![allow(unused_parens)]\n");
-        writer.append("#![allow(non_snake_case)]\n");
-        writer.append("use dbsp::algebra::{F32, F64};\n");
-        writer.append("\n");
-        for (IDBSPDeclaration declaration: this.declarations.values()) {
-            writer.append(ToRustInnerVisitor.toRustString(fakeCompiler, declaration, false));
-            writer.append("\n\n");
-        }
-        writer.close();
     }
 }

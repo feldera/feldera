@@ -49,9 +49,4 @@ public class TableModifyStatement extends FrontEndStatement {
     public void setTranslation(RelNode rel) {
         this.rel = rel;
     }
-
-    @Override
-    public SqlNode getNode() {
-        return this.node;
-    }
 }
