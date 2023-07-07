@@ -230,11 +230,6 @@ public abstract class InnerVisitor implements IRTransform {
 
     // Various
     
-    public VisitDecision preorder(DBSPMatchExpression.Case node) {
-        if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
-        else return VisitDecision.CONTINUE;
-    }
-
     public VisitDecision preorder(DBSPPathSegment node) {
         if (this.visitSuper) return this.preorder((IDBSPInnerNode) node);
         else return VisitDecision.CONTINUE;
@@ -378,15 +373,6 @@ public abstract class InnerVisitor implements IRTransform {
     }
 
     // Patterns
-    public VisitDecision preorder(DBSPTupleStructPattern node) {
-        if (this.visitSuper) return this.preorder((DBSPPattern) node);
-        else return VisitDecision.CONTINUE;
-    }
-
-    public VisitDecision preorder(DBSPTuplePattern node) {
-        if (this.visitSuper) return this.preorder((DBSPPattern) node);
-        else return VisitDecision.CONTINUE;
-    }
 
     public VisitDecision preorder(DBSPIdentifierPattern node) {
         if (this.visitSuper) return this.preorder((DBSPPattern) node);
@@ -461,11 +447,6 @@ public abstract class InnerVisitor implements IRTransform {
     }
 
     public VisitDecision preorder(DBSPQualifyTypeExpression node) {
-        if (this.visitSuper) return this.preorder((DBSPExpression) node);
-        else return VisitDecision.CONTINUE;
-    }
-
-    public VisitDecision preorder(DBSPMatchExpression node) {
         if (this.visitSuper) return this.preorder((DBSPExpression) node);
         else return VisitDecision.CONTINUE;
     }
@@ -775,10 +756,6 @@ public abstract class InnerVisitor implements IRTransform {
 
     // Various
 
-    public void postorder(DBSPMatchExpression.Case node) {
-        if (this.visitSuper) this.postorder((IDBSPInnerNode) node);
-    }
-
     public void postorder(DBSPPathSegment node) {
         if (this.visitSuper) this.postorder((IDBSPInnerNode) node);
     }
@@ -894,13 +871,6 @@ public abstract class InnerVisitor implements IRTransform {
     }
 
     // Patterns
-    public void postorder(DBSPTupleStructPattern node) {
-        if (this.visitSuper) this.postorder((DBSPPattern) node);
-    }
-
-    public void postorder(DBSPTuplePattern node) {
-        if (this.visitSuper) this.postorder((DBSPPattern) node);
-    }
 
     public void postorder(DBSPIdentifierPattern node) {
         if (this.visitSuper) this.postorder((DBSPPattern) node);
@@ -961,10 +931,6 @@ public abstract class InnerVisitor implements IRTransform {
     }
 
     public void postorder(DBSPQualifyTypeExpression node) {
-        if (this.visitSuper) this.postorder((DBSPExpression) node);
-    }
-
-    public void postorder(DBSPMatchExpression node) {
         if (this.visitSuper) this.postorder((DBSPExpression) node);
     }
 
