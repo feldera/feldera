@@ -103,7 +103,6 @@ prepare-cache:
     RUN mkdir -p crates/dbsp
     RUN mkdir -p crates/adapters
     RUN mkdir -p crates/pipeline_manager
-    RUN mkdir -p sql-to-dbsp-compiler/lib/genlib
     RUN mkdir -p sql-to-dbsp-compiler/lib/hashing
     RUN mkdir -p sql-to-dbsp-compiler/lib/readers
     RUN mkdir -p sql-to-dbsp-compiler/lib/sqllib
@@ -121,7 +120,6 @@ prepare-cache:
     COPY --keep-ts crates/adapters/Cargo.toml crates/adapters/
     COPY --keep-ts crates/pipeline_manager/Cargo.toml crates/pipeline_manager/
     #COPY --keep-ts crates/webui-tester/Cargo.toml crates/webui-tester/
-    COPY --keep-ts sql-to-dbsp-compiler/lib/genlib/Cargo.toml sql-to-dbsp-compiler/lib/genlib/
     COPY --keep-ts sql-to-dbsp-compiler/lib/hashing/Cargo.toml sql-to-dbsp-compiler/lib/hashing/
     COPY --keep-ts sql-to-dbsp-compiler/lib/readers/Cargo.toml sql-to-dbsp-compiler/lib/readers/
     COPY --keep-ts sql-to-dbsp-compiler/lib/sqllib/Cargo.toml sql-to-dbsp-compiler/lib/sqllib/
@@ -148,7 +146,6 @@ prepare-cache:
     RUN touch crates/dbsp/benches/column_layer.rs
     RUN mkdir -p crates/pipeline_manager/src && touch crates/pipeline_manager/src/main.rs
     #RUN mkdir -p crates/webui-tester/src && touch crates/webui-tester/src/lib.rs
-    RUN mkdir -p sql-to-dbsp-compiler/lib/genlib/src && touch sql-to-dbsp-compiler/lib/genlib/src/lib.rs
     RUN mkdir -p sql-to-dbsp-compiler/lib/hashing/src && touch sql-to-dbsp-compiler/lib/hashing/src/lib.rs
     RUN mkdir -p sql-to-dbsp-compiler/lib/readers/src && touch sql-to-dbsp-compiler/lib/readers/src/lib.rs
     RUN mkdir -p sql-to-dbsp-compiler/lib/sqllib/src && touch sql-to-dbsp-compiler/lib/sqllib/src/lib.rs
@@ -200,8 +197,6 @@ build-cache:
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_nexmark
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_nexmark --no-run
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_nexmark
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package genlib
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package genlib --no-run
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package hashing
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package hashing --no-run
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package readers
