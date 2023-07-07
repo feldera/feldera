@@ -22,13 +22,12 @@ services:
      - RUST_BACKTRACE=1
      - REDPANDA_BROKERS=redpanda:9092
      - RUST_LOG
+     - AUTH_CLIENT_ID
+     - AUTH_ISSUER
+     - AUTH_JWK_URI
    command:
-     - ./dbsp_pipeline_manager
-     - --bind-address=0.0.0.0
-     - --working-directory=/working-dir
-     - --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler
-     - --dbsp-override-path=/database-stream-processor
      - --db-connection-string=postgresql://postgres:postgres@db:5432
+     - --use-auth=${USE_AUTH:-false}
 
   redpanda:
     profiles: ["demo"]

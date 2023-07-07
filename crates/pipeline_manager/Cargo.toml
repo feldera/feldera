@@ -11,7 +11,7 @@ license = "MIT OR Apache-2.0"
 dbsp_adapters = { path = "../adapters" }
 actix-web = "4.3"
 actix-web-static-files = "4.0.0"
-awc = "3.1.0"
+awc = {version = "3.1.0", features = ["openssl"] } # Needed for auth workflows
 static-files = "0.2.3"
 actix-cors = "0.6.4"
 anyhow = { version = "1.0.57", features = ["backtrace"] }

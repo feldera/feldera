@@ -93,13 +93,12 @@ pub(crate) struct ManagerConfig {
     ///
     /// Usage depends on three environment variables to be set
     ///
-    /// OAUTH_CLIENT_ID, the client-id or application
-    /// OAUTH_ISSUER, the issuing service
-    /// OAUTH_JWK_URI, the URI to get JWK signing keys from
+    /// AUTH_CLIENT_ID, the client-id or application
+    /// AUTH_ISSUER, the issuing service
     ///
     /// The default is `false`.
     #[serde(default)]
-    #[arg(long)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t=false)]
     pub use_auth: bool,
 
     /// Point to a relational database to use for state management. Accepted

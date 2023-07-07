@@ -264,10 +264,9 @@ pub(crate) enum Provider {
 
 pub(crate) fn aws_auth_config() -> AuthConfiguration {
     let mut validation = Validation::new(Algorithm::RS256);
-    let audience =
-        env::var("OAUTH_CLIENT_ID").expect("Missing environment variable OAUTH_CLIENT_ID");
-    let iss = env::var("OAUTH_ISSUER").expect("Missing environment variable OAUTH_ISSUER");
-    let jwk_uri = env::var("OAUTH_JWK_URI").expect("Missing environment variable OAUTH_JWK_URI");
+    let audience = env::var("AUTH_CLIENT_ID").expect("Missing environment variable AUTH_CLIENT_ID");
+    let iss = env::var("AUTH_ISSUER").expect("Missing environment variable AUTH_ISSUER");
+    let jwk_uri = format!("{}/.well-known/jwks.json", iss);
     validation.set_audience(&[audience]);
     validation.set_issuer(&[iss]);
     AuthConfiguration {
@@ -384,6 +383,7 @@ async fn decode_aws_cognito_token(
                 let state = req.app_data::<Data<ServerState>>().unwrap();
                 let cache = &mut state.jwk_cache.lock().await;
                 let jwk = cache.get(&header.kid.unwrap(), configuration).await?;
+
                 let token_data = decode::<AwsCognitoClaim>(token, &jwk, &configuration.validation);
                 if let Ok(t) = &token_data {
                     // TODO: aud and client_id may not be the same when using a resource server
