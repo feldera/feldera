@@ -1,10 +1,13 @@
 //! SQL String operations
 
 #![allow(non_snake_case)]
-use crate::some_function1;
-use crate::some_function2;
-use crate::some_function3;
-use crate::some_function4;
+use crate::{
+    some_function1,
+    some_function2,
+    some_function3,
+    some_function4,
+    some_polymorphic_function2,
+};
 
 use like::{Like, Escape};
 
@@ -13,19 +16,7 @@ pub fn concat_s_s(left: String, right: String) -> String {
     result
 }
 
-pub fn concat_sN_s(left: Option<String>, right: String) -> Option<String> {
-    left.map(|v| concat_s_s(v, right))
-}
-
-pub fn concat_s_sN(left: String, right: Option<String>) -> Option<String> {
-    right.map(|v| concat_s_s(left, v))
-}
-
-pub fn concat_sN_sN(left: Option<String>, right: Option<String>) -> Option<String> {
-    let left = left?;
-    let right = right?;
-    Some(concat_s_s(left, right))
-}
+some_polymorphic_function2!(concat, s, String, s, String, String);
 
 pub fn substring3___(value: String, left: i32, count: i32) -> String {
     if count < 0 { return "".to_string() }
@@ -52,17 +43,23 @@ pub fn trim_both_s_s(remove: String, value: String) -> String {
     value.trim_matches(chr).to_string()
 }
 
+some_polymorphic_function2!(trim_both, s, String, s, String, String);
+
 pub fn trim_leading_s_s(remove: String, value: String) -> String {
     // 'remove' always has exactly 1 character
     let chr = remove.chars().next().unwrap();
     value.trim_start_matches(chr).to_string()
 }
 
+some_polymorphic_function2!(trim_leading, s, String, s, String, String);
+
 pub fn trim_trailing_s_s(remove: String, value: String) -> String {
     // 'remove' always has exactly 1 character
     let chr = remove.chars().next().unwrap();
     value.trim_end_matches(chr).to_string()
 }
+
+some_polymorphic_function2!(trim_trailing, s, String, s, String, String);
 
 pub fn like2__(value: String, pattern: String) -> bool {
     Like::<false>::like(value.as_str(), pattern.as_str()).unwrap()
@@ -157,3 +154,31 @@ pub fn upper_(source: String) -> String {
 }
 
 some_function1!(upper, String, String);
+
+pub fn initcap_(source: String) -> String {
+    let mut result = String::with_capacity(source.len());
+    let mut capitalize_next = true;
+    for c in source.chars() {
+        if c.is_alphanumeric() {
+            if capitalize_next {
+                for r in c.to_uppercase() {
+                    result.push(r);
+                }
+                capitalize_next = false;
+            } else {
+                for r in c.to_lowercase() {
+                    result.push(r);
+                }
+                capitalize_next = false;
+            }
+        } else {
+            capitalize_next = true;
+            result.push(c);
+        }
+    }
+    println!("{}", result);
+    result
+}
+
+some_function1!(initcap, String, String);
+

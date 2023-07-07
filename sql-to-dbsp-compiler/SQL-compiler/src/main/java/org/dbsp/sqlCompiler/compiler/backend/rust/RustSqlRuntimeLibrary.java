@@ -55,7 +55,7 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put("gte", DBSPOpcode.GTE);
         this.arithmeticFunctions.put("plus", DBSPOpcode.ADD);
         this.arithmeticFunctions.put("minus", DBSPOpcode.SUB);
-        this.arithmeticFunctions.put("mod", DBSPOpcode.MOD);
+        this.arithmeticFunctions.put("modulo", DBSPOpcode.MOD);
         this.arithmeticFunctions.put("times", DBSPOpcode.MUL);
         this.arithmeticFunctions.put("div", DBSPOpcode.DIV);
         this.arithmeticFunctions.put("shiftr", DBSPOpcode.SHR);

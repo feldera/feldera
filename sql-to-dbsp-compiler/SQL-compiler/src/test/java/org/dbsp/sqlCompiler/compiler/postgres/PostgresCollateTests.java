@@ -20,12 +20,12 @@ public class PostgresCollateTests extends PostgresBaseTest {
         compiler.compileStatements(sql);
     }
 
-    @Test @Ignore("initcap not yet implemented in Rust")
+    @Test
     public void testUpperLower() {
         this.queryWithOutput("SELECT a, lower(x), lower(y), upper(x), upper(y), initcap(x), initcap(y) FROM collate_test10;\n" +
                 " a | lower | lower | upper | upper | initcap | initcap \n" +
                 "---+-------+-------+-------+-------+---------+---------\n" +
-                " 1 | hij   | hij   | HIJ   | HIJ   | Hij     | Hij\n" +
-                " 2 | hij   | hij   | HIJ   | HIJ   | Hij     | Hij");
+                " 1 |hij|hij|HIJ|HIJ|Hij|Hij\n" +
+                " 2 |hij|hij|HIJ|HIJ|Hij|Hij");
     }
 }
