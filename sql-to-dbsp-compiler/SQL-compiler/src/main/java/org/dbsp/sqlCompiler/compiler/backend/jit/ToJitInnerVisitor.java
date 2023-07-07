@@ -288,7 +288,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     JITInstructionPair getExpressionValues(DBSPExpression expression) {
         return Utilities.getExists(this.expressionToValues, expression);
     }
-    
+
     JITInstructionPair accept(DBSPExpression expression) {
         expression.accept(this);
         return this.getExpressionValues(expression);
@@ -462,52 +462,52 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             String jitFunction = null;
             String function = path.path.toString();
             switch (function) {
-                case "extract_Timestamp_second":
+                case "extract_second_Timestamp":
                     jitFunction = "dbsp.timestamp.second";
                     break;
-                case "extract_Timestamp_minute":
+                case "extract_minute_Timestamp":
                     jitFunction = "dbsp.timestamp.minute";
                     break;
-                case "extract_Timestamp_hour":
+                case "extract_hour_Timestamp":
                     jitFunction = "dbsp.timestamp.hour";
                     break;
-                case "extract_Timestamp_day":
+                case "extract_day_Timestamp":
                     jitFunction = "dbsp.timestamp.day";
                     break;
-                case "extract_Timestamp_dow":
+                case "extract_dow_Timestamp":
                     jitFunction = "dbsp.timestamp.day_of_week";
                     break;
-                case "extract_Timestamp_doy":
+                case "extract_doy_Timestamp":
                     jitFunction = "dbsp.timestamp.day_of_year";
                     break;
-                case "extract_Timestamp_isodow":
+                case "extract_isodow_Timestamp":
                     jitFunction = "dbsp.timestamp.iso_day_of_week";
                     break;
-                case "extract_Timestamp_week":
+                case "extract_week_Timestamp":
                     jitFunction = "dbsp.timestamp.week";
                     break;
-                case "extract_Timestamp_month":
+                case "extract_month_Timestamp":
                     jitFunction = "dbsp.timestamp.month";
                     break;
-                case "extract_Timestamp_year":
+                case "extract_year_Timestamp":
                     jitFunction = "dbsp.timestamp.year";
                     break;
-                case "extract_Timestamp_isoyear":
+                case "extract_isoyear_Timestamp":
                     jitFunction = "dbsp.timestamp.isoyear";
                     break;
-                case "extract_Timestamp_quarter":
+                case "extract_quarter_Timestamp":
                     jitFunction = "dbsp.timestamp.quarter";
                     break;
-                case "extract_Timestamp_decade":
+                case "extract_decade_Timestamp":
                     jitFunction = "dbsp.timestamp.decade";
                     break;
-                case "extract_Timestamp_century":
+                case "extract_century_Timestamp":
                     jitFunction = "dbsp.timestamp.century";
                     break;
-                case "extract_Timestamp_millennium":
+                case "extract_millennium_Timestamp":
                     jitFunction = "dbsp.timestamp.millennium";
                     break;
-                case "extract_Timestamp_epoch":
+                case "extract_epoch_Timestamp":
                     jitFunction = "dbsp.timestamp.epoch";
                     break;
                 default:

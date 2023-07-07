@@ -348,20 +348,25 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     /**
      * Compile a function call into a Rust function.
      *
-     * @param name             Name of the called function in Rust.
+     * @param baseName         Base name of the called function in Rust.
+     *                         To this name we append information about argument
+     *                         nullabilty.
      * @param node             CalciteObject holding the call.
      * @param resultType       Type of result produced by call.
      * @param ops              Translated operands for the call.
      * @param expectedArgCount A list containing all known possible argument counts.
      */
-    DBSPExpression compileFunction(String name, CalciteObject node,
+    DBSPExpression compileFunction(String baseName, CalciteObject node,
                                    DBSPType resultType, List<DBSPExpression> ops, Integer... expectedArgCount) {
+        StringBuilder builder = new StringBuilder(baseName);
         this.validateArgCount(node, ops.size(), expectedArgCount);
         DBSPExpression[] operands = ops.toArray(new DBSPExpression[0]);
+        for (DBSPExpression e: ops)
+            builder.append(e.getType().mayBeNull ? "N" : "_");
         if (expectedArgCount.length > 1)
             // If the function can have a variable number of arguments, postfix with the argument count
-            name += operands.length;
-        return new DBSPApplyExpression(node, name, resultType, operands);
+            builder.append(operands.length);
+        return new DBSPApplyExpression(node, builder.toString(), resultType, operands);
     }
 
     /**
@@ -601,9 +606,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return this.compilePolymorphicFunction(call, node, type,
                                 ops, 2);
                     }
+                    case "overlay":
+                        return this.compileFunction(call, node, type, ops, 3, 4);
                     case "char_length":
                     case "ascii":
                     case "chr":
+                    case "lower":
+                    case "upper":
+                    case "initcap":
                         return this.compileFunction(call, node, type, ops, 1);
                     case "repeat":
                         return this.compileFunction(call, node, type, ops, 2);

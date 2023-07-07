@@ -119,8 +119,20 @@ addition to the normal way of `''`.
     <td>Returns a string containing the character with the given code. If the code is incorrect (e.g., negative), the result is an empty string.</td>
   </tr>
   <tr>
-    <td><code>REPEAT ( stringm, count )</code></td>
+    <td><code>REPEAT ( string, count )</code></td>
     <td>Repeats string the specified number of times.  The result is an empty string for a negative or 0 count.</td>
+  </tr>
+  <tr>
+    <td><code>OVERLAY ( string PLACING newsubstring FROM start [ FOR remove ] )</code></td>
+    <td>Replaces the substring of string that starts at the start'th character and extends for remove characters with newsubstring. If count is omitted, it defaults to the length of newsubstring.  If 'start' is nott positive, the original string is unchanged.  If 'start' is bigger than the length of 'string', the result is the concatenation of the two strings.  If 'remove' is negative it is considered 0.</td>
+  </tr>
+  <tr>
+    <td><code>UPPER ( string )</code></td>
+    <td>Converts the string to all upper case.</td>
+  </tr>
+  <tr>
+    <td><code>LOWER ( string )</code></td>
+    <td>Converts the string to all lower case.</td>
   </tr>
 </table>
 

@@ -287,7 +287,26 @@ public class PostgresStringTests extends PostgresBaseTest {
     // SUBSTRING ... SIMILAR syntax not supported
     // SELECT SUBSTRING('abcdefg' SIMILAR 'a#"(b_d)#"%' ESCAPE '#') AS "bcd";
 
-    // TODO: overlay
+    @Test
+    public void testOverlay() {
+        this.queryWithOutput("SELECT OVERLAY('abcdef' PLACING '45' FROM 4) AS \"abc45f\";\n" +
+                " abc45f \n" +
+                "--------\n" +
+                "abc45f");
+        this.queryWithOutput("SELECT OVERLAY('yabadoo' PLACING 'daba' FROM 5) AS \"yabadaba\";\n" +
+                " yabadaba \n" +
+                "----------\n" +
+                "yabadaba");
+        this.queryWithOutput("SELECT OVERLAY('yabadoo' PLACING 'daba' FROM 5 FOR 0) AS \"yabadabadoo\";\n" +
+                " yabadabadoo \n" +
+                "-------------\n" +
+                "yabadabadoo");
+        this.queryWithOutput("SELECT OVERLAY('babosa' PLACING 'ubb' FROM 2 FOR 4) AS \"bubba\";\n" +
+                " bubba \n" +
+                "-------\n" +
+                "bubba");
+    }
+
     // TODO: regexp_replace
     // TODO: regexp_count
     // TODO: regexp_like
@@ -537,8 +556,6 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "text and varchar");
     }
 
-    // TODO: repeat
-
     @Test
     public void testLength() {
         // length in postgres is equivalent to char_length
@@ -556,7 +573,47 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "       4");
     }
 
-    // TODO: strpos
+    @Test
+    public void testStrpos() {
+        // No strpos in Calcite, replace with 'position' with arguments swapped
+        this.queryWithOutput("SELECT POSITION('cd' IN 'abcdef') AS \"pos_3\";\n" +
+                " pos_3 \n" +
+                "-------\n" +
+                "     3");
+        this.queryWithOutput("SELECT POSITION('xy' IN 'abcdef') AS \"pos_0\";\n" +
+                " pos_0 \n" +
+                "-------\n" +
+                "     0");
+        this.queryWithOutput("SELECT POSITION('' IN 'abcdef') AS \"pos_1\";\n" +
+                " pos_1 \n" +
+                "-------\n" +
+                "     1");
+        this.queryWithOutput("SELECT POSITION('xy' IN '') AS \"pos_0\";\n" +
+                " pos_0 \n" +
+                "-------\n" +
+                "     0");
+        this.queryWithOutput("SELECT POSITION('' IN '') AS \"pos_1\";\n" +
+                " pos_1 \n" +
+                "-------\n" +
+                "     1");
+    }
+
+    @Test @Ignore("No 'replace' yet in Calcite")
+    public void testReplace() {
+        this.queryWithOutput("SELECT replace('abcdef', 'de', '45') AS \"abc45f\";\n" +
+                " abc45f \n" +
+                "--------\n" +
+                " abc45f");
+        this.queryWithOutput("SELECT replace('yabadabadoo', 'ba', '123') AS \"ya123da123doo\";\n" +
+                " ya123da123doo \n" +
+                "---------------\n" +
+                " ya123da123doo");
+        this.queryWithOutput("SELECT replace('yabadoo', 'bad', '') AS \"yaoo\";\n" +
+                " yaoo \n" +
+                "------\n" +
+                " yaoo");
+    }
+
     // TODO: replace
     // TODO: split_part
     // TODO: to_hex
