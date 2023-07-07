@@ -33,31 +33,13 @@ public class DBSPBinaryExpression extends DBSPExpression {
     public final DBSPExpression left;
     public final DBSPExpression right;
     public final DBSPOpcode operation;
-    /**
-     * If 'true' it means that this is a native arithmetic operation (e.g., +).
-     * Otherwise this operation generates a runtime call (e.g., plus_i64_i64n).
-     * Primitive operations are only used to generate the sources for the genlib
-     * runtime library.
-     */
-    public final boolean primitive;
 
     public DBSPBinaryExpression(CalciteObject node, DBSPType type, DBSPOpcode operation,
-                                DBSPExpression left, DBSPExpression right, boolean primitive) {
+                                DBSPExpression left, DBSPExpression right) {
         super(node, type);
         this.operation = operation;
         this.left = left;
         this.right = right;
-        this.primitive = primitive;
-    }
-
-    public DBSPBinaryExpression(CalciteObject node, DBSPType type, DBSPOpcode operation,
-                                DBSPExpression left, DBSPExpression right) {
-        this(node, type, operation, left, right, false);
-    }
-
-    public DBSPBinaryExpression(DBSPType type, DBSPOpcode operation,
-                                DBSPExpression left, DBSPExpression right, boolean primitive) {
-        this(type.getNode(), type, operation, left, right, primitive);
     }
 
     @Override

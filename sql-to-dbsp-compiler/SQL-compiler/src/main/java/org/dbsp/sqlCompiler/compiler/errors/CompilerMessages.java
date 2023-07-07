@@ -11,7 +11,6 @@ import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 public class CompilerMessages {
     public class Error {

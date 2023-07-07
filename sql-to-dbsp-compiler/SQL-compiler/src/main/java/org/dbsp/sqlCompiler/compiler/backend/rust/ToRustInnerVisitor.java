@@ -452,49 +452,23 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
-        if (expression.primitive) {
-            if (expression.left.getType().mayBeNull) {
-                this.builder.append("(")
-                        .append("match (");
-                expression.left.accept(this);
-                this.builder.append(", ");
-                expression.right.accept(this);
-                this.builder.append(") {").increase()
-                        .append("(Some(x), Some(y)) => Some(x ")
-                        .append(expression.operation.toString())
-                        .append(" y),\n")
-                        .append("_ => None,\n")
-                        .decrease()
-                        .append("}")
-                        .append(")");
-            } else {
-                this.builder.append("(");
-                expression.left.accept(this);
-                this.builder.append(" ")
-                        .append(expression.operation.toString())
-                        .append(" ");
-                expression.right.accept(this);
-                this.builder.append(")");
-            }
-        } else {
-            if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
-                expression.left.accept(this);
-                this.builder.append(".mul_by_ref(&");
-                expression.right.accept(this);
-                this.builder.append(")");
-                return VisitDecision.STOP;
-            }
-            RustSqlRuntimeLibrary.FunctionDescription function = RustSqlRuntimeLibrary.INSTANCE.getImplementation(
-                    expression.operation,
-                    expression.getType(),
-                    expression.left.getType(),
-                    expression.right.getType());
-            this.builder.append(function.function).append("(");
+        if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
             expression.left.accept(this);
-            this.builder.append(", ");
+            this.builder.append(".mul_by_ref(&");
             expression.right.accept(this);
             this.builder.append(")");
+            return VisitDecision.STOP;
         }
+        RustSqlRuntimeLibrary.FunctionDescription function = RustSqlRuntimeLibrary.INSTANCE.getImplementation(
+                expression.operation,
+                expression.getType(),
+                expression.left.getType(),
+                expression.right.getType());
+        this.builder.append(function.function).append("(");
+        expression.left.accept(this);
+        this.builder.append(", ");
+        expression.right.accept(this);
+        this.builder.append(")");
         return VisitDecision.STOP;
     }
 
@@ -967,12 +941,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
             field.accept(this);
         }
         this.builder.append(")");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPWildcardPattern pattern) {
-        this.builder.append("_");
         return VisitDecision.STOP;
     }
 

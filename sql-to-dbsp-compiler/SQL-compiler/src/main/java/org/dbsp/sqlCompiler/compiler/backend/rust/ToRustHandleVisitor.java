@@ -53,7 +53,6 @@ import org.dbsp.util.Utilities;
 public class ToRustHandleVisitor extends ToRustVisitor {
     private final String functionName;
     int inputHandleIndex = 0;
-    int outputHandleIndex = 0;
 
     public ToRustHandleVisitor(IErrorReporter reporter, IndentStream builder, String functionName) {
         super(reporter, builder);
@@ -90,7 +89,6 @@ public class ToRustHandleVisitor extends ToRustVisitor {
 
     @Override
     public VisitDecision preorder(DBSPPartialCircuit circuit) {
-        this.outputHandleIndex = circuit.getInputCount();
         this.builder.append("pub fn ")
                 .append(this.functionName)
                 .append("(workers: usize) -> (DBSPHandle, Catalog) {")

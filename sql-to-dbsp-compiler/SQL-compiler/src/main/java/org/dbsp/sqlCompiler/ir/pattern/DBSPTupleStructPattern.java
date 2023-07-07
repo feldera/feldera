@@ -41,13 +41,6 @@ public class DBSPTupleStructPattern extends DBSPPattern {
         this.arguments = arguments;
     }
 
-    /**
-     * Shortcut to generate a Some(x) pattern.
-     */
-    public static DBSPPattern somePattern(DBSPPattern argument) {
-        return new DBSPTupleStructPattern(new DBSPPath("Some"), argument);
-    }
-
     @Override
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;

@@ -120,7 +120,6 @@ public class RustFileWriter implements ICompilerComponent {
             "    Runtime,\n" +
             "};\n" +
             "use dbsp_adapters::Catalog;\n" +
-            "use genlib::*;\n" +
             "use size_of::*;\n" +
             "use ::serde::{Deserialize,Serialize};\n" +
             "use compare::{Compare, Extract};\n" +
@@ -143,6 +142,7 @@ public class RustFileWriter implements ICompilerComponent {
             "    timestamp::*,\n" +
             "    interval::*,\n" +
             "    string::*,\n" +
+            "    operators::*,\n" +
             "};\n" +
             "#[cfg(test)]\n" +
             "use sqlvalue::*;\n" +

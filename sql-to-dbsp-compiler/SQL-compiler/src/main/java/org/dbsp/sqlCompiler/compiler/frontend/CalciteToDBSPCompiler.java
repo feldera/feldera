@@ -76,13 +76,6 @@ import java.util.stream.IntStream;
  */
 public class CalciteToDBSPCompiler extends RelVisitor
         implements IWritesLogs, ICompilerComponent {
-    /**
-     * Number of first day of the week.
-     * This should be selected by the SQL dialect, but it seems
-     * to be hardwired in the Calcite optimizer.
-     */
-    public static final int firstDOW = 1;
-
     // Result is deposited here
     private DBSPPartialCircuit circuit;
     // Map each compiled RelNode operator to its DBSP implementation.

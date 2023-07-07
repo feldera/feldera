@@ -461,7 +461,6 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         DBSPExpression[] increments = new DBSPExpression[parts];
         DBSPExpression[] posts = new DBSPExpression[parts];
         DBSPExpression[] emptySetResults = new DBSPExpression[parts];
-        DBSPExpression[] linear = new DBSPExpression[parts];
 
         DBSPType[] accumulatorTypes = new DBSPType[parts];
         DBSPType[] semigroups = new DBSPType[parts];

@@ -140,7 +140,7 @@ public class Simplify extends InnerRewriteVisitor {
         boolean leftMayBeNull = leftType.mayBeNull;
         boolean rightMayBeNull = rightType.mayBeNull;
         DBSPExpression result = new DBSPBinaryExpression(
-                expression.getNode(), type, expression.operation, left, right, expression.primitive);
+                expression.getNode(), type, expression.operation, left, right);
         if (expression.operation.equals(DBSPOpcode.AND)) {
             if (left.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);

@@ -48,8 +48,6 @@ public abstract class FrontEndStatement implements ICastable {
         this.comment = comment;
     }
 
-    public SqlNode getNode() { return this.node; }
-
     public CalciteObject getCalciteObject() {
         return new CalciteObject(this.node);
     }

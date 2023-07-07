@@ -48,10 +48,6 @@ import java.util.function.Consumer;
 public class AggregateCompiler implements ICompilerComponent {
     public final DBSPCompiler compiler;
     /**
-     * Aggregate that is being compiled.
-     */
-    public final Object call;
-    /**
      * Type of result expected.
      */
     public final DBSPType resultType;
@@ -85,7 +81,6 @@ public class AggregateCompiler implements ICompilerComponent {
         this.v = v;
         this.isDistinct = call.isDistinct();
         this.aggFunction = call.getAggregation();
-        this.call = call;
         this.generator = new NameGen("a");
         List<Integer> argList = call.getArgList();
         if (argList.size() == 0) {

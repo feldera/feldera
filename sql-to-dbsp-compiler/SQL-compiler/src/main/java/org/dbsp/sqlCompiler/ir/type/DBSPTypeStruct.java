@@ -123,8 +123,6 @@ public class DBSPTypeStruct extends DBSPType {
         return this.fields.contains(fieldName);
     }
 
-    public String getName() { return this.name; }
-
     public List<Field> getFields() { return this.args; }
 
     @Override
@@ -147,14 +145,6 @@ public class DBSPTypeStruct extends DBSPType {
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.name, this.fields.hashCode());
-    }
-
-    public DBSPType getFieldType(String col) {
-        for (Field f : this.getFields()) {
-            if (f.getName().equals(col))
-                return f.getType();
-        }
-        throw new InternalCompilerError("Field " + col + " not present in struct " + this.name, this);
     }
 
     @Override

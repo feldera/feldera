@@ -246,9 +246,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         if (left.is(IsDateType.class)) return false;
         if (right.is(IsDateType.class)) return false;
         // Allow mixing different string types in an operation
-        if (left.is(DBSPTypeString.class) && right.is(DBSPTypeString.class))
-            return false;
-        return true;
+        return !left.is(DBSPTypeString.class) || !right.is(DBSPTypeString.class);
     }
 
     public static DBSPExpression makeBinaryExpression(
@@ -361,11 +359,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         StringBuilder builder = new StringBuilder(baseName);
         this.validateArgCount(node, ops.size(), expectedArgCount);
         DBSPExpression[] operands = ops.toArray(new DBSPExpression[0]);
-        for (DBSPExpression e: ops)
-            builder.append(e.getType().mayBeNull ? "N" : "_");
         if (expectedArgCount.length > 1)
             // If the function can have a variable number of arguments, postfix with the argument count
             builder.append(operands.length);
+        for (DBSPExpression e: ops)
+            builder.append(e.getType().mayBeNull ? "N" : "_");
         return new DBSPApplyExpression(node, builder.toString(), resultType, operands);
     }
 

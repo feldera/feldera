@@ -5,6 +5,7 @@ pub mod geopoint;
 pub mod interval;
 pub mod timestamp;
 pub mod string;
+pub mod operators;
 
 use crate::interval::ShortInterval;
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
@@ -17,6 +18,291 @@ use std::ops::Add;
 
 #[derive(Clone)]
 pub struct DefaultOptSemigroup<T>(PhantomData<T>);
+
+// Macro to create variants of a function with 1 argument
+// If there exists a function is f_(x: T) -> S, this creates a function
+// fN(x: Option<T>) -> Option<S>, defined as
+// fN(x) { let x = x?; Some(f_(x)) }.
+#[macro_export]
+macro_rules! some_function1 {
+    ($func_name:ident, $arg_type:ty, $ret_type:ty) => {
+        ::paste::paste! {
+            pub fn [<$func_name N>]( arg: Option<$arg_type> ) -> Option<$ret_type> {
+                let arg = arg?;
+                Some([<$func_name _>](arg))
+            }
+        }
+    }
+}
+
+// Macro to create variants of a function with 2 arguments
+// If there exists a function is f__(x: T, y: S) -> U, this creates
+// three functions:
+// - f_N(x: T, y: Option<S>) -> Option<U>
+// - fN_(x: Option<T>, y: S) -> Option<U>
+// - fNN(x: Option<T>, y: Option<S>) -> Option<U>
+// The resulting functions return Some only if all arguments are 'Some'.
+#[macro_export]
+macro_rules! some_function2 {
+    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $ret_type:ty) => {
+        ::paste::paste! {
+            pub fn [<$func_name NN>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                Some([<$func_name __>](arg0, arg1))
+            }
+
+            pub fn [<$func_name _N>]( arg0: $arg_type0, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                Some([<$func_name __>](arg0, arg1))
+            }
+
+            pub fn [<$func_name N_>]( arg0: Option<$arg_type0>, arg1: $arg_type1 ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                Some([<$func_name __>](arg0, arg1))
+            }
+        }
+    }
+}
+
+// Macro to create variants of a function with 4 arguments
+// If there exists a function is f____(x: T, y: S, z: V, w: W) -> U, this creates
+// fifteen functions:
+// - f___N(x: T, y: S, z: V, w: Option<W>) -> Option<U>
+// - f__N_(x: T, y: S, z: Option<V>, w: W) -> Option<U>
+// - etc.
+// The resulting functions return Some only if all arguments are 'Some'.
+#[macro_export]
+macro_rules! some_function4 {
+    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $arg_type2: ty, $arg_type3: ty, $ret_type:ty) => {
+        ::paste::paste! {
+            pub fn [<$func_name ___N>]( arg0: $arg_type0, arg1: $arg_type1, arg2: $arg_type2, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
+                let arg3 = arg3?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name __N_>]( arg0: $arg_type0, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: $arg_type3 ) -> Option<$ret_type> {
+                let arg2 = arg2?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name __NN>]( arg0: $arg_type0, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
+                let arg2 = arg2?;
+                let arg3 = arg3?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name _N__>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: $arg_type2, arg3: $arg_type3 ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name _N_N>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: $arg_type2, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                let arg3 = arg3?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name _NN_>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: Option<$arg_type2>, arg3: $arg_type3 ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                let arg2 = arg2?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name _NNN>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                let arg2 = arg2?;
+                let arg3 = arg3?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name N___>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: $arg_type2, arg3: $arg_type3 ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name N__N>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg2 = arg2?;
+                let arg3 = arg3?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name N_N_>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: $arg_type2, arg3: $arg_type3 ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name N_NN>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                let arg2 = arg2?;
+                let arg3 = arg3?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name NN__>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: $arg_type2, arg3: $arg_type3 ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name NN_N>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg2 = arg2?;
+                let arg3 = arg3?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name NNN_>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: Option<$arg_type2>, arg3: $arg_type3 ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                let arg2 = arg2?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+
+            pub fn [<$func_name NNNN>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                let arg2 = arg2?;
+                let arg3 = arg3?;
+                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
+            }
+        }
+    }
+}
+
+// Macro to create variants of a function with 3 arguments
+// If there exists a function is f___(x: T, y: S, z: V) -> U, this creates
+// seven functions:
+// - f__N(x: T, y: S, z: Option<V>) -> Option<U>
+// - f_N_(x: T, y: Option<S>, z: V) -> Option<U>
+// - etc.
+// The resulting functions return Some only if all arguments are 'Some'.
+#[macro_export]
+macro_rules! some_function3 {
+    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $arg_type2: ty, $ret_type:ty) => {
+        ::paste::paste! {
+            pub fn [<$func_name __N>]( arg0: $arg_type0, arg1: $arg_type1, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
+                let arg2 = arg2?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name _N_>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: $arg_type2 ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name _NN>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                let arg2 = arg2?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name N__>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: $arg_type2 ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name N_N>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg2 = arg2?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name NN_>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: $arg_type2 ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name NNN>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                let arg2 = arg2?;
+                Some([<$func_name ___>](arg0, arg1, arg2))
+            }
+        }
+    }
+}
+
+// Macro to create variants of a function with 2 arguments
+// If there exists a function is f_t_t(x: T, y: T) -> U, this creates
+// three functions:
+// - f_tN_t(x: T, y: Option<T>) -> Option<U>
+// - f_t_tN(x: Option<T>, y: T) -> Option<U>
+// - f_tN_tN(x: Option<T>, y: Option<T>) -> Option<U>
+// The resulting functions return Some only if all arguments are 'Some'.
+#[macro_export]
+macro_rules! some_operator {
+    ($func_name: ident, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
+        ::paste::paste! {
+            #[inline(always)]
+            pub fn [<$func_name _ $short_name N _ $short_name N>]( arg0: Option<$arg_type>, arg1: Option<$arg_type> ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                Some([<$func_name _$short_name _ $short_name>](arg0, arg1))
+            }
+
+            #[inline(always)]
+            pub fn [<$func_name _ $short_name _ $short_name N>]( arg0: $arg_type, arg1: Option<$arg_type> ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                Some([<$func_name _ $short_name _ $short_name>](arg0, arg1))
+            }
+
+            #[inline(always)]
+            pub fn [<$func_name _ $short_name N _ $short_name>]( arg0: Option<$arg_type>, arg1: $arg_type ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                Some([<$func_name _ $short_name _ $short_name>](arg0, arg1))
+            }
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! for_all_int_compare {
+    ($func_name: ident, $ret_type: ty) => {
+        some_operator!($func_name, i16, i16, bool);
+        some_operator!($func_name, i32, i32, bool);
+        some_operator!($func_name, i64, i64, bool);
+    }
+}
+
+#[macro_export]
+macro_rules! for_all_numeric_compare {
+    ($func_name: ident, $ret_type: ty) => {
+        for_all_int_compare!($func_name, bool);
+        some_operator!($func_name, f, F32, bool);
+        some_operator!($func_name, d, F64, bool);
+    }
+}
+
+#[macro_export]
+macro_rules! for_all_compare {
+    ($func_name: ident, $ret_type: ty) => {
+        for_all_numeric_compare!($func_name, bool);
+        some_operator!($func_name, b, bool, bool);
+        some_operator!($func_name, s, String, bool);
+    }
+}
+
+#[macro_export]
+macro_rules! for_all_int {
+    ($func_name: ident) => {
+        some_operator!($func_name, i16, i16, i16);
+        some_operator!($func_name, i32, i32, i32);
+        some_operator!($func_name, i64, i64, i64);
+    }
+}
+
+#[macro_export]
+macro_rules! for_all_numeric {
+    ($func_name: ident) => {
+        for_all_int!($func_name);
+        some_operator!($func_name, f, F32, F32);
+        some_operator!($func_name, d, F64, F64);
+    }
+}
 
 impl<T> Semigroup<Option<T>> for DefaultOptSemigroup<T>
 where
