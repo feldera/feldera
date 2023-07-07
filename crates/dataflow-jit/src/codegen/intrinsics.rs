@@ -3,6 +3,7 @@ use crate::{
     ir::{exprs::Call, ExprId},
     row::{Row, UninitRow},
     thin_str::ThinStrRef,
+    utils::NativeRepr,
     ThinStr,
 };
 use chrono::{
@@ -566,7 +567,15 @@ intrinsics! {
 
     // Decimal functions
     decimal_lt = fn(u64, u64, u64, u64) -> bool,
+    decimal_gt = fn(u64, u64, u64, u64) -> bool,
+    decimal_le = fn(u64, u64, u64, u64) -> bool,
+    decimal_ge = fn(u64, u64, u64, u64) -> bool,
     decimal_cmp = fn(u64, u64, u64, u64) -> i8,
+    decimal_add = fn(u64, u64, u64, u64, ptr),
+    decimal_sub = fn(u64, u64, u64, u64, ptr),
+    decimal_mul = fn(u64, u64, u64, u64, ptr),
+    decimal_div = fn(u64, u64, u64, u64, ptr),
+    decimal_rem = fn(u64, u64, u64, u64, ptr),
 }
 
 /// Allocates memory with the given size and alignment
@@ -1367,7 +1376,7 @@ extern "C" fn round_sql_float_with_string_f64(float: f32, digits: i32) -> f64 {
 #[inline]
 fn decimal_from_parts(lo: u64, hi: u64) -> Decimal {
     let decimal = lo as u128 | (hi as u128) << 64;
-    Decimal::deserialize(decimal.to_le_bytes())
+    Decimal::from_repr(decimal)
 }
 
 extern "C" fn write_decimal_to_string(mut string: ThinStr, lo: u64, hi: u64) -> ThinStr {
@@ -1386,14 +1395,6 @@ unsafe extern "C" fn decimal_debug(lo: u64, hi: u64, fmt: *mut fmt::Formatter<'_
     Debug::fmt(&decimal, &mut *fmt).is_ok()
 }
 
-extern "C" fn decimal_lt(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) -> bool {
-    let (lhs, rhs) = (
-        decimal_from_parts(lhs_lo, lhs_hi),
-        decimal_from_parts(rhs_lo, rhs_hi),
-    );
-    lhs < rhs
-}
-
 extern "C" fn decimal_cmp(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) -> Ordering {
     let (lhs, rhs) = (
         decimal_from_parts(lhs_lo, lhs_hi),
@@ -1402,7 +1403,119 @@ extern "C" fn decimal_cmp(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) ->
     lhs.cmp(&rhs)
 }
 
+extern "C" fn decimal_lt(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) -> bool {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+    lhs < rhs
+}
+
+extern "C" fn decimal_gt(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) -> bool {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+    lhs > rhs
+}
+
+extern "C" fn decimal_le(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) -> bool {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+    lhs <= rhs
+}
+
+extern "C" fn decimal_ge(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) -> bool {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+    lhs >= rhs
+}
+
 extern "C" fn decimal_hash(hasher: &mut &mut dyn Hasher, lo: u64, hi: u64) {
     let decimal = decimal_from_parts(lo, hi);
     decimal.hash(hasher);
+}
+
+extern "C" fn decimal_add(
+    lhs_lo: u64,
+    lhs_hi: u64,
+    rhs_lo: u64,
+    rhs_hi: u64,
+    out: &mut MaybeUninit<u128>,
+) {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+
+    let sum = lhs + rhs;
+    out.write(sum.to_repr());
+}
+
+extern "C" fn decimal_sub(
+    lhs_lo: u64,
+    lhs_hi: u64,
+    rhs_lo: u64,
+    rhs_hi: u64,
+    out: &mut MaybeUninit<u128>,
+) {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+
+    let difference = lhs - rhs;
+    out.write(difference.to_repr());
+}
+
+extern "C" fn decimal_mul(
+    lhs_lo: u64,
+    lhs_hi: u64,
+    rhs_lo: u64,
+    rhs_hi: u64,
+    out: &mut MaybeUninit<u128>,
+) {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+
+    let product = lhs * rhs;
+    out.write(product.to_repr());
+}
+
+extern "C" fn decimal_div(
+    lhs_lo: u64,
+    lhs_hi: u64,
+    rhs_lo: u64,
+    rhs_hi: u64,
+    out: &mut MaybeUninit<u128>,
+) {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+
+    let quotient = lhs / rhs;
+    out.write(quotient.to_repr());
+}
+
+extern "C" fn decimal_rem(
+    lhs_lo: u64,
+    lhs_hi: u64,
+    rhs_lo: u64,
+    rhs_hi: u64,
+    out: &mut MaybeUninit<u128>,
+) {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+
+    let remainder = lhs % rhs;
+    out.write(remainder.to_repr());
 }

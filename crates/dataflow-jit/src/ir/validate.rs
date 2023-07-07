@@ -318,16 +318,6 @@ impl NodeVisitor for MetaCollector<'_> {
 
         let lhs_layout = self.node_outputs[&minus.lhs()];
         self.node_outputs.insert(node_id, lhs_layout);
-
-        if minus.lhs() != minus.rhs() {
-            self.errors.push(ValidationError::MismatchedOperatorInputs {
-                node_id,
-                expected: minus.lhs(),
-                expected_layout: lhs_layout,
-                received: minus.rhs(),
-                received_layout: self.node_outputs[&minus.rhs()],
-            });
-        }
     }
 
     fn visit_filter(&mut self, node_id: NodeId, filter: &Filter) {

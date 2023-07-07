@@ -391,6 +391,7 @@ mod proptests {
         codegen::{Codegen, CodegenConfig},
         ir::{ColumnType, RowLayout, RowLayoutBuilder, RowLayoutCache},
         row::UninitRow,
+        utils::NativeRepr,
         ThinStr,
     };
     use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, Utc};
@@ -547,9 +548,12 @@ mod proptests {
                 }
 
                 Self::Decimal(decimal) => {
-                    prop_assert_eq!(ptr as usize % align_of::<u128>(), 0);
-                    ptr.cast::<u128>()
-                        .write(u128::from_le_bytes(decimal.serialize()));
+                    prop_assert_eq!(
+                        ptr as usize % align_of::<<Decimal as NativeRepr>::Repr>(),
+                        0
+                    );
+                    ptr.cast::<<Decimal as NativeRepr>::Repr>()
+                        .write(decimal.to_repr());
                 }
             }
 
