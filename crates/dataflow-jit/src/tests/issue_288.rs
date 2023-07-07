@@ -1,7 +1,5 @@
 //! Test for https://github.com/feldera/dbsp/issues/288
 
-use chrono::{NaiveDate, NaiveDateTime};
-
 use crate::{
     codegen::CodegenConfig,
     facade::Demands,
@@ -13,6 +11,7 @@ use crate::{
     tests::must_equal_sc,
     utils, DbspCircuit,
 };
+use chrono::{NaiveDate, NaiveDateTime};
 
 const CIRCUIT: &str = r#"{
     "nodes": {
