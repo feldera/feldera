@@ -764,28 +764,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPMatchExpression.Case mCase) {
-        mCase.against.accept(this);
-        this.builder.append(" => ");
-        mCase.result.accept(this);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPMatchExpression expression) {
-        this.builder.append("(match ");
-        expression.matched.accept(this);
-        this.builder.append(" {").increase();
-        for (DBSPMatchExpression.Case mCase : expression.cases) {
-            mCase.accept(this);
-            this.builder.append(",\n");
-        }
-        this.builder.decrease()
-                .append("})");
-        return VisitDecision.STOP;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPPathExpression expression) {
         expression.path.accept(this);
         return VisitDecision.STOP;
@@ -912,35 +890,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPIdentifierPattern pattern) {
         this.builder.append(pattern.mutable ? "mut " : "")
                 .append(pattern.identifier);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTuplePattern pattern) {
-        this.builder.append("(");
-        boolean first = true;
-        for (DBSPPattern field: pattern.fields) {
-            if (!first)
-                this.builder.append(", ");
-            first = false;
-            field.accept(this);
-        }
-        this.builder.append(")");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTupleStructPattern pattern) {
-        pattern.path.accept(this);
-        this.builder.append("(");
-        boolean first = true;
-        for (DBSPPattern field: pattern.arguments) {
-            if (!first)
-                this.builder.append(", ");
-            first = false;
-            field.accept(this);
-        }
-        this.builder.append(")");
         return VisitDecision.STOP;
     }
 

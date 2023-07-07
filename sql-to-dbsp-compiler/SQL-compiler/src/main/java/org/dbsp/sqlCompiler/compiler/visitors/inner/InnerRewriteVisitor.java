@@ -747,21 +747,6 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPMatchExpression expression) {
-        this.push(expression);
-        List<DBSPExpression> caseExpressions =
-                Linq.map(expression.cases, c -> this.transform(c.result));
-        DBSPExpression matched = this.transform(expression.matched);
-        DBSPType type = this.transform(expression.getType());
-        this.pop(expression);
-        List<DBSPMatchExpression.Case> newCases = Linq.zipSameLength(expression.cases, caseExpressions,
-                (c0, e) -> new DBSPMatchExpression.Case(c0.against, e));
-        DBSPExpression result = new DBSPMatchExpression(matched, newCases, type);
-        this.map(expression, result);
-        return VisitDecision.STOP;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPPathExpression expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
