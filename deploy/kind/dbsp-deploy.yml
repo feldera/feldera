@@ -111,4 +111,3 @@ spec:
             name: dbsp-service
             port:
               number: 8080
----

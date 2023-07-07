@@ -67,7 +67,7 @@ COPY sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/te
 COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
 # Run the precompile phase to speed up Rust compilations during deployment
 RUN ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
-CMD ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor
+ENTRYPOINT ["./dbsp_pipeline_manager", "--bind-address=0.0.0.0", "--working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
 
 ##### The stages below are used to build the demo container
 
