@@ -1,6 +1,8 @@
-from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar, Union
 
 import attr
+
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.neighborhood_query_anchor import NeighborhoodQueryAnchor
@@ -17,30 +19,32 @@ class NeighborhoodQuery:
 
         Attributes:
             after (int):
-            anchor (NeighborhoodQueryAnchor):
             before (int):
+            anchor (Union[Unset, None, NeighborhoodQueryAnchor]):
     """
 
     after: int
-    anchor: "NeighborhoodQueryAnchor"
     before: int
+    anchor: Union[Unset, None, "NeighborhoodQueryAnchor"] = UNSET
     additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         after = self.after
-        anchor = self.anchor.to_dict()
-
         before = self.before
+        anchor: Union[Unset, None, Dict[str, Any]] = UNSET
+        if not isinstance(self.anchor, Unset):
+            anchor = self.anchor.to_dict() if self.anchor else None
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
                 "after": after,
-                "anchor": anchor,
                 "before": before,
             }
         )
+        if anchor is not UNSET:
+            field_dict["anchor"] = anchor
 
         return field_dict
 
@@ -51,14 +55,21 @@ class NeighborhoodQuery:
         d = src_dict.copy()
         after = d.pop("after")
 
-        anchor = NeighborhoodQueryAnchor.from_dict(d.pop("anchor"))
-
         before = d.pop("before")
+
+        _anchor = d.pop("anchor", UNSET)
+        anchor: Union[Unset, None, NeighborhoodQueryAnchor]
+        if _anchor is None:
+            anchor = None
+        elif isinstance(_anchor, Unset):
+            anchor = UNSET
+        else:
+            anchor = NeighborhoodQueryAnchor.from_dict(_anchor)
 
         neighborhood_query = cls(
             after=after,
-            anchor=anchor,
             before=before,
+            anchor=anchor,
         )
 
         neighborhood_query.additional_properties = d

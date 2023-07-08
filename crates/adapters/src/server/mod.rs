@@ -1005,6 +1005,18 @@ outputs:
         let body = serde_json::from_slice::<JsonValue>(&body.unwrap()).unwrap();
         println!("Neighborhood: {body}");
 
+        // Request default neighborhood snapshot.
+        let mut hood_resp_default = server
+            .get("/egress/test_output1?mode=snapshot&query=neighborhood")
+            .send_json(&json!({"before": 50, "after": 30}))
+            .await
+            .unwrap();
+        assert!(hood_resp_default.status().is_success());
+        let body = hood_resp_default.body().await;
+        // println!("Response: {body:?}");
+        let body = serde_json::from_slice::<JsonValue>(&body.unwrap()).unwrap();
+        println!("Default neighborhood: {body}");
+
         // Request neighborhood snapshot: invalid request.
         let mut hood_inv_resp = server
             .get("/egress/test_output1?mode=snapshot&query=neighborhood")

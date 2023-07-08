@@ -1853,6 +1853,7 @@ async fn http_input(
         ("format" = String, Query, description = "Output data format, e.g., 'csv' or 'json'."),
         ("query" = Option<OutputQuery>, Query, description = "Query to execute on the table. Must be one of 'table', 'neighborhood', or 'quantiles'. The default value is 'table'"),
         ("mode" = Option<EgressMode>, Query, description = "Output mode. Must be one of 'watch' or 'snapshot'. The default value is 'watch'"),
+        ("quantiles" = Option<u32>, Query, description = "For 'quantiles' queries: the number of quantiles to output. The default value is 100."),
     ),
     request_body(
         content = Option<NeighborhoodQuery>,

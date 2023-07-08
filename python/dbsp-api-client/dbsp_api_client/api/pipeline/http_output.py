@@ -22,6 +22,7 @@ def _get_kwargs(
     format_: str,
     query: Union[Unset, None, OutputQuery] = UNSET,
     mode: Union[Unset, None, EgressMode] = UNSET,
+    quantiles: Union[Unset, None, int] = UNSET,
 ) -> Dict[str, Any]:
     url = "{}/v0/pipelines/{pipeline_id}/egress/{table_name}".format(
         client.base_url, pipeline_id=pipeline_id, table_name=table_name
@@ -44,6 +45,8 @@ def _get_kwargs(
         json_mode = mode.value if mode else None
 
     params["mode"] = json_mode
+
+    params["quantiles"] = quantiles
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -106,6 +109,7 @@ def sync_detailed(
     format_: str,
     query: Union[Unset, None, OutputQuery] = UNSET,
     mode: Union[Unset, None, EgressMode] = UNSET,
+    quantiles: Union[Unset, None, int] = UNSET,
 ) -> Response[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates to a SQL view or table.
 
@@ -127,6 +131,7 @@ def sync_detailed(
             We currently do not support ad hoc queries.  Instead the client can use
             three pre-defined queries to inspect the contents of a table or view.
         mode (Union[Unset, None, EgressMode]):
+        quantiles (Union[Unset, None, int]):
         json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
             table or view.
             The neighborhood is defined in terms of its central point (`anchor`)
@@ -148,6 +153,7 @@ def sync_detailed(
         format_=format_,
         query=query,
         mode=mode,
+        quantiles=quantiles,
     )
 
     response = httpx.request(
@@ -167,6 +173,7 @@ def sync(
     format_: str,
     query: Union[Unset, None, OutputQuery] = UNSET,
     mode: Union[Unset, None, EgressMode] = UNSET,
+    quantiles: Union[Unset, None, int] = UNSET,
 ) -> Optional[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates to a SQL view or table.
 
@@ -188,6 +195,7 @@ def sync(
             We currently do not support ad hoc queries.  Instead the client can use
             three pre-defined queries to inspect the contents of a table or view.
         mode (Union[Unset, None, EgressMode]):
+        quantiles (Union[Unset, None, int]):
         json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
             table or view.
             The neighborhood is defined in terms of its central point (`anchor`)
@@ -209,6 +217,7 @@ def sync(
         format_=format_,
         query=query,
         mode=mode,
+        quantiles=quantiles,
     ).parsed
 
 
@@ -221,6 +230,7 @@ async def asyncio_detailed(
     format_: str,
     query: Union[Unset, None, OutputQuery] = UNSET,
     mode: Union[Unset, None, EgressMode] = UNSET,
+    quantiles: Union[Unset, None, int] = UNSET,
 ) -> Response[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates to a SQL view or table.
 
@@ -242,6 +252,7 @@ async def asyncio_detailed(
             We currently do not support ad hoc queries.  Instead the client can use
             three pre-defined queries to inspect the contents of a table or view.
         mode (Union[Unset, None, EgressMode]):
+        quantiles (Union[Unset, None, int]):
         json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
             table or view.
             The neighborhood is defined in terms of its central point (`anchor`)
@@ -263,6 +274,7 @@ async def asyncio_detailed(
         format_=format_,
         query=query,
         mode=mode,
+        quantiles=quantiles,
     )
 
     async with httpx.AsyncClient(verify=client.verify_ssl) as _client:
@@ -280,6 +292,7 @@ async def asyncio(
     format_: str,
     query: Union[Unset, None, OutputQuery] = UNSET,
     mode: Union[Unset, None, EgressMode] = UNSET,
+    quantiles: Union[Unset, None, int] = UNSET,
 ) -> Optional[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates to a SQL view or table.
 
@@ -301,6 +314,7 @@ async def asyncio(
             We currently do not support ad hoc queries.  Instead the client can use
             three pre-defined queries to inspect the contents of a table or view.
         mode (Union[Unset, None, EgressMode]):
+        quantiles (Union[Unset, None, int]):
         json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
             table or view.
             The neighborhood is defined in terms of its central point (`anchor`)
@@ -323,5 +337,6 @@ async def asyncio(
             format_=format_,
             query=query,
             mode=mode,
+            quantiles=quantiles,
         )
     ).parsed
