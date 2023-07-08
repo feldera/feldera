@@ -2,14 +2,10 @@
 
 #![allow(non_snake_case)]
 use crate::{
-    some_function1,
-    some_function2,
-    some_function3,
-    some_function4,
-    some_polymorphic_function2,
+    some_function1, some_function2, some_function3, some_function4, some_polymorphic_function2,
 };
 
-use like::{Like, Escape};
+use like::{Escape, Like};
 
 pub fn concat_s_s(left: String, right: String) -> String {
     let result = format!("{}{}", left, right);
@@ -19,11 +15,16 @@ pub fn concat_s_s(left: String, right: String) -> String {
 some_polymorphic_function2!(concat, s, String, s, String, String);
 
 pub fn substring3___(value: String, left: i32, count: i32) -> String {
-    if count < 0 { return "".to_string() }
-    else {
+    if count < 0 {
+        "".to_string()
+    } else {
         // character indexes in SQL start at 1
         let start = if left < 1 { 0 } else { left - 1 };
-        value.chars().skip(start as usize).take(count as usize).collect()
+        value
+            .chars()
+            .skip(start as usize)
+            .take(count as usize)
+            .collect()
     }
 }
 
@@ -90,20 +91,24 @@ pub fn char_length_(value: String) -> i32 {
 
 some_function1!(char_length, String, i32);
 
-pub fn char_length_ref(value: &String) -> i32 {
+pub fn char_length_ref(value: &str) -> i32 {
     value.chars().count() as i32
 }
 
 pub fn ascii_(value: String) -> i32 {
-    if value.is_empty() { 0 }
-    else { value.chars().next().unwrap() as u32 as i32 }
+    if value.is_empty() {
+        0
+    } else {
+        value.chars().next().unwrap() as u32 as i32
+    }
 }
 
 some_function1!(ascii, String, i32);
 
 pub fn chr_(code: i32) -> String {
-    if code < 0 { String::default() }
-    else {
+    if code < 0 {
+        String::default()
+    } else {
         let c = char::from_u32(code as u32);
         match c {
             None => String::default(),
@@ -115,8 +120,11 @@ pub fn chr_(code: i32) -> String {
 some_function1!(chr, i32, String);
 
 pub fn repeat__(value: String, count: i32) -> String {
-    if count <= 0 { String::default() }
-    else { value.repeat(count as usize) }
+    if count <= 0 {
+        String::default()
+    } else {
+        value.repeat(count as usize)
+    }
 }
 
 some_function2!(repeat, String, i32, String);
@@ -130,10 +138,14 @@ some_function3!(overlay3, String, String, i32, String);
 
 pub fn overlay4____(source: String, replacement: String, position: i32, remove: i32) -> String {
     let mut remove = remove;
-    if remove < 0 { remove = 0; }
-    if position <= 0 { source }
-    else if position > char_length_ref(&source) { concat_s_s(source, replacement) }
-    else {
+    if remove < 0 {
+        remove = 0;
+    }
+    if position <= 0 {
+        source
+    } else if position > char_length_ref(&source) {
+        concat_s_s(source, replacement)
+    } else {
         let mut result = substring3___(source.clone(), 0, position - 1);
         result += &replacement;
         result += &substring2__(source, position + remove);
@@ -181,4 +193,3 @@ pub fn initcap_(source: String) -> String {
 }
 
 some_function1!(initcap, String, String);
-
