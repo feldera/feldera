@@ -23,10 +23,9 @@
 //!   compiled pipelines and for interacting with them at runtime.
 
 use actix_web::dev::Service;
+use actix_web::Scope;
 use actix_web::{
-    delete,
-    dev::{ServiceFactory, ServiceRequest},
-    get,
+    delete, get,
     http::{
         header::{CacheControl, CacheDirective},
         Method,
@@ -35,7 +34,7 @@ use actix_web::{
     patch, post, rt,
     web::Data as WebData,
     web::{self, ReqData},
-    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, ResponseError,
+    App, HttpRequest, HttpResponse, HttpServer, ResponseError,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
@@ -56,7 +55,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::Mutex;
-use utoipa::{openapi::OpenApi as OpenApiDoc, OpenApi, ToSchema};
+use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::{uuid, Uuid};
 
@@ -323,7 +322,6 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
         // reset all programs to `ProgramStatus::None`, which will force
         // us to recompile programs before running them.
         db.lock().await.reset_program_status().await?;
-        let openapi = ApiDoc::openapi();
 
         let state = WebData::new(ServerState::new(config, db, Some(compiler)).await?);
 
@@ -332,26 +330,26 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
                 let auth_middleware = HttpAuthentication::with_fn(auth::auth_validator);
                 let auth_configuration = auth::aws_auth_config();
 
-                let app = App::new()
+                App::new()
                     .app_data(state.clone())
                     .app_data(auth_configuration)
                     .wrap(Logger::default())
                     .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()))
-                    .wrap(auth_middleware);
-                build_app(app, openapi.clone())
+                    .service(api_scope().wrap(auth_middleware))
+                    .service(static_website_scope())
             });
             server.listen(listener)?.run().await?;
         } else {
             let server = HttpServer::new(move || {
-                let app = App::new()
+                App::new()
                     .app_data(state.clone())
                     .wrap(Logger::default())
                     .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()))
-                    .wrap_fn(|req, srv| {
+                    .service(api_scope().wrap_fn(|req, srv| {
                         let req = auth::tag_with_default_tenant_id(req);
                         srv.call(req)
-                    });
-                build_app(app, openapi.clone())
+                    }))
+                    .service(static_website_scope())
             });
             server.listen(listener)?.run().await?;
         }
@@ -362,14 +360,23 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
 // `static_files` magic.
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-fn build_app<T>(app: App<T>, openapi: OpenApiDoc) -> App<T>
-where
-    T: ServiceFactory<ServiceRequest, Config = (), Error = ActixError, InitError = ()>,
-{
+fn static_website_scope() -> Scope {
+    let openapi = ApiDoc::openapi();
     // Creates a dictionary of static files indexed by file name.
     let generated = generate();
 
-    app.service(list_programs)
+    // Leave this is an empty prefix to load the UI by default. When constructing an app, always
+    // attach other scopes without empty prefixes before this one, or route resolution does
+    // not work correctly.
+    web::scope("")
+        .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
+        .service(ResourceFiles::new("/", generated))
+}
+
+fn api_scope() -> Scope {
+    // Make APIs available under the /v0/ prefix
+    web::scope("/v0")
+        .service(list_programs)
         .service(program_code)
         .service(program_status)
         .service(new_program)
@@ -392,8 +399,6 @@ where
         .service(delete_connector)
         .service(http_input)
         .service(http_output)
-        .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
-        .service(ResourceFiles::new("/", generated))
 }
 
 // Example errors for use in OpenApi docs.
@@ -583,7 +588,7 @@ fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
     ),
     tag = "Program"
 )]
-#[get("/v0/programs")]
+#[get("/programs")]
 async fn list_programs(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -628,7 +633,7 @@ struct ProgramCodeResponse {
     ),
     tag = "Program"
 )]
-#[get("/v0/program/{program_id}/code")]
+#[get("/program/{program_id}/code")]
 async fn program_code(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -673,7 +678,7 @@ async fn program_code(
     ),
     tag = "Program"
 )]
-#[get("/v0/program")]
+#[get("/program")]
 async fn program_status(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -746,7 +751,7 @@ struct NewProgramResponse {
     ),
     tag = "Program"
 )]
-#[post("/v0/programs")]
+#[post("/programs")]
 async fn new_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -838,7 +843,7 @@ struct UpdateProgramResponse {
     ),
     tag = "Program"
 )]
-#[patch("/v0/programs")]
+#[patch("/programs")]
 async fn update_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -890,7 +895,7 @@ struct CompileProgramRequest {
     ),
     tag = "Program"
 )]
-#[post("/v0/programs/compile")]
+#[post("/programs/compile")]
 async fn compile_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -934,7 +939,7 @@ struct CancelProgramRequest {
     ),
     tag = "Program"
 )]
-#[delete("/v0/programs/compile")]
+#[delete("/programs/compile")]
 async fn cancel_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -970,7 +975,7 @@ async fn cancel_program(
     ),
     tag = "Program"
 )]
-#[delete("/v0/programs/{program_id}")]
+#[delete("/programs/{program_id}")]
 async fn delete_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1028,7 +1033,7 @@ struct NewPipelineResponse {
     ),
     tag = "Pipeline"
 )]
-#[post("/v0/pipelines")]
+#[post("/pipelines")]
 async fn new_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1107,7 +1112,7 @@ struct UpdatePipelineResponse {
     ),
     tag = "Pipeline"
 )]
-#[patch("/v0/pipelines")]
+#[patch("/pipelines")]
 async fn update_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1140,7 +1145,7 @@ async fn update_pipeline(
     ),
     tag = "Pipeline"
 )]
-#[get("/v0/pipelines")]
+#[get("/pipelines")]
 async fn list_pipelines(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1167,7 +1172,7 @@ async fn list_pipelines(
     ),
     tag = "Pipeline"
 )]
-#[get("/v0/pipelines/{pipeline_id}/committed")]
+#[get("/pipelines/{pipeline_id}/committed")]
 async fn pipeline_committed(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1217,7 +1222,7 @@ async fn pipeline_committed(
     ),
     tag = "Pipeline"
 )]
-#[get("/v0/pipelines/{pipeline_id}/stats")]
+#[get("/pipelines/{pipeline_id}/stats")]
 async fn pipeline_stats(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1262,7 +1267,7 @@ async fn pipeline_stats(
     ),
     tag = "Pipeline"
 )]
-#[get("/v0/pipeline")]
+#[get("/pipeline")]
 async fn pipeline_status(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1358,7 +1363,7 @@ async fn pipeline_status(
     ),
     tag = "Pipeline"
 )]
-#[get("/v0/pipelines/{pipeline_id}/validate")]
+#[get("/pipelines/{pipeline_id}/validate")]
 async fn pipeline_validate(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1433,7 +1438,7 @@ async fn pipeline_validate(
     ),
     tag = "Pipeline"
 )]
-#[post("/v0/pipelines/{pipeline_id}/{action}")]
+#[post("/pipelines/{pipeline_id}/{action}")]
 async fn pipeline_action(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1483,7 +1488,7 @@ async fn pipeline_action(
     ),
     tag = "Pipeline"
 )]
-#[delete("/v0/pipelines/{pipeline_id}")]
+#[delete("/pipelines/{pipeline_id}")]
 async fn pipeline_delete(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1506,7 +1511,7 @@ async fn pipeline_delete(
     ),
     tag = "Connector"
 )]
-#[get("/v0/connectors")]
+#[get("/connectors")]
 async fn list_connectors(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1544,7 +1549,7 @@ struct NewConnectorResponse {
     ),
     tag = "Connector"
 )]
-#[post("/v0/connectors")]
+#[post("/connectors")]
 async fn new_connector(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1600,7 +1605,7 @@ struct UpdateConnectorResponse {}
     ),
     tag = "Connector"
 )]
-#[patch("/v0/connectors")]
+#[patch("/connectors")]
 async fn update_connector(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1642,7 +1647,7 @@ async fn update_connector(
     ),
     tag = "Connector"
 )]
-#[delete("/v0/connectors/{connector_id}")]
+#[delete("/connectors/{connector_id}")]
 async fn delete_connector(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1700,7 +1705,7 @@ pub struct IdOrNameTomlQuery {
     ),
     tag = "Connector"
 )]
-#[get("/v0/connector")]
+#[get("/connector")]
 async fn connector_status(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1779,7 +1784,7 @@ async fn connector_status(
     ),
     tag = "Pipeline"
 )]
-#[post("/v0/pipelines/{pipeline_id}/ingress/{table_name}")]
+#[post("/pipelines/{pipeline_id}/ingress/{table_name}")]
 async fn http_input(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
@@ -1862,7 +1867,7 @@ async fn http_input(
     ),
     tag = "Pipeline"
 )]
-#[get("/v0/pipelines/{pipeline_id}/egress/{table_name}")]
+#[get("/pipelines/{pipeline_id}/egress/{table_name}")]
 async fn http_output(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,

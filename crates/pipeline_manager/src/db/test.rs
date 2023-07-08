@@ -1646,7 +1646,7 @@ impl Storage for Mutex<DbModel> {
             return Err(DBError::unique_key_violation("pipeline_pkey"));
         }
         // UNIQUE constraint on name
-        if let Some(c) = s
+        if let Some(_) = s
             .pipelines
             .iter()
             .filter(|k| k.0 .0 == tenant_id)
