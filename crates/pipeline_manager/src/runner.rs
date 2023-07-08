@@ -24,8 +24,9 @@ use tokio::{
 };
 use uuid::Uuid;
 
-pub(crate) const STARTUP_TIMEOUT: Duration = Duration::from_millis(10_000);
+pub(crate) const STARTUP_TIMEOUT: Duration = Duration::from_millis(15_000);
 const PORT_FILE_LOG_QUIET_PERIOD: Duration = Duration::from_millis(2_000);
+const INITIALIZATION_LOG_QUIET_PERIOD: Duration = Duration::from_millis(2_000);
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
@@ -298,26 +299,78 @@ impl LocalRunner {
 
         match Self::wait_for_startup(pipeline_id, &self.config.port_file_path(pipeline_id)).await {
             Ok(port) => {
-                // Store pipeline in the database.
-                if let Err(e) = self
+                // Wait for pipeline initialization to complete by polling the `stats` endpoint.
+                // XXX: this is a temporary hack that will disappear with proper pipeline state
+                // management.
+                let start = Instant::now();
+                let mut count = 0;
+                loop {
+                    let resp =
+                        Self::forward_to_port(port, pipeline_id, Method::GET, "stats").await?;
+
+                    if resp.status().is_success() {
+                        // Store pipeline in the database.
+                        if let Err(e) = self
+                            .db
+                            .lock()
+                            .await
+                            .set_pipeline_deployed(tenant_id, pipeline_id, port)
+                            .await
+                        {
+                            let _ = pipeline_process.kill().await;
+                            Err(e)?
+                        };
+
+                        return Ok(HttpResponse::Ok().json("Pipeline successfully deployed."));
+                    } else if resp.status() == StatusCode::SERVICE_UNAVAILABLE {
+                        if start.elapsed() > STARTUP_TIMEOUT {
+                            log::debug!(
+                                "Pipeline initialization timeout. Killing the pipeline process."
+                            );
+                            let _ = pipeline_process.kill().await;
+                            let _ = self
+                                .db
+                                .lock()
+                                .await
+                                .set_pipeline_status(
+                                    tenant_id,
+                                    pipeline_id,
+                                    PipelineStatus::Shutdown,
+                                )
+                                .await;
+                            Err(RunnerError::PipelineInitializationTimeout {
+                                pipeline_id,
+                                timeout: STARTUP_TIMEOUT,
+                            })?
+                        }
+
+                        if start.elapsed() > INITIALIZATION_LOG_QUIET_PERIOD && (count % 10) == 0 {
+                            log::debug!("Waiting for pipeline to initialize. Retrying.");
+                        }
+                        count += 1;
+                    } else {
+                        log::debug!("Pipeline initialization error. Killing the pipeline process.");
+                        let _ = pipeline_process.kill().await;
+                        let _ = self
+                            .db
+                            .lock()
+                            .await
+                            .set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Shutdown)
+                            .await;
+                        return Ok(resp);
+                    }
+                    sleep(Duration::from_millis(500)).await;
+                }
+            }
+            Err(e) => {
+                log::debug!("Failed to connect to the pipeline. Killing the pipeline process.");
+                let _ = pipeline_process.kill().await;
+                let _ = self
                     .db
                     .lock()
                     .await
-                    .set_pipeline_deployed(tenant_id, pipeline_id, port)
-                    .await
-                {
-                    let _ = pipeline_process.kill().await;
-                    Err(e)?
-                };
-                Ok(HttpResponse::Ok().json("Pipeline successfully deployed."))
-            }
-            Err(e) => {
-                let _ = pipeline_process.kill().await;
-                self.db
-                    .lock()
-                    .await
                     .set_pipeline_status(tenant_id, pipeline_id, PipelineStatus::Shutdown)
-                    .await?;
+                    .await;
                 Err(e)
             }
         }
@@ -402,14 +455,17 @@ impl LocalRunner {
             Err(RunnerError::PipelineShutdown { pipeline_id })?
         }
 
+        Self::forward_to_port(pipeline_descr.port, pipeline_id, method, endpoint).await
+    }
+
+    async fn forward_to_port(
+        port: u16,
+        pipeline_id: PipelineId,
+        method: Method,
+        endpoint: &str,
+    ) -> Result<HttpResponse, ManagerError> {
         let client = Client::default();
-        let request = client.request(
-            method,
-            &format!(
-                "http://localhost:{port}/{endpoint}",
-                port = pipeline_descr.port
-            ),
-        );
+        let request = client.request(method, &format!("http://localhost:{port}/{endpoint}"));
 
         let mut response = request
             .send()
@@ -501,6 +557,8 @@ impl LocalRunner {
         // Create pipeline directory (delete old directory if exists); write metadata
         // and config files to it.
         let pipeline_dir = self.config.pipeline_dir(pipeline_id);
+
+        let _ = remove_dir_all(&pipeline_dir).await;
         create_dir_all(&pipeline_dir).await.map_err(|e| {
             ManagerError::io_error(
                 format!("creating pipeline directory '{}'", pipeline_dir.display()),

@@ -785,7 +785,12 @@ mod test_with_kafka {
         test_runner::TestRunner,
     };
     use serde_json::{self, json, Value as JsonValue};
-    use std::{io::Write, thread, thread::sleep, time::Duration};
+    use std::{
+        io::Write,
+        thread,
+        thread::sleep,
+        time::{Duration, Instant},
+    };
     use tempfile::NamedTempFile;
 
     #[actix_web::test]
@@ -868,6 +873,13 @@ outputs:
 
         sleep(Duration::from_millis(2000));
         assert!(buffer_consumer.is_empty());
+
+        let start = Instant::now();
+        while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
+        {
+            assert!(start.elapsed() < Duration::from_millis(20_000));
+            sleep(Duration::from_millis(200));
+        }
 
         // Start command; wait for data.
         println!("/start");
