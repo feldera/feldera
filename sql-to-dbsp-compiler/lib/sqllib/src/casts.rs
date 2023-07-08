@@ -20,6 +20,8 @@
 
 #![allow(non_snake_case)]
 
+use std::cmp::Ordering;
+
 use crate::{geopoint::*, interval::*, timestamp::*};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
@@ -236,7 +238,6 @@ pub fn cast_to_Date_s(value: String) -> Date {
         None => Date::default(),
     }
 }
-
 
 /////////// cast to dateN
 
@@ -1002,7 +1003,7 @@ where
 
 #[inline(always)]
 pub fn truncate(value: String, size: usize) -> String {
-    let mut result = value.clone();
+    let mut result = value;
     result.truncate(size);
     result
 }
@@ -1015,12 +1016,10 @@ pub fn size_string(value: String, size: i32) -> String {
         value.trim_end().to_string()
     } else {
         let sz = size as usize;
-        if value.len() == sz {
-            value
-        } else if value.len() > sz {
-            truncate(value, sz)
-        } else {
-            format!("{value:<sz$}")
+        match value.len().cmp(&sz) {
+            Ordering::Equal => value,
+            Ordering::Greater => truncate(value, sz),
+            Ordering::Less => format!("{value:<sz$}"),
         }
     }
 }
