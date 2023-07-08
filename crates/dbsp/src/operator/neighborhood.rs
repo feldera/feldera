@@ -60,12 +60,17 @@ use std::{borrow::Cow, marker::PhantomData};
 pub type Neighborhood<K, V, R> = OrdZSet<(isize, (K, V)), R>;
 
 /// Neighborhood descriptor represents a request from the user to
-/// output a specific neighborhood.  The neighborhood is defined in
-/// terms of its central point (`anchor`) and the number of rows
-/// preceding and following the anchor to output.
+/// output a specific neighborhood.
+///
+/// The neighborhood is defined in terms of its central point
+/// (`anchor`) and the number of rows preceding and following the
+/// anchor to output.
+///
+/// The `anchor` value of `None` is equivalent to specifying the
+/// smallest value of type `K`.
 #[derive(Clone, Debug, Deserialize, PartialOrd, Ord, PartialEq, Eq, Hash, SizeOf)]
 pub struct NeighborhoodDescr<K, V> {
-    anchor: K,
+    anchor: Option<K>,
     #[serde(default)]
     anchor_val: V,
     before: usize,
@@ -92,7 +97,7 @@ pub type NeighborhoodStream<K, V, R> = Stream<RootCircuit, Neighborhood<K, V, R>
 pub type NeighborhoodDescrStream<K, V> = Stream<RootCircuit, Option<NeighborhoodDescr<K, V>>>;
 
 impl<K, V> NeighborhoodDescr<K, V> {
-    pub fn new(k: K, v: V, before: usize, after: usize) -> Self {
+    pub fn new(k: Option<K>, v: V, before: usize, after: usize) -> Self {
         Self {
             anchor: k,
             anchor_val: v,
@@ -256,7 +261,9 @@ where
             let mut after = Vec::with_capacity(descr.after);
             let mut offset = 0;
 
-            cursor.seek_keyval(anchor_key, anchor_val);
+            if let Some(anchor_key) = anchor_key {
+                cursor.seek_keyval(anchor_key, anchor_val);
+            };
             while cursor.keyval_valid() && offset < descr.after {
                 let w = cursor.weight();
 
@@ -274,19 +281,21 @@ where
             let mut before = Vec::with_capacity(descr.before);
             offset = 1;
 
-            cursor.seek_keyval_reverse(anchor_key, anchor_val);
-            if cursor.keyval_valid() && cursor.keyval() == (anchor_key, anchor_val) {
-                cursor.step_keyval_reverse();
-            }
-
-            while cursor.keyval_valid() && offset <= descr.before {
-                let w = cursor.weight();
-
-                if !cursor.weight().is_zero() {
-                    before.push(((cursor.key().clone(), cursor.val().clone()), w));
-                    offset += 1;
+            if let Some(anchor_key) = anchor_key {
+                cursor.seek_keyval_reverse(anchor_key, anchor_val);
+                if cursor.keyval_valid() && cursor.keyval() == (anchor_key, anchor_val) {
+                    cursor.step_keyval_reverse();
                 }
-                cursor.step_keyval_reverse();
+
+                while cursor.keyval_valid() && offset <= descr.before {
+                    let w = cursor.weight();
+
+                    if !cursor.weight().is_zero() {
+                        before.push(((cursor.key().clone(), cursor.val().clone()), w));
+                        offset += 1;
+                    }
+                    cursor.step_keyval_reverse();
+                }
             }
 
             // Assemble final result.
@@ -365,7 +374,9 @@ where
             let mut after = Vec::with_capacity(descr.after);
             let mut offset = 0;
 
-            cursor.seek_keyval(anchor_key, anchor_val);
+            if let Some(anchor_key) = anchor_key {
+                cursor.seek_keyval(anchor_key, anchor_val);
+            }
             while cursor.keyval_valid() && offset < descr.after {
                 let w = cursor.weight();
 
@@ -388,25 +399,27 @@ where
             let mut before = Vec::with_capacity(descr.before);
             offset = 1;
 
-            cursor.seek_keyval_reverse(anchor_key, anchor_val);
-            if cursor.keyval_valid() && cursor.keyval() == (anchor_key, anchor_val) {
-                cursor.step_keyval_reverse();
-            }
-
-            while cursor.keyval_valid() && offset <= descr.before {
-                let w = cursor.weight();
-
-                if !cursor.weight().is_zero() {
-                    before.push((
-                        (
-                            -(offset as isize),
-                            (cursor.key().clone(), cursor.val().clone()),
-                        ),
-                        w,
-                    ));
-                    offset += 1;
+            if let Some(anchor_key) = anchor_key {
+                cursor.seek_keyval_reverse(anchor_key, anchor_val);
+                if cursor.keyval_valid() && cursor.keyval() == (anchor_key, anchor_val) {
+                    cursor.step_keyval_reverse();
                 }
-                cursor.step_keyval_reverse();
+
+                while cursor.keyval_valid() && offset <= descr.before {
+                    let w = cursor.weight();
+
+                    if !cursor.weight().is_zero() {
+                        before.push((
+                            (
+                                -(offset as isize),
+                                (cursor.key().clone(), cursor.val().clone()),
+                            ),
+                            w,
+                        ));
+                        offset += 1;
+                    }
+                    cursor.step_keyval_reverse();
+                }
             }
 
             let mut builder = <<Neighborhood<_, _, _> as Batch>::Builder>::with_capacity(
@@ -457,10 +470,14 @@ mod test {
                 let anchor_v = &descr.anchor_val;
 
                 let tuples = batch_to_tuples(self);
-                let start = tuples
-                    .iter()
-                    .position(|((k, v, ()), _w)| (k, v) >= (anchor_k, anchor_v))
-                    .unwrap_or(tuples.len()) as isize;
+                let start = if let Some(anchor_k) = anchor_k {
+                    tuples
+                        .iter()
+                        .position(|((k, v, ()), _w)| (k, v) >= (anchor_k, anchor_v))
+                        .unwrap_or(tuples.len()) as isize
+                } else {
+                    0
+                };
 
                 let mut from = start - descr.before as isize;
                 let mut to = start + descr.after as isize;
@@ -512,13 +529,19 @@ mod test {
             Runtime::init_circuit(4, test_circuit).unwrap();
 
         // Empty collection.
-        descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
 
         dbsp.step().unwrap();
 
         assert!(batch_to_tuples(&output_handle.consolidate()).is_empty());
 
-        descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(None, 10, 3, 5)));
+
+        dbsp.step().unwrap();
+
+        assert!(batch_to_tuples(&output_handle.consolidate()).is_empty());
+
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
         input_handle.push(9, (0, 1));
 
         dbsp.step().unwrap();
@@ -528,7 +551,14 @@ mod test {
             &[((-1, (9, 0), ()), 1)]
         );
 
-        descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(None, 10, 3, 5)));
+        dbsp.step().unwrap();
+        assert_eq!(
+            &batch_to_tuples(&output_handle.consolidate()),
+            &[((0, (9, 0), ()), 1)]
+        );
+
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
         input_handle.push(9, (1, 1));
 
         dbsp.step().unwrap();
@@ -538,7 +568,7 @@ mod test {
             &[((-2, (9, 0), ()), 1), ((-1, (9, 1), ()), 1)]
         );
 
-        descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
         input_handle.push(8, (1, 1));
 
         dbsp.step().unwrap();
@@ -552,7 +582,7 @@ mod test {
             ]
         );
 
-        descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
         input_handle.push(7, (1, 1));
 
         dbsp.step().unwrap();
@@ -566,7 +596,7 @@ mod test {
             ]
         );
 
-        descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
         input_handle.push(10, (10, 1));
 
         dbsp.step().unwrap();
@@ -581,7 +611,7 @@ mod test {
             ]
         );
 
-        descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
         input_handle.push(10, (11, 1));
         input_handle.push(12, (0, 1));
 
@@ -599,7 +629,7 @@ mod test {
             ]
         );
 
-        descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
         input_handle.push(10, (10, -1));
 
         dbsp.step().unwrap();
@@ -615,7 +645,7 @@ mod test {
             ]
         );
 
-        descr_handle.set_for_all(Some(NeighborhoodDescr::new(10, 10, 3, 5)));
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
         input_handle.push(13, (0, 1));
         input_handle.push(14, (0, 1));
         input_handle.push(14, (1, 1));
@@ -635,6 +665,21 @@ mod test {
                 ((2, (13, 0), ()), 1),
                 ((3, (14, 0), ()), 1),
                 ((4, (14, 1), ()), 1)
+            ]
+        );
+
+        descr_handle.set_for_all(Some(NeighborhoodDescr::new(None, 10, 3, 5)));
+
+        dbsp.step().unwrap();
+
+        assert_eq!(
+            &batch_to_tuples(&output_handle.consolidate()),
+            &[
+                ((0, (7, 1), ()), 1),
+                ((1, (8, 1), ()), 1),
+                ((2, (9, 0), ()), 1),
+                ((3, (9, 1), ()), 1),
+                ((4, (10, 11), ()), 1),
             ]
         );
     }
@@ -677,7 +722,17 @@ mod test {
                 for (k, v, r) in batch.into_iter() {
                     input_handle.push(k, (v, r));
                 }
-                let descr = NeighborhoodDescr::new(start_key, start_val, before, after);
+                let descr = NeighborhoodDescr::new(Some(start_key), start_val, before, after);
+                descr_handle.set_for_all(Some(descr.clone()));
+
+                dbsp.step().unwrap();
+
+                let output = output_handle.consolidate();
+                let ref_output = ref_trace.neighborhood(&Some(descr));
+
+                assert_batch_eq(&output, &ref_output);
+
+                let descr = NeighborhoodDescr::new(None, start_val, before, after);
                 descr_handle.set_for_all(Some(descr.clone()));
 
                 dbsp.step().unwrap();

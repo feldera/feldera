@@ -18,7 +18,7 @@ use utoipa::ToSchema;
 /// and the number of rows preceding and following the anchor to output.
 #[derive(Deserialize, ToSchema)]
 pub struct NeighborhoodQuery {
-    pub anchor: utoipa::openapi::Object,
+    pub anchor: Option<utoipa::openapi::Object>,
     pub before: u32,
     pub after: u32,
 }
