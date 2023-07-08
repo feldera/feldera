@@ -31,7 +31,7 @@ pub enum RowOrScalar {
 impl RowOrScalar {
     /// Returns `true` if the arg type is a [`Row`].
     ///
-    /// [`Row`]: ArgType::Row
+    /// [`Row`]: RowOrScalar::Row
     #[must_use]
     #[inline]
     pub const fn is_row(&self) -> bool {
@@ -40,7 +40,7 @@ impl RowOrScalar {
 
     /// Returns `true` if the arg type is a [`Scalar`].
     ///
-    /// [`Scalar`]: ArgType::Scalar
+    /// [`Scalar`]: RowOrScalar::Scalar
     #[must_use]
     #[inline]
     pub const fn is_scalar(&self) -> bool {
@@ -85,8 +85,8 @@ impl RowOrScalar {
 
     /// Returns `true` if the current layout or column type needs dropping
     ///
-    /// Calls [`RowLayout::needs_drop()`] or [`ColumnType::needs_drop()`]
-    /// depending on what's inside of `self`
+    /// Calls [`RowLayout::needs_drop()`](`crate::ir::RowLayout::needs_drop()`)
+    /// or [`ColumnType::needs_drop()`] depending on what's inside of `self`
     pub fn needs_drop(self, cache: &RowLayoutCache) -> bool {
         match self {
             Self::Row(layout) => cache.get(layout).needs_drop(),
