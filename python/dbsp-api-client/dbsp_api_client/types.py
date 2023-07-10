@@ -1,12 +1,12 @@
 """ Contains some shared types for properties """
 from http import HTTPStatus
-from typing import BinaryIO, Generic, MutableMapping, Optional, Tuple, TypeVar
+from typing import BinaryIO, Generic, Literal, MutableMapping, Optional, Tuple, TypeVar
 
 import attr
 
 
 class Unset:
-    def __bool__(self) -> bool:
+    def __bool__(self) -> Literal[False]:
         return False
 
 

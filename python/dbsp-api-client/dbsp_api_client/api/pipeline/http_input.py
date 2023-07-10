@@ -16,7 +16,7 @@ def _get_kwargs(
     client: Client,
     format_: str,
 ) -> Dict[str, Any]:
-    url = "{}/v0/pipelines/{pipeline_id}/ingress/{table_name}".format(
+    url = "{}/pipelines/{pipeline_id}/ingress/{table_name}".format(
         client.base_url, pipeline_id=pipeline_id, table_name=table_name
     )
 

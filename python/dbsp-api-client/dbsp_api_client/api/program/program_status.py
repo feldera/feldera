@@ -16,7 +16,7 @@ def _get_kwargs(
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
 ) -> Dict[str, Any]:
-    url = "{}/v0/program".format(client.base_url)
+    url = "{}/program".format(client.base_url)
 
     headers: Dict[str, str] = client.get_headers()
     cookies: Dict[str, Any] = client.get_cookies()

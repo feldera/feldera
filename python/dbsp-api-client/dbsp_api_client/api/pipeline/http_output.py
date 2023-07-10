@@ -24,7 +24,7 @@ def _get_kwargs(
     mode: Union[Unset, None, EgressMode] = UNSET,
     quantiles: Union[Unset, None, int] = UNSET,
 ) -> Dict[str, Any]:
-    url = "{}/v0/pipelines/{pipeline_id}/egress/{table_name}".format(
+    url = "{}/pipelines/{pipeline_id}/egress/{table_name}".format(
         client.base_url, pipeline_id=pipeline_id, table_name=table_name
     )
 
