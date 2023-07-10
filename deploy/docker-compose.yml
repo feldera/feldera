@@ -24,7 +24,6 @@ services:
      - RUST_LOG
      - AUTH_CLIENT_ID
      - AUTH_ISSUER
-     - AUTH_JWK_URI
    command:
      - --db-connection-string=postgresql://postgres:postgres@db:5432
      - --use-auth=${USE_AUTH:-false}
