@@ -424,6 +424,30 @@ test-manager:
     RUN cp `cargo test --features integration-test --no-run --package dbsp_pipeline_manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable' | grep -v null` test_binary
     SAVE ARTIFACT test_binary
 
+python-bindings-checker:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
+
+    FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    COPY +build-manager/dbsp_pipeline_manager .
+    RUN mkdir -p /root/.local/lib/python3.10
+    RUN mkdir -p /root/.local/bin
+
+    COPY +install-python/python3.10 /root/.local/lib/python3.10
+    COPY +install-python/bin /root/.local/bin
+
+    RUN pip3 install openapi-python-client
+    COPY +build-manager/dbsp_pipeline_manager .
+    COPY +test-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
+    COPY python/dbsp-api-client dbsp-api-client-base
+
+    # This line will fail if the pytdochon bindings need to be regenerated
+    RUN mkdir checker
+    RUN cd checker && ../dbsp_pipeline_manager --dump-openapi &&  \
+        openapi-python-client generate --path openapi.json --fail-on-warning && \
+        diff -bur dbsp-api-client ../dbsp-api-client-base
+
+
 test-python:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
@@ -545,6 +569,7 @@ all-tests:
     BUILD +test-rust
     BUILD +test-python
     BUILD +audit
+    BUILD +python-bindings-checker
     BUILD +test-sql
     BUILD +test-docker-compose
     BUILD +integration-tests
