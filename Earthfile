@@ -531,15 +531,15 @@ integration-test-container:
 integration-tests:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
+    COPY deploy/.env .
     WITH DOCKER --pull postgres \
                 --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
                 --compose docker-compose.yml \
                 --service db \
                 --service dbsp \
                 --load itest:latest=+integration-test-container
-        RUN sleep 5 && docker run --network default_default itest:latest
+        RUN sleep 5 && docker run --env-file .env --network default_default itest:latest
     END
-
 
 all-tests:
     BUILD +test-rust

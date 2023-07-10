@@ -56,6 +56,11 @@ jobs:
         env:
           muix_license: ${{ secrets.muix_license }}
 
+      - name: Integration test .env
+        run: echo ${itest_config} > deploy/.env
+        env:
+          itest_config: ${{ secrets.itest_config }}
+
       - name: Earthly version
         run: earthly --version
 

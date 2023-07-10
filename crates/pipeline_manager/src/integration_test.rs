@@ -5,6 +5,7 @@ use std::{
 
 use actix_http::{encoding::Decoder, Payload, StatusCode};
 use awc::{http, ClientRequest, ClientResponse};
+use aws_sdk_cognitoidentityprovider::config::Region;
 use serde_json::{json, Value};
 use serial_test::serial;
 use tempfile::TempDir;
@@ -185,10 +186,15 @@ async fn bearer_token() -> Option<String> {
     match client_id {
         Ok(client_id) => {
             let test_user = std::env::var("TEST_USER")
-                .expect("If TEST_CLIENT_ID is set, TEST_USER and TEST_PASSWORD should be as well");
+                .expect("If TEST_CLIENT_ID is set, TEST_USER should be as well");
             let test_password = std::env::var("TEST_PASSWORD")
-                .expect("If TEST_CLIENT_ID is set, TEST_USER and TEST_PASSWORD should be as well");
-            let config = ::aws_config::load_from_env().await;
+                .expect("If TEST_CLIENT_ID is set, TEST_PASSWORD should be as well");
+            let test_region = std::env::var("TEST_REGION")
+                .expect("If TEST_CLIENT_ID is set, TEST_REGION should be as well");
+            let config = aws_config::from_env()
+                .region(Region::new(test_region))
+                .load()
+                .await;
             let cognito_idp = aws_sdk_cognitoidentityprovider::Client::new(&config);
             let res = cognito_idp
                 .initiate_auth()
