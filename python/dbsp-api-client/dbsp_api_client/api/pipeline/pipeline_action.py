@@ -15,7 +15,7 @@ def _get_kwargs(
     *,
     client: Client,
 ) -> Dict[str, Any]:
-    url = "{}/v0/pipelines/{pipeline_id}/{action}".format(client.base_url, pipeline_id=pipeline_id, action=action)
+    url = "{}/pipelines/{pipeline_id}/{action}".format(client.base_url, pipeline_id=pipeline_id, action=action)
 
     headers: Dict[str, str] = client.get_headers()
     cookies: Dict[str, Any] = client.get_cookies()

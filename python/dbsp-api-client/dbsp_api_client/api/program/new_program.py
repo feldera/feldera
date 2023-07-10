@@ -16,7 +16,7 @@ def _get_kwargs(
     client: Client,
     json_body: NewProgramRequest,
 ) -> Dict[str, Any]:
-    url = "{}/v0/programs".format(client.base_url)
+    url = "{}/programs".format(client.base_url)
 
     headers: Dict[str, str] = client.get_headers()
     cookies: Dict[str, Any] = client.get_cookies()
