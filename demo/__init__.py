@@ -4,7 +4,7 @@ from dbsp import DBSPConnection
 
 
 def execute(dbsp_url, actions, name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None):
-    dbsp = DBSPConnection(dbsp_url)
+    dbsp = DBSPConnection(dbsp_url + "/v0")
     sql_code = open(code_file, "r").read()
     program = dbsp.create_or_replace_program(
         name=name, sql_code=sql_code)
