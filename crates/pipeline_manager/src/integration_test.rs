@@ -4,7 +4,7 @@ use std::{
 };
 
 use actix_http::{encoding::Decoder, Payload, StatusCode};
-use awc::ClientResponse;
+use awc::{http, ClientRequest, ClientResponse};
 use serde_json::{json, Value};
 use serial_test::serial;
 use tempfile::TempDir;
@@ -75,6 +75,7 @@ async fn initialize_local_dbsp_instance() -> TempDir {
 struct TestConfig {
     dbsp_url: String,
     client: awc::Client,
+    bearer_token: Option<String>,
 }
 
 impl TestConfig {
@@ -114,11 +115,19 @@ impl TestConfig {
     }
 
     async fn get<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
-        self.client
-            .get(self.endpoint_url(endpoint))
+        self.maybe_attach_bearer_token(self.client.get(self.endpoint_url(endpoint)))
             .send()
             .await
             .unwrap()
+    }
+
+    fn maybe_attach_bearer_token(&self, req: ClientRequest) -> ClientRequest {
+        match &self.bearer_token {
+            Some(token) => {
+                req.insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
+            }
+            None => req,
+        }
     }
 
     async fn post<S: AsRef<str>>(
@@ -126,16 +135,14 @@ impl TestConfig {
         endpoint: S,
         json: &Value,
     ) -> ClientResponse<Decoder<Payload>> {
-        self.client
-            .post(self.endpoint_url(endpoint))
+        self.maybe_attach_bearer_token(self.client.post(self.endpoint_url(endpoint)))
             .send_json(&json)
             .await
             .unwrap()
     }
 
     async fn delete<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
-        self.client
-            .delete(self.endpoint_url(endpoint))
+        self.maybe_attach_bearer_token(self.client.delete(self.endpoint_url(endpoint)))
             .send()
             .await
             .unwrap()
@@ -173,6 +180,45 @@ impl TestConfig {
     }
 }
 
+async fn bearer_token() -> Option<String> {
+    let client_id = std::env::var("TEST_CLIENT_ID");
+    match client_id {
+        Ok(client_id) => {
+            let test_user = std::env::var("TEST_USER")
+                .expect("If TEST_CLIENT_ID is set, TEST_USER and TEST_PASSWORD should be as well");
+            let test_password = std::env::var("TEST_PASSWORD")
+                .expect("If TEST_CLIENT_ID is set, TEST_USER and TEST_PASSWORD should be as well");
+            let config = ::aws_config::load_from_env().await;
+            let cognito_idp = aws_sdk_cognitoidentityprovider::Client::new(&config);
+            let res = cognito_idp
+                .initiate_auth()
+                .set_client_id(Some(client_id))
+                .set_auth_flow(Some(
+                    aws_sdk_cognitoidentityprovider::types::AuthFlowType::UserPasswordAuth,
+                ))
+                .auth_parameters("USERNAME", test_user)
+                .auth_parameters("PASSWORD", test_password)
+                .send()
+                .await
+                .unwrap();
+            Some(
+                res.authentication_result()
+                    .unwrap()
+                    .access_token()
+                    .unwrap()
+                    .to_string(),
+            )
+        }
+        Err(e) => {
+            println!(
+                "TEST_CLIENT_ID is unset (reason: {}). Test will not use authentication",
+                e
+            );
+            None
+        }
+    }
+}
+
 async fn setup() -> TestConfig {
     let dbsp_url = match std::env::var(TEST_DBSP_URL_VAR) {
         Ok(val) => {
@@ -190,7 +236,12 @@ async fn setup() -> TestConfig {
         }
     };
     let client = awc::Client::default();
-    let config = TestConfig { dbsp_url, client };
+    let bearer_token = bearer_token().await;
+    let config = TestConfig {
+        dbsp_url,
+        client,
+        bearer_token,
+    };
     config.cleanup().await;
     config
 }
