@@ -46,7 +46,7 @@ described in the accompanying paper:
 - [Budiu, Chajed, McSherry, Ryzhyk, Tannen. DBSP: Automatic
   Incremental View Maintenance for Rich Query Languages, Conference on
   Very Large Databases, August 2023, Vancouver,
-  Canada](https://github.com/feldera/dbsp/blob/main/doc/vldb23/main.pdf)
+  Canada](https://github.com/feldera/dbsp/blob/main/docs/static/vldb23.pdf)
 
 - Here is the [video of a DBSP
 presentation](https://www.youtube.com/watch?v=iT4k5DCnvPU) at the 2023
