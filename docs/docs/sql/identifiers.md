@@ -40,3 +40,24 @@ single quotes, not double quotes, after UESCAPE.
 
 To include the escape character in the identifier literally, write it
 twice.
+
+## Comments
+
+A comment is a sequence of characters beginning with double dashes and
+extending to the end of the line, e.g.:
+
+```SQL
+-- This is a standard SQL comment
+```
+
+Alternatively, C-style block comments can be used:
+
+```
+/* multiline comment
+ * with nesting: /* nested block comment */
+ */
+```
+
+where the comment begins with `/*` and extends to the matching
+occurrence of `*/`.  Note that block comments cannot be nested unlike
+the requirements of the SQL standard.

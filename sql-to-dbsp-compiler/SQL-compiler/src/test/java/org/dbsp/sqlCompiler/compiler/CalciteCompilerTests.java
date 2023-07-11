@@ -87,4 +87,48 @@ public class CalciteCompilerTests {
         SqlNode node = calcite.parse(query);
         Assert.assertNotNull(node);
     }
+
+    @Test
+    public void commentsTest() throws SqlParseException {
+        String query = "--- Line comment\n" +
+                "/* Second comment\n" +
+                "SELECT * FROM T\n" +
+                "*/\n" +
+                "CREATE VIEW V AS SELECT 0";
+        CalciteCompiler calcite = new CalciteCompiler(options);
+        SqlNode node = calcite.parseStatements(query);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
+    public void primaryKeyTest() throws SqlParseException {
+        // MYSQL syntax for primary keys
+        String query =
+                "create table git_commit (\n" +
+                "    git_commit_id bigint not null primary key\n" +
+                ")";
+        CalciteCompiler calcite = new CalciteCompiler(options);
+        SqlNode node = calcite.parseStatements(query);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
+    public void foreignKeyTest() throws SqlParseException {
+        // MYSQL syntax for FOREIGN KEY
+        String query = "-- Commit inside a Git repo.\n" +
+                "create table git_commit (\n" +
+                "    git_commit_id bigint not null,\n" +
+                "    repository_id bigint not null,\n" +
+                "    commit_id varchar not null,\n" +
+                "    commit_date timestamp not null,\n" +
+                "    commit_owner varchar not null\n" +
+                ");\n" +
+                "create table pipeline_sources (\n" +
+                "    git_commit_id bigint not null foreign key references git_commit(git_commit_id),\n" +
+                "    pipeline_id bigint not null\n" +
+                ")";
+        CalciteCompiler calcite = new CalciteCompiler(options);
+        SqlNode node = calcite.parseStatements(query);
+        Assert.assertNotNull(node);
+    }
 }

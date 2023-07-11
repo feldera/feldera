@@ -103,8 +103,7 @@ See the [documentation](https://docs.feldera.io/guides/sql)
 
 ## Compiler architecture
 
-[A
-presentation](http://budiu.info/work/sql-compiler-architecture23.pptx)
+[A presentation](https://github.com/feldera/dbsp/blob/main/docs/static/sql-compiler-architecture.pptx)
 about the internals of the compiler implementation.
 
 Compilation proceeds in several stages:
@@ -158,11 +157,11 @@ Options:
 -u username   Postgres user name
 -p password   Postgres password
 Registered executors:
-	hybrid
-	dbsp
-	hsql
-	psql
-	none
+        hybrid
+        dbsp
+        hsql
+        psql
+        none
 ```
 
 We have multiple executors.  Some executors are inherited

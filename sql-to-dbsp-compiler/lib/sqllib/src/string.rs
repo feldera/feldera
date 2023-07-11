@@ -194,3 +194,10 @@ pub fn initcap_(source: String) -> String {
 }
 
 some_function1!(initcap, String, String);
+
+pub fn replace___(haystack: String, needle: String, replacement: String) -> String {
+    haystack.replace(&needle, &replacement)
+}
+
+some_function3!(replace, String, String, String, String);
+

@@ -31,6 +31,20 @@ Division or modulus by zero return `NaN`.
 Casting a string to a floating-point value will produce the value
 `0` when parsing fails.
 
+Please note that numeric values with a decimal point have the
+`decimal` type by default.  To write a floating-point literal you have
+to include the `e` for exponent using the following grammar:
+
+digits`.`digits[`e`[`+-`]digits]
+
+[digits]`.`digits[`e`[`+-`]digits]
+
+Alternatively, you can use an explicit cast:
+
+```SQL
+REAL '1.23'  -- string style
+1.23::REAL   -- PostgreSQL style
+```
 
 ## Predefined functions on Floating-point Values
 

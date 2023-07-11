@@ -10,23 +10,23 @@ boolean IfExistsOpt() :
     { return false; }
 }
 
-SqlNodeList TableElementList() :
+SqlNodeList ExtendedTableElementList() :
 {
     final Span s;
     final List<SqlNode> list = new ArrayList<SqlNode>();
 }
 {
     <LPAREN> { s = span(); }
-    TableElement(list)
+    ExtendedTableElement(list)
     (
-        <COMMA> TableElement(list)
+        <COMMA> ExtendedTableElement(list)
     )*
     <RPAREN> {
         return new SqlNodeList(list, s.end(this));
     }
 }
 
-void TableElement(List<SqlNode> list) :
+void ExtendedTableElement(List<SqlNode> list) :
 {
     final SqlIdentifier id;
     final SqlDataTypeSpec type;
@@ -43,20 +43,17 @@ void TableElement(List<SqlNode> list) :
         type = DataType()
         nullable = NullableOptDefaultTrue()
         (
-            <DEFAULT_> e = Expression(ExprContext.ACCEPT_SUB_QUERY) {
-                strategy = ColumnStrategy.DEFAULT;
-            }
+            <PRIMARY> <KEY> /* ignored, but accepted */ {}
         |
-            {
-                e = null;
-                strategy = nullable ? ColumnStrategy.NULLABLE
-                    : ColumnStrategy.NOT_NULLABLE;
-            }
+            <FOREIGN> <KEY> <REFERENCES> SimpleIdentifier() <LPAREN> SimpleIdentifier() <RPAREN> /* ignored */ {}
+        |
+            /* empty */ {}
         )
         {
+            strategy = nullable ? ColumnStrategy.NULLABLE : ColumnStrategy.NOT_NULLABLE;
             list.add(
                 SqlDdlNodes.column(s.add(id).end(this), id,
-                    type.withNullable(nullable), e, strategy));
+                    type.withNullable(nullable), null, strategy));
         }
     |
         { list.add(id); }
@@ -75,6 +72,10 @@ void TableElement(List<SqlNode> list) :
         <PRIMARY>  { s.add(this); } <KEY>
         columnList = ParenthesizedSimpleIdentifierList() {
             list.add(SqlDdlNodes.primary(s.end(columnList), name, columnList));
+        }
+    |   <FOREIGN> ParenthesizedSimpleIdentifierList() <KEY> <REFERENCES>
+                  SimpleIdentifier() <LPAREN> ParenthesizedSimpleIdentifierList() <RPAREN> {
+            // Ignored, but parsed
         }
     )
 }
@@ -133,6 +134,23 @@ SqlCreate SqlCreateType(Span s, boolean replace) :
     )
     {
         return SqlDdlNodes.createType(s.end(this), replace, id, attributeDefList, type);
+    }
+}
+
+SqlCreate SqlCreateExtendedTable(Span s, boolean replace) :
+{
+    final boolean ifNotExists;
+    final SqlIdentifier id;
+    SqlNodeList tableElementList = null;
+    SqlNode query = null;
+}
+{
+    <TABLE> ifNotExists = IfNotExistsOpt() id = CompoundIdentifier()
+    [ tableElementList = ExtendedTableElementList() ]
+    [ <AS> query = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY) ]
+    {
+        return SqlDdlNodes.createTable(s.end(this), replace, ifNotExists, id,
+            tableElementList, query);
     }
 }
 

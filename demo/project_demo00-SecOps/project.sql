@@ -41,7 +41,7 @@ create table artifact (
     artifact_size_in_bytes bigint not null,
     artifact_type varchar not null,
     builtby_pipeline_id bigint not null /* foreign key references pipeline(pipeline_id) */,
-    parent_artifact_id bigint /* foreign key references artifact(artifact_id) */
+    parent_artifact_id bigint foreign key references artifact(artifact_id)
 );
 
 -- Vulnerabilities discovered in source code.
@@ -71,14 +71,14 @@ create table k8scluster (
 -- Deployed k8s objects.
 create table k8sobject (
     k8sobject_id bigint not null,
-    artifact_id bigint not null /* foreign key references artifact(artifact_id) */,
+    artifact_id bigint not null foreign key references artifact(artifact_id),
     create_date timestamp not null,
     createdby_user_id bigint not null,
     update_date timestamp,
     updatedby_user_id bigint,
     checksum varchar not null,
     checksum_type varchar not null,
-    deployed_id bigint not null /* foreign key references k8scluster(k8scluster_id) */,
+    deployed_id bigint not null foreign key references k8scluster(k8scluster_id),
     deployment_type varchar not null,
     k8snamespace varchar not null
 );
@@ -158,7 +158,7 @@ create view k8scluster_vulnerability_stats (
     total_vulnerabilities,
     most_severe_vulnerability
 ) as
-    SELECT 
+    SELECT
         cluster_id,
         k8scluster.name as k8scluster_name,
         total_vulnerabilities,
