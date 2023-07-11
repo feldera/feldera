@@ -670,7 +670,7 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "     1");
     }
 
-    @Test
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5813")
     public void testReplace() {
         this.queryWithOutput("SELECT REPLACE('abcdef', 'de', '45') AS \"abc45f\";\n" +
                 " abc45f \n" +
