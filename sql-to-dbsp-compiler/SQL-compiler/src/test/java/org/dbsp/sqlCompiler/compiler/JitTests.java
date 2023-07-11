@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -15,7 +14,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -32,24 +30,6 @@ public class JitTests extends EndToEndTests {
     }
 
     // All the @Ignore-ed tests below should eventually pass.
-
-    @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/241")
-    public void averageTest() {
-        Logger.INSTANCE.setLoggingLevel(ToJitVisitor.class, 4);
-        String query = "SELECT AVG(T.COL1) FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(10, true))));
-    }
-
-    @Test @Override @Ignore("https://github.com/feldera/dbsp/issues/241")
-    public void constAggregateExpression2() {
-        Logger.INSTANCE.setLoggingLevel(ToJitVisitor.class, 4);
-        String query = "SELECT 34 / AVG (1) FROM T GROUP BY COL1";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(34, true))));
-    }
 
     @Test @Override @Ignore("Uses Decimals, not yet supported by JIT https://github.com/feldera/dbsp/issues/158")
     public void divZero() {

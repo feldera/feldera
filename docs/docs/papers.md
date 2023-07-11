@@ -1,6 +1,6 @@
 # Publications
 
-[DBPS mathematical specification](/spec.pdf)
+[DBSP mathematical specification](/spec.pdf)
 
 [DBSP: Automatic Incremental View Maintenance for Rich Query
 Languages](http://budiu.info/work/budiu-vldb23.pdf) *Mihai Budiu, Tej

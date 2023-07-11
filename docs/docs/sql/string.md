@@ -202,6 +202,10 @@ SELECT 'h%awkeye' LIKE 'h#%a%k%e' ESCAPE '#'   true
 
 ## POSIX regular expressions
 
+The description below is from the [Postgres
+documentation](https://www.postgresql.org/docs/15/functions-matching.html#FUNCTIONS-POSIX-REGEXP),
+where credit is given to Henry Spencer.
+
 POSIX regular expressions provide a more powerful means for pattern
 matching than the `LIKE` and `SIMILAR TO` operators.  Many Unix tools
 such as `egrep`, `sed`, or `awk` use a pattern matching language that
@@ -220,9 +224,6 @@ expressions use different special characters than `LIKE` does. Unlike
 `LIKE` patterns, a regular expression is allowed to match anywhere
 within a string, unless the regular expression is explicitly anchored
 to the beginning or end of the string.
-
-The description below is from the Postgres documentation, where credit
-is given to Henry Spencer.
 
 A *regular expression* is defined as one or more *branches*, separated
 by `|`. It matches anything that matches one of the branches.
