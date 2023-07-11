@@ -307,7 +307,79 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "bubba");
     }
 
-    // TODO: regexp_replace
+    @Test @Ignore("Not yet implemented")
+    public void testRegexpReplace() {
+        this.queryWithOutput("SELECT regexp_replace('1112223333', E'(\\\\d{3})(\\\\d{3})(\\\\d{4})', E'(\\\\1) \\\\2-\\\\3');\n" +
+                " regexp_replace \n" +
+                "----------------\n" +
+                "(111) 222-3333");
+        this.queryWithOutput("SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\&Y', 'g');\n" +
+                "  regexp_replace   \n" +
+                "-------------------\n" +
+                "fXooYbaXrrYbaXzzY");
+        this.queryWithOutput("SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\\\\\Y', 'g');\n" +
+                " regexp_replace \n" +
+                "----------------\n" +
+                "fX\\YbaX\\YbaX\\Y");
+        this.queryWithOutput("SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\Y\\\\1Z\\\\');\n" +
+                " regexp_replace  \n" +
+                "-----------------\n" +
+                "fX\\YoZ\\barrbazz");
+        this.queryWithOutput("SELECT regexp_replace('AAA   BBB   CCC   ', E'\\\\s+', ' ', 'g');\n" +
+                " regexp_replace \n" +
+                "----------------\n" +
+                "AAA BBB CCC ");
+        this.queryWithOutput("SELECT regexp_replace('AAA', '^|$', 'Z', 'g');\n" +
+                " regexp_replace \n" +
+                "----------------\n" +
+                " ZAAAZ");
+        this.queryWithOutput("SELECT regexp_replace('AAA aaa', 'A+', 'Z', 'gi');\n" +
+                " regexp_replace \n" +
+                "----------------\n" +
+                " Z Z");
+        this.queryWithOutput(
+                "-- invalid regexp option\n" +
+                "SELECT regexp_replace('AAA aaa', 'A+', 'Z', 'z');\n" +
+                "ERROR:  invalid regular expression option: \"z\"");
+        this.queryWithOutput("SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 1);\n" +
+                "    regexp_replace     \n" +
+                "-----------------------\n" +
+                " X PostgreSQL function");
+        this.queryWithOutput("SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 1, 2);\n" +
+                "    regexp_replace     \n" +
+                "-----------------------\n" +
+                " A PXstgreSQL function");
+        this.queryWithOutput("SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 0, 'i');\n" +
+                "    regexp_replace     \n" +
+                "-----------------------\n" +
+                " X PXstgrXSQL fXnctXXn");
+        this.queryWithOutput("SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 1, 'i');\n" +
+                "    regexp_replace     \n" +
+                "-----------------------\n" +
+                " X PostgreSQL function");
+        this.queryWithOutput("SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 2, 'i');\n" +
+                "    regexp_replace     \n" +
+                "-----------------------\n" +
+                " A PXstgreSQL function");
+        this.queryWithOutput("SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 3, 'i');\n" +
+                "    regexp_replace     \n" +
+                "-----------------------\n" +
+                " A PostgrXSQL function");
+        this.queryWithOutput("SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 9, 'i');\n" +
+                "    regexp_replace     \n" +
+                "-----------------------\n" +
+                " A PostgreSQL function");
+        this.queryWithOutput("SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 7, 0, 'i');\n" +
+                "    regexp_replace     \n" +
+                "-----------------------\n" +
+                " A PostgrXSQL fXnctXXn");
+        this.queryWithOutput("-- 'g' flag should be ignored when N is specified\n" +
+                "SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 1, 'g');\n" +
+                "    regexp_replace     \n" +
+                "-----------------------\n" +
+                " A PXstgreSQL function");
+    }
+
     // TODO: regexp_count
     // TODO: regexp_like
     // TODO: regexp_instr
@@ -598,20 +670,20 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "     1");
     }
 
-    @Test @Ignore("No 'replace' yet in Calcite")
+    @Test
     public void testReplace() {
-        this.queryWithOutput("SELECT replace('abcdef', 'de', '45') AS \"abc45f\";\n" +
+        this.queryWithOutput("SELECT REPLACE('abcdef', 'de', '45') AS \"abc45f\";\n" +
                 " abc45f \n" +
                 "--------\n" +
-                " abc45f");
+                "abc45f");
         this.queryWithOutput("SELECT replace('yabadabadoo', 'ba', '123') AS \"ya123da123doo\";\n" +
                 " ya123da123doo \n" +
                 "---------------\n" +
-                " ya123da123doo");
+                "ya123da123doo");
         this.queryWithOutput("SELECT replace('yabadoo', 'bad', '') AS \"yaoo\";\n" +
                 " yaoo \n" +
                 "------\n" +
-                " yaoo");
+                "yaoo");
     }
 
     // TODO: replace

@@ -12,3 +12,7 @@ An explicit cast can be specified in three ways:
 * using an infix operator <code>::</code> from Postgres:
   <code>value :: type</code>
 * using the `CONVERT` function: `CONVERT(value, type)`
+
+The rules for implicit casts are complex; we [inherit these
+rules](https://calcite.apache.org/docs/reference.html#conversion-contexts-and-strategies)
+from Calcite.

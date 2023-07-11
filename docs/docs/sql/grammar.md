@@ -25,15 +25,20 @@ tableElement
   |   tableConstraint
 
 columnConstraint
-  :   [ CONSTRAINT name ]
-      [ NOT ] NULL
+  :   [ PRIMARY KEY ]
+  |   [ NOT ] NULL
+  |   [ FOREIGN KEY REFERENCES identifier '(' identifier ')' ]
+
+parensColumnList
+  :   '(' columnName [, columnName ]* ')'
 
 tableConstraint
   :   [ CONSTRAINT name ]
       {
           CHECK '(' expression ')'
-      |   PRIMARY KEY '(' columnName [, columnName ]* ')'
+      |   PRIMARY KEY parensColumnList
       }
+  |   FOREIGN KEY parensColumnList REFERENCES identifier parensColumnList
 
 query
   :   values
@@ -114,6 +119,9 @@ windowSpec
        ]
       ')'
 ```
+
+Note: `PRIMARY KEY` and `FOREIGN KEY` information is parsed, but
+ignored.
 
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.

@@ -459,7 +459,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertTrue(success);
     }
 
-
     @Test
     public void testCompilerToJson() throws IOException {
         String[] statements = new String[]{

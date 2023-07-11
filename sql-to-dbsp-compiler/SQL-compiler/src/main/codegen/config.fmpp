@@ -38,6 +38,7 @@ data: {
     # List of keywords from "keywords" section that are not reserved.
     # We might want the full list from here: https://github.com/apache/calcite/blob/main/core/src/main/codegen/default_config.fmpp
     nonReservedKeywords: [
+      "REPLACE"
     ]
 
     # List of non-reserved keywords to add
@@ -579,7 +580,7 @@ data: {
     # Each must accept arguments "(SqlParserPos pos, boolean replace)".
     createStatementParserMethods: [
       "SqlCreateView"
-      "SqlCreateTable"
+      "SqlCreateExtendedTable"
     ]
 
     # List of methods for parsing extensions to "DROP" calls.
