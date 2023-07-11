@@ -707,7 +707,7 @@ impl<'a> CodegenCtx<'a> {
             self.strconst(constant, builder)
         } else if constant.is_float() {
             self.fconst(constant, builder)
-        } else if constant.is_int() || constant.is_bool() {
+        } else if constant.is_int() || constant.is_bool() || constant.is_decimal() {
             self.iconst(constant, builder)
         } else {
             unreachable!("cannot codegen for unit constants: {constant:?}")
