@@ -241,28 +241,40 @@ impl<'a> MetaCollector<'a> {
         }
     }
 
-    fn add_simple(&mut self, node_id: NodeId, input: NodeId, output_layout: StreamLayout) {
+    fn add_unary(&mut self, node_id: NodeId, input: NodeId, output_layout: StreamLayout) {
         self.add_node(node_id);
         self.node_inputs.insert(node_id, vec![input]);
+        self.node_outputs.insert(node_id, output_layout);
+    }
+
+    fn add_binary(
+        &mut self,
+        node_id: NodeId,
+        lhs: NodeId,
+        rhs: NodeId,
+        output_layout: StreamLayout,
+    ) {
+        self.add_node(node_id);
+        self.node_inputs.insert(node_id, vec![lhs, rhs]);
         self.node_outputs.insert(node_id, output_layout);
     }
 }
 
 impl NodeVisitor for MetaCollector<'_> {
     fn visit_map(&mut self, node_id: NodeId, map: &Map) {
-        self.add_simple(node_id, map.input(), map.output_layout());
+        self.add_unary(node_id, map.input(), map.output_layout());
     }
 
     fn visit_min(&mut self, node_id: NodeId, min: &Min) {
-        self.add_simple(node_id, min.input(), min.layout());
+        self.add_unary(node_id, min.input(), min.layout());
     }
 
     fn visit_max(&mut self, node_id: NodeId, max: &Max) {
-        self.add_simple(node_id, max.input(), max.layout());
+        self.add_unary(node_id, max.input(), max.layout());
     }
 
     fn visit_neg(&mut self, node_id: NodeId, neg: &Neg) {
-        self.add_simple(node_id, neg.input(), neg.layout());
+        self.add_unary(node_id, neg.input(), neg.layout());
     }
 
     fn visit_sum(&mut self, node_id: NodeId, sum: &Sum) {
@@ -276,7 +288,7 @@ impl NodeVisitor for MetaCollector<'_> {
             self.node_outputs[&fold.input()].unwrap_map().0,
             fold.output_layout(),
         );
-        self.add_simple(node_id, fold.input(), output);
+        self.add_unary(node_id, fold.input(), output);
 
         // FIXME: Move to `DataflowNode::validation()` impl
         if let Err(error) = fold
@@ -296,7 +308,7 @@ impl NodeVisitor for MetaCollector<'_> {
             self.node_outputs[&rolling_fold.input()].unwrap_map().0,
             rolling_fold.output_layout(),
         );
-        self.add_simple(node_id, rolling_fold.input(), output);
+        self.add_unary(node_id, rolling_fold.input(), output);
 
         // FIXME: Move to `DataflowNode::validation()` impl
         if let Err(error) = rolling_fold
@@ -312,20 +324,20 @@ impl NodeVisitor for MetaCollector<'_> {
     }
 
     fn visit_minus(&mut self, node_id: NodeId, minus: &Minus) {
-        self.add_node(node_id);
-        self.node_inputs
-            .insert(node_id, vec![minus.lhs(), minus.rhs()]);
-
-        let lhs_layout = self.node_outputs[&minus.lhs()];
-        self.node_outputs.insert(node_id, lhs_layout);
+        self.add_binary(
+            node_id,
+            minus.lhs(),
+            minus.rhs(),
+            self.node_outputs[&minus.lhs()],
+        );
     }
 
     fn visit_filter(&mut self, node_id: NodeId, filter: &Filter) {
-        self.add_simple(node_id, filter.input(), self.node_outputs[&filter.input()]);
+        self.add_unary(node_id, filter.input(), self.node_outputs[&filter.input()]);
     }
 
     fn visit_filter_map(&mut self, node_id: NodeId, filter_map: &FilterMap) {
-        self.add_simple(
+        self.add_unary(
             node_id,
             filter_map.input(),
             self.node_outputs[&filter_map.input()],
@@ -345,19 +357,19 @@ impl NodeVisitor for MetaCollector<'_> {
     }
 
     fn visit_index_with(&mut self, node_id: NodeId, index_with: &IndexWith) {
-        self.add_simple(node_id, index_with.input(), index_with.output_layout())
+        self.add_unary(node_id, index_with.input(), index_with.output_layout())
     }
 
     fn visit_differentiate(&mut self, node_id: NodeId, differentiate: &Differentiate) {
-        self.add_simple(node_id, differentiate.input(), differentiate.layout());
+        self.add_unary(node_id, differentiate.input(), differentiate.layout());
     }
 
     fn visit_integrate(&mut self, node_id: NodeId, integrate: &Integrate) {
-        self.add_simple(node_id, integrate.input(), integrate.layout());
+        self.add_unary(node_id, integrate.input(), integrate.layout());
     }
 
     fn visit_delta0(&mut self, node_id: NodeId, delta0: &Delta0) {
-        self.add_simple(node_id, delta0.input(), self.node_outputs[&delta0.input()]);
+        self.add_unary(node_id, delta0.input(), self.node_outputs[&delta0.input()]);
     }
 
     fn visit_delayed_feedback(&mut self, node_id: NodeId, delayed_feedback: &DelayedFeedback) {
@@ -368,14 +380,10 @@ impl NodeVisitor for MetaCollector<'_> {
     }
 
     fn visit_distinct(&mut self, node_id: NodeId, distinct: &Distinct) {
-        self.add_simple(node_id, distinct.input(), distinct.layout());
+        self.add_unary(node_id, distinct.input(), distinct.layout());
     }
 
     fn visit_join_core(&mut self, node_id: NodeId, join: &super::nodes::JoinCore) {
-        self.add_node(node_id);
-        self.node_inputs
-            .insert(node_id, vec![join.lhs(), join.rhs()]);
-
         let output = match join.result_kind() {
             StreamKind::Set => {
                 if join.value_layout() != self.layout_cache.unit() {
@@ -390,22 +398,21 @@ impl NodeVisitor for MetaCollector<'_> {
             }
             StreamKind::Map => StreamLayout::Map(join.key_layout(), join.value_layout()),
         };
-        self.node_outputs.insert(node_id, output);
+
+        self.add_binary(node_id, join.lhs(), join.rhs(), output);
     }
 
     fn visit_monotonic_join(&mut self, node_id: NodeId, join: &MonotonicJoin) {
-        self.add_node(node_id);
-        self.node_inputs
-            .insert(node_id, vec![join.lhs(), join.rhs()]);
-        self.node_outputs
-            .insert(node_id, StreamLayout::Set(join.key_layout()));
+        self.add_binary(
+            node_id,
+            join.lhs(),
+            join.rhs(),
+            StreamLayout::Set(join.key_layout()),
+        );
     }
 
     fn visit_antijoin(&mut self, node_id: NodeId, antijoin: &Antijoin) {
-        self.add_node(node_id);
-        self.node_inputs
-            .insert(node_id, vec![antijoin.lhs(), antijoin.rhs()]);
-        self.node_outputs.insert(node_id, antijoin.layout());
+        self.add_binary(node_id, antijoin.lhs(), antijoin.rhs(), antijoin.layout());
     }
 
     fn visit_constant(&mut self, node_id: NodeId, constant: &ConstantStream) {
@@ -420,11 +427,11 @@ impl NodeVisitor for MetaCollector<'_> {
     }
 
     fn visit_flat_map(&mut self, node_id: NodeId, flat_map: &FlatMap) {
-        self.add_simple(node_id, flat_map.input(), flat_map.output_layout());
+        self.add_unary(node_id, flat_map.input(), flat_map.output_layout());
     }
 
     fn visit_index_by_column(&mut self, node_id: NodeId, index_by: &IndexByColumn) {
-        self.add_simple(
+        self.add_unary(
             node_id,
             index_by.input(),
             StreamLayout::Map(index_by.key_layout(), index_by.value_layout()),
@@ -432,7 +439,7 @@ impl NodeVisitor for MetaCollector<'_> {
     }
 
     fn visit_unit_map_to_set(&mut self, node_id: NodeId, map_to_set: &UnitMapToSet) {
-        self.add_simple(
+        self.add_unary(
             node_id,
             map_to_set.input(),
             StreamLayout::Set(map_to_set.value_layout()),
@@ -454,11 +461,11 @@ impl NodeVisitor for MetaCollector<'_> {
 
     // TODO: Do exports need any special handling?
     fn visit_export(&mut self, node_id: NodeId, export: &Export) {
-        self.add_simple(node_id, export.input(), export.layout());
+        self.add_unary(node_id, export.input(), export.layout());
     }
 
     fn visit_exported_node(&mut self, node_id: NodeId, exported_node: &ExportedNode) {
-        self.add_simple(node_id, exported_node.input(), exported_node.layout());
+        self.add_unary(node_id, exported_node.input(), exported_node.layout());
     }
 }
 
