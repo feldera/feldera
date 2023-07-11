@@ -1356,6 +1356,26 @@ impl FunctionValidator {
                 assert_eq!(call.ret_ty(), ColumnType::String);
             }
 
+            "dbsp.str.parse" => {
+                if call.args().len() != 2 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 2,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::String) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                assert_eq!(call.ret_ty(), ColumnType::String);
+            }
+
             "dbsp.io.str.print" => {
                 if call.args().len() != 1 {
                     return Err(ValidationError::IncorrectFunctionArgLen {
