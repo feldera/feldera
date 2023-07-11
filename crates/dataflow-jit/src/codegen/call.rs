@@ -1291,9 +1291,12 @@ impl CodegenCtx<'_> {
                 self.parse_scalar_from_string("parse_f64_from_str", expr_id, call, builder);
             }
 
+            ColumnType::Decimal => {
+                self.parse_scalar_from_string("parse_decimal_from_str", expr_id, call, builder);
+            }
+
             ColumnType::Date
             | ColumnType::Timestamp
-            | ColumnType::Decimal
             | ColumnType::String
             | ColumnType::Unit
             | ColumnType::Ptr => todo!(),

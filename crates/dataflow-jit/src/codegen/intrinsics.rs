@@ -558,6 +558,7 @@ intrinsics! {
     parse_f32_from_str = fn(ptr, usize, ptr) -> bool,
     parse_f64_from_str = fn(ptr, usize, ptr) -> bool,
     parse_bool_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_decimal_from_str = fn(ptr, usize, ptr) -> bool,
 
     round_sql_float_with_string_f32 = fn(f32, i32) -> f32,
     round_sql_float_with_string_f64 = fn(f64, i32) -> f64,
@@ -1333,6 +1334,24 @@ unsafe extern "C" fn parse_bool_from_str(
             is not a valid bool (expected \"true\" or \"false\")",
         );
         true
+    }
+}
+
+unsafe extern "C" fn parse_decimal_from_str(
+    ptr: *const u8,
+    len: usize,
+    output: &mut MaybeUninit<u128>,
+) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    match string.parse::<Decimal>() {
+        Ok(decimal) => {
+            output.write(decimal.to_repr());
+            false
+        }
+        Err(error) => {
+            tracing::error!("failed to parse decimal from string {string:?}: {error}");
+            true
+        }
     }
 }
 
