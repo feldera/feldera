@@ -58,6 +58,8 @@ import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
+
 /**
  * Sql test executor that uses DBSP for query execution.
  */
@@ -164,7 +166,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
 
     private DBSPExpression generateReadDbCall(TableValue tableValue) {
         // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
-        DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, "AnyRow", false);
+        DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
         DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType);
         DBSPTypeTuple tupleType = tableValue.contents.zsetType.elementType.to(DBSPTypeTuple.class);
         final List<DBSPExpression> rowGets = new ArrayList<>(tupleType.tupFields.length);
@@ -449,11 +451,6 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 this.statementsExecuted++;
             } else {
                 SqlTestQuery query = operation.to(options.err, SqlTestQuery.class);
-                if (toSkip > 0) {
-                    toSkip--;
-                    result.incIgnored();
-                    continue;
-                }
                 if (this.buggyOperations.contains(query.getQuery())) {
                     options.message("Skipping " + query.getQuery(), 2);
                     result.incIgnored();

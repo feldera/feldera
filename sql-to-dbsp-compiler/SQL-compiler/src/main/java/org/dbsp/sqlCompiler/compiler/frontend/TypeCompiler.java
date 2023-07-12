@@ -64,13 +64,13 @@ public class TypeCompiler implements ICompilerComponent {
                 case BOOLEAN:
                     return new DBSPTypeBool(node, nullable);
                 case TINYINT:
-                    return new DBSPTypeInteger(node, 8, true, nullable);
+                    return new DBSPTypeInteger(node, DBSPTypeCode.INT8, 8, true, nullable);
                 case SMALLINT:
-                    return new DBSPTypeInteger(node, 16, true, nullable);
+                    return new DBSPTypeInteger(node, DBSPTypeCode.INT16, 16, true, nullable);
                 case INTEGER:
-                    return new DBSPTypeInteger(node, 32, true, nullable);
+                    return new DBSPTypeInteger(node, DBSPTypeCode.INT32, 32, true, nullable);
                 case BIGINT:
-                    return new DBSPTypeInteger(node, 64, true, nullable);
+                    return new DBSPTypeInteger(node, DBSPTypeCode.INT64,  64, true, nullable);
                 case DECIMAL: {
                     int precision = dt.getPrecision();
                     int scale = dt.getScale();

@@ -32,6 +32,8 @@ import org.dbsp.util.IIndentStream;
 
 import java.nio.charset.StandardCharsets;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STRING;
+
 public class DBSPTypeString extends DBSPTypeBaseType {
     public static final int UNLIMITED_PRECISION = -1;
 
@@ -53,7 +55,7 @@ public class DBSPTypeString extends DBSPTypeBaseType {
     public final int precision;
 
     public DBSPTypeString(CalciteObject node, int precision, boolean fixed, boolean mayBeNull) {
-        super(node, mayBeNull);
+        super(node, STRING, mayBeNull);
         this.precision = precision;
         this.fixed = fixed;
     }
@@ -63,11 +65,6 @@ public class DBSPTypeString extends DBSPTypeBaseType {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeString(this.getNode(), this.precision, this.fixed, mayBeNull);
-    }
-
-    @Override
-    public String shortName() {
-        return "s";
     }
 
     @Override

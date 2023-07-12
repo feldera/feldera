@@ -117,7 +117,7 @@ public class EndToEndTests extends BaseSQLTests {
     static final DBSPZSetLiteral.Contents z1 = new DBSPZSetLiteral.Contents(e1);
     static final DBSPZSetLiteral.Contents empty = DBSPZSetLiteral.Contents.emptyWithElementType(z0.getElementType());
 
-    void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
+    public void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
         DBSPZSetLiteral.Contents input = this.createInput();
         this.testQueryBase(query, new InputOutputPair(input, expectedOutput));
     }
@@ -425,7 +425,7 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
                         new DBSPGeoPointLiteral(CalciteObject.EMPTY,
-                                new DBSPDoubleLiteral(0), new DBSPDoubleLiteral(0)).some())));
+                                new DBSPDoubleLiteral(0), new DBSPDoubleLiteral(0), false).some())));
     }
 
     @Test

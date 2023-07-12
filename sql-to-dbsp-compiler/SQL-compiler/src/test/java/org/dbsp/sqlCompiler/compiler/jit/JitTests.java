@@ -1,5 +1,7 @@
-package org.dbsp.sqlCompiler.compiler;
+package org.dbsp.sqlCompiler.compiler.jit;
 
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.EndToEndTests;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -9,11 +11,9 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -38,16 +38,6 @@ public class JitTests extends EndToEndTests {
                 new DBSPTupleExpression(
                         new DBSPDecimalLiteral(DBSPTypeDecimal.DEFAULT_NULLABLE,
                                 null))));
-    }
-
-    @Test @Override @Ignore("Uses Decimals, not yet supported by JIT https://github.com/feldera/dbsp/issues/158")
-    public void correlatedAggregate() {
-        String query = "SELECT Sum(r.COL1 * r.COL5) FROM T r\n" +
-                "WHERE\n" +
-                "0.5 * (SELECT Sum(r1.COL5) FROM T r1) =\n" +
-                "(SELECT Sum(r2.COL5) FROM T r2 WHERE r2.COL1 = r.COL1)";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
     }
 
     @Test @Override @Ignore("Uses Decimals, not yet supported by JIT https://github.com/feldera/dbsp/issues/158")
@@ -145,7 +135,7 @@ public class JitTests extends EndToEndTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
                         new DBSPGeoPointLiteral(CalciteObject.EMPTY,
-                                new DBSPDoubleLiteral(0), new DBSPDoubleLiteral(0)).some())));
+                                new DBSPDoubleLiteral(0), new DBSPDoubleLiteral(0), false).some())));
     }
 
     @Test @Override @Ignore("GEO POINT not yet implemented https://github.com/feldera/dbsp/issues/158")

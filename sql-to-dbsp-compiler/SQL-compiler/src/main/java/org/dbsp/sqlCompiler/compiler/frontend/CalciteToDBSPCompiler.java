@@ -65,6 +65,8 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
+
 /**
  * The compiler is stateful: it compiles a sequence of SQL statements
  * defining tables and views.  The views must be defined in terms of
@@ -1013,7 +1015,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             new DBSPPath(
                     new DBSPSimplePathSegment("Fold",
                             DBSPTypeAny.INSTANCE,
-                        new DBSPTypeUser(node, "UnimplementedSemigroup",
+                        new DBSPTypeUser(node, USER, "UnimplementedSemigroup",
                                 false, DBSPTypeAny.INSTANCE),
                         DBSPTypeAny.INSTANCE,
                         DBSPTypeAny.INSTANCE),

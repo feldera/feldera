@@ -226,7 +226,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType[] args = this.transform(type.typeArgs);
         this.pop(type);
-        DBSPType result = new DBSPTypeUser(type.getNode(), type.name, type.mayBeNull, args);
+        DBSPType result = new DBSPTypeUser(type.getNode(), type.code, type.name, type.mayBeNull, args);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -333,7 +333,7 @@ public abstract class InnerRewriteVisitor
         @Nullable DBSPExpression left = this.transformN(expression.left);
         @Nullable DBSPExpression right = this.transformN(expression.right);
         this.pop(expression);
-        DBSPExpression result = new DBSPGeoPointLiteral(expression.getNode(), left, right);
+        DBSPExpression result = new DBSPGeoPointLiteral(expression.getNode(), left, right, expression.mayBeNull());
         this.map(expression, result);
         return VisitDecision.STOP;
     }

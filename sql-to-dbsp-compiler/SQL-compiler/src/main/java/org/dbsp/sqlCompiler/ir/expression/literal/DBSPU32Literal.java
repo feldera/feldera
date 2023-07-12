@@ -71,8 +71,8 @@ public class DBSPU32Literal extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
-        return new DBSPU32Literal(Objects.requireNonNull(this.value));
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        return new DBSPU32Literal(this.checkIfNull(this.value, mayBeNull), mayBeNull);
     }
 
     public DBSPTypeInteger getIntegerType() {

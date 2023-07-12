@@ -39,7 +39,7 @@ import org.junit.Test;
  */
 @SuppressWarnings("ALL")
 public class PostgresNumericTests extends PostgresBaseTest {
-    final int width = 25;
+    protected static final int width = 25;
 
     @Override
     public void prepareData(DBSPCompiler compiler) {
@@ -511,8 +511,8 @@ public class PostgresNumericTests extends PostgresBaseTest {
      * @param intermediate  A SQL query that defines an intermediate view, which is not output by the circuit.
      * @param last          A SQL query that defines the final view, which is output from the circuit.
      */
-    void testTwoViews(String intermediate, String last) {
-        DBSPCompiler compiler = this.testCompiler();
+    public void testTwoViews(String intermediate, String last) {
+        DBSPCompiler compiler = new DBSPCompiler(this.getOptions(true));
         this.prepareData(compiler);
         compiler.generateOutputForNextView(false);
         compiler.compileStatement(intermediate);

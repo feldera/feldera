@@ -229,7 +229,9 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        if (mayBeNull)
+            throw new InternalCompilerError("Nullable zset");
         return this;
     }
 

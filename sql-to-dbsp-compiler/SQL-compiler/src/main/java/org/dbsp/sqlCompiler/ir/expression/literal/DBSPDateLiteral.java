@@ -69,8 +69,9 @@ public class DBSPDateLiteral extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
-        return new DBSPDateLiteral(this.getNode(), this.getType().setMayBeNull(false), this.value);
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        return new DBSPDateLiteral(this.getNode(), this.getType().setMayBeNull(mayBeNull),
+                this.checkIfNull(this.value, mayBeNull));
     }
 
     @Nullable

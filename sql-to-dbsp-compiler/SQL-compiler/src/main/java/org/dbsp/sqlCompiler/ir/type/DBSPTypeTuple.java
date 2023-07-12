@@ -35,12 +35,14 @@ import org.dbsp.util.Utilities;
 import java.util.Arrays;
 import java.util.List;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TUPLE;
+
 /**
  * A Raw Rust tuple.
  */
 public class DBSPTypeTuple extends DBSPTypeTupleBase {
     public DBSPTypeTuple(CalciteObject node, boolean mayBeNull, DBSPType... tupFields) {
-        super(node, mayBeNull, tupFields);
+        super(node, TUPLE, mayBeNull, tupFields);
     }
 
     public DBSPTypeTuple(CalciteObject node, DBSPType... tupFields) {
@@ -97,6 +99,10 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         visitor.postorder(this);
     }
 
+    /**
+     * Returns a lambda which casts every field of a tuple
+     * to the corresponding field of this type.
+     */
     @Override
     public DBSPExpression caster(DBSPType to) {
         if (!to.is(DBSPTypeTuple.class))

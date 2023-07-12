@@ -43,8 +43,10 @@ public class DBSPNullLiteral extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
-        throw new UnsupportedException(this.getNode());
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        if (!mayBeNull)
+            throw new UnsupportedException(this.getNode());
+        return this;
     }
 
     @Override

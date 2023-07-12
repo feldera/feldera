@@ -6,11 +6,13 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.VOID;
+
 public class DBSPTypeVoid extends DBSPTypeBaseType {
     public static final DBSPTypeVoid INSTANCE = new DBSPTypeVoid();
 
     protected DBSPTypeVoid() {
-        super(CalciteObject.EMPTY, false);
+        super(CalciteObject.EMPTY, VOID, false);
     }
 
     @Override
@@ -31,11 +33,6 @@ public class DBSPTypeVoid extends DBSPTypeBaseType {
         if (mayBeNull)
             throw new UnsupportedException(this.getNode());
         return this;
-    }
-
-    @Override
-    public String shortName() {
-        return "void";
     }
 
     @Override

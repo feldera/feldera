@@ -9,6 +9,8 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.JITSinkOperator;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.JITSourceOperator;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPasses;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
@@ -75,6 +77,8 @@ class TestCase {
      */
     DBSPFunction createTesterCode(int testNumber) {
         List<DBSPStatement> list = new ArrayList<>();
+        if (!this.name.isEmpty())
+            list.add(new DBSPComment(this.name));
         DBSPLetStatement circuit = new DBSPLetStatement("circuit",
                 new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.INSTANCE), true);
         list.add(circuit);
@@ -107,7 +111,8 @@ class TestCase {
      */
     DBSPFunction createJITTesterCode(int testNumber) {
         List<DBSPStatement> list = new ArrayList<>();
-        // Logger.INSTANCE.setDebugLevel(ToJitVisitor.class, 4);
+        if (!this.name.isEmpty())
+            list.add(new DBSPComment(this.name));
         JITProgram program = ToJitVisitor.circuitToJIT(this.compiler, this.circuit);
         DBSPComment comment = new DBSPComment(program.toAssembly());
         list.add(comment);
@@ -174,7 +179,9 @@ class TestCase {
             throw new UnsupportedException("Only support 1 input/output pair for tests", CalciteObject.EMPTY);
         }
 
-        ToRustJitLiteral converter = new ToRustJitLiteral(this.compiler);
+        InnerPasses converter = new InnerPasses();
+        converter.add(new Simplify(this.compiler));
+        converter.add(new ToRustJitLiteral(this.compiler));
         if (data.length > 0) {
             InputOutputPair pair = this.data[0];
             int index = 0;

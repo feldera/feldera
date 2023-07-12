@@ -42,8 +42,8 @@ public class DBSPI16Literal extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
-        return new DBSPI16Literal(Objects.requireNonNull(this.value));
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        return new DBSPI16Literal(this.checkIfNull(this.value, mayBeNull), mayBeNull);
     }
 
     public DBSPTypeInteger getIntegerType() {

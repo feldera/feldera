@@ -29,12 +29,14 @@ import org.dbsp.util.IIndentStream;
 import java.util.Arrays;
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.FUNCTION;
+
 public class DBSPTypeFunction extends DBSPType {
     public final DBSPType resultType;
     public final DBSPType[] argumentTypes;
 
     public DBSPTypeFunction(DBSPType resultType, DBSPType... argumentTypes) {
-        super(false);
+        super(false, FUNCTION);
         this.resultType = resultType;
         this.argumentTypes = argumentTypes;
     }

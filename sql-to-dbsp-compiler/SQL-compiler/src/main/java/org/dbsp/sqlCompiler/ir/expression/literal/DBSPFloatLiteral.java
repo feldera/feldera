@@ -74,8 +74,8 @@ public class DBSPFloatLiteral extends DBSPFPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
-        return new DBSPFloatLiteral(Objects.requireNonNull(this.value), false, this.raw);
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        return new DBSPFloatLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull, this.raw);
     }
 
     @Override

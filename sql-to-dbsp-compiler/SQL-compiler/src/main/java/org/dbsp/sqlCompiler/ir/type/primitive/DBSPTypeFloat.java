@@ -28,23 +28,19 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 
 import java.util.Objects;
 
 public class DBSPTypeFloat extends DBSPTypeFP implements IsNumericType {
-    protected DBSPTypeFloat(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
+    protected DBSPTypeFloat(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.FLOAT, mayBeNull); }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeFloat(this.getNode(), mayBeNull);
-    }
-
-    @Override
-    public String shortName() {
-        return "f";
     }
 
     public static final DBSPTypeFloat INSTANCE =new DBSPTypeFloat(CalciteObject.EMPTY,false);

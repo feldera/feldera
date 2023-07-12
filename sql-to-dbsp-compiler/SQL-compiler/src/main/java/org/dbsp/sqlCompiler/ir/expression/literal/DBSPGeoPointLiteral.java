@@ -40,8 +40,9 @@ public class DBSPGeoPointLiteral extends DBSPLiteral {
     public final DBSPExpression right;
 
     public DBSPGeoPointLiteral(CalciteObject node,
-                               @Nullable DBSPExpression left, @Nullable DBSPExpression right) {
-        super(node, DBSPTypeGeoPoint.INSTANCE, left == null || right == null);
+                               @Nullable DBSPExpression left, @Nullable DBSPExpression right,
+                               boolean mayBeNull) {
+        super(node, DBSPTypeGeoPoint.INSTANCE.setMayBeNull(mayBeNull), left == null || right == null);
         this.left = left;
         this.right = right;
     }
@@ -61,9 +62,10 @@ public class DBSPGeoPointLiteral extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
         return new DBSPGeoPointLiteral(
-                this.getNode(), Objects.requireNonNull(this.left), Objects.requireNonNull(this.right));
+                this.getNode(), this.checkIfNull(this.left, mayBeNull),
+                this.checkIfNull(this.right, mayBeNull), mayBeNull);
     }
 
     @Override

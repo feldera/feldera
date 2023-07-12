@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
@@ -48,7 +49,7 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
     public final int scale;
 
     public DBSPTypeDecimal(CalciteObject node, int precision, int scale, boolean mayBeNull) {
-        super(node, mayBeNull);
+        super(node, DBSPTypeCode.DECIMAL, mayBeNull);
         if (precision <= 0)
             throw new IllegalArgumentException("Precision must be positive: " + precision);
         if (scale < 0)
@@ -60,11 +61,6 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
             throw new UnsupportedException(scale + " larger than maximum supported scale " + MAX_SCALE, node);
         this.precision = precision;
         this.scale = scale;
-    }
-
-    @Override
-    public String getRustString() {
-        return "Decimal";
     }
 
     @Override
@@ -97,11 +93,6 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
     @Override
     public boolean hasCopy() {
         return false;
-    }
-
-    @Override
-    public String shortName() {
-        return "decimal";
     }
 
     @Override

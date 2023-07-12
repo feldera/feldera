@@ -35,17 +35,14 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.DATE;
+
 public class DBSPTypeDate extends DBSPTypeBaseType implements IsNumericType, IsDateType {
     public static final DBSPTypeDate INSTANCE =new DBSPTypeDate(CalciteObject.EMPTY, false);
     public static final DBSPTypeDate NULLABLE_INSTANCE = new DBSPTypeDate(CalciteObject.EMPTY, true);
 
     protected DBSPTypeDate(CalciteObject node, boolean mayBeNull) {
-        super(node, mayBeNull);
-    }
-
-    @Override
-    public String shortName() {
-        return "Date";
+        super(node, DATE, mayBeNull);
     }
 
     @Override
@@ -98,10 +95,5 @@ public class DBSPTypeDate extends DBSPTypeBaseType implements IsNumericType, IsD
     @Override
     public int hashCode() {
         return Objects.hash(this.mayBeNull, 3);
-    }
-
-    @Override
-    public String getRustString() {
-        return "Date";
     }
 }

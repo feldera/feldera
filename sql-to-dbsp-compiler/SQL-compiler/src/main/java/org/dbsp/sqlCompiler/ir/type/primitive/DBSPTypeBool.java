@@ -28,11 +28,12 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 
 import java.util.Objects;
 
 public class DBSPTypeBool extends DBSPTypeBaseType {
-    public DBSPTypeBool(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
+    public DBSPTypeBool(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.BOOL, mayBeNull); }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
@@ -44,11 +45,6 @@ public class DBSPTypeBool extends DBSPTypeBaseType {
     @Override
     public int hashCode() {
         return Objects.hash(this.mayBeNull, 2);
-    }
-
-    @Override
-    public String shortName() {
-        return "b";
     }
 
     @Override

@@ -28,6 +28,8 @@ import org.dbsp.util.IIndentStream;
 
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STREAM;
+
 /**
  * A type of the form 'Stream<_, elementType>'
  */
@@ -35,7 +37,7 @@ public class DBSPTypeStream extends DBSPType {
     public final DBSPType elementType;
 
     public DBSPTypeStream(DBSPType elementType) {
-        super(elementType.getNode(), elementType.mayBeNull);
+        super(elementType.getNode(), STREAM, elementType.mayBeNull);
         this.elementType = elementType;
     }
 

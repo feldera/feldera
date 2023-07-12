@@ -29,6 +29,8 @@ import org.dbsp.util.IIndentStream;
 
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.REF;
+
 /**
  * A type of the form &type.
  */
@@ -37,7 +39,7 @@ public class DBSPTypeRef extends DBSPType {
     public final boolean mutable;
 
     public DBSPTypeRef(DBSPType type, boolean mutable) {
-        super(type.getNode(), false);
+        super(type.getNode(), REF,false);
         this.type = type;
         this.mutable = mutable;
     }

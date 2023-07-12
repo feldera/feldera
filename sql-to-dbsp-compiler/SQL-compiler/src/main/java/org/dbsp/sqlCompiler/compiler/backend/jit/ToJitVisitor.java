@@ -196,29 +196,31 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
         DBSPTypeBaseType base = type.as(DBSPTypeBaseType.class);
         if (base == null)
             throw new InternalCompilerError("Expected a base type " + type, type);
-        switch (base.shortName()) {
-            case "b":
+        switch (base.code) {
+            case BOOL:
                 return JITBoolType.INSTANCE;
-            case "i16":
+            case INT16:
                 return JITI16Type.INSTANCE;
-            case "i32":
+            case INT32:
                 return JITI32Type.INSTANCE;
-            case "i64":
+            case INT64:
                 return JITI64Type.INSTANCE;
-            case "d":
+            case DOUBLE:
                 return JITF64Type.INSTANCE;
-            case "f":
+            case FLOAT:
                 return JITF32Type.INSTANCE;
-            case "s":
+            case STRING:
                 return JITStringType.INSTANCE;
-            case "date":
+            case DATE:
                 return JITDateType.INSTANCE;
-            case "Timestamp":
+            case TIMESTAMP:
                 return JITTimestampType.INSTANCE;
-            case "u":
+            case USIZE:
                 return JITUSizeType.INSTANCE;
-            case "i":
+            case ISIZE:
                 return JITISizeType.INSTANCE;
+            case DECIMAL:
+                return JITDecimalType.INSTANCE;
             default:
                 break;
         }

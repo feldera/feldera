@@ -180,7 +180,11 @@ public class RustFileWriter implements ICompilerComponent {
             "    interval::*,\n" +
             "};\n" +
             "#[cfg(test)]\n" +
-            "use chrono::{NaiveDate, NaiveDateTime};\n"
+            "use chrono::{NaiveDate, NaiveDateTime};\n" +
+            "#[cfg(test)]\n" +
+            "use rust_decimal::Decimal;\n" +
+            "#[cfg(test)]\n" +
+            "use std::str::FromStr;\n"
             ;
 
     final DBSPCompiler compiler;
@@ -305,7 +309,7 @@ public class RustFileWriter implements ICompilerComponent {
             stream.append(rustPreamble)
                     .newline();
             stream.append("type ")
-                    .append(DBSPTypeWeight.INSTANCE.name)
+                    .append(DBSPTypeWeight.INSTANCE.getRustString())
                     .append(" = ")
                     .append(this.getCompiler().getWeightTypeImplementation().toString())
                     .append(";")

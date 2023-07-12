@@ -26,12 +26,14 @@ package org.dbsp.sqlCompiler.ir.type;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ZSET;
+
 public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
     public final DBSPType elementType;
     public final DBSPType weightType;
 
     public DBSPTypeZSet(CalciteObject node, DBSPType elementType, DBSPType weightType) {
-        super(node, "OrdZSet", false, elementType, weightType);
+        super(node, ZSET, "OrdZSet", false, elementType, weightType);
         this.elementType = elementType;
         this.weightType = weightType;
     }

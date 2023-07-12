@@ -37,7 +37,7 @@ import java.util.*;
  * runtime library: support functions that implement the
  * SQL semantics.
  */
-@SuppressWarnings({"FieldCanBeLocal", "MismatchedQueryAndUpdateOfCollection", "SpellCheckingInspection"})
+@SuppressWarnings({"SpellCheckingInspection"})
 public class RustSqlRuntimeLibrary {
     private final LinkedHashMap<String, DBSPOpcode> arithmeticFunctions = new LinkedHashMap<>();
     private final LinkedHashMap<String, DBSPOpcode> dateFunctions = new LinkedHashMap<>();

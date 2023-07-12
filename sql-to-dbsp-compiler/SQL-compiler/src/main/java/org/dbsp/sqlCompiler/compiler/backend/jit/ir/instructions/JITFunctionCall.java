@@ -84,6 +84,8 @@ public class JITFunctionCall extends JITInstruction {
                 .append(this.functionName)
                 .append("(")
                 .joinI(", ", this.arguments)
-                .append(")");
+                .append(")")
+                .append(": ")
+                .append(this.returnType);
     }
 }

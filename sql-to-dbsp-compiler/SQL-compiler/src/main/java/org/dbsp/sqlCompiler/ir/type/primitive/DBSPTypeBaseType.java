@@ -28,33 +28,21 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.IIndentStream;
 
 public abstract class DBSPTypeBaseType extends DBSPType {
-    protected DBSPTypeBaseType(CalciteObject node, boolean mayBeNull) {
-        super(node, mayBeNull);
+    protected DBSPTypeBaseType(CalciteObject node, DBSPTypeCode code, boolean mayBeNull) {
+        super(node, code, mayBeNull);
     }
 
-    /**
-     * Used when generating names for library functions that depend on argument types.
-     * Here is a map of the short type names
-     * Bool -> b
-     * Date -> date
-     * Decimal -> decimal
-     * Double -> d
-     * Float -> f
-     * GeoPoint -> geopoint
-     * Null -> null
-     * String -> s
-     * Timestamp -> TS
-     * isize -> i
-     * signed16 -> i16
-     * signed32 -> i32
-     * signed64 -> i64
-     * str -> str
-     * usize -> u
-     */
-    public abstract String shortName();
+    public String shortName() {
+        return this.code.shortName;
+    }
+
+    public String getRustString() {
+        return this.code.rustName;
+    }
 
     @Override
     public DBSPExpression caster(DBSPType to) {

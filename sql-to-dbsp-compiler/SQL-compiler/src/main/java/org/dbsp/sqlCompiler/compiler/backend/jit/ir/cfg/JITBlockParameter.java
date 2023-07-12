@@ -49,6 +49,8 @@ public class JITBlockParameter extends JITNode {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append(this.argument);
+        return builder.append(this.argument)
+                .append(": ")
+                .append(this.type);
     }
 }

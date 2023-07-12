@@ -28,23 +28,19 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 
 import java.util.Objects;
 
 public class DBSPTypeDouble extends DBSPTypeFP implements IsNumericType {
-    protected DBSPTypeDouble(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
+    protected DBSPTypeDouble(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.DOUBLE, mayBeNull); }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeDouble(this.getNode(), mayBeNull);
-    }
-
-    @Override
-    public String shortName() {
-        return "d";
     }
 
     public static final DBSPTypeDouble INSTANCE = new DBSPTypeDouble(CalciteObject.EMPTY,false);

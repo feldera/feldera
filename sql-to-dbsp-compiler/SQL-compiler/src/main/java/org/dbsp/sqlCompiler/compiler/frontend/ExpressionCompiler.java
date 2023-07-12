@@ -156,7 +156,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 Coordinate c = Objects.requireNonNull(point).getCoordinate();
                 return new DBSPGeoPointLiteral(node,
                         new DBSPDoubleLiteral(c.getOrdinate(0)),
-                        new DBSPDoubleLiteral(c.getOrdinate(1)));
+                        new DBSPDoubleLiteral(c.getOrdinate(1)),
+                        type.mayBeNull);
             }
         } catch (BaseCompilerException ex) {
             throw ex;
@@ -191,8 +192,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         DBSPTypeFP lf = left.as(DBSPTypeFP.class);
         DBSPTypeFP rf = right.as(DBSPTypeFP.class);
         if (li != null) {
-            if (ri != null)
-                return new DBSPTypeInteger(left.getNode(), Math.max(li.getWidth(), ri.getWidth()), true,false);
+            if (ri != null) {
+                int width = Math.max(li.getWidth(), ri.getWidth());
+                return new DBSPTypeInteger(left.getNode(),
+                        DBSPTypeInteger.NULLABLE_SIGNED_64.getCode(width, true),
+                        width, true, false);
+            }
             if (rf != null || rd != null)
                 return right.setMayBeNull(false);
         }

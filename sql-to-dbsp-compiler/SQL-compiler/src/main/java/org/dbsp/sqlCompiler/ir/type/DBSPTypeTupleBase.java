@@ -29,8 +29,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 public abstract class DBSPTypeTupleBase extends DBSPType {
     public final DBSPType[] tupFields;
 
-    protected DBSPTypeTupleBase(CalciteObject node, boolean mayBeNull, DBSPType... tupFields) {
-        super(node, mayBeNull);
+    protected DBSPTypeTupleBase(CalciteObject node, DBSPTypeCode code, boolean mayBeNull, DBSPType... tupFields) {
+        super(node, code, mayBeNull);
         this.tupFields = tupFields;
         for (DBSPType type: this.tupFields)
             if (type == null)

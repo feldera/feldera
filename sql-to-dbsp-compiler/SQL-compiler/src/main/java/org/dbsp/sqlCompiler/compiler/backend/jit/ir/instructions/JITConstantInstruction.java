@@ -68,6 +68,8 @@ public class JITConstantInstruction extends JITInstruction {
     public IIndentStream toString(IIndentStream builder) {
         return super.toString(builder)
                 .append(" ")
-                .append(this.value);
+                .append(this.value)
+                .append(": ")
+                .append(this.type);
     }
 }

@@ -66,8 +66,8 @@ public class DBSPISizeLiteral extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
-        return new DBSPISizeLiteral(Objects.requireNonNull(this.value));
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        return new DBSPISizeLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull);
     }
 
     @Override

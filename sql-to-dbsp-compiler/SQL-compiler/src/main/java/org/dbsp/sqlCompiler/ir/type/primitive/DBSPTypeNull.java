@@ -31,6 +31,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.NULL;
+
 /**
  * This type has a single value, NULL.
  */
@@ -39,12 +41,7 @@ public class DBSPTypeNull extends DBSPTypeBaseType {
 
     @SuppressWarnings("SameParameterValue")
     protected DBSPTypeNull(CalciteObject node, boolean mayBeNull) {
-        super(node, mayBeNull);
-    }
-
-    @Override
-    public String shortName() {
-        return "null";
+        super(node, NULL, mayBeNull);
     }
 
     @Override

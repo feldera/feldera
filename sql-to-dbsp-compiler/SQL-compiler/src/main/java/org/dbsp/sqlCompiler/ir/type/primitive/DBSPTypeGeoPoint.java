@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 
 import java.util.Objects;
 
@@ -36,7 +37,7 @@ public class DBSPTypeGeoPoint extends DBSPTypeGeo {
     public static final DBSPTypeGeoPoint NULLABLE_INSTANCE = new DBSPTypeGeoPoint(CalciteObject.EMPTY, true);
 
     public DBSPTypeGeoPoint(CalciteObject node, boolean mayBeNull) {
-        super(node, mayBeNull);
+        super(node, DBSPTypeCode.GEOPOINT, mayBeNull);
     }
 
     @Override
@@ -67,14 +68,10 @@ public class DBSPTypeGeoPoint extends DBSPTypeGeo {
     }
 
     @Override
-    public String shortName() {
-        return "geopoint";
-    }
-
-    @Override
     public DBSPLiteral defaultValue() {
         return new DBSPGeoPointLiteral(CalciteObject.EMPTY,
                 DBSPTypeDouble.INSTANCE.defaultValue(),
-                DBSPTypeDouble.INSTANCE.defaultValue());
+                DBSPTypeDouble.INSTANCE.defaultValue(),
+                false);
     }
 }

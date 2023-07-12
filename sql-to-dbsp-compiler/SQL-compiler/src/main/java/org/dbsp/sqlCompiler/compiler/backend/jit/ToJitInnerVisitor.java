@@ -358,13 +358,16 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
      * The function call is applied only when all arguments are non-null,
      * otherwise the result is immediately null.
      * @param name           Name of function to call.
+     * @param resultType     Expected result type.
      * @param expression     Operations which is being translated.
      *                       Usually an ApplyExpression, but not always.
      * @param arguments      Arguments to supply to the function call.
      */
-    void createFunctionCall(String name,
+    JITInstructionPair createFunctionCall(String name,
+                            @Nullable DBSPType resultType,
                             DBSPExpression expression,
                             DBSPExpression... arguments) {
+        Objects.requireNonNull(resultType);
         List<JITInstructionRef> nullableArgs = new ArrayList<>();
         List<JITType> argumentTypes = new ArrayList<>();
         List<JITInstructionRef> args = new ArrayList<>();
@@ -405,16 +408,16 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             this.setCurrentBlock(onNonNullBlock);
         }
 
-        JITScalarType resultType = convertScalarType(expression);
+        JITScalarType jitResultType = this.convertType(resultType).to(JITScalarType.class);
         long id = this.nextInstructionId();
-        JITInstruction call = this.add(new JITFunctionCall(id, name, args, argumentTypes, resultType));
+        JITInstruction call = this.add(new JITFunctionCall(id, name, args, argumentTypes, jitResultType));
         JITInstructionPair result;
 
         if (isNull.isValid()) {
             Objects.requireNonNull(nextBlock);
             Objects.requireNonNull(onNonNullBlock);
             Objects.requireNonNull(onNullBlock);
-            JITInstructionRef param = this.addParameter(nextBlock, resultType);
+            JITInstructionRef param = this.addParameter(nextBlock, jitResultType);
 
             JITBlockDestination next = nextBlock.createDestination();
             next.addArgument(call.getInstructionReference());
@@ -423,7 +426,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
 
             next = nextBlock.createDestination();
             this.setCurrentBlock(onNullBlock);
-            DBSPLiteral defaultValue = expression.getType()
+            DBSPLiteral defaultValue = resultType
                     .setMayBeNull(false)
                     .to(DBSPTypeBaseType.class)
                     .defaultValue();
@@ -437,7 +440,22 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         } else {
             result = new JITInstructionPair(call);
         }
-        this.map(expression, result);
+        return result;
+    }
+
+    /**
+     * Insert a function call operation.
+     * The function call is applied only when all arguments are non-null,
+     * otherwise the result is immediately null.
+     * @param name           Name of function to call.
+     * @param expression     Operations which is being translated.
+     *                       Usually an ApplyExpression, but not always.
+     * @param arguments      Arguments to supply to the function call.
+     */
+    JITInstructionPair createFunctionCall(String name,
+                                          DBSPExpression expression,
+                                          DBSPExpression... arguments) {
+        return this.createFunctionCall(name, expression.getType(), expression, arguments);
     }
 
     /////////////////////////// Code generation
@@ -456,66 +474,79 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         return VisitDecision.STOP;
     }
 
+    /**
+     * Function Type class.  Describes some type information about a JIT function.
+     * (Chose a short name to make the hashmap below more compact.)
+     */
+    static class FT {
+        /**
+         * The name of the JIT function.
+         */
+        public final String name;
+        /**
+         * Type of result produced by JIT function.
+         */
+        public final DBSPTypeBaseType resultType;
+
+        FT(String name, DBSPTypeBaseType resultType) {
+            this.name = name;
+            this.resultType = resultType;
+        }
+    }
+    
+    static final Map<String, FT> functionTranslation = new HashMap<String, FT>() {{
+        put("extract_second_Timestamp", new FT("dbsp.timestamp.second", DBSPTypeInteger.SIGNED_64));
+        put("extract_minute_Timestamp", new FT("dbsp.timestamp.minute", DBSPTypeInteger.SIGNED_64));
+        put("extract_hour_Timestamp", new FT("dbsp.timestamp.hour", DBSPTypeInteger.SIGNED_64));
+        put("extract_day_Timestamp", new FT("dbsp.timestamp.day", DBSPTypeInteger.SIGNED_64));
+        put("extract_dow_Timestamp", new FT("dbsp.timestamp.day_of_week", DBSPTypeInteger.SIGNED_64));
+        put("extract_doy_Timestamp", new FT("dbsp.timestamp.day_of_year", DBSPTypeInteger.SIGNED_64));
+        put("extract_isodow_Timestamp", new FT("dbsp.timestamp.iso_day_of_week", DBSPTypeInteger.SIGNED_64));
+        put("extract_week_Timestamp", new FT("dbsp.timestamp.week", DBSPTypeInteger.SIGNED_64));
+        put("extract_month_Timestamp", new FT("dbsp.timestamp.month", DBSPTypeInteger.SIGNED_64));
+        put("extract_year_Timestamp", new FT("dbsp.timestamp.year", DBSPTypeInteger.SIGNED_64));
+        put("extract_isoyear_Timestamp", new FT("dbsp.timestamp.iso_year", DBSPTypeInteger.SIGNED_64));
+        put("extract_quarter_Timestamp", new FT("dbsp.timestamp.quarter", DBSPTypeInteger.SIGNED_64));
+        put("extract_decade_Timestamp", new FT("dbsp.timestamp.decade", DBSPTypeInteger.SIGNED_64));
+        put("extract_century_Timestamp", new FT("dbsp.timestamp.century", DBSPTypeInteger.SIGNED_64));
+        put("extract_millennium_Timestamp", new FT("dbsp.timestamp.millennium", DBSPTypeInteger.SIGNED_64));
+        put("extract_epoch_Timestamp", new FT("dbsp.timestamp.epoch", DBSPTypeInteger.SIGNED_32));
+        put("extract_second_Date", new FT("dbsp.date.second", DBSPTypeInteger.SIGNED_32));
+        put("extract_millisecond_Date", new FT("dbsp.date.millisecond", DBSPTypeInteger.SIGNED_32));
+        put("extract_microsecond_Date", new FT("dbsp.date.microsecond", DBSPTypeInteger.SIGNED_32));
+        put("extract_minute_Date", new FT("dbsp.date.minute", DBSPTypeInteger.SIGNED_32));
+        put("extract_hour_Date", new FT("dbsp.date.hour", DBSPTypeInteger.SIGNED_32));
+        put("extract_day_Date", new FT("dbsp.date.day", DBSPTypeInteger.SIGNED_32));
+        put("extract_dow_Date", new FT("dbsp.date.day_of_week", DBSPTypeInteger.SIGNED_32));
+        put("extract_doy_Date", new FT("dbsp.date.day_of_year", DBSPTypeInteger.SIGNED_32));
+        put("extract_isodow_Date", new FT("dbsp.date.iso_day_of_week", DBSPTypeInteger.SIGNED_32));
+        put("extract_week_Date", new FT("dbsp.date.week", DBSPTypeInteger.SIGNED_32));
+        put("extract_month_Date", new FT("dbsp.date.month", DBSPTypeInteger.SIGNED_32));
+        put("extract_year_Date", new FT("dbsp.date.year", DBSPTypeInteger.SIGNED_32));
+        put("extract_isoyear_Date", new FT("dbsp.date.iso_year", DBSPTypeInteger.SIGNED_32));
+        put("extract_quarter_Date", new FT("dbsp.date.quarter", DBSPTypeInteger.SIGNED_32));
+        put("extract_decade_Date", new FT("dbsp.date.decade", DBSPTypeInteger.SIGNED_32));
+        put("extract_century_Date", new FT("dbsp.date.century", DBSPTypeInteger.SIGNED_32));
+        put("extract_millennium_Date", new FT("dbsp.date.millennium", DBSPTypeInteger.SIGNED_32));
+        put("extract_epoch_Date", new FT("dbsp.date.epoch", DBSPTypeInteger.SIGNED_32));
+    }};
+
     @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
+        JITScalarType resultType = this.convertScalarType(expression);
         DBSPPathExpression path = expression.function.as(DBSPPathExpression.class);
         if (path != null) {
-            String jitFunction = null;
             String function = path.path.toString();
-            switch (function) {
-                case "extract_second_Timestamp":
-                    jitFunction = "dbsp.timestamp.second";
-                    break;
-                case "extract_minute_Timestamp":
-                    jitFunction = "dbsp.timestamp.minute";
-                    break;
-                case "extract_hour_Timestamp":
-                    jitFunction = "dbsp.timestamp.hour";
-                    break;
-                case "extract_day_Timestamp":
-                    jitFunction = "dbsp.timestamp.day";
-                    break;
-                case "extract_dow_Timestamp":
-                    jitFunction = "dbsp.timestamp.day_of_week";
-                    break;
-                case "extract_doy_Timestamp":
-                    jitFunction = "dbsp.timestamp.day_of_year";
-                    break;
-                case "extract_isodow_Timestamp":
-                    jitFunction = "dbsp.timestamp.iso_day_of_week";
-                    break;
-                case "extract_week_Timestamp":
-                    jitFunction = "dbsp.timestamp.week";
-                    break;
-                case "extract_month_Timestamp":
-                    jitFunction = "dbsp.timestamp.month";
-                    break;
-                case "extract_year_Timestamp":
-                    jitFunction = "dbsp.timestamp.year";
-                    break;
-                case "extract_isoyear_Timestamp":
-                    jitFunction = "dbsp.timestamp.isoyear";
-                    break;
-                case "extract_quarter_Timestamp":
-                    jitFunction = "dbsp.timestamp.quarter";
-                    break;
-                case "extract_decade_Timestamp":
-                    jitFunction = "dbsp.timestamp.decade";
-                    break;
-                case "extract_century_Timestamp":
-                    jitFunction = "dbsp.timestamp.century";
-                    break;
-                case "extract_millennium_Timestamp":
-                    jitFunction = "dbsp.timestamp.millennium";
-                    break;
-                case "extract_epoch_Timestamp":
-                    jitFunction = "dbsp.timestamp.epoch";
-                    break;
-                default:
-                    break;
-            }
+            if (function.endsWith("N"))
+                function = function.substring(0, function.length() - 1);
+            FT jitFunction = functionTranslation.get(function);
             if (jitFunction != null) {
-                this.createFunctionCall(jitFunction, expression, expression.arguments);
+                JITInstructionPair call = this.createFunctionCall(
+                        jitFunction.name, jitFunction.resultType, expression, expression.arguments);
+                JITScalarType type = this.convertType(jitFunction.resultType).to(JITScalarType.class);
+                JITInstructionRef cast = this.insertCast(call.value, type, resultType, "");
+                JITInstructionPair result = new JITInstructionPair(cast, call.isNull);
+                this.map(expression, result);
                 return VisitDecision.STOP;
             }
         }
@@ -555,9 +586,18 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             // These are implemented using function calls.
             DBSPExpression empty = new DBSPStringLiteral("").applyClone();
             // Write appends the argument to the supplied string
-            this.createFunctionCall("dbsp.str.write", expression, empty, expression.source);
+            JITInstructionPair result = this.createFunctionCall(
+                    "dbsp.str.write", expression, empty, expression.source);
+            this.map(expression, result);
             return VisitDecision.STOP;
         }
+        if (sourceType.is(JITStringType.class) && !destinationType.is(JITStringType.class)) {
+            JITInstructionPair result = this.createFunctionCall(
+                    "dbsp.str.parse", expression, expression.source);
+            this.map(expression, result);
+            return VisitDecision.STOP;
+        }
+
         JITInstructionPair sourceId = this.accept(expression.source);
         JITInstructionRef cast = this.insertCast(sourceId.value, sourceType, destinationType, expression.toString());
         JITInstructionRef isNull = JITInstructionRef.INVALID;
@@ -688,8 +728,10 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
         if (expression.operation.equals(DBSPOpcode.CONCAT)) {
-            this.createFunctionCall("dbsp.str.concat", expression,
+            JITInstructionPair result = this.createFunctionCall(
+                    "dbsp.str.concat", expression,
                     expression.left, expression.right);
+            this.map(expression, result);
             return VisitDecision.STOP;
         }
         if (expression.operation.equals(DBSPOpcode.DIV) &&

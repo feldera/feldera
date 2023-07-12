@@ -33,6 +33,8 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ISIZE;
+
 /**
  * Represents the usize Rust type.
  */
@@ -42,7 +44,7 @@ public class DBSPTypeISize extends DBSPTypeBaseType
 
     @SuppressWarnings("SameParameterValue")
     protected DBSPTypeISize(CalciteObject node, boolean mayBeNull) {
-        super(node, mayBeNull);
+        super(node, ISIZE, mayBeNull);
     }
 
     @Override
@@ -55,11 +57,6 @@ public class DBSPTypeISize extends DBSPTypeBaseType
     @Override
     public int hashCode() {
         return Objects.hash(this.mayBeNull, 7);
-    }
-
-    @Override
-    public String shortName() {
-        return "i";
     }
 
     @Override
