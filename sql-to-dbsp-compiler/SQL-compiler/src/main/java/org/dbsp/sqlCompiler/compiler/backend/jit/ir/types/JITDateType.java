@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+
 public class JITDateType extends JITScalarType {
     public static final JITDateType INSTANCE = new JITDateType();
 
     protected JITDateType() {
-        super("Date");
+        super(DBSPTypeCode.DATE);
     }
 }

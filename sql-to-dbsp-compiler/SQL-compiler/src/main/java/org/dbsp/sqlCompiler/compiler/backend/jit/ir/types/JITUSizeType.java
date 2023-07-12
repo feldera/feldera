@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+
 public class JITUSizeType extends JITScalarType {
     public static final JITUSizeType INSTANCE = new JITUSizeType();
 
     protected JITUSizeType() {
-        super("Usize");
+        super(DBSPTypeCode.USIZE);
     }
 }

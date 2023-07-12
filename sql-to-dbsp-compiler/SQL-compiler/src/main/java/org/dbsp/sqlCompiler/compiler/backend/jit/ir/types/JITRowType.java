@@ -38,6 +38,8 @@ import org.dbsp.util.Linq;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TUPLE;
+
 public class JITRowType extends JITType implements IJITId, IJitKvOrRowType {
     static class NullableScalarType extends JITNode {
         public final boolean nullable;
@@ -66,6 +68,7 @@ public class JITRowType extends JITType implements IJITId, IJitKvOrRowType {
     final List<NullableScalarType> fields;
 
     public JITRowType(long id, DBSPTypeTupleBase type, ToJitVisitor jitVisitor) {
+        super(TUPLE);
         this.id = id;
         this.fields = new ArrayList<>();
         for (DBSPType colType: type.tupFields) {

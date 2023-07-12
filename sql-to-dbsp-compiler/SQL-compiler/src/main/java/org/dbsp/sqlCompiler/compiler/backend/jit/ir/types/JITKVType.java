@@ -28,6 +28,7 @@ import com.fasterxml.jackson.databind.node.BaseJsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 
 /**
  * A pair type with two fields: a key type and a value type.
@@ -38,6 +39,7 @@ public class JITKVType extends JITType implements IJitKvOrRowType {
     final JITRowType value;
 
     public JITKVType(JITRowType key, JITRowType value) {
+        super(DBSPTypeCode.KV);
         this.key = key;
         this.value = value;
     }

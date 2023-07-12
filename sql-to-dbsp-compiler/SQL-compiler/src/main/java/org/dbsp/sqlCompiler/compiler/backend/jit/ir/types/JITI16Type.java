@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+
 public class JITI16Type extends JITScalarType {
     public static final JITI16Type INSTANCE = new JITI16Type();
 
     protected JITI16Type() {
-        super("I16");
+        super(DBSPTypeCode.INT16);
     }
 }

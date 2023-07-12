@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+
 public class JITF32Type extends JITScalarType {
     public static final JITF32Type INSTANCE = new JITF32Type();
 
     protected JITF32Type() {
-        super("F32");
+        super(DBSPTypeCode.FLOAT);
     }
 }

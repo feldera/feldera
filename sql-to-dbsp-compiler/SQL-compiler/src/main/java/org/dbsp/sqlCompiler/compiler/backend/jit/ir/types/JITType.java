@@ -25,10 +25,16 @@ package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
 import com.fasterxml.jackson.databind.node.BaseJsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.IIndentStream;
 
 public abstract class JITType extends JITNode {
-    protected JITType() {}
+    public final DBSPTypeCode code;
+
+    protected JITType(DBSPTypeCode code) {
+        this.code = code;
+    }
+
     public abstract boolean isScalarType();
 
     public abstract BaseJsonNode asJsonReference();
