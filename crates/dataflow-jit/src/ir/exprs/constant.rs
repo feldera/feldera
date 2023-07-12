@@ -183,6 +183,7 @@ where
 impl PartialEq for Constant {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Unit, Self::Unit) => true,
             (Self::U8(lhs), Self::U8(rhs)) => lhs == rhs,
             (Self::I8(lhs), Self::I8(rhs)) => lhs == rhs,
             (Self::U16(lhs), Self::U16(rhs)) => lhs == rhs,
@@ -211,6 +212,7 @@ impl PartialEq for Constant {
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
             (Self::Date(lhs), Self::Date(rhs)) => lhs == rhs,
             (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs == rhs,
+            (Self::Decimal(lhs), Self::Decimal(rhs)) => lhs == rhs,
 
             _ => {
                 debug_assert_ne!(mem::discriminant(self), mem::discriminant(other));
@@ -225,6 +227,7 @@ impl Eq for Constant {}
 impl PartialOrd for Constant {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(match (self, other) {
+            (Self::Unit, Self::Unit) => Ordering::Equal,
             (Self::U8(lhs), Self::U8(rhs)) => lhs.cmp(rhs),
             (Self::I8(lhs), Self::I8(rhs)) => lhs.cmp(rhs),
             (Self::U16(lhs), Self::U16(rhs)) => lhs.cmp(rhs),
@@ -267,6 +270,7 @@ impl PartialOrd for Constant {
             (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
             (Self::Date(lhs), Self::Date(rhs)) => lhs.cmp(rhs),
             (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs.cmp(rhs),
+            (Self::Decimal(lhs), Self::Decimal(rhs)) => lhs.cmp(rhs),
 
             _ => {
                 debug_assert_ne!(mem::discriminant(self), mem::discriminant(other));
@@ -279,6 +283,7 @@ impl PartialOrd for Constant {
 impl Ord for Constant {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
+            (Self::Unit, Self::Unit) => Ordering::Equal,
             (Self::U8(lhs), Self::U8(rhs)) => lhs.cmp(rhs),
             (Self::I8(lhs), Self::I8(rhs)) => lhs.cmp(rhs),
             (Self::U16(lhs), Self::U16(rhs)) => lhs.cmp(rhs),
@@ -321,6 +326,7 @@ impl Ord for Constant {
             (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
             (Self::Date(lhs), Self::Date(rhs)) => lhs.cmp(rhs),
             (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs.cmp(rhs),
+            (Self::Decimal(lhs), Self::Decimal(rhs)) => lhs.cmp(rhs),
 
             _ => {
                 debug_assert_ne!(mem::discriminant(self), mem::discriminant(other));
