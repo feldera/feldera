@@ -1,4 +1,4 @@
-use crate::codegen::{utils::FunctionBuilderExt, CodegenCtx, TRAP_DIV_OVERFLOW};
+use crate::codegen::{utils::FunctionBuilderExt, CodegenCtx, TRAP_ABORT, TRAP_DIV_OVERFLOW};
 use cranelift::prelude::{types, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags, Value};
 
 impl CodegenCtx<'_> {
@@ -877,6 +877,70 @@ impl CodegenCtx<'_> {
 
         let quotient = builder.block_params(after_block)[0];
         (quotient, overflowed)
+    }
+
+    /// Signed integer multiplication that traps on overflow in debug mode
+    pub(super) fn smul_debug_trapping(
+        &mut self,
+        lhs: Value,
+        rhs: Value,
+        // An optional message to display if overflow occurs
+        message: Option<&str>,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        // If debug assertions are enabled we perform the multiplication and check if it
+        // overflows. If it overflows we print an error and then abort
+        if self.debug_assertions() {
+            // The block we'll jump to if no overflow occurs
+            let no_overflow = builder.create_block();
+
+            // The block we'll jump to if an overflow occurs. This is where the trapping
+            // happens and is set as cold since this shouldn't really ever happen and we
+            // want it out of the fast path
+            let overflow_abort = builder.create_block();
+            builder.set_cold_block(overflow_abort);
+
+            // Perform the multiplication
+            let (product, overflow) = builder.ins().smul_overflow(lhs, rhs);
+            // Check the overflow flag and branch to the proper block
+            builder
+                .ins()
+                .brif(overflow, overflow_abort, &[], no_overflow, &[]);
+
+            // Construct the `overflow_abort` block
+            // TODO: We should try to cache this block whenever possible so we don't have
+            // multiple copies of it bouncing around each function
+            {
+                builder.switch_to_block(overflow_abort);
+
+                // Import the print function, `fn(*const u8, usize)`
+                let print = self.imports.get("print_str", self.module, builder.func);
+
+                // Import the message to be printed on overflow
+                let (message_ptr, message_len) = if let Some(message) = message {
+                    self.import_string(message, builder)
+                } else {
+                    self.import_string("overflow occurred in multiplication", builder)
+                };
+
+                // Print out the message
+                // TODO: It'd be nice to print out the operands in the message along with source
+                // information
+                builder.ins().call(print, &[message_ptr, message_len]);
+
+                // Terminate the block with an unconditional trap
+                builder.ins().trap(TRAP_ABORT);
+            }
+
+            // Switch to the `no_overflow` block and continue execution
+            builder.switch_to_block(no_overflow);
+
+            product
+
+        // Otherwise allow overflow to wrap
+        } else {
+            builder.ins().imul(lhs, rhs)
+        }
     }
 
     /// Rounds a floating point value to the given number of digits using scalar

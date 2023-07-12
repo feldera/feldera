@@ -10,7 +10,6 @@ mod timestamp;
 mod utils;
 mod vtable;
 
-use chrono::NaiveTime;
 pub use layout::{BitSetType, InvalidBitsetType, NativeLayout, NativeType};
 pub use layout_cache::NativeLayoutCache;
 pub use vtable::{LayoutVTable, VTable};
@@ -37,6 +36,7 @@ use crate::{
     },
     ThinStr,
 };
+use chrono::NaiveTime;
 use cranelift::{
     codegen::{
         ir::{GlobalValue, Inst, StackSlot, UserFuncName},
@@ -69,7 +69,6 @@ const TRAP_ASSERT_EQ: TrapCode = TrapCode::User(3);
 const TRAP_DIV_OVERFLOW: TrapCode = TrapCode::User(5);
 const TRAP_ABORT: TrapCode = TrapCode::User(6);
 const TRAP_FAILED_PARSE: TrapCode = TrapCode::User(7);
-const TRAP_OVERFLOW: TrapCode = TrapCode::User(8);
 
 // TODO: Pretty function debugging https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs
 
@@ -704,12 +703,25 @@ impl<'a> CodegenCtx<'a> {
     }
 
     fn constant(&mut self, constant: &Constant, builder: &mut FunctionBuilder<'_>) -> Value {
+        // Strings
         if constant.is_string() {
             self.strconst(constant, builder)
+
+        // Floats
         } else if constant.is_float() {
             self.fconst(constant, builder)
-        } else if constant.is_int() || constant.is_bool() || constant.is_decimal() {
+
+        // Integer-like scalar types
+        } else if constant.is_int()
+            || constant.is_bool()
+            || constant.is_decimal()
+            || constant.is_date()
+            || constant.is_timestamp()
+        {
             self.iconst(constant, builder)
+
+        // Should only be unit constants that reach this, but unit constants
+        // shouldn't exist at this stage in the pipeline
         } else {
             unreachable!("cannot codegen for unit constants: {constant:?}")
         }
@@ -1632,6 +1644,7 @@ impl<'a> CodegenCtx<'a> {
                 }
             }
             // TODO: rhs != 0 assertion/panic
+            // TODO: DivFloor for decimal
             BinaryOpKind::DivFloor => self.div_floor(lhs_ty.is_signed_int(), lhs, rhs, builder),
             // TODO: rhs != 0 assertion/panic
             BinaryOpKind::Rem => {

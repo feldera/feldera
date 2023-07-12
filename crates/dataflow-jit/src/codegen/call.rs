@@ -1,7 +1,7 @@
 use crate::{
     codegen::{
         intrinsics::TRIG_INTRINSICS, utils::FunctionBuilderExt, CodegenCtx, VTable, TRAP_ABORT,
-        TRAP_ASSERT_EQ, TRAP_FAILED_PARSE, TRAP_OVERFLOW,
+        TRAP_ASSERT_EQ, TRAP_FAILED_PARSE,
     },
     ir::{exprs::Call, ColumnType, ExprId},
     ThinStr,
@@ -905,9 +905,16 @@ impl CodegenCtx<'_> {
     ) {
         let date = self.value(call.args()[0]);
 
-        // date.days() as i64 * 86400 * 1000
-        let days = builder.ins().uextend(types::I64, date);
-        let milliseconds = builder.ins().imul_imm(days, 86400 * 1000);
+        // date.days() as i64 * (86400 * 1000)
+        let days: cranelift_codegen::ir::Value = builder.ins().uextend(types::I64, date);
+        let days_to_millis = builder.ins().iconst(types::I64, 86400 * 1000);
+        let milliseconds = self.smul_debug_trapping(
+            days,
+            days_to_millis,
+            Some("@dbsp.date.to_timestamp() overflowed"),
+            builder,
+        );
+
         self.add_expr(expr_id, milliseconds, ColumnType::Timestamp, None);
 
         if let Some(writer) = self.comment_writer.as_deref() {
@@ -924,16 +931,10 @@ impl CodegenCtx<'_> {
         // date.days() as i64 * 86400
         let date = builder.ins().sextend(types::I64, date);
         let days = builder.ins().iconst(types::I64, 86400);
-        // If debug assertions are enabled, trap on overflow
-        let epoch = if self.debug_assertions() {
-            let (epoch, overflow) = builder.ins().smul_overflow(date, days);
-            builder.ins().trapnz(overflow, TRAP_OVERFLOW);
-            epoch
 
-        // Otherwise allow overflow to wrap
-        } else {
-            builder.ins().imul(date, days)
-        };
+        // If debug assertions are enabled, trap on overflow
+        let epoch =
+            self.smul_debug_trapping(date, days, Some("@dbsp.date.epoch() overflowed"), builder);
 
         self.add_expr(expr_id, epoch, ColumnType::I64, None);
         self.comment(builder.value_def(epoch), || {
@@ -950,14 +951,9 @@ impl CodegenCtx<'_> {
     ) {
         let zero = builder.ins().iconst(types::I32, 0);
         self.add_expr(expr_id, zero, ColumnType::I32, None);
-
-        if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.value_def(zero);
-            writer.borrow_mut().add_comment(
-                inst,
-                format!("call @{function}({})", self.value(call.args()[0])),
-            );
-        }
+        self.comment(builder.value_def(zero), || {
+            format!("call @{function}({})", self.value(call.args()[0]))
+        });
     }
 
     fn math_is_power_of_two(
