@@ -11,26 +11,29 @@ To run the demo, you will first need to install Docker and the Docker
 Compose plugin.  If you don't already have them, install them one of
 these ways:
 
-* On Mac OS, Windows, or Linux, install [Docker
-  Desktop](https://docs.docker.com/desktop/), which includes the
-  Docker Compose plugin.
+* On Mac OS, Windows, or Linux, install [Docker Desktop][1], which
+  includes the Docker Compose plugin.
 
-* On Linux only, first install [Docker
-  Engine](https://docs.docker.com/engine/install/) and the [Docker
-  Compose plugin](https://docs.docker.com/compose/install/linux).
+* On Linux only, first install [Docker Engine][2] and the [Docker
+  Compose plugin][3].
 
-  > The plugin implements Docker Compose v2, invoked as `docker
+  > :bulb: The plugin implements Docker Compose v2, invoked as `docker
   > compose`.  DBSP does not support the older Docker Compose v1,
   > which was invoked with `docker-compose` (note the ` ` versus `-`
   > distinction).
 
   Then, follow the instructions to [manage Docker as a non-root
-  user](https://docs.docker.com/engine/install/linux-postinstall/).
+  user][4].
 
-  > If you you only want root to manage Docker, you can prefix the
-  > `docker compose` command below with `sudo`.
+  > :bulb: If you you only want root to manage Docker, you can prefix
+  > the `docker compose` command below with `sudo`.
 
 You also need `curl` and a web browser such as Chrome or Firefox.
+
+[1]: https://docs.docker.com/desktop/
+[2]: https://docs.docker.com/engine/install/
+[3]: https://docs.docker.com/compose/install/linux
+[4]: https://docs.docker.com/engine/install/linux-postinstall/
 
 ## Start the DBSP demo
 
