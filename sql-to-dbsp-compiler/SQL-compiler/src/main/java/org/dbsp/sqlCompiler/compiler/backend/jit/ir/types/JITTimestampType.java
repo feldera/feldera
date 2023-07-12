@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+
 public class JITTimestampType extends JITScalarType {
     public static final JITTimestampType INSTANCE = new JITTimestampType();
 
     protected JITTimestampType() {
-        super("Timestamp");
+        super(DBSPTypeCode.TIMESTAMP);
     }
 }

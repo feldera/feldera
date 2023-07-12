@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+
 public class JITUnitType extends JITScalarType {
     public static final JITUnitType INSTANCE = new JITUnitType();
 
     protected JITUnitType() {
-        super("Unit");
+        super(DBSPTypeCode.UNIT);
     }
 }

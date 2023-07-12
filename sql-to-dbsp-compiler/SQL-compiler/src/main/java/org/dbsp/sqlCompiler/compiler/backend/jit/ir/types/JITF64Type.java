@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+
 public class JITF64Type extends JITScalarType {
     public static final JITF64Type INSTANCE = new JITF64Type();
 
     protected JITF64Type() {
-        super("F64");
+        super(DBSPTypeCode.DOUBLE);
     }
 }

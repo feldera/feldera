@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+
 public class JITStringType extends JITScalarType {
     public static final JITStringType INSTANCE = new JITStringType();
 
     protected JITStringType() {
-        super("String");
+        super(DBSPTypeCode.STRING);
     }
 }

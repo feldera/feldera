@@ -26,12 +26,11 @@ package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 import com.fasterxml.jackson.databind.node.BaseJsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 
 public class JITScalarType extends JITType {
-    public final String name;
-
-    protected JITScalarType(String name) {
-        this.name = name;
+    protected JITScalarType(DBSPTypeCode code) {
+        super(code);
     }
 
     @Override
@@ -48,7 +47,7 @@ public class JITScalarType extends JITType {
 
     @Override
     public String toString() {
-        return this.name;
+        return this.code.jitName;
     }
 
     @Override
@@ -61,11 +60,11 @@ public class JITScalarType extends JITType {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         JITScalarType that = (JITScalarType) o;
-        return name.equals(that.name);
+        return this.code.equals(that.code);
     }
 
     @Override
     public int hashCode() {
-        return name.hashCode();
+        return this.code.hashCode();
     }
 }
