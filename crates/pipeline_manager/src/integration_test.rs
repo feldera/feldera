@@ -59,7 +59,6 @@ async fn initialize_local_dbsp_instance() -> TempDir {
     .canonicalize()
     .unwrap();
     let compiler_config = CompilerConfig {
-        db_connection_string: db_connection_string.to_owned(),
         working_directory: workdir.to_owned(),
         sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
         dbsp_override_path: Some("../../".to_owned()),
