@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
@@ -42,7 +43,7 @@ public class DBSPTypeUSize extends DBSPTypeBaseType
 
     @SuppressWarnings("SameParameterValue")
     protected DBSPTypeUSize(CalciteObject node, boolean mayBeNull) {
-        super(node, mayBeNull);
+        super(node, DBSPTypeCode.USIZE, mayBeNull);
     }
 
     @Override
@@ -50,11 +51,6 @@ public class DBSPTypeUSize extends DBSPTypeBaseType
         if (mayBeNull)
             throw new UnsupportedOperationException();
         return this;
-    }
-
-    @Override
-    public String shortName() {
-        return "u";
     }
 
     @Override

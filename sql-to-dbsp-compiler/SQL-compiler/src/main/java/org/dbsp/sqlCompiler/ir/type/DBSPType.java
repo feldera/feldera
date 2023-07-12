@@ -36,20 +36,20 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import java.util.Objects;
 
 public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
+    public final DBSPTypeCode code;
     /**
      * True if this type may include null values.
      */
     public final boolean mayBeNull;
 
-    protected DBSPType(CalciteObject node, boolean mayBeNull) {
+    protected DBSPType(CalciteObject node, DBSPTypeCode code, boolean mayBeNull) {
         super(node);
         this.mayBeNull = mayBeNull;
+        this.code = code;
     }
 
-    @SuppressWarnings("SameParameterValue")
-    protected DBSPType(boolean mayBeNull) {
-        super(CalciteObject.EMPTY);
-        this.mayBeNull = mayBeNull;
+    protected DBSPType(boolean mayBeNull, DBSPTypeCode code) {
+        this(CalciteObject.EMPTY, code, mayBeNull);
     }
 
     public void wrapOption(IndentStream builder, String type) {

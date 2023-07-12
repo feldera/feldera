@@ -24,13 +24,14 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 
 /**
  * Base class for geographic data types.
  */
 public abstract class DBSPTypeGeo extends DBSPTypeBaseType {
-    protected DBSPTypeGeo(CalciteObject node, boolean mayBeNull) {
-        super(node, mayBeNull);
+    protected DBSPTypeGeo(CalciteObject node, DBSPTypeCode code, boolean mayBeNull) {
+        super(node, code, mayBeNull);
     }
 
     public boolean hasCopy() {

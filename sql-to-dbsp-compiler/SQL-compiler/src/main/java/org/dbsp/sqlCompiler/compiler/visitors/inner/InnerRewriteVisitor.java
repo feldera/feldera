@@ -226,7 +226,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType[] args = this.transform(type.typeArgs);
         this.pop(type);
-        DBSPType result = new DBSPTypeUser(type.getNode(), type.name, type.mayBeNull, args);
+        DBSPType result = new DBSPTypeUser(type.getNode(), type.code, type.name, type.mayBeNull, args);
         this.map(type, result);
         return VisitDecision.STOP;
     }

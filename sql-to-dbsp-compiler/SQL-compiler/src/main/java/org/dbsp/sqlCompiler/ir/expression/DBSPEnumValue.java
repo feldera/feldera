@@ -30,6 +30,8 @@ import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
+
 /**
  * For now only support simple enums, with no additional arguments.
  */
@@ -39,7 +41,7 @@ public class DBSPEnumValue extends DBSPExpression {
     public final String constructor;
 
     public DBSPEnumValue(String enumName, String constructor) {
-        super(CalciteObject.EMPTY, new DBSPTypeUser(CalciteObject.EMPTY, enumName, false));
+        super(CalciteObject.EMPTY, new DBSPTypeUser(CalciteObject.EMPTY, USER, enumName, false));
         this.enumName = enumName;
         this.constructor = constructor;
     }

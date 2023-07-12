@@ -26,22 +26,21 @@ package org.dbsp.sqlCompiler.ir.type.primitive;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 
 /**
  * Base class for floating-point types.
  */
 public abstract class DBSPTypeFP extends DBSPTypeBaseType implements IsNumericType {
-    protected DBSPTypeFP(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
+    protected DBSPTypeFP(CalciteObject node, DBSPTypeCode code, boolean mayBeNull) {
+        super(node, code, mayBeNull);
+    }
 
     /**
      * Width in bits.
      */
     public abstract int getWidth();
-    /**
-     * Rust string describing this type, e.g., f32.
-     */
-    public String getRustString() { return "f" + this.getWidth(); }
 
     @Override
     public void accept(InnerVisitor visitor) {

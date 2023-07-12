@@ -39,16 +39,16 @@ import java.util.List;
 public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     public static final DBSPTypeRawTuple EMPTY_TUPLE_TYPE = new DBSPTypeRawTuple();
 
-    private DBSPTypeRawTuple(CalciteObject node, boolean mayBeNull, DBSPType... tupArgs) {
-        super(node, mayBeNull, tupArgs);
+    private DBSPTypeRawTuple(CalciteObject node, DBSPTypeCode code, boolean mayBeNull, DBSPType... tupArgs) {
+        super(node, code, mayBeNull, tupArgs);
     }
 
     public DBSPTypeRawTuple(DBSPType... tupArgs) {
-        this(CalciteObject.EMPTY, false, tupArgs);
+        this(CalciteObject.EMPTY, DBSPTypeCode.RAW_TUPLE, false, tupArgs);
     }
 
     public DBSPTypeRawTuple(CalciteObject node, List<DBSPType> tupArgs) {
-        this(node, false, tupArgs.toArray(new DBSPType[0]));
+        this(node, DBSPTypeCode.RAW_TUPLE, false, tupArgs.toArray(new DBSPType[0]));
     }
 
     @Override
@@ -60,7 +60,7 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
-        return new DBSPTypeRawTuple(this.getNode(), mayBeNull, this.tupFields);
+        return new DBSPTypeRawTuple(this.getNode(), this.code, mayBeNull, this.tupFields);
     }
 
     @Override
@@ -88,6 +88,10 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
         visitor.postorder(this);
     }
 
+    /**
+     * @return A closure that casts every member of a tuple to
+     * generate a raw tuple of this type.
+     */
     @Override
     public DBSPExpression caster(DBSPType to) {
         if (!to.is(DBSPTypeRawTuple.class))

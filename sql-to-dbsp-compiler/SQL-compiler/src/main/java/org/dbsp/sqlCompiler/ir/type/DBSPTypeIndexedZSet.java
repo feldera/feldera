@@ -33,7 +33,7 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
 
     public DBSPTypeIndexedZSet(CalciteObject node, DBSPType keyType,
                                DBSPType elementType, DBSPType weightType) {
-        super(node, "OrdIndexedZSet", false, keyType, elementType, weightType);
+        super(node, DBSPTypeCode.INDEXED_ZSET, "OrdIndexedZSet", false, keyType, elementType, weightType);
         this.keyType = keyType;
         this.elementType = elementType;
         this.weightType = weightType;

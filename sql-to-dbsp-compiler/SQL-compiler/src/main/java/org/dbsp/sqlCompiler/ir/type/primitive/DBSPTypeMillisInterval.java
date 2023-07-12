@@ -34,6 +34,8 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INTERVAL_SHORT;
+
 /**
  * Models the SQL Interval type for days-seconds.
  * Always stores the interval value in milliseconds.
@@ -43,7 +45,7 @@ public class DBSPTypeMillisInterval extends DBSPTypeBaseType implements IsNumeri
     public static final DBSPType NULLABLE_INSTANCE = new DBSPTypeMillisInterval(CalciteObject.EMPTY, true);
 
     public DBSPTypeMillisInterval(CalciteObject node, boolean mayBeNull) {
-        super(node, mayBeNull);
+        super(node, INTERVAL_SHORT, mayBeNull);
     }
 
     @Override
@@ -64,16 +66,6 @@ public class DBSPTypeMillisInterval extends DBSPTypeBaseType implements IsNumeri
     @Override
     public int hashCode() {
         return Objects.hash(this.mayBeNull, 8);
-    }
-
-    @Override
-    public String getRustString() {
-        return "ShortInterval";
-    }
-
-    @Override
-    public String shortName() {
-        return "ShortInterval";
     }
 
     @Override

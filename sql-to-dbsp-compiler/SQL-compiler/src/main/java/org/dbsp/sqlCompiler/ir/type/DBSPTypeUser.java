@@ -37,8 +37,8 @@ public class DBSPTypeUser extends DBSPType {
     public final String name;
     public final DBSPType[] typeArgs;
 
-    public DBSPTypeUser(CalciteObject node, String name, boolean mayBeNull, DBSPType... typeArgs) {
-        super(node, mayBeNull);
+    public DBSPTypeUser(CalciteObject node, DBSPTypeCode code, String name, boolean mayBeNull, DBSPType... typeArgs) {
+        super(node, code, mayBeNull);
         this.name = name;
         this.typeArgs = typeArgs;
     }
@@ -51,7 +51,7 @@ public class DBSPTypeUser extends DBSPType {
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
-        return new DBSPTypeUser(this.getNode(), this.name, mayBeNull, this.typeArgs);
+        return new DBSPTypeUser(this.getNode(), this.code, this.name, mayBeNull, this.typeArgs);
     }
 
     @Override

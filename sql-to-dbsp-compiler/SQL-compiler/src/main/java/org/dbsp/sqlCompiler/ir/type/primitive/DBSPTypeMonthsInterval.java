@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -43,7 +44,7 @@ public class DBSPTypeMonthsInterval extends DBSPTypeBaseType implements IsNumeri
     public static final DBSPType NULLABLE_INSTANCE = new DBSPTypeMonthsInterval(CalciteObject.EMPTY, true);
 
     public DBSPTypeMonthsInterval(CalciteObject node, boolean mayBeNull) {
-        super(node, mayBeNull);
+        super(node, DBSPTypeCode.INTERVAL_LONG, mayBeNull);
     }
 
     @Override
@@ -64,16 +65,6 @@ public class DBSPTypeMonthsInterval extends DBSPTypeBaseType implements IsNumeri
     @Override
     public int hashCode() {
         return Objects.hash(this.mayBeNull, 9);
-    }
-
-    @Override
-    public String getRustString() {
-        return "LongInterval";
-    }
-
-    @Override
-    public String shortName() {
-        return "LongInterval";
     }
 
     @Override

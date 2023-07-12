@@ -31,21 +31,18 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STR;
+
 public class DBSPTypeStr extends DBSPTypeBaseType {
     public static final DBSPTypeStr INSTANCE =new DBSPTypeStr(CalciteObject.EMPTY,false);
 
-    protected DBSPTypeStr(CalciteObject node, boolean mayBeNull) { super(node, mayBeNull); }
+    protected DBSPTypeStr(CalciteObject node, boolean mayBeNull) { super(node, STR, mayBeNull); }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeStr(this.getNode(), mayBeNull);
-    }
-
-    @Override
-    public String shortName() {
-        return "str";
     }
 
     @Override

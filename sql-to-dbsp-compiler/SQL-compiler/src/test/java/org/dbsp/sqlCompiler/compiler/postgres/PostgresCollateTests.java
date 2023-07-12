@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /**

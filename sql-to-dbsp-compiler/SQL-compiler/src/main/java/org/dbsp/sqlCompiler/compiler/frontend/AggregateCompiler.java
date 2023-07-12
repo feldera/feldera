@@ -42,6 +42,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
+
 /**
  * Compiles SQL aggregate functions.
  */
@@ -150,7 +152,7 @@ public class AggregateCompiler implements ICompilerComponent {
                             argument,
                             this.compiler.weightVar));
         }
-        DBSPType semigroup = new DBSPTypeUser(node, "DefaultSemigroup", false, this.resultType);
+        DBSPType semigroup = new DBSPTypeUser(node, USER, "DefaultSemigroup", false, this.resultType);
         this.foldingFunction = new DBSPAggregate.Implementation(
                 node, zero, this.makeRowClosure(increment, accumulator),
                 zero, semigroup, linear);
@@ -185,7 +187,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPVariablePath accumulator = this.nullableResultType.var(this.genAccumulatorName());
         DBSPExpression increment = ExpressionCompiler.aggregateOperation(
                 node, call, this.nullableResultType, accumulator, aggregatedValue);
-        DBSPType semigroup = new DBSPTypeUser(node, semigroupName, false, accumulator.getType());
+        DBSPType semigroup = new DBSPTypeUser(node, USER, semigroupName, false, accumulator.getType());
         this.foldingFunction = new DBSPAggregate.Implementation(
                 node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, null);
     }
@@ -210,7 +212,7 @@ public class AggregateCompiler implements ICompilerComponent {
                             aggregatedValue,
                             this.compiler.weightVar));
         }
-        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, "DefaultOptSemigroup",
+        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, USER, "DefaultOptSemigroup",
                 false, accumulator.getType().setMayBeNull(false));
         this.foldingFunction = new DBSPAggregate.Implementation(
                 node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, null);
@@ -240,7 +242,7 @@ public class AggregateCompiler implements ICompilerComponent {
         String semigroupName = "DefaultSemigroup";
         if (accumulator.getType().mayBeNull)
             semigroupName = "DefaultOptSemigroup";
-        DBSPType semigroup = new DBSPTypeUser(node, semigroupName, false,
+        DBSPType semigroup = new DBSPTypeUser(node, USER, semigroupName, false,
                 accumulator.getType().setMayBeNull(false));
         this.foldingFunction = new DBSPAggregate.Implementation(
                 node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, linear);
@@ -296,9 +298,9 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPClosureExpression post = new DBSPClosureExpression(
                 node, divide, a.asParameter());
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
-        DBSPType semigroup = new DBSPTypeUser(node,"PairSemigroup", false, i64, i64,
-                new DBSPTypeUser(node, "DefaultOptSemigroup", false, DBSPTypeInteger.SIGNED_64),
-                new DBSPTypeUser(node, "DefaultOptSemigroup", false, DBSPTypeInteger.SIGNED_64));
+        DBSPType semigroup = new DBSPTypeUser(node, USER, "PairSemigroup", false, i64, i64,
+                new DBSPTypeUser(node, USER, "DefaultOptSemigroup", false, DBSPTypeInteger.SIGNED_64),
+                new DBSPTypeUser(node, USER, "DefaultOptSemigroup", false, DBSPTypeInteger.SIGNED_64));
         this.foldingFunction = new DBSPAggregate.Implementation(
                 node, zero, this.makeRowClosure(increment, accumulator), post, postZero, semigroup, null);
     }

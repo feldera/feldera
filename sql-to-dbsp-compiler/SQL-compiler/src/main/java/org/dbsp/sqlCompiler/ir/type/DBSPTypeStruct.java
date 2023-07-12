@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -34,6 +33,8 @@ import org.dbsp.util.IIndentStream;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STRUCT;
 
 public class DBSPTypeStruct extends DBSPType {
     public static class Field extends DBSPNode implements IHasType, IDBSPInnerNode {
@@ -100,7 +101,7 @@ public class DBSPTypeStruct extends DBSPType {
     private final HashSet<String> fields = new HashSet<>();
 
     public DBSPTypeStruct(CalciteObject node, String name, List<Field> args) {
-        super(node,false);
+        super(node, STRUCT, false);
         this.name = name;
         this.args = args;
         for (Field f: args) {

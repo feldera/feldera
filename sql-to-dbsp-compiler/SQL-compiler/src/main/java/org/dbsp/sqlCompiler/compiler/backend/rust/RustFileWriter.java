@@ -309,7 +309,7 @@ public class RustFileWriter implements ICompilerComponent {
             stream.append(rustPreamble)
                     .newline();
             stream.append("type ")
-                    .append(DBSPTypeWeight.INSTANCE.name)
+                    .append(DBSPTypeWeight.INSTANCE.getRustString())
                     .append(" = ")
                     .append(this.getCompiler().getWeightTypeImplementation().toString())
                     .append(";")

@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 
 import java.util.Objects;
 
@@ -37,10 +38,10 @@ import java.util.Objects;
  * It should never surface in code.
  */
 public class DBSPTypeKeyword extends DBSPTypeBaseType {
-    public static final DBSPTypeKeyword INSTANCE =new DBSPTypeKeyword();
+    public static final DBSPTypeKeyword INSTANCE = new DBSPTypeKeyword();
 
     protected DBSPTypeKeyword() {
-        super(CalciteObject.EMPTY, false);
+        super(CalciteObject.EMPTY, DBSPTypeCode.KEYWORD, false);
     }
 
     @Override
@@ -50,11 +51,6 @@ public class DBSPTypeKeyword extends DBSPTypeBaseType {
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
-        throw new UnsupportedException(this.getNode());
-    }
-
-    @Override
-    public String shortName() {
         throw new UnsupportedException(this.getNode());
     }
 

@@ -34,6 +34,8 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TIMESTAMP;
+
 public class DBSPTypeTimestamp extends DBSPTypeBaseType
         implements IsNumericType, IsDateType {
     public static final DBSPTypeTimestamp INSTANCE =
@@ -42,12 +44,7 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
             new DBSPTypeTimestamp(CalciteObject.EMPTY, true);
 
     protected DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
-        super(node, mayBeNull);
-    }
-
-    @Override
-    public String shortName() {
-        return "Timestamp";
+        super(node, TIMESTAMP, mayBeNull);
     }
 
     @Override
@@ -68,10 +65,6 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeTimestamp(this.getNode(), mayBeNull);
-    }
-
-    public String getRustString() {
-        return "Timestamp";
     }
 
     @Override

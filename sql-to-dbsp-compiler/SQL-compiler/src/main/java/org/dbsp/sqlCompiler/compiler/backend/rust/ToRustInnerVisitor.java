@@ -894,12 +894,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPTypeWeight type) {
-        this.builder.append(type.name);
-        return VisitDecision.STOP;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPTypeAny type) {
         this.builder.append("_");
         return VisitDecision.STOP;
@@ -912,96 +906,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPTypeDouble type) {
-        type.wrapOption(this.builder,"F64");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeDecimal type) {
-        type.wrapOption(this.builder,"Decimal");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeFloat type) {
-        type.wrapOption(this.builder,"F32");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeBool type) {
-        type.wrapOption(this.builder,"bool");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeTimestamp type) {
+    public VisitDecision preorder(DBSPTypeBaseType type) {
         type.wrapOption(this.builder, type.getRustString());
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeInteger type) {
-        type.wrapOption(this.builder, type.getRustString());
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeMillisInterval type) {
-        type.wrapOption(this.builder, type.getRustString());
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeDate type) {
-        type.wrapOption(this.builder, type.getRustString());
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeMonthsInterval type) {
-        type.wrapOption(this.builder, type.getRustString());
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeISize type) {
-        type.wrapOption(this.builder, "isize");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeUSize type) {
-        type.wrapOption(this.builder, "usize");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeStr type) {
-        type.wrapOption(this.builder, "str");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeString type) {
-        type.wrapOption(this.builder, "String");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeNull type) {
-        type.wrapOption(this.builder, "()");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeGeo type) {
-        if (type.mayBeNull)
-            this.builder.append("Option<");
-        this.builder.append("GeoPoint");
-        if (type.mayBeNull)
-            this.builder.append(">");
         return VisitDecision.STOP;
     }
 

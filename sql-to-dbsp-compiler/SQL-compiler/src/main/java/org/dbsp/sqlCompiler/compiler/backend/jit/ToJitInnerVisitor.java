@@ -358,17 +358,15 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
      * The function call is applied only when all arguments are non-null,
      * otherwise the result is immediately null.
      * @param name           Name of function to call.
+     * @param resultType     Expected result type.
      * @param expression     Operations which is being translated.
      *                       Usually an ApplyExpression, but not always.
-     * @param resultType     Expected result type.  If null, type obtained from expression.
      * @param arguments      Arguments to supply to the function call.
      */
     JITInstructionPair createFunctionCall(String name,
                             @Nullable DBSPType resultType,
                             DBSPExpression expression,
                             DBSPExpression... arguments) {
-        if (resultType == null)
-            resultType = expression.getType();
         Objects.requireNonNull(resultType);
         List<JITInstructionRef> nullableArgs = new ArrayList<>();
         List<JITType> argumentTypes = new ArrayList<>();
@@ -445,6 +443,21 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         return result;
     }
 
+    /**
+     * Insert a function call operation.
+     * The function call is applied only when all arguments are non-null,
+     * otherwise the result is immediately null.
+     * @param name           Name of function to call.
+     * @param expression     Operations which is being translated.
+     *                       Usually an ApplyExpression, but not always.
+     * @param arguments      Arguments to supply to the function call.
+     */
+    JITInstructionPair createFunctionCall(String name,
+                                          DBSPExpression expression,
+                                          DBSPExpression... arguments) {
+        return this.createFunctionCall(name, expression.getType(), expression, arguments);
+    }
+
     /////////////////////////// Code generation
 
     @Override
@@ -461,6 +474,10 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         return VisitDecision.STOP;
     }
 
+    /**
+     * Function Type class.  Describes some type information about a JIT function.
+     * (Chose a short name to make the hashmap below more compact.)
+     */
     static class FT {
         /**
          * The name of the JIT function.
@@ -469,7 +486,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         /**
          * Type of result produced by JIT function.
          */
-        public DBSPTypeBaseType resultType;
+        public final DBSPTypeBaseType resultType;
 
         FT(String name, DBSPTypeBaseType resultType) {
             this.name = name;
@@ -477,7 +494,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         }
     }
     
-    static Map<String, FT> functionTranslation = new HashMap<String, FT>() {{
+    static final Map<String, FT> functionTranslation = new HashMap<String, FT>() {{
         put("extract_second_Timestamp", new FT("dbsp.timestamp.second", DBSPTypeInteger.SIGNED_64));
         put("extract_minute_Timestamp", new FT("dbsp.timestamp.minute", DBSPTypeInteger.SIGNED_64));
         put("extract_hour_Timestamp", new FT("dbsp.timestamp.hour", DBSPTypeInteger.SIGNED_64));
@@ -570,13 +587,13 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             DBSPExpression empty = new DBSPStringLiteral("").applyClone();
             // Write appends the argument to the supplied string
             JITInstructionPair result = this.createFunctionCall(
-                    "dbsp.str.write", null, expression, empty, expression.source);
+                    "dbsp.str.write", expression, empty, expression.source);
             this.map(expression, result);
             return VisitDecision.STOP;
         }
         if (sourceType.is(JITStringType.class) && !destinationType.is(JITStringType.class)) {
             JITInstructionPair result = this.createFunctionCall(
-                    "dbsp.str.parse", null, expression, expression.source);
+                    "dbsp.str.parse", expression, expression.source);
             this.map(expression, result);
             return VisitDecision.STOP;
         }
@@ -712,7 +729,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     public VisitDecision preorder(DBSPBinaryExpression expression) {
         if (expression.operation.equals(DBSPOpcode.CONCAT)) {
             JITInstructionPair result = this.createFunctionCall(
-                    "dbsp.str.concat", null, expression,
+                    "dbsp.str.concat", expression,
                     expression.left, expression.right);
             this.map(expression, result);
             return VisitDecision.STOP;

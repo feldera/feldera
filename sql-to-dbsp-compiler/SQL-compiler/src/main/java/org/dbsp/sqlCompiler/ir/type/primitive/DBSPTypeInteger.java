@@ -23,16 +23,20 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
+
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.*;
 
 public class DBSPTypeInteger extends DBSPTypeBaseType
         implements IsNumericType {
@@ -40,24 +44,42 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     public final boolean signed;
 
     public static final DBSPTypeInteger SIGNED_16 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, 16, true,false);
+            new DBSPTypeInteger(CalciteObject.EMPTY, INT16, 16, true,false);
     public static final DBSPTypeInteger SIGNED_32 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false);
+            new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false);
     public static final DBSPTypeInteger SIGNED_64 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false);
+            new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false);
     public static final DBSPTypeInteger UNSIGNED_32 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, 32, false,false);
+            new DBSPTypeInteger(CalciteObject.EMPTY, UINT32,32, false,false);
     public static final DBSPTypeInteger UNSIGNED_64 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, 64, false,false);
+            new DBSPTypeInteger(CalciteObject.EMPTY, UINT64,64, false,false);
     public static final DBSPTypeInteger NULLABLE_SIGNED_16 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, 16, true,true);
+            new DBSPTypeInteger(CalciteObject.EMPTY, INT16,16, true,true);
     public static final DBSPTypeInteger NULLABLE_SIGNED_32 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true);
+            new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true);
     public static final DBSPTypeInteger NULLABLE_SIGNED_64 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,true);
+            new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,true);
 
-    public DBSPTypeInteger(CalciteObject node, int width, boolean signed, boolean mayBeNull) {
-        super(node, mayBeNull);
+    public DBSPTypeCode getCode(int width, boolean signed) {
+        if (signed) {
+            switch (width) {
+                case 8: return INT8;
+                case 16: return INT16;
+                case 32: return INT32;
+                case 64: return INT64;
+            }
+        } else {
+            switch (width) {
+                case 16: return UINT16;
+                case 32: return UINT32;
+                case 64: return UINT64;
+            }
+        }
+        throw new InternalCompilerError("Unexpected width " + width);
+    }
+
+    public DBSPTypeInteger(CalciteObject node, DBSPTypeCode code, int width, boolean signed, boolean mayBeNull) {
+        super(node, code, mayBeNull);
         this.width = width;
         this.signed = signed;
     }
@@ -65,11 +87,6 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     @Override
     public int hashCode() {
         return Objects.hash(this.width, this.signed);
-    }
-
-    @Override
-    public String getRustString() {
-        return (this.signed ? "i" : "u") + this.width;
     }
 
     @Override
@@ -122,12 +139,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
-        return new DBSPTypeInteger(this.getNode(), this.width, this.signed, mayBeNull);
-    }
-
-    @Override
-    public String shortName() {
-        return (this.signed ? "i" : "u") + this.width;
+        return new DBSPTypeInteger(this.getNode(), this.code, this.width, this.signed, mayBeNull);
     }
 
     @Override

@@ -79,6 +79,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 public class OtherTests extends BaseSQLTests implements IWritesLogs {
     static CompilerOptions getOptions() {
@@ -291,7 +292,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
         String connectionString = "sqlite://" + filepath;
         // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
-        DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, "AnyRow", false);
+        DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
         DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType);
         DBSPExpression[] fields = EndToEndTests.e0NoDouble.fields; // Should be the same for e1NoDouble too
         final List<DBSPExpression> rowGets = new ArrayList<>(fields.length);

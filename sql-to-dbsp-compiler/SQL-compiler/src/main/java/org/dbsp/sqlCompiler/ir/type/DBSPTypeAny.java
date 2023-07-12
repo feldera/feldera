@@ -36,7 +36,7 @@ public class DBSPTypeAny extends DBSPType {
     public static final DBSPType INSTANCE = new DBSPTypeAny();
 
     protected DBSPTypeAny() {
-        super(CalciteObject.EMPTY, false);
+        super(CalciteObject.EMPTY, DBSPTypeCode.ANY, false);
     }
 
     @Override
