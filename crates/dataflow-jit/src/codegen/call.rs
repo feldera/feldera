@@ -1,7 +1,7 @@
 use crate::{
     codegen::{
         intrinsics::TRIG_INTRINSICS, utils::FunctionBuilderExt, CodegenCtx, VTable, TRAP_ABORT,
-        TRAP_ASSERT_EQ, TRAP_FAILED_PARSE,
+        TRAP_ASSERT_EQ, TRAP_FAILED_PARSE, TRAP_OVERFLOW,
     },
     ir::{exprs::Call, ColumnType, ExprId},
     ThinStr,
@@ -922,17 +922,23 @@ impl CodegenCtx<'_> {
         let date = self.value(call.args()[0]);
 
         // date.days() as i64 * 86400
-        // TODO: The real code uses an i64 but we keep it as an i32 here
-        // let date = builder.ins().uextend(types::I64, date);
-        let epoch = builder.ins().imul_imm(date, 86400);
-        self.add_expr(expr_id, epoch, ColumnType::I32, None);
+        let date = builder.ins().sextend(types::I64, date);
+        let days = builder.ins().iconst(types::I64, 86400);
+        // If debug assertions are enabled, trap on overflow
+        let epoch = if self.debug_assertions() {
+            let (epoch, overflow) = builder.ins().smul_overflow(date, days);
+            builder.ins().trapnz(overflow, TRAP_OVERFLOW);
+            epoch
 
-        if let Some(writer) = self.comment_writer.as_deref() {
-            let inst = builder.value_def(epoch);
-            writer
-                .borrow_mut()
-                .add_comment(inst, format!("call @dbsp.date.epoch({date})"));
-        }
+        // Otherwise allow overflow to wrap
+        } else {
+            builder.ins().imul(date, days)
+        };
+
+        self.add_expr(expr_id, epoch, ColumnType::I64, None);
+        self.comment(builder.value_def(epoch), || {
+            format!("call @dbsp.date.epoch({date})")
+        });
     }
 
     fn constant_zero_date_function(
