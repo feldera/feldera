@@ -71,8 +71,8 @@ public class DBSPBoolLiteral extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
-        return new DBSPBoolLiteral(Objects.requireNonNull(this.value));
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        return new DBSPBoolLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull);
     }
 
     @Override

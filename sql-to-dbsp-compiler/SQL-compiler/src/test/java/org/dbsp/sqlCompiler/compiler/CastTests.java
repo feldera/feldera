@@ -37,7 +37,7 @@ public class CastTests extends BaseSQLTests {
     final DBSPTypeDecimal tenTwo = new DBSPTypeDecimal(CalciteObject.EMPTY, 10, 2, true);
     final DBSPTypeDecimal tenFour = new DBSPTypeDecimal(CalciteObject.EMPTY, 10, 4, false);
 
-   public DBSPCompiler compileQuery(String query) {
+    public DBSPCompiler compileQuery(String query) {
         DBSPCompiler compiler = this.testCompiler();
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 INT NOT NULL" +
@@ -51,7 +51,7 @@ public class CastTests extends BaseSQLTests {
         return compiler;
     }
 
-    DBSPZSetLiteral.Contents createInput() {
+    public DBSPZSetLiteral.Contents createInput() {
         return new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
                 new DBSPI32Literal(10),
                 new DBSPDoubleLiteral(12.0),
@@ -60,7 +60,7 @@ public class CastTests extends BaseSQLTests {
                 new DBSPDecimalLiteral(tenFour, new BigDecimal(100103123))));
     }
 
-    void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
+    public void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
         DBSPCircuit circuit = getCircuit(compiler);
@@ -80,12 +80,6 @@ public class CastTests extends BaseSQLTests {
         String query = "SELECT T.COL1 + T.COL3 FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(new DBSPI32Literal(100110))));
-    }
-
-    @Test
-    public void idTest() {
-        String query = "SELECT * FROM T";
-        this.testQuery(query, this.createInput());
     }
 
     @Test

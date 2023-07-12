@@ -75,6 +75,7 @@ public class DBSPTypeGeoPoint extends DBSPTypeGeo {
     public DBSPLiteral defaultValue() {
         return new DBSPGeoPointLiteral(CalciteObject.EMPTY,
                 DBSPTypeDouble.INSTANCE.defaultValue(),
-                DBSPTypeDouble.INSTANCE.defaultValue());
+                DBSPTypeDouble.INSTANCE.defaultValue(),
+                false);
     }
 }

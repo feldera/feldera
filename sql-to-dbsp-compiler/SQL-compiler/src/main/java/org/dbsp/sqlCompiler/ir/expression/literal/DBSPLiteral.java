@@ -49,6 +49,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import javax.annotation.Nullable;
+import java.util.Objects;
 
 /**
  * This is not just a base class, it also can be used to represent NULL
@@ -135,19 +136,21 @@ public abstract class DBSPLiteral extends DBSPExpression {
         visitor.postorder(this);
     }
 
-    public void checkNotNull() {
-        if (this.isNull)
-            throw new InternalCompilerError("Expected a non-null literal", this);
-    }
-
     boolean hasSameType(DBSPLiteral other) {
         return this.getType().sameType(other.getType());
     }
 
     /**
-     * The same literal but with a non-nullable type.
+     * The same literal but with the specified nullability.
      */
-    public abstract DBSPLiteral getNonNullable();
+    public abstract DBSPLiteral getWithNullable(boolean mayBeNull);
+
+    @Nullable
+    public <T> T checkIfNull(@Nullable T value, boolean mayBeNull) {
+        if (!mayBeNull)
+            return Objects.requireNonNull(value);
+        return value;
+    }
 
     @Override
     public boolean sameFields(IDBSPNode other) {

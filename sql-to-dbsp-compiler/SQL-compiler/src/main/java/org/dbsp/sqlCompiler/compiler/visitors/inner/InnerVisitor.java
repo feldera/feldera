@@ -46,6 +46,8 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
+import org.dbsp.util.IWritesLogs;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -56,7 +58,7 @@ import java.util.List;
  * Depth-first traversal of an DBSPInnerNode hierarchy.
  */
 @SuppressWarnings({"SameReturnValue, EmptyMethod", "unused"})
-public abstract class InnerVisitor implements IRTransform {
+public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     /// If true each visit call will visit by default the superclass.
     // TODO: should this be removed?
     protected final boolean visitSuper = true;
@@ -89,7 +91,11 @@ public abstract class InnerVisitor implements IRTransform {
     /**
      * Override to initialize before visiting any node.
      */
-    public void startVisit() {}
+    public void startVisit() {
+        Logger.INSTANCE.belowLevel(this, 4)
+                .append("Starting ")
+                .append(this.toString());
+    }
 
     /**
      * Override to finish after visiting all nodes.

@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -34,7 +36,9 @@ public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContaine
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        if (mayBeNull)
+            throw new InternalCompilerError("Null indexed zset");
         return this;
     }
 

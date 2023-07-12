@@ -50,8 +50,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
     }
 
     @Override
-    void testQuery(String query,
-                   DBSPZSetLiteral.Contents firstOutput) {
+    public void testQuery(String query, DBSPZSetLiteral.Contents firstOutput) {
         DBSPZSetLiteral.Contents input = this.createInput();
         DBSPZSetLiteral.Contents secondOutput = DBSPZSetLiteral.Contents.emptyWithElementType(
                 firstOutput.getElementType());
@@ -72,8 +71,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         this.testQuery(query, this.createInput());
     }
 
-    void testConstantOutput(String query,
-                            DBSPZSetLiteral.Contents output) {
+    void testConstantOutput(String query, DBSPZSetLiteral.Contents output) {
         DBSPZSetLiteral.Contents input = this.createInput();
         DBSPZSetLiteral.Contents e = DBSPZSetLiteral.Contents.emptyWithElementType(output.getElementType());
         this.invokeTestQueryBase(query,
@@ -230,7 +228,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
                         new DBSPGeoPointLiteral(CalciteObject.EMPTY,
-                                new DBSPDoubleLiteral(0), new DBSPDoubleLiteral(0)).some())));
+                                new DBSPDoubleLiteral(0), new DBSPDoubleLiteral(0), false).some())));
     }
 
     @Override @Test

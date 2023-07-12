@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.apache.calcite.util.DateString;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
@@ -34,11 +35,23 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -79,10 +92,46 @@ public class Simplify extends InnerRewriteVisitor {
         this.pop(expression);
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
-            if (lit.getType().is(DBSPTypeNull.class)) {
+            DBSPType litType = lit.getType();
+            if (type.setMayBeNull(false).sameType(litType)) {
+                // Cast from type to Option<type>
+                result = lit.getWithNullable(type.mayBeNull);
+            } else if (lit.isNull) {
+                result = DBSPLiteral.none(type);
+            } else if (litType.is(DBSPTypeNull.class)) {
                 // This is a literal with type "NULL".
                 // Convert it to a literal of the resulting type
-                result = DBSPLiteral.none(expression.getType());
+                result = DBSPLiteral.none(type);
+            } else if (lit.is(DBSPStringLiteral.class)) {
+                // Constant folding string values
+                // This is mostly useful for testing code, to fold various literals.
+                DBSPStringLiteral str = lit.to(DBSPStringLiteral.class);
+                Objects.requireNonNull(str.value);
+                if (type.is(DBSPTypeDate.class)) {
+                    // We have to validate the date, it may be invalid, and in this case
+                    // the result is 'null'.  This pattern is hardwired in Calcite.
+                    DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.US)
+                            .withResolverStyle(ResolverStyle.STRICT);
+                    try {
+                        LocalDate.parse(str.value, dateFormatter);
+                        result = new DBSPDateLiteral(lit.getNode(), type, new DateString(str.value));
+                    } catch (DateTimeParseException ex) {
+                        result = DBSPLiteral.none(type);
+                    }
+                } else if (type.is(DBSPTypeDecimal.class)) {
+                    try {
+                        result = new DBSPDecimalLiteral(type, new BigDecimal(str.value));
+                    } catch (NumberFormatException ex) {
+                        // on parse error return 0.
+                        result = new DBSPDecimalLiteral(type, BigDecimal.ZERO);
+                    }
+                }
+            } else if (lit.is(DBSPI32Literal.class)) {
+                DBSPI32Literal i = lit.to(DBSPI32Literal.class);
+                Objects.requireNonNull(i.value);
+                if (type.is(DBSPTypeDecimal.class)) {
+                    result = new DBSPDecimalLiteral(source.getNode(), type, new BigDecimal(i.value));
+                }
             }
         }
         this.map(expression, result);

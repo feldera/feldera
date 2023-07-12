@@ -49,13 +49,18 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
      */
     public void prepareData(DBSPCompiler compiler) {}
 
-    public DBSPCompiler testCompiler(boolean optimize) {
+    public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
         options.ioOptions.lexicalRules = Lex.ORACLE;
         options.optimizerOptions.throwOnError = true;
         options.optimizerOptions.optimizationLevel = optimize ? 2 : 0;
         options.optimizerOptions.generateInputForEveryTable = true;
         options.optimizerOptions.incrementalize = false;
+        return options;
+    }
+
+    public DBSPCompiler testCompiler(boolean optimize) {
+        CompilerOptions options = this.getOptions(optimize);
         return new DBSPCompiler(options);
     }
 
@@ -228,7 +233,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
      * Runs two test cases, one with optimizations and one without.
      * This makes sure that constant queries still exercise the runtime.
      */
-    void queryWithOutput(String queryAndOutput) {
+    public void queryWithOutput(String queryAndOutput) {
         int semicolon = queryAndOutput.indexOf(';');
         if (semicolon < 0)
             throw new RuntimeException("Could not parse query and output");

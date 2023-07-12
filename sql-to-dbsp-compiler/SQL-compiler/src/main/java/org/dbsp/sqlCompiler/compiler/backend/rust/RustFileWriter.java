@@ -180,7 +180,11 @@ public class RustFileWriter implements ICompilerComponent {
             "    interval::*,\n" +
             "};\n" +
             "#[cfg(test)]\n" +
-            "use chrono::{NaiveDate, NaiveDateTime};\n"
+            "use chrono::{NaiveDate, NaiveDateTime};\n" +
+            "#[cfg(test)]\n" +
+            "use rust_decimal::Decimal;\n" +
+            "#[cfg(test)]\n" +
+            "use std::str::FromStr;\n"
             ;
 
     final DBSPCompiler compiler;

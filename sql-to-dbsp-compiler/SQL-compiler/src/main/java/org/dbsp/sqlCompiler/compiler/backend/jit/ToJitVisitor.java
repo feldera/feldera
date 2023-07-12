@@ -211,7 +211,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                 return JITF32Type.INSTANCE;
             case "s":
                 return JITStringType.INSTANCE;
-            case "date":
+            case "Date":
                 return JITDateType.INSTANCE;
             case "Timestamp":
                 return JITTimestampType.INSTANCE;
@@ -219,6 +219,8 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                 return JITUSizeType.INSTANCE;
             case "i":
                 return JITISizeType.INSTANCE;
+            case "decimal":
+                return JITDecimalType.INSTANCE;
             default:
                 break;
         }

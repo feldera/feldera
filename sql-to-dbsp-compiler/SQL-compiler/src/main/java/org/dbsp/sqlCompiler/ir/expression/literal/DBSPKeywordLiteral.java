@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
 import org.dbsp.util.IIndentStream;
@@ -86,7 +87,9 @@ public class DBSPKeywordLiteral extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        if (mayBeNull)
+            throw new InternalCompilerError("Nullable keyword");
         return this;
     }
 

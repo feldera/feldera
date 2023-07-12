@@ -77,8 +77,8 @@ public class DBSPI32Literal extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
-        return new DBSPI32Literal(Objects.requireNonNull(this.value));
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        return new DBSPI32Literal(this.checkIfNull(this.value, mayBeNull), mayBeNull);
     }
 
     @Override

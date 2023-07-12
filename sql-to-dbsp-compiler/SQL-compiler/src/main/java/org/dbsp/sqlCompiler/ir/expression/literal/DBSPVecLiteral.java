@@ -117,7 +117,9 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        if (mayBeNull)
+            throw new InternalCompilerError("Nullable vec");
         return this;
     }
 

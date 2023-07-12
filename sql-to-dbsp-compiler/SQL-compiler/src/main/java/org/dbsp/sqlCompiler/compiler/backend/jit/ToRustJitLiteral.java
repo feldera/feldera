@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPStructExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -66,7 +67,7 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
     }
 
     void constant(String type, DBSPLiteral literal) {
-        this.constant(type, literal, literal.isNull ? literal : literal.getNonNullable());
+        this.constant(type, literal, literal.isNull ? literal : literal.getWithNullable(false));
     }
 
     @Override
@@ -88,6 +89,12 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
                 DBSPTypeAny.INSTANCE.path(new DBSPPath("NaiveDate", "parse_from_str")),
                 DBSPTypeAny.INSTANCE, rustLiteral, new DBSPStrLiteral("%F"));
         this.constant("Date", node, expression.unwrap());
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDecimalLiteral node) {
+        this.constant("Decimal", node);
         return VisitDecision.STOP;
     }
 

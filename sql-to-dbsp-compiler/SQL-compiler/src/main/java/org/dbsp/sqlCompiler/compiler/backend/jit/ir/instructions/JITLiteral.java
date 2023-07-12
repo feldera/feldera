@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions;
 
 import com.fasterxml.jackson.databind.node.BaseJsonNode;
+import com.fasterxml.jackson.databind.node.BigIntegerNode;
 import com.fasterxml.jackson.databind.node.BooleanNode;
 import com.fasterxml.jackson.databind.node.DoubleNode;
 import com.fasterxml.jackson.databind.node.FloatNode;
@@ -37,6 +38,7 @@ import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITScalarType;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -46,6 +48,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+
+import java.math.BigInteger;
 
 public class JITLiteral extends JITValue {
     public final DBSPLiteral literal;
@@ -93,6 +97,9 @@ public class JITLiteral extends JITValue {
             return isNull ? new DoubleNode(0.0) : new DoubleNode(this.literal.to(DBSPDoubleLiteral.class).value);
         } else if (this.literal.is(DBSPFloatLiteral.class)) {
             return isNull ? new FloatNode(0.0F) : new FloatNode(this.literal.to(DBSPFloatLiteral.class).value);
+        } else if (this.literal.is(DBSPDecimalLiteral.class)) {
+            return isNull ? new BigIntegerNode(BigInteger.ZERO) :
+                    new BigIntegerNode(this.literal.to(DBSPDecimalLiteral.class).value.toBigInteger());
         } else if (this.literal.is(DBSPTimestampLiteral.class)) {
             String value = "";
             if (!isNull) {

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -69,7 +70,9 @@ public class DBSPStrLiteral extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        if (mayBeNull)
+            throw new InternalCompilerError("Nullable str");
         return this;
     }
 

@@ -1,5 +1,7 @@
-package org.dbsp.sqlCompiler.compiler;
+package org.dbsp.sqlCompiler.compiler.jit;
 
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.TimeTests;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;

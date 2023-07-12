@@ -333,7 +333,7 @@ public abstract class InnerRewriteVisitor
         @Nullable DBSPExpression left = this.transformN(expression.left);
         @Nullable DBSPExpression right = this.transformN(expression.right);
         this.pop(expression);
-        DBSPExpression result = new DBSPGeoPointLiteral(expression.getNode(), left, right);
+        DBSPExpression result = new DBSPGeoPointLiteral(expression.getNode(), left, right, expression.mayBeNull());
         this.map(expression, result);
         return VisitDecision.STOP;
     }

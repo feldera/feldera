@@ -423,7 +423,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         DBSPType sourceType = expression.source.getType();
         DBSPTypeBaseType baseSource = sourceType.as(DBSPTypeBaseType.class);
         if (baseSource == null)
-            throw new UnsupportedException(sourceType.getNode());
+            throw new UnsupportedException(sourceType.toString(), sourceType.getNode());
         String destName = baseDest.shortName();
         String srcName = baseSource.shortName();
         String functionName = "cast_to_" + destName + baseDest.nullableSuffix() +

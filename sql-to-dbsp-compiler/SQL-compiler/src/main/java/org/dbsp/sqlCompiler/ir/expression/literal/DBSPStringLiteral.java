@@ -89,8 +89,8 @@ public class DBSPStringLiteral extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
-        return new DBSPStringLiteral(Objects.requireNonNull(this.value), this.charset);
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        return new DBSPStringLiteral(this.checkIfNull(this.value, mayBeNull), this.charset, mayBeNull);
     }
 
     @Override

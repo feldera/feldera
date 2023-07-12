@@ -77,8 +77,8 @@ public class DBSPU64Literal extends DBSPLiteral {
     }
 
     @Override
-    public DBSPLiteral getNonNullable() {
-        return new DBSPU64Literal(Objects.requireNonNull(this.value));
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        return new DBSPU64Literal(this.checkIfNull(this.value, mayBeNull), mayBeNull);
     }
 
     @Override
