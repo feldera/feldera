@@ -665,7 +665,6 @@ mod test {
             dev_mode: false,
         };
         let compiler_config = CompilerConfig {
-            db_connection_string: "postgres-embed".to_owned(),
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: Some("../../".to_owned()),
             debug: false,
