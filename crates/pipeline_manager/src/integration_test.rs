@@ -91,7 +91,7 @@ impl TestConfig {
         let mut req = config.get("/v0/pipelines").await;
         let pipelines: Value = req.json().await.unwrap();
         for pipeline in pipelines.as_array().unwrap() {
-            let id = pipeline.get("pipeline_id").unwrap().as_str().unwrap();
+            let id = pipeline["pipeline_id"].as_str().unwrap();
             let req = config.delete(format!("/v0/pipelines/{}", id)).await;
             assert_eq!(StatusCode::OK, req.status())
         }
@@ -100,7 +100,7 @@ impl TestConfig {
         let mut req = config.get("/v0/programs").await;
         let programs: Value = req.json().await.unwrap();
         for program in programs.as_array().unwrap() {
-            let id = program.get("program_id").unwrap().as_str().unwrap();
+            let id = program["program_id"].as_str().unwrap();
             let req = config.delete(format!("/v0/programs/{}", id)).await;
             assert_eq!(StatusCode::OK, req.status())
         }
@@ -109,7 +109,7 @@ impl TestConfig {
         let mut req = config.get("/v0/connectors").await;
         let programs: Value = req.json().await.unwrap();
         for program in programs.as_array().unwrap() {
-            let id = program.get("connector_id").unwrap().as_str().unwrap();
+            let id = program["connector_id"].as_str().unwrap();
             let req = config.delete(format!("/v0/connectors/{}", id)).await;
             assert_eq!(StatusCode::OK, req.status())
         }
@@ -129,6 +129,13 @@ impl TestConfig {
             }
             None => req,
         }
+    }
+
+    async fn post_no_body<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
+        self.maybe_attach_bearer_token(self.client.post(self.endpoint_url(endpoint)))
+            .send()
+            .await
+            .unwrap()
     }
 
     async fn post<S: AsRef<str>>(
@@ -169,7 +176,7 @@ impl TestConfig {
             }
             let mut resp = self.get(format!("/v0/program?id={}", program_id)).await;
             let val: Value = resp.json().await.unwrap();
-            let status = val.get("status").unwrap().as_str().unwrap();
+            let status = val["status"].as_str().unwrap();
             if status != "CompilingSql" && status != "CompilingRust" && status != "Pending" {
                 if status == "Success" {
                     break;
@@ -275,8 +282,8 @@ async fn program_create_compile_delete() {
     let mut req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
     let resp: Value = req.json().await.unwrap();
-    let id = resp.get("program_id").unwrap().as_str().unwrap();
-    let version = resp.get("version").unwrap().as_i64().unwrap();
+    let id = resp["program_id"].as_str().unwrap();
+    let version = resp["version"].as_i64().unwrap();
     config.compile(id, version).await;
     let resp = config.delete(format!("/v0/programs/{}", id)).await;
     assert_eq!(StatusCode::OK, resp.status());
@@ -304,4 +311,106 @@ async fn program_create_twice() {
     });
     let req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CONFLICT, req.status());
+}
+
+#[actix_web::test]
+#[serial]
+async fn deploy_pipeline() {
+    let config = setup().await;
+    let program_request = json!({
+        "name":  "test",
+        "description": "desc",
+        "code": "create table t1(c1 integer);"
+    });
+    let mut req = config.post("/v0/programs", &program_request).await;
+    assert_eq!(StatusCode::CREATED, req.status());
+    let resp: Value = req.json().await.unwrap();
+    let id = resp["program_id"].as_str().unwrap();
+    let version = resp["version"].as_i64().unwrap();
+    config.compile(id, version).await;
+
+    let pipeline_request = json!({
+        "name":  "test",
+        "description": "desc",
+        "program_id": Some(id.to_string()),
+        "config": "",
+        "connectors": null
+    });
+    let mut req = config.post("/v0/pipelines", &pipeline_request).await;
+    let resp: Value = req.json().await.unwrap();
+    let id = resp["pipeline_id"].as_str().unwrap();
+
+    //
+    // TODO: We should not bubble a connection refused error. Instead,
+    // we should return an error about the pipeline not running.
+    // Tracking issue: https://github.com/feldera/dbsp/issues/343
+    //
+    // Start the pipeline before it has been deployed
+    // let mut req = config
+    //     .post_no_body(format!("/v0/pipelines/{}/start", id))
+    //     .await;
+    // let resp: Value = req.json().await.unwrap();
+    // assert_eq!("Pipeline is not deployed", resp.as_str().unwrap());
+
+    // Deploy the pipeline
+    let mut req = config
+        .post_no_body(format!("/v0/pipelines/{}/deploy", id))
+        .await;
+    let resp: Value = req.json().await.unwrap();
+    assert_eq!("Pipeline successfully deployed.", resp.as_str().unwrap());
+
+    // Pause a pipeline before it is started
+    let mut req = config
+        .post_no_body(format!("/v0/pipelines/{}/pause", id))
+        .await;
+    let resp: Value = req.json().await.unwrap();
+    assert_eq!("Pipeline paused", resp.as_str().unwrap());
+
+    // Start the pipeline
+    let mut req = config
+        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .await;
+    let resp: Value = req.json().await.unwrap();
+    assert_eq!("The pipeline is running", resp.as_str().unwrap());
+
+    // Pause a pipeline after it is started
+    let mut req = config
+        .post_no_body(format!("/v0/pipelines/{}/pause", id))
+        .await;
+    let resp: Value = req.json().await.unwrap();
+    assert_eq!("Pipeline paused", resp.as_str().unwrap());
+
+    // Start the pipeline
+    let mut req = config
+        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .await;
+    let resp: Value = req.json().await.unwrap();
+    assert_eq!("The pipeline is running", resp.as_str().unwrap());
+
+    // TODO: Deploying again currently creates another instance, which
+    // might not be correct behavior
+
+    // let mut req = config
+    //     .post_no_body(format!("/v0/pipelines/{}/deploy", id))
+    //     .await;
+    // let resp: Value = req.json().await.unwrap();
+    // assert_eq!("Pipeline successfully deployed.", resp.as_str().unwrap());
+
+    // Shutdown the pipeline
+    let mut req = config
+        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .await;
+    let resp: Value = req.json().await.unwrap();
+    assert_eq!("Pipeline successfully terminated.", resp.as_str().unwrap());
+
+    //
+    // TODO: We should not bubble a connection refused error. Instead,
+    // we should return an error about the pipeline not running.
+    // Tracking issue: https://github.com/feldera/dbsp/issues/343
+    //
+    // let mut req = config
+    //     .post_no_body(format!("/v0/pipelines/{}/pause", id))
+    //     .await;
+    // let resp: Value = req.json().await.unwrap();
+    // assert_eq!("Pipeline is not deployed", resp.as_str().unwrap());
 }
