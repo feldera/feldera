@@ -1221,6 +1221,10 @@ impl FunctionValidator {
                         actual_arg_types[0],
                     );
                 }
+
+                if call.function() == "dbsp.date.epoch" {
+                    assert_eq!(call.ret_ty(), ColumnType::I64);
+                }
             }
 
             "dbsp.date.to_timestamp" => {

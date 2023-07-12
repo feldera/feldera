@@ -69,6 +69,7 @@ const TRAP_ASSERT_EQ: TrapCode = TrapCode::User(3);
 const TRAP_DIV_OVERFLOW: TrapCode = TrapCode::User(5);
 const TRAP_ABORT: TrapCode = TrapCode::User(6);
 const TRAP_FAILED_PARSE: TrapCode = TrapCode::User(7);
+const TRAP_OVERFLOW: TrapCode = TrapCode::User(8);
 
 // TODO: Pretty function debugging https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs
 
