@@ -585,7 +585,7 @@ mod test {
 
     use crate::{
         auth::{self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim, Provider},
-        config::ManagerConfig,
+        config::{CompilerConfig, ManagerConfig},
         db::{storage::Storage, ApiPermission},
         ServerState,
     };
@@ -658,17 +658,19 @@ mod test {
             bind_address: "0.0.0.0".to_owned(),
             logfile: None,
             working_directory: "".to_owned(),
-            sql_compiler_home: "".to_owned(),
-            dbsp_override_path: None,
-            debug: false,
             unix_daemon: false,
             use_auth: true,
             db_connection_string: "postgres-embed".to_owned(),
-            dump_openapi: false,
-            precompile: false,
-            config_file: None,
             initial_sql: None,
             dev_mode: false,
+        };
+        let compiler_config = CompilerConfig {
+            db_connection_string: "postgres-embed".to_owned(),
+            sql_compiler_home: "".to_owned(),
+            dbsp_override_path: Some("../../".to_owned()),
+            debug: false,
+            precompile: true,
+            working_directory: "".to_owned(),
         };
         let (conn, _temp) = crate::db::test::setup_pg().await;
         if api_key.is_some() {
@@ -685,7 +687,11 @@ mod test {
             .unwrap();
         }
         let db = Arc::new(Mutex::new(conn));
-        let state = crate::WebData::new(ServerState::new(manager_config, db, None).await.unwrap());
+        let state = crate::WebData::new(
+            ServerState::new(manager_config, compiler_config, db)
+                .await
+                .unwrap(),
+        );
         if decoding_key.is_some() {
             state
                 .jwk_cache

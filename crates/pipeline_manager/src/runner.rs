@@ -1,5 +1,6 @@
 use crate::{
     auth::TenantId,
+    config::CompilerConfig,
     db::{storage::Storage, DBError, PipelineRevision, PipelineStatus},
     ErrorResponse, ManagerConfig, ManagerError, PipelineId, ProjectDB, ResponseError,
 };
@@ -141,8 +142,10 @@ pub(crate) enum Runner {
 /// for a few seconds after the request succeeds.
 pub struct LocalRunner {
     db: Arc<Mutex<ProjectDB>>,
-    config: ManagerConfig,
+    config: CompilerConfig, // TODO: This should really be a handle to find binaries.
 }
+
+pub struct LocalRunnerConfig {}
 
 impl Runner {
     /// Start a new pipeline.
@@ -252,7 +255,7 @@ impl Runner {
 impl LocalRunner {
     pub(crate) fn new(
         db: Arc<Mutex<ProjectDB>>,
-        config: &ManagerConfig,
+        config: &CompilerConfig,
     ) -> Result<Self, ManagerError> {
         Ok(Self {
             db,

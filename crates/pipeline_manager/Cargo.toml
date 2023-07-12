@@ -2,6 +2,7 @@
 name = "dbsp_pipeline_manager"
 version = "0.1.0"
 edition = "2021"
+path = "src/main.rs"
 license = "MIT OR Apache-2.0"
 
     [package.metadata.cargo-udeps.ignore]

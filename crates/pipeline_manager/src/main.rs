@@ -42,6 +42,7 @@ use anyhow::{Error as AnyError, Result as AnyResult};
 use auth::JwkCache;
 use clap::Parser;
 use colored::Colorize;
+use config::CompilerConfig;
 #[cfg(unix)]
 use daemonize::Daemonize;
 use dbsp_adapters::{ControllerError, ErrorResponse};
@@ -79,6 +80,7 @@ pub use error::ManagerError;
 use runner::{LocalRunner, Runner, RunnerError, STARTUP_TIMEOUT};
 
 use crate::auth::TenantId;
+use crate::config::CliArgs;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -219,32 +221,32 @@ fn main() -> AnyResult<()> {
         })
         .init();
 
-    let mut config = ManagerConfig::try_parse()?;
-
-    if config.dump_openapi {
+    let mut cli_args = CliArgs::try_parse()?;
+    if cli_args.dump_openapi {
         let openapi_json = ApiDoc::openapi().to_json()?;
         write("openapi.json", openapi_json.as_bytes())?;
         return Ok(());
     }
 
-    if config.precompile {
-        rt::System::new().block_on(Compiler::precompile_dependencies(&config))?;
-        return Ok(());
-    }
+    // if config.precompile {
+    //     rt::System::new().block_on(Compiler::precompile_dependencies(&config))?;
+    //     return Ok(());
+    // }
 
-    if let Some(config_file) = &config.config_file {
+    if let Some(config_file) = &cli_args.config_file {
         let config_yaml = read(config_file).map_err(|e| {
             AnyError::msg(format!("error reading config file '{config_file}': {e}"))
         })?;
         let config_yaml = String::from_utf8_lossy(&config_yaml);
-        config = serde_yaml::from_str(&config_yaml).map_err(|e| {
+        cli_args = serde_yaml::from_str(&config_yaml).map_err(|e| {
             AnyError::msg(format!("error parsing config file '{config_file}': {e}"))
         })?;
     }
 
-    let config = config.canonicalize()?;
+    let manager_config = ManagerConfig::new(&cli_args).canonicalize()?;
+    let compiler_config = CompilerConfig::new(&cli_args).canonicalize()?;
 
-    run(config)
+    run(manager_config, compiler_config)
 }
 
 struct ServerState {
@@ -252,7 +254,6 @@ struct ServerState {
     // transaction conflicts.  The server must avoid holding this lock
     // for a long time to avoid blocking concurrent requests.
     db: Arc<Mutex<ProjectDB>>,
-    // Dropping this handle kills the compiler task.
     _compiler: Option<Compiler>,
     runner: Runner,
     _config: ManagerConfig,
@@ -262,14 +263,15 @@ struct ServerState {
 impl ServerState {
     async fn new(
         config: ManagerConfig,
+        compiler_config: CompilerConfig,
         db: Arc<Mutex<ProjectDB>>,
-        compiler: Option<Compiler>,
     ) -> AnyResult<Self> {
-        let runner = Runner::Local(LocalRunner::new(db.clone(), &config)?);
+        let runner = Runner::Local(LocalRunner::new(db.clone(), &compiler_config)?);
+        let compiler = Compiler::new(&compiler_config, db.clone()).await?;
 
         Ok(Self {
             db,
-            _compiler: compiler,
+            _compiler: Some(compiler),
             runner,
             _config: config,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
@@ -277,7 +279,7 @@ impl ServerState {
     }
 }
 
-fn run(config: ManagerConfig) -> AnyResult<()> {
+fn run(config: ManagerConfig, compiler_config: CompilerConfig) -> AnyResult<()> {
     // Check that the port is available before turning into a daemon, so we can fail
     // early if the port is taken.
     let listener = TcpListener::bind((config.bind_address.clone(), config.port)).map_err(|e| {
@@ -316,14 +318,13 @@ fn run(config: ManagerConfig) -> AnyResult<()> {
     rt::System::new().block_on(async {
         let db = ProjectDB::connect(&config).await?;
         let db = Arc::new(Mutex::new(db));
-        let compiler = Compiler::new(&config, db.clone()).await?;
 
         // Since we don't trust any file system state after restart,
         // reset all programs to `ProgramStatus::None`, which will force
         // us to recompile programs before running them.
         db.lock().await.reset_program_status().await?;
 
-        let state = WebData::new(ServerState::new(config, db, Some(compiler)).await?);
+        let state = WebData::new(ServerState::new(config, compiler_config, db).await?);
 
         if use_auth {
             let server = HttpServer::new(move || {

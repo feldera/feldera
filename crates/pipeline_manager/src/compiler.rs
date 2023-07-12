@@ -1,6 +1,7 @@
 use crate::auth::TenantId;
+use crate::config::CompilerConfig;
 use crate::db::storage::Storage;
-use crate::{ManagerConfig, ManagerError, ProgramId, ProjectDB, Version};
+use crate::{ManagerError, ProgramId, ProjectDB, Version};
 use log::warn;
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
@@ -8,10 +9,10 @@ use std::{
     process::{ExitStatus, Stdio},
     sync::Arc,
 };
+use tokio::io::AsyncWriteExt;
 use tokio::{
     fs,
     fs::{File, OpenOptions},
-    io::AsyncWriteExt,
     process::{Child, Command},
     select, spawn,
     sync::Mutex,
@@ -133,7 +134,7 @@ fn main() {
 
 impl Compiler {
     pub(crate) async fn new(
-        config: &ManagerConfig,
+        config: &CompilerConfig,
         db: Arc<Mutex<ProjectDB>>,
     ) -> Result<Self, ManagerError> {
         Self::create_working_directory(config).await?;
@@ -145,7 +146,7 @@ impl Compiler {
         })
     }
 
-    async fn create_working_directory(config: &ManagerConfig) -> Result<(), ManagerError> {
+    async fn create_working_directory(config: &CompilerConfig) -> Result<(), ManagerError> {
         fs::create_dir_all(&config.workspace_dir())
             .await
             .map_err(|e| {
@@ -167,7 +168,7 @@ impl Compiler {
     /// file, making sure that subsequent `cargo` runs do not access the
     /// network.
     pub(crate) async fn precompile_dependencies(
-        config: &ManagerConfig,
+        config: &CompilerConfig,
     ) -> Result<(), ManagerError> {
         let program_id = ProgramId(Uuid::nil());
 
@@ -238,7 +239,7 @@ impl Compiler {
     }
 
     async fn run_cargo_build(
-        config: &ManagerConfig,
+        config: &CompilerConfig,
         program_id: ProgramId,
     ) -> Result<Child, ManagerError> {
         let err_file = File::create(&config.compiler_stderr_path(program_id))
@@ -284,7 +285,7 @@ impl Compiler {
     }
 
     async fn version_binary(
-        config: &ManagerConfig,
+        config: &CompilerConfig,
         program_id: ProgramId,
         version: Version,
     ) -> Result<(), ManagerError> {
@@ -310,12 +311,12 @@ impl Compiler {
 
     /// Generate workspace-level `Cargo.toml`.
     async fn write_workspace_toml(
-        config: &ManagerConfig,
+        config: &CompilerConfig,
         program_id: ProgramId,
     ) -> Result<(), ManagerError> {
         let workspace_toml_code = format!(
             "[workspace]\nmembers = [ \"{}\" ]\n",
-            ManagerConfig::crate_name(program_id),
+            CompilerConfig::crate_name(program_id),
         );
         let toml_path = config.workspace_toml_path();
         fs::write(&toml_path, workspace_toml_code)
@@ -327,14 +328,14 @@ impl Compiler {
 
     /// Generate project-level `Cargo.toml`.
     async fn write_project_toml(
-        config: &ManagerConfig,
+        config: &CompilerConfig,
         program_id: ProgramId,
     ) -> Result<(), ManagerError> {
         let template_path = config.project_toml_template_path();
         let template_toml = fs::read_to_string(&template_path).await.map_err(|e| {
             ManagerError::io_error(format!("reading template '{}'", template_path.display()), e)
         })?;
-        let program_name = format!("name = \"{}\"", ManagerConfig::crate_name(program_id));
+        let program_name = format!("name = \"{}\"", CompilerConfig::crate_name(program_id));
         let mut project_toml_code = template_toml
             .replace("name = \"temp\"", &program_name)
             .replace(", default-features = false", "")
@@ -357,7 +358,10 @@ impl Compiler {
         Ok(())
     }
 
-    async fn gc_task(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> Result<(), ManagerError> {
+    async fn gc_task(
+        config: CompilerConfig,
+        db: Arc<Mutex<ProjectDB>>,
+    ) -> Result<(), ManagerError> {
         Self::do_gc_task(config, db).await.map_err(|e| {
             error!("gc task failed; error: '{e}'");
             e
@@ -372,7 +376,7 @@ impl Compiler {
     /// Note that this task handles all errors internally and does not propagate
     /// them up so it can run forever and never aborts.
     async fn do_gc_task(
-        config: ManagerConfig,
+        config: CompilerConfig,
         db: Arc<Mutex<ProjectDB>>,
     ) -> Result<(), ManagerError> {
         loop {
@@ -444,7 +448,7 @@ impl Compiler {
     }
 
     async fn compiler_task(
-        config: ManagerConfig,
+        config: CompilerConfig,
         db: Arc<Mutex<ProjectDB>>,
     ) -> Result<(), ManagerError> {
         Self::do_compiler_task(config, db).await.map_err(|e| {
@@ -454,7 +458,8 @@ impl Compiler {
     }
 
     async fn do_compiler_task(
-        /* command_receiver: Receiver<CompilerCommand>, */ config: ManagerConfig,
+        /* command_receiver: Receiver<CompilerCommand>, */
+        config: CompilerConfig,
         db: Arc<Mutex<ProjectDB>>,
     ) -> Result<(), ManagerError> {
         let mut job: Option<CompilationJob> = None;
@@ -623,7 +628,7 @@ impl CompilationJob {
     /// Run SQL-to-DBSP compiler.
     async fn sql(
         tenant_id: TenantId,
-        config: &ManagerConfig,
+        config: &CompilerConfig,
         code: &str,
         program_id: ProgramId,
         version: Version,
@@ -698,7 +703,7 @@ impl CompilationJob {
     // Run `cargo` on the generated Rust workspace.
     async fn rust(
         tenant_id: TenantId,
-        config: &ManagerConfig,
+        config: &CompilerConfig,
         program_id: ProgramId,
         version: Version,
     ) -> Result<Self, ManagerError> {
@@ -746,7 +751,7 @@ impl CompilationJob {
     }
 
     /// Read error output of (Rust or SQL) compiler.
-    async fn error_output(&self, config: &ManagerConfig) -> Result<String, ManagerError> {
+    async fn error_output(&self, config: &CompilerConfig) -> Result<String, ManagerError> {
         let output = match self.stage {
             Stage::Sql => {
                 let stderr_path = config.compiler_stderr_path(self.program_id);
