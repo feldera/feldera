@@ -2,7 +2,7 @@ use crate::{
     auth::TenantId,
     config::CompilerConfig,
     db::{storage::Storage, DBError, PipelineRevision, PipelineStatus},
-    ErrorResponse, ManagerConfig, ManagerError, PipelineId, ProjectDB, ResponseError,
+    ErrorResponse, ManagerError, PipelineId, ProjectDB, ResponseError,
 };
 use actix_web::{
     body::BoxBody,
@@ -144,8 +144,6 @@ pub struct LocalRunner {
     db: Arc<Mutex<ProjectDB>>,
     config: CompilerConfig, // TODO: This should really be a handle to find binaries.
 }
-
-pub struct LocalRunnerConfig {}
 
 impl Runner {
     /// Start a new pipeline.

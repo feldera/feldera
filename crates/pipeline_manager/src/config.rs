@@ -267,7 +267,7 @@ impl ManagerConfig {
 #[derive(Clone, Debug)]
 pub(crate) struct CompilerConfig {
     pub working_directory: String,
-    pub db_connection_string: String,
+    // pub db_connection_string: String,
     pub debug: bool,
     pub sql_compiler_home: String,
     pub dbsp_override_path: Option<String>,
@@ -278,7 +278,7 @@ impl CompilerConfig {
     pub fn new(cli_args: &CliArgs) -> CompilerConfig {
         CompilerConfig {
             working_directory: cli_args.working_directory.clone(),
-            db_connection_string: cli_args.db_connection_string.clone(),
+            // db_connection_string: cli_args.db_connection_string.clone(),
             debug: cli_args.debug,
             sql_compiler_home: cli_args.sql_compiler_home.clone(),
             dbsp_override_path: cli_args.dbsp_override_path.clone(),

@@ -228,11 +228,6 @@ fn main() -> AnyResult<()> {
         return Ok(());
     }
 
-    // if config.precompile {
-    //     rt::System::new().block_on(Compiler::precompile_dependencies(&config))?;
-    //     return Ok(());
-    // }
-
     if let Some(config_file) = &cli_args.config_file {
         let config_yaml = read(config_file).map_err(|e| {
             AnyError::msg(format!("error reading config file '{config_file}': {e}"))
@@ -246,6 +241,10 @@ fn main() -> AnyResult<()> {
     let manager_config = ManagerConfig::new(&cli_args).canonicalize()?;
     let compiler_config = CompilerConfig::new(&cli_args).canonicalize()?;
 
+    if compiler_config.precompile {
+        rt::System::new().block_on(Compiler::precompile_dependencies(&compiler_config))?;
+        return Ok(());
+    }
     run(manager_config, compiler_config)
 }
 
