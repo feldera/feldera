@@ -16,6 +16,7 @@ const sidebars = {
   docsSidebar: [
     "what-is-dbsp",
     "intro",
+    "tour/tour",
     {
       type: "category",
       label: "Demos",
