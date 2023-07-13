@@ -28,9 +28,8 @@ be on hand before beginning computation.  Unlike a database, DBSP does
 not durably store data.
 
 For computation, being incremental means that when new data arrives,
-DBSP does a minimal amount of work to incorporate it into queries,
-rather than by recomputing queries from the top.  This speeds up
-processing.
+DBSP does a minimal amount of work to update query results, rather
+than by fully recomputing them.  This speeds up processing.
 
 For output, being incremental means that DBSP streams query results to
 output streams, in a similar way to how it accepts its input.  When a
@@ -48,8 +47,7 @@ view definitions:
 
 * SQL view definitions with `CREATE VIEW` specify analyses.  Views may
   draw data from tables and from other views.  DBSP provides powerful
-  SQL analysis features, including recursion and time-series
-  operators.
+  SQL analysis features, including time-series operators.
 
 A program defines a computation, but it doesn't specify the source or
 destination for data.  Those are the province of **connectors** and
