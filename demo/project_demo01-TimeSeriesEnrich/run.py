@@ -52,14 +52,14 @@ def prepare():
 
 
 def make_config(project):
-    config = DBSPPipelineConfig(project, 8, 'TimeSeriesEnrich Pipeline')
+    config = DBSPPipelineConfig(project, 8, 'Time Series Enrichment Pipeline')
     config.add_kafka_input(name='Fraud Demographics Large', stream='DEMOGRAPHICS',
                            config=KafkaInputConfig.from_dict(
                                {'topics': ['fraud_demo_large_demographics'], 'auto.offset.reset': 'earliest'}), format=CsvInputFormatConfig())
     config.add_kafka_input(name='Fraud Transactions Large', stream='TRANSACTIONS',
                            config=KafkaInputConfig.from_dict(
                                {'topics': ['fraud_demo_large_transactions'], 'auto.offset.reset': 'earliest'}), format=CsvInputFormatConfig())
-    config.add_kafka_output(name='Join Demographics<>Transactions', stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
+    config.add_kafka_output(name='Join Demographics⋈Transactions', stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
                             config=KafkaOutputConfig.from_dict(
                                 {'topic': 'fraud_demo_large_enriched'}), format=CsvOutputFormatConfig())
     config.save()
@@ -67,5 +67,5 @@ def make_config(project):
 
 
 if __name__ == "__main__":
-    run_demo("Time Series Enrichment Join", os.path.join(
+    run_demo("Time Series Enrichment", os.path.join(
         SCRIPT_DIR, 'project.sql'), make_config, prepare)

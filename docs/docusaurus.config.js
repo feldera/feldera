@@ -125,6 +125,12 @@ const config = {
         copyright: `Copyright © ${new Date().getFullYear()} Feldera, Inc.`,
       },
     }),
+
+    markdown: {
+	mermaid: true,
+    },
+
+    themes: ['@docusaurus/theme-mermaid'],
 };
 
 module.exports = config;

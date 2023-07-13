@@ -1,5 +1,3 @@
-CREATE TABLE USERS (
-    name varchar
-);
+CREATE TABLE users (name varchar);
 
-CREATE VIEW OUTPUT_USERS as SELECT * from USERS;
+CREATE VIEW output_users AS SELECT * FROM users;

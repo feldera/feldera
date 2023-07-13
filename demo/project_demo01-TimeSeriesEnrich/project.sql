@@ -26,7 +26,7 @@ CREATE TABLE transactions (
     is_fraud INTEGER
 );
 
-CREATE VIEW transactions_with_demographics as 
+CREATE VIEW transactions_with_demographics AS
     SELECT
         transactions.trans_date_trans_time,
         transactions.cc_num,
