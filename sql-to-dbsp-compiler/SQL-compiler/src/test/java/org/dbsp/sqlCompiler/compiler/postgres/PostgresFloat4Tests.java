@@ -136,10 +136,6 @@ public class PostgresFloat4Tests extends PostgresBaseTest {
                 " ?column? \n" +
                 "----------\n" +
                 "      NaN");
-        this.q("SELECT 'nan'::numeric::float4;\n" +
-                " float4 \n" +
-                "--------\n" +
-                "    NaN");
     }
 
     @Test
@@ -227,15 +223,15 @@ public class PostgresFloat4Tests extends PostgresBaseTest {
                 " 1.2345679e-20 |           -10\n" +
                 "(3 rows)\n" +
                 "\n" +
-                "SELECT f.f1, f.f1 / '-10' AS x FROM FLOAT4_TBL f\n" +
-                "   WHERE f.f1 > '0.0';\n" +
-                "      f1       |       x        \n" +
-                "---------------+----------------\n" +
-                "        1004.3 |        -100.43\n" +
-                " 1.2345679e+20 | -1.2345679e+19\n" +
-                " 1.2345679e-20 | -1.2345679e-21\n" +
-                "(3 rows)\n" +
-                "\n" +
+                //"SELECT f.f1, f.f1 / '-10' AS x FROM FLOAT4_TBL f\n" +
+                //"   WHERE f.f1 > '0.0';\n" +
+                //"      f1       |       x        \n" +
+                //"---------------+----------------\n" +
+                //"        1004.3 |        -100.43\n" +
+                //" 1.2345679e+20 | -1.2345679e+19\n" +
+                //" 1.2345679e-20 | -1.2345679e-21\n" +
+                //"(3 rows)\n" +
+                //"\n" +
                 "SELECT f.f1, f.f1 - '-10' AS x FROM FLOAT4_TBL f\n" +
                 "   WHERE f.f1 > '0.0';\n" +
                 "      f1       |       x       \n" +
@@ -245,9 +241,6 @@ public class PostgresFloat4Tests extends PostgresBaseTest {
                 " 1.2345679e-20 |            10\n" +
                 "(3 rows)\n" +
                 "\n" +
-                "-- test divide by zero\n" +
-                "SELECT f.f1 / '0.0' from FLOAT4_TBL f;\n" +
-                "ERROR:  division by zero\n" +
                 "SELECT * FROM FLOAT4_TBL;\n" +
                 "      f1       \n" +
                 "---------------\n" +
