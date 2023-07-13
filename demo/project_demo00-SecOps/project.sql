@@ -1,28 +1,28 @@
--- -- Git repository.
--- create table repository (
---     repository_id bigint not null,
---     type varchar not null,
---     url varchar not null,
---     name varchar not null
--- );
+-- Git repository.
+create table repository (
+    repository_id bigint not null,
+    type varchar not null,
+    url varchar not null,
+    name varchar not null
+);
 
--- -- Commit inside a Git repo.
--- create table git_commit (
---     git_commit_id bigint not null,
---     repository_id bigint not null /* foreign key references repository(repository_id)*/,
---     commit_id varchar not null,
---     commit_date timestamp not null,
---     commit_owner varchar not null
--- );
+-- Commit inside a Git repo.
+create table git_commit (
+    git_commit_id bigint not null,
+    repository_id bigint not null /* foreign key references repository(repository_id)*/,
+    commit_id varchar not null,
+    commit_date timestamp not null,
+    commit_owner varchar not null
+);
 
--- -- CI/CD pipeline.
--- create table pipeline (
---     pipeline_id bigint not null,
---     create_date timestamp not null,
---     createdby_user_id bigint not null,
---     update_date timestamp,
---     updatedby_user_id bigint
--- );
+-- CI/CD pipeline.
+create table pipeline (
+    pipeline_id bigint not null,
+    create_date timestamp not null,
+    createdby_user_id bigint not null,
+    update_date timestamp,
+    updatedby_user_id bigint
+);
 
 -- Git commits used by each pipeline.
 create table pipeline_sources (

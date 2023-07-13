@@ -21,8 +21,8 @@ const sidebars = {
       type: "category",
       label: "Demos",
       link: {
-        type: "generated-index",
-        description: "A walkthrough of the pre-existing DBSP demos.",
+        type: "doc",
+        id: 'demos/index',
       },
       items: [
         "demos/simple-select",

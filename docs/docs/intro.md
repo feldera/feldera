@@ -54,8 +54,16 @@ You also need `curl` and a web browser such as Chrome or Firefox.
 
    You only need to do the first time.
 
+   :::caution
+
+   This will replace any existing file named `docker-compose.yml` in
+   the current directory.
+
+   :::
+
 2. Launch containers for the demo, including the DBSP manager,
-   Postgres to support it, and a SecOps demo that uses Redpanda:
+   Postgres to support it, and a SecOps demo that uses Redpanda.  From
+   the directory where you ran the command above:
 
    ```bash
    docker compose --profile demo up
@@ -75,7 +83,7 @@ You also need `curl` and a web browser such as Chrome or Firefox.
 3. Visit <http://localhost:8085/> in your web browser to bring up the
    DBSP web-based user interface.
 
-4. Try out one of the [demos](category/demos).
+4. Try out one of the [demos](demos).
 
 ## Stop the DBSP demo
 
@@ -84,19 +92,42 @@ where `docker compose` is running.  Docker Compose will show its
 progress as it shuts down each of the containers in turn.  It can take
 up to about 15 seconds to complete shutdown.
 
-:::caution
+## Restart the demo
 
-Stopping the demo discards SQL and anything else that you added, so be
-sure that you copy out anything valuable before you stop it.
+If you start and then stop the demo as described above, you can
+restart it a few different ways:
 
-:::
+* To restart it without changes, run:
+
+   ```bash
+   docker compose up
+   ```
+
+* Run this command to reload the demo afresh, while discarding all
+  additional programs, connectors and pipelines you've added:
+
+   ```bash
+   docker compose --profile demo up
+   ```
+
+* Run this command to upgrade to a new version of the demo, while
+  discarding all additional programs, connectors and pipelines you've
+  added:
+
+  ```bash
+  docker compose --profile demo up --pull always --force-recreate -V
+  ```
 
 ## Troubleshooting
 
 If the demo fails to start after it previously ran successfully, then
 it might not have fully shut down from the previous run.  To ensure
-that it is fully shut down, run the `docker compose` command from
-before using `down` instead of `up`, and then try starting it again.
+that it is fully shut down, run the following command, and then try
+starting it again:
+
+```bash
+docker compose --profile demo down
+```
 
 If starting the demo fails with `bind: address already in use`, then
 something on your machine is already listening on one of the ports
