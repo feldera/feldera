@@ -40,7 +40,7 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use auth::JwkCache;
-use clap::Parser;
+use clap::{Args, Command, FromArgMatches};
 use colored::Colorize;
 use config::CompilerConfig;
 #[cfg(unix)]
@@ -80,7 +80,6 @@ pub use error::ManagerError;
 use runner::{LocalRunner, Runner, RunnerError, STARTUP_TIMEOUT};
 
 use crate::auth::TenantId;
-use crate::config::CliArgs;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -220,26 +219,35 @@ fn main() -> AnyResult<()> {
             )
         })
         .init();
+    let cli = Command::new("Pipeline manager CLI");
+    let cli = ManagerConfig::augment_args(cli);
+    let cli = CompilerConfig::augment_args(cli);
+    let matches = cli.get_matches();
 
-    let mut cli_args = CliArgs::try_parse()?;
-    if cli_args.dump_openapi {
+    let mut manager_config = ManagerConfig::from_arg_matches(&matches)
+        .map_err(|err| err.exit())
+        .unwrap();
+    if manager_config.dump_openapi {
         let openapi_json = ApiDoc::openapi().to_json()?;
         write("openapi.json", openapi_json.as_bytes())?;
         return Ok(());
     }
 
-    if let Some(config_file) = &cli_args.config_file {
+    if let Some(config_file) = &manager_config.config_file {
         let config_yaml = read(config_file).map_err(|e| {
             AnyError::msg(format!("error reading config file '{config_file}': {e}"))
         })?;
         let config_yaml = String::from_utf8_lossy(&config_yaml);
-        cli_args = serde_yaml::from_str(&config_yaml).map_err(|e| {
+        manager_config = serde_yaml::from_str(&config_yaml).map_err(|e| {
             AnyError::msg(format!("error parsing config file '{config_file}': {e}"))
         })?;
     }
+    let compiler_config = CompilerConfig::from_arg_matches(&matches)
+        .map_err(|err| err.exit())
+        .unwrap();
 
-    let manager_config = ManagerConfig::new(&cli_args).canonicalize()?;
-    let compiler_config = CompilerConfig::new(&cli_args).canonicalize()?;
+    let manager_config = manager_config.canonicalize()?;
+    let compiler_config = compiler_config.canonicalize()?;
 
     if compiler_config.precompile {
         rt::System::new().block_on(Compiler::precompile_dependencies(&compiler_config))?;

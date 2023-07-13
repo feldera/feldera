@@ -55,6 +55,8 @@ async fn initialize_local_dbsp_instance() -> TempDir {
         db_connection_string: db_connection_string.to_owned(),
         initial_sql: None,
         dev_mode: false,
+        dump_openapi: false,
+        config_file: None,
     }
     .canonicalize()
     .unwrap();
@@ -64,6 +66,7 @@ async fn initialize_local_dbsp_instance() -> TempDir {
         dbsp_override_path: Some("../../".to_owned()),
         debug: false,
         precompile: true,
+        db_connection_string: db_connection_string.to_owned(),
     }
     .canonicalize()
     .unwrap();

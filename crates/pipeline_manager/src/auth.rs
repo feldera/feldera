@@ -663,6 +663,8 @@ mod test {
             db_connection_string: "postgres-embed".to_owned(),
             initial_sql: None,
             dev_mode: false,
+            dump_openapi: false,
+            config_file: None,
         };
         let compiler_config = CompilerConfig {
             sql_compiler_home: "".to_owned(),
@@ -670,6 +672,7 @@ mod test {
             debug: false,
             precompile: true,
             working_directory: "".to_owned(),
+            db_connection_string: "postgres-embed".to_owned(),
         };
         let (conn, _temp) = crate::db::test::setup_pg().await;
         if api_key.is_some() {
