@@ -62,10 +62,8 @@ use static_assertions::assert_impl_any;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{
-    db::{storage::Storage, ApiPermission, DBError, ProjectDB},
-    ServerState,
-};
+use crate::db::{storage::Storage, ApiPermission, DBError, ProjectDB};
+use crate::pipeline_manager::ServerState;
 
 // Used when no auth is configured, so we tag the request with the default user
 // and passthrough
@@ -587,7 +585,7 @@ mod test {
         auth::{self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim, Provider},
         config::{CompilerConfig, ManagerConfig},
         db::{storage::Storage, ApiPermission},
-        ServerState,
+        pipeline_manager::ServerState,
     };
 
     use super::AuthError;
@@ -686,7 +684,7 @@ mod test {
             .unwrap();
         }
         let db = Arc::new(Mutex::new(conn));
-        let state = crate::WebData::new(
+        let state = actix_web::web::Data::new(
             ServerState::new(manager_config, compiler_config, db)
                 .await
                 .unwrap(),

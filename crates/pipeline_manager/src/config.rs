@@ -1,4 +1,4 @@
-use crate::{PipelineId, ProgramId, Version};
+use crate::db::{PipelineId, ProgramId, Version};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
 use serde::Deserialize;
@@ -31,7 +31,7 @@ fn default_db_connection_string() -> String {
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
-pub(crate) struct DatabaseConfig {
+pub struct DatabaseConfig {
     /// Point to a relational database to use for state management. Accepted
     /// values are `postgres://<host>:<port>` or `postgres-embed`. For
     /// postgres-embed we create a DB in the current working directory. For
@@ -65,7 +65,7 @@ impl DatabaseConfig {
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
-pub(crate) struct ManagerConfig {
+pub struct ManagerConfig {
     /// Directory where the manager stores its filesystem state:
     /// generated Rust crates, pipeline logs, etc.
     #[serde(default = "default_working_directory")]
@@ -141,7 +141,7 @@ impl ManagerConfig {
     /// Converts `working_directory` `sql_compiler_home`, and
     /// `dbsp_override_path` fields to absolute paths;
     /// fails if any of the paths doesn't exist or isn't readable.
-    pub(crate) fn canonicalize(mut self) -> AnyResult<Self> {
+    pub fn canonicalize(mut self) -> AnyResult<Self> {
         create_dir_all(&self.manager_working_directory).map_err(|e| {
             AnyError::msg(format!(
                 "unable to create or open working directory '{}': {e}",
@@ -209,7 +209,7 @@ impl ManagerConfig {
 /// Pipeline manager configuration read from a YAML config file or from command
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
-pub(crate) struct CompilerConfig {
+pub struct CompilerConfig {
     /// Directory where the manager stores its filesystem state:
     /// generated Rust crates, pipeline logs, etc.
     #[serde(default = "default_working_directory")]
@@ -342,7 +342,7 @@ impl CompilerConfig {
     /// Converts `working_directory` `sql_compiler_home`, and
     /// `dbsp_override_path` fields to absolute paths;
     /// fails if any of the paths doesn't exist or isn't readable.
-    pub(crate) fn canonicalize(mut self) -> AnyResult<Self> {
+    pub fn canonicalize(mut self) -> AnyResult<Self> {
         create_dir_all(&self.compiler_working_directory).map_err(|e| {
             AnyError::msg(format!(
                 "unable to create or open working directory '{}': {e}",

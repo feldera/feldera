@@ -2,16 +2,18 @@ use crate::{
     auth::TenantId,
     config::CompilerConfig,
     db::{storage::Storage, DBError, PipelineRevision, PipelineStatus},
-    ErrorResponse, ManagerError, PipelineId, ProjectDB, ResponseError,
+    db::{PipelineId, ProjectDB},
+    error::ManagerError,
 };
 use actix_web::{
     body::BoxBody,
     http::{Method, StatusCode},
     web::Payload,
-    HttpRequest, HttpResponse, HttpResponseBuilder,
+    HttpRequest, HttpResponse, HttpResponseBuilder, ResponseError,
 };
 use awc::Client;
 use dbsp_adapters::DetailedError;
+use dbsp_adapters::ErrorResponse;
 use serde::Serialize;
 use std::{
     borrow::Cow, error::Error as StdError, fmt, fmt::Display, path::Path, process::Stdio, sync::Arc,

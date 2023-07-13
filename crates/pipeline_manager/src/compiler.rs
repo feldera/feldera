@@ -1,7 +1,8 @@
 use crate::auth::TenantId;
 use crate::config::CompilerConfig;
 use crate::db::storage::Storage;
-use crate::{ManagerError, ProgramId, ProjectDB, Version};
+use crate::db::{ProgramId, ProjectDB, Version};
+use crate::error::ManagerError;
 use log::warn;
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
@@ -111,7 +112,7 @@ impl ProgramStatus {
 }
 
 pub struct Compiler {
-    compiler_task: JoinHandle<Result<(), ManagerError>>,
+    pub compiler_task: JoinHandle<Result<(), ManagerError>>,
     gc_task: JoinHandle<Result<(), ManagerError>>,
 }
 
@@ -133,7 +134,7 @@ fn main() {
 }"#;
 
 impl Compiler {
-    pub(crate) async fn new(
+    pub async fn new(
         config: &CompilerConfig,
         db: Arc<Mutex<ProjectDB>>,
     ) -> Result<Self, ManagerError> {
@@ -167,9 +168,7 @@ impl Compiler {
     /// compilation job completes quickly.  Also creates the `Cargo.lock`
     /// file, making sure that subsequent `cargo` runs do not access the
     /// network.
-    pub(crate) async fn precompile_dependencies(
-        config: &CompilerConfig,
-    ) -> Result<(), ManagerError> {
+    pub async fn precompile_dependencies(config: &CompilerConfig) -> Result<(), ManagerError> {
         let program_id = ProgramId(Uuid::nil());
 
         Self::create_working_directory(config).await?;
