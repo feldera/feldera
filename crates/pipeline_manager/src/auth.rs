@@ -657,11 +657,9 @@ mod test {
             port: 0,
             bind_address: "0.0.0.0".to_owned(),
             logfile: None,
-            working_directory: "".to_owned(),
+            manager_working_directory: "".to_owned(),
             unix_daemon: false,
             use_auth: true,
-            db_connection_string: "postgres-embed".to_owned(),
-            initial_sql: None,
             dev_mode: false,
             dump_openapi: false,
             config_file: None,
@@ -671,8 +669,7 @@ mod test {
             dbsp_override_path: Some("../../".to_owned()),
             debug: false,
             precompile: true,
-            working_directory: "".to_owned(),
-            db_connection_string: "postgres-embed".to_owned(),
+            compiler_working_directory: "".to_owned(),
         };
         let (conn, _temp) = crate::db::test::setup_pg().await;
         if api_key.is_some() {

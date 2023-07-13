@@ -1,6 +1,8 @@
+#[cfg(feature = "pg-embed")]
+use crate::ManagerConfig;
 use crate::{
     auth::{TenantId, TenantRecord},
-    config::ManagerConfig,
+    config::DatabaseConfig,
     ProgramStatus,
 };
 use async_trait::async_trait;
@@ -1696,13 +1698,16 @@ impl Storage for ProjectDB {
 }
 
 impl ProjectDB {
-    pub(crate) async fn connect(config: &ManagerConfig) -> Result<Self, DBError> {
-        let connection_str = config.database_connection_string();
-        let initial_sql = &config.initial_sql;
+    pub(crate) async fn connect(
+        db_config: &DatabaseConfig,
+        #[cfg(feature = "pg-embed")] manager_config: &ManagerConfig,
+    ) -> Result<Self, DBError> {
+        let connection_str = db_config.database_connection_string();
+        let initial_sql = &db_config.initial_sql;
 
         #[cfg(feature = "pg-embed")]
         if connection_str.starts_with("postgres-embed") {
-            let database_dir = config.postgres_embed_data_dir();
+            let database_dir = manager_config.postgres_embed_data_dir();
             let pg_inst = pg_setup::install(database_dir, true, Some(8082)).await?;
             let connection_string = pg_inst.db_uri.to_string();
             return Self::connect_inner(connection_string.as_str(), initial_sql, Some(pg_inst))

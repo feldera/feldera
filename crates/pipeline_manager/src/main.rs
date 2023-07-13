@@ -42,7 +42,7 @@ use anyhow::{Error as AnyError, Result as AnyResult};
 use auth::JwkCache;
 use clap::{Args, Command, FromArgMatches};
 use colored::Colorize;
-use config::CompilerConfig;
+use config::{CompilerConfig, DatabaseConfig};
 #[cfg(unix)]
 use daemonize::Daemonize;
 use dbsp_adapters::{ControllerError, ErrorResponse};
@@ -220,8 +220,9 @@ fn main() -> AnyResult<()> {
         })
         .init();
     let cli = Command::new("Pipeline manager CLI");
+    let cli = DatabaseConfig::augment_args(cli);
     let cli = ManagerConfig::augment_args(cli);
-    let cli = CompilerConfig::augment_args(cli);
+    let cli = CompilerConfig::augment_args_for_update(cli);
     let matches = cli.get_matches();
 
     let mut manager_config = ManagerConfig::from_arg_matches(&matches)
@@ -253,7 +254,8 @@ fn main() -> AnyResult<()> {
         rt::System::new().block_on(Compiler::precompile_dependencies(&compiler_config))?;
         return Ok(());
     }
-    run(manager_config, compiler_config)
+    let database_config = DatabaseConfig::from_arg_matches(&matches)?;
+    run(database_config, manager_config, compiler_config)
 }
 
 struct ServerState {
@@ -286,30 +288,36 @@ impl ServerState {
     }
 }
 
-fn run(config: ManagerConfig, compiler_config: CompilerConfig) -> AnyResult<()> {
+fn run(
+    database_config: DatabaseConfig,
+    manager_config: ManagerConfig,
+    compiler_config: CompilerConfig,
+) -> AnyResult<()> {
     // Check that the port is available before turning into a daemon, so we can fail
     // early if the port is taken.
-    let listener = TcpListener::bind((config.bind_address.clone(), config.port)).map_err(|e| {
-        AnyError::msg(format!(
-            "failed to bind port '{}:{}': {e}",
-            &config.bind_address, config.port
-        ))
-    })?;
-
-    #[cfg(unix)]
-    if config.unix_daemon {
-        let logfile = std::fs::File::create(config.logfile.as_ref().unwrap()).map_err(|e| {
+    let listener = TcpListener::bind((manager_config.bind_address.clone(), manager_config.port))
+        .map_err(|e| {
             AnyError::msg(format!(
-                "failed to create log file '{}': {e}",
-                &config.logfile.as_ref().unwrap()
+                "failed to bind port '{}:{}': {e}",
+                &manager_config.bind_address, manager_config.port
             ))
         })?;
+
+    #[cfg(unix)]
+    if manager_config.unix_daemon {
+        let logfile =
+            std::fs::File::create(manager_config.logfile.as_ref().unwrap()).map_err(|e| {
+                AnyError::msg(format!(
+                    "failed to create log file '{}': {e}",
+                    &manager_config.logfile.as_ref().unwrap()
+                ))
+            })?;
 
         let logfile_clone = logfile.try_clone().unwrap();
 
         let daemonize = Daemonize::new()
-            .pid_file(config.manager_pid_file_path())
-            .working_directory(&config.working_directory)
+            .pid_file(manager_config.manager_pid_file_path())
+            .working_directory(&manager_config.manager_working_directory)
             .stdout(logfile_clone)
             .stderr(logfile);
 
@@ -320,10 +328,15 @@ fn run(config: ManagerConfig, compiler_config: CompilerConfig) -> AnyResult<()> 
         })?;
     }
 
-    let dev_mode = config.dev_mode;
-    let use_auth = config.use_auth;
+    let dev_mode = manager_config.dev_mode;
+    let use_auth = manager_config.use_auth;
     rt::System::new().block_on(async {
-        let db = ProjectDB::connect(&config).await?;
+        let db = ProjectDB::connect(
+            &database_config,
+            #[cfg(feature = "pg-embed")]
+            &manager_config,
+        )
+        .await?;
         let db = Arc::new(Mutex::new(db));
 
         // Since we don't trust any file system state after restart,
@@ -331,7 +344,7 @@ fn run(config: ManagerConfig, compiler_config: CompilerConfig) -> AnyResult<()> 
         // us to recompile programs before running them.
         db.lock().await.reset_program_status().await?;
 
-        let state = WebData::new(ServerState::new(config, compiler_config, db).await?);
+        let state = WebData::new(ServerState::new(manager_config, compiler_config, db).await?);
 
         if use_auth {
             let server = HttpServer::new(move || {

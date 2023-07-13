@@ -13,7 +13,7 @@ use tokio::sync::OnceCell;
 
 use crate::{
     compiler::Compiler,
-    config::{CompilerConfig, ManagerConfig},
+    config::{CompilerConfig, DatabaseConfig, ManagerConfig},
 };
 
 const TEST_DBSP_URL_VAR: &str = "TEST_DBSP_URL";
@@ -44,16 +44,17 @@ async fn initialize_local_dbsp_instance() -> TempDir {
     tokio::time::sleep(Duration::from_millis(5000)).await;
     let tmp_dir = TempDir::new().unwrap();
     let workdir = tmp_dir.path().to_str().unwrap();
-    let db_connection_string = "postgresql://postgres:postgres@localhost:6666";
+    let database_config = DatabaseConfig {
+        db_connection_string: "postgresql://postgres:postgres@localhost:6666".to_owned(),
+        initial_sql: None,
+    };
     let manager_config = ManagerConfig {
         port: TEST_DBSP_DEFAULT_PORT,
         bind_address: "0.0.0.0".to_owned(),
         logfile: None,
-        working_directory: workdir.to_owned(),
+        manager_working_directory: workdir.to_owned(),
         unix_daemon: false,
         use_auth: false,
-        db_connection_string: db_connection_string.to_owned(),
-        initial_sql: None,
         dev_mode: false,
         dump_openapi: false,
         config_file: None,
@@ -61,12 +62,11 @@ async fn initialize_local_dbsp_instance() -> TempDir {
     .canonicalize()
     .unwrap();
     let compiler_config = CompilerConfig {
-        working_directory: workdir.to_owned(),
+        compiler_working_directory: workdir.to_owned(),
         sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
         dbsp_override_path: Some("../../".to_owned()),
         debug: false,
         precompile: true,
-        db_connection_string: db_connection_string.to_owned(),
     }
     .canonicalize()
     .unwrap();
@@ -79,7 +79,7 @@ async fn initialize_local_dbsp_instance() -> TempDir {
 
     // We can't use tokio::spawn because super::run() creates its own Tokio Runtime
     let _ = std::thread::spawn(|| {
-        super::run(manager_config, compiler_config).unwrap();
+        super::run(database_config, manager_config, compiler_config).unwrap();
     });
     tokio::time::sleep(Duration::from_millis(1000)).await;
     tmp_dir

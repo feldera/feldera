@@ -31,13 +31,7 @@ fn default_db_connection_string() -> String {
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
-pub(crate) struct ManagerConfig {
-    /// Directory where the manager stores its filesystem state:
-    /// generated Rust crates, pipeline logs, etc.
-    #[serde(default = "default_working_directory")]
-    #[arg(short, long, default_value_t = default_working_directory())]
-    pub working_directory: String,
-
+pub(crate) struct DatabaseConfig {
     /// Point to a relational database to use for state management. Accepted
     /// values are `postgres://<host>:<port>` or `postgres-embed`. For
     /// postgres-embed we create a DB in the current working directory. For
@@ -45,6 +39,38 @@ pub(crate) struct ManagerConfig {
     #[serde(default = "default_db_connection_string")]
     #[arg(short, long, default_value_t = default_db_connection_string())]
     pub db_connection_string: String,
+
+    /// [Developers only] Inject a SQL file into the database when starting the
+    /// manager.
+    ///
+    /// This is useful to populate the DB with state for testing.
+    #[serde(skip)]
+    #[arg(short, long)]
+    pub initial_sql: Option<String>,
+}
+
+impl DatabaseConfig {
+    /// Database connection string.
+    pub(crate) fn database_connection_string(&self) -> String {
+        if self.db_connection_string.starts_with("postgres") {
+            // this starts_with works for `postgres://` and `postgres-embed`
+            self.db_connection_string.clone()
+        } else {
+            panic!("Invalid connection string {}", self.db_connection_string)
+        }
+    }
+}
+
+/// Pipeline manager configuration read from a YAML config file or from command
+/// line arguments.
+#[derive(Parser, Deserialize, Debug, Clone)]
+#[command(author, version, about, long_about = None)]
+pub(crate) struct ManagerConfig {
+    /// Directory where the manager stores its filesystem state:
+    /// generated Rust crates, pipeline logs, etc.
+    #[serde(default = "default_working_directory")]
+    #[arg(short, long, default_value_t = default_working_directory())]
+    pub manager_working_directory: String,
 
     /// Port number for the HTTP service, defaults to 8080.
     #[serde(default = "default_server_port")]
@@ -98,14 +124,6 @@ pub(crate) struct ManagerConfig {
     #[arg(short, long)]
     pub config_file: Option<String>,
 
-    /// [Developers only] Inject a SQL file into the database when starting the
-    /// manager.
-    ///
-    /// This is useful to populate the DB with state for testing.
-    #[serde(skip)]
-    #[arg(short, long)]
-    pub initial_sql: Option<String>,
-
     /// [Developers only] Run in development mode.
     ///
     /// This runs with permissive CORS settings and allows the manager to be
@@ -124,18 +142,18 @@ impl ManagerConfig {
     /// `dbsp_override_path` fields to absolute paths;
     /// fails if any of the paths doesn't exist or isn't readable.
     pub(crate) fn canonicalize(mut self) -> AnyResult<Self> {
-        create_dir_all(&self.working_directory).map_err(|e| {
+        create_dir_all(&self.manager_working_directory).map_err(|e| {
             AnyError::msg(format!(
                 "unable to create or open working directory '{}': {e}",
-                self.working_directory
+                self.manager_working_directory
             ))
         })?;
 
-        self.working_directory = canonicalize(&self.working_directory)
+        self.manager_working_directory = canonicalize(&self.manager_working_directory)
             .map_err(|e| {
                 AnyError::msg(format!(
                     "error canonicalizing working directory path '{}': {e}",
-                    self.working_directory
+                    self.manager_working_directory
                 ))
             })?
             .to_string_lossy()
@@ -143,7 +161,7 @@ impl ManagerConfig {
 
         // Running as daemon and no log file specified - use default log file name.
         if self.logfile.is_none() && self.unix_daemon {
-            self.logfile = Some(format!("{}/manager.log", self.working_directory));
+            self.logfile = Some(format!("{}/manager.log", self.manager_working_directory));
         }
 
         if let Some(logfile) = &self.logfile {
@@ -176,7 +194,7 @@ impl ManagerConfig {
     /// e.g., `<working-directory>/data`
     #[cfg(feature = "pg-embed")]
     pub(crate) fn postgres_embed_data_dir(&self) -> PathBuf {
-        Path::new(&self.working_directory).join("data")
+        Path::new(&self.manager_working_directory).join("data")
     }
 
     /// Manager pid file.
@@ -184,17 +202,7 @@ impl ManagerConfig {
     /// e.g., `<working-directory>/manager.pid`
     #[cfg(unix)]
     pub(crate) fn manager_pid_file_path(&self) -> PathBuf {
-        Path::new(&self.working_directory).join("manager.pid")
-    }
-
-    /// Database connection string.
-    pub(crate) fn database_connection_string(&self) -> String {
-        if self.db_connection_string.starts_with("postgres") {
-            // this starts_with works for `postgres://` and `postgres-embed`
-            self.db_connection_string.clone()
-        } else {
-            panic!("Invalid connection string {}", self.db_connection_string)
-        }
+        Path::new(&self.manager_working_directory).join("manager.pid")
     }
 }
 
@@ -205,16 +213,8 @@ pub(crate) struct CompilerConfig {
     /// Directory where the manager stores its filesystem state:
     /// generated Rust crates, pipeline logs, etc.
     #[serde(default = "default_working_directory")]
-    #[arg(short, long, default_value_t = default_working_directory())]
-    pub working_directory: String,
-
-    /// Point to a relational database to use for state management. Accepted
-    /// values are `postgres://<host>:<port>` or `postgres-embed`. For
-    /// postgres-embed we create a DB in the current working directory. For
-    /// postgres, we use the connection string as provided.
-    #[serde(default = "default_db_connection_string")]
-    #[arg(short, long, default_value_t = default_db_connection_string())]
-    pub db_connection_string: String,
+    #[arg(long, default_value_t = default_working_directory())]
+    pub compiler_working_directory: String,
 
     /// Compile pipelines in debug mode.
     ///
@@ -264,7 +264,7 @@ impl CompilerConfig {
     ///
     /// e.g., `<working-directory>/cargo_workspace`
     pub(crate) fn workspace_dir(&self) -> PathBuf {
-        Path::new(&self.working_directory).join("cargo_workspace")
+        Path::new(&self.compiler_working_directory).join("cargo_workspace")
     }
 
     /// Directory where the manager stores binary artefacts needed to
@@ -272,7 +272,7 @@ impl CompilerConfig {
     ///
     /// e.g., `<working-directory>/binaries`
     pub(crate) fn binaries_dir(&self) -> PathBuf {
-        Path::new(&self.working_directory).join("binaries")
+        Path::new(&self.compiler_working_directory).join("binaries")
     }
 
     /// Location of the versioned executable.
@@ -343,10 +343,10 @@ impl CompilerConfig {
     /// `dbsp_override_path` fields to absolute paths;
     /// fails if any of the paths doesn't exist or isn't readable.
     pub(crate) fn canonicalize(mut self) -> AnyResult<Self> {
-        create_dir_all(&self.working_directory).map_err(|e| {
+        create_dir_all(&self.compiler_working_directory).map_err(|e| {
             AnyError::msg(format!(
                 "unable to create or open working directory '{}': {e}",
-                self.working_directory
+                self.compiler_working_directory
             ))
         })?;
         create_dir_all(self.binaries_dir()).map_err(|e| {
@@ -414,7 +414,7 @@ impl CompilerConfig {
 
     /// Location to store pipeline files at runtime.
     pub(crate) fn pipeline_dir(&self, pipeline_id: PipelineId) -> PathBuf {
-        Path::new(&self.working_directory)
+        Path::new(&self.compiler_working_directory)
             .join("pipelines")
             .join(format!("pipeline{pipeline_id}"))
     }
