@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use clap::{Args, Command, FromArgMatches};
 
@@ -19,6 +20,7 @@ async fn main() {
 
     let database_config = DatabaseConfig::from_arg_matches(&matches).unwrap();
     let compiler_config = CompilerConfig::from_arg_matches(&matches).unwrap();
+    let compiler_config = compiler_config.canonicalize().unwrap();
     let db: ProjectDB = ProjectDB::connect(
         &database_config,
         #[cfg(feature = "pg-embed")]
@@ -29,4 +31,10 @@ async fn main() {
     let compiler = Compiler::new(&compiler_config, Arc::new(Mutex::new(db)))
         .await
         .unwrap();
+    loop {
+        if compiler.compiler_task.is_finished() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+    }
 }
