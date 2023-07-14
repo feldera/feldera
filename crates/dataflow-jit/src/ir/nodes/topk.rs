@@ -74,7 +74,11 @@ impl DataflowNode for TopK {
         Some(self.layout)
     }
 
-    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
+    fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0], self.layout);
+        assert!(self.layout.is_map(), "cannot use topk operator on sets");
+    }
 
     fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
 
