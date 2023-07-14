@@ -193,6 +193,9 @@ where
         let state = state.clone();
         build_app(App::new().wrap(Logger::default()), state)
     })
+    // Set timeout for graceful shutdown of workers.
+    // The default in actix is 30s. We may consider making this configurable.
+    .shutdown_timeout(10)
     //.workers(1)
     .listen(listener)
     .map_err(|e| ControllerError::io_error("binding server to the listener".to_string(), e))?

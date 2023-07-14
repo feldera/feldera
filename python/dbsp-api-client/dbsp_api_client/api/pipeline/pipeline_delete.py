@@ -29,9 +29,9 @@ def _get_kwargs(
     }
 
 
-def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[ErrorResponse, str]]:
+def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[Any, ErrorResponse]]:
     if response.status_code == HTTPStatus.OK:
-        response_200 = cast(str, response.json())
+        response_200 = cast(Any, None)
         return response_200
     if response.status_code == HTTPStatus.BAD_REQUEST:
         response_400 = ErrorResponse.from_dict(response.json())
@@ -47,7 +47,7 @@ def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Uni
         return None
 
 
-def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[ErrorResponse, str]]:
+def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[Any, ErrorResponse]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -60,13 +60,12 @@ def sync_detailed(
     pipeline_id: str,
     *,
     client: Client,
-) -> Response[Union[ErrorResponse, str]]:
-    """Terminate and delete a pipeline.
+) -> Response[Union[Any, ErrorResponse]]:
+    """Delete a pipeline.
 
-     Terminate and delete a pipeline.
+     Delete a pipeline.
 
-    Shut down the pipeline if it is still running and delete it from
-    the database.
+    Deletes the pipeline.  The pipeline must not be executing.
 
     Args:
         pipeline_id (str):
@@ -76,7 +75,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, str]]
+        Response[Union[Any, ErrorResponse]]
     """
 
     kwargs = _get_kwargs(
@@ -96,13 +95,12 @@ def sync(
     pipeline_id: str,
     *,
     client: Client,
-) -> Optional[Union[ErrorResponse, str]]:
-    """Terminate and delete a pipeline.
+) -> Optional[Union[Any, ErrorResponse]]:
+    """Delete a pipeline.
 
-     Terminate and delete a pipeline.
+     Delete a pipeline.
 
-    Shut down the pipeline if it is still running and delete it from
-    the database.
+    Deletes the pipeline.  The pipeline must not be executing.
 
     Args:
         pipeline_id (str):
@@ -112,7 +110,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, str]
+        Union[Any, ErrorResponse]
     """
 
     return sync_detailed(
@@ -125,13 +123,12 @@ async def asyncio_detailed(
     pipeline_id: str,
     *,
     client: Client,
-) -> Response[Union[ErrorResponse, str]]:
-    """Terminate and delete a pipeline.
+) -> Response[Union[Any, ErrorResponse]]:
+    """Delete a pipeline.
 
-     Terminate and delete a pipeline.
+     Delete a pipeline.
 
-    Shut down the pipeline if it is still running and delete it from
-    the database.
+    Deletes the pipeline.  The pipeline must not be executing.
 
     Args:
         pipeline_id (str):
@@ -141,7 +138,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, str]]
+        Response[Union[Any, ErrorResponse]]
     """
 
     kwargs = _get_kwargs(
@@ -159,13 +156,12 @@ async def asyncio(
     pipeline_id: str,
     *,
     client: Client,
-) -> Optional[Union[ErrorResponse, str]]:
-    """Terminate and delete a pipeline.
+) -> Optional[Union[Any, ErrorResponse]]:
+    """Delete a pipeline.
 
-     Terminate and delete a pipeline.
+     Delete a pipeline.
 
-    Shut down the pipeline if it is still running and delete it from
-    the database.
+    Deletes the pipeline.  The pipeline must not be executing.
 
     Args:
         pipeline_id (str):
@@ -175,7 +171,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, str]
+        Union[Any, ErrorResponse]
     """
 
     return (

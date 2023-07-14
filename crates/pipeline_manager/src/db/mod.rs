@@ -7,6 +7,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use dbsp_adapters::ErrorResponse;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use futures_util::TryFutureExt;
 use log::{debug, error};
@@ -217,7 +218,7 @@ pub(crate) struct Field {
 }
 
 /// Program descriptor.
-#[derive(Serialize, ToSchema, Debug, Eq, PartialEq, Clone)]
+#[derive(Deserialize, Serialize, ToSchema, Debug, Eq, PartialEq, Clone)]
 pub(crate) struct ProgramDescr {
     /// Unique program id.
     pub program_id: ProgramId,
@@ -261,15 +262,168 @@ pub(crate) struct ProgramDescr {
     pub schema: Option<ProgramSchema>,
 }
 
-/// Lifecycle of a pipeline.
-#[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone, Copy)]
+/// Pipeline status.
+///
+/// This type represents the state of the pipeline tracked by the pipeline runner and
+/// observed by the API client via the `GET /pipeline` endpoint.
+///
+/// ### The lifecycle of a pipeline
+///
+/// The following automaton captures the lifecycle of the pipeline.  Individual states
+/// and transitions of the automaton are described below.
+///
+/// * In addition to the transitions shown in the diagram, all states have an implicit
+///   "forced shutdown" transition to the `Shutdown` state.  This transition is triggered
+///   when the pipeline runner is unable to communicate with the pipeline and thereby
+///   forces a shutdown.
+///
+/// * States labeled with the hourglass symbol (⌛) are **timed** states.  The automaton
+///   stays in timed state until the corresponding operation completes or until the runner
+///   performs a forced shutdown of the pipeline after a pre-defined timeout perioud.
+///
+/// * State transitions labeled with API endpoint names (`/deploy`, `/start`, `/pause`,
+///   `/shutdown`) are triggered by invoking corresponding endpoint, e.g.,
+///   `POST /v0/pipelines/{pipeline_id}/start`.
+///
+/// ```text
+///                  Shutdown◄────┐
+///                     │         │
+///              /deploy│         │
+///                     │   ⌛ShuttingDown
+///                     ▼         ▲
+///             ⌛Provisioning    │
+///                     │         │
+///  Provisioned        │         │
+///                     ▼         │/shutdown
+///             ⌛Initializing    │
+///                     │         │
+///            ┌────────┴─────────┴─┐
+///            │        ▼           │
+///            │      Paused        │
+///            │      │    ▲        │
+///            │/start│    │/pause  │
+///            │      ▼    │        │
+///            │     Running        │
+///            └──────────┬─────────┘
+///                       │
+///                       ▼
+///                     Failed
+/// ```
+///
+/// ### Desired and actual status
+///
+/// We use the desired state model to manage the lifecycle of a pipeline.
+/// In this model, the pipeline has two status attributes associated with
+/// it at runtime: the **desired** status, which represents what the user
+/// would like the pipeline to do, and the **current** status, which
+/// represents the actual state of the pipeline.  The pipeline runner
+/// service continuously monitors both fields and steers the pipeline
+/// towards the desired state specified by the user.
+///
+// Using rustdoc references in the following paragraph upsets `docusaurus`.
+/// Only three of the states in the pipeline automaton above can be
+/// used as desired statuses: `Paused`, `Running`, and `Shutdown`.
+/// These statuses are selected by invoking REST endpoints shown
+/// in the diagram.
+///
+/// The user can monitor the current state of the pipeline via the
+/// `/status` endpoint, which returns an object of type [`Pipeline`].
+/// In a typical scenario, the user first sets
+/// the desired state, e.g., by invoking the `/deploy` endpoint, and
+/// then polls the `GET /pipeline` endpoint to monitor the actual status
+/// of the pipeline until its `state.current_status` attribute changes
+/// to "paused" indicating that the pipeline has been successfully
+/// initialized, or "failed", indicating an error.
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone, Copy)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub(crate) enum PipelineStatus {
+pub enum PipelineStatus {
+    /// Pipeline has not been started or has been shut down.
+    ///
+    /// The pipeline remains in this state until the user triggers
+    /// a deployment by invoking the `/deploy` endpoint.
     Shutdown,
-    Deployed,
-    Running,
+
+    /// The runner triggered a deployment of the pipeline and is
+    /// waiting for the pipeline HTTP server to come up.
+    ///
+    /// In this state, the runner provisions a runtime for the pipeline
+    /// (e.g., a Kubernetes pod or a local process), starts the pipeline
+    /// within this runtime and waits for it to start accepting HTTP
+    /// requests.
+    ///
+    /// The user is unable to communicate with the pipeline during this
+    /// time.  The pipeline remains in this state until:
+    ///
+    /// 1. Its HTTP server is up and running; the pipeline transitions
+    ///    to the [`Initializing`](`Self::Initializing`) state.
+    /// 2. A pre-defined timeout has passed.  The runner performs forced
+    ///    shutdown of the pipeline; returns to the
+    ///    [`Shutdown`](`Self::Shutdown`) state.
+    /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint.
+    ///    The manager performs forced shutdown of the pipeline, returns to
+    ///    the [`Shutdown`](`Self::Shutdown`) state.
+    Provisioning,
+
+    /// The pipeline is initializing its internal state and connectors.
+    ///
+    /// This state is part of the pipeline's deployment process.  In this state,
+    /// the pipeline's HTTP server is up and running, but its query engine
+    /// and input and output connectors are still initializing.
+    ///
+    /// The pipeline remains in this state until:
+    ///
+    /// 1. Intialization completes successfully; the pipeline transitions
+    ///    to the [`Paused`](`Self::Paused`) state.
+    /// 2. Intialization fails; transitions to the [`Failed`](`Self::Failed`) state.
+    /// 3. A pre-defined timeout has passed.  The runner performs forced shutdown of
+    ///    the pipeline; returns to the [`Shutdown`](`Self::Shutdown`) state.
+    /// 4. The user cancels the pipeline by invoking the `/shutdown` endpoint.
+    ///    The manager performs forced shutdown of the pipeline, returns to the
+    ///    [`Shutdown`](`Self::Shutdown`) state.
+    Initializing,
+
+    /// The pipeline is fully initialized, but data processing has been paused.
+    ///
+    /// The pipeline remains in this state until:
+    ///
+    /// 1. The user starts the pipeline by invoking the `/start` endpoint.
+    ///    The manager passes the request to the pipeline; transitions to the
+    ///    [`Running`](`Self::Running`) state.
+    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint.
+    ///    The manager passes the shutdown request to the pipeline to perform a graceful
+    ///    shutdown; transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected runtime error renders the pipeline [`Failed`](`Self::Failed`).
     Paused,
-    // Failure isn't in-use yet -- we don't have failure detection.
+
+    /// The pipeline is processing data.
+    ///
+    /// The pipeline remains in this state until:
+    ///
+    /// 1. The user pauses the pipeline by invoking the `/pause` endpoint.
+    ///    The manager passes the request to the pipeline; transitions to the
+    ///    [`Paused`](`Self::Paused`) state.
+    /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint.
+    ///    The runner passes the shutdown request to the pipeline to perform a graceful
+    ///    shutdown; transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected runtime error renders the pipeline [`Failed`](`Self::Failed`).
+    Running,
+
+    /// Graceful shutdown in progress.
+    ///
+    /// In this state, the pipeline finishes any ongoing data processing,
+    /// produces final outputs, shuts down input/output connectors and terminates.
+    ///
+    /// The pipeline remains in this state until:
+    ///
+    /// 1. Shutdown completes successfully; transitions to the
+    ///    [`Shutdown`](`Self::Shutdown`) state.
+    /// 2. A pre-defined timeout has passed.  The manager performs forced shutdown of
+    ///    the pipeline; returns to the [`Shutdown`](`Self::Shutdown`) state.
+    ShuttingDown,
+
+    /// The pipeline remains in this state until the users acknowledges the error
+    /// by issuing a `/shutdown` request; transitions to the
+    /// [`Shutdown`](`Self::Shutdown`) state.
     Failed,
 }
 
@@ -278,10 +432,12 @@ impl TryFrom<String> for PipelineStatus {
     fn try_from(value: String) -> Result<Self, DBError> {
         match value.as_str() {
             "shutdown" => Ok(Self::Shutdown),
-            "deployed" => Ok(Self::Deployed),
-            "running" => Ok(Self::Running),
+            "provisioning" => Ok(Self::Provisioning),
+            "initializing" => Ok(Self::Initializing),
             "paused" => Ok(Self::Paused),
+            "running" => Ok(Self::Running),
             "failed" => Ok(Self::Failed),
+            "shutting_down" => Ok(Self::ShuttingDown),
             _ => Err(DBError::unknown_pipeline_status(value)),
         }
     }
@@ -291,17 +447,19 @@ impl From<PipelineStatus> for &'static str {
     fn from(val: PipelineStatus) -> Self {
         match val {
             PipelineStatus::Shutdown => "shutdown",
-            PipelineStatus::Deployed => "deployed",
-            PipelineStatus::Running => "running",
+            PipelineStatus::Provisioning => "provisioning",
+            PipelineStatus::Initializing => "initializing",
             PipelineStatus::Paused => "paused",
+            PipelineStatus::Running => "running",
             PipelineStatus::Failed => "failed",
+            PipelineStatus::ShuttingDown => "shutting_down",
         }
     }
 }
 
 /// A pipeline revision is a versioned, immutable configuration struct that
 /// contains all information necessary to run a pipeline.
-#[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub(crate) struct PipelineRevision {
     /// The revision number, starts at 1, increases every time the pipeline is
     /// comitted.
@@ -496,7 +654,7 @@ impl PipelineRevision {
 }
 
 /// Pipeline descriptor.
-#[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub(crate) struct PipelineDescr {
     pub pipeline_id: PipelineId,
     pub program_id: Option<ProgramId>,
@@ -505,9 +663,76 @@ pub(crate) struct PipelineDescr {
     pub description: String,
     pub config: String,
     pub attached_connectors: Vec<AttachedConnector>,
-    pub status: PipelineStatus,
-    pub port: u16,
-    pub created: Option<DateTime<Utc>>,
+}
+
+/// Runtime state of the pipeine.
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub(crate) struct PipelineRuntimeState {
+    /// Location where the pipeline can be reached at runtime.
+    /// e.g., a TCP port number or a URI.
+    pub location: String,
+
+    /// Desired pipeline status, i.e., the status requested by the user.
+    ///
+    /// Possible values are [`Shutdown`](`PipelineStatus::Shutdown`),
+    /// [`Paused`](`PipelineStatus::Paused`), and
+    /// [`Running`](`PipelineStatus::Running`).
+    pub desired_status: PipelineStatus,
+
+    /// Current status of the pipeline.
+    pub current_status: PipelineStatus,
+
+    /// Time when the pipeline was assigned its current status
+    /// of the pipeline.
+    #[cfg_attr(test, proptest(value = "Utc::now()"))]
+    pub status_since: DateTime<Utc>,
+
+    /// Error that caused the pipeline to fail.
+    ///
+    /// This field is only used when the `current_status` of the pipeline
+    /// is [`Shutdown`](`PipelineStatus::Shutdown`) or
+    /// [`Failed`](`PipelineStatus::Failed`).
+    /// When present, this field contains the error that caused
+    /// the pipeline to terminate abnormally.
+    // TODO: impl `Arbitrary` for `ErrorResponse`.
+    #[cfg_attr(test, proptest(value = "None"))]
+    pub error: Option<ErrorResponse>,
+
+    /// Time when the pipeline started executing.
+    #[cfg_attr(test, proptest(value = "Utc::now()"))]
+    pub created: DateTime<Utc>,
+}
+
+impl PipelineRuntimeState {
+    pub(crate) fn set_current_status(
+        &mut self,
+        new_current_status: PipelineStatus,
+        error: Option<ErrorResponse>,
+    ) {
+        self.current_status = new_current_status;
+        self.error = error;
+        self.status_since = Utc::now();
+    }
+
+    pub(crate) fn set_location(&mut self, location: String) {
+        self.location = location;
+    }
+
+    pub(crate) fn set_created(&mut self) {
+        self.created = Utc::now();
+    }
+}
+
+/// State of a pipeline, including static configuration
+/// and runtime status.
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub(crate) struct Pipeline {
+    /// Static configuration of the pipeline.
+    pub descriptor: PipelineDescr,
+
+    /// Runtime state of the pipeline.
+    pub state: PipelineRuntimeState,
 }
 
 /// Format to add attached connectors during a config update.
@@ -526,7 +751,7 @@ pub(crate) struct AttachedConnector {
 }
 
 /// Connector descriptor.
-#[derive(Serialize, ToSchema, Debug, Clone, Eq, PartialEq)]
+#[derive(Deserialize, Serialize, ToSchema, Debug, Clone, Eq, PartialEq)]
 pub(crate) struct ConnectorDescr {
     pub connector_id: ConnectorId,
     pub name: String,
@@ -542,19 +767,15 @@ pub(crate) enum ApiPermission {
     Write,
 }
 
-fn convert_bigint_to_time(created_secs: Option<i64>) -> Result<Option<DateTime<Utc>>, DBError> {
-    if let Some(created_secs) = created_secs {
-        let created_naive =
-            NaiveDateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
-                DBError::invalid_data(format!(
-                    "Invalid timestamp in 'pipeline.created' column: {created_secs}"
-                ))
-            })?;
+fn convert_bigint_to_time(created_secs: i64) -> Result<DateTime<Utc>, DBError> {
+    let created_naive =
+        NaiveDateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
+            DBError::invalid_data(format!(
+                "Invalid timestamp in 'pipeline_runtime_state.created' column: {created_secs}"
+            ))
+        })?;
 
-        Ok(Some(DateTime::<Utc>::from_utc(created_naive, Utc)))
-    } else {
-        Ok(None)
-    }
+    Ok(DateTime::<Utc>::from_utc(created_naive, Utc))
 }
 
 // The goal for these methods is to avoid multiple DB interactions as much as
@@ -1087,7 +1308,7 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn list_pipelines(&self, tenant_id: TenantId) -> Result<Vec<PipelineDescr>, DBError> {
+    async fn list_pipelines(&self, tenant_id: TenantId) -> Result<Vec<Pipeline>, DBError> {
         let rows: Vec<Row> = self
             .pool
             .get()
@@ -1095,46 +1316,62 @@ impl Storage for ProjectDB {
             // For every pipeline, produce a JSON representation of all connectors
             .query(
                 "SELECT p.id, version, p.name, description, p.config, program_id,
-                        created, port, status,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
-                        '[]')
-
+                        '[]'),
+                rt.location, rt.desired_status, rt.current_status, rt.status_since, rt.error, rt.created
                 FROM pipeline p
+                INNER JOIN pipeline_runtime_state rt on p.id = rt.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
                 WHERE p.tenant_id = $1
-                GROUP BY p.id;",
+                GROUP BY p.id, rt.id;",
                 &[&tenant_id.0],
             )
             .await?;
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
-            let pipeline_id = PipelineId(row.get(0));
-            let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
-            let created = convert_bigint_to_time(row.get(6))?;
-            let attached_connectors = self.json_to_attached_connectors(row.get(9)).await?;
-
-            result.push(PipelineDescr {
-                pipeline_id,
-                version: Version(row.get(1)),
-                name: row.get(2),
-                description: row.get(3),
-                config: row.get(4),
-                program_id,
-                attached_connectors,
-                created,
-                port: row.get::<_, Option<i16>>(7).unwrap_or(0) as u16,
-                status: row.get::<_, String>(8).try_into()?,
-            });
+            result.push(self.row_to_pipeline(&row).await?);
         }
 
         Ok(result)
     }
 
     async fn get_pipeline_by_id(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<Pipeline, DBError> {
+        let row = self
+            .pool
+            .get()
+            .await?
+            .query_opt(
+                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                COALESCE(json_agg(json_build_object('name', ac.name,
+                                                    'connector_id', connector_id,
+                                                    'config', ac.config,
+                                                    'is_input', is_input))
+                                FILTER (WHERE ac.name IS NOT NULL),
+                        '[]'),
+                rt.location, rt.desired_status, rt.current_status, rt.status_since, rt.error, rt.created
+                FROM pipeline p
+                INNER JOIN pipeline_runtime_state rt on p.id = rt.id
+                LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                WHERE p.id = $1 AND p.tenant_id = $2
+                GROUP BY p.id, rt.id
+                ",
+                &[&pipeline_id.0, &tenant_id.0],
+            )
+            .await?
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
+
+        self.row_to_pipeline(&row).await
+    }
+
+    async fn get_pipeline_descr_by_id(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
@@ -1145,7 +1382,6 @@ impl Storage for ProjectDB {
             .await?
             .query_opt(
                 "SELECT p.id, version, p.name as cname, description, p.config, program_id,
-                        created, port, status,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
                                                     'config', ac.config,
@@ -1159,12 +1395,33 @@ impl Storage for ProjectDB {
                 ",
                 &[&pipeline_id.0, &tenant_id.0],
             )
-            .await?;
+            .await?
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
 
-        self.row_to_pipeline(pipeline_id, row).await
+        self.row_to_pipeline_descr(&row).await
     }
 
-    async fn get_pipeline_by_name(
+    async fn get_pipeline_runtime_state(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<PipelineRuntimeState, DBError> {
+        let row = self
+            .pool
+            .get()
+            .await?
+            .query_opt(
+                "SELECT location, desired_status, current_status, status_since, error, created
+                FROM pipeline_runtime_state
+                WHERE id = $1 AND tenant_id = $2",
+                &[&pipeline_id.0, &tenant_id.0],
+            )
+            .await?;
+
+        self.row_to_pipeline_runtime_state(pipeline_id, &row).await
+    }
+
+    async fn get_pipeline_descr_by_name(
         &self,
         tenant_id: TenantId,
         name: String,
@@ -1174,8 +1431,7 @@ impl Storage for ProjectDB {
             .get()
             .await?
             .query_opt(
-                "SELECT p.id, version, description, p.config, program_id,
-                        created, port, status,
+                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
                                                     'config', ac.config,
@@ -1189,30 +1445,42 @@ impl Storage for ProjectDB {
                 ",
                 &[&name, &tenant_id.0],
             )
-            .await?;
+            .await?
+            .ok_or(DBError::UnknownName { name })?;
 
-        if let Some(row) = row {
-            let pipeline_id = PipelineId(row.get(0));
-            let program_id = row.get::<_, Option<Uuid>>(4).map(ProgramId);
-            let created = convert_bigint_to_time(row.get(5))?;
+        self.row_to_pipeline_descr(&row).await
+    }
 
-            let descr = PipelineDescr {
-                pipeline_id,
-                program_id,
-                version: Version(row.get(1)),
-                name,
-                description: row.get(2),
-                config: row.get(3),
-                attached_connectors: self.json_to_attached_connectors(row.get(8)).await?,
-                created,
-                port: row.get::<_, Option<i16>>(6).unwrap_or(0) as u16,
-                status: row.get::<_, String>(7).try_into()?,
-            };
+    async fn get_pipeline_by_name(
+        &self,
+        tenant_id: TenantId,
+        name: String,
+    ) -> Result<Pipeline, DBError> {
+        let row = self
+            .pool
+            .get()
+            .await?
+            .query_opt(
+                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                COALESCE(json_agg(json_build_object('name', ac.name,
+                                                    'connector_id', connector_id,
+                                                    'config', ac.config,
+                                                    'is_input', is_input))
+                                FILTER (WHERE ac.name IS NOT NULL),
+                        '[]'),
+                rt.location, rt.desired_status, rt.current_status, rt.status_since, rt.error, rt.created
+                FROM pipeline p
+                INNER JOIN pipeline_runtime_state rt on p.id = rt.id
+                LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                WHERE p.name = $1 AND p.tenant_id = $2
+                GROUP BY p.id, rt.id
+                ",
+                &[&name, &tenant_id.0],
+            )
+            .await?
+            .ok_or(DBError::UnknownName { name })?;
 
-            Ok(descr)
-        } else {
-            Err(DBError::UnknownName { name })
-        }
+        self.row_to_pipeline(&row).await
     }
 
     // XXX: Multiple statements
@@ -1229,7 +1497,7 @@ impl Storage for ProjectDB {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         txn.execute(
-            "INSERT INTO pipeline (id, program_id, version, name, description, config, status, tenant_id) VALUES($1, $2, 1, $3, $4, $5, 'shutdown', $6)",
+            "INSERT INTO pipeline (id, program_id, version, name, description, config, tenant_id) VALUES($1, $2, 1, $3, $4, $5, $6)",
             &[&id, &program_id.map(|id| id.0),
             &pipline_name,
             &pipeline_description,
@@ -1239,6 +1507,12 @@ impl Storage for ProjectDB {
             .map_err(ProjectDB::maybe_unique_violation)
             .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, program_id.map(|e| e.0)))
             .map_err(|e| ProjectDB::maybe_program_id_foreign_key_constraint_err(e, program_id))?;
+
+        txn.execute(
+            "INSERT INTO pipeline_runtime_state (id, tenant_id, desired_status, current_status, status_since, created) VALUES($1, $2, 'shutdown', 'shutdown', extract(epoch from now()), extract(epoch from now()))",
+            &[&id, &tenant_id.0])
+            .await?;
+
         let pipeline_id = PipelineId(id);
 
         if let Some(connectors) = connectors {
@@ -1279,7 +1553,7 @@ impl Storage for ProjectDB {
         let txn = client.transaction().await?;
 
         // First check whether the pipeline exists. Without this check, subsequent
-        // calls will fail correctly.
+        // calls will fail.
         let row = txn
             .query_opt(
                 "SELECT id FROM pipeline WHERE id = $1 AND tenant_id = $2",
@@ -1313,6 +1587,81 @@ impl Storage for ProjectDB {
             Some(row) => Ok(Version(row.get(0))),
             None => Err(DBError::UnknownPipeline { pipeline_id }),
         }
+    }
+
+    /// Update the runtime state of the pipeline.
+    ///
+    /// This function is meant for use by the runner, and therefore doesn't
+    /// modify the `desired_status` column, which is always managed by the
+    /// client.
+    async fn update_pipeline_runtime_state(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        state: &PipelineRuntimeState,
+    ) -> Result<(), DBError> {
+        let current_status: &'static str = state.current_status.into();
+
+        let modified_rows = self
+            .pool
+            .get()
+            .await?
+            .execute(
+                "UPDATE pipeline_runtime_state
+                SET location = $3,
+                    current_status = $4,
+                    status_since = $5,
+                    created = $6,
+                    error = $7
+                WHERE id = $1 AND tenant_id = $2
+                ",
+                &[
+                    &pipeline_id.0,
+                    &tenant_id.0,
+                    &state.location,
+                    &current_status,
+                    &state.status_since.timestamp(),
+                    &state.created.timestamp(),
+                    &state
+                        .error
+                        .as_ref()
+                        .map(|e| serde_json::to_string(&e).unwrap()),
+                ],
+            )
+            .await?;
+
+        if modified_rows == 0 {
+            return Err(DBError::UnknownPipeline { pipeline_id });
+        }
+        Ok(())
+    }
+
+    /// Update the `desired_status` column.
+    async fn set_pipeline_desired_status(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        desired_status: PipelineStatus,
+    ) -> Result<(), DBError> {
+        let desired_status: &'static str = desired_status.into();
+
+        let modified_rows = self
+            .pool
+            .get()
+            .await?
+            .execute(
+                "UPDATE pipeline_runtime_state
+                SET desired_status = $3
+                WHERE tenant_id = $1 AND id = $2
+                ",
+                &[&tenant_id.0, &pipeline_id.0, &desired_status],
+            )
+            .await?;
+
+        if modified_rows == 0 {
+            return Err(DBError::UnknownPipeline { pipeline_id });
+        }
+        Ok(())
     }
 
     async fn delete_config(
@@ -1360,51 +1709,6 @@ impl Storage for ProjectDB {
                 name: name.to_string(),
             }),
         }
-    }
-
-    async fn set_pipeline_deployed(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        port: u16,
-    ) -> Result<(), DBError> {
-        let status: &'static str = PipelineStatus::Deployed.into();
-
-        let res = self
-            .pool
-            .get()
-            .await?
-            .execute(
-                "UPDATE pipeline SET status = $3, port = $1, created = extract(epoch from now()) WHERE id = $2 AND tenant_id = $4",
-                &[&(port as i16), &pipeline_id.0, &status, &tenant_id.0],
-            )
-            .await?;
-
-        if res > 0 {
-            Ok(())
-        } else {
-            Err(DBError::UnknownPipeline { pipeline_id })
-        }
-    }
-
-    async fn set_pipeline_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        status: PipelineStatus,
-    ) -> Result<bool, DBError> {
-        let status: &str = status.into();
-
-        let res = self
-            .pool
-            .get()
-            .await?
-            .execute(
-                "UPDATE pipeline SET status=$2 WHERE id = $1 AND tenant_id = $3",
-                &[&pipeline_id.0, &status, &tenant_id.0],
-            )
-            .await?;
-        Ok(res > 0)
     }
 
     async fn delete_pipeline(
@@ -1822,32 +2126,81 @@ impl ProjectDB {
         return Ok(Self { pool });
     }
 
-    async fn row_to_pipeline(
+    fn deserialize_error_response(
+        pipeline_id: PipelineId,
+        error_str: &str,
+    ) -> Result<ErrorResponse, DBError> {
+        serde_json::from_str::<ErrorResponse>(error_str).map_err(|_| {
+            DBError::invalid_data(format!(
+                "Unexpected pipeline error format for pipeline '{pipeline_id}': {error_str}"
+            ))
+        })
+    }
+
+    async fn row_to_pipeline_descr(&self, row: &Row) -> Result<PipelineDescr, DBError> {
+        let pipeline_id = PipelineId(row.get(0));
+        let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
+
+        Ok(PipelineDescr {
+            pipeline_id,
+            program_id,
+            version: Version(row.get(1)),
+            name: row.get(2),
+            description: row.get(3),
+            config: row.get(4),
+            attached_connectors: self.json_to_attached_connectors(row.get(6)).await?,
+        })
+    }
+
+    async fn row_to_pipeline_runtime_state(
         &self,
         pipeline_id: PipelineId,
-        row: Option<Row>,
-    ) -> Result<PipelineDescr, DBError> {
+        row: &Option<Row>,
+    ) -> Result<PipelineRuntimeState, DBError> {
         if let Some(row) = row {
-            let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
-            let created = convert_bigint_to_time(row.get(6))?;
-
-            let descr = PipelineDescr {
-                pipeline_id,
-                program_id,
-                version: Version(row.get(1)),
-                name: row.get(2),
-                description: row.get(3),
-                config: row.get(4),
-                attached_connectors: self.json_to_attached_connectors(row.get(9)).await?,
-                created,
-                port: row.get::<_, Option<i16>>(7).unwrap_or(0) as u16,
-                status: row.get::<_, String>(8).try_into()?,
-            };
-
-            Ok(descr)
+            Ok(PipelineRuntimeState {
+                location: row.get::<_, Option<String>>(0).unwrap_or_default(),
+                desired_status: row.get::<_, String>(1).try_into()?,
+                current_status: row.get::<_, String>(2).try_into()?,
+                status_since: convert_bigint_to_time(row.get(3))?,
+                error: row
+                    .get::<_, Option<String>>(4)
+                    .map(|s| Self::deserialize_error_response(pipeline_id, &s))
+                    .transpose()?,
+                created: convert_bigint_to_time(row.get(5))?,
+            })
         } else {
             Err(DBError::UnknownPipeline { pipeline_id })
         }
+    }
+
+    async fn row_to_pipeline(&self, row: &Row) -> Result<Pipeline, DBError> {
+        let pipeline_id = PipelineId(row.get(0));
+        let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
+
+        let descriptor = PipelineDescr {
+            pipeline_id,
+            program_id,
+            version: Version(row.get(1)),
+            name: row.get(2),
+            description: row.get(3),
+            config: row.get(4),
+            attached_connectors: self.json_to_attached_connectors(row.get(6)).await?,
+        };
+
+        let state = PipelineRuntimeState {
+            location: row.get::<_, Option<String>>(7).unwrap_or_default(),
+            desired_status: row.get::<_, String>(8).try_into()?,
+            current_status: row.get::<_, String>(9).try_into()?,
+            status_since: convert_bigint_to_time(row.get(10))?,
+            error: row
+                .get::<_, Option<String>>(11)
+                .map(|s| Self::deserialize_error_response(pipeline_id, &s))
+                .transpose()?,
+            created: convert_bigint_to_time(row.get(12))?,
+        };
+
+        Ok(Pipeline { descriptor, state })
     }
 
     /// We check if a program is 'in use' by checking if it is referenced by a
@@ -1888,7 +2241,9 @@ impl ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<(PipelineDescr, ProgramDescr, Vec<ConnectorDescr>), DBError> {
-        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        let pipeline = self
+            .get_pipeline_descr_by_id(tenant_id, pipeline_id)
+            .await?;
         let program_id = pipeline.program_id.ok_or(DBError::ProgramNotSet)?;
         let program = self.get_program_by_id(tenant_id, program_id).await?;
         let connectors = self
@@ -1904,7 +2259,9 @@ impl ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<String, DBError> {
-        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        let pipeline = self
+            .get_pipeline_descr_by_id(tenant_id, pipeline_id)
+            .await?;
         let connectors: Vec<ConnectorDescr> = self
             .get_connectors_for_pipeline_id(tenant_id, pipeline_id)
             .await?;
@@ -1969,7 +2326,6 @@ impl ProjectDB {
             .await?
             .query_opt(
                 "SELECT p.id, version, p.name as cname, description, p.config, program_id,
-                        created, port, status,
                 COALESCE(json_agg(json_build_object('name', ach.name,
                                                     'connector_id', connector_id,
                                                     'config', ach.config,
@@ -1979,13 +2335,14 @@ impl ProjectDB {
                 FROM pipeline_history p
                 LEFT JOIN attached_connector_history ach on p.id = ach.pipeline_id AND ach.revision = $3
                 WHERE p.id = $1 AND p.tenant_id = $2 AND p.revision = $3
-                GROUP BY p.id, p.version, p.name, p.description, p.config, p.program_id, p.created, p.port, p.status
+                GROUP BY p.id, p.version, p.name, p.description, p.config, p.program_id
                 ",
                 &[&pipeline_id.0, &tenant_id.0, &revision.0],
             )
-            .await?;
+            .await?
+            .ok_or(DBError::UnknownPipeline {pipeline_id})?;
 
-        self.row_to_pipeline(pipeline_id, row).await
+        self.row_to_pipeline_descr(&row).await
     }
 
     async fn get_committed_connectors_by_id(

@@ -1,10 +1,7 @@
-import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar, Union
 
 import attr
-from dateutil.parser import isoparse
 
-from ..models.pipeline_status import PipelineStatus
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -24,10 +21,7 @@ class PipelineDescr:
         description (str):
         name (str):
         pipeline_id (str): Unique pipeline id.
-        port (int):
-        status (PipelineStatus): Lifecycle of a pipeline.
         version (int): Version number.
-        created (Union[Unset, None, datetime.datetime]):
         program_id (Union[Unset, None, str]): Unique program id.
     """
 
@@ -36,10 +30,7 @@ class PipelineDescr:
     description: str
     name: str
     pipeline_id: str
-    port: int
-    status: PipelineStatus
     version: int
-    created: Union[Unset, None, datetime.datetime] = UNSET
     program_id: Union[Unset, None, str] = UNSET
     additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
 
@@ -54,14 +45,7 @@ class PipelineDescr:
         description = self.description
         name = self.name
         pipeline_id = self.pipeline_id
-        port = self.port
-        status = self.status.value
-
         version = self.version
-        created: Union[Unset, None, str] = UNSET
-        if not isinstance(self.created, Unset):
-            created = self.created.isoformat() if self.created else None
-
         program_id = self.program_id
 
         field_dict: Dict[str, Any] = {}
@@ -73,13 +57,9 @@ class PipelineDescr:
                 "description": description,
                 "name": name,
                 "pipeline_id": pipeline_id,
-                "port": port,
-                "status": status,
                 "version": version,
             }
         )
-        if created is not UNSET:
-            field_dict["created"] = created
         if program_id is not UNSET:
             field_dict["program_id"] = program_id
 
@@ -105,20 +85,7 @@ class PipelineDescr:
 
         pipeline_id = d.pop("pipeline_id")
 
-        port = d.pop("port")
-
-        status = PipelineStatus(d.pop("status"))
-
         version = d.pop("version")
-
-        _created = d.pop("created", UNSET)
-        created: Union[Unset, None, datetime.datetime]
-        if _created is None:
-            created = None
-        elif isinstance(_created, Unset):
-            created = UNSET
-        else:
-            created = isoparse(_created)
 
         program_id = d.pop("program_id", UNSET)
 
@@ -128,10 +95,7 @@ class PipelineDescr:
             description=description,
             name=name,
             pipeline_id=pipeline_id,
-            port=port,
-            status=status,
             version=version,
-            created=created,
             program_id=program_id,
         )
 

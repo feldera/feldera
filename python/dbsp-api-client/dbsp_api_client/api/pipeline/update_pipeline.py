@@ -67,12 +67,11 @@ def sync_detailed(
     client: Client,
     json_body: UpdatePipelineRequest,
 ) -> Response[Union[ErrorResponse, UpdatePipelineResponse]]:
-    """Update existing program configuration.
+    """Update existing pipeline configuration.
 
-     Update existing program configuration.
+     Update existing pipeline configuration.
 
-    Updates program config name, description and code and, optionally, config
-    and connectors. On success, increments config version by 1.
+    Updates pipeline configuration. On success, increments pipeline version by 1.
 
     Args:
         json_body (UpdatePipelineRequest): Request to update an existing program configuration.
@@ -103,12 +102,11 @@ def sync(
     client: Client,
     json_body: UpdatePipelineRequest,
 ) -> Optional[Union[ErrorResponse, UpdatePipelineResponse]]:
-    """Update existing program configuration.
+    """Update existing pipeline configuration.
 
-     Update existing program configuration.
+     Update existing pipeline configuration.
 
-    Updates program config name, description and code and, optionally, config
-    and connectors. On success, increments config version by 1.
+    Updates pipeline configuration. On success, increments pipeline version by 1.
 
     Args:
         json_body (UpdatePipelineRequest): Request to update an existing program configuration.
@@ -132,12 +130,11 @@ async def asyncio_detailed(
     client: Client,
     json_body: UpdatePipelineRequest,
 ) -> Response[Union[ErrorResponse, UpdatePipelineResponse]]:
-    """Update existing program configuration.
+    """Update existing pipeline configuration.
 
-     Update existing program configuration.
+     Update existing pipeline configuration.
 
-    Updates program config name, description and code and, optionally, config
-    and connectors. On success, increments config version by 1.
+    Updates pipeline configuration. On success, increments pipeline version by 1.
 
     Args:
         json_body (UpdatePipelineRequest): Request to update an existing program configuration.
@@ -166,12 +163,11 @@ async def asyncio(
     client: Client,
     json_body: UpdatePipelineRequest,
 ) -> Optional[Union[ErrorResponse, UpdatePipelineResponse]]:
-    """Update existing program configuration.
+    """Update existing pipeline configuration.
 
-     Update existing program configuration.
+     Update existing pipeline configuration.
 
-    Updates program config name, description and code and, optionally, config
-    and connectors. On success, increments config version by 1.
+    Updates pipeline configuration. On success, increments pipeline version by 1.
 
     Args:
         json_body (UpdatePipelineRequest): Request to update an existing program configuration.

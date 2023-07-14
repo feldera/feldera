@@ -220,7 +220,7 @@ def main():
         csv = quantiles.json()['text_data']
         print(csv.strip())
 
-    print("Pipeline status: " + str(pipeline.descriptor().status))
+    print("Pipeline status: " + str(pipeline.status().state.current_status))
 
     pipeline.pause()
     print("Pipeline paused")

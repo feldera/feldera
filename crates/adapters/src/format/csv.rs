@@ -16,7 +16,7 @@ use utoipa::ToSchema;
 pub struct CsvInputFormat;
 
 #[derive(Deserialize, ToSchema)]
-pub struct CsvParserConfig;
+pub struct CsvParserConfig {}
 
 impl InputFormat for CsvInputFormat {
     fn name(&self) -> Cow<'static, str> {

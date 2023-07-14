@@ -6,7 +6,7 @@ import httpx
 from ... import errors
 from ...client import Client
 from ...models.error_response import ErrorResponse
-from ...models.pipeline_descr import PipelineDescr
+from ...models.pipeline import Pipeline
 from ...types import UNSET, Response, Unset
 
 
@@ -42,9 +42,9 @@ def _get_kwargs(
     }
 
 
-def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[ErrorResponse, PipelineDescr]]:
+def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[ErrorResponse, Pipeline]]:
     if response.status_code == HTTPStatus.OK:
-        response_200 = PipelineDescr.from_dict(response.json())
+        response_200 = Pipeline.from_dict(response.json())
 
         return response_200
     if response.status_code == HTTPStatus.BAD_REQUEST:
@@ -61,7 +61,7 @@ def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Uni
         return None
 
 
-def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[ErrorResponse, PipelineDescr]]:
+def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[ErrorResponse, Pipeline]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -76,10 +76,15 @@ def sync_detailed(
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
     toml: Union[Unset, None, bool] = UNSET,
-) -> Response[Union[ErrorResponse, PipelineDescr]]:
-    """Retrieve pipeline metadata.
+) -> Response[Union[ErrorResponse, Pipeline]]:
+    """Retrieve pipeline configuration and runtime state.
 
-     Retrieve pipeline metadata.
+     Retrieve pipeline configuration and runtime state.
+
+    When invoked without the `?toml` flag, this endpoint
+    returns pipeline state, including static configuration and runtime status,
+    in the JSON format.  The `?toml` flag changes the behavior of this
+    endpoint to return static pipeline configuratiin in the TOML format.
 
     Args:
         id (Union[Unset, None, str]):
@@ -91,7 +96,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, PipelineDescr]]
+        Response[Union[ErrorResponse, Pipeline]]
     """
 
     kwargs = _get_kwargs(
@@ -115,10 +120,15 @@ def sync(
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
     toml: Union[Unset, None, bool] = UNSET,
-) -> Optional[Union[ErrorResponse, PipelineDescr]]:
-    """Retrieve pipeline metadata.
+) -> Optional[Union[ErrorResponse, Pipeline]]:
+    """Retrieve pipeline configuration and runtime state.
 
-     Retrieve pipeline metadata.
+     Retrieve pipeline configuration and runtime state.
+
+    When invoked without the `?toml` flag, this endpoint
+    returns pipeline state, including static configuration and runtime status,
+    in the JSON format.  The `?toml` flag changes the behavior of this
+    endpoint to return static pipeline configuratiin in the TOML format.
 
     Args:
         id (Union[Unset, None, str]):
@@ -130,7 +140,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, PipelineDescr]
+        Union[ErrorResponse, Pipeline]
     """
 
     return sync_detailed(
@@ -147,10 +157,15 @@ async def asyncio_detailed(
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
     toml: Union[Unset, None, bool] = UNSET,
-) -> Response[Union[ErrorResponse, PipelineDescr]]:
-    """Retrieve pipeline metadata.
+) -> Response[Union[ErrorResponse, Pipeline]]:
+    """Retrieve pipeline configuration and runtime state.
 
-     Retrieve pipeline metadata.
+     Retrieve pipeline configuration and runtime state.
+
+    When invoked without the `?toml` flag, this endpoint
+    returns pipeline state, including static configuration and runtime status,
+    in the JSON format.  The `?toml` flag changes the behavior of this
+    endpoint to return static pipeline configuratiin in the TOML format.
 
     Args:
         id (Union[Unset, None, str]):
@@ -162,7 +177,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, PipelineDescr]]
+        Response[Union[ErrorResponse, Pipeline]]
     """
 
     kwargs = _get_kwargs(
@@ -184,10 +199,15 @@ async def asyncio(
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
     toml: Union[Unset, None, bool] = UNSET,
-) -> Optional[Union[ErrorResponse, PipelineDescr]]:
-    """Retrieve pipeline metadata.
+) -> Optional[Union[ErrorResponse, Pipeline]]:
+    """Retrieve pipeline configuration and runtime state.
 
-     Retrieve pipeline metadata.
+     Retrieve pipeline configuration and runtime state.
+
+    When invoked without the `?toml` flag, this endpoint
+    returns pipeline state, including static configuration and runtime status,
+    in the JSON format.  The `?toml` flag changes the behavior of this
+    endpoint to return static pipeline configuratiin in the TOML format.
 
     Args:
         id (Union[Unset, None, str]):
@@ -199,7 +219,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, PipelineDescr]
+        Union[ErrorResponse, Pipeline]
     """
 
     return (
