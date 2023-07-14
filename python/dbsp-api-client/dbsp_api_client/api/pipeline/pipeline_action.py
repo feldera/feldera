@@ -30,10 +30,10 @@ def _get_kwargs(
     }
 
 
-def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[ErrorResponse, str]]:
-    if response.status_code == HTTPStatus.OK:
-        response_200 = cast(str, response.json())
-        return response_200
+def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[Any, ErrorResponse]]:
+    if response.status_code == HTTPStatus.ACCEPTED:
+        response_202 = cast(Any, None)
+        return response_202
     if response.status_code == HTTPStatus.BAD_REQUEST:
         response_400 = ErrorResponse.from_dict(response.json())
 
@@ -56,7 +56,7 @@ def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Uni
         return None
 
 
-def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[ErrorResponse, str]]:
+def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[Any, ErrorResponse]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -70,20 +70,29 @@ def sync_detailed(
     action: str,
     *,
     client: Client,
-) -> Response[Union[ErrorResponse, str]]:
-    """Perform action on a pipeline.
+) -> Response[Union[Any, ErrorResponse]]:
+    """Change the desired state of the pipeline.
 
-     Perform action on a pipeline.
+     Change the desired state of the pipeline.
 
-    - 'deploy': Deploy a pipeline for the specified program and configuration.
-    This is a synchronous endpoint, which sends a response once the pipeline has
-    been initialized.
-    - 'start': Start a pipeline.
+    This endpoint allows the user to control the execution of the pipeline,
+    by changing its desired state attribute (see the discussion of the desired
+    state model in the [`PipelineStatus`] documentation).
+
+    The endpoint returns immediately after validating the request and forwarding
+    it to the pipeline. The requested status change completes asynchronously.  On success,
+    the pipeline enters the requested desired state.  On error, the pipeline
+    transitions to the `Failed` state. The user
+    can monitor the current status of the pipeline by polling the `GET /pipeline`
+    endpoint.
+
+    The following values of the `action` argument are accepted by this endpoint:
+
+    - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
+    (cloud deployment) to execute the pipeline and initialize its connectors.
+    - 'start': Start processing data.
     - 'pause': Pause the pipeline.
-    - 'shutdown': Terminate the execution of a pipeline. Sends a termination
-    request to the pipeline process. Returns immediately, without waiting for
-    the pipeline to terminate (which can take several seconds). The pipeline is
-    not deleted from the database, but its `status` is set to `shutdown`.
+    - 'shutdown': Terminate the execution of the pipeline.
 
     Args:
         pipeline_id (str):
@@ -94,7 +103,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, str]]
+        Response[Union[Any, ErrorResponse]]
     """
 
     kwargs = _get_kwargs(
@@ -116,20 +125,29 @@ def sync(
     action: str,
     *,
     client: Client,
-) -> Optional[Union[ErrorResponse, str]]:
-    """Perform action on a pipeline.
+) -> Optional[Union[Any, ErrorResponse]]:
+    """Change the desired state of the pipeline.
 
-     Perform action on a pipeline.
+     Change the desired state of the pipeline.
 
-    - 'deploy': Deploy a pipeline for the specified program and configuration.
-    This is a synchronous endpoint, which sends a response once the pipeline has
-    been initialized.
-    - 'start': Start a pipeline.
+    This endpoint allows the user to control the execution of the pipeline,
+    by changing its desired state attribute (see the discussion of the desired
+    state model in the [`PipelineStatus`] documentation).
+
+    The endpoint returns immediately after validating the request and forwarding
+    it to the pipeline. The requested status change completes asynchronously.  On success,
+    the pipeline enters the requested desired state.  On error, the pipeline
+    transitions to the `Failed` state. The user
+    can monitor the current status of the pipeline by polling the `GET /pipeline`
+    endpoint.
+
+    The following values of the `action` argument are accepted by this endpoint:
+
+    - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
+    (cloud deployment) to execute the pipeline and initialize its connectors.
+    - 'start': Start processing data.
     - 'pause': Pause the pipeline.
-    - 'shutdown': Terminate the execution of a pipeline. Sends a termination
-    request to the pipeline process. Returns immediately, without waiting for
-    the pipeline to terminate (which can take several seconds). The pipeline is
-    not deleted from the database, but its `status` is set to `shutdown`.
+    - 'shutdown': Terminate the execution of the pipeline.
 
     Args:
         pipeline_id (str):
@@ -140,7 +158,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, str]
+        Union[Any, ErrorResponse]
     """
 
     return sync_detailed(
@@ -155,20 +173,29 @@ async def asyncio_detailed(
     action: str,
     *,
     client: Client,
-) -> Response[Union[ErrorResponse, str]]:
-    """Perform action on a pipeline.
+) -> Response[Union[Any, ErrorResponse]]:
+    """Change the desired state of the pipeline.
 
-     Perform action on a pipeline.
+     Change the desired state of the pipeline.
 
-    - 'deploy': Deploy a pipeline for the specified program and configuration.
-    This is a synchronous endpoint, which sends a response once the pipeline has
-    been initialized.
-    - 'start': Start a pipeline.
+    This endpoint allows the user to control the execution of the pipeline,
+    by changing its desired state attribute (see the discussion of the desired
+    state model in the [`PipelineStatus`] documentation).
+
+    The endpoint returns immediately after validating the request and forwarding
+    it to the pipeline. The requested status change completes asynchronously.  On success,
+    the pipeline enters the requested desired state.  On error, the pipeline
+    transitions to the `Failed` state. The user
+    can monitor the current status of the pipeline by polling the `GET /pipeline`
+    endpoint.
+
+    The following values of the `action` argument are accepted by this endpoint:
+
+    - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
+    (cloud deployment) to execute the pipeline and initialize its connectors.
+    - 'start': Start processing data.
     - 'pause': Pause the pipeline.
-    - 'shutdown': Terminate the execution of a pipeline. Sends a termination
-    request to the pipeline process. Returns immediately, without waiting for
-    the pipeline to terminate (which can take several seconds). The pipeline is
-    not deleted from the database, but its `status` is set to `shutdown`.
+    - 'shutdown': Terminate the execution of the pipeline.
 
     Args:
         pipeline_id (str):
@@ -179,7 +206,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, str]]
+        Response[Union[Any, ErrorResponse]]
     """
 
     kwargs = _get_kwargs(
@@ -199,20 +226,29 @@ async def asyncio(
     action: str,
     *,
     client: Client,
-) -> Optional[Union[ErrorResponse, str]]:
-    """Perform action on a pipeline.
+) -> Optional[Union[Any, ErrorResponse]]:
+    """Change the desired state of the pipeline.
 
-     Perform action on a pipeline.
+     Change the desired state of the pipeline.
 
-    - 'deploy': Deploy a pipeline for the specified program and configuration.
-    This is a synchronous endpoint, which sends a response once the pipeline has
-    been initialized.
-    - 'start': Start a pipeline.
+    This endpoint allows the user to control the execution of the pipeline,
+    by changing its desired state attribute (see the discussion of the desired
+    state model in the [`PipelineStatus`] documentation).
+
+    The endpoint returns immediately after validating the request and forwarding
+    it to the pipeline. The requested status change completes asynchronously.  On success,
+    the pipeline enters the requested desired state.  On error, the pipeline
+    transitions to the `Failed` state. The user
+    can monitor the current status of the pipeline by polling the `GET /pipeline`
+    endpoint.
+
+    The following values of the `action` argument are accepted by this endpoint:
+
+    - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
+    (cloud deployment) to execute the pipeline and initialize its connectors.
+    - 'start': Start processing data.
     - 'pause': Pause the pipeline.
-    - 'shutdown': Terminate the execution of a pipeline. Sends a termination
-    request to the pipeline process. Returns immediately, without waiting for
-    the pipeline to terminate (which can take several seconds). The pipeline is
-    not deleted from the database, but its `status` is set to `shutdown`.
+    - 'shutdown': Terminate the execution of the pipeline.
 
     Args:
         pipeline_id (str):
@@ -223,7 +259,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, str]
+        Union[Any, ErrorResponse]
     """
 
     return (

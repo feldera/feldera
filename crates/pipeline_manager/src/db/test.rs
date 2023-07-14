@@ -3,10 +3,11 @@ use super::{
     PipelineRevision, PipelineStatus, ProgramDescr, ProgramId, ProgramStatus, ProjectDB, Revision,
     Version,
 };
-use super::{ApiPermission, PipelineDescr, ProgramSchema};
+use super::{ApiPermission, Pipeline, PipelineDescr, PipelineRuntimeState, ProgramSchema};
 use crate::auth::{self, TenantId, TenantRecord};
 use crate::db::Relation;
 use async_trait::async_trait;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use openssl::sha::{self};
 use pretty_assertions::assert_eq;
 use proptest::test_runner::{Config, TestRunner};
@@ -389,11 +390,11 @@ async fn program_config() {
     let res = handle.db.list_pipelines(tenant_id).await.unwrap();
     assert_eq!(1, res.len());
     let config = res.get(0).unwrap();
-    assert_eq!("1", config.name);
-    assert_eq!("2", config.description);
-    assert_eq!("3", config.config);
-    assert_eq!(None, config.program_id);
-    let connectors = &config.attached_connectors;
+    assert_eq!("1", config.descriptor.name);
+    assert_eq!("2", config.descriptor.description);
+    assert_eq!("3", config.descriptor.config);
+    assert_eq!(None, config.descriptor.program_id);
+    let connectors = &config.descriptor.attached_connectors;
     assert_eq!(1, connectors.len());
     let ac_ret = connectors.get(0).unwrap().clone();
     assert_eq!(ac, ac_ret);
@@ -881,11 +882,14 @@ enum StorageAction {
         Option<String>,
         Option<Vec<AttachedConnector>>,
     ),
-    PipelineSetDeployed(TenantId, PipelineId, u16),
-    SetPipelineStatus(TenantId, PipelineId, PipelineStatus),
+    UpdatePipelineRuntimeState(TenantId, PipelineId, PipelineRuntimeState),
+    SetPipelineDesiredStatus(TenantId, PipelineId, PipelineStatus),
     DeletePipeline(TenantId, PipelineId),
     GetPipelineById(TenantId, PipelineId),
     GetPipelineByName(TenantId, String),
+    GetPipelineDescrById(TenantId, PipelineId),
+    GetPipelineDescrByName(TenantId, String),
+    GetPipelineRuntimeState(TenantId, PipelineId),
     ListPipelines(TenantId),
     NewConnector(
         TenantId,
@@ -932,11 +936,41 @@ fn check_responses<T: Debug + PartialEq>(step: usize, model: DBResult<T>, impl_:
 }
 
 // Compare everything except the `created` field which gets set inside the DB..
-fn compare_pipeline(step: usize, model: DBResult<PipelineDescr>, impl_: DBResult<PipelineDescr>) {
+fn compare_pipeline(step: usize, model: DBResult<Pipeline>, impl_: DBResult<Pipeline>) {
     match (model, impl_) {
-        (Ok(mut mr), Ok(mut ir)) => {
-            mr.created = None;
-            ir.created = None;
+        (Ok(mut mr), Ok(ir)) => {
+            mr.state.created = ir.state.created;
+            mr.state.status_since = ir.state.status_since;
+            assert_eq!(
+                mr, ir,
+                "mismatch detected with model (left) and right (impl)"
+            );
+        }
+        (Err(me), Ok(ir)) => {
+            panic!("Step({step}): model returned error: {me:?}, but impl returned result: {ir:?}");
+        }
+        (Ok(mr), Err(ie)) => {
+            panic!("Step({step}): model returned result: {mr:?}, but impl returned error: {ie:?}");
+        }
+        (Err(me), Err(ie)) => {
+            assert_eq!(
+                me.to_string(),
+                ie.to_string(),
+                "Step({step}): Error return mismatch"
+            );
+        }
+    }
+}
+
+fn compare_pipeline_runtime_state(
+    step: usize,
+    model: DBResult<PipelineRuntimeState>,
+    impl_: DBResult<PipelineRuntimeState>,
+) {
+    match (model, impl_) {
+        (Ok(mut mr), Ok(ir)) => {
+            mr.created = ir.created;
+            mr.status_since = ir.status_since;
             assert_eq!(
                 mr, ir,
                 "mismatch detected with model (left) and right (impl)"
@@ -959,18 +993,21 @@ fn compare_pipeline(step: usize, model: DBResult<PipelineDescr>, impl_: DBResult
 }
 
 /// Compare everything except the `created` field which gets set inside the DB.
-fn compare_pipelines(
-    mut model_response: Vec<PipelineDescr>,
-    mut impl_response: Vec<PipelineDescr>,
-) {
+fn compare_pipelines(mut model_response: Vec<Pipeline>, mut impl_response: Vec<Pipeline>) {
     assert_eq!(
         model_response
             .iter_mut()
-            .map(|p| p.created = None)
+            .map(|p| {
+                p.state.created = DateTime::<Utc>::from_utc(NaiveDateTime::MIN, Utc);
+                p.state.status_since = DateTime::<Utc>::from_utc(NaiveDateTime::MIN, Utc);
+            })
             .collect::<Vec<_>>(),
         impl_response
             .iter_mut()
-            .map(|p| p.created = None)
+            .map(|p| {
+                p.state.created = DateTime::<Utc>::from_utc(NaiveDateTime::MIN, Utc);
+                p.state.status_since = DateTime::<Utc>::from_utc(NaiveDateTime::MIN, Utc);
+            })
             .collect::<Vec<_>>()
     );
 }
@@ -1153,12 +1190,30 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.get_pipeline_by_name(tenant_id, name).await;
                                 compare_pipeline(i, model_response, impl_response);
                             }
+                            StorageAction::GetPipelineDescrById(tenant_id, pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_descr_by_id(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.get_pipeline_descr_by_id(tenant_id, pipeline_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::GetPipelineDescrByName(tenant_id, name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_descr_by_name(tenant_id, name.clone()).await;
+                                let impl_response = handle.db.get_pipeline_descr_by_name(tenant_id, name).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::GetPipelineRuntimeState(tenant_id, pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_runtime_state(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.get_pipeline_runtime_state(tenant_id, pipeline_id).await;
+                                compare_pipeline_runtime_state(i, model_response, impl_response);
+                            }
                             StorageAction::ListPipelines(tenant_id,) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.list_pipelines(tenant_id, ).await.unwrap();
                                 let mut impl_response = handle.db.list_pipelines(tenant_id, ).await.unwrap();
                                 // Impl does not guarantee order of rows returned by SELECT
-                                impl_response.sort_by(|a, b| a.pipeline_id.cmp(&b.pipeline_id));
+                                impl_response.sort_by(|a, b| a.descriptor.pipeline_id.cmp(&b.descriptor.pipeline_id));
                                 compare_pipelines(model_response, impl_response);
                             }
                             StorageAction::NewPipeline(tenant_id, id, program_id, name, description, config, connectors) => {
@@ -1180,16 +1235,16 @@ fn db_impl_behaves_like_model() {
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::PipelineSetDeployed(tenant_id,pipeline_id, port) => {
+                            StorageAction::UpdatePipelineRuntimeState(tenant_id, pipeline_id, state) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.set_pipeline_deployed(tenant_id, pipeline_id, port).await;
-                                let impl_response = handle.db.set_pipeline_deployed(tenant_id, pipeline_id, port).await;
+                                let model_response = model.update_pipeline_runtime_state(tenant_id, pipeline_id, &state).await;
+                                let impl_response = handle.db.update_pipeline_runtime_state(tenant_id, pipeline_id, &state).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetPipelineStatus(tenant_id,pipeline_id, status) => {
+                            StorageAction::SetPipelineDesiredStatus(tenant_id, pipeline_id, status) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.set_pipeline_status(tenant_id, pipeline_id, status).await;
-                                let impl_response = handle.db.set_pipeline_status(tenant_id, pipeline_id, status).await;
+                                let model_response = model.set_pipeline_desired_status(tenant_id, pipeline_id, status).await;
+                                let impl_response = handle.db.set_pipeline_desired_status(tenant_id, pipeline_id, status).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::DeletePipeline(tenant_id,pipeline_id) => {
@@ -1284,7 +1339,7 @@ type ProgramData = (ProgramDescr, String, SystemTime);
 struct DbModel {
     // `programs` Format is: (program, code, created)
     pub programs: BTreeMap<(TenantId, ProgramId), ProgramData>,
-    pub pipelines: BTreeMap<(TenantId, PipelineId), PipelineDescr>,
+    pub pipelines: BTreeMap<(TenantId, PipelineId), Pipeline>,
     pub history: BTreeMap<(TenantId, PipelineId), PipelineRevision>,
     pub api_keys: BTreeMap<String, (TenantId, Vec<ApiPermission>)>,
     pub connectors: BTreeMap<(TenantId, ConnectorId), ConnectorDescr>,
@@ -1501,7 +1556,8 @@ impl Storage for Mutex<DbModel> {
             .map(|_| ())
             .ok_or(DBError::UnknownProgram { program_id })?;
         // Foreign key delete:
-        s.pipelines.retain(|_, c| c.program_id != Some(program_id));
+        s.pipelines
+            .retain(|_, c| c.descriptor.program_id != Some(program_id));
 
         Ok(())
     }
@@ -1534,7 +1590,7 @@ impl Storage for Mutex<DbModel> {
             .get(&(tenant_id, pipeline_id))
             .ok_or(DBError::UnknownPipeline { pipeline_id })?;
 
-        if let Some(program_id) = pipeline.program_id {
+        if let Some(program_id) = pipeline.descriptor.program_id {
             let program_data = s
                 .programs
                 .get(&(tenant_id, program_id))
@@ -1544,6 +1600,7 @@ impl Storage for Mutex<DbModel> {
                 .values()
                 .filter(|c| {
                     pipeline
+                        .descriptor
                         .attached_connectors
                         .iter()
                         .any(|ac| ac.connector_id == c.connector_id)
@@ -1551,7 +1608,7 @@ impl Storage for Mutex<DbModel> {
                 .cloned()
                 .collect::<Vec<ConnectorDescr>>();
 
-            let pipeline = pipeline.clone();
+            let pipeline = pipeline.descriptor.clone();
             let connectors = connectors.clone();
             let program_data = program_data.clone();
             PipelineRevision::validate(&pipeline, &connectors, &program_data.0)?;
@@ -1651,7 +1708,7 @@ impl Storage for Mutex<DbModel> {
             .iter()
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1)
-            .find(|c| c.name == pipeline_name)
+            .find(|c| c.descriptor.name == pipeline_name)
         {
             return Err(DBError::DuplicateName.into());
         }
@@ -1684,17 +1741,24 @@ impl Storage for Mutex<DbModel> {
         let version = Version(1);
         s.pipelines.insert(
             (tenant_id, pipeline_id),
-            PipelineDescr {
-                pipeline_id,
-                program_id,
-                name: pipeline_name.to_owned(),
-                description: pipeline_description.to_owned(),
-                config: config.to_owned(),
-                attached_connectors: new_acs,
-                version: Version(1),
-                port: 0,
-                created: None,
-                status: PipelineStatus::Shutdown,
+            Pipeline {
+                descriptor: PipelineDescr {
+                    pipeline_id,
+                    program_id,
+                    name: pipeline_name.to_owned(),
+                    description: pipeline_description.to_owned(),
+                    config: config.to_owned(),
+                    attached_connectors: new_acs,
+                    version: Version(1),
+                },
+                state: PipelineRuntimeState {
+                    location: "".to_string(),
+                    desired_status: PipelineStatus::Shutdown,
+                    current_status: PipelineStatus::Shutdown,
+                    status_since: Utc::now(),
+                    error: None,
+                    created: Utc::now(),
+                },
             },
         );
 
@@ -1706,7 +1770,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_id: Option<ProgramId>,
-        pipline_name: &str,
+        pipeline_name: &str,
         pipeline_description: &str,
         config: &Option<String>,
         connectors: &Option<Vec<AttachedConnector>>,
@@ -1719,18 +1783,6 @@ impl Storage for Mutex<DbModel> {
         s.pipelines
             .get_mut(&(tenant_id, pipeline_id))
             .ok_or(DBError::UnknownPipeline { pipeline_id })?;
-        // UNIQUE constraint on name
-        if let Some(c) = s
-            .pipelines
-            .iter()
-            .filter(|k| k.0 .0 == tenant_id)
-            .map(|k| k.1)
-            .find(|c| c.name == pipline_name)
-        {
-            if c.pipeline_id != pipeline_id {
-                return Err(DBError::DuplicateName.into());
-            }
-        }
 
         let mut new_acs: Vec<AttachedConnector> = vec![];
         if let Some(connectors) = connectors {
@@ -1753,9 +1805,24 @@ impl Storage for Mutex<DbModel> {
                 .pipelines
                 .get(&(tenant_id, pipeline_id))
                 .ok_or(DBError::UnknownPipeline { pipeline_id })?
+                .descriptor
                 .attached_connectors
                 .clone();
         }
+
+        // UNIQUE constraint on name
+        if let Some(c) = s
+            .pipelines
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1)
+            .find(|c| c.descriptor.name == pipeline_name)
+        {
+            if c.descriptor.pipeline_id != pipeline_id {
+                return Err(DBError::DuplicateName.into());
+            }
+        }
+
         // Check program exists foreign key constraint
         if let Some(program_id) = program_id {
             if !db_programs.contains_key(&(tenant_id, program_id)) {
@@ -1763,10 +1830,11 @@ impl Storage for Mutex<DbModel> {
             }
         }
 
-        let c = s
+        let c = &mut s
             .pipelines
             .get_mut(&(tenant_id, pipeline_id))
-            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?
+            .descriptor;
 
         // Foreign key constraint on `program_id`
         if let Some(program_id) = program_id {
@@ -1780,7 +1848,7 @@ impl Storage for Mutex<DbModel> {
         }
 
         c.attached_connectors = new_acs;
-        c.name = pipline_name.to_owned();
+        c.name = pipeline_name.to_owned();
         c.description = pipeline_description.to_owned();
         c.version = c.version.increment();
         if let Some(config) = config {
@@ -1812,40 +1880,6 @@ impl Storage for Mutex<DbModel> {
         todo!()
     }
 
-    async fn set_pipeline_deployed(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: super::PipelineId,
-        port: u16,
-    ) -> DBResult<()> {
-        let mut s = self.lock().await;
-        let p = s
-            .pipelines
-            .get_mut(&(tenant_id, pipeline_id))
-            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
-
-        p.port = port;
-        p.status = PipelineStatus::Deployed;
-
-        Ok(())
-    }
-
-    async fn set_pipeline_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: super::PipelineId,
-        status: PipelineStatus,
-    ) -> DBResult<bool> {
-        let mut s = self.lock().await;
-        Ok(s.pipelines
-            .get_mut(&(tenant_id, pipeline_id))
-            .map(|p| {
-                p.status = status;
-                true
-            })
-            .unwrap_or(false))
-    }
-
     async fn delete_pipeline(
         &self,
         tenant_id: TenantId,
@@ -1865,7 +1899,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         pipeline_id: super::PipelineId,
-    ) -> DBResult<super::PipelineDescr> {
+    ) -> DBResult<super::Pipeline> {
         let s = self.lock().await;
         s.pipelines
             .get(&(tenant_id, pipeline_id))
@@ -1873,21 +1907,90 @@ impl Storage for Mutex<DbModel> {
             .ok_or(DBError::UnknownPipeline { pipeline_id })
     }
 
+    async fn get_pipeline_descr_by_id(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: super::PipelineId,
+    ) -> DBResult<super::PipelineDescr> {
+        self.get_pipeline_by_id(tenant_id, pipeline_id)
+            .await
+            .map(|p| p.descriptor)
+    }
+
+    async fn get_pipeline_runtime_state(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<PipelineRuntimeState, DBError> {
+        self.get_pipeline_by_id(tenant_id, pipeline_id)
+            .await
+            .map(|p| p.state)
+    }
+
+    async fn update_pipeline_runtime_state(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        state: &PipelineRuntimeState,
+    ) -> Result<(), DBError> {
+        let mut s = self.lock().await;
+
+        let pipeline = s
+            .pipelines
+            .get_mut(&(tenant_id, pipeline_id))
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
+
+        pipeline.state.location = state.location.clone();
+        pipeline.state.current_status = state.current_status;
+        pipeline.state.status_since = state.status_since;
+        pipeline.state.error = state.error.clone();
+        pipeline.state.created = state.created;
+
+        Ok(())
+    }
+
+    async fn set_pipeline_desired_status(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        desired_status: PipelineStatus,
+    ) -> Result<(), DBError> {
+        let mut s = self.lock().await;
+
+        s.pipelines
+            .get_mut(&(tenant_id, pipeline_id))
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?
+            .state
+            .desired_status = desired_status;
+
+        Ok(())
+    }
+
     async fn get_pipeline_by_name(
         &self,
         tenant_id: TenantId,
         name: String,
-    ) -> DBResult<super::PipelineDescr> {
+    ) -> DBResult<super::Pipeline> {
         let s = self.lock().await;
         s.pipelines
             .iter()
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
-            .find(|p| p.name == name)
+            .find(|p| p.descriptor.name == name)
             .ok_or(DBError::UnknownName { name })
     }
 
-    async fn list_pipelines(&self, tenant_id: TenantId) -> DBResult<Vec<super::PipelineDescr>> {
+    async fn get_pipeline_descr_by_name(
+        &self,
+        tenant_id: TenantId,
+        name: String,
+    ) -> DBResult<super::PipelineDescr> {
+        self.get_pipeline_by_name(tenant_id, name)
+            .await
+            .map(|p| p.descriptor)
+    }
+
+    async fn list_pipelines(&self, tenant_id: TenantId) -> DBResult<Vec<super::Pipeline>> {
         Ok(self
             .lock()
             .await
@@ -2016,7 +2119,8 @@ impl Storage for Mutex<DbModel> {
             .remove(&(tenant_id, connector_id))
             .ok_or(DBError::UnknownConnector { connector_id })?;
         s.pipelines.values_mut().for_each(|c| {
-            c.attached_connectors
+            c.descriptor
+                .attached_connectors
                 .retain(|c| c.connector_id != connector_id);
         });
         Ok(())

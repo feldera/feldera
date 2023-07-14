@@ -65,7 +65,7 @@ pub(crate) struct SqlCompilerMessage {
 }
 
 /// Program compilation status.
-#[derive(Debug, Serialize, Eq, PartialEq, ToSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub(crate) enum ProgramStatus {
     /// Initial state: program has been created or modified, but the user

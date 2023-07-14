@@ -46,11 +46,9 @@ use daemonize::Daemonize;
 use dbsp_adapters::{ControllerError, ErrorResponse};
 use log::debug;
 use serde::{Deserialize, Serialize};
-use std::env;
-use std::{net::TcpListener, sync::Arc};
+use std::{env, net::TcpListener, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
-use utoipa::openapi::Server;
-use utoipa::{Modify, OpenApi, ToSchema};
+use utoipa::{openapi::Server, IntoParams, Modify, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::{uuid, Uuid};
 
@@ -58,10 +56,10 @@ pub(crate) use crate::compiler::{Compiler, ProgramStatus};
 pub(crate) use crate::config::ManagerConfig;
 use crate::db::{
     storage::Storage, AttachedConnector, AttachedConnectorId, ConnectorId, DBError, PipelineId,
-    PipelineRevision, ProgramDescr, ProgramId, ProjectDB, Version,
+    PipelineRevision, PipelineStatus, ProgramDescr, ProgramId, ProjectDB, Version,
 };
 pub use crate::error::ManagerError;
-use crate::runner::{LocalRunner, Runner, RunnerError, STARTUP_TIMEOUT};
+use crate::runner::{Runner, RunnerError};
 
 use crate::auth::TenantId;
 
@@ -144,6 +142,8 @@ observed by the user is outdated, so the request is rejected."
         crate::db::Relation,
         crate::db::Field,
         crate::db::ConnectorDescr,
+        crate::db::Pipeline,
+        crate::db::PipelineRuntimeState,
         crate::db::PipelineDescr,
         crate::db::PipelineRevision,
         crate::db::Revision,
@@ -213,7 +213,7 @@ impl ServerState {
         compiler_config: CompilerConfig,
         db: Arc<Mutex<ProjectDB>>,
     ) -> AnyResult<Self> {
-        let runner = Runner::Local(LocalRunner::new(db.clone(), &compiler_config)?);
+        let runner = Runner::local(db.clone(), &compiler_config);
         let compiler = Compiler::new(&compiler_config, db.clone()).await?;
 
         Ok(Self {
@@ -395,9 +395,6 @@ fn example_pipeline_toml() -> String {
         config: "workers: 8\n".into(),
         attached_connectors: vec![input, output],
         version: Version(1),
-        port: 0,
-        created: None,
-        status: crate::db::PipelineStatus::Running,
     };
 
     let connectors = vec![input_connector, output_connector];
@@ -494,7 +491,7 @@ fn example_pipline_invalid_output_ac() -> ErrorResponse {
 fn example_pipeline_timeout() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInitializationTimeout {
         pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
-        timeout: STARTUP_TIMEOUT,
+        timeout: Duration::from_millis(10_000),
     })
 }
 
@@ -517,6 +514,26 @@ fn example_connector_not_specified() -> ErrorResponse {
 fn example_invalid_pipeline_action() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&ManagerError::InvalidPipelineAction {
         action: "my_action".to_string(),
+    })
+}
+
+fn example_illegal_pipeline_action() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&RunnerError::IllegalPipelineStateTransition {
+            pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
+            error: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.".to_string(),
+            current_status: PipelineStatus::ShuttingDown,
+            desired_status: PipelineStatus::Shutdown,
+            requested_status: Some(PipelineStatus::Running),
+    })
+}
+
+fn example_cannot_delete_when_running() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&RunnerError::IllegalPipelineStateTransition {
+            pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
+            error: "Cannot delete a running pipeline. Shutdown the pipeline first by invoking the '/shutdown' endpoint.".to_string(),
+            current_status: PipelineStatus::Running,
+            desired_status: PipelineStatus::Running,
+            requested_status: None,
     })
 }
 
@@ -631,17 +648,13 @@ async fn program_code(
             , body = ErrorResponse
             , example = json!(example_unknown_program())),
     ),
-    params(
-        ("id" = Option<Uuid>, Query, description = "Unique connector identifier"),
-        ("name" = Option<String>, Query, description = "Unique connector name")
-    ),
     tag = "Program"
 )]
 #[get("/program")]
 async fn program_status(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: web::Query<IdOrNameQuery>,
+    req: web::Query<ProgramIdOrNameQuery>,
 ) -> Result<HttpResponse, ManagerError> {
     let descr = if let Some(id) = req.id {
         state
@@ -1052,14 +1065,13 @@ struct UpdatePipelineResponse {
     version: Version,
 }
 
-/// Update existing program configuration.
+/// Update existing pipeline configuration.
 ///
-/// Updates program config name, description and code and, optionally, config
-/// and connectors. On success, increments config version by 1.
+/// Updates pipeline configuration. On success, increments pipeline version by 1.
 #[utoipa::path(
     request_body = UpdatePipelineRequest,
     responses(
-        (status = OK, description = "Configuration successfully updated.", body = UpdatePipelineResponse),
+        (status = OK, description = "Pipeline successfully updated.", body = UpdatePipelineResponse),
         (status = NOT_FOUND
             , description = "Specified pipeline id does not exist in the database."
             , body = ErrorResponse
@@ -1100,7 +1112,7 @@ async fn update_pipeline(
 /// List pipelines.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Pipeline list retrieved successfully.", body = [PipelineDescr])
+        (status = OK, description = "Pipeline list retrieved successfully.", body = [Pipeline])
     ),
     tag = "Pipeline"
 )]
@@ -1195,12 +1207,18 @@ async fn pipeline_stats(
         .await
 }
 
-/// Retrieve pipeline metadata.
+/// Retrieve pipeline configuration and runtime state.
+///
+/// When invoked without the `?toml` flag, this endpoint
+/// returns pipeline state, including static configuration and runtime status,
+/// in the JSON format.  The `?toml` flag changes the behavior of this
+/// endpoint to return static pipeline configuratiin in the TOML format.
+// TODO: explain what this TOML is for.
 #[utoipa::path(
     responses(
         (status = OK, description = "Pipeline descriptor retrieved successfully.",content(
             ("text/plain" = String, example = json!(example_pipeline_toml())),
-            ("application/json" = PipelineDescr),
+            ("application/json" = Pipeline),
         )),
         (status = BAD_REQUEST
             , description = "Pipeline not specified. Use ?id or ?name query strings in the URL."
@@ -1214,15 +1232,6 @@ async fn pipeline_stats(
             , description = "Specified pipeline id does not exist in the database."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
-        (status = NOT_FOUND
-            , description = "Specified pipeline name does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(example_unknown_name())),
-    ),
-    params(
-        ("id" = Option<Uuid>, Query, description = "Unique pipeline identifier"),
-        ("name" = Option<String>, Query, description = "Unique pipeline name"),
-        ("toml" = Option<bool>, Query, description = "Set to true to request the configuration of the pipeline as a toml file."),
     ),
     tag = "Pipeline"
 )]
@@ -1230,7 +1239,7 @@ async fn pipeline_stats(
 async fn pipeline_status(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: web::Query<IdOrNameTomlQuery>,
+    req: web::Query<PipelineIdOrNameTomlQuery>,
 ) -> Result<HttpResponse, ManagerError> {
     if req.toml.unwrap_or(false) {
         let toml: String = if let Some(id) = req.id {
@@ -1242,7 +1251,7 @@ async fn pipeline_status(
                 .await?
         } else if let Some(name) = req.name.clone() {
             let db: tokio::sync::MutexGuard<'_, ProjectDB> = state.db.lock().await;
-            let pipeline = db.get_pipeline_by_name(*tenant_id, name).await?;
+            let pipeline = db.get_pipeline_descr_by_name(*tenant_id, name).await?;
             db.pipeline_to_toml(*tenant_id, pipeline.pipeline_id)
                 .await?
         } else {
@@ -1254,7 +1263,7 @@ async fn pipeline_status(
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .body(toml))
     } else {
-        let descr: crate::db::PipelineDescr = if let Some(id) = req.id {
+        let pipeline: crate::db::Pipeline = if let Some(id) = req.id {
             state
                 .db
                 .lock()
@@ -1274,7 +1283,7 @@ async fn pipeline_status(
 
         Ok(HttpResponse::Ok()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(&descr))
+            .json(&pipeline))
     }
 }
 
@@ -1301,19 +1310,19 @@ async fn pipeline_status(
             , body = ErrorResponse
             , example = json!(example_program_not_set())),
         (status = SERVICE_UNAVAILABLE
-            , description = "Unable to start the pipeline before its program has been compiled."
+            , description = "The program associated with this pipeline has not been compiled."
             , body = ErrorResponse
             , example = json!(example_program_not_compiled())),
         (status = BAD_REQUEST
-            , description = "Unable to start the pipeline before its program has been compiled successfully."
+            , description = "The program associated with the pipeline raised compilation error."
             , body = ErrorResponse
             , example = json!(example_program_has_errors())),
         (status = BAD_REQUEST
-            , description = "The connectors in the config referenced a table that doesn't exist."
+            , description = "The connectors in the config reference a table that doesn't exist."
             , body = ErrorResponse
             , example = json!(example_pipline_invalid_input_ac())),
         (status = BAD_REQUEST
-            , description = "The connectors in the config referenced a view that doesn't exist."
+            , description = "The connectors in the config reference a view that doesn't exist."
             , body = ErrorResponse
             , example = json!(example_pipline_invalid_output_ac())),
     ),
@@ -1337,25 +1346,32 @@ async fn pipeline_validate(
         .map(|_| HttpResponse::Ok().json("Pipeline successfully validated."))?)
 }
 
-/// Perform action on a pipeline.
+/// Change the desired state of the pipeline.
 ///
-/// - 'deploy': Deploy a pipeline for the specified program and configuration.
-/// This is a synchronous endpoint, which sends a response once the pipeline has
-/// been initialized.
-/// - 'start': Start a pipeline.
+/// This endpoint allows the user to control the execution of the pipeline,
+/// by changing its desired state attribute (see the discussion of the desired
+/// state model in the [`PipelineStatus`] documentation).
+///
+/// The endpoint returns immediately after validating the request and forwarding
+/// it to the pipeline. The requested status change completes asynchronously.  On success,
+/// the pipeline enters the requested desired state.  On error, the pipeline
+/// transitions to the `Failed` state. The user
+/// can monitor the current status of the pipeline by polling the `GET /pipeline`
+/// endpoint.
+///
+/// The following values of the `action` argument are accepted by this endpoint:
+///
+/// - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
+///   (cloud deployment) to execute the pipeline and initialize its connectors.
+/// - 'start': Start processing data.
 /// - 'pause': Pause the pipeline.
-/// - 'shutdown': Terminate the execution of a pipeline. Sends a termination
-/// request to the pipeline process. Returns immediately, without waiting for
-/// the pipeline to terminate (which can take several seconds). The pipeline is
-/// not deleted from the database, but its `status` is set to `shutdown`.
+/// - 'shutdown': Terminate the execution of the pipeline.
 #[utoipa::path(
     responses(
-        (status = OK
-            , description = "Performed a Pipeline action."
-            , content_type = "application/json"
-            , body = String),
+        (status = ACCEPTED
+            , description = "Request accepted."),
         (status = BAD_REQUEST
-            , description = "Invalid pipeline action specified."
+            , description = "Invalid action specified."
             , body = ErrorResponse
             , example = json!(example_invalid_pipeline_action())),
         (status = BAD_REQUEST
@@ -1371,23 +1387,27 @@ async fn pipeline_validate(
             , body = ErrorResponse
             , example = json!(example_program_not_set())),
         (status = SERVICE_UNAVAILABLE
-            , description = "Unable to start the pipeline before its program has been compiled."
+            , description = "The program associated with this pipeline has not been compiled."
             , body = ErrorResponse
             , example = json!(example_program_not_compiled())),
         (status = BAD_REQUEST
-            , description = "Unable to start the pipeline before its program has been compiled successfully."
+            , description = "The program associated with the pipeline raised compilation error."
             , body = ErrorResponse
             , example = json!(example_program_has_errors())),
         (status = BAD_REQUEST
-            , description = "The connectors in the config referenced a table that doesn't exist."
+            , description = "The connectors in the config references a table that doesn't exist."
             , body = ErrorResponse
             , example = json!(example_pipline_invalid_input_ac())),
         (status = BAD_REQUEST
-            , description = "The connectors in the config referenced a view that doesn't exist."
+            , description = "The connectors in the config references a view that doesn't exist."
             , body = ErrorResponse
             , example = json!(example_pipline_invalid_output_ac())),
+        (status = BAD_REQUEST
+            , description = "Action is not applicable in the current state of the pipeline."
+            , body = ErrorResponse
+            , example = json!(example_illegal_pipeline_action())),
         (status = INTERNAL_SERVER_ERROR
-            , description = "Timeout waiting for the pipeline to initialize. Indicates an internal system error."
+            , description = "Timeout waiting for the pipeline to initialize."
             , body = ErrorResponse
             , example = json!(example_pipeline_timeout())),
     ),
@@ -1407,32 +1427,35 @@ async fn pipeline_action(
     let action = parse_pipeline_action(&req)?;
 
     match action {
-        "deploy" => state.runner.deploy_pipeline(*tenant_id, pipeline_id).await,
-        "start" => state.runner.start_pipeline(*tenant_id, pipeline_id).await,
-        "pause" => state.runner.pause_pipeline(*tenant_id, pipeline_id).await,
+        "deploy" => {
+            state
+                .runner
+                .deploy_pipeline(*tenant_id, pipeline_id)
+                .await?
+        }
+        "start" => state.runner.start_pipeline(*tenant_id, pipeline_id).await?,
+        "pause" => state.runner.pause_pipeline(*tenant_id, pipeline_id).await?,
         "shutdown" => {
             state
                 .runner
                 .shutdown_pipeline(*tenant_id, pipeline_id)
-                .await
+                .await?
         }
         _ => Err(ManagerError::InvalidPipelineAction {
             action: action.to_string(),
-        }),
+        })?,
     }
+
+    Ok(HttpResponse::Accepted().finish())
 }
 
-/// Terminate and delete a pipeline.
+/// Delete a pipeline.
 ///
-/// Shut down the pipeline if it is still running and delete it from
-/// the database.
+/// Deletes the pipeline.  The pipeline must not be executing.
 #[utoipa::path(
     responses(
         (status = OK
-            , description = "Pipeline successfully deleted."
-            , content_type = "application/json"
-            , body = String
-            , example = json!("Pipeline successfully deleted")),
+            , description = "Pipeline successfully deleted."),
         (status = BAD_REQUEST
             , description = "Specified pipeline id is not a valid uuid."
             , body = ErrorResponse
@@ -1441,6 +1464,10 @@ async fn pipeline_action(
             , description = "Specified pipeline id does not exist in the database."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
+        (status = BAD_REQUEST
+            , description = "Pipeline cannot be deleted while executing. Shutdown the pipeine first."
+            , body = ErrorResponse
+            , example = json!(example_cannot_delete_when_running())),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
@@ -1455,12 +1482,12 @@ async fn pipeline_delete(
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
 
-    let db = state.db.lock().await;
-
     state
         .runner
-        .delete_pipeline(*tenant_id, &db, pipeline_id)
-        .await
+        .delete_pipeline(*tenant_id, pipeline_id)
+        .await?;
+
+    Ok(HttpResponse::Ok().finish())
 }
 
 /// Enumerate the connector database.
@@ -1624,16 +1651,32 @@ async fn delete_connector(
     Ok(HttpResponse::Ok().finish())
 }
 
-#[derive(Debug, Deserialize)]
-pub struct IdOrNameQuery {
+// Duplicate the same structure twice, since
+// these doc comments will be automatically used
+// in the OpenAPI spec.
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct ConnectorIdOrNameQuery {
+    /// Unique connector identifier.
     id: Option<Uuid>,
+    /// Unique connector name.
     name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct IdOrNameTomlQuery {
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct ProgramIdOrNameQuery {
+    /// Unique program identifier.
     id: Option<Uuid>,
+    /// Unique program name.
     name: Option<String>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct PipelineIdOrNameTomlQuery {
+    /// Unique pipeline id.
+    id: Option<Uuid>,
+    /// Unique pipeline name.
+    name: Option<String>,
+    /// Set to true to request the configuration of the pipeline as a toml file.
     toml: Option<bool>,
 }
 
@@ -1658,17 +1701,13 @@ pub struct IdOrNameTomlQuery {
             , body = ErrorResponse
             , example = json!(example_unknown_name())),
     ),
-    params(
-        ("id" = Option<Uuid>, Query, description = "Unique connector identifier"),
-        ("name" = Option<String>, Query, description = "Unique connector name")
-    ),
     tag = "Connector"
 )]
 #[get("/connector")]
 async fn connector_status(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: web::Query<IdOrNameQuery>,
+    req: web::Query<ConnectorIdOrNameQuery>,
 ) -> Result<HttpResponse, ManagerError> {
     let descr: crate::db::ConnectorDescr = if let Some(id) = req.id {
         state

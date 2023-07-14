@@ -32,11 +32,13 @@ from .new_program_request import NewProgramRequest
 from .new_program_response import NewProgramResponse
 from .output_endpoint_config import OutputEndpointConfig
 from .output_query import OutputQuery
+from .pipeline import Pipeline
 from .pipeline_config import PipelineConfig
 from .pipeline_config_inputs import PipelineConfigInputs
 from .pipeline_config_outputs import PipelineConfigOutputs
 from .pipeline_descr import PipelineDescr
 from .pipeline_revision import PipelineRevision
+from .pipeline_runtime_state import PipelineRuntimeState
 from .pipeline_stats_response_200 import PipelineStatsResponse200
 from .pipeline_status import PipelineStatus
 from .program_code_response import ProgramCodeResponse
@@ -94,11 +96,13 @@ __all__ = (
     "NewProgramResponse",
     "OutputEndpointConfig",
     "OutputQuery",
+    "Pipeline",
     "PipelineConfig",
     "PipelineConfigInputs",
     "PipelineConfigOutputs",
     "PipelineDescr",
     "PipelineRevision",
+    "PipelineRuntimeState",
     "PipelineStatsResponse200",
     "PipelineStatus",
     "ProgramCodeResponse",

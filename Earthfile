@@ -436,7 +436,7 @@ python-bindings-checker:
     COPY +install-python/python3.10 /root/.local/lib/python3.10
     COPY +install-python/bin /root/.local/bin
 
-    RUN pip3 install openapi-python-client
+    RUN pip3 install openapi-python-client && openapi-python-client --version
     COPY +build-manager/dbsp_pipeline_manager .
     COPY +test-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
     COPY python/dbsp-api-client dbsp-api-client-base

@@ -5,7 +5,7 @@ import httpx
 
 from ... import errors
 from ...client import Client
-from ...models.pipeline_descr import PipelineDescr
+from ...models.pipeline import Pipeline
 from ...types import Response
 
 
@@ -28,12 +28,12 @@ def _get_kwargs(
     }
 
 
-def _parse_response(*, client: Client, response: httpx.Response) -> Optional[List["PipelineDescr"]]:
+def _parse_response(*, client: Client, response: httpx.Response) -> Optional[List["Pipeline"]]:
     if response.status_code == HTTPStatus.OK:
         response_200 = []
         _response_200 = response.json()
         for response_200_item_data in _response_200:
-            response_200_item = PipelineDescr.from_dict(response_200_item_data)
+            response_200_item = Pipeline.from_dict(response_200_item_data)
 
             response_200.append(response_200_item)
 
@@ -44,7 +44,7 @@ def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Lis
         return None
 
 
-def _build_response(*, client: Client, response: httpx.Response) -> Response[List["PipelineDescr"]]:
+def _build_response(*, client: Client, response: httpx.Response) -> Response[List["Pipeline"]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -56,7 +56,7 @@ def _build_response(*, client: Client, response: httpx.Response) -> Response[Lis
 def sync_detailed(
     *,
     client: Client,
-) -> Response[List["PipelineDescr"]]:
+) -> Response[List["Pipeline"]]:
     """List pipelines.
 
      List pipelines.
@@ -66,7 +66,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[List['PipelineDescr']]
+        Response[List['Pipeline']]
     """
 
     kwargs = _get_kwargs(
@@ -84,7 +84,7 @@ def sync_detailed(
 def sync(
     *,
     client: Client,
-) -> Optional[List["PipelineDescr"]]:
+) -> Optional[List["Pipeline"]]:
     """List pipelines.
 
      List pipelines.
@@ -94,7 +94,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        List['PipelineDescr']
+        List['Pipeline']
     """
 
     return sync_detailed(
@@ -105,7 +105,7 @@ def sync(
 async def asyncio_detailed(
     *,
     client: Client,
-) -> Response[List["PipelineDescr"]]:
+) -> Response[List["Pipeline"]]:
     """List pipelines.
 
      List pipelines.
@@ -115,7 +115,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[List['PipelineDescr']]
+        Response[List['Pipeline']]
     """
 
     kwargs = _get_kwargs(
@@ -131,7 +131,7 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: Client,
-) -> Optional[List["PipelineDescr"]]:
+) -> Optional[List["Pipeline"]]:
     """List pipelines.
 
      List pipelines.
@@ -141,7 +141,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        List['PipelineDescr']
+        List['Pipeline']
     """
 
     return (

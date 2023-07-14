@@ -9,11 +9,12 @@ use aws_sdk_cognitoidentityprovider::config::Region;
 use serde_json::{json, Value};
 use serial_test::serial;
 use tempfile::TempDir;
-use tokio::sync::OnceCell;
+use tokio::{sync::OnceCell, time::sleep};
 
 use crate::{
     compiler::Compiler,
     config::{CompilerConfig, DatabaseConfig, ManagerConfig},
+    db::{Pipeline, PipelineStatus},
 };
 
 const TEST_DBSP_URL_VAR: &str = "TEST_DBSP_URL";
@@ -103,7 +104,7 @@ impl TestConfig {
         let mut req = config.get("/v0/pipelines").await;
         let pipelines: Value = req.json().await.unwrap();
         for pipeline in pipelines.as_array().unwrap() {
-            let id = pipeline["pipeline_id"].as_str().unwrap();
+            let id = pipeline["descriptor"]["pipeline_id"].as_str().unwrap();
             let req = config.delete(format!("/v0/pipelines/{}", id)).await;
             assert_eq!(StatusCode::OK, req.status())
         }
@@ -196,6 +197,26 @@ impl TestConfig {
                     panic!("Compilation failed with status {}", status);
                 }
             }
+        }
+    }
+
+    /// Wait for the pipeline to reach the specified status.
+    /// Panic afrer `timeout`.
+    async fn wait_for_pipeline_status(&self, id: &str, status: PipelineStatus, timeout: Duration) {
+        let start = Instant::now();
+        loop {
+            let mut response = self.get(format!("/v0/pipeline?id={}", id)).await;
+
+            let pipeline = response.json::<Pipeline>().await.unwrap();
+
+            println!("Pipeline:\n{pipeline:#?}");
+            if pipeline.state.current_status == status {
+                break;
+            }
+            if start.elapsed() >= timeout {
+                panic!("Timeout waiting for pipeline status {status:?}");
+            }
+            sleep(Duration::from_millis(300)).await;
         }
     }
 }
@@ -365,39 +386,44 @@ async fn deploy_pipeline() {
     // assert_eq!("Pipeline is not deployed", resp.as_str().unwrap());
 
     // Deploy the pipeline
-    let mut req = config
+    let resp = config
         .post_no_body(format!("/v0/pipelines/{}/deploy", id))
         .await;
-    let resp: Value = req.json().await.unwrap();
-    assert_eq!("Pipeline successfully deployed.", resp.as_str().unwrap());
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+    config
+        .wait_for_pipeline_status(id, PipelineStatus::Paused, Duration::from_millis(100_000))
+        .await;
 
     // Pause a pipeline before it is started
-    let mut req = config
+    let resp = config
         .post_no_body(format!("/v0/pipelines/{}/pause", id))
         .await;
-    let resp: Value = req.json().await.unwrap();
-    assert_eq!("Pipeline paused", resp.as_str().unwrap());
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
     // Start the pipeline
-    let mut req = config
+    let resp = config
         .post_no_body(format!("/v0/pipelines/{}/start", id))
         .await;
-    let resp: Value = req.json().await.unwrap();
-    assert_eq!("The pipeline is running", resp.as_str().unwrap());
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
     // Pause a pipeline after it is started
-    let mut req = config
+    let resp = config
         .post_no_body(format!("/v0/pipelines/{}/pause", id))
         .await;
-    let resp: Value = req.json().await.unwrap();
-    assert_eq!("Pipeline paused", resp.as_str().unwrap());
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(id, PipelineStatus::Paused, Duration::from_millis(1_000))
+        .await;
 
     // Start the pipeline
-    let mut req = config
+    let resp = config
         .post_no_body(format!("/v0/pipelines/{}/start", id))
         .await;
-    let resp: Value = req.json().await.unwrap();
-    assert_eq!("The pipeline is running", resp.as_str().unwrap());
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .await;
 
     // TODO: Deploying again currently creates another instance, which
     // might not be correct behavior
@@ -409,11 +435,13 @@ async fn deploy_pipeline() {
     // assert_eq!("Pipeline successfully deployed.", resp.as_str().unwrap());
 
     // Shutdown the pipeline
-    let mut req = config
+    let resp = config
         .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
         .await;
-    let resp: Value = req.json().await.unwrap();
-    assert_eq!("Pipeline successfully terminated.", resp.as_str().unwrap());
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .await;
 
     //
     // TODO: We should not bubble a connection refused error. Instead,

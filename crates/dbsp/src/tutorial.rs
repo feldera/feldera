@@ -942,7 +942,7 @@
 //!     Ok(())
 //! }
 //! ```
-//! 
+//!
 //! The whole program is in `tutorial6.rs`.  If we run it, it prints both per-month
 //! vaccination numbers and 3-month moving averages:
 //!

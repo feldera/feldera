@@ -20,6 +20,7 @@ from dbsp_api_client.models.update_pipeline_request import UpdatePipelineRequest
 from dbsp_api_client.models.attached_connector import AttachedConnector
 from dbsp_api_client.models.pipeline_status import PipelineStatus
 from dbsp_api_client.models.pipeline_descr import PipelineDescr
+from dbsp_api_client.models.pipeline import Pipeline
 from dbsp_api_client.api.pipeline import new_pipeline
 from dbsp_api_client.api.pipeline import update_pipeline
 from dbsp_api_client.api.pipeline import pipeline_stats
@@ -46,7 +47,6 @@ class DBSPPipelineConfig:
         self.pipeline_id = None
         self.pipeline_version = None
         self.attached_connectors = []
-        self.status = None
         self.name = name
         self.description = description
 
@@ -213,10 +213,9 @@ class DBSPPipelineConfig:
         self.save()
         pipeline_action.sync_detailed(
             client=self.api_client, pipeline_id=self.pipeline_id, action='deploy').unwrap("Failed to deploy pipeline")
-        self.status = PipelineStatus.DEPLOYED
+        self.wait_for_status(PipelineStatus.PAUSED, 60.0)
         pipeline_action.sync_detailed(
             client=self.api_client, pipeline_id=self.pipeline_id, action='start').unwrap("Failed to start pipeline")
-        self.status = PipelineStatus.RUNNING
 
     def pause(self):
         """Pause pipeline.
@@ -227,7 +226,6 @@ class DBSPPipelineConfig:
         """
         pipeline_action.sync_detailed(
             client=self.api_client, pipeline_id=self.pipeline_id, action='pause').unwrap("Failed to pause pipeline")
-        self.status = PipelineStatus.PAUSED
 
     def start(self):
         """Resume a paused pipeline.
@@ -238,7 +236,6 @@ class DBSPPipelineConfig:
         """
         pipeline_action.sync_detailed(
             client=self.api_client, pipeline_id=self.pipeline_id, action='start').unwrap("Failed to start pipeline")
-        self.status = PipelineStatus.RUNNING
 
     def wait(self, timeout: float = sys.maxsize):
         """Wait for the pipeline to process all inputs to completion.
@@ -278,16 +275,26 @@ class DBSPPipelineConfig:
             raise
         self.delete()
 
-    def descriptor(self) -> PipelineDescr:
-        """Retrieve pipeline descriptor.
+    def status(self) -> Pipeline:
+        """Retrieve pipeline status information.
 
         Raises:
             httpx.TimeoutException: If the request takes longer than Client.timeout.
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
-        desc = pipeline_status.sync_detailed(client=self.api_client, id=self.pipeline_id).unwrap(
-            "Failed to retrieve pipeline metadata")
-        return desc
+        status = pipeline_status.sync_detailed(client=self.api_client, id=self.pipeline_id).unwrap(
+            "Failed to retrieve pipeline status")
+        return status
+
+    def wait_for_status(self, expected_status: PipelineStatus, timeout: float = sys.maxsize):
+        start = time.time();
+        while True:
+            status = self.status().state.current_status;
+            if status == expected_status:
+                break
+            if time.time() - start > timeout:
+                raise TimeoutException("Timeout waiting for the pipeline to reach expected status " + str(expected_status) + ".  Current status is" + str(status) + ".")
+
 
     def stats(self) -> Dict[str, Any]:
         """Retrieve pipeline status and performance counters.
@@ -310,6 +317,13 @@ class DBSPPipelineConfig:
             httpx.TimeoutException: If the request takes longer than Client.timeout.
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
+
+        pipeline_action.sync_detailed(
+            client=self.api_client, pipeline_id=self.pipeline_id, action='shutdown').unwrap("Failed to pause pipeline")
+        self.wait_for_status(PipelineStatus.SHUTDOWN, 60.0)
+
         pipeline_delete.sync_detailed(
             client=self.api_client, pipeline_id=self.pipeline_id).unwrap("Failed to delete pipeline")
+
+        time.sleep(1.0)
         self.pipeline_id = None
