@@ -40,7 +40,7 @@ const GC_POLL_INTERVAL: Duration = Duration::from_secs(3);
 /// The SQL compiler returns a list of errors in the following JSON format if
 /// it's invoked with the `-je` option.
 ///
-/// ```no_run
+/// ```ignore
 ///  [ {
 /// "startLineNumber" : 14,
 /// "startColumn" : 13,

@@ -239,14 +239,14 @@ pub(crate) struct ProgramDescr {
     ///
     /// The given SQL program:
     ///
-    /// ```no_run
+    /// ```ignore
     /// CREATE TABLE USERS ( name varchar );
     /// CREATE VIEW OUTPUT_USERS as SELECT * FROM USERS;
     /// ```
     ///
     /// Would lead the following JSON string in `schema`:
     ///
-    /// ```no_run
+    /// ```ignore
     /// {
     ///   "inputs": [{
     ///       "name": "USERS",
