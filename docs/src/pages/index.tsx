@@ -34,7 +34,6 @@ function HomepageHeader(): JSX.Element {
 }
 
 export default function Home(): JSX.Element {
-  const { siteConfig } = useDocusaurusContext()
   return (
     <Layout title={`DBSP`} description='Streaming data processing engine'>
       <HomepageHeader />
