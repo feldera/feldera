@@ -1,6 +1,9 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
+const math = require('remark-math');
+const katex = require('rehype-katex');
+
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: "dbsp",
@@ -35,8 +38,10 @@ const config = {
       /** @type {import('docusaurus-preset-openapi').Options} */
       ({
         docs: {
-          sidebarPath: require.resolve("./sidebars.js")
+          sidebarPath: require.resolve("./sidebars.js"),
           /* editUrl: "https://github.com/feldera/dbsp/docs", */
+          remarkPlugins: [math],
+	  rehypePlugins: [katex],
         },
         api: {
           path: "openapi.json",
@@ -131,6 +136,16 @@ const config = {
     },
 
     themes: ['@docusaurus/theme-mermaid'],
+
+    stylesheets: [
+      {
+	href: 'https://cdn.jsdelivr.net/npm/katex@0.13.24/dist/katex.min.css',
+	type: 'text/css',
+	integrity:
+	  'sha384-odtC+0UGzzFL/6PNoE8rX/SPcQDXBJ+uRepguP4QkPCm2LBxH3FA3y+fKSiJ+AmM',
+	crossorigin: 'anonymous',
+      },
+    ],
 };
 
 module.exports = config;
