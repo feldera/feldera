@@ -6,6 +6,7 @@ use dbsp_pipeline_manager::config::{CompilerConfig, DatabaseConfig, ManagerConfi
 use dbsp_pipeline_manager::pipeline_manager::ApiDoc;
 use utoipa::OpenApi;
 
+// Standalone binary that runs the pipeline manager, compiler and local runner services.
 fn main() -> anyhow::Result<()> {
     // Stay in single-threaded mode (no tokio) until calling `daemonize`.
 
@@ -49,6 +50,8 @@ fn main() -> anyhow::Result<()> {
             .block_on(Compiler::precompile_dependencies(&compiler_config))?;
         return Ok(());
     }
-    let database_config = DatabaseConfig::from_arg_matches(&matches)?;
+    let database_config = DatabaseConfig::from_arg_matches(&matches)
+        .map_err(|err| err.exit())
+        .unwrap();
     dbsp_pipeline_manager::pipeline_manager::run(database_config, manager_config, compiler_config)
 }
