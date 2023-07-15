@@ -104,12 +104,16 @@ const config = {
             title: "Community",
             items: [
               {
-                label: "Stack Overflow",
-                href: "https://stackoverflow.com/questions/tagged/dbsp",
+                label: "GitHub",
+                href: "https://github.com/feldera",
               },
               {
-                label: "Twitter",
-                href: "https://twitter.com/felderainc",
+                label: "LinkedIn",
+                href: "https://www.linkedin.com/company/feldera/",
+              },
+              {
+                label: "Stack Overflow",
+                href: "https://stackoverflow.com/questions/tagged/dbsp",
               },
             ],
           },
@@ -119,10 +123,6 @@ const config = {
               {
                 label: "Blog",
                 to: "/blog",
-              },
-              {
-                label: "GitHub",
-                href: "https://github.com/feldera",
               },
             ],
           },
