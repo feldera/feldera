@@ -87,7 +87,7 @@ notification when you git push.
 
 ### Merging a pull request
 
-Since we run benchmarks as part of CI it's good practice to preserve the commit IDs of the feature branch
+Since we run benchmarks as part of the CI, it'sa  good practice to preserve the commit IDs of the feature branch
 we've worked on (and benchmarked). Unfortunately, [the github UI does not have support for this](https://github.com/community/community/discussions/4618)
 (it only allows rebase, squash and merge commits to close PRs).
 Therefore, it's recommended to merge PRs using the following git CLI invocation:
@@ -98,8 +98,15 @@ git merge --ff-only feature-branch-name
 git push upstream main
 ```
 
+
 ### Code Style
 
+Execute the following command to make `git commit` check the code for formatting issues before commit. It is not yet applied to the sql compiler.
+
+```shell
+GITDIR=$(git rev-parse --git-dir)
+ln -sf $(pwd)/tools/pre-push ${GITDIR}/hooks/pre-push
+```
 ### Formatting Commit Messages
 
 We follow the conventions on [How to Write a Git Commit Message](http://chris.beams.io/posts/git-commit/).
@@ -111,3 +118,47 @@ and commits.
 ## Reporting Bugs and Creating Issues
 
 When opening a new issue, try to roughly follow the commit message format conventions above.
+
+
+# For developers
+
+## Running Benchmarks against DBSP
+
+The repository has a number of benchmarks available in the `benches` directory that provide a comparison of DBSP's performance against a known set of tests.
+
+Each benchmark has its own options and behavior, as outlined below.
+
+### Nexmark Benchmark
+
+You can run the complete set of Nexmark queries, with the default settings, with:
+
+```shell
+cargo bench --bench nexmark --features with-nexmark
+```
+
+By default this will run each query with a total of 100 million events emitted at 10M per second (by two event generator threads), using 2 CPU cores for processing the data.
+
+To run just the one query, q3, with only 10 million events, but using 8 CPU cores to process the data and 6 event generator threads, you can run:
+
+```shell
+cargo bench --bench nexmark --features with-nexmark -- --query q3 --max-events 10000000 --cpu-cores 8 --num-event-generators 6
+```
+
+For further options that you can use with the Nexmark benchmark,
+
+```shell
+cargo bench --bench nexmark --features with-nexmark -- --help
+```
+
+An extensive blog post about the implementation of Nexmark in DBSP:
+<https://liveandletlearn.net/post/vmware-take-3-experience-with-rust-and-dbsp/>
+
+
+## Updating the pipeline manager database schema
+
+Here are some guidelines when contributing code that affects the Pipeline Manager's DB schema.
+
+* We use SQL migrations to apply the schema to a live database to faciliate upgrades. We use [refinery](https://github.com/rust-db/refinery) to manage migrations.
+* The migration files can be found in `crates/pipeline_manager/migrations`
+* Do not modify an existing migration file. If you want to evolve the schema, add a new SQL or rust file to the migrations folder following [refinery's versioning and naming scheme](https://docs.rs/refinery/latest/refinery/#usage). The migration script should update an existing schema as opposed to assuming a clean slate. For example, use `ALTER TABLE` to add a new column to an existing table and fill that column for existing rows with the appropriate defaults.
+* If you add a new migration script `V{i}`, add tests for migrations from `V{i-1} to V{i}`. For example, add tests that invoke the pipeline manager APIs before and after the migration.
