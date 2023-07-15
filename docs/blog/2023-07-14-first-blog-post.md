@@ -3,7 +3,6 @@ slug: first-blog-post
 title: Welcome to Feldera
 authors: [mbudiu]
 tags: [welcome]
-unlisted: true
 ---
 
 In this blog we will provide technical information related to the

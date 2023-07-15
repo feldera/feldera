@@ -3,7 +3,6 @@ slug: Changes
 title: Computing with changes
 authors: [mbudiu]
 tags: [incremental computation, changes, deltas, transaction, diff, database, CDC]
-unlisted: true
 ---
 
 # Incremental computation
