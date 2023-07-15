@@ -17,7 +17,7 @@ produces an output *O*:
 ![computation](computation.svg)
 
 Now let's change the input by *modifying* it with some change, which
-we denote by *ΔI*:
+we denote by *ΔI* :
 
 ![reuse](reuse.svg)
 
@@ -121,11 +121,11 @@ ones.
 
 Notice that we are dealing with two different kinds of structures: the
 changed objects (e.g., files), and the changes between objects
-(deltas, or diffs).  (One can store a change in a text file, but its
+(deltas, or diffs).  (One can store a change in a text file, but it's
 really a different object.)
 
 Let's call these two data structures *D* for data, and *Δ* for
-changes.  First we have a *diff8 operation *D - D → Δ*: where use
+changes.  First we have a *diff* operation *D - D → Δ*: where we use
 minus for the *diff*.  The diff between two data values is a change.
 
 We also have an inverse operation: *D + Δ → D*, which changes some
@@ -148,6 +148,14 @@ your bank account is a legal change if you have $20, but not if you
 have only $5 left.  So the validity of a change cannot be evaluated in
 isolation, you have to know *what* is being changed.  Only the
 application domain can decide that.
+
+For this case the structures *D* and *Δ* are identical: you can
+represent both the data and the changes as numbers (but you must
+include negative numbers if you want to represent all possible
+changes).  *Empty* data and *empty* changes are both the number zero.
+This is very convenient.  We will show up in a future blog post that
+we can take advantage of this nice property even when we don't handle
+just numbers.
 
 ## Databases and changes
 
@@ -220,7 +228,7 @@ Recovering transactions from CDC is usually a very involved process.
 
 We believe that in ideal world CDC and changes described by
 transactions should be described in the same language.  But legacy
-systems are very hard to change, so it may be a long time before
+systems are very hard to change, so it may be a long time before this
 happens.  But it is still very important to understand this conceptual
 relationship.  In future articles we will show why unifying these two
 concepts can have some unexpected benefits.
