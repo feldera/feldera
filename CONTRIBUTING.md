@@ -87,7 +87,7 @@ notification when you git push.
 
 ### Merging a pull request
 
-Since we run benchmarks as part of the CI, it'sa  good practice to preserve the commit IDs of the feature branch
+Since we run benchmarks as part of the CI, it's a good practice to preserve the commit IDs of the feature branch
 we've worked on (and benchmarked). Unfortunately, [the github UI does not have support for this](https://github.com/community/community/discussions/4618)
 (it only allows rebase, squash and merge commits to close PRs).
 Therefore, it's recommended to merge PRs using the following git CLI invocation:
@@ -101,7 +101,7 @@ git push upstream main
 
 ### Code Style
 
-Execute the following command to make `git commit` check the code for formatting issues before commit. It is not yet applied to the sql compiler.
+Execute the following command to make `git push` check the code for formatting issues.
 
 ```shell
 GITDIR=$(git rev-parse --git-dir)
@@ -121,6 +121,44 @@ When opening a new issue, try to roughly follow the commit message format conven
 
 
 # For developers
+
+## Building DBSP from sources
+
+DBSP is implemented in Rust and uses Rust's `cargo` build system. The SQL
+to DBSP compiler is implemented in Java and uses `maven` as its build system.
+
+You can build the rust sources by runnning the following at the top level of this tree.
+
+```
+cargo build
+```
+
+To build the SQL to DBSP compiler, run the following from `sql-to-dbsp-compiler/SQL-compiler`:
+
+```
+mvn package
+```
+
+If you want to develop DBSP without installing the required toolchains
+locally, you can use Github Codespaces; from
+https://github.com/feldera/dbsp, click on the green `<> Code` button,
+then select Codespaces and click on "Create codespace on main".
+
+## Learning the DBSP Rust code
+
+To learn how the DBSP core works, we recommend starting with the tutorial.
+
+From the project root:
+
+```
+cargo doc --open
+```
+
+Then search for `dbsp::tutorial`.
+
+Another good place to start is the `circuit::circuit_builder` module documentation,
+or the examples folder.  For more sophisticated examples, try looking
+at the `nexmark` benchmark in the `benches` directory.
 
 ## Running Benchmarks against DBSP
 
@@ -156,9 +194,10 @@ An extensive blog post about the implementation of Nexmark in DBSP:
 
 ## Updating the pipeline manager database schema
 
-Here are some guidelines when contributing code that affects the Pipeline Manager's DB schema.
+The pipeline manager serves as the API server for Feldera. It persists API state in a Postgres DB instance.
+Here are some guidelines when contributing code that affects this database's schema.
 
-* We use SQL migrations to apply the schema to a live database to faciliate upgrades. We use [refinery](https://github.com/rust-db/refinery) to manage migrations.
+* We use SQL migrations to apply the schema to a live database to facilitate upgrades. We use [refinery](https://github.com/rust-db/refinery) to manage migrations.
 * The migration files can be found in `crates/pipeline_manager/migrations`
 * Do not modify an existing migration file. If you want to evolve the schema, add a new SQL or rust file to the migrations folder following [refinery's versioning and naming scheme](https://docs.rs/refinery/latest/refinery/#usage). The migration script should update an existing schema as opposed to assuming a clean slate. For example, use `ALTER TABLE` to add a new column to an existing table and fill that column for existing rows with the appropriate defaults.
-* If you add a new migration script `V{i}`, add tests for migrations from `V{i-1} to V{i}`. For example, add tests that invoke the pipeline manager APIs before and after the migration.
+* If you add a new migration script `V{i}`, add tests for migrations from `V{i-1}` to `V{i}`. For example, add tests that invoke the pipeline manager APIs before and after the migration.
