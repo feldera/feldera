@@ -79,7 +79,7 @@ async fn initialize_local_dbsp_instance() -> TempDir {
 
     // We can't use tokio::spawn because super::run() creates its own Tokio Runtime
     let _ = std::thread::spawn(|| {
-        super::run(database_config, manager_config, compiler_config).unwrap();
+        crate::pipeline_manager::run(database_config, manager_config, compiler_config).unwrap();
     });
     tokio::time::sleep(Duration::from_millis(1000)).await;
     tmp_dir
