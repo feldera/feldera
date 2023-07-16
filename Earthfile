@@ -421,7 +421,7 @@ test-manager:
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
-    RUN cp `cargo test --features integration-test --no-run --package dbsp_pipeline_manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable' | grep -v null` test_binary
+    RUN cp `cargo test --features integration-test --no-run --package dbsp_pipeline_manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable' | grep -v null | grep dbsp_pipeline_manager` test_binary
     SAVE ARTIFACT test_binary
 
 python-bindings-checker:
@@ -476,7 +476,7 @@ test-python:
     WITH DOCKER --pull postgres
         RUN docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
             sleep 3 && \
-            ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --unix-daemon && \
+            ./dbsp_pipeline_manager --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --unix-daemon && \
             sleep 1 && \
             python3 python/test.py && \
             cd demo/demo_notebooks && jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
@@ -513,8 +513,8 @@ build-dbsp-manager-container:
     COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp /database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
     COPY sql-to-dbsp-compiler/lib /database-stream-processor/sql-to-dbsp-compiler/lib
     COPY sql-to-dbsp-compiler/temp /database-stream-processor/sql-to-dbsp-compiler/temp
-    RUN ./dbsp_pipeline_manager --bind-address=0.0.0.0 --working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
-    ENTRYPOINT ["./dbsp_pipeline_manager", "--bind-address=0.0.0.0", "--working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
+    RUN ./dbsp_pipeline_manager --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
+    ENTRYPOINT ["./dbsp_pipeline_manager", "--bind-address=0.0.0.0", "--manager-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
     SAVE IMAGE ghcr.io/feldera/dbsp-manager
 
 # TODO: mirrors the Dockerfile. See note above.
