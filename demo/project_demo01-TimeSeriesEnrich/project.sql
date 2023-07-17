@@ -1,5 +1,5 @@
 CREATE TABLE demographics (
-    cc_num FLOAT64 NOT NULL,
+    cc_num STRING NOT NULL,
     first STRING,
     gender STRING,
     street STRING,
@@ -15,7 +15,7 @@ CREATE TABLE demographics (
 
 CREATE TABLE transactions (
     trans_date_trans_time TIMESTAMP NOT NULL,
-    cc_num FLOAT64 NOT NULL,
+    cc_num STRING NOT NULL,
     merchant STRING,
     category STRING,
     amt FLOAT64,

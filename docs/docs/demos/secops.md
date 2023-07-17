@@ -11,12 +11,6 @@ binaries built from them directly or indirectly, to Kubernetes images
 built using those vulnerable binaries, and to Kubernetes clusters
 running those vulnerable images.
 
-> We presume that vulnerabilities are transitive, as is often the
-> case.  That is, if A is built using B, and B was built using C, and
-> C has a vulnerability, then we take A and B to have that
-> vulnerability too.  DBSP has strong support for this kind of
-> recursive graph relationship.
-
 ## Schema
 
 Suppose each record in `pipeline` represents a run of the CI build

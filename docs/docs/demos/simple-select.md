@@ -1,8 +1,8 @@
 # Simple Data Selection
 
-The simplest demo included in our set is the simplest one that still
-serves to demonstrate the basics of DBSP.  Start by firing up the DBSP
-demo and visiting <http://localhost:8085/>.
+This demo is the simplest one in our set that still serves to
+demonstrate the basics of DBSP.  Start by firing up the DBSP demo and
+visiting <http://localhost:8085/>.
 
 ## SQL program
 

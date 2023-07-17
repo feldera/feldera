@@ -13,7 +13,7 @@ and address of its user:
 ```mermaid
 erDiagram
    demographics {
-     float64 cc_num
+     string cc_num
      string first
      string gender
      string street
@@ -28,7 +28,7 @@ erDiagram
    }
    transactions {
      timestamp trans_date_trans_time
-     float64 cc_num
+     string cc_num
      string merchant
      string category
      float64 amt
