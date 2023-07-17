@@ -1,5 +1,5 @@
 CREATE TABLE demographics (
-    cc_num FLOAT64 NOT NULL,
+    cc_num STRING NOT NULL,
     first STRING,
     gender STRING,
     street STRING,
@@ -16,7 +16,7 @@ CREATE TABLE demographics (
 
 CREATE TABLE transactions (
     trans_date_trans_time TIMESTAMP NOT NULL,
-    cc_num FLOAT64 NOT NULL,
+    cc_num STRING NOT NULL,
     merchant STRING,
     category STRING,
     amt FLOAT64,
@@ -34,17 +34,17 @@ CREATE VIEW features as
         ST_DISTANCE(ST_POINT(long,lat), ST_POINT(merch_long,merch_lat)) AS distance,
         -- TIMESTAMPDIFF(MINUTE, trans_date_trans_time, last_txn_date) AS trans_diff,
         AVG(amt) OVER(
-            PARTITION BY CAST(cc_num AS NUMERIC)
+            PARTITION BY cc_num
             ORDER BY unix_time
             RANGE BETWEEN 60 * 60 * 24 * 7 /* 7 days */ PRECEDING AND 1 PRECEDING) AS
         avg_spend_pw,
         AVG(amt) OVER(
-            PARTITION BY CAST(cc_num AS NUMERIC)
+            PARTITION BY cc_num
             ORDER BY unix_time
             RANGE BETWEEN 60 * 60 * 24 * 30 /* 30 days */ PRECEDING AND 1 PRECEDING) AS
         avg_spend_pm,
         COUNT(*) OVER(
-            PARTITION BY CAST(cc_num AS NUMERIC)
+            PARTITION BY cc_num
             ORDER BY unix_time
             RANGE BETWEEN 60 * 60 * 24 /* 1 day */ PRECEDING AND 1 PRECEDING ) AS
         trans_freq_24,
