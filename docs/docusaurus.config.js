@@ -49,6 +49,8 @@ const config = {
         },
         blog: {
           showReadingTime: false,
+          remarkPlugins: [math],
+	  rehypePlugins: [katex],
           /* editUrl: "https://github.com/feldera/dbsp/docs", */
         },
         theme: {

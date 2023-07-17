@@ -10,25 +10,26 @@ tags: [incremental computation, changes, deltas, transaction, diff, database, CD
 *Incremental computation* refers to computations that attempt to
 reuse results that were previously computed.
 
-Let us assume you have a program *P* that is given an input *I* and
-produces an output *O*:
+Let us assume you have a program $P$ that is given an input $I$ and
+produces an output $O$:
 
 ![computation](computation.svg)
 
 Now let's change the input by *modifying* it with some change, which
-we denote by *ΔI* :
+we denote by $\Delta I$:
 
 ![reuse](reuse.svg)
 
 We would like to avoid computing the entire output again, and ideally
-reuse the previously computed *O* and only adjust it by a change *ΔO*.
-This would be great especially if the output doesn't *change* much.
+reuse the previously computed $O$ and only adjust it by a change
+$\Delta O$.  This would be great especially if the output doesn't
+*change* much.
 
 This sounds nice, but is very vague.  To make this work we have to
-explain what a __change__ is (what we denoted by Δ) and what it means
-to change something (what we denoted by +).  For general-purpose
-computations this in general makes no sense, but it works very well in
-some important domains.
+explain what a __change__ is (what we denoted by $\Delta$) and what it
+means to change something (what we denoted by $+$).  For
+general-purpose computations this in general makes no sense, but it
+works very well in some important domains.
 
 ## Changes in documents
 
@@ -123,12 +124,13 @@ changed objects (e.g., files), and the changes between objects
 (deltas, or diffs).  (One can store a change in a text file, but it's
 really a different object.)
 
-Let's call these two data structures *D* for data, and *Δ* for
-changes.  First we have a *diff* operation *D - D → Δ*: where we use
-minus for the *diff*.  The diff between two data values is a change.
+Let's call these two data structures $D$ for data, and $\Delta$ for
+changes.  First we have a *diff* operation $D - D \to \Delta$: where
+we use minus for the *diff*.  The diff between two data values is a
+change.
 
-We also have an inverse operation: *D + Δ → D*, which changes some
-data by *applying* a change.  There is also a notion of an *empty
+We also have an inverse operation: $D + \Delta \to D$, which changes
+some data by *applying* a change.  There is also a notion of an *empty
 change*, which is the difference between two identical data values.
 
 ## Changing numbers
@@ -148,7 +150,7 @@ have only $5 left.  So the validity of a change cannot be evaluated in
 isolation, you have to know *what* is being changed.  Only the
 application domain can decide that.
 
-For this case the structures *D* and *Δ* are identical: you can
+For this case the structures $D$ and $\Delta$ are identical: you can
 represent both the data and the changes as numbers (but you must
 include negative numbers if you want to represent all possible
 changes).  *Empty* data and *empty* changes are both the number zero.
