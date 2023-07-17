@@ -9,7 +9,7 @@ create table repository (
 -- Commit inside a Git repo.
 create table git_commit (
     git_commit_id bigint not null,
-    repository_id bigint not null /* foreign key references repository(repository_id)*/,
+    repository_id bigint not null foreign key references repository(repository_id),
     commit_id varchar not null,
     commit_date timestamp not null,
     commit_owner varchar not null
@@ -26,8 +26,8 @@ create table pipeline (
 
 -- Git commits used by each pipeline.
 create table pipeline_sources (
-    git_commit_id bigint not null /* foreign key references git_commit(git_commit_id) */,
-    pipeline_id bigint not null /* foreign key references pipeline(pipeline_id) */
+    git_commit_id bigint not null foreign key references git_commit(git_commit_id),
+    pipeline_id bigint not null foreign key references pipeline(pipeline_id)
 );
 
 -- Binary artifact created by a CI pipeline.
@@ -40,7 +40,7 @@ create table artifact (
     checksum_type varchar not null,
     artifact_size_in_bytes bigint not null,
     artifact_type varchar not null,
-    builtby_pipeline_id bigint not null /* foreign key references pipeline(pipeline_id) */,
+    builtby_pipeline_id bigint not null foreign key references pipeline(pipeline_id),
     parent_artifact_id bigint foreign key references artifact(artifact_id)
 );
 
@@ -49,7 +49,7 @@ create table vulnerability (
     vulnerability_id bigint not null,
     discovery_date timestamp not null,
     discovered_by_user_id bigint not null,
-    discovered_in bigint not null /* foreign key references git_commit(git_commit_id) */,
+    discovered_in bigint not null foreign key references git_commit(git_commit_id),
     update_date timestamp,
     updated_by_user_id bigint,
     checksum varchar not null,
