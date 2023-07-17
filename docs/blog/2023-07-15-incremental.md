@@ -7,8 +7,8 @@ tags: [incremental computation, changes, deltas, transaction, diff, database, CD
 
 # Incremental computation
 
-*Incremental computation* refers to computations that attempt to
-reuse results that were previously computed.
+*Incremental computation* is a computation that reuses results that
+were previously computed.
 
 Let us assume you have a program $P$ that is given an input $I$ and
 produces an output $O$:
@@ -27,8 +27,8 @@ $\Delta O$.  This would be great especially if the output doesn't
 
 This sounds nice, but is very vague.  To make this work we have to
 explain what a __change__ is (what we denoted by $\Delta$) and what it
-means to change something (what we denoted by $+$).  For
-general-purpose computations this in general makes no sense, but it
+means to change something (what we denoted by $+$).  This may be
+difficult to define precisely for an arbirary computation, but it
 works very well in some important domains.
 
 ## Changes in documents
@@ -42,16 +42,16 @@ a screenshot of Word showing changes to short document:
 
 Word keeps track of the changes by looking at your keystrokes and
 recording what is being deleted (shown with a ~~strikethrough~~) or
-inserted (shown as underlined).  Notice that Word doesn't attempt to
+inserted (shown as <u>underlined</u>).  Notice that Word doesn't attempt to
 show the minimal changes performed -- which could be shown just by the
 deletion of the apostrophe `'` in *it's*, but it rather mirrors the
 actions you have performed to change the document.
 
 Change tracking is such a useful feature in Word because it allows
 readers to avoid reading a whole edited document to discover what has
-changed.  In general
+changed.  In general:
 
-> change tracking is mostly useful when changes are expected to be
+> Change tracking is mostly useful when changes are expected to be
   *small* compared to the modified object
 
 ## Changes in programs
@@ -115,7 +115,7 @@ description to convert a set of old file versions into a set of newer
 ones.
 
 > Changes can be hierarchical: changes to complex objects can be
-  described from changes to simpler ones
+  described from changes to simpler ones.
 
 ## Data and changes
 
@@ -140,15 +140,15 @@ Consider the case of a bank account.  The value of the account is a
 dollar amount -- a number.  At the end of each month we get a bank
 statement describing the change in the value of the account: also a
 number.  For bank accounts the changes can be both positive and
-negative, but, unless you have overdraft protection, the amounts are
+negative but, unless you have overdraft protection, the amounts are
 always positive.
 
-This is another important lesson: applying a change to a legal data
-value may not produce another legal data value.  Removing $10 from
-your bank account is a legal change if you have $20, but not if you
-have only $5 left.  So the validity of a change cannot be evaluated in
-isolation, you have to know *what* is being changed.  Only the
-application domain can decide that.
+This is another important lesson: applying a change to a valid data
+value may not produce another valid data value.  Removing $10 from
+your bank account is a permitted change if you have $20, but not if
+you have only $5 left.  So the validity of a change cannot be
+evaluated in isolation, you have to know *what* is being changed.
+Only the application domain can decide that.
 
 For this case the structures $D$ and $\Delta$ are identical: you can
 represent both the data and the changes as numbers (but you must
@@ -162,15 +162,22 @@ just numbers.
 
 Databases are an application domain where changes are actually
 central.  Changes appear in databases in two guises, which look very
-dissimilar superficially, which we describe below.  We think that this
-is a historical mistake, and the two notions should be unified.
+dissimilar superficially: transactions and change data capture; we
+describe these in more details below.  These forms appear
+superficially dissimilar and historically treated separately, but
+their fundamental similarity leads us to believe that in the future
+they should be unified.
+
+(There is yet another way that changes appear in databases, in the
+guise of Incremental View Maintenace; we reserve a future blog post to
+discuss about this kind of changes.)
 
 ### Transactions
 
 A database is a set of tables.  To simplify the discussion, let us
 assume that the database schema does not change - i.e., the set of
-tables is fixed.  (This discussion *can* handle schema changes as
-well, but let's keep it simple.)  A change to the database can be
+tables is fixed.  (Schema changes *can* be handled as well, but let's
+keep this discussion simple.)  A change to the database can be
 described by a set of changes, one to each table, similar to the way a
 patch contains changes to multiple files.
 
@@ -189,14 +196,14 @@ which group multiple changes together.
 
 This is an important concept, so let us highlight it:
 
-> Transactions describe database changes
+> Transactions describe database changes.
 
 Transactions do many other things, like isolation, durability, etc,
 but here we care only about their ability of describing changes that
 are applied together.
 
 As we observed previously, it is possible to describe changes that are
-not always legal, such as deleting a row that doesn't exist from a
+not always valid, such as deleting a row that doesn't exist from a
 table, or inserting a row that duplicates a primary key.  Attempting
 to execute such a change in a transaction will usually result in the
 entire transaction being aborted.
@@ -214,7 +221,7 @@ changes continuously, as they happen.  So you install a CDC system in
 the source database, which sends the changes to the second database,
 which applies them to its contents.
 
-> CDC describe database changes
+> CDC describes database changes.
 
 So a diagram of the system looks roughly like this:
 
@@ -227,7 +234,7 @@ while CDC is usually expressed in a complex format (perhaps encoded as
 JSON), which describes also the changes in terms of simple changes.
 Recovering transactions from CDC is usually a very involved process.
 
-We believe that in ideal world CDC and changes described by
+We believe that, in ideal world, CDC and changes described by
 transactions should be described in the same language.  But legacy
 systems are very hard to change, so it may be a long time before this
 happens.  But it is still very important to understand this conceptual

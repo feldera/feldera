@@ -6,7 +6,7 @@ tags: [welcome]
 ---
 
 In this blog we will provide technical information related to the
-products and technologies produced
+products and technologies produced by
 [feldera.com](https://www.feldera.com).  Feldera is an early-stage
 start-up that builds an incremental streaming query engine.
 Significant parts of the software produced by Feldera is available
@@ -27,10 +27,10 @@ databases tend to offer restricted query engines, or to support
 incremental computations only for restricted forms of queries.
 
 We will start this blog with a series of articles explaining how these
-three seemingly disparate concepts can be unified in very natural way,
-and how one can build a tool that provides all these features without
-compromising in any of these dimensions.  In the figure below IVM
-stands for *Incremental View Maintenance*, which is a form of
+three seemingly disparate concepts can be unified in a very natural
+way, and how one can build a tool that provides all these features
+without compromising in any of these dimensions.  In the figure below,
+IVM stands for *Incremental View Maintenance*, which is a form of
 incremental computation provided by databases.
 
 ![cube](cube.svg)
