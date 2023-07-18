@@ -660,6 +660,10 @@ async fn program_code(
             , body = ErrorResponse
             , example = json!(example_unknown_program())),
     ),
+    params(
+        ("id" = Option<Uuid>, Query, description = "Unique connector identifier"),
+        ("name" = Option<String>, Query, description = "Unique connector name")
+    ),
     tag = "Program"
 )]
 #[get("/program")]
@@ -1245,6 +1249,11 @@ async fn pipeline_stats(
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
     ),
+    params(
+        ("id" = Option<Uuid>, Query, description = "Unique pipeline identifier"),
+        ("name" = Option<String>, Query, description = "Unique pipeline name"),
+        ("toml" = Option<bool>, Query, description = "Set to true to request the configuration of the pipeline as a toml file."),
+    ),
     tag = "Pipeline"
 )]
 #[get("/pipeline")]
@@ -1712,6 +1721,10 @@ pub struct PipelineIdOrNameTomlQuery {
             , description = "Specified connector name does not exist in the database."
             , body = ErrorResponse
             , example = json!(example_unknown_name())),
+    ),
+    params(
+        ("id" = Option<Uuid>, Query, description = "Unique connector identifier"),
+        ("name" = Option<String>, Query, description = "Unique connector name")
     ),
     tag = "Connector"
 )]
