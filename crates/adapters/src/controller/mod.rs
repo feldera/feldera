@@ -796,7 +796,10 @@ impl ControllerInner {
         // Create transport endpoint.
         let transport = <dyn InputTransport>::get_transport(&endpoint_config.transport.name)
             .ok_or_else(|| {
-                ControllerError::unknown_input_transport(&endpoint_config.transport.name)
+                ControllerError::unknown_input_transport(
+                    endpoint_name,
+                    &endpoint_config.transport.name,
+                )
             })?;
 
         let endpoint = transport
@@ -845,11 +848,15 @@ impl ControllerInner {
         let catalog = self.catalog.lock().unwrap();
         let input_stream = catalog
             .input_collection_handle(&endpoint_config.stream)
-            .ok_or_else(|| ControllerError::unknown_input_stream(&endpoint_config.stream))?;
+            .ok_or_else(|| {
+                ControllerError::unknown_input_stream(endpoint_name, &endpoint_config.stream)
+            })?;
 
         // Create parser.
-        let format = <dyn InputFormat>::get_format(&endpoint_config.format.name)
-            .ok_or_else(|| ControllerError::unknown_input_format(&endpoint_config.format.name))?;
+        let format =
+            <dyn InputFormat>::get_format(&endpoint_config.format.name).ok_or_else(|| {
+                ControllerError::unknown_input_format(endpoint_name, &endpoint_config.format.name)
+            })?;
 
         let parser = format
             .new_parser(input_stream, format_config)
@@ -932,7 +939,10 @@ impl ControllerInner {
         // Create transport endpoint.
         let transport = <dyn OutputTransport>::get_transport(&endpoint_config.transport.name)
             .ok_or_else(|| {
-                ControllerError::unknown_output_transport(&endpoint_config.transport.name)
+                ControllerError::unknown_output_transport(
+                    endpoint_name,
+                    &endpoint_config.transport.name,
+                )
             })?;
 
         let endpoint = transport
@@ -982,7 +992,9 @@ impl ControllerInner {
             .lock()
             .unwrap()
             .output_query_handles(&endpoint_config.stream, endpoint_config.query)
-            .ok_or_else(|| ControllerError::unknown_output_stream(&endpoint_config.stream))?;
+            .ok_or_else(|| {
+                ControllerError::unknown_output_stream(endpoint_name, &endpoint_config.stream)
+            })?;
 
         let endpoint_id = outputs.alloc_endpoint_id();
         let endpoint_name_str = endpoint_name.to_string();
@@ -1005,8 +1017,10 @@ impl ControllerInner {
         ));
 
         // Create encoder.
-        let format = <dyn OutputFormat>::get_format(&endpoint_config.format.name)
-            .ok_or_else(|| ControllerError::unknown_output_format(&endpoint_config.format.name))?;
+        let format =
+            <dyn OutputFormat>::get_format(&endpoint_config.format.name).ok_or_else(|| {
+                ControllerError::unknown_output_format(endpoint_name, &endpoint_config.format.name)
+            })?;
         let encoder = format
             .new_encoder(format_config, probe)
             .map_err(|e| ControllerError::encode_error(endpoint_name, e))?;

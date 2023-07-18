@@ -25,24 +25,42 @@ pub enum ConfigError {
     DuplicateOutputEndpoint { endpoint_name: String },
 
     /// Endpoint configuration specifies unknown input format name.
-    UnknownInputFormat { format_name: String },
+    UnknownInputFormat {
+        endpoint_name: String,
+        format_name: String,
+    },
 
     /// Endpoint configuration specifies unknown output format name.
-    UnknownOutputFormat { format_name: String },
+    UnknownOutputFormat {
+        endpoint_name: String,
+        format_name: String,
+    },
 
     /// Endpoint configuration specifies unknown input transport name.
-    UnknownInputTransport { transport_name: String },
+    UnknownInputTransport {
+        endpoint_name: String,
+        transport_name: String,
+    },
 
     /// Endpoint configuration specifies unknown output transport name.
-    UnknownOutputTransport { transport_name: String },
+    UnknownOutputTransport {
+        endpoint_name: String,
+        transport_name: String,
+    },
 
     /// Endpoint configuration specifies an input stream name
     /// that is not found in the circuit catalog.
-    UnknownInputStream { stream_name: String },
+    UnknownInputStream {
+        endpoint_name: String,
+        stream_name: String,
+    },
 
     /// Endpoint configuration specifies an output stream name
     /// that is not found in the circuit catalog.
-    UnknownOutputStream { stream_name: String },
+    UnknownOutputStream {
+        endpoint_name: String,
+        stream_name: String,
+    },
 }
 
 impl StdError for ConfigError {}
@@ -72,26 +90,47 @@ impl Display for ConfigError {
             Self::DuplicateInputEndpoint { endpoint_name } => {
                 write!(f, "Input endpoint '{endpoint_name}' already exists")
             }
-            Self::UnknownInputFormat { format_name } => {
-                write!(f, "Unknown input format '{format_name}'")
+            Self::UnknownInputFormat {
+                endpoint_name,
+                format_name,
+            } => {
+                write!(f, "Input endpoint '{endpoint_name}' specifies unknown input format '{format_name}'")
             }
-            Self::UnknownInputTransport { transport_name } => {
-                write!(f, "Unknown input transport '{transport_name}'")
+            Self::UnknownInputTransport {
+                endpoint_name,
+                transport_name,
+            } => {
+                write!(f, "Input endpoint '{endpoint_name}' specifies unknown input transport '{transport_name}'")
             }
             Self::DuplicateOutputEndpoint { endpoint_name } => {
                 write!(f, "Output endpoint '{endpoint_name}' already exists")
             }
-            Self::UnknownOutputFormat { format_name } => {
-                write!(f, "Unknown output format '{format_name}'")
+            Self::UnknownOutputFormat {
+                endpoint_name,
+                format_name,
+            } => {
+                write!(f, "Output endpoint '{endpoint_name}' specifies unknown output format '{format_name}'")
             }
-            Self::UnknownOutputTransport { transport_name } => {
-                write!(f, "Unknown output transport '{transport_name}'")
+            Self::UnknownOutputTransport {
+                endpoint_name,
+                transport_name,
+            } => {
+                write!(f, "Output endpoint '{endpoint_name}' specifies unknown output transport '{transport_name}'")
             }
-            Self::UnknownInputStream { stream_name } => {
-                write!(f, "Unknown table '{stream_name}'")
+            Self::UnknownInputStream {
+                endpoint_name,
+                stream_name,
+            } => {
+                write!(
+                    f,
+                    "Input endpoint '{endpoint_name}' specifies unknown table '{stream_name}'"
+                )
             }
-            Self::UnknownOutputStream { stream_name } => {
-                write!(f, "Unknown output table or view '{stream_name}'")
+            Self::UnknownOutputStream {
+                endpoint_name,
+                stream_name,
+            } => {
+                write!(f, "Output endpoint '{endpoint_name}' specifies unknown output table or view '{stream_name}'")
             }
         }
     }
@@ -113,14 +152,16 @@ impl ConfigError {
         }
     }
 
-    pub fn unknown_input_format(format_name: &str) -> Self {
+    pub fn unknown_input_format(endpoint_name: &str, format_name: &str) -> Self {
         Self::UnknownInputFormat {
+            endpoint_name: endpoint_name.to_owned(),
             format_name: format_name.to_owned(),
         }
     }
 
-    pub fn unknown_input_transport(transport_name: &str) -> Self {
+    pub fn unknown_input_transport(endpoint_name: &str, transport_name: &str) -> Self {
         Self::UnknownInputTransport {
+            endpoint_name: endpoint_name.to_owned(),
             transport_name: transport_name.to_owned(),
         }
     }
@@ -131,26 +172,30 @@ impl ConfigError {
         }
     }
 
-    pub fn unknown_output_format(format_name: &str) -> Self {
+    pub fn unknown_output_format(endpoint_name: &str, format_name: &str) -> Self {
         Self::UnknownOutputFormat {
+            endpoint_name: endpoint_name.to_owned(),
             format_name: format_name.to_owned(),
         }
     }
 
-    pub fn unknown_output_transport(transport_name: &str) -> Self {
+    pub fn unknown_output_transport(endpoint_name: &str, transport_name: &str) -> Self {
         Self::UnknownOutputTransport {
+            endpoint_name: endpoint_name.to_owned(),
             transport_name: transport_name.to_owned(),
         }
     }
 
-    pub fn unknown_input_stream(stream_name: &str) -> Self {
+    pub fn unknown_input_stream(endpoint_name: &str, stream_name: &str) -> Self {
         Self::UnknownInputStream {
+            endpoint_name: endpoint_name.to_owned(),
             stream_name: stream_name.to_owned(),
         }
     }
 
-    pub fn unknown_output_stream(stream_name: &str) -> Self {
+    pub fn unknown_output_stream(endpoint_name: &str, stream_name: &str) -> Self {
         Self::UnknownOutputStream {
+            endpoint_name: endpoint_name.to_owned(),
             stream_name: stream_name.to_owned(),
         }
     }
@@ -434,15 +479,15 @@ impl ControllerError {
         }
     }
 
-    pub fn unknown_input_format(format_name: &str) -> Self {
+    pub fn unknown_input_format(endpoint_name: &str, format_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_input_format(format_name),
+            config_error: ConfigError::unknown_input_format(endpoint_name, format_name),
         }
     }
 
-    pub fn unknown_input_transport(transport_name: &str) -> Self {
+    pub fn unknown_input_transport(endpoint_name: &str, transport_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_input_transport(transport_name),
+            config_error: ConfigError::unknown_input_transport(endpoint_name, transport_name),
         }
     }
 
@@ -452,27 +497,27 @@ impl ControllerError {
         }
     }
 
-    pub fn unknown_output_format(format_name: &str) -> Self {
+    pub fn unknown_output_format(endpoint_name: &str, format_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_output_format(format_name),
+            config_error: ConfigError::unknown_output_format(endpoint_name, format_name),
         }
     }
 
-    pub fn unknown_output_transport(transport_name: &str) -> Self {
+    pub fn unknown_output_transport(endpoint_name: &str, transport_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_output_transport(transport_name),
+            config_error: ConfigError::unknown_output_transport(endpoint_name, transport_name),
         }
     }
 
-    pub fn unknown_input_stream(stream_name: &str) -> Self {
+    pub fn unknown_input_stream(endpoint_name: &str, stream_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_input_stream(stream_name),
+            config_error: ConfigError::unknown_input_stream(endpoint_name, stream_name),
         }
     }
 
-    pub fn unknown_output_stream(stream_name: &str) -> Self {
+    pub fn unknown_output_stream(endpoint_name: &str, stream_name: &str) -> Self {
         Self::Config {
-            config_error: ConfigError::unknown_output_stream(stream_name),
+            config_error: ConfigError::unknown_output_stream(endpoint_name, stream_name),
         }
     }
 

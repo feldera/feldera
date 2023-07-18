@@ -1,6 +1,7 @@
 use super::{default_redpanda_server, refine_kafka_error, KafkaLogLevel};
 use crate::{InputConsumer, InputEndpoint, InputTransport, PipelineState};
-use anyhow::{Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use crossbeam::queue::ArrayQueue;
 use log::debug;
 use num_traits::FromPrimitive;
 use rdkafka::{
@@ -19,7 +20,7 @@ use std::{
         Arc, Mutex, Weak,
     },
     thread::spawn,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use utoipa::{
     openapi::{
@@ -30,6 +31,10 @@ use utoipa::{
 };
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
+
+// Size of the circular buffer used to pass errors from ClientContext
+// to the worker thread.
+const ERROR_BUFFER_SIZE: usize = 1000;
 
 /// On startup, the endpoint waits to join the consumer group.
 /// This constant defines the default wait timeout.
@@ -207,7 +212,22 @@ impl KafkaInputContext {
     }
 }
 
-impl ClientContext for KafkaInputContext {}
+impl ClientContext for KafkaInputContext {
+    fn error(&self, error: KafkaError, reason: &str) {
+        // eprintln!("Kafka error: {error}");
+        if let Some(endpoint) = self.endpoint.lock().unwrap().upgrade() {
+            endpoint.push_error(error, reason);
+        }
+    }
+
+    /*fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
+        println!("log: {} {}", fac, log_message);
+    }
+
+    fn stats(&self, statistics: rdkafka::Statistics) {
+        println!("stats: {:?}", statistics)
+    }*/
+}
 
 impl ConsumerContext for KafkaInputContext {
     fn post_rebalance(&self, rebalance: &Rebalance<'_>) {
@@ -215,8 +235,6 @@ impl ConsumerContext for KafkaInputContext {
         if matches!(rebalance, Rebalance::Assign(_)) {
             if let Some(endpoint) = self.endpoint.lock().unwrap().upgrade() {
                 if endpoint.state() == PipelineState::Running {
-                    // TODO: handle errors by storing them inside `endpoint`
-                    // for later processing in `poll`.
                     let _ = endpoint.resume_partitions();
                 } else {
                     let _ = endpoint.pause_partitions();
@@ -229,8 +247,10 @@ impl ConsumerContext for KafkaInputContext {
 }
 
 struct KafkaInputEndpointInner {
+    config: KafkaInputConfig,
     state: AtomicU32,
     kafka_consumer: BaseConsumer<KafkaInputContext>,
+    errors: ArrayQueue<(KafkaError, String)>,
 }
 
 impl KafkaInputEndpointInner {
@@ -249,47 +269,30 @@ impl KafkaInputEndpointInner {
             client_config.set_log_level(RDKafkaLogLevel::from(log_level));
         }
 
-        // Context object to intercept rebalancing events.
+        // Context object to intercept rebalancing events and errors.
         let context = KafkaInputContext::new();
 
+        eprintln!("Creating Kafka consumer");
         // Create Kafka consumer.
         let kafka_consumer = BaseConsumer::from_config_and_context(&client_config, context)?;
 
         let endpoint = Arc::new(Self {
+            config,
             state: AtomicU32::new(PipelineState::Paused as u32),
             kafka_consumer,
+            errors: ArrayQueue::new(ERROR_BUFFER_SIZE),
         });
 
-        *endpoint.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&endpoint);
-
-        // Subscibe consumer to `topics`.
-        endpoint
-            .kafka_consumer
-            .subscribe(&config.topics.iter().map(String::as_str).collect::<Vec<_>>())?;
-
-        // Wait for the consumer to join the group by waiting for the group
-        // rebalance protocol to be set.
-        for attempt in 0..=config.group_join_timeout_secs {
-            if matches!(
-                endpoint.kafka_consumer.rebalance_protocol(),
-                RebalanceProtocol::None
-            ) {
-                if attempt == config.group_join_timeout_secs {
-                    return Err(AnyError::msg(format!(
-                        "failed to join consumer group '{}', giving up after {}s",
-                        config.kafka_options.get("group.id").unwrap(),
-                        config.group_join_timeout_secs
-                    )));
-                }
-                std::thread::sleep(std::time::Duration::from_millis(1000));
-                // kafka_consumer.poll(POLL_TIMEOUT);
-                // println!("waiting to join the group");
-            } else {
-                break;
-            }
-        }
-
         Ok(endpoint)
+    }
+
+    fn push_error(&self, error: KafkaError, reason: &str) {
+        // `force_push` makes the queue operate as a circular buffer.
+        self.errors.force_push((error, reason.to_string()));
+    }
+
+    fn pop_error(&self) -> Option<(KafkaError, String)> {
+        self.errors.pop()
     }
 
     #[allow(dead_code)]
@@ -361,9 +364,9 @@ impl KafkaInputEndpoint {
                 _ => {}
             }
 
-            // According to `rdkafka` docs, we must keep polling even while
-            // the consumer is paused as `BaseConsumer` processes control
-            // messages (including rebalancing) within the polling thread.
+            // Keep polling even while the consumer is paused as `BaseConsumer`
+            // processes control messages (including rebalancing and errors)
+            // within the polling thread.
             //
             // `POLL_TIMEOUT` makes sure that the thread will periodically
             // check for termination and pause commands.
@@ -390,12 +393,88 @@ impl KafkaInputEndpoint {
                     }
                 }
             }
+
+            while let Some((error, reason)) = endpoint.pop_error() {
+                let (fatal, _e) = endpoint.refine_error(error);
+                // `reason` contains a human-readable description of the
+                // error.
+                consumer.error(fatal, anyhow!(reason));
+                if fatal {
+                    return;
+                }
+            }
         }
     }
 }
 
 impl InputEndpoint for KafkaInputEndpoint {
-    fn connect(&mut self, consumer: Box<dyn InputConsumer>) -> AnyResult<()> {
+    fn connect(&mut self, mut consumer: Box<dyn InputConsumer>) -> AnyResult<()> {
+        *self.0.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&self.0);
+
+        let topics = self
+            .0
+            .config
+            .topics
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+
+        // Subscibe consumer to `topics`.
+        self.0.kafka_consumer.subscribe(&topics)?;
+
+        let start = Instant::now();
+
+        // Wait for the consumer to join the group by waiting for the group
+        // rebalance protocol to be set.
+        loop {
+            // We must poll in order to receive connection failures; otherwise
+            // we'd have to rely on timeouts only.
+            match self.0.kafka_consumer.poll(POLL_TIMEOUT) {
+                Some(Err(e)) => {
+                    // Topic-does-not-exist error will be reported here.
+                    bail!(
+                        "failed to subscribe to topics '{topics:?}' (consumer group id '{}'): {e}",
+                        self.0.config.kafka_options.get("group.id").unwrap(),
+                    );
+                }
+                Some(Ok(message)) => {
+                    // `KafkaInputContext` should instantly pause the topic upon connecting to it.
+                    // Hopefully, this guarantees that we won't see any messages from it, but if
+                    // that's not the case, there shouldn't be any harm in sending them downstream.
+                    if let Some(payload) = message.payload() {
+                        // Leave it to the controller to handle errors.  There is noone we can
+                        // forward the error to upstream.
+                        let _ = consumer.input(payload);
+                    }
+                }
+                _ => (),
+            }
+
+            // Invalid broker address and other global errors are reported here.
+            if let Some((_error, reason)) = self.0.pop_error() {
+                // let (_fatal, e) = self.0.refine_error(error);
+                bail!("error subscribing to topics {topics:?}: {reason}");
+            }
+
+            if matches!(
+                self.0.kafka_consumer.rebalance_protocol(),
+                RebalanceProtocol::None
+            ) {
+                if start.elapsed()
+                    >= Duration::from_secs(self.0.config.group_join_timeout_secs as u64)
+                {
+                    bail!(
+                        "failed to subscribe to topics '{topics:?}' (consumer group id '{}'), giving up after {}s",
+                        self.0.config.kafka_options.get("group.id").unwrap(),
+                        self.0.config.group_join_timeout_secs
+                    );
+                }
+                // println!("waiting to join the group");
+            } else {
+                break;
+            }
+        }
+
         let endpoint_clone = self.0.clone();
         spawn(move || Self::worker_thread(endpoint_clone, consumer));
         Ok(())

@@ -58,6 +58,49 @@ proptest! {
 
         let kafka_resources = KafkaResources::create_topics(&[("input_test_topic1", 1), ("input_test_topic2", 2)]);
 
+        println!("Test: Specify invalid Kafka broker address");
+
+        let config_str = r#"
+stream: test_input
+transport:
+    name: kafka
+    config:
+        bootstrap.servers: localhost:11111
+        auto.offset.reset: "earliest"
+        topics: [input_test_topic1, input_test_topic2]
+        log_level: debug
+format:
+    name: csv
+"#;
+
+        match mock_input_pipeline::<TestStruct>(
+            serde_yaml::from_str(config_str).unwrap(),
+        ) {
+            Ok(_) => panic!("expected an error"),
+            Err(e) => println!("Error: {e}"),
+        };
+
+        println!("Test: Specify invalid Kafka topic name");
+
+        let config_str = r#"
+stream: test_input
+transport:
+    name: kafka
+    config:
+        auto.offset.reset: "earliest"
+        topics: [input_test_topic1, this_topic_does_not_exist]
+        log_level: debug
+format:
+    name: csv
+"#;
+
+        match mock_input_pipeline::<TestStruct>(
+            serde_yaml::from_str(config_str).unwrap(),
+        ) {
+            Ok(_) => panic!("expected an error"),
+            Err(e) => println!("Error: {e}"),
+        };
+
         // auto.offset.reset: "earliest" - guarantees that on startup the
         // consumer will observe all messages sent by the producer even if
         // the producer starts earlier (the consumer won't start until the
@@ -78,7 +121,7 @@ format:
 
         let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct>(
             serde_yaml::from_str(config_str).unwrap(),
-        );
+        ).unwrap();
 
         endpoint.start().unwrap();
 
