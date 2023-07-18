@@ -430,7 +430,7 @@ test-manager:
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
-    RUN cp `cargo test --features integration-test --no-run --package pipeline-manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable' | grep -v null | grep api-server` test_binary
+    RUN cp `cargo test --features integration-test --no-run --package pipeline-manager --message-format=json | jq -r 'select(.target.kind[0] == "lib") | .executable' | grep -v null` test_binary
     SAVE ARTIFACT test_binary
 
 python-bindings-checker:
