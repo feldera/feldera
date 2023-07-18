@@ -13,7 +13,7 @@ You also need the OpenAPI JSON spec from the manager. This file is automatically
 generated during the CI build. For local development you need to run once:
 
 ```bash
-cargo run --bin dbsp_pipeline_manager -- --dump-openapi
+cargo run --bin api-server -- --dump-openapi
 jq '.servers= [{url: "http://localhost:8080/v0"}]' openapi.json > openapi_docs.json
 ```
 

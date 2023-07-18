@@ -62,7 +62,7 @@ spec:
         ports:
         - containerPort: 8080
         command:
-          - ./dbsp_pipeline_manager
+          - ./api-server
         args:
           - --bind-address=0.0.0.0
           - --manager-working-directory=/working-dir

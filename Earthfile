@@ -188,9 +188,9 @@ build-cache:
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_adapters
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --no-run
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_adapters
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_pipeline_manager
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager --no-run
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_pipeline_manager
+    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline-manager
+    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline-manager
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dataflow-jit
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dataflow-jit --no-run
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dataflow-jit
@@ -281,16 +281,16 @@ build-manager:
     RUN rm -rf crates/pipeline_manager
     COPY --keep-ts --dir crates/pipeline_manager crates/pipeline_manager
 
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_pipeline_manager
+    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline-manager
     RUN cd crates/pipeline_manager && cargo +$RUST_TOOLCHAIN machete
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_pipeline_manager -- -D warnings
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline-manager -- -D warnings
+    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager --no-run
 
-    IF [ -f ./target/debug/dbsp_pipeline_manager ]
-        SAVE ARTIFACT --keep-ts ./target/debug/dbsp_pipeline_manager dbsp_pipeline_manager
+    IF [ -f ./target/debug/api-server ]
+        SAVE ARTIFACT --keep-ts ./target/debug/api-server api-server
     END
-    IF [ -f ./target/release/dbsp_pipeline_manager ]
-        SAVE ARTIFACT --keep-ts ./target/release/dbsp_pipeline_manager dbsp_pipeline_manager
+    IF [ -f ./target/release/api-server ]
+        SAVE ARTIFACT --keep-ts ./target/release/api-server api-server
     END
 
 build-sql:
@@ -330,8 +330,8 @@ install-docs-deps:
 build-docs:
     FROM +install-docs-deps
     COPY docs/ docs/
-    COPY ( +build-manager/dbsp_pipeline_manager ) ./docs/dbsp_pipeline_manager
-    RUN cd docs && ./dbsp_pipeline_manager --dump-openapi \
+    COPY ( +build-manager/api-server ) ./docs/api-server
+    RUN cd docs && ./api-server --dump-openapi \
         && (jq '.servers= [{url: "http://localhost:8080/v0"}]' openapi.json > openapi_docs.json) \
         && rm openapi.json
     RUN cd docs && yarn format:check
@@ -426,11 +426,11 @@ test-manager:
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
-            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_pipeline_manager
+            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
-    RUN cp `cargo test --features integration-test --no-run --package dbsp_pipeline_manager --message-format=json | jq -r 'select(.target.kind[0] == "lib") | .executable' | grep -v null ` test_binary
+    RUN cp `cargo test --features integration-test --no-run --package pipeline-manager --message-format=json | jq -r 'select(.target.kind[0] == "bin") | .executable' | grep -v null | grep api-server` test_binary
     SAVE ARTIFACT test_binary
 
 python-bindings-checker:
@@ -438,7 +438,7 @@ python-bindings-checker:
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
     FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    COPY +build-manager/dbsp_pipeline_manager .
+    COPY +build-manager/api-server .
     RUN mkdir -p /root/.local/lib/python3.10
     RUN mkdir -p /root/.local/bin
 
@@ -446,12 +446,12 @@ python-bindings-checker:
     COPY +install-python/bin /root/.local/bin
 
     RUN pip3 install openapi-python-client==0.15.0 && openapi-python-client --version
-    COPY +build-manager/dbsp_pipeline_manager .
+    COPY +build-manager/api-server .
     COPY python/feldera-api-client feldera-api-client-base
 
     # This line will fail if the python bindings need to be regenerated
     RUN mkdir checker
-    RUN cd checker && ../dbsp_pipeline_manager --dump-openapi &&  \
+    RUN cd checker && ../api-server --dump-openapi &&  \
         openapi-python-client generate --path openapi.json --fail-on-warning && \
         diff -bur feldera-api-client ../feldera-api-client-base
 
@@ -461,14 +461,14 @@ test-python:
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
     FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    COPY +build-manager/dbsp_pipeline_manager .
+    COPY +build-manager/api-server .
     RUN mkdir -p /root/.local/lib/python3.10
     RUN mkdir -p /root/.local/bin
 
     COPY +install-python/python3.10 /root/.local/lib/python3.10
     COPY +install-python/bin /root/.local/bin
 
-    COPY +build-manager/dbsp_pipeline_manager .
+    COPY +build-manager/api-server .
     COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
 
     COPY demo/demo_notebooks demo/demo_notebooks
@@ -484,7 +484,7 @@ test-python:
     WITH DOCKER --pull postgres
         RUN docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
             sleep 3 && \
-            ./dbsp_pipeline_manager --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --unix-daemon && \
+            ./api-server --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --unix-daemon && \
             sleep 1 && \
             python3 python/test.py && \
             cd demo/demo_notebooks && jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
@@ -508,7 +508,7 @@ build-dbsp-manager-container:
 
     # First, copy over the artifacts built from previous stages
     RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
-    COPY +build-manager/dbsp_pipeline_manager .
+    COPY +build-manager/api-server .
     COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
 
     # Then copy over the crates needed by the sql compiler
@@ -521,8 +521,8 @@ build-dbsp-manager-container:
     COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp /database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
     COPY sql-to-dbsp-compiler/lib /database-stream-processor/sql-to-dbsp-compiler/lib
     COPY sql-to-dbsp-compiler/temp /database-stream-processor/sql-to-dbsp-compiler/temp
-    RUN ./dbsp_pipeline_manager --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
-    ENTRYPOINT ["./dbsp_pipeline_manager", "--bind-address=0.0.0.0", "--manager-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
+    RUN ./api-server --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
+    ENTRYPOINT ["./api-server", "--bind-address=0.0.0.0", "--manager-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
     SAVE IMAGE ghcr.io/feldera/dbsp-manager
 
 # TODO: mirrors the Dockerfile. See note above.

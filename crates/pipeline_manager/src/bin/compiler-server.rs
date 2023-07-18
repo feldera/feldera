@@ -4,16 +4,16 @@ use std::time::Duration;
 use clap::{Args, Command, FromArgMatches};
 
 use colored::Colorize;
-use dbsp_pipeline_manager::compiler::Compiler;
-use dbsp_pipeline_manager::config::{CompilerConfig, DatabaseConfig};
-use dbsp_pipeline_manager::db::ProjectDB;
+use pipeline_manager::compiler::Compiler;
+use pipeline_manager::config::{CompilerConfig, DatabaseConfig};
+use pipeline_manager::db::ProjectDB;
 use tokio::sync::Mutex;
 
 // Entrypoint to bring up the standalone compiler service.
 #[tokio::main]
 async fn main() {
     let name = "[compiler]".cyan();
-    dbsp_pipeline_manager::logging::init_logging(name);
+    pipeline_manager::logging::init_logging(name);
     let cli = Command::new("Feldera compiler service");
     let cli = DatabaseConfig::augment_args(cli);
     let cli = CompilerConfig::augment_args(cli);
