@@ -1,15 +1,25 @@
 use super::{default_redpanda_server, KafkaLogLevel};
 use crate::{AsyncErrorCallback, OutputEndpoint, OutputEndpointConfig, OutputTransport};
-use anyhow::{Error as AnyError, Result as AnyResult};
-use crossbeam::sync::{Parker, Unparker};
-use log::debug;
+use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use crossbeam::{
+    queue::ArrayQueue,
+    sync::{Parker, Unparker},
+};
+use log::{debug, error};
 use rdkafka::{
     config::{FromClientConfigAndContext, RDKafkaLogLevel},
+    error::KafkaError,
     producer::{BaseRecord, DeliveryResult, Producer, ProducerContext, ThreadedProducer},
-    ClientConfig, ClientContext,
+    types::RDKafkaErrorCode,
+    ClientConfig, ClientContext, Statistics,
 };
 use serde::Deserialize;
-use std::{borrow::Cow, collections::BTreeMap, sync::RwLock, time::Duration};
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    sync::RwLock,
+    time::{Duration, Instant},
+};
 use utoipa::{
     openapi::{
         schema::{KnownFormat, Schema},
@@ -19,6 +29,8 @@ use utoipa::{
 };
 
 const OUTPUT_POLLING_INTERVAL: Duration = Duration::from_millis(100);
+
+const ERROR_BUFFER_SIZE: usize = 1000;
 
 /// [`OutputTransport`] implementation that writes data to a Kafka topic.
 ///
@@ -53,6 +65,10 @@ const fn default_max_inflight_messages() -> u32 {
     1000
 }
 
+const fn default_initialization_timeout_secs() -> u32 {
+    10
+}
+
 /// Configuration for writing data to a Kafka topic with [`OutputTransport`].
 #[derive(Deserialize, Debug)]
 pub struct KafkaOutputConfig {
@@ -84,6 +100,13 @@ pub struct KafkaOutputConfig {
     /// Defaults to 1000.
     #[serde(default = "default_max_inflight_messages")]
     pub max_inflight_messages: u32,
+
+    /// Maximum timeout in seconds to wait for the endpoint to connect to
+    /// a Kafka broker.
+    ///
+    /// Defaults to 10.
+    #[serde(default = "default_initialization_timeout_secs")]
+    pub initialization_timeout_secs: u32,
 }
 
 impl KafkaOutputConfig {
@@ -155,6 +178,14 @@ struct KafkaOutputContext {
 
     /// Callback to notify the controller about delivery failure.
     async_error_callback: RwLock<Option<AsyncErrorCallback>>,
+
+    /// Errors encountered during initialization, i.e., before an error
+    /// callback is connected to the context.
+    errors: ArrayQueue<(bool, String)>,
+
+    /// The latest snapshot of Kafka producer statistics obtained
+    /// via the `stats` callback.
+    stats: RwLock<Option<Statistics>>,
 }
 
 impl KafkaOutputContext {
@@ -162,11 +193,41 @@ impl KafkaOutputContext {
         Self {
             unparker,
             async_error_callback: RwLock::new(None),
+            errors: ArrayQueue::new(ERROR_BUFFER_SIZE),
+            stats: RwLock::new(None),
         }
+    }
+
+    fn push_error(&self, fatal: bool, reason: &str) {
+        // `force_push` makes the queue operate as a circular buffer.
+        self.errors.force_push((fatal, reason.to_string()));
+    }
+
+    fn pop_error(&self) -> Option<(bool, String)> {
+        self.errors.pop()
     }
 }
 
-impl ClientContext for KafkaOutputContext {}
+impl ClientContext for KafkaOutputContext {
+    fn error(&self, error: KafkaError, reason: &str) {
+        let fatal = match error.rdkafka_error_code() {
+            Some(code) => code == RDKafkaErrorCode::Fatal,
+            _ => false,
+        };
+
+        // eprintln!("Kafka error: {error}, fatal: {fatal}, reason: {reason}");
+
+        if let Some(cb) = self.async_error_callback.read().unwrap().as_ref() {
+            cb(fatal, anyhow!(reason.to_string()));
+        } else {
+            self.push_error(fatal, reason);
+        }
+    }
+
+    fn stats(&self, statistics: Statistics) {
+        *self.stats.write().unwrap() = Some(statistics);
+    }
+}
 
 impl ProducerContext for KafkaOutputContext {
     type DeliveryOpaque = ();
@@ -190,8 +251,7 @@ impl ProducerContext for KafkaOutputContext {
 
 struct KafkaOutputEndpoint {
     kafka_producer: ThreadedProducer<KafkaOutputContext>,
-    topic: String,
-    max_inflight_messages: u32,
+    config: KafkaOutputConfig,
     parker: Parker,
 }
 
@@ -207,6 +267,14 @@ impl KafkaOutputEndpoint {
             client_config.set(key, value);
         }
 
+        // This is needed to activate the `KafkaOutputContext::stats` callback.
+        // We currently only use the stats during initialization, but we
+        // may want to surface it in the future as part of endpoint
+        // statistics.  It doesn't seem possible to adjust this parameter at
+        // runtime, so we pick a value that shouldn't slow down the initialization
+        // too much while also not causing significant runtime overhead.
+        client_config.set("statistics.interval.ms", "1000");
+
         if let Some(log_level) = config.log_level {
             client_config.set_log_level(RDKafkaLogLevel::from(log_level));
         }
@@ -221,15 +289,51 @@ impl KafkaOutputEndpoint {
 
         Ok(Self {
             kafka_producer,
-            topic: config.topic,
-            max_inflight_messages: config.max_inflight_messages,
+            config,
             parker,
         })
+    }
+
+    /// Determines from producer stats whether the producer can be
+    /// considered successfully initialized.
+    ///
+    /// This is not a well-defined notion in Kafka, but as a good-enough
+    /// approximation, we check that the producer is connected to at least
+    /// one broker whose status is "UP".  Together with the
+    /// `KafkaOutputContext::error` callback this should at least detect
+    /// invalid broker address type of issue.
+    fn status_ok(stats: &Statistics) -> bool {
+        stats.brokers.values().any(|broker| broker.state == "UP")
     }
 }
 
 impl OutputEndpoint for KafkaOutputEndpoint {
     fn connect(&self, async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
+        let start = Instant::now();
+        loop {
+            // Treat all errors as fatal during initialization.
+            if let Some((_fatal, error)) = self.kafka_producer.context().pop_error() {
+                bail!(error);
+            }
+
+            if let Some(stats) = self.kafka_producer.context().stats.read().unwrap().as_ref() {
+                if Self::status_ok(stats) {
+                    // debug!("Kafka output endpoint initialization complete. Stats: {stats:?}");
+                    break;
+                }
+            }
+
+            if start.elapsed() > Duration::from_secs(self.config.initialization_timeout_secs as u64)
+            {
+                if let Some(stats) = self.kafka_producer.context().stats.read().unwrap().as_ref() {
+                    error!("Timeout initializing Kafka producer. Producer stats: {stats:?}");
+                }
+                bail!(
+                    "failed to initialize Kafka producer, giving up after {}s",
+                    self.config.initialization_timeout_secs
+                );
+            }
+        }
         *self
             .kafka_producer
             .context()
@@ -242,7 +346,9 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         // Wait for the number of unacknowledged messages to drop
         // below `max_inflight_messages`.
-        while self.kafka_producer.in_flight_count() as i64 > self.max_inflight_messages as i64 {
+        while self.kafka_producer.in_flight_count() as i64
+            > self.config.max_inflight_messages as i64
+        {
             // FIXME: It appears that the delivery callback can be invoked before the
             // in-flight counter is decremented, in which case we may never get
             // unparked and may need to poll the in-flight counter.  This
@@ -252,7 +358,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
             self.parker.park_timeout(OUTPUT_POLLING_INTERVAL);
         }
 
-        let record = <BaseRecord<(), [u8], ()>>::to(&self.topic).payload(buffer);
+        let record = <BaseRecord<(), [u8], ()>>::to(&self.config.topic).payload(buffer);
         self.kafka_producer
             .send(record)
             .map_err(|(err, _record)| err)?;
