@@ -547,6 +547,8 @@ test-docker-compose:
 integration-test-container:
     FROM +install-deps
     COPY +test-manager/test_binary .
+    # Check that the binary does indeed run integration tests
+    RUN ./test_binary integration_test --list | grep integration_test
     ENV TEST_DBSP_URL=http://dbsp:8080
     ENTRYPOINT ["./test_binary", "integration_test::"]
     SAVE IMAGE itest:latest
