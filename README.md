@@ -103,7 +103,7 @@ described in the accompanying paper:
   Very Large Databases, August 2023, Vancouver,
   Canada](https://github.com/feldera/dbsp/blob/main/docs/static/vldb23.pdf)
 
-- Here is the [a presentation about DBSP](https://www.youtube.com/watch?v=iT4k5DCnvPU) at the 2023
+- Here is [a presentation about DBSP](https://www.youtube.com/watch?v=iT4k5DCnvPU) at the 2023
 Apache Calcite Meetup.
 
 The model provides two things:
