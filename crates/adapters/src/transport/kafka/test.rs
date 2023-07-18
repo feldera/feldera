@@ -47,6 +47,46 @@ fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStru
     assert_eq!(zset_sorted, data_sorted);
 }
 
+#[test]
+fn test_kafka_output_errors() {
+    let _ = log::set_logger(&TEST_LOGGER);
+    log::set_max_level(LevelFilter::Debug);
+
+    println!("Test invalid Kafka broker address");
+
+    let config_str = r#"
+name: test
+inputs:
+outputs:
+    test_output:
+        stream: test_output1
+        transport:
+            name: kafka
+            config:
+                bootstrap.servers: localhost:11111
+                topic: end_to_end_test_output_topic
+                max_inflight_messages: 0
+        format:
+            name: csv
+"#;
+
+    println!("Creating circuit");
+    let (circuit, catalog) = test_circuit(4);
+
+    println!("Starting controller");
+    let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
+
+    match Controller::with_config(
+        circuit,
+        catalog,
+        &config,
+        Box::new(|e| panic!("error: {e}")),
+    ) {
+        Ok(_) => panic!("expected an error"),
+        Err(e) => println!("error: {e}"),
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2))]
 
