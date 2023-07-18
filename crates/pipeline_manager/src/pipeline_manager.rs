@@ -436,15 +436,24 @@ fn example_unknown_name() -> ErrorResponse {
 }
 
 fn example_unknown_input_table(table: &str) -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ControllerError::unknown_input_stream(table))
+    ErrorResponse::from_error_nolog(&ControllerError::unknown_input_stream(
+        "input_endpoint1",
+        table,
+    ))
 }
 
 fn example_unknown_output_table(table: &str) -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ControllerError::unknown_output_stream(table))
+    ErrorResponse::from_error_nolog(&ControllerError::unknown_output_stream(
+        "output_endpoint1",
+        table,
+    ))
 }
 
 fn example_unknown_input_format() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ControllerError::unknown_input_format("xml"))
+    ErrorResponse::from_error_nolog(&ControllerError::unknown_input_format(
+        "input_endpoint1",
+        "xml",
+    ))
 }
 
 fn example_parse_error() -> ErrorResponse {
@@ -455,7 +464,10 @@ fn example_parse_error() -> ErrorResponse {
 }
 
 fn example_unknown_output_format() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ControllerError::unknown_output_format("xml"))
+    ErrorResponse::from_error_nolog(&ControllerError::unknown_output_format(
+        "output_endpoint1",
+        "xml",
+    ))
 }
 
 fn example_pipeline_shutdown() -> ErrorResponse {

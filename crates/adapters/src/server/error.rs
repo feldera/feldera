@@ -83,7 +83,7 @@ pub struct ErrorResponse {
 
 impl<E> From<&E> for ErrorResponse
 where
-    E: DetailedError
+    E: DetailedError,
 {
     fn from(error: &E) -> ErrorResponse {
         Self::from_error(error)

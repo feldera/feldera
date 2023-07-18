@@ -299,7 +299,7 @@ format:
         writer.flush().unwrap();
 
         let (endpoint, consumer, zset) =
-            mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap());
+            mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
 
         sleep(Duration::from_millis(10));
 
@@ -348,7 +348,7 @@ format:
             .from_writer(temp_file.as_file());
 
         let (endpoint, consumer, zset) =
-            mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap());
+            mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
 
         for _ in 0..10 {
             for val in test_data.iter().cloned() {

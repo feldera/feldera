@@ -32,9 +32,8 @@ class PipelineRuntimeState:
 
             * In addition to the transitions shown in the diagram, all states have an implicit
             "forced shutdown" transition to the `Shutdown` state.  This transition is triggered
-            when the pipeline runner is unable to communicate with the pipeline or and forces
-            the pipeline to terminate by sending a `KILL` signal to the pipeline process or by
-            deleting its Kubernetes pod.
+            when the pipeline runner is unable to communicate with the pipeline and thereby
+            forces a shutdown.
 
             * States labeled with the hourglass symbol (⌛) are **timed** states.  The automaton
             stays in timed state until the corresponding operation completes or until the runner
@@ -46,7 +45,6 @@ class PipelineRuntimeState:
 
             ```text
             Shutdown◄────┐
-            │         │
             │         │
             /deploy│         │
             │   ⌛ShuttingDown
@@ -105,9 +103,8 @@ class PipelineRuntimeState:
 
             * In addition to the transitions shown in the diagram, all states have an implicit
             "forced shutdown" transition to the `Shutdown` state.  This transition is triggered
-            when the pipeline runner is unable to communicate with the pipeline or and forces
-            the pipeline to terminate by sending a `KILL` signal to the pipeline process or by
-            deleting its Kubernetes pod.
+            when the pipeline runner is unable to communicate with the pipeline and thereby
+            forces a shutdown.
 
             * States labeled with the hourglass symbol (⌛) are **timed** states.  The automaton
             stays in timed state until the corresponding operation completes or until the runner
@@ -119,7 +116,6 @@ class PipelineRuntimeState:
 
             ```text
             Shutdown◄────┐
-            │         │
             │         │
             /deploy│         │
             │   ⌛ShuttingDown
