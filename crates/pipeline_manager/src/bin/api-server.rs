@@ -1,9 +1,9 @@
 use clap::{Args, Command, FromArgMatches};
 
 use colored::Colorize;
-use dbsp_pipeline_manager::compiler::Compiler;
-use dbsp_pipeline_manager::config::{CompilerConfig, DatabaseConfig, ManagerConfig};
-use dbsp_pipeline_manager::pipeline_manager::ApiDoc;
+use pipeline_manager::compiler::Compiler;
+use pipeline_manager::config::{CompilerConfig, DatabaseConfig, ManagerConfig};
+use pipeline_manager::pipeline_manager::ApiDoc;
 use utoipa::OpenApi;
 
 // Standalone binary that runs the pipeline manager, compiler and local runner services.
@@ -12,7 +12,7 @@ fn main() -> anyhow::Result<()> {
 
     // Create env logger.
     let name = "[manager]".cyan();
-    dbsp_pipeline_manager::logging::init_logging(name);
+    pipeline_manager::logging::init_logging(name);
 
     let cli = Command::new("Pipeline manager CLI");
     let cli = DatabaseConfig::augment_args(cli);
@@ -53,5 +53,5 @@ fn main() -> anyhow::Result<()> {
     let database_config = DatabaseConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
-    dbsp_pipeline_manager::pipeline_manager::run(database_config, manager_config, compiler_config)
+    pipeline_manager::pipeline_manager::run(database_config, manager_config, compiler_config)
 }

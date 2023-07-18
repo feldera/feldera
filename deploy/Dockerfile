@@ -35,9 +35,9 @@ RUN /root/.cargo/bin/cargo chef prepare --recipe-path recipe.json
 # layer for faster incremental builds of source-code only changes
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
-RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json --bin=dbsp_pipeline_manager --no-default-features
+RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json --bin=api-server --no-default-features
 COPY . .
-RUN /root/.cargo/bin/cargo build --release --bin=dbsp_pipeline_manager --no-default-features
+RUN /root/.cargo/bin/cargo build --release --bin=api-server --no-default-features
 
 # Java build can be performed in parallel
 FROM base as javabuild
@@ -50,7 +50,7 @@ RUN cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
 FROM base as release
 ENV PATH="$PATH:/root/.cargo/bin"
 # Pipeline manager binary
-COPY --from=builder /app/target/release/dbsp_pipeline_manager dbsp_pipeline_manager
+COPY --from=builder /app/target/release/api-server api-server
 # SQL compiler uber jar
 RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
 COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
@@ -66,8 +66,8 @@ COPY sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
 COPY sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/temp
 COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
 # Run the precompile phase to speed up Rust compilations during deployment
-RUN ./dbsp_pipeline_manager --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
-ENTRYPOINT ["./dbsp_pipeline_manager", "--bind-address=0.0.0.0", "--manager-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
+RUN ./api-server --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
+ENTRYPOINT ["./api-server", "--bind-address=0.0.0.0", "--manager-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
 
 ##### The stages below are used to build the demo container
 
@@ -88,7 +88,7 @@ RUN /root/.cargo/bin/cargo build --release
 FROM ubuntu:22.04 AS client
 ENV DEBIAN_FRONTEND noninteractive
 ENV PATH="$PATH:/root/.cargo/bin"
-COPY --from=builder /app/target/release/dbsp_pipeline_manager dbsp_pipeline_manager
+COPY --from=builder /app/target/release/api-server api-server
 COPY demo demo
 # Remove the simulator cargo project and the corresponding build artifacts
 RUN rm -rf ./demo/project_demo00-SecOps/simulator/*
@@ -104,8 +104,8 @@ RUN apt update && apt install pkg-config \
       && rpk version \
       && rm rpk-linux-$arch.zip \
     # Install DBSP python library and dependencies
-    && ./dbsp_pipeline_manager --dump-openapi \
-      && rm dbsp_pipeline_manager \
+    && ./api-server --dump-openapi \
+      && rm api-server \
       && pip3 install openapi-python-client websockets \
       && cd python \
       && rm -rf feldera-api-client \
