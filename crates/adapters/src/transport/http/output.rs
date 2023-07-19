@@ -12,8 +12,12 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
+    time::Duration,
 };
-use tokio::sync::broadcast::{self, error::RecvError};
+use tokio::{
+    sync::broadcast::{self, error::RecvError},
+    time::timeout,
+};
 
 // TODO: make this configurable via endpoint config.
 const MAX_BUFFERS: usize = 100;
@@ -85,6 +89,47 @@ impl HttpOutputEndpointInner {
             // async_error_callback: RwLock::new(None),
         }
     }
+
+    fn push_buffer(&self, buffer: &[u8]) -> AnyResult<()> {
+        let seq_number = self.total_buffers.fetch_add(1, Ordering::AcqRel);
+
+        let json_buf = Vec::with_capacity(buffer.len() + 1024);
+        let mut serializer = serde_json::Serializer::new(json_buf);
+        let mut struct_serializer = serializer
+            .serialize_struct("Chunk", 2)
+            .map_err(|e| anyhow!("error serializing 'Chunk' struct: '{e}'"))?;
+        struct_serializer
+            .serialize_field("sequence_number", &seq_number)
+            .map_err(|e| anyhow!("error serializing 'sequence_number' field: '{e}'"))?;
+
+        match self.format {
+            Format::Binary => unimplemented!(),
+            Format::Text => {
+                let data_str = std::str::from_utf8(buffer)
+                    .map_err(|e| anyhow!("received an invalid UTF8 string from encoder: '{e}'"))?;
+                struct_serializer
+                    .serialize_field("text_data", data_str)
+                    .map_err(|e| anyhow!("error serializing 'text_data' field: '{e}'"))?;
+            }
+            Format::Json => unimplemented!(),
+        }
+        struct_serializer
+            .end()
+            .map_err(|e| anyhow!("error serializing 'text_data' field: '{e}'"))?;
+
+        let mut json_buf = serializer.into_inner();
+        json_buf.push(b'\r');
+        json_buf.push(b'\n');
+
+        // A failure simply means that there are no receivers.
+        let _ = self
+            .sender
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|sender| sender.send(Buffer::new(seq_number, Bytes::from(json_buf))));
+        Ok(())
+    }
 }
 
 struct RequestGuard {
@@ -150,15 +195,28 @@ impl HttpOutputEndpoint {
         let name = self.name().to_string();
         let guard = RequestGuard::new(finalizer);
 
+        let inner = self.inner.clone();
+
         HttpResponse::Ok()
             .insert_header(ContentType::json())
             .streaming(stream! {
                 let _guard = guard;
                 loop {
-                    match receiver.recv().await {
-                        Err(RecvError::Closed) => break,
-                        Err(RecvError::Lagged(_)) => (),
-                        Ok(buffer) => {
+                    // There is a bug in actix (https://github.com/actix/actix-web/issues/1313)
+                    // that prevents it from dropping HTTP connections on client disconnect
+                    // unless the endpoint periodically sends some data.  As a workaround,
+                    // if there is not real payload to send for more than 3 seconds, we will
+                    // generate an empty chunk.  Note that it takes 6s, i.e., 2x the timeout
+                    // period for actix to actually drop the connection.
+                    match timeout(Duration::from_millis(3_000), receiver.recv()).await {
+                        Err(_) => {
+                            // Send the empty chunk via the `push_buffer` method to
+                            // make sure it gets assigned correct sequence number.
+                            let _ = inner.push_buffer(&[]);
+                        }
+                        Ok(Err(RecvError::Closed)) => break,
+                        Ok(Err(RecvError::Lagged(_))) => (),
+                        Ok(Ok(buffer)) => {
                             debug!(
                                 "HTTP output endpoint '{}': sending chunk #{} ({} bytes)",
                                 name,
@@ -181,45 +239,7 @@ impl OutputEndpoint for HttpOutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
-        let seq_number = self.inner.total_buffers.fetch_add(1, Ordering::AcqRel);
-
-        let json_buf = Vec::with_capacity(buffer.len() + 1024);
-        let mut serializer = serde_json::Serializer::new(json_buf);
-        let mut struct_serializer = serializer
-            .serialize_struct("Chunk", 2)
-            .map_err(|e| anyhow!("error serializing 'Chunk' struct: '{e}'"))?;
-        struct_serializer
-            .serialize_field("sequence_number", &seq_number)
-            .map_err(|e| anyhow!("error serializing 'sequence_number' field: '{e}'"))?;
-
-        match self.inner.format {
-            Format::Binary => unimplemented!(),
-            Format::Text => {
-                let data_str = std::str::from_utf8(buffer)
-                    .map_err(|e| anyhow!("received an invalid UTF8 string from encoder: '{e}'"))?;
-                struct_serializer
-                    .serialize_field("text_data", data_str)
-                    .map_err(|e| anyhow!("error serializing 'text_data' field: '{e}'"))?;
-            }
-            Format::Json => unimplemented!(),
-        }
-        struct_serializer
-            .end()
-            .map_err(|e| anyhow!("error serializing 'text_data' field: '{e}'"))?;
-
-        let mut json_buf = serializer.into_inner();
-        json_buf.push(b'\r');
-        json_buf.push(b'\n');
-
-        // A failure simply means that there are no receivers.
-        let _ = self
-            .inner
-            .sender
-            .read()
-            .unwrap()
-            .as_ref()
-            .map(|sender| sender.send(Buffer::new(seq_number, Bytes::from(json_buf))));
-        Ok(())
+        self.inner.push_buffer(buffer)
     }
 
     fn batch_end(&mut self) -> AnyResult<()> {

@@ -773,11 +773,14 @@ async fn output_endpoint(
 #[cfg(feature = "server")]
 mod test_with_kafka {
     use super::{bootstrap, build_app, Args, ServerState};
-    use crate::test::{
-        generate_test_batches,
-        http::{TestHttpReceiver, TestHttpSender},
-        kafka::{BufferConsumer, KafkaResources, TestProducer},
-        test_circuit,
+    use crate::{
+        controller::MAX_API_CONNECTIONS,
+        test::{
+            generate_test_batches,
+            http::{TestHttpReceiver, TestHttpSender},
+            kafka::{BufferConsumer, KafkaResources, TestProducer},
+            test_circuit,
+        },
     };
     use actix_web::{http::StatusCode, middleware::Logger, web::Data as WebData, App};
     use futures_util::StreamExt;
@@ -940,6 +943,23 @@ outputs:
             }
         }
 
+        // Make sure that HTTP connections get dropped on client disconnect
+        // (see comment in `HttpOutputEndpoint::request`).  We create 2x the
+        // number of supported simultaneous API connections and drop the client
+        // side instantly, which should cause the server side to close within
+        // 6 seconds.  If everything works as intended, this should _not_
+        // trigger the API connection limit error.
+        for _ in 0..2 * MAX_API_CONNECTIONS {
+            assert!(server
+                .get("/egress/test_output1")
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .is_success());
+            sleep(Duration::from_millis(75));
+        }
+
         println!("Connecting to HTTP output endpoint");
         let mut resp1 = server.get("/egress/test_output1").send().await.unwrap();
 
@@ -968,6 +988,8 @@ outputs:
         TestHttpReceiver::wait_for_output_unordered(&mut resp2, &data).await;
         drop(resp1);
         drop(resp2);
+
+        sleep(Duration::from_millis(5000));
 
         // Request quantiles.
         let mut quantiles_resp1 = server
