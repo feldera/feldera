@@ -11,6 +11,7 @@ from ...types import Response
 
 
 def _get_kwargs(
+    program_id: str,
     *,
     json_body: CompileProgramRequest,
 ) -> Dict[str, Any]:
@@ -20,7 +21,9 @@ def _get_kwargs(
 
     return {
         "method": "post",
-        "url": "/programs/compile",
+        "url": "/programs/{program_id}/compile".format(
+            program_id=program_id,
+        ),
         "json": json_json_body,
     }
 
@@ -57,18 +60,21 @@ def _build_response(
 
 
 def sync_detailed(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: CompileProgramRequest,
 ) -> Response[Union[Any, ErrorResponse]]:
-    """Queue program for compilation.
+    """Mark a program for compilation.
 
-     Queue program for compilation.
+     Mark a program for compilation.
 
-    The client should poll the `/program_status` endpoint
-    for compilation results.
+    The client can track a program's compilation status by pollling the
+    `/program/{program_id}` or `/programs` endpoints, and
+    then checking the `status` field of the program object
 
     Args:
+        program_id (str):
         json_body (CompileProgramRequest): Request to queue a program for compilation.
 
     Raises:
@@ -80,6 +86,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
+        program_id=program_id,
         json_body=json_body,
     )
 
@@ -91,18 +98,21 @@ def sync_detailed(
 
 
 def sync(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: CompileProgramRequest,
 ) -> Optional[Union[Any, ErrorResponse]]:
-    """Queue program for compilation.
+    """Mark a program for compilation.
 
-     Queue program for compilation.
+     Mark a program for compilation.
 
-    The client should poll the `/program_status` endpoint
-    for compilation results.
+    The client can track a program's compilation status by pollling the
+    `/program/{program_id}` or `/programs` endpoints, and
+    then checking the `status` field of the program object
 
     Args:
+        program_id (str):
         json_body (CompileProgramRequest): Request to queue a program for compilation.
 
     Raises:
@@ -114,24 +124,28 @@ def sync(
     """
 
     return sync_detailed(
+        program_id=program_id,
         client=client,
         json_body=json_body,
     ).parsed
 
 
 async def asyncio_detailed(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: CompileProgramRequest,
 ) -> Response[Union[Any, ErrorResponse]]:
-    """Queue program for compilation.
+    """Mark a program for compilation.
 
-     Queue program for compilation.
+     Mark a program for compilation.
 
-    The client should poll the `/program_status` endpoint
-    for compilation results.
+    The client can track a program's compilation status by pollling the
+    `/program/{program_id}` or `/programs` endpoints, and
+    then checking the `status` field of the program object
 
     Args:
+        program_id (str):
         json_body (CompileProgramRequest): Request to queue a program for compilation.
 
     Raises:
@@ -143,6 +157,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
+        program_id=program_id,
         json_body=json_body,
     )
 
@@ -152,18 +167,21 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: CompileProgramRequest,
 ) -> Optional[Union[Any, ErrorResponse]]:
-    """Queue program for compilation.
+    """Mark a program for compilation.
 
-     Queue program for compilation.
+     Mark a program for compilation.
 
-    The client should poll the `/program_status` endpoint
-    for compilation results.
+    The client can track a program's compilation status by pollling the
+    `/program/{program_id}` or `/programs` endpoints, and
+    then checking the `status` field of the program object
 
     Args:
+        program_id (str):
         json_body (CompileProgramRequest): Request to queue a program for compilation.
 
     Raises:
@@ -176,6 +194,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
+            program_id=program_id,
             client=client,
             json_body=json_body,
         )

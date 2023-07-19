@@ -1,7 +1,7 @@
 import dbsp_api_client
 
 from dbsp_api_client.models.compile_program_request import CompileProgramRequest
-from dbsp_api_client.api.program import program_status
+from dbsp_api_client.api.program import get_program
 from dbsp_api_client.api.program import compile_program
 from dbsp.error import CompilationException
 import time
@@ -40,11 +40,10 @@ class DBSPProgram:
         """
 
         body = CompileProgramRequest(
-            program_id=self.program_id,
             version=self.program_version,
         )
         # Queue program for compilation.
-        compile_program.sync_detailed(client = self.api_client, json_body=body).unwrap("Failed to queue program for compilation")
+        compile_program.sync_detailed(client = self.api_client, program_id = self.program_id, json_body=body).unwrap("Failed to queue program for compilation")
 
         start = time.time()
         while time.time() - start < timeout:
@@ -69,9 +68,9 @@ class DBSPProgram:
         Returns:
             Union[Dict[str, Any], str]
         """
-        response = program_status.sync_detailed(
+        response = get_program.sync_detailed(
                 client = self.api_client,
-                id = self.program_id).unwrap("Failed to retrieve program status")
+                program_id = self.program_id).unwrap("Failed to retrieve program status")
 
         # if api_response.body['version'] != self.program_version:
         #    raise RuntimeError(

@@ -10,23 +10,19 @@ class CompileProgramRequest:
     """Request to queue a program for compilation.
 
     Attributes:
-        program_id (str): Unique program id.
         version (int): Version number.
     """
 
-    program_id: str
     version: int
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        program_id = self.program_id
         version = self.version
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "program_id": program_id,
                 "version": version,
             }
         )
@@ -36,12 +32,9 @@ class CompileProgramRequest:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        program_id = d.pop("program_id")
-
         version = d.pop("version")
 
         compile_program_request = cls(
-            program_id=program_id,
             version=version,
         )
 

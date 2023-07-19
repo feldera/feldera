@@ -260,6 +260,9 @@ pub(crate) struct ProgramDescr {
     /// }
     /// ```
     pub schema: Option<ProgramSchema>,
+
+    /// SQL code
+    pub code: Option<String>,
 }
 
 /// Pipeline status.
@@ -470,8 +473,6 @@ pub(crate) struct PipelineRevision {
     pub(crate) connectors: Vec<ConnectorDescr>,
     /// The versioned program descriptor.
     pub(crate) program: ProgramDescr,
-    /// The versioned SQL code.
-    pub(crate) code: String,
     /// The generated TOML config for the pipeline.
     pub(crate) config: String,
     // So new must be called if used outside of this module.
@@ -489,7 +490,6 @@ impl PipelineRevision {
         pipeline: PipelineDescr,
         connectors: Vec<ConnectorDescr>,
         program: ProgramDescr,
-        code: String,
     ) -> Self {
         assert!(
             PipelineRevision::validate(&pipeline, &connectors, &program).is_ok(),
@@ -504,7 +504,6 @@ impl PipelineRevision {
             pipeline,
             connectors,
             program,
-            code,
             config,
             _private: (),
         }
@@ -794,14 +793,20 @@ impl Storage for ProjectDB {
         Ok(())
     }
 
-    async fn list_programs(&self, tenant_id: TenantId) -> Result<Vec<ProgramDescr>, DBError> {
+    async fn list_programs(
+        &self,
+        tenant_id: TenantId,
+        with_code: bool,
+    ) -> Result<Vec<ProgramDescr>, DBError> {
         let rows = self
             .pool
             .get()
             .await?
             .query(
-                r#"SELECT id, name, description, version, status, error, schema FROM program WHERE tenant_id = $1"#,
-                &[&tenant_id.0],
+                r#"SELECT id, name, description, version, status, error, schema,
+                CASE WHEN $2 IS TRUE THEN code ELSE null END
+                FROM program WHERE tenant_id = $1"#,
+                &[&tenant_id.0, &with_code],
             )
             .await?;
 
@@ -823,47 +828,11 @@ impl Storage for ProjectDB {
                 version: Version(row.get(3)),
                 schema,
                 status,
+                code: row.get(7),
             });
         }
 
         Ok(result)
-    }
-
-    async fn program_code(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-    ) -> Result<(ProgramDescr, String), DBError> {
-        let row = self.pool.get().await?.query_opt(
-            "SELECT name, description, version, status, error, code, schema FROM program WHERE id = $1 AND tenant_id = $2", &[&program_id.0, &tenant_id.0]
-        )
-        .await?
-        .ok_or(DBError::UnknownProgram{program_id})?;
-
-        let name: String = row.get(0);
-        let description: String = row.get(1);
-        let version: Version = Version(row.get(2));
-        let status: Option<String> = row.get(3);
-        let error: Option<String> = row.get(4);
-        let code: String = row.get(5);
-        let schema: Option<ProgramSchema> = row
-            .get::<_, Option<String>>(6)
-            .map(|s| serde_json::from_str(&s))
-            .transpose()
-            .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
-
-        let status = ProgramStatus::from_columns(status.as_deref(), error)?;
-        Ok((
-            ProgramDescr {
-                program_id,
-                name,
-                description,
-                version,
-                status,
-                schema,
-            },
-            code,
-        ))
     }
 
     async fn new_program(
@@ -951,10 +920,17 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
+        with_code: bool,
     ) -> Result<Option<ProgramDescr>, DBError> {
-        let row = self.pool.get().await?.query_opt(
-                "SELECT name, description, version, status, error, schema FROM program WHERE id = $1 AND tenant_id = $2",
-                &[&program_id.0, &tenant_id.0],
+        let row = self
+            .pool
+            .get()
+            .await?
+            .query_opt(
+                "SELECT name, description, version, status, error, schema,
+                CASE WHEN $3 IS TRUE THEN code ELSE null END
+                FROM program WHERE id = $1 AND tenant_id = $2",
+                &[&program_id.0, &tenant_id.0, &with_code],
             )
             .await?;
 
@@ -969,6 +945,7 @@ impl Storage for ProjectDB {
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
+            let code: Option<String> = row.get(6);
 
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
             Ok(Some(ProgramDescr {
@@ -978,6 +955,7 @@ impl Storage for ProjectDB {
                 version,
                 status,
                 schema,
+                code,
             }))
         } else {
             Ok(None)
@@ -989,10 +967,17 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         program_name: &str,
+        with_code: bool,
     ) -> Result<Option<ProgramDescr>, DBError> {
-        let row = self.pool.get().await?.query_opt(
-                "SELECT id, description, version, status, error, schema, tenant_id FROM program WHERE name = $1 AND tenant_id = $2",
-                &[&program_name, &tenant_id.0],
+        let row = self
+            .pool
+            .get()
+            .await?
+            .query_opt(
+                "SELECT id, description, version, status, error, schema, tenant_id,
+                 CASE WHEN $3 IS TRUE THEN code ELSE null END
+                 FROM program WHERE name = $1 AND tenant_id = $2",
+                &[&program_name, &tenant_id.0, &with_code],
             )
             .await?;
 
@@ -1007,6 +992,7 @@ impl Storage for ProjectDB {
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
+            let code: Option<String> = row.get(7);
 
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
             Ok(Some(ProgramDescr {
@@ -1016,6 +1002,7 @@ impl Storage for ProjectDB {
                 version,
                 status,
                 schema,
+                code,
             }))
         } else {
             Ok(None)
@@ -1120,8 +1107,13 @@ impl Storage for ProjectDB {
                 "DELETE FROM program WHERE id = $1 AND tenant_id = $2",
                 &[&program_id.0, &tenant_id.0],
             )
-            .await?;
-
+            .await
+            .map_err(|e| {
+                ProjectDB::maybe_program_id_in_use_foreign_key_constraint_err(
+                    e.into(),
+                    Some(program_id),
+                )
+            })?;
         if res > 0 {
             Ok(())
         } else {
@@ -1293,7 +1285,7 @@ impl Storage for ProjectDB {
             let program_id = pipeline
                 .program_id
                 .expect("pre-condition: pipeline has a program");
-            let (program, code) = self
+            let program = self
                 .get_committed_program_by_id(tenant_id, program_id, revision)
                 .await?;
             let connectors = self
@@ -1301,7 +1293,7 @@ impl Storage for ProjectDB {
                 .await?;
 
             Ok(PipelineRevision::new(
-                revision, pipeline, connectors, program, code,
+                revision, pipeline, connectors, program,
             ))
         } else {
             Err(DBError::UnknownPipeline { pipeline_id })
@@ -1506,7 +1498,7 @@ impl Storage for ProjectDB {
             .await
             .map_err(ProjectDB::maybe_unique_violation)
             .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, program_id.map(|e| e.0)))
-            .map_err(|e| ProjectDB::maybe_program_id_foreign_key_constraint_err(e, program_id))?;
+            .map_err(|e| ProjectDB::maybe_program_id_not_found_foreign_key_constraint_err(e, program_id))?;
 
         txn.execute(
             "INSERT INTO pipeline_runtime_state (id, tenant_id, desired_status, current_status, status_since, created) VALUES($1, $2, 'shutdown', 'shutdown', extract(epoch from now()), extract(epoch from now()))",
@@ -1581,7 +1573,7 @@ impl Storage for ProjectDB {
             &[&pipline_name, &pipeline_description, &config, &program_id.map(|id| id.0), &pipeline_id.0, &tenant_id.0])
             .await
             .map_err(ProjectDB::maybe_unique_violation)
-            .map_err(|e| ProjectDB::maybe_program_id_foreign_key_constraint_err(e, program_id))?;
+            .map_err(|e| ProjectDB::maybe_program_id_not_found_foreign_key_constraint_err(e, program_id))?;
         txn.commit().await?;
         match row {
             Some(row) => Ok(Version(row.get(0))),
@@ -2245,7 +2237,7 @@ impl ProjectDB {
             .get_pipeline_descr_by_id(tenant_id, pipeline_id)
             .await?;
         let program_id = pipeline.program_id.ok_or(DBError::ProgramNotSet)?;
-        let program = self.get_program_by_id(tenant_id, program_id).await?;
+        let program = self.get_program_by_id(tenant_id, program_id, true).await?;
         let connectors = self
             .get_connectors_for_pipeline_id(tenant_id, pipeline_id)
             .await?;
@@ -2273,7 +2265,7 @@ impl ProjectDB {
         tenant_id: TenantId,
         program_id: ProgramId,
         revision: Revision,
-    ) -> Result<(ProgramDescr, String), DBError> {
+    ) -> Result<ProgramDescr, DBError> {
         let row = self
             .pool
             .get()
@@ -2298,17 +2290,16 @@ impl ProjectDB {
                 .transpose()
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
-            Ok((
-                ProgramDescr {
-                    program_id,
-                    name,
-                    description,
-                    version,
-                    status,
-                    schema,
-                },
-                row.get(6),
-            ))
+            let code = row.get(6);
+            Ok(ProgramDescr {
+                program_id,
+                name,
+                description,
+                version,
+                status,
+                schema,
+                code,
+            })
         } else {
             Err(DBError::UnknownProgram { program_id })
         }
@@ -2505,7 +2496,7 @@ impl ProjectDB {
 
     /// Helper to convert program_id foreign key constraint error into an
     /// user-friendly error message.
-    fn maybe_program_id_foreign_key_constraint_err(
+    fn maybe_program_id_not_found_foreign_key_constraint_err(
         err: DBError,
         program_id: Option<ProgramId>,
     ) -> DBError {
@@ -2517,6 +2508,30 @@ impl ProjectDB {
                 {
                     if let Some(program_id) = program_id {
                         return DBError::UnknownProgram { program_id };
+                    } else {
+                        unreachable!("program_id cannot be none");
+                    }
+                }
+            }
+        }
+
+        err
+    }
+
+    /// Helper to convert program_id foreign key constraint error into an
+    /// user-friendly error message.
+    fn maybe_program_id_in_use_foreign_key_constraint_err(
+        err: DBError,
+        program_id: Option<ProgramId>,
+    ) -> DBError {
+        if let DBError::PostgresError { error, .. } = &err {
+            let db_err = error.as_db_error();
+            if let Some(db_err) = db_err {
+                if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
+                    && db_err.constraint() == Some("pipeline_program_id_tenant_id_fkey")
+                {
+                    if let Some(program_id) = program_id {
+                        return DBError::ProgramInUseByPipeline { program_id };
                     } else {
                         unreachable!("program_id cannot be none");
                     }

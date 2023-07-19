@@ -1,5 +1,5 @@
 from http import HTTPStatus
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import httpx
 
@@ -14,6 +14,7 @@ def _get_kwargs(
     *,
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
+    with_code: Union[Unset, None, bool] = UNSET,
 ) -> Dict[str, Any]:
     pass
 
@@ -22,26 +23,29 @@ def _get_kwargs(
 
     params["name"] = name
 
+    params["with_code"] = with_code
+
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     return {
         "method": "get",
-        "url": "/program",
+        "url": "/programs",
         "params": params,
     }
 
 
 def _parse_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Optional[Union[ErrorResponse, ProgramDescr]]:
+) -> Optional[Union[ErrorResponse, List["ProgramDescr"]]]:
     if response.status_code == HTTPStatus.OK:
-        response_200 = ProgramDescr.from_dict(response.json())
+        response_200 = []
+        _response_200 = response.json()
+        for response_200_item_data in _response_200:
+            response_200_item = ProgramDescr.from_dict(response_200_item_data)
+
+            response_200.append(response_200_item)
 
         return response_200
-    if response.status_code == HTTPStatus.BAD_REQUEST:
-        response_400 = ErrorResponse.from_dict(response.json())
-
-        return response_400
     if response.status_code == HTTPStatus.NOT_FOUND:
         response_404 = ErrorResponse.from_dict(response.json())
 
@@ -54,7 +58,7 @@ def _parse_response(
 
 def _build_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Response[Union[ErrorResponse, ProgramDescr]]:
+) -> Response[Union[ErrorResponse, List["ProgramDescr"]]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -68,27 +72,29 @@ def sync_detailed(
     client: Union[AuthenticatedClient, Client],
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
-) -> Response[Union[ErrorResponse, ProgramDescr]]:
-    """Returns program descriptor, including current program version and
+    with_code: Union[Unset, None, bool] = UNSET,
+) -> Response[Union[ErrorResponse, List["ProgramDescr"]]]:
+    """Fetch programs, optionally filtered by name or ID.
 
-     Returns program descriptor, including current program version and
-    compilation status.
+     Fetch programs, optionally filtered by name or ID.
 
     Args:
         id (Union[Unset, None, str]):
         name (Union[Unset, None, str]):
+        with_code (Union[Unset, None, bool]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, ProgramDescr]]
+        Response[Union[ErrorResponse, List['ProgramDescr']]]
     """
 
     kwargs = _get_kwargs(
         id=id,
         name=name,
+        with_code=with_code,
     )
 
     response = client.get_httpx_client().request(
@@ -103,28 +109,30 @@ def sync(
     client: Union[AuthenticatedClient, Client],
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
-) -> Optional[Union[ErrorResponse, ProgramDescr]]:
-    """Returns program descriptor, including current program version and
+    with_code: Union[Unset, None, bool] = UNSET,
+) -> Optional[Union[ErrorResponse, List["ProgramDescr"]]]:
+    """Fetch programs, optionally filtered by name or ID.
 
-     Returns program descriptor, including current program version and
-    compilation status.
+     Fetch programs, optionally filtered by name or ID.
 
     Args:
         id (Union[Unset, None, str]):
         name (Union[Unset, None, str]):
+        with_code (Union[Unset, None, bool]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, ProgramDescr]
+        Union[ErrorResponse, List['ProgramDescr']]
     """
 
     return sync_detailed(
         client=client,
         id=id,
         name=name,
+        with_code=with_code,
     ).parsed
 
 
@@ -133,27 +141,29 @@ async def asyncio_detailed(
     client: Union[AuthenticatedClient, Client],
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
-) -> Response[Union[ErrorResponse, ProgramDescr]]:
-    """Returns program descriptor, including current program version and
+    with_code: Union[Unset, None, bool] = UNSET,
+) -> Response[Union[ErrorResponse, List["ProgramDescr"]]]:
+    """Fetch programs, optionally filtered by name or ID.
 
-     Returns program descriptor, including current program version and
-    compilation status.
+     Fetch programs, optionally filtered by name or ID.
 
     Args:
         id (Union[Unset, None, str]):
         name (Union[Unset, None, str]):
+        with_code (Union[Unset, None, bool]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, ProgramDescr]]
+        Response[Union[ErrorResponse, List['ProgramDescr']]]
     """
 
     kwargs = _get_kwargs(
         id=id,
         name=name,
+        with_code=with_code,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -166,22 +176,23 @@ async def asyncio(
     client: Union[AuthenticatedClient, Client],
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
-) -> Optional[Union[ErrorResponse, ProgramDescr]]:
-    """Returns program descriptor, including current program version and
+    with_code: Union[Unset, None, bool] = UNSET,
+) -> Optional[Union[ErrorResponse, List["ProgramDescr"]]]:
+    """Fetch programs, optionally filtered by name or ID.
 
-     Returns program descriptor, including current program version and
-    compilation status.
+     Fetch programs, optionally filtered by name or ID.
 
     Args:
         id (Union[Unset, None, str]):
         name (Union[Unset, None, str]):
+        with_code (Union[Unset, None, bool]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, ProgramDescr]
+        Union[ErrorResponse, List['ProgramDescr']]
     """
 
     return (
@@ -189,5 +200,6 @@ async def asyncio(
             client=client,
             id=id,
             name=name,
+            with_code=with_code,
         )
     ).parsed
