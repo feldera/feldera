@@ -367,7 +367,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testProjectFiles() {
+    public void testProjectFiles() throws IOException, InterruptedException {
         // Compiles all the programs in the tests directory
         final String projectsDirectory = "../../demo/";
         File dir = new File(projectsDirectory);
@@ -377,9 +377,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
             if (!subdir.getName().contains("project_"))
                 continue;
             String path = subdir.getPath() + "/project.sql";
-            CompilerMessages messages = CompilerMain.execute("-o", "/dev/null", path);
-            System.out.println(messages);
+            CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, path);
             Assert.assertEquals(0, messages.errorCount());
+            // Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
         }
     }
 
@@ -563,7 +563,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertEquals(messages.errorCount(), 1);
         msg = messages.getError(0);
         Assert.assertFalse(msg.warning);
-        Assert.assertEquals(msg.message, "Not yet implemented: cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n" +
+        Assert.assertEquals(msg.message, "cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n" +
                 "LINESTRING (0 0, 0 0):GEOMETRY");
 
         boolean success = file.delete();

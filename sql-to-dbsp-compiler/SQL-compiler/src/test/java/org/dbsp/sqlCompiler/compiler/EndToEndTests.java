@@ -246,6 +246,13 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void testConcatNull2() {
+        String query = "SELECT CONCAT(T.COL4, NULL) FROM T";
+        DBSPExpression lit = new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeString.UNLIMITED_INSTANCE));
+        this.testQuery(query, new DBSPZSetLiteral.Contents(lit, lit));
+    }
+
+    @Test
     public void overTwiceTest() {
         DBSPExpression t = new DBSPTupleExpression(
                 new DBSPI32Literal(10),

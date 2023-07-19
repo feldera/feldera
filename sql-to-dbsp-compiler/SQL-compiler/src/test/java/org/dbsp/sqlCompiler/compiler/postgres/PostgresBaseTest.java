@@ -271,12 +271,14 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
     public void qs(String queriesWithOutputs) {
         String[] parts = queriesWithOutputs.split("\n\n");
         // From each part drop the last line (N rows) *and* its last newline.
-        Pattern regex = Pattern.compile("^(.*)\\n\\(\\d+ rows\\)$", Pattern.DOTALL);
+        Pattern regex = Pattern.compile("^(.*)\\n\\(\\d+ rows?\\)$", Pattern.DOTALL);
         for (String part: parts) {
             Matcher regexMatcher = regex.matcher(part);
             if (regexMatcher.find()) {
                 String result = regexMatcher.group(1);
                 this.q(result);
+            } else {
+                throw new RuntimeException("Could not understand test: " + part);
             }
         }
     }

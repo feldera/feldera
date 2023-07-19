@@ -14,3 +14,4 @@ num = { version = "0.4.0" }
 chrono = { version = "0.4.23" }
 like = { version = "0.3.1" }
 paste = { version = "1.0.12" }
+regex = { version = "1.9.1" }

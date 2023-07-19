@@ -620,6 +620,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "initcap":
                         return this.compileFunction(call, node, type, ops, 1);
                     case "repeat":
+                    case "left":
                         return this.compileFunction(call, node, type, ops, 2);
                     case "replace":
                         return this.compileFunction(call, node, type, ops, 3);
@@ -648,6 +649,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         String functionName = opName + baseType.nullableSuffix();
                         return this.compileFunction(functionName, node, type, ops, 2, 3);
                     }
+                    case "concat":
+                        return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
                 }
                 throw new UnimplementedException(node);
             }
@@ -665,6 +668,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 // This is also hit for "date_part", which is an alias for "extract".
                 return this.compileKeywordFunction(call, node, "extract", type, ops, 0, 2);
             }
+            case RLIKE:
             case POSITION: {
                 return this.compileFunction(call, node, type, ops, 2);
             }

@@ -23,27 +23,19 @@
  *
  */
 
-package org.dbsp.sqlCompiler.compiler.errors;
-
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+/**
+ * Package that doesn't allow null values as method parameters.
+ */
 
 /**
- * Exception thrown when an unsupported construct is compiled.
- * This signals a bug in the user input.
+ * Tests for various other SQL functions.
  */
-public class UnsupportedException extends BaseCompilerException {
-    public static final String KIND = "Not supported";
+@ParametersAreNonnullByDefault
+@FieldsAreNonnullByDefault
+@MethodsAreNonnullByDefault
+package org.dbsp.sqlCompiler.compiler.functions;
 
-    public UnsupportedException(CalciteObject obj) {
-        super(KIND, obj);
-    }
+import org.dbsp.util.FieldsAreNonnullByDefault;
+import org.dbsp.util.MethodsAreNonnullByDefault;
 
-    public UnsupportedException(String msg, CalciteObject obj) {
-        super(msg, obj);
-    }
-
-    @Override
-    public String getErrorKind() {
-        return KIND;
-    }
-}
+import javax.annotation.ParametersAreNonnullByDefault;

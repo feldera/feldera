@@ -6,6 +6,7 @@ use crate::{
 };
 
 use like::{Escape, Like};
+use regex::Regex;
 
 pub fn concat_s_s(mut left: String, right: String) -> String {
     left.reserve(right.len());
@@ -68,6 +69,14 @@ pub fn like2__(value: String, pattern: String) -> bool {
 }
 
 some_function2!(like2, String, String, bool);
+
+pub fn rlike__(value: String, pattern: String) -> bool {
+    // TODO: the regex should not be created for each row.
+    let re = Regex::new(&pattern);
+    re.map_or_else(|_| false, |re| re.is_match(&value))
+}
+
+some_function2!(rlike, String, String, bool);
 
 pub fn like3___(value: String, pattern: String, escape: String) -> bool {
     let escaped = pattern.as_str().escape(escape.as_str()).unwrap();
@@ -201,3 +210,8 @@ pub fn replace___(haystack: String, needle: String, replacement: String) -> Stri
 
 some_function3!(replace, String, String, String, String);
 
+pub fn left__(source: String, size: i32) -> String {
+    substring3___(source, 1, size)
+}
+
+some_function2!(left, String, i32, String);
