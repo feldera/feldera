@@ -16,7 +16,11 @@ use uuid::Uuid;
 pub(crate) trait Storage {
     async fn reset_program_status(&self) -> Result<(), DBError>;
 
-    async fn list_programs(&self, tenant_id: TenantId) -> Result<Vec<ProgramDescr>, DBError>;
+    async fn list_programs(
+        &self,
+        tenant_id: TenantId,
+        with_code: bool,
+    ) -> Result<Vec<ProgramDescr>, DBError>;
 
     /// Retrieve program descriptor.
     ///
@@ -26,8 +30,9 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
+        with_code: bool,
     ) -> Result<ProgramDescr, DBError> {
-        self.get_program_if_exists(tenant_id, program_id)
+        self.get_program_if_exists(tenant_id, program_id, with_code)
             .await?
             .ok_or(DBError::UnknownProgram { program_id })
     }
@@ -40,8 +45,9 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         name: &str,
+        with_code: bool,
     ) -> Result<ProgramDescr, DBError> {
-        self.lookup_program(tenant_id, name)
+        self.lookup_program(tenant_id, name, with_code)
             .await?
             .ok_or_else(|| DBError::UnknownName { name: name.into() })
     }
@@ -57,7 +63,7 @@ pub(crate) trait Storage {
         program_id: ProgramId,
         expected_version: Version,
     ) -> Result<ProgramDescr, DBError> {
-        let descr = self.get_program_by_id(tenant_id, program_id).await?;
+        let descr = self.get_program_by_id(tenant_id, program_id, false).await?;
         if descr.version != expected_version {
             return Err(DBError::OutdatedProgramVersion { expected_version });
         }
@@ -116,14 +122,6 @@ pub(crate) trait Storage {
         Ok(())
     }
 
-    /// Retrieve code of the specified program along with the program's
-    /// meta-data.
-    async fn program_code(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-    ) -> Result<(ProgramDescr, String), DBError>;
-
     /// Create a new program.
     async fn new_program(
         &self,
@@ -152,6 +150,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
+        with_code: bool,
     ) -> Result<Option<ProgramDescr>, DBError>;
 
     /// Lookup program by name.
@@ -159,6 +158,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         program_name: &str,
+        with_code: bool,
     ) -> Result<Option<ProgramDescr>, DBError>;
 
     /// Update program status.

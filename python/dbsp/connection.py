@@ -1,9 +1,11 @@
 import dbsp_api_client
 
 from dbsp_api_client.models.new_program_request import NewProgramRequest
-from dbsp_api_client.api.program import list_programs
+from dbsp_api_client.api.program import get_programs
 from dbsp_api_client.api.program import new_program
+from dbsp_api_client.api.program import delete_program
 from dbsp.program import DBSPProgram
+from http import HTTPStatus
 
 class DBSPConnection:
     """DBSP server connection.
@@ -17,7 +19,7 @@ class DBSPConnection:
                 base_url = url,
                 timeout = 20.0)
 
-        list_programs.sync_detailed(client = self.api_client).unwrap("Failed to fetch program list from the DBSP server")
+        get_programs.sync_detailed(client = self.api_client).unwrap("Failed to fetch program list from the DBSP server")
 
     def create_program(self, *, name: str, sql_code: str, description: str = '') -> DBSPProgram:
         """Create a new program.
@@ -59,8 +61,14 @@ class DBSPConnection:
         return self.create_program_inner(name = name, sql_code = sql_code, description = description, replace = True)
 
     def create_program_inner(self, *, name: str, sql_code: str, description: str, replace: bool):
-        request = NewProgramRequest(name=name, overwrite_existing = replace, code=sql_code, description='')
+        # Delete existing program first
+        resp = get_programs.sync_detailed(client = self.api_client, name = name)
+        if resp.status_code == HTTPStatus.OK:
+            program_id = resp.unwrap("Failed to unwrap program %s" % (name))[0].program_id
+            delete_program.sync_detailed(client = self.api_client, program_id = program_id)
 
+        # Create a new one instead
+        request = NewProgramRequest(name=name, code=sql_code, description='')
         new_program_response = new_program.sync_detailed(client = self.api_client, json_body=request).unwrap("Failed to create a program")
 
         return DBSPProgram(

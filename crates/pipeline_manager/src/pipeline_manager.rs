@@ -68,6 +68,10 @@ struct ServerAddon;
 // We use this to add a server variable to the OpenAPI spec
 // rendered by the swagger-ui
 // https://docs.rs/utoipa/1.0.1/utoipa/trait.Modify.html
+//
+// Note, even though this percolates to the OpenAPI spec,
+// the openapi-python-generator ignores it.
+// See: https://github.com/openapi-generators/openapi-python-client/issues/112
 impl Modify for ServerAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         openapi.servers = Some(vec![Server::new("/v0")])
@@ -79,43 +83,54 @@ impl Modify for ServerAddon {
     modifiers(&ServerAddon),
     info(
         title = "DBSP API",
-        description = r"API to catalog, compile, and execute SQL programs.
+        description = r"
+With Feldera, users create data pipelines out of SQL programs and data connectors. A SQL program comprises tables and views. Connectors feed data to input tables in a program or receive outputs computed by views.
+
+This API allows users to create and manage data pipelines, and the programs
+and connectors that comprise these pipelines.
 
 # API concepts
 
-* *Program*.  A program is a SQL script with a unique name and a unique ID
-  attached to it.  The client can add, remove, modify, and compile programs.
-  Compilation includes running the SQL-to-DBSP compiler followed by the Rust
-  compiler.
+* *Program*.  A SQL program with a unique name and a unique ID
+  attached to it. A program contains tables and views. A program
+  needs to be compiled before it can be executed in a pipeline.
 
-* *Configuration*.  A program can have multiple configurations associated with
-  it.  Similar to programs, one can add, remove, and modify configs.
+* *Connector*. A data connector that can be used to feed input data to
+SQL tables or consume outputs from SQL views. Every connector
+has a unique name and identifier. We currently support Kafka and Redpanda.
+We also support directly ingesting and consuming data via HTTP;
+see the `pipelines/{pipeline_id}/ingress` and `pipelines/{pipeline_id}/egress`
+endpoints.
 
-* *Pipeline*.  A pipeline is a running instance of a compiled program based on
-  one of the configs.  Clients can start multiple pipelines for a program with
-  the same or different configs.
+* *Pipeline*.  A pipeline is a running instance of a program and
+some attached connectors. A client can create multiple pipelines that make use of
+the same program and connectors. Every pipeline has a unique name and identifier.
+Pipelines need to be explicitly *committed* before use. Committing a pipeline
+instantiates the pipeline with the then latest version of the referenced program and
+connectors. This allows the API to accumulate edits to programs and connectors
+before use.
 
 # Concurrency
 
-The API prevents race conditions due to multiple users accessing the same
+All programs and pipelines have an associated *version*. This is done to prevent
+race conditions due to multiple users accessing the same
 program or configuration concurrently.  An example is user 1 modifying the program,
-while user 2 is starting a pipeline for the same program.  The pipeline
-may end up running the old or the new version, potentially leading to
-unexpected behaviors.  The API prevents such situations by associating a
-monotonically increasing version number with each program and configuration.
-Every request to compile the program or start a pipeline must include program
-id _and_ version number. If the version number isn't equal to the current
-version in the database, this means that the last version of the program
-observed by the user is outdated, so the request is rejected."
+while user 2 is starting a pipeline for the same program. It would be confusing
+if the pipeline could end up running the old or the new version.
+
+A version is a monotonically increasing number, associated with each
+program and pipeline. Every request to compile the program or start a
+pipeline must include the program id and version number. If the version number
+isn't equal to the current version in the database, this means that the
+last version of the program observed by the client is outdated, so the
+request is rejected."
     ),
     paths(
-        list_programs,
-        program_code,
-        program_status,
+        get_programs,
+        get_program,
         new_program,
         update_program,
         compile_program,
-        cancel_program,
         delete_program,
         new_pipeline,
         update_pipeline,
@@ -178,7 +193,6 @@ observed by the user is outdated, so the request is rejected."
         UpdateProgramRequest,
         UpdateProgramResponse,
         CompileProgramRequest,
-        CancelProgramRequest,
         NewPipelineRequest,
         NewPipelineResponse,
         UpdatePipelineRequest,
@@ -335,9 +349,8 @@ fn static_website_scope() -> Scope {
 fn api_scope() -> Scope {
     // Make APIs available under the /v0/ prefix
     web::scope("/v0")
-        .service(list_programs)
-        .service(program_code)
-        .service(program_status)
+        .service(get_programs)
+        .service(get_program)
         .service(new_program)
         .service(update_program)
         .service(compile_program)
@@ -403,6 +416,12 @@ fn example_pipeline_toml() -> String {
 
 fn example_unknown_program() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::UnknownProgram {
+        program_id: ProgramId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
+    })
+}
+
+fn example_program_in_use_by_pipeline() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::ProgramInUseByPipeline {
         program_id: ProgramId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
     })
 }
@@ -488,13 +507,13 @@ fn example_program_has_errors() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::ProgramFailedToCompile)
 }
 
-fn example_pipline_invalid_input_ac() -> ErrorResponse {
+fn example_pipeline_invalid_input_ac() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::TablesNotInSchema {
         missing: vec![("ac_name".to_string(), "my_table".to_string())],
     })
 }
 
-fn example_pipline_invalid_output_ac() -> ErrorResponse {
+fn example_pipeline_invalid_output_ac() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::ViewsNotInSchema {
         missing: vec![("ac_name".to_string(), "my_view".to_string())],
     })
@@ -509,10 +528,6 @@ fn example_pipeline_timeout() -> ErrorResponse {
 
 fn example_invalid_uuid_param() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&ManagerError::InvalidUuidParam{value: "not_a_uuid".to_string(), error: "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1".to_string()})
-}
-
-fn example_program_not_specified() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ManagerError::ProgramNotSpecified)
 }
 
 fn example_pipeline_not_specified() -> ErrorResponse {
@@ -569,31 +584,6 @@ fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
     }
 }
 
-/// Enumerate the program database.
-#[utoipa::path(
-    responses(
-        (status = OK, description = "List of programs retrieved successfully", body = [ProgramDescr]),
-    ),
-    tag = "Program"
-)]
-#[get("/programs")]
-async fn list_programs(
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-) -> Result<HttpResponse, DBError> {
-    state
-        .db
-        .lock()
-        .await
-        .list_programs(*tenant_id)
-        .await
-        .map(|programs| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(programs)
-        })
-}
-
 /// Response to a program code request.
 #[derive(Serialize, ToSchema)]
 struct ProgramCodeResponse {
@@ -603,96 +593,98 @@ struct ProgramCodeResponse {
     code: String,
 }
 
-/// Returns the latest SQL source code of the program along with its meta-data.
+/// Fetch programs, optionally filtered by name or ID.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Program data and code retrieved successfully.", body = ProgramCodeResponse),
-        (status = BAD_REQUEST
-            , description = "Specified program id is not a valid uuid."
-            , body = ErrorResponse
-            , example = json!(example_invalid_uuid_param())),
+        (status = OK, description = "Programs retrieved successfully.", body = [ProgramDescr]),
         (status = NOT_FOUND
-            , description = "Specified program id does not exist in the database."
+            , description = "Specified program name or ID does not exist in the database."
             , body = ErrorResponse
-            , example = json!(example_unknown_program())),
+            , examples(
+                ("Unknown program name" = (value = json!(example_unknown_name()))),
+                ("Unknown program ID" = (value = json!(example_unknown_program())))
+            ),
+        )
     ),
-    params(
-        ("program_id" = Uuid, Path, description = "Unique program identifier")
-    ),
+    params(ProgramIdOrNameQuery, WithCodeQuery),
     tag = "Program"
 )]
-#[get("/program/{program_id}/code")]
-async fn program_code(
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-    req: HttpRequest,
-) -> Result<HttpResponse, ManagerError> {
-    let program_id = ProgramId(parse_uuid_param(&req, "program_id")?);
-
-    Ok(state
-        .db
-        .lock()
-        .await
-        .program_code(*tenant_id, program_id)
-        .await
-        .map(|(program, code)| {
-            HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&ProgramCodeResponse { program, code })
-        })?)
-}
-
-/// Returns program descriptor, including current program version and
-/// compilation status.
-#[utoipa::path(
-    responses(
-        (status = OK, description = "Program status retrieved successfully.", body = ProgramDescr),
-        (status = BAD_REQUEST
-            , description = "Program not specified. Use ?id or ?name query strings in the URL."
-            , body = ErrorResponse
-            , example = json!(example_program_not_specified())),
-        (status = NOT_FOUND
-            , description = "Specified program name does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(example_unknown_name())),
-        (status = NOT_FOUND
-            , description = "Specified program id does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(example_unknown_program())),
-    ),
-    params(
-        ("id" = Option<Uuid>, Query, description = "Unique connector identifier"),
-        ("name" = Option<String>, Query, description = "Unique connector name")
-    ),
-    tag = "Program"
-)]
-#[get("/program")]
-async fn program_status(
+#[get("/programs")]
+async fn get_programs(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: web::Query<ProgramIdOrNameQuery>,
+    with_code: web::Query<WithCodeQuery>,
 ) -> Result<HttpResponse, ManagerError> {
-    let descr = if let Some(id) = req.id {
-        state
+    let with_code = with_code.with_code.unwrap_or(false);
+    if let Some(id) = req.id {
+        let program = state
             .db
             .lock()
             .await
-            .get_program_by_id(*tenant_id, ProgramId(id))
-            .await?
+            .get_program_by_id(*tenant_id, ProgramId(id), with_code)
+            .await?;
+
+        Ok(HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&vec![program]))
     } else if let Some(name) = req.name.clone() {
-        state
+        let program = state
             .db
             .lock()
             .await
-            .get_program_by_name(*tenant_id, &name)
-            .await?
+            .get_program_by_name(*tenant_id, &name, with_code)
+            .await?;
+        Ok(HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&vec![program]))
     } else {
-        return Err(ManagerError::ProgramNotSpecified);
-    };
+        let programs = state
+            .db
+            .lock()
+            .await
+            .list_programs(*tenant_id, with_code)
+            .await?;
+        Ok(HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&programs))
+    }
+}
+
+/// Fetch a program by ID.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Program retrieved successfully.", body = ProgramDescr),
+        (status = NOT_FOUND
+            , description = "Specified program id does not exist in the database."
+            , body = ErrorResponse
+            , example = json!(example_unknown_program())),
+    ),
+    params(
+        ("program_id" = Uuid, Path, description = "Unique program identifier"),
+        WithCodeQuery
+    ),
+    tag = "Program"
+)]
+#[get("/programs/{program_id}")]
+async fn get_program(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+    query: web::Query<WithCodeQuery>,
+) -> Result<HttpResponse, ManagerError> {
+    let program_id = ProgramId(parse_uuid_param(&req, "program_id")?);
+    let with_code = query.with_code.unwrap_or(false);
+    let program = state
+        .db
+        .lock()
+        .await
+        .get_program_by_id(*tenant_id, program_id, with_code)
+        .await?;
 
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(&descr))
+        .json(&program))
 }
 
 /// Request to create a new DBSP program.
@@ -701,9 +693,6 @@ struct NewProgramRequest {
     /// Program name.
     #[schema(example = "Example program")]
     name: String,
-    /// Overwrite existing program with the same name, if any.
-    #[serde(default)]
-    overwrite_existing: bool,
     /// Program description.
     #[schema(example = "Example description")]
     description: String,
@@ -724,10 +713,6 @@ struct NewProgramResponse {
 }
 
 /// Create a new program.
-///
-/// If the `overwrite_existing` flag is set in the request and a program with
-/// the same name already exists, all pipelines associated with that program and
-/// the program itself will be deleted.
 #[utoipa::path(
     request_body = NewProgramRequest,
     responses(
@@ -753,18 +738,6 @@ async fn do_new_program(
     tenant_id: ReqData<TenantId>,
     request: web::Json<NewProgramRequest>,
 ) -> Result<HttpResponse, DBError> {
-    if request.overwrite_existing {
-        let descr = {
-            let db = state.db.lock().await;
-            let descr = db.lookup_program(*tenant_id, &request.name).await?;
-            drop(db);
-            descr
-        };
-        if let Some(program_descr) = descr {
-            do_delete_program(state.clone(), *tenant_id, program_descr.program_id).await?;
-        }
-    }
-
     state
         .db
         .lock()
@@ -790,8 +763,6 @@ async fn do_new_program(
 /// Update program request.
 #[derive(Deserialize, ToSchema)]
 struct UpdateProgramRequest {
-    /// Id of the program.
-    program_id: ProgramId,
     /// New name for the program.
     name: String,
     /// New description for the program.
@@ -810,11 +781,13 @@ struct UpdateProgramResponse {
     version: Version,
 }
 
-/// Change program code and/or name.
+/// Change one or more of a program's code, description or name.
 ///
-/// If program code changes, any ongoing compilation gets cancelled,
-/// program status is reset to `None`, and program version
-/// is incremented by 1.  Changing program name only doesn't affect its
+/// If a program's code changes, any ongoing compilation gets cancelled,
+/// the program status is reset to `None`, and the program version
+/// is incremented by 1.
+///
+/// Changing only the program's name or description does not affect its
 /// version or the compilation process.
 #[utoipa::path(
     request_body = UpdateProgramRequest,
@@ -829,24 +802,29 @@ struct UpdateProgramResponse {
             , body = ErrorResponse
             , example = json!(example_duplicate_name())),
     ),
+    params(
+        ("program_id" = Uuid, Path, description = "Unique program identifier")
+    ),
     tag = "Program"
 )]
-#[patch("/programs")]
+#[patch("/programs/{program_id}")]
 async fn update_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    request: web::Json<UpdateProgramRequest>,
-) -> Result<HttpResponse, DBError> {
+    request: HttpRequest,
+    body: web::Json<UpdateProgramRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let program_id = ProgramId(parse_uuid_param(&request, "program_id")?);
     let version = state
         .db
         .lock()
         .await
         .update_program(
             *tenant_id,
-            request.program_id,
-            &request.name,
-            &request.description,
-            &request.code,
+            program_id,
+            &body.name,
+            &body.description,
+            &body.code,
         )
         .await?;
 
@@ -858,16 +836,15 @@ async fn update_program(
 /// Request to queue a program for compilation.
 #[derive(Deserialize, ToSchema)]
 struct CompileProgramRequest {
-    /// Program id.
-    program_id: ProgramId,
     /// Latest program version known to the client.
     version: Version,
 }
 
-/// Queue program for compilation.
+/// Mark a program for compilation.
 ///
-/// The client should poll the `/program_status` endpoint
-/// for compilation results.
+/// The client can track a program's compilation status by pollling the
+/// `/program/{program_id}` or `/programs` endpoints, and
+/// then checking the `status` field of the program object
 #[utoipa::path(
     request_body = CompileProgramRequest,
     responses(
@@ -881,63 +858,24 @@ struct CompileProgramRequest {
             , body = ErrorResponse
             , example = json!(example_outdated_program_version())),
     ),
-    tag = "Program"
-)]
-#[post("/programs/compile")]
-async fn compile_program(
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-    request: web::Json<CompileProgramRequest>,
-) -> Result<HttpResponse, DBError> {
-    state
-        .db
-        .lock()
-        .await
-        .set_program_pending(*tenant_id, request.program_id, request.version)
-        .await?;
-
-    Ok(HttpResponse::Accepted().finish())
-}
-
-/// Request to cancel ongoing program compilation.
-#[derive(Deserialize, ToSchema)]
-struct CancelProgramRequest {
-    /// Program id.
-    program_id: ProgramId,
-    /// Latest program version known to the client.
-    version: Version,
-}
-
-/// Cancel outstanding compilation request.
-///
-/// The client should poll the `/program_status` endpoint
-/// to determine when the cancelation request completes.
-#[utoipa::path(
-    request_body = CancelProgramRequest,
-    responses(
-        (status = ACCEPTED, description = "Cancelation request submitted."),
-        (status = NOT_FOUND
-            , description = "Specified program id does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(example_unknown_program())),
-        (status = CONFLICT
-            , description = "Program version specified in the request doesn't match the latest program version in the database."
-            , body = ErrorResponse
-            , example = json!(example_outdated_program_version())),
+    params(
+        ("program_id" = Uuid, Path, description = "Unique program identifier")
     ),
     tag = "Program"
 )]
-#[delete("/programs/compile")]
-async fn cancel_program(
+#[post("/programs/{program_id}/compile")]
+async fn compile_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    request: web::Json<CancelProgramRequest>,
-) -> Result<HttpResponse, DBError> {
+    request: HttpRequest,
+    body: web::Json<CompileProgramRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let program_id = ProgramId(parse_uuid_param(&request, "program_id")?);
     state
         .db
         .lock()
         .await
-        .cancel_program(*tenant_id, request.program_id, request.version)
+        .set_program_pending(*tenant_id, program_id, body.version)
         .await?;
 
     Ok(HttpResponse::Accepted().finish())
@@ -945,14 +883,22 @@ async fn cancel_program(
 
 /// Delete a program.
 ///
-/// Deletes all pipelines and configs associated with the program.
+/// Deletion fails if there is at least one pipeline associated with the program.
 #[utoipa::path(
     responses(
         (status = OK, description = "Program successfully deleted."),
         (status = BAD_REQUEST
-            , description = "Specified program id is not a valid uuid."
+            , description = "Specified program id is referenced by a pipeline or is not a valid uuid."
             , body = ErrorResponse
-            , example = json!(example_invalid_uuid_param())),
+            , examples (
+                ("Program in use" =
+                    (description = "Specified program id is referenced by a pipeline",
+                      value = json!(example_program_in_use_by_pipeline()))),
+                ("Invalid uuid" =
+                    (description = "Specified program id is not a valid uuid.",
+                     value = json!(example_invalid_uuid_param()))),
+            )
+        ),
         (status = NOT_FOUND
             , description = "Specified program id does not exist in the database."
             , body = ErrorResponse
@@ -1341,11 +1287,11 @@ async fn pipeline_status(
         (status = BAD_REQUEST
             , description = "The connectors in the config reference a table that doesn't exist."
             , body = ErrorResponse
-            , example = json!(example_pipline_invalid_input_ac())),
+            , example = json!(example_pipeline_invalid_input_ac())),
         (status = BAD_REQUEST
             , description = "The connectors in the config reference a view that doesn't exist."
             , body = ErrorResponse
-            , example = json!(example_pipline_invalid_output_ac())),
+            , example = json!(example_pipeline_invalid_output_ac())),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
@@ -1416,11 +1362,11 @@ async fn pipeline_validate(
         (status = BAD_REQUEST
             , description = "The connectors in the config references a table that doesn't exist."
             , body = ErrorResponse
-            , example = json!(example_pipline_invalid_input_ac())),
+            , example = json!(example_pipeline_invalid_input_ac())),
         (status = BAD_REQUEST
             , description = "The connectors in the config references a view that doesn't exist."
             , body = ErrorResponse
-            , example = json!(example_pipline_invalid_output_ac())),
+            , example = json!(example_pipeline_invalid_output_ac())),
         (status = BAD_REQUEST
             , description = "Action is not applicable in the current state of the pipeline."
             , body = ErrorResponse
@@ -1681,6 +1627,15 @@ pub struct ProgramIdOrNameQuery {
     id: Option<Uuid>,
     /// Unique program name.
     name: Option<String>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct WithCodeQuery {
+    /// Option to include the SQL program code or not
+    /// in the Program objects returned by the query.
+    /// If false (default), the returned program object
+    /// will not include the code.
+    with_code: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]

@@ -534,11 +534,10 @@ dependencies = [
 
 [[package]]
 name = "arcstr"
-version = "1.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f907281554a3d0312bb7aab855a8e0ef6cbf1614d06de54105039ca8b34460e"
+version = "1.1.4"
+source = "git+https://github.com/gz/arcstr.git?rev=b43120c#b43120cd13db16a1c1f61a12d1637b047b9bcd89"
 dependencies = [
- "serde",
+ "bincode",
 ]
 
 [[package]]
@@ -589,7 +588,7 @@ dependencies = [
  "async-lock",
  "async-task",
  "concurrent-queue",
- "fastrand",
+ "fastrand 1.9.0",
  "futures-lite",
  "slab",
 ]
@@ -841,7 +840,7 @@ dependencies = [
  "aws-smithy-types",
  "aws-types",
  "bytes",
- "fastrand",
+ "fastrand 1.9.0",
  "hex",
  "http",
  "hyper",
@@ -861,7 +860,7 @@ checksum = "1fcdb2f7acbc076ff5ad05e7864bdb191ca70a6fd07668dc3a1a8bcd051de5ae"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-types",
- "fastrand",
+ "fastrand 1.9.0",
  "tokio",
  "tracing",
  "zeroize",
@@ -1032,7 +1031,7 @@ dependencies = [
  "aws-smithy-http-tower",
  "aws-smithy-types",
  "bytes",
- "fastrand",
+ "fastrand 1.9.0",
  "http",
  "http-body",
  "hyper",
@@ -1285,7 +1284,7 @@ dependencies = [
  "async-lock",
  "async-task",
  "atomic-waker",
- "fastrand",
+ "fastrand 1.9.0",
  "futures-lite",
  "log",
 ]
@@ -2078,11 +2077,23 @@ dependencies = [
 
 [[package]]
 name = "csv"
+version = "1.1.6"
+source = "git+https://github.com/ryzhyk/rust-csv.git#795e411f6bec8a92fd77adb857dcbaa940bc59f0"
+dependencies = [
+ "bstr",
+ "csv-core 0.1.10 (git+https://github.com/ryzhyk/rust-csv.git)",
+ "itoa",
+ "ryu",
+ "serde",
+]
+
+[[package]]
+name = "csv"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "626ae34994d3d8d668f4269922248239db4ae42d538b14c398b74a52208e8086"
 dependencies = [
- "csv-core",
+ "csv-core 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "itoa",
  "ryu",
  "serde",
@@ -2093,6 +2104,14 @@ name = "csv-core"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b2466559f260f48ad25fe6317b3c8dac77b5bdb5763ac7d9d6103530663bc90"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "csv-core"
+version = "0.1.10"
+source = "git+https://github.com/ryzhyk/rust-csv.git#795e411f6bec8a92fd77adb857dcbaa940bc59f0"
 dependencies = [
  "memchr",
 ]
@@ -2244,7 +2263,7 @@ dependencies = [
  "cranelift-codegen",
  "cranelift-jit",
  "cranelift-module",
- "csv",
+ "csv 1.2.2",
  "dbsp",
  "derive_more",
  "enum_dispatch",
@@ -2286,7 +2305,7 @@ dependencies = [
  "criterion",
  "crossbeam",
  "crossbeam-utils",
- "csv",
+ "csv 1.1.6",
  "hashbrown 0.13.2",
  "impl-trait-for-tuples",
  "indicatif",
@@ -2331,13 +2350,12 @@ dependencies = [
  "async-stream",
  "awc",
  "bincode",
- "bstr",
  "bytestring",
  "chrono",
  "clap 4.3.17",
  "colored",
  "crossbeam",
- "csv",
+ "csv 1.1.6",
  "dbsp",
  "env_logger",
  "erased-serde",
@@ -2375,7 +2393,7 @@ dependencies = [
  "bincode",
  "cached 0.38.0",
  "clap 3.2.25",
- "csv",
+ "csv 1.1.6",
  "dbsp",
  "hdrhist",
  "indicatif",
@@ -2689,6 +2707,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fastrand"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6999dc1837253364c2ebb0704ba97994bd874e8f195d665c50b7548f6ea92764"
+
+[[package]]
 name = "filetime"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2848,7 +2872,7 @@ version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49a9d51ce47660b1e808d3c990b4709f2f415d928835a17dfd16991515c46bce"
 dependencies = [
- "fastrand",
+ "fastrand 1.9.0",
  "futures-core",
  "futures-io",
  "memchr",
@@ -4683,7 +4707,7 @@ name = "readers"
 version = "0.1.0"
 dependencies = [
  "async-std",
- "csv",
+ "csv 1.2.2",
  "dbsp",
  "derive_more",
  "paste",
@@ -5799,15 +5823,14 @@ checksum = "1d2faeef5759ab89935255b1a4cd98e0baf99d1085e37d36599c625dac49ae8e"
 
 [[package]]
 name = "tempfile"
-version = "3.6.0"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31c0432476357e58790aaa47a8efb0c5138f137343f3b5f23bd36a27e3b0a6d6"
+checksum = "5486094ee78b2e5038a6382ed7645bc084dc2ec433426ca4c3cb61e2007b8998"
 dependencies = [
- "autocfg",
  "cfg-if",
- "fastrand",
+ "fastrand 2.0.0",
  "redox_syscall 0.3.5",
- "rustix 0.37.23",
+ "rustix 0.38.4",
  "windows-sys 0.48.0",
 ]
 

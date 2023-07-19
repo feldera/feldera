@@ -13,21 +13,18 @@ class UpdateProgramRequest:
 
     Attributes:
         name (str): New name for the program.
-        program_id (str): Unique program id.
         code (Union[Unset, None, str]): New SQL code for the program or `None` to keep existing program
             code unmodified.
         description (Union[Unset, str]): New description for the program.
     """
 
     name: str
-    program_id: str
     code: Union[Unset, None, str] = UNSET
     description: Union[Unset, str] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         name = self.name
-        program_id = self.program_id
         code = self.code
         description = self.description
 
@@ -36,7 +33,6 @@ class UpdateProgramRequest:
         field_dict.update(
             {
                 "name": name,
-                "program_id": program_id,
             }
         )
         if code is not UNSET:
@@ -51,15 +47,12 @@ class UpdateProgramRequest:
         d = src_dict.copy()
         name = d.pop("name")
 
-        program_id = d.pop("program_id")
-
         code = d.pop("code", UNSET)
 
         description = d.pop("description", UNSET)
 
         update_program_request = cls(
             name=name,
-            program_id=program_id,
             code=code,
             description=description,
         )

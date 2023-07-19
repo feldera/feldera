@@ -1,44 +1,47 @@
 from http import HTTPStatus
-from typing import Any, Dict, Optional, Union, cast
+from typing import Any, Dict, Optional, Union
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.cancel_program_request import CancelProgramRequest
 from ...models.error_response import ErrorResponse
-from ...types import Response
+from ...models.program_descr import ProgramDescr
+from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
+    program_id: str,
     *,
-    json_body: CancelProgramRequest,
+    with_code: Union[Unset, None, bool] = UNSET,
 ) -> Dict[str, Any]:
     pass
 
-    json_json_body = json_body.to_dict()
+    params: Dict[str, Any] = {}
+    params["with_code"] = with_code
+
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     return {
-        "method": "delete",
-        "url": "/programs/compile",
-        "json": json_json_body,
+        "method": "get",
+        "url": "/programs/{program_id}".format(
+            program_id=program_id,
+        ),
+        "params": params,
     }
 
 
 def _parse_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Optional[Union[Any, ErrorResponse]]:
-    if response.status_code == HTTPStatus.ACCEPTED:
-        response_202 = cast(Any, None)
-        return response_202
+) -> Optional[Union[ErrorResponse, ProgramDescr]]:
+    if response.status_code == HTTPStatus.OK:
+        response_200 = ProgramDescr.from_dict(response.json())
+
+        return response_200
     if response.status_code == HTTPStatus.NOT_FOUND:
         response_404 = ErrorResponse.from_dict(response.json())
 
         return response_404
-    if response.status_code == HTTPStatus.CONFLICT:
-        response_409 = ErrorResponse.from_dict(response.json())
-
-        return response_409
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -47,7 +50,7 @@ def _parse_response(
 
 def _build_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Response[Union[Any, ErrorResponse]]:
+) -> Response[Union[ErrorResponse, ProgramDescr]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -57,30 +60,30 @@ def _build_response(
 
 
 def sync_detailed(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: CancelProgramRequest,
-) -> Response[Union[Any, ErrorResponse]]:
-    """Cancel outstanding compilation request.
+    with_code: Union[Unset, None, bool] = UNSET,
+) -> Response[Union[ErrorResponse, ProgramDescr]]:
+    """Fetch a program by ID.
 
-     Cancel outstanding compilation request.
-
-    The client should poll the `/program_status` endpoint
-    to determine when the cancelation request completes.
+     Fetch a program by ID.
 
     Args:
-        json_body (CancelProgramRequest): Request to cancel ongoing program compilation.
+        program_id (str):
+        with_code (Union[Unset, None, bool]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[Any, ErrorResponse]]
+        Response[Union[ErrorResponse, ProgramDescr]]
     """
 
     kwargs = _get_kwargs(
-        json_body=json_body,
+        program_id=program_id,
+        with_code=with_code,
     )
 
     response = client.get_httpx_client().request(
@@ -91,59 +94,59 @@ def sync_detailed(
 
 
 def sync(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: CancelProgramRequest,
-) -> Optional[Union[Any, ErrorResponse]]:
-    """Cancel outstanding compilation request.
+    with_code: Union[Unset, None, bool] = UNSET,
+) -> Optional[Union[ErrorResponse, ProgramDescr]]:
+    """Fetch a program by ID.
 
-     Cancel outstanding compilation request.
-
-    The client should poll the `/program_status` endpoint
-    to determine when the cancelation request completes.
+     Fetch a program by ID.
 
     Args:
-        json_body (CancelProgramRequest): Request to cancel ongoing program compilation.
+        program_id (str):
+        with_code (Union[Unset, None, bool]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[Any, ErrorResponse]
+        Union[ErrorResponse, ProgramDescr]
     """
 
     return sync_detailed(
+        program_id=program_id,
         client=client,
-        json_body=json_body,
+        with_code=with_code,
     ).parsed
 
 
 async def asyncio_detailed(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: CancelProgramRequest,
-) -> Response[Union[Any, ErrorResponse]]:
-    """Cancel outstanding compilation request.
+    with_code: Union[Unset, None, bool] = UNSET,
+) -> Response[Union[ErrorResponse, ProgramDescr]]:
+    """Fetch a program by ID.
 
-     Cancel outstanding compilation request.
-
-    The client should poll the `/program_status` endpoint
-    to determine when the cancelation request completes.
+     Fetch a program by ID.
 
     Args:
-        json_body (CancelProgramRequest): Request to cancel ongoing program compilation.
+        program_id (str):
+        with_code (Union[Unset, None, bool]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[Any, ErrorResponse]]
+        Response[Union[ErrorResponse, ProgramDescr]]
     """
 
     kwargs = _get_kwargs(
-        json_body=json_body,
+        program_id=program_id,
+        with_code=with_code,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -152,31 +155,31 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: CancelProgramRequest,
-) -> Optional[Union[Any, ErrorResponse]]:
-    """Cancel outstanding compilation request.
+    with_code: Union[Unset, None, bool] = UNSET,
+) -> Optional[Union[ErrorResponse, ProgramDescr]]:
+    """Fetch a program by ID.
 
-     Cancel outstanding compilation request.
-
-    The client should poll the `/program_status` endpoint
-    to determine when the cancelation request completes.
+     Fetch a program by ID.
 
     Args:
-        json_body (CancelProgramRequest): Request to cancel ongoing program compilation.
+        program_id (str):
+        with_code (Union[Unset, None, bool]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[Any, ErrorResponse]
+        Union[ErrorResponse, ProgramDescr]
     """
 
     return (
         await asyncio_detailed(
+            program_id=program_id,
             client=client,
-            json_body=json_body,
+            with_code=with_code,
         )
     ).parsed
