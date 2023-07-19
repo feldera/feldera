@@ -49,7 +49,8 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::{net::TcpListener, sync::Arc};
 use tokio::sync::Mutex;
-use utoipa::{OpenApi, ToSchema};
+use utoipa::openapi::Server;
+use utoipa::{Modify, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::{uuid, Uuid};
 
@@ -64,8 +65,20 @@ use crate::runner::{LocalRunner, Runner, RunnerError, STARTUP_TIMEOUT};
 
 use crate::auth::TenantId;
 
+struct ServerAddon;
+
+// We use this to add a server variable to the OpenAPI spec
+// rendered by the swagger-ui
+// https://docs.rs/utoipa/1.0.1/utoipa/trait.Modify.html
+impl Modify for ServerAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        openapi.servers = Some(vec![Server::new("/v0")])
+    }
+}
+
 #[derive(OpenApi)]
 #[openapi(
+    modifiers(&ServerAddon),
     info(
         title = "DBSP API",
         description = r"API to catalog, compile, and execute SQL programs.
