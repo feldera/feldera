@@ -563,7 +563,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertEquals(messages.errorCount(), 1);
         msg = messages.getError(0);
         Assert.assertFalse(msg.warning);
-        Assert.assertEquals(msg.message, "Not yet implemented: cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n" +
+        Assert.assertEquals(msg.message, "cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n" +
                 "LINESTRING (0 0, 0 0):GEOMETRY");
 
         boolean success = file.delete();
