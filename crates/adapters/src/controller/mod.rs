@@ -70,7 +70,7 @@ pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
 /// Maximal number of concurrent API connections per circuit
 /// (including both input and output connecions).
 // TODO: make this configurable.
-const MAX_API_CONNECTIONS: u64 = 100;
+pub(crate) const MAX_API_CONNECTIONS: u64 = 100;
 
 pub(crate) type EndpointId = u64;
 
