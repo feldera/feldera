@@ -58,13 +58,15 @@ public class CompilerMessages {
                 output.append(sourceFile)
                         .append(":")
                         .append(this.range.start)
-                        .append(":");
+                        .append(": ");
             }
             if (this.warning)
-                output.append(" warning");
+                output.append("warning:");
             else
-                output.append(" error");
-            output.append(": ")
+                output.append("error:");
+            output.append(" ")
+                    .append(this.errorType)
+                    .append(": ")
                     .append(this.message)
                     .append(SourceFileContents.newline());
             output.append(contents.getFragment(this.range));

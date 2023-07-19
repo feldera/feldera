@@ -107,7 +107,32 @@ joinCondition
   |   USING '(' column [, column ]* ')'
 
 tableReference
-  :   tablePrimary [ [ AS ] alias [ '(' columnAlias [, columnAlias ]* ')' ] ]
+  :   tablePrimary [ pivot ] [ [ AS ] alias [ '(' columnAlias [, columnAlias ]* ')' ] ]
+
+pivot
+  :   PIVOT '('
+      pivotAgg [, pivotAgg ]*
+      FOR pivotList
+      IN '(' pivotExpr [, pivotExpr ]* ')'
+      ')'
+
+pivotAgg
+  :   agg '(' [ ALL | DISTINCT ] value [, value ]* ')'
+      [ [ AS ] alias ]
+
+pivotList
+  :   columnOrList
+
+pivotExpr
+  :   exprOrList [ [ AS ] alias ]
+
+columnOrList
+  :   column
+  |   '(' column [, column ]* ')'
+
+exprOrList
+  :   expr
+  |   '(' expr [, expr ]* ')'
 
 windowSpec
   :   '('
@@ -116,7 +141,7 @@ windowSpec
       [ PARTITION BY expression [, expression ]* ]
       [
           RANGE numericOrIntervalExpression { PRECEDING | FOLLOWING }
-       ]
+      ]
       ')'
 ```
 

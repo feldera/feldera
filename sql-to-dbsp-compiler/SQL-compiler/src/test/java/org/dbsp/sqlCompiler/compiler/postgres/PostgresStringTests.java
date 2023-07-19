@@ -449,6 +449,100 @@ public class PostgresStringTests extends PostgresBaseTest {
     }
 
     @Test
+    public void testRlike() {
+        // This is not a postgres operator
+        this.q("SELECT 'hawkeye' RLIKE 'h.*' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.q("SELECT 'hawkeye' NOT RLIKE 'h.*' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.q("SELECT 'hawkeye' RLIKE 'H.*' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.q("SELECT 'hawkeye' NOT RLIKE 'H.*' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.q("SELECT 'hawkeye' RLIKE 'indio.*' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.q("SELECT 'hawkeye' NOT RLIKE 'indio.*' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.q("SELECT 'hawkeye' RLIKE 'h.*eye' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.q("SELECT 'hawkeye' NOT RLIKE 'h.*eye' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.q("SELECT 'indio' RLIKE '.ndio' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.q("SELECT 'indio' NOT RLIKE '.ndio' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.q("SELECT 'indio' RLIKE 'in..o' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.q("SELECT 'indio' NOT RLIKE 'in..o' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.q("SELECT 'indio' RLIKE 'in.o' AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.q("SELECT 'indio' NOT RLIKE 'in.o' AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+    }
+
+    @Test
+    public void testRlike2() {
+        // This is not a postgres operator
+        this.q("SELECT RLIKE('hawkeye', 'h.*') AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.q("SELECT RLIKE('hawkeye', 'H.*') AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.q("SELECT RLIKE('hawkeye', 'indio.*') AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+        this.q("SELECT RLIKE('hawkeye', 'h.*eye') AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.q("SELECT RLIKE('indio', '.ndio') AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.q("SELECT RLIKE('indio', 'in..o') AS \"true\";\n" +
+                " true \n" +
+                "------\n" +
+                " t");
+        this.q("SELECT RLIKE('indio', 'in.o') AS \"false\";\n" +
+                " false \n" +
+                "-------\n" +
+                " f");
+    }
+
+    @Test
     public void testLike3() {
         this.q("SELECT 'hawkeye' LIKE 'h%' ESCAPE '#' AS \"true\";\n" +
                 " true \n" +

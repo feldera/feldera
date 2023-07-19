@@ -73,6 +73,7 @@ public class AggregateCompiler implements ICompilerComponent {
     private final NameGen generator;
 
     public AggregateCompiler(
+            CalciteObject node,
             DBSPCompiler compiler,
             AggregateCall call, DBSPType resultType,
             DBSPVariablePath v) {

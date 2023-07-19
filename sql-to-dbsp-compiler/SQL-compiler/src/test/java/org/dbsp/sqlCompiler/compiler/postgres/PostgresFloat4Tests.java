@@ -223,6 +223,7 @@ public class PostgresFloat4Tests extends PostgresBaseTest {
                 " 1.2345679e-20 |           -10\n" +
                 "(3 rows)\n" +
                 "\n" +
+                // TODO: precision doesn't match in output
                 //"SELECT f.f1, f.f1 / '-10' AS x FROM FLOAT4_TBL f\n" +
                 //"   WHERE f.f1 > '0.0';\n" +
                 //"      f1       |       x        \n" +

@@ -172,13 +172,34 @@ public class CalciteCompiler implements IWritesLogs {
         }
     }
 
+    static class RlikeFunction extends SqlFunction {
+        public RlikeFunction() {
+            super("RLIKE",
+                    SqlKind.RLIKE,
+                    ReturnTypes.BOOLEAN,
+                    null,
+                    OperandTypes.STRING_STRING,
+                    SqlFunctionCategory.STRING);
+        }
+
+        @Override
+        public boolean isDeterministic() {
+            // TODO: change this when we learn how to constant-fold in the RexToLixTranslator
+            return false;
+        }
+    }
+
     public static final RelDataTypeSystem TYPE_SYSTEM = new RelDataTypeSystemImpl() {
+        @Override
         public int getMaxNumericPrecision() {
             return DBSPTypeDecimal.MAX_PRECISION;
         }
+        @Override
         public int getMaxNumericScale() {
             return DBSPTypeDecimal.MAX_SCALE;
         }
+        @Override
+        public boolean shouldConvertRaggedUnionTypesToVarying() { return true; }
     };
 
     // Adapted from https://www.querifylabs.com/blog/assembling-a-query-optimizer-with-apache-calcite
@@ -223,7 +244,6 @@ public class CalciteCompiler implements IWritesLogs {
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
                 rootSchema, Collections.singletonList(catalog.schemaName), this.typeFactory, connectionConfig);
 
-        SqlFunction division = new SqlDivideFunction();
         SqlOperatorTable operatorTable = SqlOperatorTables.chain(
                 // Libraries of user-defined functions supported.
                 SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(
@@ -232,15 +252,13 @@ public class CalciteCompiler implements IWritesLogs {
                                 SqlLibrary.MYSQL,
                                 SqlLibrary.POSTGRESQL,
                                 SqlLibrary.BIG_QUERY,
-                                // Geospatial functions
+                                SqlLibrary.SPARK,
                                 SqlLibrary.SPATIAL)),
-                // Our custom division operation
-                SqlOperatorTables.of(division)
+                SqlOperatorTables.of(new SqlDivideFunction(), new RlikeFunction())
         );
 
         SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT
                 .withIdentifierExpansion(true);
-
         this.validator = SqlValidatorUtil.newValidator(
                 operatorTable,
                 catalogReader,

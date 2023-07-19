@@ -51,32 +51,31 @@ public class UnimplementedException extends BaseCompilerException {
     }
 
     public UnimplementedException(String message) {
-        this(kind + ": " + message, null, CalciteObject.EMPTY);
+        this(message, null, CalciteObject.EMPTY);
     }
 
     public UnimplementedException(IDBSPNode node) {
-        this(kind + ": " + node.getClass().getSimpleName() + ":" + node,
+        this(node.getClass().getSimpleName() + ":" + node,
                 node, CalciteObject.EMPTY);
     }
 
     public UnimplementedException(CalciteObject object) {
-        this(kind + ": " + object.getClass().getSimpleName() + ":" + object,
+        this(object.getClass().getSimpleName() + ":" + object,
                 null, object);
     }
 
     public UnimplementedException(String message, IDBSPNode node) {
-        this(kind + ": " + message + " " + node.getClass().getSimpleName() + ":" + node,
+        this(message + " " + node.getClass().getSimpleName() + ":" + node,
                 node, CalciteObject.EMPTY);
     }
 
     public UnimplementedException(String message, CalciteObject node) {
-        this(kind + ": " + message + " " + node.getClass().getSimpleName() + ":" + node,
+        this(message + " " + node.getClass().getSimpleName() + ":" + node,
                 null, node);
     }
 
     public UnimplementedException(IDBSPNode node, Throwable cause) {
-        super(kind + ": "
-                        + cause.getMessage()
+        super(cause.getMessage()
                         + System.lineSeparator()
                         + node
                 , CalciteObject.EMPTY, cause);
@@ -84,8 +83,7 @@ public class UnimplementedException extends BaseCompilerException {
     }
 
     public UnimplementedException(CalciteObject node, Throwable cause) {
-        super(kind + ": "
-                        + cause.getMessage()
+        super(cause.getMessage()
                         + System.lineSeparator()
                         + node
                 , CalciteObject.EMPTY, cause);
