@@ -162,6 +162,17 @@ impl TestConfig {
             .unwrap()
     }
 
+    async fn post_csv<S: AsRef<str>>(
+        &self,
+        endpoint: S,
+        csv: String,
+    ) -> ClientResponse<Decoder<Payload>> {
+        self.maybe_attach_bearer_token(self.client.post(self.endpoint_url(endpoint)))
+            .send_body(csv)
+            .await
+            .unwrap()
+    }
+
     async fn delete<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
         self.maybe_attach_bearer_token(self.client.delete(self.endpoint_url(endpoint)))
             .send()
@@ -353,7 +364,7 @@ async fn deploy_pipeline() {
     let program_request = json!({
         "name":  "test",
         "description": "desc",
-        "code": "create table t1(c1 integer);"
+        "code": "create table t1(c1 integer); create view v1 as select * from t1;"
     });
     let mut req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
@@ -407,6 +418,15 @@ async fn deploy_pipeline() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
+    // Push some data.
+    let req = config
+        .post_csv(
+            format!("/v0/pipelines/{}/ingress/T1", id),
+            "1\n2\n3\n".to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
     // Pause a pipeline after it is started
     let resp = config
         .post_no_body(format!("/v0/pipelines/{}/pause", id))
@@ -415,6 +435,20 @@ async fn deploy_pipeline() {
     config
         .wait_for_pipeline_status(id, PipelineStatus::Paused, Duration::from_millis(1_000))
         .await;
+
+    // Querying quantiles should work in paused state.
+    let mut resp = config
+        .get(format!(
+            "/v0/pipelines/{}/egress/T1?query=quantiles&mode=snapshot",
+            id
+        ))
+        .await;
+    assert!(resp.status().is_success());
+    let resp: Value = resp.json().await.unwrap();
+    assert_eq!(
+        resp.get("text_data").unwrap().as_str().unwrap(),
+        "1,1\n2,1\n3,1\n"
+    );
 
     // Start the pipeline
     let resp = config
