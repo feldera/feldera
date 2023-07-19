@@ -62,8 +62,6 @@ def sync_detailed(
 
      Delete a program.
 
-    Deletes all pipelines and configs associated with the program.
-
     Args:
         program_id (str):
 
@@ -95,8 +93,6 @@ def sync(
 
      Delete a program.
 
-    Deletes all pipelines and configs associated with the program.
-
     Args:
         program_id (str):
 
@@ -122,8 +118,6 @@ async def asyncio_detailed(
     """Delete a program.
 
      Delete a program.
-
-    Deletes all pipelines and configs associated with the program.
 
     Args:
         program_id (str):
@@ -153,8 +147,6 @@ async def asyncio(
     """Delete a program.
 
      Delete a program.
-
-    Deletes all pipelines and configs associated with the program.
 
     Args:
         program_id (str):

@@ -169,8 +169,7 @@ async fn program_creation() {
         )
         .await
         .unwrap();
-    let rows = handle.db.list_programs(tenant_id).await.unwrap();
-    assert_eq!(1, rows.len());
+    let rows = handle.db.list_programs(tenant_id, false).await.unwrap();
     let expected = ProgramDescr {
         program_id: res.0,
         name: "test1".to_string(),
@@ -178,8 +177,24 @@ async fn program_creation() {
         version: res.1,
         status: ProgramStatus::None,
         schema: None,
+        code: None,
     };
     let actual = rows.get(0).unwrap();
+    assert_eq!(1, rows.len());
+    assert_eq!(&expected, actual);
+
+    let rows = handle.db.list_programs(tenant_id, true).await.unwrap();
+    let expected = ProgramDescr {
+        program_id: res.0,
+        name: "test1".to_string(),
+        description: "program desc".to_string(),
+        version: res.1,
+        status: ProgramStatus::None,
+        schema: None,
+        code: Some("ignored".to_string()),
+    };
+    let actual = rows.get(0).unwrap();
+    assert_eq!(1, rows.len());
     assert_eq!(&expected, actual);
 }
 
@@ -239,7 +254,7 @@ async fn program_reset() {
         .await
         .unwrap();
     handle.db.reset_program_status().await.unwrap();
-    let results = handle.db.list_programs(tenant_id).await.unwrap();
+    let results = handle.db.list_programs(tenant_id, false).await.unwrap();
     for p in results {
         assert_eq!(ProgramStatus::None, p.status);
         assert_eq!(None, p.schema); //can't check for error fields directly
@@ -273,10 +288,17 @@ async fn program_code() {
         )
         .await
         .unwrap();
-    let results = handle.db.program_code(tenant_id, program_id).await.unwrap();
-    assert_eq!("test1", results.0.name);
-    assert_eq!("program desc", results.0.description);
-    assert_eq!("create table t1(c1 integer);".to_owned(), results.1);
+    let result = handle
+        .db
+        .get_program_by_id(tenant_id, program_id, true)
+        .await
+        .unwrap();
+    assert_eq!("test1", result.name);
+    assert_eq!("program desc", result.description);
+    assert_eq!(
+        "create table t1(c1 integer);".to_owned(),
+        result.code.unwrap()
+    );
 }
 
 #[tokio::test]
@@ -304,10 +326,14 @@ async fn update_program() {
             &Some("create table t2(c2 integer);".to_string()),
         )
         .await;
-    let (descr, code) = handle.db.program_code(tenant_id, program_id).await.unwrap();
+    let descr = handle
+        .db
+        .get_program_by_id(tenant_id, program_id, true)
+        .await
+        .unwrap();
     assert_eq!("test2", descr.name);
     assert_eq!("different desc", descr.description);
-    assert_eq!("create table t2(c2 integer);", code);
+    assert_eq!("create table t2(c2 integer);", descr.code.unwrap());
 
     let _ = handle
         .db
@@ -319,7 +345,7 @@ async fn update_program() {
             &None,
         )
         .await;
-    let results = handle.db.list_programs(tenant_id).await.unwrap();
+    let results = handle.db.list_programs(tenant_id, false).await.unwrap();
     assert_eq!(1, results.len());
     let row = results.get(0).unwrap();
     assert_eq!("updated_test1", row.name);
@@ -343,19 +369,23 @@ async fn program_queries() {
         .unwrap();
     let desc = handle
         .db
-        .get_program_if_exists(tenant_id, program_id)
+        .get_program_if_exists(tenant_id, program_id, false)
         .await
         .unwrap()
         .unwrap();
     assert_eq!("test1", desc.name);
     let desc = handle
         .db
-        .lookup_program(tenant_id, "test1")
+        .lookup_program(tenant_id, "test1", false)
         .await
         .unwrap()
         .unwrap();
     assert_eq!("test1", desc.name);
-    let desc = handle.db.lookup_program(tenant_id, "test2").await.unwrap();
+    let desc = handle
+        .db
+        .lookup_program(tenant_id, "test2", false)
+        .await
+        .unwrap();
     assert!(desc.is_none());
 }
 
@@ -462,7 +492,7 @@ async fn update_status() {
         .unwrap();
     let desc = handle
         .db
-        .get_program_if_exists(tenant_id, program_id)
+        .get_program_if_exists(tenant_id, program_id, false)
         .await
         .unwrap()
         .unwrap();
@@ -474,7 +504,7 @@ async fn update_status() {
         .unwrap();
     let desc = handle
         .db
-        .get_program_if_exists(tenant_id, program_id)
+        .get_program_if_exists(tenant_id, program_id, false)
         .await
         .unwrap()
         .unwrap();
@@ -847,8 +877,7 @@ pub(crate) fn limited_uuid() -> impl Strategy<Value = Uuid> {
 #[derive(Debug, Clone, Arbitrary)]
 enum StorageAction {
     ResetProgramStatus(TenantId),
-    ListPrograms(TenantId),
-    ProgramCode(TenantId, ProgramId),
+    ListPrograms(TenantId, bool),
     NewProgram(
         TenantId,
         #[proptest(strategy = "limited_uuid()")] Uuid,
@@ -857,8 +886,8 @@ enum StorageAction {
         String,
     ),
     UpdateProgram(TenantId, ProgramId, String, String, Option<String>),
-    GetProgramIfExists(TenantId, ProgramId),
-    LookupProgram(TenantId, String),
+    GetProgramIfExists(TenantId, ProgramId, bool),
+    LookupProgram(TenantId, String, bool),
     SetProgramStatus(TenantId, ProgramId, ProgramStatus),
     SetProgramStatusGuarded(TenantId, ProgramId, Version, ProgramStatus),
     SetProgramSchema(TenantId, ProgramId, ProgramSchema),
@@ -1088,10 +1117,10 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.reset_program_status().await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::ListPrograms(tenant_id) => {
+                            StorageAction::ListPrograms(tenant_id, with_code) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.list_programs(tenant_id).await;
-                                let impl_response = handle.db.list_programs(tenant_id).await;
+                                let model_response = model.list_programs(tenant_id, with_code).await;
+                                let impl_response = handle.db.list_programs(tenant_id, with_code).await;
                                 if model_response.is_ok() && impl_response.is_ok() {
                                     let m = model_response.unwrap();
                                     let mut i = impl_response.unwrap();
@@ -1101,12 +1130,6 @@ fn db_impl_behaves_like_model() {
                                 } else {
                                     check_responses(i, model_response, impl_response);
                                 }
-                            }
-                            StorageAction::ProgramCode(tenant_id, program_id) => {
-                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.program_code(tenant_id, program_id).await;
-                                let impl_response = handle.db.program_code(tenant_id, program_id).await;
-                                check_responses(i, model_response, impl_response);
                             }
                             StorageAction::NewProgram(tenant_id, id, name, description, code) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
@@ -1127,17 +1150,17 @@ fn db_impl_behaves_like_model() {
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::GetProgramIfExists(tenant_id,program_id) => {
+                            StorageAction::GetProgramIfExists(tenant_id,program_id, with_code) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_program_if_exists(tenant_id, program_id).await;
+                                let model_response = model.get_program_if_exists(tenant_id, program_id, with_code).await;
                                 let impl_response =
-                                    handle.db.get_program_if_exists(tenant_id, program_id).await;
+                                    handle.db.get_program_if_exists(tenant_id, program_id, with_code).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::LookupProgram(tenant_id, name) => {
+                            StorageAction::LookupProgram(tenant_id, name, with_code) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.lookup_program(tenant_id, &name).await;
-                                let impl_response = handle.db.lookup_program(tenant_id, &name).await;
+                                let model_response = model.lookup_program(tenant_id, &name, with_code).await;
+                                let impl_response = handle.db.lookup_program(tenant_id, &name, with_code).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::SetProgramStatus(tenant_id, program_id, status) => {
@@ -1332,7 +1355,7 @@ fn db_impl_behaves_like_model() {
 }
 
 /// The program data
-type ProgramData = (ProgramDescr, String, SystemTime);
+type ProgramData = (ProgramDescr, SystemTime);
 
 /// Our model of the database (uses btrees for tables).
 #[derive(Debug, Default)]
@@ -1349,37 +1372,29 @@ struct DbModel {
 #[async_trait]
 impl Storage for Mutex<DbModel> {
     async fn reset_program_status(&self) -> Result<(), DBError> {
-        self.lock()
-            .await
-            .programs
-            .values_mut()
-            .for_each(|(p, _, _e)| {
-                p.status = ProgramStatus::None;
-                p.schema = None;
-            });
+        self.lock().await.programs.values_mut().for_each(|(p, _e)| {
+            p.status = ProgramStatus::None;
+            p.schema = None;
+        });
 
         Ok(())
     }
 
-    async fn list_programs(&self, tenant_id: TenantId) -> DBResult<Vec<ProgramDescr>> {
+    async fn list_programs(
+        &self,
+        tenant_id: TenantId,
+        with_code: bool,
+    ) -> DBResult<Vec<ProgramDescr>> {
         let s = self.lock().await;
         Ok(s.programs
             .iter()
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1 .0.clone())
+            .map(|p| ProgramDescr {
+                code: if with_code { p.code.clone() } else { None },
+                ..p
+            })
             .collect())
-    }
-
-    async fn program_code(
-        &self,
-        tenant_id: TenantId,
-        program_id: super::ProgramId,
-    ) -> DBResult<(ProgramDescr, String)> {
-        let s = self.lock().await;
-        s.programs
-            .get(&(tenant_id, program_id))
-            .map(|(p, c, _e)| (p.clone(), c.clone()))
-            .ok_or(DBError::UnknownProgram { program_id })
     }
 
     async fn new_program(
@@ -1416,8 +1431,8 @@ impl Storage for Mutex<DbModel> {
                     status: ProgramStatus::None,
                     schema: None,
                     version,
+                    code: Some(program_code.to_owned()),
                 },
-                program_code.to_owned(),
                 SystemTime::now(),
             ),
         );
@@ -1449,12 +1464,13 @@ impl Storage for Mutex<DbModel> {
 
         s.programs
             .get_mut(&(tenant_id, program_id))
-            .map(|(p, cur_code, _e)| {
+            .map(|(p, _e)| {
+                let cur_code = p.code.clone().unwrap();
                 p.name = program_name.to_owned();
                 p.description = program_description.to_owned();
                 if let Some(code) = program_code {
-                    if code != cur_code {
-                        *cur_code = code.to_owned();
+                    if *code != cur_code {
+                        p.code = program_code.to_owned();
                         p.version.0 += 1;
                         p.schema = None;
                         p.status = ProgramStatus::None;
@@ -1469,24 +1485,34 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         program_id: super::ProgramId,
+        with_code: bool,
     ) -> DBResult<Option<ProgramDescr>> {
         let s = self.lock().await;
         Ok(s.programs
             .get(&(tenant_id, program_id))
-            .map(|(p, _, _)| p.clone()))
+            .map(|(p, _)| p.clone())
+            .map(|p| ProgramDescr {
+                code: if with_code { p.code.clone() } else { None },
+                ..p
+            }))
     }
 
     async fn lookup_program(
         &self,
         tenant_id: TenantId,
         program_name: &str,
+        with_code: bool,
     ) -> DBResult<Option<ProgramDescr>> {
         let s = self.lock().await;
         Ok(s.programs
             .iter()
             .filter(|k: &(&(TenantId, ProgramId), &ProgramData)| k.0 .0 == tenant_id)
             .map(|k| k.1 .0.clone())
-            .find(|p| p.name == program_name))
+            .find(|p| p.name == program_name)
+            .map(|p| ProgramDescr {
+                code: if with_code { p.code.clone() } else { None },
+                ..p
+            }))
     }
 
     async fn set_program_status(
@@ -1496,15 +1522,12 @@ impl Storage for Mutex<DbModel> {
         status: ProgramStatus,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
-        let _r = s
-            .programs
-            .get_mut(&(tenant_id, program_id))
-            .map(|(p, _, t)| {
-                p.status = status;
-                *t = SystemTime::now();
-                // TODO: It's a bit odd that this function also resets the schema
-                p.schema = None;
-            });
+        let _r = s.programs.get_mut(&(tenant_id, program_id)).map(|(p, t)| {
+            p.status = status;
+            *t = SystemTime::now();
+            // TODO: It's a bit odd that this function also resets the schema
+            p.schema = None;
+        });
 
         Ok(())
     }
@@ -1519,7 +1542,7 @@ impl Storage for Mutex<DbModel> {
         let mut s = self.lock().await;
         s.programs
             .get_mut(&(tenant_id, program_id))
-            .map(|(p, _, t)| {
+            .map(|(p, t)| {
                 if p.version == expected_version {
                     p.status = status;
                     *t = SystemTime::now();
@@ -1535,12 +1558,9 @@ impl Storage for Mutex<DbModel> {
         schema: ProgramSchema,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
-        let _r = s
-            .programs
-            .get_mut(&(tenant_id, program_id))
-            .map(|(p, _, _)| {
-                p.schema = Some(schema);
-            });
+        let _r = s.programs.get_mut(&(tenant_id, program_id)).map(|(p, _)| {
+            p.schema = Some(schema);
+        });
 
         Ok(())
     }
@@ -1551,15 +1571,23 @@ impl Storage for Mutex<DbModel> {
         program_id: super::ProgramId,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
-        s.programs
-            .remove(&(tenant_id, program_id))
-            .map(|_| ())
-            .ok_or(DBError::UnknownProgram { program_id })?;
         // Foreign key delete:
-        s.pipelines
-            .retain(|_, c| c.descriptor.program_id != Some(program_id));
+        let found = s
+            .pipelines
+            .iter()
+            .filter(|&c| c.0 .0 == tenant_id)
+            .any(|c| c.1.descriptor.program_id == Some(program_id));
 
-        Ok(())
+        if found {
+            Err(DBError::ProgramInUseByPipeline { program_id })
+        } else {
+            s.programs
+                .remove(&(tenant_id, program_id))
+                .map(|_| ())
+                .ok_or(DBError::UnknownProgram { program_id })?;
+
+            Ok(())
+        }
     }
 
     async fn next_job(
@@ -1568,7 +1596,7 @@ impl Storage for Mutex<DbModel> {
         let s = self.lock().await;
         let mut values: Vec<(&(TenantId, ProgramId), &ProgramData)> =
             Vec::from_iter(s.programs.iter());
-        values.sort_by(|(_, t1), (_, t2)| t1.2.cmp(&t2.2));
+        values.sort_by(|(_, t1), (_, t2)| t1.1.cmp(&t2.1));
 
         values
             .iter()
@@ -1621,7 +1649,7 @@ impl Storage for Mutex<DbModel> {
                 cur_connectors: &Vec<ConnectorDescr>,
                 prev: &PipelineRevision,
             ) -> bool {
-                cur_sql != &prev.code
+                cur_sql != &prev.program.code.clone().unwrap()
                     || cur_pipeline.config != prev.pipeline.config
                     || cur_pipeline
                         .attached_connectors
@@ -1641,7 +1669,12 @@ impl Storage for Mutex<DbModel> {
             let prev = s.history.get(&(tenant_id, pipeline_id));
             let (has_changed, next_revision) = match prev {
                 Some(prev) => (
-                    detect_changes(&pipeline, &program_data.1, &connectors, prev),
+                    detect_changes(
+                        &pipeline,
+                        &program_data.0.code.clone().unwrap(),
+                        &connectors,
+                        prev,
+                    ),
                     prev.revision,
                 ),
                 None => (true, Revision(new_revision_id)),
@@ -1654,8 +1687,7 @@ impl Storage for Mutex<DbModel> {
                         next_revision,
                         pipeline,
                         connectors,
-                        program_data.0,
-                        program_data.1,
+                        program_data.0.clone(),
                     ),
                 );
                 Ok(next_revision)

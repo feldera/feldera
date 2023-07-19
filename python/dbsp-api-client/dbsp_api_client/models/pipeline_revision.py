@@ -17,7 +17,6 @@ class PipelineRevision:
     contains all information necessary to run a pipeline.
 
         Attributes:
-            code (str): The versioned SQL code.
             config (str): The generated TOML config for the pipeline.
             connectors (List['ConnectorDescr']): The versioned connectors.
             pipeline (PipelineDescr): Pipeline descriptor.
@@ -25,7 +24,6 @@ class PipelineRevision:
             revision (str): Revision number.
     """
 
-    code: str
     config: str
     connectors: List["ConnectorDescr"]
     pipeline: "PipelineDescr"
@@ -34,7 +32,6 @@ class PipelineRevision:
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        code = self.code
         config = self.config
         connectors = []
         for connectors_item_data in self.connectors:
@@ -52,7 +49,6 @@ class PipelineRevision:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "code": code,
                 "config": config,
                 "connectors": connectors,
                 "pipeline": pipeline,
@@ -70,8 +66,6 @@ class PipelineRevision:
         from ..models.program_descr import ProgramDescr
 
         d = src_dict.copy()
-        code = d.pop("code")
-
         config = d.pop("config")
 
         connectors = []
@@ -88,7 +82,6 @@ class PipelineRevision:
         revision = d.pop("revision")
 
         pipeline_revision = cls(
-            code=code,
             config=config,
             connectors=connectors,
             pipeline=pipeline,

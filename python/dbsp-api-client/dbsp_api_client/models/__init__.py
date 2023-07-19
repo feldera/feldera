@@ -1,7 +1,6 @@
 """ Contains all the data models used in inputs/outputs """
 
 from .attached_connector import AttachedConnector
-from .cancel_program_request import CancelProgramRequest
 from .chunk import Chunk
 from .chunk_json_data import ChunkJsonData
 from .compile_program_request import CompileProgramRequest
@@ -65,7 +64,6 @@ from .update_program_response import UpdateProgramResponse
 
 __all__ = (
     "AttachedConnector",
-    "CancelProgramRequest",
     "Chunk",
     "ChunkJsonData",
     "CompileProgramRequest",

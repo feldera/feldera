@@ -181,13 +181,13 @@ impl TestConfig {
     }
 
     async fn compile(&self, program_id: &str, version: i64) {
-        let compilation_request = json!({
-            "program_id":  program_id,
-            "version": version
-        });
+        let compilation_request = json!({ "version": version });
 
         let resp = self
-            .post("/v0/programs/compile", &compilation_request)
+            .post(
+                format!("/v0/programs/{program_id}/compile"),
+                &compilation_request,
+            )
             .await;
         assert_eq!(StatusCode::ACCEPTED, resp.status());
 
@@ -198,7 +198,7 @@ impl TestConfig {
             if now.elapsed().as_secs() > 100 {
                 panic!("Compilation timeout");
             }
-            let mut resp = self.get(format!("/v0/program?id={}", program_id)).await;
+            let mut resp = self.get(format!("/v0/programs/{}", program_id)).await;
             let val: Value = resp.json().await.unwrap();
             let status = val["status"].as_str().unwrap();
             if status != "CompilingSql" && status != "CompilingRust" && status != "Pending" {
@@ -372,7 +372,7 @@ async fn program_create_compile_delete() {
     config.compile(id, version).await;
     let resp = config.delete(format!("/v0/programs/{}", id)).await;
     assert_eq!(StatusCode::OK, resp.status());
-    let resp = config.get(format!("/v0/program?id={}", id).as_str()).await;
+    let resp = config.get(format!("/v0/programs/{}", id).as_str()).await;
     assert_eq!(StatusCode::NOT_FOUND, resp.status());
 }
 
@@ -522,4 +522,44 @@ async fn pipeline_panic() {
     config
         .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
         .await;
+}
+
+// Program deletes must not cause pipeline deletes.
+#[actix_web::test]
+#[serial]
+async fn program_delete_with_pipeline() {
+    let config = setup().await;
+    let program_request = json!({
+        "name":  "test",
+        "description": "desc",
+        "code": "create table t1(c1 integer); create view v1 as select * from t1;"
+    });
+    let mut req = config.post("/v0/programs", &program_request).await;
+    assert_eq!(StatusCode::CREATED, req.status());
+    let resp: Value = req.json().await.unwrap();
+    let program_id = resp["program_id"].as_str().unwrap();
+
+    let pipeline_request = json!({
+        "name":  "test",
+        "description": "desc",
+        "program_id": Some(program_id.to_string()),
+        "config": "",
+        "connectors": null
+    });
+    let mut req = config.post("/v0/pipelines", &pipeline_request).await;
+    assert_eq!(StatusCode::OK, req.status());
+    let resp: Value = req.json().await.unwrap();
+    let pipeline_id = resp["pipeline_id"].as_str().unwrap();
+    let req = config.get(format!("/v0/pipeline?id={pipeline_id}")).await;
+    assert_eq!(StatusCode::OK, req.status());
+
+    // Now delete the program and check that the pipeline still exists
+    let req = config.delete(format!("/v0/programs/{program_id}")).await;
+    assert_eq!(StatusCode::BAD_REQUEST, req.status());
+
+    let req = config.get(format!("/v0/programs/{program_id}")).await;
+    assert_eq!(StatusCode::OK, req.status());
+
+    let req = config.get(format!("/v0/pipeline?id={pipeline_id}")).await;
+    assert_eq!(StatusCode::OK, req.status());
 }

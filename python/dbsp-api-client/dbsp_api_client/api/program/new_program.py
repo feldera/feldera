@@ -63,10 +63,6 @@ def sync_detailed(
 
      Create a new program.
 
-    If the `overwrite_existing` flag is set in the request and a program with
-    the same name already exists, all pipelines associated with that program and
-    the program itself will be deleted.
-
     Args:
         json_body (NewProgramRequest): Request to create a new DBSP program.
 
@@ -98,10 +94,6 @@ def sync(
 
      Create a new program.
 
-    If the `overwrite_existing` flag is set in the request and a program with
-    the same name already exists, all pipelines associated with that program and
-    the program itself will be deleted.
-
     Args:
         json_body (NewProgramRequest): Request to create a new DBSP program.
 
@@ -127,10 +119,6 @@ async def asyncio_detailed(
     """Create a new program.
 
      Create a new program.
-
-    If the `overwrite_existing` flag is set in the request and a program with
-    the same name already exists, all pipelines associated with that program and
-    the program itself will be deleted.
 
     Args:
         json_body (NewProgramRequest): Request to create a new DBSP program.
@@ -160,10 +148,6 @@ async def asyncio(
     """Create a new program.
 
      Create a new program.
-
-    If the `overwrite_existing` flag is set in the request and a program with
-    the same name already exists, all pipelines associated with that program and
-    the program itself will be deleted.
 
     Args:
         json_body (NewProgramRequest): Request to create a new DBSP program.

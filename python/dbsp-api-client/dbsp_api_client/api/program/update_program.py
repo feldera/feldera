@@ -12,6 +12,7 @@ from ...types import Response
 
 
 def _get_kwargs(
+    program_id: str,
     *,
     json_body: UpdateProgramRequest,
 ) -> Dict[str, Any]:
@@ -21,7 +22,9 @@ def _get_kwargs(
 
     return {
         "method": "patch",
-        "url": "/programs",
+        "url": "/programs/{program_id}".format(
+            program_id=program_id,
+        ),
         "json": json_json_body,
     }
 
@@ -59,20 +62,24 @@ def _build_response(
 
 
 def sync_detailed(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: UpdateProgramRequest,
 ) -> Response[Union[ErrorResponse, UpdateProgramResponse]]:
-    """Change program code and/or name.
+    """Change one or more of a program's code, description or name.
 
-     Change program code and/or name.
+     Change one or more of a program's code, description or name.
 
-    If program code changes, any ongoing compilation gets cancelled,
-    program status is reset to `None`, and program version
-    is incremented by 1.  Changing program name only doesn't affect its
+    If a program's code changes, any ongoing compilation gets cancelled,
+    the program status is reset to `None`, and the program version
+    is incremented by 1.
+
+    Changing only the program's name or description does not affect its
     version or the compilation process.
 
     Args:
+        program_id (str):
         json_body (UpdateProgramRequest): Update program request.
 
     Raises:
@@ -84,6 +91,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
+        program_id=program_id,
         json_body=json_body,
     )
 
@@ -95,20 +103,24 @@ def sync_detailed(
 
 
 def sync(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: UpdateProgramRequest,
 ) -> Optional[Union[ErrorResponse, UpdateProgramResponse]]:
-    """Change program code and/or name.
+    """Change one or more of a program's code, description or name.
 
-     Change program code and/or name.
+     Change one or more of a program's code, description or name.
 
-    If program code changes, any ongoing compilation gets cancelled,
-    program status is reset to `None`, and program version
-    is incremented by 1.  Changing program name only doesn't affect its
+    If a program's code changes, any ongoing compilation gets cancelled,
+    the program status is reset to `None`, and the program version
+    is incremented by 1.
+
+    Changing only the program's name or description does not affect its
     version or the compilation process.
 
     Args:
+        program_id (str):
         json_body (UpdateProgramRequest): Update program request.
 
     Raises:
@@ -120,26 +132,31 @@ def sync(
     """
 
     return sync_detailed(
+        program_id=program_id,
         client=client,
         json_body=json_body,
     ).parsed
 
 
 async def asyncio_detailed(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: UpdateProgramRequest,
 ) -> Response[Union[ErrorResponse, UpdateProgramResponse]]:
-    """Change program code and/or name.
+    """Change one or more of a program's code, description or name.
 
-     Change program code and/or name.
+     Change one or more of a program's code, description or name.
 
-    If program code changes, any ongoing compilation gets cancelled,
-    program status is reset to `None`, and program version
-    is incremented by 1.  Changing program name only doesn't affect its
+    If a program's code changes, any ongoing compilation gets cancelled,
+    the program status is reset to `None`, and the program version
+    is incremented by 1.
+
+    Changing only the program's name or description does not affect its
     version or the compilation process.
 
     Args:
+        program_id (str):
         json_body (UpdateProgramRequest): Update program request.
 
     Raises:
@@ -151,6 +168,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
+        program_id=program_id,
         json_body=json_body,
     )
 
@@ -160,20 +178,24 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    program_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: UpdateProgramRequest,
 ) -> Optional[Union[ErrorResponse, UpdateProgramResponse]]:
-    """Change program code and/or name.
+    """Change one or more of a program's code, description or name.
 
-     Change program code and/or name.
+     Change one or more of a program's code, description or name.
 
-    If program code changes, any ongoing compilation gets cancelled,
-    program status is reset to `None`, and program version
-    is incremented by 1.  Changing program name only doesn't affect its
+    If a program's code changes, any ongoing compilation gets cancelled,
+    the program status is reset to `None`, and the program version
+    is incremented by 1.
+
+    Changing only the program's name or description does not affect its
     version or the compilation process.
 
     Args:
+        program_id (str):
         json_body (UpdateProgramRequest): Update program request.
 
     Raises:
@@ -186,6 +208,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
+            program_id=program_id,
             client=client,
             json_body=json_body,
         )
