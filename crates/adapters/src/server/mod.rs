@@ -765,7 +765,7 @@ async fn output_endpoint(
                 OutputQuery::Table => {}
             }
         }
-        None => return Err(PipelineError::Terminating),
+        None => return Err(missing_controller_error(&state)),
     };
 
     Ok(response)
@@ -785,7 +785,12 @@ mod test_with_kafka {
             test_circuit,
         },
     };
-    use actix_web::{http::StatusCode, middleware::Logger, web::Data as WebData, App};
+    use actix_web::{
+        http::StatusCode,
+        middleware::Logger,
+        web::{Bytes, Data as WebData},
+        App,
+    };
     use futures_util::StreamExt;
     use proptest::{
         strategy::{Strategy, ValueTree},
@@ -873,6 +878,23 @@ outputs:
         let server =
             actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
 
+        let start = Instant::now();
+        while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
+        {
+            assert!(start.elapsed() < Duration::from_millis(20_000));
+            sleep(Duration::from_millis(200));
+        }
+
+        // Request quantiles while the table is empty.  This should return an empty quantile.
+        let mut quantiles_resp1 = server
+            .get("/egress/test_output1?mode=snapshot&query=quantiles")
+            .send()
+            .await
+            .unwrap();
+        assert!(quantiles_resp1.status().is_success());
+        let body = quantiles_resp1.body().await.unwrap();
+        assert_eq!(body, Bytes::new());
+
         // Write data to Kafka.
         println!("Send test data");
         let producer = TestProducer::new();
@@ -880,13 +902,6 @@ outputs:
 
         sleep(Duration::from_millis(2000));
         assert!(buffer_consumer.is_empty());
-
-        let start = Instant::now();
-        while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
-        {
-            assert!(start.elapsed() < Duration::from_millis(20_000));
-            sleep(Duration::from_millis(200));
-        }
 
         // Start command; wait for data.
         println!("/start");
