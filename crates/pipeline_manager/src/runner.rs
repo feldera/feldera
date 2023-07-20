@@ -250,24 +250,10 @@ impl Runner {
         Ok(())
     }
 
-    /// Initiate pipeline deployment.
-    ///
-    /// Validates and commits current pipeline configuration and
-    /// sets the desired pipeline state to [`PipelineStatus::Paused`]
-    /// to trigger the deployment.
-    pub(crate) async fn deploy_pipeline(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Result<(), ManagerError> {
-        self.commit_revision(tenant_id, pipeline_id).await?;
-        self.set_desired_status(tenant_id, pipeline_id, PipelineStatus::Paused)
-            .await?;
-        self.notify_pipeline_automaton(tenant_id, pipeline_id).await;
-        Ok(())
-    }
-
     /// Set the desired state of the pipeline to [`PipelineStatus::Paused`].
+    ///
+    /// If the pipeline is currently in the `Shutdown` state, will validate
+    /// and commit the pipeline before running it.
     pub(crate) async fn pause_pipeline(
         &self,
         tenant_id: TenantId,
@@ -281,6 +267,9 @@ impl Runner {
     }
 
     /// Set the desired state of the pipeline to [`PipelineStatus::Running`].
+    ///
+    /// If the pipeline is currently in the `Shutdown` state, will validate
+    /// and commit the pipeline before running it.
     pub(crate) async fn start_pipeline(
         &self,
         tenant_id: TenantId,
@@ -372,6 +361,13 @@ impl Runner {
             Some(new_desired_status),
         )?;
 
+        // When starting a previously shutdown pipeline, commit its config first.
+        if pipeline_state.current_status == PipelineStatus::Shutdown
+            && new_desired_status != PipelineStatus::Shutdown
+        {
+            Self::commit_revision(&db, tenant_id, pipeline_id).await?;
+        }
+
         db.set_pipeline_desired_status(tenant_id, pipeline_id, new_desired_status)
             .await?;
         Ok(())
@@ -382,12 +378,10 @@ impl Runner {
     /// Tries to create a new revision if this pipeline never had a revision
     /// created before.
     async fn commit_revision(
-        &self,
+        db: &ProjectDB,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<(), ManagerError> {
-        let db = self.db.lock().await;
-
         // Make sure we create a revision by updating to latest config state
         match db
             .create_pipeline_revision(Uuid::now_v7(), tenant_id, pipeline_id)
@@ -1009,7 +1003,7 @@ impl PipelineAutomaton {
     }
 
     /// Same as `force_kill_pipeline`, but deserializes `ErrorResponse` from
-    /// a JSIN error returned by the pipeline.
+    /// a JSON error returned by the pipeline.
     async fn force_kill_pipeline_on_error(
         &mut self,
         pipeline: &mut PipelineRuntimeState,

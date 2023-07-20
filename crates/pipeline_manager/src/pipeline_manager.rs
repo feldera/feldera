@@ -1448,12 +1448,7 @@ async fn pipeline_action(
     let action = parse_pipeline_action(&req)?;
 
     match action {
-        "deploy" => {
-            state
-                .runner
-                .deploy_pipeline(*tenant_id, pipeline_id)
-                .await?
-        }
+        "deploy" => state.runner.pause_pipeline(*tenant_id, pipeline_id).await?,
         "start" => state.runner.start_pipeline(*tenant_id, pipeline_id).await?,
         "pause" => state.runner.pause_pipeline(*tenant_id, pipeline_id).await?,
         "shutdown" => {
