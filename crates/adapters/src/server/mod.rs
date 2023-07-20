@@ -31,7 +31,7 @@ use std::{
     net::TcpListener,
     sync::{
         mpsc::{self, Sender as StdSender},
-        Arc, Mutex, RwLock,
+        Arc, Mutex, RwLock, Weak,
     },
     thread,
 };
@@ -48,11 +48,11 @@ mod prometheus;
 pub use self::error::{ErrorResponse, PipelineError};
 use self::prometheus::PrometheusMetrics;
 
-/// Tracks the initialization state of the pipeline.
+/// Tracks the health of the pipeline.
 ///
 /// Enables the server to report the state of the pipeline while it is
-/// initializing or when it has failed to initialize.
-enum InitializationState {
+/// initializing, when it has failed to initialize, or failed.
+enum PipelinePhase {
     /// Initialization in progress.
     Initializing,
 
@@ -62,23 +62,27 @@ enum InitializationState {
     /// Initialization completed successfully.  Current state of the
     /// pipeline can be read using `controller.status()`.
     InitializationComplete,
+
+    /// Pipeline encountered a fatal error.
+    Failed(Arc<ControllerError>),
 }
 
 /// Generate an appropriate error when `state.controller` is set to
 /// `None`, which can mean that the pipeline is initializing, failed to
-/// initialize or has been shut down.
+/// initialize, has been shut down or failed.
 fn missing_controller_error(state: &ServerState) -> PipelineError {
-    match &*state.initialization_state.read().unwrap() {
-        InitializationState::Initializing => PipelineError::Initializing,
-        InitializationState::InitializationError(e) => {
+    match &*state.phase.read().unwrap() {
+        PipelinePhase::Initializing => PipelineError::Initializing,
+        PipelinePhase::InitializationError(e) => {
             PipelineError::InitializationError { error: e.clone() }
         }
-        InitializationState::InitializationComplete => PipelineError::Terminating,
+        PipelinePhase::InitializationComplete => PipelineError::Terminating,
+        PipelinePhase::Failed(e) => PipelineError::ControllerError { error: e.clone() },
     }
 }
 
 struct ServerState {
-    initialization_state: RwLock<InitializationState>,
+    phase: RwLock<PipelinePhase>,
     metadata: RwLock<String>,
     controller: Mutex<Option<Controller>>,
     prometheus: RwLock<Option<PrometheusMetrics>>,
@@ -91,7 +95,7 @@ struct ServerState {
 impl ServerState {
     fn new(terminate_sender: Option<Sender<()>>) -> Self {
         Self {
-            initialization_state: RwLock::new(InitializationState::Initializing),
+            phase: RwLock::new(PipelinePhase::Initializing),
             metadata: RwLock::new(String::new()),
             controller: Mutex::new(None),
             prometheus: RwLock::new(None),
@@ -246,12 +250,55 @@ fn bootstrap<F>(
     F: Fn(usize) -> (DBSPHandle, Catalog),
 {
     do_bootstrap(args, circuit_factory, &state, loginit_sender).unwrap_or_else(|e| {
-        // Store error in `state.initialization_state`, so that it can be
+        // Store error in `state.phase`, so that it can be
         // reported by the server.
         error!("Error initializing the pipeline: {e}.");
-        *state.initialization_state.write().unwrap() =
-            InitializationState::InitializationError(Arc::new(e));
+        *state.phase.write().unwrap() = PipelinePhase::InitializationError(Arc::new(e));
     })
+}
+
+/// True if the pipeline cannot operate after `error` and must be shut down.
+fn is_fatal_controller_error(error: &ControllerError) -> bool {
+    matches!(
+        error,
+        ControllerError::DbspError { .. } | ControllerError::DbspPanic
+    )
+}
+
+/// Handle errors from the controller.
+fn error_handler(state: &Weak<ServerState>, error: ControllerError) {
+    error!("{error}");
+
+    let state = match state.upgrade() {
+        None => return,
+        Some(state) => state,
+    };
+
+    if is_fatal_controller_error(&error) {
+        // Prepare to handle poisoned locks in the following code.
+
+        if let Ok(mut controller) = state.controller.lock() {
+            *controller = None;
+            // Don't risk calling `controller.stop()`.  If the error is caused
+            // by a panic in a DBSP worker thread, the `join` call in
+            // `controller.stop()` will panic.  We may consider calling `stop()`
+            // on errors do not indicate a panic, but that still seems risky.
+
+            /*if let Some(controller) = controller.take() {
+                let _ = controller.stop();
+            }*/
+            if let Ok(mut phase) = state.phase.write() {
+                *phase = PipelinePhase::Failed(Arc::new(error));
+            }
+        }
+
+        /*if let Some(sender) = &state.terminate_sender {
+            let _ = sender.try_send(());
+        }
+        if let Err(e) = std::fs::remove_file(SERVER_PORT_FILE) {
+            warn!("Failed to remove server port file: {e}");
+        }*/
+    }
 }
 
 fn do_bootstrap<F>(
@@ -307,11 +354,14 @@ where
 
     let (circuit, catalog) = circuit_factory(config.global.workers as usize);
 
+    let weak_state_ref = Arc::downgrade(state);
+
     let controller = Controller::with_config(
         circuit,
         catalog,
         &config,
-        Box::new(|e| error!("{e}")) as Box<dyn Fn(ControllerError) + Send + Sync>,
+        Box::new(move |e| error_handler(&weak_state_ref, e))
+            as Box<dyn Fn(ControllerError) + Send + Sync>,
     )?;
 
     *state.prometheus.write().unwrap() = Some(
@@ -320,7 +370,7 @@ where
     *state.controller.lock().unwrap() = Some(controller);
 
     info!("Pipeline initialization complete.");
-    *state.initialization_state.write().unwrap() = InitializationState::InitializationComplete;
+    *state.phase.write().unwrap() = PipelinePhase::InitializationComplete;
 
     Ok(())
 }

@@ -71,14 +71,14 @@ use utoipa::ToSchema;
 pub struct ErrorResponse {
     /// Human-readable error message.
     #[schema(example = "Unknown input format 'xml'.")]
-    message: String,
+    pub message: String,
     /// Error code is a string that specifies this error type.
     #[schema(example = "UnknownInputFormat")]
-    error_code: Cow<'static, str>,
+    pub error_code: Cow<'static, str>,
     /// Detailed error metadata.
     /// The contents of this field is determined by `error_code`.
     #[schema(value_type=Object)]
-    details: JsonValue,
+    pub details: JsonValue,
 }
 
 impl<E> From<&E> for ErrorResponse
@@ -173,13 +173,15 @@ pub enum PipelineError {
         // Fold `ControllerError` directly into `PipelineError` to simplify
         // the error hierarchy from the user's pespective.
         #[serde(flatten)]
-        error: ControllerError,
+        error: Arc<ControllerError>,
     },
 }
 
 impl From<ControllerError> for PipelineError {
     fn from(error: ControllerError) -> Self {
-        Self::ControllerError { error }
+        Self::ControllerError {
+            error: Arc::new(error),
+        }
     }
 }
 
