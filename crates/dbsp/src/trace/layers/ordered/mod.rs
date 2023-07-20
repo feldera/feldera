@@ -30,6 +30,11 @@ use textwrap::indent;
 /// .. offs[i+1]]`.
 // False positive from clippy
 #[derive(Debug, SizeOf, PartialEq, Eq, Clone)]
+#[cfg_attr(
+    features = "rkyv-trace",
+    derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize),
+    archive(check_bytes, bound(archive = "K: rkyv::Archive, O: rkyv::Archive"))
+)]
 pub struct OrderedLayer<K, L, O = usize> {
     /// The keys of the layer.
     pub(crate) keys: Vec<K>,
@@ -130,6 +135,13 @@ impl<K, V, R, O> OrderedLayer<K, ColumnLayer<V, R>, O> {
             vals: self.vals.into_uninit(),
             lower_bound: self.lower_bound,
         }
+    }
+}
+
+#[cfg(features = "rkyv-trace")]
+impl<K, L, O> <OrderedLayer<K, L, O> as rkyv::Archive>::Archived {
+    pub fn key_len(&self) -> usize {
+        self.keys.len()
     }
 }
 

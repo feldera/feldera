@@ -16,6 +16,7 @@ pub mod layers;
 pub mod ord;
 #[cfg(feature = "persistence")]
 pub mod persistent;
+pub mod rkyv_trace;
 pub mod spine_fueled;
 
 pub use cursor::{Consumer, Cursor, ValueConsumer};

@@ -29,6 +29,11 @@ use std::{
 
 /// A layer of unordered values
 #[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
+#[cfg_attr(
+    features = "rkyv-trace",
+    derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize),
+    archive(check_bytes, bound(archive = "K: rkyv::Archive, R: rkyv::Archive"))
+)]
 pub struct ColumnLayer<K, R> {
     // Invariant: keys.len == diffs.len
     pub(super) keys: Vec<K>,
@@ -359,6 +364,13 @@ impl<K, R> ColumnLayer<MaybeUninit<K>, MaybeUninit<R>> {
 
         // Drop diffs within the given range
         ptr::drop_in_place(self.diffs.get_unchecked_mut(range) as *mut [MaybeUninit<R>] as *mut [R]);
+    }
+}
+
+#[cfg(features = "rkyv-trace")]
+impl<K, R> <ColumnLayer<K, R> as rkyv::Archive>::Archived {
+    pub const fn len(&self) -> usize {
+        self.lower_bound
     }
 }
 

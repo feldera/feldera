@@ -200,4 +200,3 @@ pub fn replace___(haystack: String, needle: String, replacement: String) -> Stri
 }
 
 some_function3!(replace, String, String, String, String);
-

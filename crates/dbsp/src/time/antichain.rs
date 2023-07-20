@@ -21,6 +21,11 @@ use std::{
 /// different orders. This can make equality testing quadratic, though linear in
 /// the common case that the sequences are identical.
 #[derive(Default, SizeOf)]
+#[cfg_attr(
+    features = "rkyv-trace",
+    derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize),
+    archive(check_bytes, bound(archive = "T: rkyv::Archive"))
+)]
 pub struct Antichain<T> {
     // TODO: We can specialize containers based on the inner type, meaning we could give ourselves
     //       a more favorable memory footprint for things like `Antichain<()>`

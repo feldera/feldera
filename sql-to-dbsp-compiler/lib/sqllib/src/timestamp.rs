@@ -11,17 +11,8 @@ use std::{
 };
 
 use crate::{
-    some_polymorphic_function1,
-    some_existing_operator,
-    some_operator,
-    operators::{
-        lt,
-        gt,
-        eq,
-        neq,
-        lte,
-        gte,
-    },
+    operators::{eq, gt, gte, lt, lte, neq},
+    some_existing_operator, some_operator, some_polymorphic_function1,
 };
 
 /// Similar to a unix timestamp: a positive time interval between Jan 1 1970 and

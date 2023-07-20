@@ -1,0 +1,3175 @@
+{
+  "nodes" : {
+    "2456" : {
+      "Source" : {
+        "layout" : 1,
+        "table" : "VERTICES"
+      }
+    },
+    "4179" : {
+      "Map" : {
+        "input" : 2456,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 1,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 2,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 2,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 5, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 6, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 2,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 1
+        },
+        "output_layout" : {
+          "Set" : 2
+        }
+      }
+    },
+    "2479" : {
+      "Source" : {
+        "layout" : 2,
+        "table" : "EDGES"
+      }
+    },
+    "4197" : {
+      "Map" : {
+        "input" : 2479,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 2,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 2,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 1,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 2
+        },
+        "output_layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4213" : {
+      "Map" : {
+        "input" : 2479,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 2,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 2,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 1,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 2
+        },
+        "output_layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4217" : {
+      "Sum" : {
+        "layout" : {
+          "Set" : 1
+        },
+        "inputs" : [ 4197, 4213 ]
+      }
+    },
+    "4220" : {
+      "Distinct" : {
+        "input" : 4217,
+        "layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4236" : {
+      "Map" : {
+        "input" : 4220,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 1,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 3,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 3,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 5, {
+                "Constant" : {
+                  "Bool" : true
+                }
+              } ], [ 6, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 3,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "Bool"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 1
+        },
+        "output_layout" : {
+          "Set" : 3
+        }
+      }
+    },
+    "4265" : {
+      "IndexWith" : {
+        "input" : 4179,
+        "index_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 2,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          }, {
+            "id" : 3,
+            "layout" : 2,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 4, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 2,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 5, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 4,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 4
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 6, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 2,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 2,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 6
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 8, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 2,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 9, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 2,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 8
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "key_layout" : 4,
+        "value_layout" : 2
+      }
+    },
+    "4293" : {
+      "IndexWith" : {
+        "input" : 4236,
+        "index_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 3,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          }, {
+            "id" : 3,
+            "layout" : 3,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 4, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 3,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 5, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 4,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 4
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 6, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 3,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 3,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 6
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 8, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 3,
+                  "column" : 1,
+                  "column_type" : "Bool"
+                }
+              } ], [ 9, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 3,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 8
+                  },
+                  "value_type" : "Bool"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "key_layout" : 4,
+        "value_layout" : 3
+      }
+    },
+    "4328" : {
+      "JoinCore" : {
+        "lhs" : 4265,
+        "rhs" : 4293,
+        "join_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 4,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 2,
+            "flags" : "input"
+          }, {
+            "id" : 3,
+            "layout" : 3,
+            "flags" : "input"
+          }, {
+            "id" : 4,
+            "layout" : 5,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 5, {
+                "Load" : {
+                  "source" : 2,
+                  "source_layout" : 2,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 6, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 5,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 7, {
+                "Load" : {
+                  "source" : 2,
+                  "source_layout" : 2,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 8, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 5,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 7
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 9, {
+                "Load" : {
+                  "source" : 3,
+                  "source_layout" : 3,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 10, {
+                "Constant" : {
+                  "Bool" : false
+                }
+              } ], [ 11, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 5,
+                  "column" : 2,
+                  "value" : {
+                    "Expr" : 9
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 12, {
+                "SetNull" : {
+                  "target" : 4,
+                  "target_layout" : 5,
+                  "column" : 2,
+                  "is_null" : {
+                    "Expr" : 10
+                  }
+                }
+              } ], [ 13, {
+                "Load" : {
+                  "source" : 3,
+                  "source_layout" : 3,
+                  "column" : 1,
+                  "column_type" : "Bool"
+                }
+              } ], [ 14, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 5,
+                  "column" : 3,
+                  "value" : {
+                    "Expr" : 13
+                  },
+                  "value_type" : "Bool"
+                }
+              } ], [ 15, {
+                "SetNull" : {
+                  "target" : 4,
+                  "target_layout" : 5,
+                  "column" : 3,
+                  "is_null" : {
+                    "Expr" : 10
+                  }
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "value_layout" : 6,
+        "key_layout" : 5,
+        "output_kind" : "Set"
+      }
+    },
+    "4345" : {
+      "Map" : {
+        "input" : 4328,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 5,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 2,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 5,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 2,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 5, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 5,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 6, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 2,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 5
+        },
+        "output_layout" : {
+          "Set" : 2
+        }
+      }
+    },
+    "4349" : {
+      "Distinct" : {
+        "input" : 4345,
+        "layout" : {
+          "Set" : 2
+        }
+      }
+    },
+    "4352" : {
+      "Minus" : {
+        "lhs" : 4179,
+        "rhs" : 4349,
+        "layout" : {
+          "Set" : 2
+        }
+      }
+    },
+    "4355" : {
+      "Distinct" : {
+        "input" : 4352,
+        "layout" : {
+          "Set" : 2
+        }
+      }
+    },
+    "4374" : {
+      "Map" : {
+        "input" : 4328,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 5,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 7,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 5,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 5, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 5,
+                  "column" : 3,
+                  "column_type" : "Bool"
+                }
+              } ], [ 6, {
+                "IsNull" : {
+                  "target" : 1,
+                  "target_layout" : 5,
+                  "column" : 3
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "Bool"
+                }
+              } ], [ 8, {
+                "SetNull" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 1,
+                  "is_null" : {
+                    "Expr" : 6
+                  }
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 5
+        },
+        "output_layout" : {
+          "Set" : 7
+        }
+      }
+    },
+    "4390" : {
+      "Map" : {
+        "input" : 4355,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 2,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 7,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 2,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 5, {
+                "Constant" : {
+                  "Bool" : false
+                }
+              } ], [ 6, {
+                "Constant" : {
+                  "Bool" : true
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "Bool"
+                }
+              } ], [ 8, {
+                "SetNull" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 1,
+                  "is_null" : {
+                    "Expr" : 6
+                  }
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 2
+        },
+        "output_layout" : {
+          "Set" : 7
+        }
+      }
+    },
+    "4394" : {
+      "Sum" : {
+        "layout" : {
+          "Set" : 7
+        },
+        "inputs" : [ 4374, 4390 ]
+      }
+    },
+    "4409" : {
+      "Filter" : {
+        "input" : 4394,
+        "filter_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 7,
+            "flags" : "input"
+          } ],
+          "ret" : "Bool",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 2, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 7,
+                  "column" : 1,
+                  "column_type" : "Bool"
+                }
+              } ], [ 3, {
+                "IsNull" : {
+                  "target" : 1,
+                  "target_layout" : 7,
+                  "column" : 1
+                }
+              } ], [ 4, {
+                "UnaryOp" : {
+                  "value" : 2,
+                  "kind" : "Not",
+                  "value_ty" : "Bool"
+                }
+              } ], [ 5, {
+                "Constant" : {
+                  "Bool" : true
+                }
+              } ], [ 6, {
+                "Select" : {
+                  "cond" : 3,
+                  "if_true" : 5,
+                  "if_false" : 4,
+                  "value_type" : {
+                    "Scalar" : "Bool"
+                  }
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Expr" : 6
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        }
+      }
+    },
+    "4424" : {
+      "Map" : {
+        "input" : 4409,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 7,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 7,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 1,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 7
+        },
+        "output_layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4428" : {
+      "Sink" : {
+        "input" : 4424,
+        "comment" : "CREATE VIEW `UNCONNECTED_VERTICES_NOT_IN` AS\r\nSELECT `VERTEX`\r\nFROM `VERTICES`\r\nWHERE `VERTEX` NOT IN (SELECT `SRC`\r\nFROM `EDGES`\r\nUNION\r\nSELECT `DEST`\r\nFROM `EDGES`)",
+        "input_layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "2728" : {
+      "Distinct" : {
+        "input" : 2456,
+        "layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4454" : {
+      "IndexWith" : {
+        "input" : 2479,
+        "index_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 2,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 8,
+            "flags" : "output"
+          }, {
+            "id" : 3,
+            "layout" : 2,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 4, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 2,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 5, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 2,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 4
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 6, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 2,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 2,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 6
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "key_layout" : 8,
+        "value_layout" : 2
+      }
+    },
+    "4474" : {
+      "IndexWith" : {
+        "input" : 2728,
+        "index_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 1,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 8,
+            "flags" : "output"
+          }, {
+            "id" : 3,
+            "layout" : 1,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 4, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 5, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 1,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 4
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "key_layout" : 8,
+        "value_layout" : 1
+      }
+    },
+    "4503" : {
+      "JoinCore" : {
+        "lhs" : 4454,
+        "rhs" : 4474,
+        "join_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 8,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 2,
+            "flags" : "input"
+          }, {
+            "id" : 3,
+            "layout" : 1,
+            "flags" : "input"
+          }, {
+            "id" : 4,
+            "layout" : 9,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 5, {
+                "Load" : {
+                  "source" : 2,
+                  "source_layout" : 2,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 6, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 9,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 7, {
+                "Load" : {
+                  "source" : 2,
+                  "source_layout" : 2,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 8, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 9,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 7
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 9, {
+                "Load" : {
+                  "source" : 3,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 10, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 9,
+                  "column" : 2,
+                  "value" : {
+                    "Expr" : 9
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "value_layout" : 6,
+        "key_layout" : 9,
+        "output_kind" : "Set"
+      }
+    },
+    "4532" : {
+      "Filter" : {
+        "input" : 4503,
+        "filter_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 9,
+            "flags" : "input"
+          } ],
+          "ret" : "Bool",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 2, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 9,
+                  "column" : 2,
+                  "column_type" : "I64"
+                }
+              } ], [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 9,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "BinOp" : {
+                  "lhs" : 2,
+                  "rhs" : 3,
+                  "kind" : "Eq",
+                  "operand_ty" : "I64"
+                }
+              } ], [ 5, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 9,
+                  "column" : 2,
+                  "column_type" : "I64"
+                }
+              } ], [ 6, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 9,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 7, {
+                "BinOp" : {
+                  "lhs" : 5,
+                  "rhs" : 6,
+                  "kind" : "Eq",
+                  "operand_ty" : "I64"
+                }
+              } ], [ 8, {
+                "BinOp" : {
+                  "lhs" : 4,
+                  "rhs" : 7,
+                  "kind" : "Or",
+                  "operand_ty" : "Bool"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Expr" : 8
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        }
+      }
+    },
+    "4548" : {
+      "Map" : {
+        "input" : 4532,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 9,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 3,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 9,
+                  "column" : 2,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 3,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 5, {
+                "Constant" : {
+                  "Bool" : true
+                }
+              } ], [ 6, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 3,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "Bool"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 9
+        },
+        "output_layout" : {
+          "Set" : 3
+        }
+      }
+    },
+    "4577" : {
+      "IndexWith" : {
+        "input" : 4548,
+        "index_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 3,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          }, {
+            "id" : 3,
+            "layout" : 3,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 4, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 3,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 5, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 4,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 4
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 6, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 3,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 3,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 6
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 8, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 3,
+                  "column" : 1,
+                  "column_type" : "Bool"
+                }
+              } ], [ 9, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 3,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 8
+                  },
+                  "value_type" : "Bool"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "key_layout" : 4,
+        "value_layout" : 3
+      }
+    },
+    "4603" : {
+      "Fold" : {
+        "input" : 4577,
+        "acc_layout" : 10,
+        "step_layout" : 3,
+        "output_layout" : 10,
+        "finish_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 10,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 10,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 10,
+                  "column" : 0,
+                  "column_type" : "Bool"
+                }
+              } ], [ 4, {
+                "IsNull" : {
+                  "target" : 1,
+                  "target_layout" : 10,
+                  "column" : 0
+                }
+              } ], [ 5, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 10,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "Bool"
+                }
+              } ], [ 6, {
+                "SetNull" : {
+                  "target" : 2,
+                  "target_layout" : 10,
+                  "column" : 0,
+                  "is_null" : {
+                    "Expr" : 4
+                  }
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "step_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 10,
+            "flags" : "inout"
+          }, {
+            "id" : 2,
+            "layout" : 3,
+            "flags" : "input"
+          }, {
+            "id" : 3,
+            "layout" : 11,
+            "flags" : "input"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 4, {
+                "Load" : {
+                  "source" : 3,
+                  "source_layout" : 11,
+                  "column" : 0,
+                  "column_type" : "I32"
+                }
+              } ] ],
+              "terminator" : {
+                "Jump" : {
+                  "target" : 2,
+                  "params" : [ ]
+                }
+              },
+              "params" : [ ]
+            },
+            "2" : {
+              "id" : 2,
+              "body" : [ [ 5, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 10,
+                  "column" : 0,
+                  "column_type" : "Bool"
+                }
+              } ], [ 6, {
+                "IsNull" : {
+                  "target" : 1,
+                  "target_layout" : 10,
+                  "column" : 0
+                }
+              } ], [ 7, {
+                "Load" : {
+                  "source" : 2,
+                  "source_layout" : 3,
+                  "column" : 1,
+                  "column_type" : "Bool"
+                }
+              } ] ],
+              "terminator" : {
+                "Branch" : {
+                  "cond" : {
+                    "Expr" : 6
+                  },
+                  "true_params" : [ ],
+                  "false_params" : [ ],
+                  "falsy" : 4,
+                  "truthy" : 3
+                }
+              },
+              "params" : [ ]
+            },
+            "3" : {
+              "id" : 3,
+              "body" : [ [ 8, {
+                "Constant" : {
+                  "Bool" : false
+                }
+              } ] ],
+              "terminator" : {
+                "Jump" : {
+                  "target" : 5,
+                  "params" : [ 7, 8 ]
+                }
+              },
+              "params" : [ ]
+            },
+            "4" : {
+              "id" : 4,
+              "body" : [ [ 9, {
+                "BinOp" : {
+                  "lhs" : 5,
+                  "rhs" : 7,
+                  "kind" : "Min",
+                  "operand_ty" : "Bool"
+                }
+              } ], [ 10, {
+                "Constant" : {
+                  "Bool" : false
+                }
+              } ] ],
+              "terminator" : {
+                "Jump" : {
+                  "target" : 5,
+                  "params" : [ 9, 10 ]
+                }
+              },
+              "params" : [ ]
+            },
+            "5" : {
+              "id" : 5,
+              "body" : [ ],
+              "terminator" : {
+                "Jump" : {
+                  "target" : 6,
+                  "params" : [ ]
+                }
+              },
+              "params" : [ [ 11, {
+                "Scalar" : "Bool"
+              } ], [ 12, {
+                "Scalar" : "Bool"
+              } ] ]
+            },
+            "6" : {
+              "id" : 6,
+              "body" : [ [ 13, {
+                "Store" : {
+                  "target" : 1,
+                  "target_layout" : 10,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 11
+                  },
+                  "value_type" : "Bool"
+                }
+              } ], [ 14, {
+                "SetNull" : {
+                  "target" : 1,
+                  "target_layout" : 10,
+                  "column" : 0,
+                  "is_null" : {
+                    "Expr" : 12
+                  }
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "init" : {
+          "rows" : [ {
+            "Nullable" : null
+          } ]
+        }
+      }
+    },
+    "4634" : {
+      "Map" : {
+        "input" : 4603,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 4,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 10,
+            "flags" : "input"
+          }, {
+            "id" : 3,
+            "layout" : 3,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 4, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 4,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 5, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 3,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 4
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 6, {
+                "Load" : {
+                  "source" : 2,
+                  "source_layout" : 10,
+                  "column" : 0,
+                  "column_type" : "Bool"
+                }
+              } ], [ 7, {
+                "IsNull" : {
+                  "target" : 2,
+                  "target_layout" : 10,
+                  "column" : 0
+                }
+              } ], [ 8, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 3,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 6
+                  },
+                  "value_type" : "Bool"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Map" : [ 4, 10 ]
+        },
+        "output_layout" : {
+          "Set" : 3
+        }
+      }
+    },
+    "4661" : {
+      "IndexWith" : {
+        "input" : 2456,
+        "index_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 1,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          }, {
+            "id" : 3,
+            "layout" : 1,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 4, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 5, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 4,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 4
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 6, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 1,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 6
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "key_layout" : 4,
+        "value_layout" : 1
+      }
+    },
+    "4689" : {
+      "IndexWith" : {
+        "input" : 4634,
+        "index_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 3,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          }, {
+            "id" : 3,
+            "layout" : 3,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 4, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 3,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 5, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 4,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 4
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 6, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 3,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 3,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 6
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 8, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 3,
+                  "column" : 1,
+                  "column_type" : "Bool"
+                }
+              } ], [ 9, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 3,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 8
+                  },
+                  "value_type" : "Bool"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "key_layout" : 4,
+        "value_layout" : 3
+      }
+    },
+    "4720" : {
+      "JoinCore" : {
+        "lhs" : 4661,
+        "rhs" : 4689,
+        "join_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 4,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "input"
+          }, {
+            "id" : 3,
+            "layout" : 3,
+            "flags" : "input"
+          }, {
+            "id" : 4,
+            "layout" : 12,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 5, {
+                "Load" : {
+                  "source" : 2,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 6, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 12,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 7, {
+                "Load" : {
+                  "source" : 3,
+                  "source_layout" : 3,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 8, {
+                "Constant" : {
+                  "Bool" : false
+                }
+              } ], [ 9, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 12,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 7
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 10, {
+                "SetNull" : {
+                  "target" : 4,
+                  "target_layout" : 12,
+                  "column" : 1,
+                  "is_null" : {
+                    "Expr" : 8
+                  }
+                }
+              } ], [ 11, {
+                "Load" : {
+                  "source" : 3,
+                  "source_layout" : 3,
+                  "column" : 1,
+                  "column_type" : "Bool"
+                }
+              } ], [ 12, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 12,
+                  "column" : 2,
+                  "value" : {
+                    "Expr" : 11
+                  },
+                  "value_type" : "Bool"
+                }
+              } ], [ 13, {
+                "SetNull" : {
+                  "target" : 4,
+                  "target_layout" : 12,
+                  "column" : 2,
+                  "is_null" : {
+                    "Expr" : 8
+                  }
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "value_layout" : 6,
+        "key_layout" : 12,
+        "output_kind" : "Set"
+      }
+    },
+    "4734" : {
+      "Map" : {
+        "input" : 4720,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 12,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 12,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 1,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 12
+        },
+        "output_layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4738" : {
+      "Distinct" : {
+        "input" : 4734,
+        "layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4741" : {
+      "Minus" : {
+        "lhs" : 2456,
+        "rhs" : 4738,
+        "layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4744" : {
+      "Distinct" : {
+        "input" : 4741,
+        "layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4763" : {
+      "Map" : {
+        "input" : 4720,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 12,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 7,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 12,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 5, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 12,
+                  "column" : 2,
+                  "column_type" : "Bool"
+                }
+              } ], [ 6, {
+                "IsNull" : {
+                  "target" : 1,
+                  "target_layout" : 12,
+                  "column" : 2
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "Bool"
+                }
+              } ], [ 8, {
+                "SetNull" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 1,
+                  "is_null" : {
+                    "Expr" : 6
+                  }
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 12
+        },
+        "output_layout" : {
+          "Set" : 7
+        }
+      }
+    },
+    "4779" : {
+      "Map" : {
+        "input" : 4744,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 1,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 7,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 5, {
+                "Constant" : {
+                  "Bool" : false
+                }
+              } ], [ 6, {
+                "Constant" : {
+                  "Bool" : true
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "Bool"
+                }
+              } ], [ 8, {
+                "SetNull" : {
+                  "target" : 2,
+                  "target_layout" : 7,
+                  "column" : 1,
+                  "is_null" : {
+                    "Expr" : 6
+                  }
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 1
+        },
+        "output_layout" : {
+          "Set" : 7
+        }
+      }
+    },
+    "4783" : {
+      "Sum" : {
+        "layout" : {
+          "Set" : 7
+        },
+        "inputs" : [ 4763, 4779 ]
+      }
+    },
+    "4797" : {
+      "Filter" : {
+        "input" : 4783,
+        "filter_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 7,
+            "flags" : "input"
+          } ],
+          "ret" : "Bool",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 2, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 7,
+                  "column" : 1,
+                  "column_type" : "Bool"
+                }
+              } ], [ 3, {
+                "IsNull" : {
+                  "target" : 1,
+                  "target_layout" : 7,
+                  "column" : 1
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Expr" : 3
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        }
+      }
+    },
+    "4812" : {
+      "Map" : {
+        "input" : 4797,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 7,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 7,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 1,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 7
+        },
+        "output_layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4816" : {
+      "Sink" : {
+        "input" : 4812,
+        "comment" : "CREATE VIEW `UNCONNECTED_VERTICES_NOT_EXISTS` AS\r\nSELECT `VERTEX`\r\nFROM `VERTICES`\r\nWHERE NOT EXISTS (SELECT `SRC`\r\nFROM `EDGES`\r\nWHERE `VERTEX` = `SRC` OR `VERTEX` = `DEST`)",
+        "input_layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4836" : {
+      "IndexWith" : {
+        "input" : 2456,
+        "index_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 1,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 8,
+            "flags" : "output"
+          }, {
+            "id" : 3,
+            "layout" : 1,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 4, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 5, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 1,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 4
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "key_layout" : 8,
+        "value_layout" : 1
+      }
+    },
+    "4860" : {
+      "IndexWith" : {
+        "input" : 2479,
+        "index_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 2,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 8,
+            "flags" : "output"
+          }, {
+            "id" : 3,
+            "layout" : 2,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 4, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 2,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 5, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 2,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 4
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 6, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 2,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 3,
+                  "target_layout" : 2,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 6
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "key_layout" : 8,
+        "value_layout" : 2
+      }
+    },
+    "4891" : {
+      "JoinCore" : {
+        "lhs" : 4836,
+        "rhs" : 4860,
+        "join_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 8,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "input"
+          }, {
+            "id" : 3,
+            "layout" : 2,
+            "flags" : "input"
+          }, {
+            "id" : 4,
+            "layout" : 13,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 5, {
+                "Load" : {
+                  "source" : 2,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 6, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 13,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 7, {
+                "Load" : {
+                  "source" : 3,
+                  "source_layout" : 2,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 8, {
+                "Constant" : {
+                  "Bool" : false
+                }
+              } ], [ 9, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 13,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 7
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 10, {
+                "SetNull" : {
+                  "target" : 4,
+                  "target_layout" : 13,
+                  "column" : 1,
+                  "is_null" : {
+                    "Expr" : 8
+                  }
+                }
+              } ], [ 11, {
+                "Load" : {
+                  "source" : 3,
+                  "source_layout" : 2,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 12, {
+                "Store" : {
+                  "target" : 4,
+                  "target_layout" : 13,
+                  "column" : 2,
+                  "value" : {
+                    "Expr" : 11
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 13, {
+                "SetNull" : {
+                  "target" : 4,
+                  "target_layout" : 13,
+                  "column" : 2,
+                  "is_null" : {
+                    "Expr" : 8
+                  }
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "value_layout" : 6,
+        "key_layout" : 13,
+        "output_kind" : "Set"
+      }
+    },
+    "4922" : {
+      "Filter" : {
+        "input" : 4891,
+        "filter_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 13,
+            "flags" : "input"
+          } ],
+          "ret" : "Bool",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 2, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 13,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 13,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "IsNull" : {
+                  "target" : 1,
+                  "target_layout" : 13,
+                  "column" : 1
+                }
+              } ], [ 5, {
+                "BinOp" : {
+                  "lhs" : 2,
+                  "rhs" : 3,
+                  "kind" : "Eq",
+                  "operand_ty" : "I64"
+                }
+              } ], [ 6, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 13,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 7, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 13,
+                  "column" : 2,
+                  "column_type" : "I64"
+                }
+              } ], [ 8, {
+                "IsNull" : {
+                  "target" : 1,
+                  "target_layout" : 13,
+                  "column" : 2
+                }
+              } ], [ 9, {
+                "BinOp" : {
+                  "lhs" : 6,
+                  "rhs" : 7,
+                  "kind" : "Eq",
+                  "operand_ty" : "I64"
+                }
+              } ], [ 10, {
+                "BinOp" : {
+                  "lhs" : 5,
+                  "rhs" : 9,
+                  "kind" : "Or",
+                  "operand_ty" : "Bool"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Expr" : 10
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        }
+      }
+    },
+    "4936" : {
+      "Map" : {
+        "input" : 4922,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 13,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 13,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 1,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 13
+        },
+        "output_layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4940" : {
+      "Distinct" : {
+        "input" : 4936,
+        "layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4943" : {
+      "Minus" : {
+        "lhs" : 2456,
+        "rhs" : 4940,
+        "layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4946" : {
+      "Distinct" : {
+        "input" : 4943,
+        "layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "4962" : {
+      "Map" : {
+        "input" : 4946,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 1,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 13,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 1,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 13,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 5, {
+                "Constant" : {
+                  "I64" : 0
+                }
+              } ], [ 6, {
+                "Constant" : {
+                  "Bool" : true
+                }
+              } ], [ 7, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 13,
+                  "column" : 1,
+                  "value" : {
+                    "Expr" : 5
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 8, {
+                "SetNull" : {
+                  "target" : 2,
+                  "target_layout" : 13,
+                  "column" : 1,
+                  "is_null" : {
+                    "Expr" : 6
+                  }
+                }
+              } ], [ 9, {
+                "Constant" : {
+                  "I64" : 0
+                }
+              } ], [ 10, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 13,
+                  "column" : 2,
+                  "value" : {
+                    "Expr" : 9
+                  },
+                  "value_type" : "I64"
+                }
+              } ], [ 11, {
+                "SetNull" : {
+                  "target" : 2,
+                  "target_layout" : 13,
+                  "column" : 2,
+                  "is_null" : {
+                    "Expr" : 6
+                  }
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 1
+        },
+        "output_layout" : {
+          "Set" : 13
+        }
+      }
+    },
+    "4966" : {
+      "Sum" : {
+        "layout" : {
+          "Set" : 13
+        },
+        "inputs" : [ 4922, 4962 ]
+      }
+    },
+    "4985" : {
+      "Filter" : {
+        "input" : 4966,
+        "filter_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 13,
+            "flags" : "input"
+          } ],
+          "ret" : "Bool",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 2, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 13,
+                  "column" : 1,
+                  "column_type" : "I64"
+                }
+              } ], [ 3, {
+                "IsNull" : {
+                  "target" : 1,
+                  "target_layout" : 13,
+                  "column" : 1
+                }
+              } ], [ 4, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 13,
+                  "column" : 2,
+                  "column_type" : "I64"
+                }
+              } ], [ 5, {
+                "IsNull" : {
+                  "target" : 1,
+                  "target_layout" : 13,
+                  "column" : 2
+                }
+              } ], [ 6, {
+                "BinOp" : {
+                  "lhs" : 3,
+                  "rhs" : 5,
+                  "kind" : "And",
+                  "operand_ty" : "Bool"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Expr" : 6
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        }
+      }
+    },
+    "5000" : {
+      "Map" : {
+        "input" : 4985,
+        "map_fn" : {
+          "args" : [ {
+            "id" : 1,
+            "layout" : 13,
+            "flags" : "input"
+          }, {
+            "id" : 2,
+            "layout" : 1,
+            "flags" : "output"
+          } ],
+          "ret" : "Unit",
+          "entry_block" : 1,
+          "blocks" : {
+            "1" : {
+              "id" : 1,
+              "body" : [ [ 3, {
+                "Load" : {
+                  "source" : 1,
+                  "source_layout" : 13,
+                  "column" : 0,
+                  "column_type" : "I64"
+                }
+              } ], [ 4, {
+                "Store" : {
+                  "target" : 2,
+                  "target_layout" : 1,
+                  "column" : 0,
+                  "value" : {
+                    "Expr" : 3
+                  },
+                  "value_type" : "I64"
+                }
+              } ] ],
+              "terminator" : {
+                "Return" : {
+                  "value" : {
+                    "Imm" : "Unit"
+                  }
+                }
+              },
+              "params" : [ ]
+            }
+          }
+        },
+        "input_layout" : {
+          "Set" : 13
+        },
+        "output_layout" : {
+          "Set" : 1
+        }
+      }
+    },
+    "5004" : {
+      "Sink" : {
+        "input" : 5000,
+        "comment" : "CREATE VIEW `UNCONNECTED_VERTICES_LEFTJOIN` AS\r\nSELECT `VERTEX`\r\nFROM `VERTICES`\r\nLEFT JOIN `EDGES` ON `VERTEX` = `SRC` OR `VERTEX` = `DEST`\r\nWHERE `SRC` IS NULL AND `DEST` IS NULL",
+        "input_layout" : {
+          "Set" : 1
+        }
+      }
+    }
+  },
+  "layouts" : {
+    "6" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "Unit"
+      } ]
+    },
+    "8" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "Unit"
+      } ]
+    },
+    "2" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "I64"
+      }, {
+        "nullable" : false,
+        "ty" : "I64"
+      } ]
+    },
+    "7" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "I64"
+      }, {
+        "nullable" : true,
+        "ty" : "Bool"
+      } ]
+    },
+    "1" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "I64"
+      } ]
+    },
+    "4" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "I64"
+      } ]
+    },
+    "11" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "I32"
+      } ]
+    },
+    "9" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "I64"
+      }, {
+        "nullable" : false,
+        "ty" : "I64"
+      }, {
+        "nullable" : false,
+        "ty" : "I64"
+      } ]
+    },
+    "13" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "I64"
+      }, {
+        "nullable" : true,
+        "ty" : "I64"
+      }, {
+        "nullable" : true,
+        "ty" : "I64"
+      } ]
+    },
+    "10" : {
+      "columns" : [ {
+        "nullable" : true,
+        "ty" : "Bool"
+      } ]
+    },
+    "12" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "I64"
+      }, {
+        "nullable" : true,
+        "ty" : "I64"
+      }, {
+        "nullable" : true,
+        "ty" : "Bool"
+      } ]
+    },
+    "3" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "I64"
+      }, {
+        "nullable" : false,
+        "ty" : "Bool"
+      } ]
+    },
+    "5" : {
+      "columns" : [ {
+        "nullable" : false,
+        "ty" : "I64"
+      }, {
+        "nullable" : false,
+        "ty" : "I64"
+      }, {
+        "nullable" : true,
+        "ty" : "I64"
+      }, {
+        "nullable" : true,
+        "ty" : "Bool"
+      } ]
+    }
+  }
+}

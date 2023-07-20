@@ -11,6 +11,11 @@ binary = ["clap", "tracing-subscriber"]
 name = "dataflow-jit"
 required-features = ["binary"]
 
+[[bench]]
+name = "path"
+harness = false
+required-features = ["binary"]
+
 [dependencies]
 csv = "1.2.1"
 libm = "0.2.6"

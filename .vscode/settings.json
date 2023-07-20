@@ -5,10 +5,6 @@
     "cSpell.words": [
         "avaliable"
     ],
-    "rust-analyzer.cargo.features": [
-        "pg-embed",
-        "integration-test"
-    ],
     "[python]": {
         "editor.defaultFormatter": "ms-python.black-formatter"
     },
@@ -24,4 +20,8 @@
     "editor.formatOnSave": true,
     "files.trimTrailingWhitespace": true,
     "prettier.requireConfig": true,
+    "rust-analyzer.linkedProjects": [
+        ".\\crates\\dbsp\\Cargo.toml"
+    ],
+    "rust-analyzer.showUnlinkedFileNotification": false,
 }

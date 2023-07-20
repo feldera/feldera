@@ -365,9 +365,9 @@ fn static_website_scope() -> Scope {
     // Creates a dictionary of static files indexed by file name.
     let generated = generate();
 
-    // Leave this is an empty prefix to load the UI by default. When constructing an app, always
-    // attach other scopes without empty prefixes before this one, or route resolution does
-    // not work correctly.
+    // Leave this is an empty prefix to load the UI by default. When constructing an
+    // app, always attach other scopes without empty prefixes before this one,
+    // or route resolution does not work correctly.
     web::scope("")
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(ResourceFiles::new("/", generated))
