@@ -22,7 +22,14 @@ import Tooltip from '@mui/material/Tooltip'
 
 import AnalyticsPipelineTput from 'src/streaming/management/AnalyticsPipelineTput'
 import QuickSearchToolbar from 'src/components/table/QuickSearchToolbar'
-import { AttachedConnector, PipelineDescr, ConnectorDescr, PipelineStatus, PipelineRevision } from 'src/types/manager'
+import {
+  AttachedConnector,
+  Pipeline,
+  ConnectorDescr,
+  PipelineStatus,
+  PipelineRevision,
+  ErrorResponse
+} from 'src/types/manager'
 import { useQuery } from '@tanstack/react-query'
 import { ErrorOverlay } from 'src/components/table/ErrorOverlay'
 import { escapeRegExp } from 'src/utils'
@@ -33,22 +40,25 @@ import { humanSize } from 'src/utils'
 import { format } from 'd3-format'
 import { PipelineRevisionStatusChip } from 'src/streaming/management/RevisionStatus'
 import { ClientPipelineStatus, usePipelineStateStore } from './StatusContext'
-import useStartPipeline from './hooks/useStartPipeline'
+import useDeployPipeline from './hooks/useDeployPipeline'
 import usePausePipeline from './hooks/usePausePipeline'
 import useShutdownPipeline from './hooks/useShutdownPipeline'
 import useDeletePipeline from './hooks/useDeletePipeline'
+import useStartPipeline from './hooks/useStartPipeline'
 
 interface ConnectorData {
   ac: AttachedConnector
   c: ConnectorDescr | undefined
 }
 
-const DetailPanelContent = (props: { row: PipelineDescr }) => {
+const DetailPanelContent = (props: { row: Pipeline }) => {
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
+  const { descriptor, state } = props.row
+
   const pipelineRevisionQuery = useQuery<PipelineRevision>([
     'pipelineLastRevision',
-    { pipeline_id: props.row.pipeline_id }
+    { pipeline_id: descriptor.pipeline_id }
   ])
   useEffect(() => {
     if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
@@ -81,8 +91,8 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
   const [globalMetrics, setGlobalMetrics] = useState<GlobalMetrics[]>([])
   const [inputMetrics, setInputMetrics] = useState<Map<string, InputConnectorMetrics>>(new Map())
   const [outputMetrics, setOutputMetrics] = useState<Map<string, OutputConnectorMetrics>>(new Map())
-  const pipelineStatsQuery = useQuery<any>(['pipelineStats', { pipeline_id: props.row.pipeline_id }], {
-    enabled: props.row.status == PipelineStatus.RUNNING,
+  const pipelineStatsQuery = useQuery<any>(['pipelineStats', { pipeline_id: descriptor.pipeline_id }], {
+    enabled: state.current_status == PipelineStatus.RUNNING,
     refetchInterval: 1000
   })
 
@@ -105,12 +115,12 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
       })
       setOutputMetrics(newOutputMetrics)
     }
-    if (props.row.status == PipelineStatus.SHUTDOWN) {
+    if (state.current_status == PipelineStatus.SHUTDOWN) {
       setGlobalMetrics([])
       setInputMetrics(new Map())
       setOutputMetrics(new Map())
     }
-  }, [pipelineStatsQuery.isLoading, pipelineStatsQuery.isError, pipelineStatsQuery.data, props.row.status])
+  }, [pipelineStatsQuery.isLoading, pipelineStatsQuery.isError, pipelineStatsQuery.data, state.current_status])
 
   return !pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError ? (
     <Box display='flex' sx={{ m: 2 }} justifyContent='center'>
@@ -124,7 +134,7 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
                 </ListItemIcon>
                 <ListItemText primary={pipelineRevisionQuery.data?.program.name || 'not set'} />
               </ListItem>
-              {props.row.status == PipelineStatus.RUNNING && (
+              {state.current_status == PipelineStatus.RUNNING && (
                 <>
                   <ListItem>
                     <Tooltip title='Pipeline Running Since'>
@@ -132,7 +142,7 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
                         <Icon icon='clarity:date-line' fontSize={20} />
                       </ListItemIcon>
                     </Tooltip>
-                    <ListItemText primary={props.row.created || 'Not running'} />
+                    <ListItemText primary={state.created || 'Not running'} />
                   </ListItem>
                   <ListItem>
                     <Tooltip title='Pipeline Port'>
@@ -140,7 +150,7 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
                         <Icon icon='carbon:port-input' fontSize={20} />
                       </ListItemIcon>
                     </Tooltip>
-                    <ListItemText className='pipelinePort' primary={props.row.port || '0000'} />
+                    <ListItemText className='pipelinePort' primary={state.location || '0000'} />
                   </ListItem>
                 </>
               )}
@@ -196,7 +206,7 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
                         size='small'
                         onClick={e => {
                           e.preventDefault()
-                          router.push('/streaming/introspection/' + props.row.pipeline_id + '/' + params.row.ac.config)
+                          router.push('/streaming/introspection/' + descriptor.pipeline_id + '/' + params.row.ac.config)
                         }}
                       >
                         <Icon icon='bx:show' fontSize={20} />
@@ -255,7 +265,7 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
                         size='small'
                         onClick={e => {
                           e.preventDefault()
-                          router.push('/streaming/introspection/' + props.row.pipeline_id + '/' + params.row.ac.config)
+                          router.push('/streaming/introspection/' + descriptor.pipeline_id + '/' + params.row.ac.config)
                         }}
                       >
                         <Icon icon='bx:show' fontSize={20} />
@@ -277,12 +287,19 @@ const DetailPanelContent = (props: { row: PipelineDescr }) => {
   )
 }
 
-const statusToChip = (status: ClientPipelineStatus | undefined) => {
+const statusToChip = (
+  status: ClientPipelineStatus | undefined,
+  error: ErrorResponse | null,
+  onDelete: ((event: any) => void) | undefined
+) => {
   return match(status)
     .with(undefined, () => <CustomChip rounded size='small' skin='light' label='Unknown' />)
     .with(ClientPipelineStatus.UNKNOWN, () => <CustomChip rounded size='small' skin='light' label={status} />)
     .with(ClientPipelineStatus.INACTIVE, () => <CustomChip rounded size='small' skin='light' label={status} />)
-    .with(ClientPipelineStatus.CREATING, () => (
+    .with(ClientPipelineStatus.INITIALIZING, () => (
+      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
+    ))
+    .with(ClientPipelineStatus.PROVISIONING, () => (
       <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
     .with(ClientPipelineStatus.CREATE_FAILURE, () => (
@@ -307,7 +324,9 @@ const statusToChip = (status: ClientPipelineStatus | undefined) => {
       <CustomChip rounded size='small' skin='light' color='info' label={status} />
     ))
     .with(ClientPipelineStatus.FAILED, () => (
-      <CustomChip rounded size='small' skin='light' color='error' label={status} />
+      <Tooltip title={error?.message || 'Unknown Error'} disableInteractive>
+        <CustomChip rounded size='small' skin='light' color='error' label={status} onDelete={onDelete} />
+      </Tooltip>
     ))
     .with(ClientPipelineStatus.SHUTTING_DOWN, () => (
       <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
@@ -318,9 +337,11 @@ const statusToChip = (status: ClientPipelineStatus | undefined) => {
 const pipelineStatusToClientStatus = (status: PipelineStatus) => {
   return match(status)
     .with(PipelineStatus.SHUTDOWN, () => ClientPipelineStatus.INACTIVE)
-    .with(PipelineStatus.DEPLOYED, () => ClientPipelineStatus.DEPLOYED)
-    .with(PipelineStatus.RUNNING, () => ClientPipelineStatus.RUNNING)
+    .with(PipelineStatus.PROVISIONING, () => ClientPipelineStatus.PROVISIONING)
+    .with(PipelineStatus.INITIALIZING, () => ClientPipelineStatus.INITIALIZING)
     .with(PipelineStatus.PAUSED, () => ClientPipelineStatus.PAUSED)
+    .with(PipelineStatus.RUNNING, () => ClientPipelineStatus.RUNNING)
+    .with(PipelineStatus.SHUTTING_DOWN, () => ClientPipelineStatus.SHUTTING_DOWN)
     .with(PipelineStatus.FAILED, () => ClientPipelineStatus.FAILED)
     .exhaustive()
 }
@@ -328,25 +349,51 @@ const pipelineStatusToClientStatus = (status: PipelineStatus) => {
 export default function PipelineTable() {
   const [pageSize, setPageSize] = useState<number>(7)
   const [searchText, setSearchText] = useState<string>('')
-  const [rows, setRows] = useState<PipelineDescr[]>([])
-  const [filteredData, setFilteredData] = useState<PipelineDescr[]>([])
+  const [rows, setRows] = useState<Pipeline[]>([])
+  const [filteredData, setFilteredData] = useState<Pipeline[]>([])
   const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
   const setPipelineStatus = usePipelineStateStore(state => state.setStatus)
 
-  const { isLoading, isError, data, error } = useQuery<PipelineDescr[]>(['pipeline'])
+  const deployPipelineClick = useDeployPipeline()
+  const pausePipelineClick = usePausePipeline()
+  const shutdownPipelineClick = useShutdownPipeline()
+  const deletePipelineClick = useDeletePipeline()
+
+  const { isLoading, isError, data, error } = useQuery<Pipeline[]>(['pipeline'], {
+    refetchInterval: 2000
+  })
   useEffect(() => {
     if (!isLoading && !isError) {
       setRows(data)
-      for (const row of data) {
-        setPipelineStatus(row.pipeline_id, pipelineStatusToClientStatus(row.status))
+      for (const { descriptor, state } of data) {
+        // If we're not in the desired status, we know better what to display as
+        // status in the client (something pending), so we don't reset it until
+        // desired status is reached and rely on whatever we set with
+        // `setPipelineStatus` in the start/stop/pause hooks.
+        if (state.current_status == state.desired_status || state.current_status == PipelineStatus.FAILED) {
+          setPipelineStatus(descriptor.pipeline_id, pipelineStatusToClientStatus(state.current_status))
+        }
       }
     }
   }, [isLoading, isError, data, setRows, setPipelineStatus])
 
-  const startPipelineClick = useStartPipeline()
-  const pausePipelineClick = usePausePipeline()
-  const shutdownPipelineClick = useShutdownPipeline()
-  const deletePipelineClick = useDeletePipeline()
+  // When we deploy a pipeline we go from Shutdown to Paused. But if our
+  // start button was pressed we should just go to start. This makes sure we
+  // immediately start it after a the run button is pressed (which calls
+  // deploy).
+  const startPipeline = useStartPipeline()
+  useEffect(() => {
+    if (!isLoading && !isError) {
+      for (const { descriptor, state } of data) {
+        if (
+          state.current_status === PipelineStatus.PAUSED &&
+          pipelineStatus.get(descriptor.pipeline_id) === ClientPipelineStatus.PROVISIONING
+        ) {
+          startPipeline(descriptor.pipeline_id)
+        }
+      }
+    }
+  }, [isLoading, isError, data, pipelineStatus, startPipeline])
 
   const getDetailPanelContent = useCallback<NonNullable<DataGridProProps['getDetailPanelContent']>>(
     ({ row }) => <DetailPanelContent row={row} />,
@@ -374,14 +421,26 @@ export default function PipelineTable() {
   }
 
   const columns: GridColumns = [
-    { field: 'name', headerName: 'Name', editable: true, flex: 2 },
-    { field: 'description', headerName: 'Description', editable: true, flex: 3 },
+    {
+      field: 'name',
+      headerName: 'Name',
+      editable: true,
+      flex: 2,
+      valueGetter: params => params.row.descriptor.name
+    },
+    {
+      field: 'description',
+      headerName: 'Description',
+      editable: true,
+      flex: 3,
+      valueGetter: params => params.row.descriptor.description
+    },
     {
       field: 'modification',
       headerName: 'Changes',
       flex: 1,
       renderCell: (params: GridRenderCellParams) => {
-        return <PipelineRevisionStatusChip pipeline={params.row} />
+        return <PipelineRevisionStatusChip pipeline={params.row.descriptor} />
       }
     },
     {
@@ -389,8 +448,9 @@ export default function PipelineTable() {
       headerName: 'Status',
       flex: 1,
       renderCell: (params: GridRenderCellParams) => {
-        const status = statusToChip(pipelineStatus.get(params.row.pipeline_id))
-
+        const status = statusToChip(pipelineStatus.get(params.row.descriptor.pipeline_id), params.row.state.error, () =>
+          shutdownPipelineClick(params.row.descriptor.pipeline_id)
+        )
         return (
           <Badge badgeContent={params.row.warn_cnt} color='warning'>
             <Badge badgeContent={params.row.error_cnt} color='error'>
@@ -405,22 +465,24 @@ export default function PipelineTable() {
       headerName: 'Actions',
       flex: 1.0,
       renderCell: (params: GridRenderCellParams) => {
-        const needsPause = pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.RUNNING
+        const { descriptor } = params.row
+        const currentStatus = pipelineStatus.get(descriptor.pipeline_id)
+        const needsPause = currentStatus === ClientPipelineStatus.RUNNING
         const needsStart =
-          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE ||
-          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSED ||
-          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.DEPLOYED
+          currentStatus === ClientPipelineStatus.INACTIVE ||
+          currentStatus === ClientPipelineStatus.PAUSED ||
+          currentStatus === ClientPipelineStatus.DEPLOYED
         const needsShutdown =
-          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSED ||
-          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.DEPLOYED
-        const needsDelete = pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE
-        const needsEdit = pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.INACTIVE
-        const needsInspect = pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.RUNNING
+          currentStatus === ClientPipelineStatus.PAUSED || currentStatus === ClientPipelineStatus.DEPLOYED
+        const needsDelete = currentStatus === ClientPipelineStatus.INACTIVE
+        const needsEdit = currentStatus === ClientPipelineStatus.INACTIVE
+        const needsInspect = currentStatus === ClientPipelineStatus.RUNNING
         const needsSpinner =
-          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.CREATING ||
-          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.STARTING ||
-          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.PAUSING ||
-          pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.SHUTTING_DOWN
+          currentStatus === ClientPipelineStatus.PROVISIONING ||
+          currentStatus === ClientPipelineStatus.INITIALIZING ||
+          currentStatus === ClientPipelineStatus.STARTING ||
+          currentStatus === ClientPipelineStatus.PAUSING ||
+          currentStatus === ClientPipelineStatus.SHUTTING_DOWN
 
         return (
           <>
@@ -430,7 +492,7 @@ export default function PipelineTable() {
                 <IconButton
                   className='pauseButton'
                   size='small'
-                  onClick={() => pausePipelineClick(params.row.pipeline_id)}
+                  onClick={() => pausePipelineClick(params.row.descriptor.pipeline_id)}
                 >
                   <Icon icon='bx:pause-circle' fontSize={20} />
                 </IconButton>
@@ -441,16 +503,24 @@ export default function PipelineTable() {
                 <IconButton
                   className='startButton'
                   size='small'
-                  onClick={() => startPipelineClick(params.row.pipeline_id)}
+                  onClick={() => {
+                    // We re-use the same button for start/deploy so in case the
+                    // pipeline is paused we just start it and don't re-depoy it.
+                    if (pipelineStatus.get(descriptor.pipeline_id) == ClientPipelineStatus.PAUSED) {
+                      startPipeline(params.row.descriptor.pipeline_id)
+                    } else {
+                      deployPipelineClick(params.row.descriptor.pipeline_id)
+                    }
+                  }}
                 >
                   <Icon icon='bx:play-circle' fontSize={20} />
                 </IconButton>
               </Tooltip>
             )}
             {needsSpinner &&
-              (pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.STARTING ||
-                pipelineStatus.get(params.row.pipeline_id) === ClientPipelineStatus.CREATING) && (
-                <Tooltip title={pipelineStatus.get(params.row.pipeline_id)}>
+              (pipelineStatus.get(params.row.descriptor.pipeline_id) === ClientPipelineStatus.STARTING ||
+                pipelineStatus.get(params.row.descriptor.pipeline_id) === ClientPipelineStatus.PROVISIONING) && (
+                <Tooltip title={pipelineStatus.get(params.row.descriptor.pipeline_id)}>
                   <IconButton size='small'>
                     <Icon icon='svg-spinners:270-ring-with-bg' fontSize={20} />
                   </IconButton>
@@ -464,7 +534,7 @@ export default function PipelineTable() {
                   href='#'
                   onClick={e => {
                     e.preventDefault()
-                    router.push('/streaming/builder/' + params.row.pipeline_id)
+                    router.push('/streaming/builder/' + params.row.descriptor.pipeline_id)
                   }}
                 >
                   <Icon icon='bx:pencil' fontSize={20} />
@@ -476,7 +546,7 @@ export default function PipelineTable() {
                 <IconButton
                   className='shutdownButton'
                   size='small'
-                  onClick={() => shutdownPipelineClick(params.row.pipeline_id)}
+                  onClick={() => shutdownPipelineClick(params.row.descriptor.pipeline_id)}
                 >
                   <Icon icon='bx:stop-circle' fontSize={20} />
                 </IconButton>
@@ -487,7 +557,7 @@ export default function PipelineTable() {
                 <IconButton
                   className='deleteButton'
                   size='small'
-                  onClick={() => deletePipelineClick(params.row.pipeline_id)}
+                  onClick={() => deletePipelineClick(params.row.descriptor.pipeline_id)}
                 >
                   <Icon icon='bx:trash-alt' fontSize={20} />
                 </IconButton>
@@ -510,7 +580,7 @@ export default function PipelineTable() {
     <Card>
       <DataGridPro
         autoHeight
-        getRowId={(row: PipelineDescr) => row.pipeline_id}
+        getRowId={(row: Pipeline) => row.descriptor.pipeline_id}
         columns={columns}
         rowThreshold={0}
         getDetailPanelHeight={() => 'auto'}

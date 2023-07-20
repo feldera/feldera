@@ -7,7 +7,7 @@ import type { NeighborhoodQuery } from '../models/NeighborhoodQuery'
 import type { NewPipelineRequest } from '../models/NewPipelineRequest'
 import type { NewPipelineResponse } from '../models/NewPipelineResponse'
 import type { OutputQuery } from '../models/OutputQuery'
-import type { PipelineDescr } from '../models/PipelineDescr'
+import type { Pipeline } from '../models/Pipeline'
 import type { PipelineRevision } from '../models/PipelineRevision'
 import type { UpdatePipelineRequest } from '../models/UpdatePipelineRequest'
 import type { UpdatePipelineResponse } from '../models/UpdatePipelineResponse'
@@ -18,22 +18,27 @@ import { request as __request } from '../core/request'
 
 export class PipelineService {
   /**
-   * Retrieve pipeline metadata.
-   * Retrieve pipeline metadata.
-   * @param id Unique pipeline identifier
-   * @param name Unique pipeline name
+   * Retrieve pipeline configuration and runtime state.
+   * Retrieve pipeline configuration and runtime state.
+   *
+   * When invoked without the `?toml` flag, this endpoint
+   * returns pipeline state, including static configuration and runtime status,
+   * in the JSON format.  The `?toml` flag changes the behavior of this
+   * endpoint to return static pipeline configuratiin in the TOML format.
+   * @param id Unique pipeline id.
+   * @param name Unique pipeline name.
    * @param toml Set to true to request the configuration of the pipeline as a toml file.
-   * @returns PipelineDescr Pipeline descriptor retrieved successfully.
+   * @returns string Pipeline descriptor retrieved successfully.
    * @throws ApiError
    */
   public static pipelineStatus(
     id?: string | null,
     name?: string | null,
     toml?: boolean | null
-  ): CancelablePromise<PipelineDescr> {
+  ): CancelablePromise<string> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/pipeline',
+      url: '/pipeline',
       query: {
         id: id,
         name: name,
@@ -41,7 +46,7 @@ export class PipelineService {
       },
       errors: {
         400: `Pipeline not specified. Use ?id or ?name query strings in the URL.`,
-        404: `Specified pipeline name does not exist in the database.`
+        404: `Specified pipeline id does not exist in the database.`
       }
     })
   }
@@ -49,13 +54,13 @@ export class PipelineService {
   /**
    * List pipelines.
    * List pipelines.
-   * @returns PipelineDescr Pipeline list retrieved successfully.
+   * @returns Pipeline Pipeline list retrieved successfully.
    * @throws ApiError
    */
-  public static listPipelines(): CancelablePromise<Array<PipelineDescr>> {
+  public static listPipelines(): CancelablePromise<Array<Pipeline>> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/pipelines'
+      url: '/pipelines'
     })
   }
 
@@ -69,7 +74,7 @@ export class PipelineService {
   public static newPipeline(requestBody: NewPipelineRequest): CancelablePromise<NewPipelineResponse> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/v0/pipelines',
+      url: '/pipelines',
       body: requestBody,
       mediaType: 'application/json',
       errors: {
@@ -79,19 +84,18 @@ export class PipelineService {
   }
 
   /**
-   * Update existing program configuration.
-   * Update existing program configuration.
+   * Update existing pipeline configuration.
+   * Update existing pipeline configuration.
    *
-   * Updates program config name, description and code and, optionally, config
-   * and connectors. On success, increments config version by 1.
+   * Updates pipeline configuration. On success, increments pipeline version by 1.
    * @param requestBody
-   * @returns UpdatePipelineResponse Configuration successfully updated.
+   * @returns UpdatePipelineResponse Pipeline successfully updated.
    * @throws ApiError
    */
   public static updatePipeline(requestBody: UpdatePipelineRequest): CancelablePromise<UpdatePipelineResponse> {
     return __request(OpenAPI, {
       method: 'PATCH',
-      url: '/v0/pipelines',
+      url: '/pipelines',
       body: requestBody,
       mediaType: 'application/json',
       errors: {
@@ -101,24 +105,23 @@ export class PipelineService {
   }
 
   /**
-   * Terminate and delete a pipeline.
-   * Terminate and delete a pipeline.
+   * Delete a pipeline.
+   * Delete a pipeline.
    *
-   * Shut down the pipeline if it is still running and delete it from
-   * the database.
+   * Deletes the pipeline.  The pipeline must not be executing.
    * @param pipelineId Unique pipeline identifier
-   * @returns string Pipeline successfully deleted.
+   * @returns any Pipeline successfully deleted.
    * @throws ApiError
    */
-  public static pipelineDelete(pipelineId: string): CancelablePromise<string> {
+  public static pipelineDelete(pipelineId: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'DELETE',
-      url: '/v0/pipelines/{pipeline_id}',
+      url: '/pipelines/{pipeline_id}',
       path: {
         pipeline_id: pipelineId
       },
       errors: {
-        400: `Specified pipeline id is not a valid uuid.`,
+        400: `Pipeline cannot be deleted while executing. Shutdown the pipeine first.`,
         404: `Specified pipeline id does not exist in the database.`
       }
     })
@@ -135,7 +138,7 @@ export class PipelineService {
   public static pipelineCommitted(pipelineId: string): CancelablePromise<PipelineRevision | null> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/pipelines/{pipeline_id}/committed',
+      url: '/pipelines/{pipeline_id}/committed',
       path: {
         pipeline_id: pipelineId
       },
@@ -160,6 +163,7 @@ export class PipelineService {
    * @param format Output data format, e.g., 'csv' or 'json'.
    * @param query Query to execute on the table. Must be one of 'table', 'neighborhood', or 'quantiles'. The default value is 'table'
    * @param mode Output mode. Must be one of 'watch' or 'snapshot'. The default value is 'watch'
+   * @param quantiles For 'quantiles' queries: the number of quantiles to output. The default value is 100.
    * @param requestBody When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.
    * @returns Chunk Connection to the endpoint successfully established. The body of the response contains a stream of data chunks.
    * @throws ApiError
@@ -170,11 +174,12 @@ export class PipelineService {
     format: string,
     query?: OutputQuery | null,
     mode?: EgressMode | null,
+    quantiles?: number | null,
     requestBody?: NeighborhoodQuery | null
   ): CancelablePromise<Chunk> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/pipelines/{pipeline_id}/egress/{table_name}',
+      url: '/pipelines/{pipeline_id}/egress/{table_name}',
       path: {
         pipeline_id: pipelineId,
         table_name: tableName
@@ -182,7 +187,8 @@ export class PipelineService {
       query: {
         format: format,
         query: query,
-        mode: mode
+        mode: mode,
+        quantiles: quantiles
       },
       body: requestBody,
       mediaType: 'application/json',
@@ -215,7 +221,7 @@ export class PipelineService {
   public static httpInput(pipelineId: string, tableName: string, format: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/v0/pipelines/{pipeline_id}/ingress/{table_name}',
+      url: '/pipelines/{pipeline_id}/ingress/{table_name}',
       path: {
         pipeline_id: pipelineId,
         table_name: tableName
@@ -242,7 +248,7 @@ export class PipelineService {
   public static pipelineStats(pipelineId: string): CancelablePromise<Record<string, any>> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/pipelines/{pipeline_id}/stats',
+      url: '/pipelines/{pipeline_id}/stats',
       path: {
         pipeline_id: pipelineId
       },
@@ -266,49 +272,58 @@ export class PipelineService {
   public static pipelineValidate(pipelineId: string): CancelablePromise<string> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/pipelines/{pipeline_id}/validate',
+      url: '/pipelines/{pipeline_id}/validate',
       path: {
         pipeline_id: pipelineId
       },
       errors: {
-        400: `The connectors in the config referenced a view that doesn't exist.`,
+        400: `The connectors in the config reference a view that doesn't exist.`,
         404: `Specified pipeline id does not exist in the database.`,
-        503: `Unable to start the pipeline before its program has been compiled.`
+        503: `The program associated with this pipeline has not been compiled.`
       }
     })
   }
 
   /**
-   * Perform action on a pipeline.
-   * Perform action on a pipeline.
+   * Change the desired state of the pipeline.
+   * Change the desired state of the pipeline.
    *
-   * - 'deploy': Deploy a pipeline for the specified program and configuration.
-   * This is a synchronous endpoint, which sends a response once the pipeline has
-   * been initialized.
-   * - 'start': Start a pipeline.
+   * This endpoint allows the user to control the execution of the pipeline,
+   * by changing its desired state attribute (see the discussion of the desired
+   * state model in the [`PipelineStatus`] documentation).
+   *
+   * The endpoint returns immediately after validating the request and forwarding
+   * it to the pipeline. The requested status change completes asynchronously.  On success,
+   * the pipeline enters the requested desired state.  On error, the pipeline
+   * transitions to the `Failed` state. The user
+   * can monitor the current status of the pipeline by polling the `GET /pipeline`
+   * endpoint.
+   *
+   * The following values of the `action` argument are accepted by this endpoint:
+   *
+   * - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
+   * (cloud deployment) to execute the pipeline and initialize its connectors.
+   * - 'start': Start processing data.
    * - 'pause': Pause the pipeline.
-   * - 'shutdown': Terminate the execution of a pipeline. Sends a termination
-   * request to the pipeline process. Returns immediately, without waiting for
-   * the pipeline to terminate (which can take several seconds). The pipeline is
-   * not deleted from the database, but its `status` is set to `shutdown`.
+   * - 'shutdown': Terminate the execution of the pipeline.
    * @param pipelineId Unique pipeline identifier
    * @param action Pipeline action [deploy, start, pause, shutdown]
-   * @returns string Performed a Pipeline action.
+   * @returns any Request accepted.
    * @throws ApiError
    */
-  public static pipelineAction(pipelineId: string, action: string): CancelablePromise<string> {
+  public static pipelineAction(pipelineId: string, action: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/v0/pipelines/{pipeline_id}/{action}',
+      url: '/pipelines/{pipeline_id}/{action}',
       path: {
         pipeline_id: pipelineId,
         action: action
       },
       errors: {
-        400: `The connectors in the config referenced a view that doesn't exist.`,
+        400: `Action is not applicable in the current state of the pipeline.`,
         404: `Specified pipeline id does not exist in the database.`,
-        500: `Timeout waiting for the pipeline to initialize. Indicates an internal system error.`,
-        503: `Unable to start the pipeline before its program has been compiled.`
+        500: `Timeout waiting for the pipeline to initialize.`,
+        503: `The program associated with this pipeline has not been compiled.`
       }
     })
   }

@@ -9,20 +9,24 @@ export enum ClientPipelineStatus {
   UNKNOWN = 'Unknown',
   // Maps to PipelineStatus.SHUTDOWN
   INACTIVE = 'Inactive',
-  CREATING = 'Creating ...',
-  CREATE_FAILURE = 'Failed to deploy',
+  // Maps to PipelineStatus.PROVISIONING
+  PROVISIONING = 'Provisioning …',
+  // Maps to PipelineStatus.INITIALIZING
+  INITIALIZING = 'Creating …',
+  CREATE_FAILURE = 'Create failed',
   // Maps to PipelineStatus.DEPLOYED
   DEPLOYED = 'Deployed',
-  STARTING = 'Starting ...',
-  STARTUP_FAILURE = 'Failed to start',
-  // PipelineStatus.RUNNING
+  STARTING = 'Starting …',
+  STARTUP_FAILURE = 'Starting failed',
+  // Maps to PipelineStatus.RUNNING
   RUNNING = 'Running',
-  PAUSING = 'Pausing ...',
-  // PipelineStatus.PAUSED
+  PAUSING = 'Pausing …',
+  // Maps to PipelineStatus.PAUSED
   PAUSED = 'Paused',
-  // PipelineStatus.FAILED
+  // Maps to PipelineStatus.FAILED
   FAILED = 'Failed',
-  SHUTTING_DOWN = 'Shutting down ...'
+  // Maps to PipelineStatus.SHUTTING_DOWN
+  SHUTTING_DOWN = 'Shutting down …'
 }
 
 interface PipelineState {

@@ -1,4 +1,4 @@
-// Logic to pause a running pipeline.
+// Logic to deploy (and then start) a given pipeline.
 
 import { useCallback } from 'react'
 import { ClientPipelineStatus, usePipelineStateStore } from '../StatusContext'
@@ -8,7 +8,7 @@ import { invalidatePipeline } from 'src/types/defaultQueryFn'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { PipelineAction } from 'src/types/pipeline'
 
-function usePausePipeline() {
+function useStartPipeline() {
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
   const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
@@ -20,28 +20,33 @@ function usePausePipeline() {
     }
   })
 
-  const pausePipelineClick = useCallback(
+  const startPipelineClick = useCallback(
     (pipeline_id: PipelineId) => {
-      if (!pipelineActionLoading && pipelineStatus.get(pipeline_id) == ClientPipelineStatus.RUNNING) {
-        setPipelineStatus(pipeline_id, ClientPipelineStatus.PAUSING)
+      if (!pipelineActionLoading && pipelineStatus.get(pipeline_id) != ClientPipelineStatus.PAUSED) {
         piplineAction(
-          { pipeline_id: pipeline_id, command: 'pause' },
           {
+            pipeline_id: pipeline_id,
+            command: 'deploy' as const
+          },
+          {
+            onSuccess: () => {
+              setPipelineStatus(pipeline_id, ClientPipelineStatus.PROVISIONING)
+            },
             onSettled: () => {
               invalidatePipeline(queryClient, pipeline_id)
             },
             onError: error => {
               pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              setPipelineStatus(pipeline_id, ClientPipelineStatus.RUNNING)
+              setPipelineStatus(pipeline_id, ClientPipelineStatus.CREATE_FAILURE)
             }
           }
         )
       }
     },
-    [pipelineActionLoading, pushMessage, queryClient, piplineAction, pipelineStatus, setPipelineStatus]
+    [piplineAction, pipelineActionLoading, queryClient, pushMessage, setPipelineStatus, pipelineStatus]
   )
 
-  return pausePipelineClick
+  return startPipelineClick
 }
 
-export default usePausePipeline
+export default useStartPipeline

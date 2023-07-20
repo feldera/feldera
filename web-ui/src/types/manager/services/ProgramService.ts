@@ -19,15 +19,15 @@ export class ProgramService {
    * Returns program descriptor, including current program version and
    * Returns program descriptor, including current program version and
    * compilation status.
-   * @param id Unique connector identifier
-   * @param name Unique connector name
+   * @param id Unique program identifier.
+   * @param name Unique program name.
    * @returns ProgramDescr Program status retrieved successfully.
    * @throws ApiError
    */
   public static programStatus(id?: string | null, name?: string | null): CancelablePromise<ProgramDescr> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/program',
+      url: '/program',
       query: {
         id: id,
         name: name
@@ -49,7 +49,7 @@ export class ProgramService {
   public static programCode(programId: string): CancelablePromise<ProgramCodeResponse> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/program/{program_id}/code',
+      url: '/program/{program_id}/code',
       path: {
         program_id: programId
       },
@@ -69,7 +69,7 @@ export class ProgramService {
   public static listPrograms(): CancelablePromise<Array<ProgramDescr>> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/programs'
+      url: '/programs'
     })
   }
 
@@ -87,7 +87,7 @@ export class ProgramService {
   public static newProgram(requestBody: NewProgramRequest): CancelablePromise<NewProgramResponse> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/v0/programs',
+      url: '/programs',
       body: requestBody,
       mediaType: 'application/json',
       errors: {
@@ -111,7 +111,7 @@ export class ProgramService {
   public static updateProgram(requestBody: UpdateProgramRequest): CancelablePromise<UpdateProgramResponse> {
     return __request(OpenAPI, {
       method: 'PATCH',
-      url: '/v0/programs',
+      url: '/programs',
       body: requestBody,
       mediaType: 'application/json',
       errors: {
@@ -134,7 +134,7 @@ export class ProgramService {
   public static compileProgram(requestBody: CompileProgramRequest): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/v0/programs/compile',
+      url: '/programs/compile',
       body: requestBody,
       mediaType: 'application/json',
       errors: {
@@ -157,7 +157,7 @@ export class ProgramService {
   public static cancelProgram(requestBody: CancelProgramRequest): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'DELETE',
-      url: '/v0/programs/compile',
+      url: '/programs/compile',
       body: requestBody,
       mediaType: 'application/json',
       errors: {
@@ -179,7 +179,7 @@ export class ProgramService {
   public static deleteProgram(programId: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'DELETE',
-      url: '/v0/programs/{program_id}',
+      url: '/programs/{program_id}',
       path: {
         program_id: programId
       },

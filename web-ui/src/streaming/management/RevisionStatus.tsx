@@ -35,7 +35,7 @@ import { DiffEditor, MonacoDiffEditor } from '@monaco-editor/react'
 import { diffLines, Change } from 'diff'
 
 import { ApiError, ErrorResponse, PipelineDescr, PipelineRevision, ProgramCodeResponse } from 'src/types/manager'
-import useStartPipeline from './hooks/useStartPipeline'
+import useStartPipeline from './hooks/useDeployPipeline'
 import { ThemeColor } from 'src/@core/layouts/types'
 
 interface ErrorProps {
@@ -141,7 +141,6 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
           size='small'
           onClick={() => {
             setShow(false)
-            console.log('close clicked? ' + show)
           }}
           sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
         >

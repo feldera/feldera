@@ -4,7 +4,7 @@ import { NodeProps, useReactFlow } from 'reactflow'
 import { useBuilderState } from '../useBuilderState'
 import useDebouncedSave from './useDebouncedSave'
 import { useQueryClient } from '@tanstack/react-query'
-import { PipelineDescr, ProgramDescr } from 'src/types/manager'
+import { Pipeline, ProgramDescr } from 'src/types/manager'
 import { useCallback } from 'react'
 
 // Replaces the program placeholder node with a sqlProgram node
@@ -73,12 +73,11 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
       const pipelineId = null
       if (pipelineId) {
         // TODO: figure out if it's better to optimistically update query here?
-        queryClient.setQueryData(
-          ['pipelineStatus', { pipeline_id: pipelineId }],
-          (oldData: PipelineDescr | undefined) => {
-            return oldData ? { ...oldData, program_id: project.program_id } : oldData
-          }
-        )
+        queryClient.setQueryData(['pipelineStatus', { pipeline_id: pipelineId }], (oldData: Pipeline | undefined) => {
+          return oldData
+            ? { ...oldData, descriptor: { ...oldData.descriptor, program_id: project.program_id } }
+            : oldData
+        })
       }
       replacePlaceholder(project)
       savePipeline()

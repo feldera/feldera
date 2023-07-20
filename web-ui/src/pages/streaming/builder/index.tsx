@@ -12,7 +12,7 @@ import { useBuilderState } from 'src/streaming/builder/useBuilderState'
 import {
   AttachedConnector,
   CancelError,
-  PipelineDescr,
+  Pipeline,
   PipelineId,
   PipelineService,
   ConnectorDescr,
@@ -88,7 +88,7 @@ export const PipelineWithProvider = (props: {
   const { pushMessage } = useStatusNotification()
   const projects = useQuery<ProgramDescr[]>(['program'])
   const connectorQuery = useQuery<ConnectorDescr[]>(['connector'])
-  const pipelineQuery = useQuery<PipelineDescr>(['pipelineStatus', { pipeline_id: pipelineId }], {
+  const pipelineQuery = useQuery<Pipeline>(['pipelineStatus', { pipeline_id: pipelineId }], {
     enabled:
       pipelineId !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
   })
@@ -102,13 +102,14 @@ export const PipelineWithProvider = (props: {
         !connectorQuery.isLoading &&
         !connectorQuery.isError
       ) {
-        setPipelineId(() => pipelineQuery.data.pipeline_id)
-        setName(pipelineQuery.data.name)
-        setDescription(pipelineQuery.data.description)
-        setConfig(pipelineQuery.data.config)
+        const descriptor = pipelineQuery.data.descriptor
+        setPipelineId(() => descriptor.pipeline_id)
+        setName(descriptor.name)
+        setDescription(descriptor.description)
+        setConfig(descriptor.config)
         setSaveState('isUpToDate')
 
-        const attachedConnectors = pipelineQuery.data.attached_connectors
+        const attachedConnectors = descriptor.attached_connectors
         let invalidConnections: AttachedConnector[] = []
         let validConnections: AttachedConnector[] = attachedConnectors
         console.log(attachedConnectors)
@@ -117,8 +118,8 @@ export const PipelineWithProvider = (props: {
         // the saveState every time the backend returns some result. Because it
         // could cancel potentially in-progress saves (started by client action).
 
-        if (pipelineQuery.data.program_id) {
-          const foundProject = projects.data.find(p => p.program_id === pipelineQuery.data.program_id)
+        if (descriptor.program_id) {
+          const foundProject = projects.data.find(p => p.program_id === descriptor.program_id)
           if (foundProject) {
             if (!foundProject.schema) {
               setMissingSchemaDialog(true)
@@ -272,15 +273,18 @@ export const PipelineWithProvider = (props: {
             // show the old connectors again after deletion.
             queryClient.setQueryData(
               ['pipelineStatus', { pipeline_id: pipelineId }],
-              (oldData: PipelineDescr | undefined) => {
+              (oldData: Pipeline | undefined) => {
                 return oldData
                   ? {
                       ...oldData,
-                      name,
-                      description,
-                      program_id: project?.program_id,
-                      config,
-                      attached_connectors: connectors
+                      descriptor: {
+                        ...oldData.descriptor,
+                        name,
+                        description,
+                        program_id: project?.program_id,
+                        config,
+                        attached_connectors: connectors
+                      }
                     }
                   : oldData
               }
