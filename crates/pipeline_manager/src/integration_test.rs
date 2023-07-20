@@ -213,16 +213,21 @@ impl TestConfig {
 
     /// Wait for the pipeline to reach the specified status.
     /// Panic afrer `timeout`.
-    async fn wait_for_pipeline_status(&self, id: &str, status: PipelineStatus, timeout: Duration) {
+    async fn wait_for_pipeline_status(
+        &self,
+        id: &str,
+        status: PipelineStatus,
+        timeout: Duration,
+    ) -> Pipeline {
         let start = Instant::now();
         loop {
             let mut response = self.get(format!("/v0/pipeline?id={}", id)).await;
 
             let pipeline = response.json::<Pipeline>().await.unwrap();
 
-            println!("Pipeline:\n{pipeline:#?}");
+            // println!("Pipeline:\n{pipeline:#?}");
             if pipeline.state.current_status == status {
-                break;
+                return pipeline;
             }
             if start.elapsed() >= timeout {
                 panic!("Timeout waiting for pipeline status {status:?}");
@@ -303,6 +308,43 @@ async fn setup() -> TestConfig {
     config
 }
 
+async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> String {
+    let program_request = json!({
+        "name":  "test",
+        "description": "desc",
+        "code": sql,
+    });
+    let mut req = config.post("/v0/programs", &program_request).await;
+    assert_eq!(StatusCode::CREATED, req.status());
+    let resp: Value = req.json().await.unwrap();
+    let id = resp["program_id"].as_str().unwrap();
+    let version = resp["version"].as_i64().unwrap();
+    config.compile(id, version).await;
+
+    let pipeline_request = json!({
+        "name":  "test",
+        "description": "desc",
+        "program_id": Some(id.to_string()),
+        "config": "",
+        "connectors": null
+    });
+    let mut req = config.post("/v0/pipelines", &pipeline_request).await;
+    let resp: Value = req.json().await.unwrap();
+    let id = resp["pipeline_id"].as_str().unwrap();
+
+    // TODO: `/deploy` is on its way out.
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/deploy", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+    config
+        .wait_for_pipeline_status(id, PipelineStatus::Paused, Duration::from_millis(100_000))
+        .await;
+
+    id.to_string()
+}
+
 #[actix_web::test]
 #[serial]
 async fn lists_at_initialization_are_empty() {
@@ -361,50 +403,11 @@ async fn program_create_twice() {
 #[serial]
 async fn deploy_pipeline() {
     let config = setup().await;
-    let program_request = json!({
-        "name":  "test",
-        "description": "desc",
-        "code": "create table t1(c1 integer); create view v1 as select * from t1;"
-    });
-    let mut req = config.post("/v0/programs", &program_request).await;
-    assert_eq!(StatusCode::CREATED, req.status());
-    let resp: Value = req.json().await.unwrap();
-    let id = resp["program_id"].as_str().unwrap();
-    let version = resp["version"].as_i64().unwrap();
-    config.compile(id, version).await;
-
-    let pipeline_request = json!({
-        "name":  "test",
-        "description": "desc",
-        "program_id": Some(id.to_string()),
-        "config": "",
-        "connectors": null
-    });
-    let mut req = config.post("/v0/pipelines", &pipeline_request).await;
-    let resp: Value = req.json().await.unwrap();
-    let id = resp["pipeline_id"].as_str().unwrap();
-
-    //
-    // TODO: We should not bubble a connection refused error. Instead,
-    // we should return an error about the pipeline not running.
-    // Tracking issue: https://github.com/feldera/dbsp/issues/343
-    //
-    // Start the pipeline before it has been deployed
-    // let mut req = config
-    //     .post_no_body(format!("/v0/pipelines/{}/start", id))
-    //     .await;
-    // let resp: Value = req.json().await.unwrap();
-    // assert_eq!("Pipeline is not deployed", resp.as_str().unwrap());
-
-    // Deploy the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/deploy", id))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-
-    config
-        .wait_for_pipeline_status(id, PipelineStatus::Paused, Duration::from_millis(100_000))
-        .await;
+    let id = deploy_pipeline_without_connectors(
+        &config,
+        "create table t1(c1 integer); create view v1 as select * from t1;",
+    )
+    .await;
 
     // Pause a pipeline before it is started
     let resp = config
@@ -433,7 +436,7 @@ async fn deploy_pipeline() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(id, PipelineStatus::Paused, Duration::from_millis(1_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Paused, Duration::from_millis(1_000))
         .await;
 
     // Querying quantiles should work in paused state.
@@ -456,17 +459,8 @@ async fn deploy_pipeline() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
         .await;
-
-    // TODO: Deploying again currently creates another instance, which
-    // might not be correct behavior
-
-    // let mut req = config
-    //     .post_no_body(format!("/v0/pipelines/{}/deploy", id))
-    //     .await;
-    // let resp: Value = req.json().await.unwrap();
-    // assert_eq!("Pipeline successfully deployed.", resp.as_str().unwrap());
 
     // Shutdown the pipeline
     let resp = config
@@ -474,17 +468,59 @@ async fn deploy_pipeline() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .await;
+}
+
+// Correctly report pipeline panic to the user.
+#[actix_web::test]
+#[serial]
+async fn pipeline_panic() {
+    let config = setup().await;
+
+    // This SQL program is known to panic.
+    let id = deploy_pipeline_without_connectors(
+        &config,
+        "create table t1(c1 integer); create view v1 as select element(array [2, 3]) from t1;",
+    )
+    .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
         .await;
 
-    //
-    // TODO: We should not bubble a connection refused error. Instead,
-    // we should return an error about the pipeline not running.
-    // Tracking issue: https://github.com/feldera/dbsp/issues/343
-    //
-    // let mut req = config
-    //     .post_no_body(format!("/v0/pipelines/{}/pause", id))
-    //     .await;
-    // let resp: Value = req.json().await.unwrap();
-    // assert_eq!("Pipeline is not deployed", resp.as_str().unwrap());
+    // Push some data.  This should cause a panic.
+    let req = config
+        .post_csv(
+            format!("/v0/pipelines/{}/ingress/T1", id),
+            "1\n2\n3\n".to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    // The manager should discover the error next time it polls the pipeline.
+    let pipeline = config
+        .wait_for_pipeline_status(&id, PipelineStatus::Failed, Duration::from_millis(20_000))
+        .await;
+
+    assert_eq!(
+        pipeline.state.error.as_ref().unwrap().error_code,
+        "RuntimeError.WorkerPanic"
+    );
+    println!("status: {pipeline:?}");
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .await;
 }

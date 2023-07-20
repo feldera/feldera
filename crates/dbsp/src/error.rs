@@ -58,16 +58,16 @@ impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
             Self::Scheduler(error) => {
-                write!(f, "scheduler error: '{error}'")
+                write!(f, "scheduler error: {error}")
             }
             Self::Runtime(error) => {
-                write!(f, "runtime error: '{error}'")
+                write!(f, "runtime error: {error}")
             }
             Self::IO(error) => {
-                write!(f, "IO error: '{error}'")
+                write!(f, "IO error: {error}")
             }
             Self::Constructor(error) => {
-                write!(f, "circuit construction error: '{error}'")
+                write!(f, "circuit construction error: {error}")
             }
         }
     }

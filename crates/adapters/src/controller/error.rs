@@ -385,10 +385,10 @@ impl Display for ControllerError {
                 write!(f, "I/O error {context}: {io_error}")
             }
             Self::CliArgsError { error } => {
-                write!(f, "Error parsing command line arguments: '{error}'")
+                write!(f, "Error parsing command line arguments: {error}")
             }
             Self::Config { config_error } => {
-                write!(f, "invalid controller configuration: '{config_error}'")
+                write!(f, "invalid controller configuration: {config_error}")
             }
             Self::InputTransportError {
                 endpoint_name,
@@ -397,7 +397,7 @@ impl Display for ControllerError {
             } => {
                 write!(
                     f,
-                    "{}error on input endpoint '{endpoint_name}': '{error}'",
+                    "{}error on input endpoint '{endpoint_name}': {error}",
                     if *fatal { "FATAL " } else { "" }
                 )
             }
@@ -408,7 +408,7 @@ impl Display for ControllerError {
             } => {
                 write!(
                     f,
-                    "{}error on output endpoint '{endpoint_name}': '{error}'",
+                    "{}error on output endpoint '{endpoint_name}': {error}",
                     if *fatal { "FATAL " } else { "" }
                 )
             }
@@ -418,7 +418,7 @@ impl Display for ControllerError {
             } => {
                 write!(
                     f,
-                    "parse error on input endpoint '{endpoint_name}': '{error}'"
+                    "parse error on input endpoint '{endpoint_name}': {error}"
                 )
             }
             Self::EncodeError {
@@ -427,14 +427,14 @@ impl Display for ControllerError {
             } => {
                 write!(
                     f,
-                    "encoder error on output endpoint '{endpoint_name}': '{error}'"
+                    "encoder error on output endpoint '{endpoint_name}': {error}"
                 )
             }
             Self::PrometheusError { error } => {
                 write!(f, "Error in the Prometheus metrics module: '{error}'")
             }
             Self::DbspError { error } => {
-                write!(f, "DBSP error: '{error}'")
+                write!(f, "DBSP error: {error}")
             }
             Self::DbspPanic => {
                 write!(f, "Panic inside the DBSP runtime")
