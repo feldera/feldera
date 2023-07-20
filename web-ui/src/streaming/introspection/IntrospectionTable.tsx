@@ -4,22 +4,22 @@ import Card from '@mui/material/Card'
 import { DataGridPro, GridColumns, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { PipelineDescr, PipelineStatus, OpenAPI, PipelineRevision } from 'src/types/manager'
+import { Pipeline, PipelineStatus, OpenAPI, PipelineRevision } from 'src/types/manager'
 import { parse } from 'csv-parse'
 
 export type IntrospectionTableProps = {
-  pipelineDescr: PipelineDescr | undefined
+  pipeline: Pipeline | undefined
   name: string | undefined
 }
 
-export const IntrospectionTable = ({ pipelineDescr, name }: IntrospectionTableProps) => {
+export const IntrospectionTable = ({ pipeline, name }: IntrospectionTableProps) => {
   const apiRef = useGridApiRef()
   const [headers, setHeaders] = useState<GridColumns | undefined>(undefined)
 
   const pipelineRevisionQuery = useQuery<PipelineRevision>(
-    ['pipelineLastRevision', { pipeline_id: pipelineDescr?.pipeline_id }],
+    ['pipelineLastRevision', { pipeline_id: pipeline?.descriptor.pipeline_id }],
     {
-      enabled: pipelineDescr !== undefined && pipelineDescr.program_id !== undefined
+      enabled: pipeline !== undefined && pipeline.descriptor.program_id !== undefined
     }
   )
   useEffect(() => {
@@ -50,8 +50,8 @@ export const IntrospectionTable = ({ pipelineDescr, name }: IntrospectionTablePr
   // Stream changes from backend and update the table
   useEffect(() => {
     if (
-      pipelineDescr &&
-      pipelineDescr.status == PipelineStatus.RUNNING &&
+      pipeline &&
+      pipeline.state.current_status == PipelineStatus.RUNNING &&
       name !== undefined &&
       headers !== undefined &&
       apiRef.current
@@ -110,10 +110,10 @@ export const IntrospectionTable = ({ pipelineDescr, name }: IntrospectionTablePr
         }
       }
 
-      const url = OpenAPI.BASE + '/v0/pipelines/' + pipelineDescr.pipeline_id + '/egress/' + name + '?format=csv'
+      const url = OpenAPI.BASE + '/v0/pipelines/' + pipeline.descriptor.pipeline_id + '/egress/' + name + '?format=csv'
       watchStream(url)
     }
-  }, [pipelineDescr, name, apiRef, headers])
+  }, [pipeline, name, apiRef, headers])
 
   return (
     <Card>

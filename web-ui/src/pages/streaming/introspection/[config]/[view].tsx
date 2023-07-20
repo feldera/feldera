@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
 import PageHeader from 'src/layouts/components/page-header'
-import { PipelineDescr, PipelineId } from 'src/types/manager'
+import { Pipeline, PipelineId } from 'src/types/manager'
 import { IntrospectionTable } from 'src/streaming/introspection/IntrospectionTable'
 
 const IntrospectInputOutput = () => {
@@ -25,34 +25,34 @@ const IntrospectInputOutput = () => {
       setTableOrView(view)
     }
   }, [pipelineId, setPipelineId, config, view, setTableOrView])
-  const [pipelineDescr, setPipelineDescr] = useState<PipelineDescr | undefined>(undefined)
+  const [pipeline, setPipeline] = useState<Pipeline | undefined>(undefined)
 
-  const configQuery = useQuery<PipelineDescr>(['pipelineStatus', { pipeline_id: pipelineId }], {
+  const configQuery = useQuery<Pipeline>(['pipelineStatus', { pipeline_id: pipelineId }], {
     enabled: pipelineId !== undefined
   })
   useEffect(() => {
     if (!configQuery.isLoading && !configQuery.isError) {
-      setPipelineDescr(configQuery.data)
+      setPipeline(configQuery.data)
     }
-  }, [configQuery.isLoading, configQuery.isError, configQuery.data, setPipelineDescr])
+  }, [configQuery.isLoading, configQuery.isError, configQuery.data, setPipeline])
 
   return (
     !configQuery.isLoading &&
     !configQuery.isError &&
-    pipelineDescr &&
+    pipeline &&
     tableOrView && (
       <Grid container spacing={6} className='match-height'>
         <PageHeader
           title={
             <Typography variant='h5'>
-              {pipelineDescr?.name} / {tableOrView}
+              {pipeline?.descriptor.name} / {tableOrView}
             </Typography>
           }
           subtitle={<Typography variant='body2'>Introspection</Typography>}
         />
 
         <Grid item xs={12}>
-          <IntrospectionTable pipelineDescr={pipelineDescr} name={tableOrView} />
+          <IntrospectionTable pipeline={pipeline} name={tableOrView} />
         </Grid>
       </Grid>
     )

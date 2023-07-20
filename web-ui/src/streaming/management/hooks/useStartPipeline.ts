@@ -2,9 +2,9 @@
 
 import { useCallback } from 'react'
 import { ClientPipelineStatus, usePipelineStateStore } from '../StatusContext'
-import { PipelineService, CancelError, PipelineId, PipelineStatus } from 'src/types/manager'
+import { PipelineService, CancelError, PipelineId } from 'src/types/manager'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { invalidatePipeline, pipelineStatusQueryCacheUpdate } from 'src/types/defaultQueryFn'
+import { invalidatePipeline } from 'src/types/defaultQueryFn'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { PipelineAction } from 'src/types/pipeline'
 
@@ -27,46 +27,6 @@ function useStartPipeline() {
         (pipelineStatus.get(pipeline_id) != ClientPipelineStatus.PAUSED ||
           pipelineStatus.get(pipeline_id) != ClientPipelineStatus.DEPLOYED)
       ) {
-        setPipelineStatus(pipeline_id, ClientPipelineStatus.CREATING)
-        piplineAction(
-          {
-            pipeline_id: pipeline_id,
-            command: 'deploy' as const
-          },
-          {
-            onSuccess: () => {
-              setPipelineStatus(pipeline_id, ClientPipelineStatus.STARTING)
-              piplineAction(
-                {
-                  pipeline_id: pipeline_id,
-                  command: 'start' as const
-                },
-                {
-                  onSettled: () => {
-                    invalidatePipeline(queryClient, pipeline_id)
-                  },
-                  onSuccess: () => {
-                    setPipelineStatus(pipeline_id, ClientPipelineStatus.RUNNING)
-                    pipelineStatusQueryCacheUpdate(queryClient, pipeline_id, PipelineStatus.RUNNING)
-                  },
-                  onError: error => {
-                    pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-                    setPipelineStatus(pipeline_id, ClientPipelineStatus.STARTUP_FAILURE)
-                  }
-                }
-              )
-            },
-            onSettled: () => {
-              invalidatePipeline(queryClient, pipeline_id)
-            },
-            onError: error => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-              setPipelineStatus(pipeline_id, ClientPipelineStatus.CREATE_FAILURE)
-            }
-          }
-        )
-      } else if (!pipelineActionLoading && pipelineStatus.get(pipeline_id) != ClientPipelineStatus.INACTIVE) {
-        // Pipeline already exists, we just need to start it
         setPipelineStatus(pipeline_id, ClientPipelineStatus.STARTING)
         piplineAction(
           {
@@ -76,10 +36,6 @@ function useStartPipeline() {
           {
             onSettled: () => {
               invalidatePipeline(queryClient, pipeline_id)
-            },
-            onSuccess: () => {
-              setPipelineStatus(pipeline_id, ClientPipelineStatus.RUNNING)
-              pipelineStatusQueryCacheUpdate(queryClient, pipeline_id, PipelineStatus.RUNNING)
             },
             onError: error => {
               pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })

@@ -15,15 +15,15 @@ export class ConnectorService {
   /**
    * Returns connector descriptor.
    * Returns connector descriptor.
-   * @param id Unique connector identifier
-   * @param name Unique connector name
+   * @param id Unique connector identifier.
+   * @param name Unique connector name.
    * @returns ConnectorDescr connector status retrieved successfully.
    * @throws ApiError
    */
   public static connectorStatus(id?: string | null, name?: string | null): CancelablePromise<ConnectorDescr> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/connector',
+      url: '/connector',
       query: {
         id: id,
         name: name
@@ -44,7 +44,7 @@ export class ConnectorService {
   public static listConnectors(): CancelablePromise<Array<ConnectorDescr>> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/connectors'
+      url: '/connectors'
     })
   }
 
@@ -58,7 +58,7 @@ export class ConnectorService {
   public static newConnector(requestBody: NewConnectorRequest): CancelablePromise<NewConnectorResponse> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/v0/connectors',
+      url: '/connectors',
       body: requestBody,
       mediaType: 'application/json'
     })
@@ -77,7 +77,7 @@ export class ConnectorService {
   public static updateConnector(requestBody: UpdateConnectorRequest): CancelablePromise<UpdateConnectorResponse> {
     return __request(OpenAPI, {
       method: 'PATCH',
-      url: '/v0/connectors',
+      url: '/connectors',
       body: requestBody,
       mediaType: 'application/json',
       errors: {
@@ -96,7 +96,7 @@ export class ConnectorService {
   public static deleteConnector(connectorId: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'DELETE',
-      url: '/v0/connectors/{connector_id}',
+      url: '/connectors/{connector_id}',
       path: {
         connector_id: connectorId
       },
