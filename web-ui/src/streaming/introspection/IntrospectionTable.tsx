@@ -110,7 +110,7 @@ export const IntrospectionTable = ({ pipeline, name }: IntrospectionTableProps) 
         }
       }
 
-      const url = OpenAPI.BASE + '/v0/pipelines/' + pipeline.descriptor.pipeline_id + '/egress/' + name + '?format=csv'
+      const url = OpenAPI.BASE + '/pipelines/' + pipeline.descriptor.pipeline_id + '/egress/' + name + '?format=csv'
       watchStream(url)
     }
   }, [pipeline, name, apiRef, headers])
