@@ -229,6 +229,7 @@ public class CalciteCompiler implements IWritesLogs {
         CalciteSchema rootSchema = CalciteSchema.createRootSchema(false, false);
         rootSchema.add(catalog.schemaName, this.catalog);
         // Register new types
+        rootSchema.add("DATETIME", factory -> factory.createSqlType(SqlTypeName.TIMESTAMP));
         rootSchema.add("INT2", factory -> factory.createSqlType(SqlTypeName.SMALLINT));
         rootSchema.add("INT8", factory -> factory.createSqlType(SqlTypeName.BIGINT));
         rootSchema.add("INT4", factory -> factory.createSqlType(SqlTypeName.INTEGER));
@@ -362,9 +363,13 @@ public class CalciteCompiler implements IWritesLogs {
                 PruneEmptyRules.JOIN_LEFT_INSTANCE,
                 PruneEmptyRules.JOIN_RIGHT_INSTANCE,
                 PruneEmptyRules.SORT_FETCH_ZERO_INSTANCE);
+        HepProgram window = createProgram(
+                CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
+        );
         HepProgram distinctAggregates = createProgram(
                 // Convert DISTINCT aggregates into separate computations and join the results
-                CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN);
+                CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN
+        );
         HepProgram multiJoins = new HepProgramBuilder()
                 // Join order optimization
                 .addRuleInstance(CoreRules.FILTER_INTO_JOIN)
@@ -393,12 +398,11 @@ public class CalciteCompiler implements IWritesLogs {
                 CoreRules.PROJECT_JOIN_JOIN_REMOVE,
                 CoreRules.PROJECT_JOIN_REMOVE
                 );
-        HepProgram window = createProgram(
-                CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
-        );
-            if (avoidBushyJoin(rel))
-                return Linq.list(constantFold, removeEmpty, window, distinctAggregates, move, mergeNodes, remove);
-            return Linq.list(constantFold, removeEmpty, window, distinctAggregates, move, multiJoins, mergeNodes, remove);
+        if (avoidBushyJoin(rel))
+            return Linq.list(constantFold, removeEmpty, window,
+                    distinctAggregates, move, mergeNodes, remove);
+        return Linq.list(constantFold, removeEmpty, window, distinctAggregates,
+                move, multiJoins, mergeNodes, remove);
             /*
         return Linq.list(
                 CoreRules.AGGREGATE_PROJECT_PULL_UP_CONSTANTS,

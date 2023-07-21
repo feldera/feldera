@@ -20,7 +20,7 @@ public enum DBSPTypeCode {
     NULL("null", "()", ""),
     STR("str", "str", ""),
     STRING("s", "String", "String"),
-    TIME("time", "Time", ""),
+    TIME("Time", "Time", ""),
     TIMESTAMP("Timestamp", "Timestamp", "Timestamp"),
     TIMESTAMP_TZ("", "", ""),
     UNIT("", "()", "Unit"),  // JIT use only

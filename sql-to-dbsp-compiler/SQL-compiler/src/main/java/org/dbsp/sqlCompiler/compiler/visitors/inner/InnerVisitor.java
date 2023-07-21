@@ -521,24 +521,32 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
         return this.preorder((DBSPLiteral) node);
     }
 
-    public VisitDecision preorder(DBSPI16Literal node) {
+    public VisitDecision preorder(DBSPIntLiteral node) {
         return this.preorder((DBSPLiteral) node);
+    }
+
+    public VisitDecision preorder(DBSPI8Literal node) {
+        return this.preorder((DBSPIntLiteral) node);
+    }
+
+    public VisitDecision preorder(DBSPI16Literal node) {
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPI32Literal node) {
-        return this.preorder((DBSPLiteral) node);
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPU32Literal node) {
-        return this.preorder((DBSPLiteral) node);
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPI64Literal node) {
-        return this.preorder((DBSPLiteral) node);
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPU64Literal node) {
-        return this.preorder((DBSPLiteral) node);
+        return this.preorder((DBSPIntLiteral) node);
     }
 
     public VisitDecision preorder(DBSPBoolLiteral node) {
@@ -961,24 +969,32 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
         this.postorder((DBSPLiteral) node);
     }
 
-    public void postorder(DBSPI16Literal node) {
+    public void postorder(DBSPIntLiteral node) {
         this.postorder((DBSPLiteral) node);
+    }
+
+    public void postorder(DBSPI8Literal node) {
+        this.postorder((DBSPIntLiteral) node);
+    }
+
+    public void postorder(DBSPI16Literal node) {
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPI32Literal node) {
-        this.postorder((DBSPLiteral) node);
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPU32Literal node) {
-        this.postorder((DBSPLiteral) node);
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPI64Literal node) {
-        this.postorder((DBSPLiteral) node);
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPU64Literal node) {
-        this.postorder((DBSPLiteral) node);
+        this.postorder((DBSPIntLiteral) node);
     }
 
     public void postorder(DBSPBoolLiteral node) {

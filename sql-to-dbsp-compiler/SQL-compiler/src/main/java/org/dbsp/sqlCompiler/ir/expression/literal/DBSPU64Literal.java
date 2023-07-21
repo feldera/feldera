@@ -33,7 +33,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPU64Literal extends DBSPLiteral {
+public class DBSPU64Literal extends DBSPIntLiteral {
     @Nullable
     public final Long value;
 
@@ -62,10 +62,6 @@ public class DBSPU64Literal extends DBSPLiteral {
 
     public DBSPU64Literal(@Nullable Long value, boolean nullable) {
         this(CalciteObject.EMPTY, value, nullable);
-    }
-
-    public DBSPTypeInteger getIntegerType() {
-        return this.type.to(DBSPTypeInteger.class);
     }
 
     @Override

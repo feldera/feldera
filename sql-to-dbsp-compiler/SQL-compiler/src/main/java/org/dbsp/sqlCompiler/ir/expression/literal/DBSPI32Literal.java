@@ -33,7 +33,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPI32Literal extends DBSPLiteral {
+public class DBSPI32Literal extends DBSPIntLiteral {
     @Nullable
     public final Integer value;
 
@@ -62,10 +62,6 @@ public class DBSPI32Literal extends DBSPLiteral {
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
-    }
-
-    public DBSPTypeInteger getIntegerType() {
-        return this.type.to(DBSPTypeInteger.class);
     }
 
     @Override

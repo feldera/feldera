@@ -10,6 +10,7 @@ public enum DBSPOpcode {
     NEG("-", false),
     UNARY_PLUS("+", false),
     NOT("!", false),
+    // Indicator(x) = if x == null { 0 } else { 1 }
     INDICATOR("indicator", false),
     IS_FALSE("is_false", false),
     IS_TRUE("is_true", false),
@@ -41,6 +42,8 @@ public enum DBSPOpcode {
     CONCAT("||", false),
     IS_DISTINCT("is_distinct", false),
     IS_NOT_DISTINCT("is_not_distinct", false),
+    // if_selected(x, p) = if p { Some(x) } else { None }
+    IF_SELECTED("if_selected", false),
 
     // Aggregate operations
     AGG_MAX("agg_max", true),

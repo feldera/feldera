@@ -70,6 +70,7 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
         this.arithmeticFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
         this.arithmeticFunctions.put("mul_by_ref", DBSPOpcode.MUL_WEIGHT);
+        this.arithmeticFunctions.put("if_selected", DBSPOpcode.IF_SELECTED);
 
         this.dateFunctions.put("plus", DBSPOpcode.ADD);
         this.dateFunctions.put("minus", DBSPOpcode.SUB);

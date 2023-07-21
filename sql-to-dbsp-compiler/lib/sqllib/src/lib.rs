@@ -8,7 +8,7 @@ pub mod string;
 pub mod timestamp;
 
 use crate::interval::ShortInterval;
-use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
+use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64, HasZero};
 use geopoint::GeoPoint;
 use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
@@ -332,6 +332,7 @@ macro_rules! some_operator {
 #[macro_export]
 macro_rules! for_all_int_compare {
     ($func_name: ident, $ret_type: ty) => {
+        some_operator!($func_name, i8, i8, bool);
         some_operator!($func_name, i16, i16, bool);
         some_operator!($func_name, i32, i32, bool);
         some_operator!($func_name, i64, i64, bool);
@@ -360,6 +361,7 @@ macro_rules! for_all_compare {
 #[macro_export]
 macro_rules! for_all_int_operator {
     ($func_name: ident) => {
+        some_operator!($func_name, i8, i8, i8);
         some_operator!($func_name, i16, i16, i16);
         some_operator!($func_name, i32, i32, i32);
         some_operator!($func_name, i64, i64, i64);
@@ -494,6 +496,24 @@ pub fn indicator<T>(value: Option<T>) -> i64 {
     }
 }
 
+#[inline(always)]
+pub fn if_selected<T>(value: T, predicate: bool) -> T
+where
+    T: HasZero
+{
+    if predicate { value } else { T::zero() }
+}
+
+#[inline(always)]
+pub fn if_selectedN<T>(value: T, predicate: bool) -> Option<T> {
+    if predicate { Some(value) } else { None }
+}
+
+#[inline(always)]
+pub fn if_selectedNN<T>(value: Option<T>, predicate: bool) -> Option<T> {
+    if predicate { value } else { None }
+}
+
 pub fn agg_max_N_N<T>(left: Option<T>, right: Option<T>) -> Option<T>
 where
     T: Ord + Copy,
@@ -589,6 +609,11 @@ where
 }
 
 #[inline(always)]
+pub fn abs_i8(left: i8) -> i8 {
+    left.abs()
+}
+
+#[inline(always)]
 pub fn abs_i16(left: i16) -> i16 {
     left.abs()
 }
@@ -618,6 +643,7 @@ pub fn abs_decimal(left: Decimal) -> Decimal {
     left.abs()
 }
 
+some_polymorphic_function1!(abs, i8, i8, i8);
 some_polymorphic_function1!(abs, i16, i16, i16);
 some_polymorphic_function1!(abs, i32, i32, i32);
 some_polymorphic_function1!(abs, i64, i64, i64);

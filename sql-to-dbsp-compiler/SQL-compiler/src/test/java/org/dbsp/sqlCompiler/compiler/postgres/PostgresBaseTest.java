@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.apache.calcite.config.Lex;
+import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -18,9 +19,11 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -35,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFloat;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 
 import javax.annotation.Nullable;
@@ -68,14 +72,17 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         return new DBSPCompiler(options);
     }
 
-    // Calcite is not very flexible regarding timestamp formats
     public DBSPCompiler compileQuery(String query, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareData(compiler);
         compiler.compileStatement(query);
+        if (!compiler.options.optimizerOptions.throwOnError) {
+            compiler.throwIfErrorsOccurred();
+        }
         return compiler;
     }
 
+    // Calcite is not very flexible regarding timestamp formats
     static final SimpleDateFormat[] TIMESTAMP_INPUT_FORMAT = {
             new SimpleDateFormat("EEE MMM d HH:mm:ss.SSS yyyy"),
             new SimpleDateFormat("EEE MMM d HH:mm:ss yyyy G"),
@@ -126,6 +133,12 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         }
     }
 
+    static DBSPExpression convertTime(@Nullable String time) {
+        if (time == null || time.isEmpty() || time.equalsIgnoreCase("null"))
+            return DBSPLiteral.none(DBSPTypeTime.NULLABLE_INSTANCE);
+        return new DBSPTimeLiteral(CalciteObject.EMPTY, DBSPTypeTime.NULLABLE_INSTANCE, new TimeString(time));
+    }
+
     public DBSPZSetLiteral.Contents parseTable(String table, DBSPType outputType) {
         DBSPTypeZSet zset = outputType.to(DBSPTypeZSet.class);
         DBSPZSetLiteral.Contents result = DBSPZSetLiteral.Contents.emptyWithElementType(zset.elementType);
@@ -133,8 +146,16 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
 
         String[] lines = table.split("\n", -1);
         boolean inHeader = true;
+        boolean first = true;
         for (String line: lines) {
-            if (line.startsWith("---")) {
+            if (line.isEmpty() && first)
+                continue;
+            if (line.startsWith("+---")) {
+                if (first)
+                    continue;
+            }
+            first = false;
+            if (line.contains("---")) {
                 inHeader = false;
                 continue;
             }
@@ -143,6 +164,8 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
             int comment = line.indexOf("--");
             if (comment >= 0)
                 line = line.substring(0, comment);
+            if (line.startsWith("|") && line.endsWith("|"))
+                line = line.substring(1, line.length() - 2);
             String[] columns = line.split("[|]");
             if (columns.length != tuple.size())
                 throw new RuntimeException("Row has " + columns.length + " columns, but expected " + tuple.size());
@@ -172,9 +195,14 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
                     columnValue = convertTimestamp(column, fieldType.mayBeNull);
                 } else if (fieldType.is(DBSPTypeDate.class)) {
                     columnValue = convertDate(column);
+                } else if (fieldType.is(DBSPTypeTime.class)) {
+                    columnValue = convertTime(column);
                 } else if (fieldType.is(DBSPTypeInteger.class)) {
                     DBSPTypeInteger intType = fieldType.to(DBSPTypeInteger.class);
                     switch (intType.getWidth()) {
+                        case 8:
+                            columnValue = new DBSPI8Literal(Byte.parseByte(column), fieldType.mayBeNull);
+                            break;
                         case 16:
                             columnValue = new DBSPI16Literal(Short.parseShort(column), fieldType.mayBeNull);
                             break;
@@ -223,6 +251,8 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareData(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
+        if (!compiler.options.optimizerOptions.throwOnError)
+            compiler.throwIfErrorsOccurred();
         compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPType outputType = circuit.getOutputType(0);

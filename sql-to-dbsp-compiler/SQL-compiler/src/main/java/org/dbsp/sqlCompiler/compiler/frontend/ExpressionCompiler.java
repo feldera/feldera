@@ -216,6 +216,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return left.setMayBeNull(false);
             if (rf != null)
                 return right.setMayBeNull(false);
+            if (rd != null)
+                return left.setMayBeNull(false);
         }
         throw new UnimplementedException("Cast from " + right + " to " + left);
     }

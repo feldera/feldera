@@ -17,7 +17,7 @@ strings of any length.
 Trailing spaces are removed when converting a character value to one
 of the other string types.  Note that trailing spaces are semantically
 significant in character varying and text values, and when using
-pattern matching, that is LIKE and regular expressions.
+pattern matching (e.g., LIKE  and regular expressions).
 
 ## String constants (literals)
 

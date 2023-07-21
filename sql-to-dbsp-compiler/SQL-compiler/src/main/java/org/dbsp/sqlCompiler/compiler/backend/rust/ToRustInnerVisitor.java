@@ -184,6 +184,20 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPTimeLiteral literal) {
+        if (literal.isNull)
+            return this.doNull(literal);
+        if (literal.mayBeNull())
+            this.builder.append("Some(");
+        this.builder.append("Time::new(");
+        this.builder.append(Objects.requireNonNull(literal.value).toString());
+        this.builder.append(")");
+        if (literal.mayBeNull())
+            this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPIntervalMillisLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);
@@ -322,6 +336,16 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append(literal.wrapSome(val + "isize"));
         return VisitDecision.STOP;
     }
+
+    @Override
+    public VisitDecision preorder(DBSPI8Literal literal) {
+        if (literal.isNull)
+            return this.doNull(literal);
+        String val = Byte.toString(Objects.requireNonNull(literal.value));
+        this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        return VisitDecision.STOP;
+    }
+
 
     @Override
     public VisitDecision preorder(DBSPI16Literal literal) {
@@ -464,7 +488,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 expression.getType(),
                 expression.left.getType(),
                 expression.right.getType());
-        this.builder.append(function.function).append("(");
+        String func = function.function;
+        if (expression.operation.equals(DBSPOpcode.IF_SELECTED))
+            func = "if_selected" + expression.getType().nullableSuffix() + expression.left.getType().nullableSuffix();
+        this.builder.append(func).append("(");
         expression.left.accept(this);
         this.builder.append(", ");
         expression.right.accept(this);

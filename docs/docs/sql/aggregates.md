@@ -68,3 +68,75 @@ aggregate function.
      <td>Same as <code>EVERY</code></td>
   </tr>
 </table>
+
+## Pivots
+
+The SQL `PIVOT` operation can be used to turn rows into columns.
+It is usually performed in lieu of a `GROUP-BY` operation when
+the group keys are known in advance.  Instead of producing one row for
+each group, `PIVOT` can produce one *column* for each group.
+
+This documentation is adapted from the [SPARK documentation for PIVOT](
+https://spark.apache.org/docs/latest/sql-ref-syntax-qry-select-pivot.html).
+
+### Syntax
+
+```
+PIVOT ( { aggregate_expression [ AS aggregate_expression_alias ] } [ , ... ]
+    FOR column_list IN ( expression_list ) )
+```
+
+### Parameters
+
+- aggregate_expression
+  Specifies an aggregate expression (`SUM`, `COUNT(DISTINCT )`, etc.).
+
+- aggregate_expression_alias
+  Specifies an alias for the aggregate expression.
+
+- column_list
+  Contains columns in the `FROM` clause, which specifies the columns we
+  want to replace with new columns.
+
+- expression_list
+  Specifies new columns, which are used to match values in column_list
+  as the aggregating condition. We can also add aliases for them.
+
+### Examples
+
+```sql
+CREATE TABLE person (id INT, name STRING, age INT, class INT, address STRING);
+INSERT INTO person VALUES
+    (100, 'John', 30, 1, 'Street 1'),
+    (200, 'Mary', NULL, 1, 'Street 2'),
+    (300, 'Mike', 80, 3, 'Street 3'),
+    (400, 'Dan', 50, 4, 'Street 4');
+
+SELECT * FROM person
+    PIVOT (
+        SUM(age) AS a, AVG(class) AS c
+        FOR name IN ('John' AS john, 'Mike' AS mike)
+    );
++------+-----------+---------+---------+---------+---------+
+|  id  |  address  | john_a  | john_c  | mike_a  | mike_c  |
++------+-----------+---------+---------+---------+---------+
+| 200  | Street 2  | NULL    | NULL    | NULL    | NULL    |
+| 100  | Street 1  | 30      | 1.0     | NULL    | NULL    |
+| 300  | Street 3  | NULL    | NULL    | 80      | 3.0     |
+| 400  | Street 4  | NULL    | NULL    | NULL    | NULL    |
++------+-----------+---------+---------+---------+---------+
+
+SELECT * FROM person
+    PIVOT (
+        SUM(age) AS a, AVG(class) AS c
+        FOR (name, age) IN (('John', 30) AS c1, ('Mike', 40) AS c2)
+    );
++------+-----------+-------+-------+-------+-------+
+|  id  |  address  | c1_a  | c1_c  | c2_a  | c2_c  |
++------+-----------+-------+-------+-------+-------+
+| 200  | Street 2  | NULL  | NULL  | NULL  | NULL  |
+| 100  | Street 1  | 30    | 1.0   | NULL  | NULL  |
+| 300  | Street 3  | NULL  | NULL  | NULL  | NULL  |
+| 400  | Street 4  | NULL  | NULL  | NULL  | NULL  |
++------+-----------+-------+-------+-------+-------+
+```

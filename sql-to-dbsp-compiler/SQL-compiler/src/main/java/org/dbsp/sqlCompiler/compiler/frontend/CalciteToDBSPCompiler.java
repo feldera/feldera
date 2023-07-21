@@ -307,7 +307,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression[] groups = new DBSPExpression[aggregate.getGroupCount()];
             int next = 0;
             for (int index: aggregate.getGroupSet()) {
-                groups[next] = t.field(index);
+                groups[next] = t.field(index).applyCloneIfNeeded();
                 next++;
             }
             DBSPExpression keyExpression = new DBSPRawTupleExpression(groups);
@@ -336,9 +336,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath kv = kvType.var("kv");
             DBSPExpression[] flattenFields = new DBSPExpression[aggregate.getGroupCount() + aggType.size()];
             for (int i = 0; i < aggregate.getGroupCount(); i++)
-                flattenFields[i] = kv.field(0).field(i);
+                flattenFields[i] = kv.field(0).field(i).applyCloneIfNeeded();
             for (int i = 0; i < aggType.size(); i++) {
-                DBSPExpression flattenField = kv.field(1).field(i);
+                DBSPExpression flattenField = kv.field(1).field(i).applyCloneIfNeeded();
                 // Here we correct from the type produced by the Folder (typeFromAggregate) to the
                 // actual expected type aggType (which is the tuple of aggTypes).
                 flattenFields[aggregate.getGroupCount() + i] = flattenField.cast(aggTypes[i]);
@@ -453,7 +453,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPType expectedType = tuple.getFieldType(index);
                 if (!exp.getType().sameType(expectedType)) {
                     // Calcite's optimizations do not preserve types!
-                    exp = exp.cast(expectedType);
+                    exp = exp.applyCloneIfNeeded().cast(expectedType);
                 }
                 resultColumns.add(exp);
                 index++;
@@ -946,7 +946,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             // Join the previous result with the aggregate
             // First index the aggregate.
-            DBSPExpression partAndOrder = new DBSPRawTupleExpression(partition, orderField);
+            DBSPExpression partAndOrder = new DBSPRawTupleExpression(
+                    partition.applyCloneIfNeeded(),
+                    orderField.applyCloneIfNeeded());
             DBSPExpression indexedInput = new DBSPRawTupleExpression(partAndOrder, previousRowRefVar.applyClone());
             DBSPExpression partAndOrderClo = indexedInput.closure(previousRowRefVar.asParameter());
             DBSPOperator indexInput = new DBSPIndexOperator(node, partAndOrderClo,
