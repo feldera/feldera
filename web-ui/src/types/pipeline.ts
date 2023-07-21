@@ -40,6 +40,6 @@ export interface ConnectorStatus {
 }
 
 export type PipelineAction = {
-  command: 'deploy' | 'pause' | 'start' | 'shutdown'
+  command: 'pause' | 'start' | 'shutdown'
   pipeline_id: string
 }

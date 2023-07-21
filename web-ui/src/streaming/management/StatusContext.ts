@@ -14,8 +14,6 @@ export enum ClientPipelineStatus {
   // Maps to PipelineStatus.INITIALIZING
   INITIALIZING = 'Creating …',
   CREATE_FAILURE = 'Create failed',
-  // Maps to PipelineStatus.DEPLOYED
-  DEPLOYED = 'Deployed',
   STARTING = 'Starting …',
   STARTUP_FAILURE = 'Starting failed',
   // Maps to PipelineStatus.RUNNING

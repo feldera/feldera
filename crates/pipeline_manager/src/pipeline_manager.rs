@@ -1382,8 +1382,6 @@ async fn pipeline_validate(
 ///
 /// The following values of the `action` argument are accepted by this endpoint:
 ///
-/// - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
-///   (cloud deployment) to execute the pipeline and initialize its connectors.
 /// - 'start': Start processing data.
 /// - 'pause': Pause the pipeline.
 /// - 'shutdown': Terminate the execution of the pipeline.
@@ -1434,7 +1432,7 @@ async fn pipeline_validate(
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
-        ("action" = String, Path, description = "Pipeline action [deploy, start, pause, shutdown]")
+        ("action" = String, Path, description = "Pipeline action [start, pause, shutdown]")
     ),
     tag = "Pipeline"
 )]
@@ -1448,7 +1446,6 @@ async fn pipeline_action(
     let action = parse_pipeline_action(&req)?;
 
     match action {
-        "deploy" => state.runner.pause_pipeline(*tenant_id, pipeline_id).await?,
         "start" => state.runner.start_pipeline(*tenant_id, pipeline_id).await?,
         "pause" => state.runner.pause_pipeline(*tenant_id, pipeline_id).await?,
         "shutdown" => {
