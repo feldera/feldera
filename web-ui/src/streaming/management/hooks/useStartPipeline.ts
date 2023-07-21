@@ -1,4 +1,4 @@
-// Logic to deploy (and then start) a given pipeline.
+// Logic to start a given pipeline.
 
 import { useCallback } from 'react'
 import { ClientPipelineStatus, usePipelineStateStore } from '../StatusContext'
@@ -22,11 +22,7 @@ function useStartPipeline() {
 
   const startPipelineClick = useCallback(
     (pipeline_id: PipelineId) => {
-      if (
-        !pipelineActionLoading &&
-        (pipelineStatus.get(pipeline_id) != ClientPipelineStatus.PAUSED ||
-          pipelineStatus.get(pipeline_id) != ClientPipelineStatus.DEPLOYED)
-      ) {
+      if (!pipelineActionLoading && pipelineStatus.get(pipeline_id) != ClientPipelineStatus.RUNNING) {
         setPipelineStatus(pipeline_id, ClientPipelineStatus.STARTING)
         piplineAction(
           {

@@ -332,9 +332,8 @@ async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> S
     let resp: Value = req.json().await.unwrap();
     let id = resp["pipeline_id"].as_str().unwrap();
 
-    // TODO: `/deploy` is on its way out.
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/deploy", id))
+        .post_no_body(format!("/v0/pipelines/{}/pause", id))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 

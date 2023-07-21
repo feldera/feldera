@@ -212,10 +212,8 @@ class DBSPPipelineConfig:
         """
         self.save()
         pipeline_action.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id, action='deploy').unwrap("Failed to deploy pipeline")
-        self.wait_for_status(PipelineStatus.PAUSED, 60.0)
-        pipeline_action.sync_detailed(
             client=self.api_client, pipeline_id=self.pipeline_id, action='start').unwrap("Failed to start pipeline")
+        self.wait_for_status(PipelineStatus.RUNNING, 60.0)
 
     def pause(self):
         """Pause pipeline.

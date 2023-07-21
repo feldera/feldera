@@ -35,7 +35,7 @@ import { DiffEditor, MonacoDiffEditor } from '@monaco-editor/react'
 import { diffLines, Change } from 'diff'
 
 import { ApiError, ErrorResponse, PipelineDescr, PipelineRevision, ProgramCodeResponse } from 'src/types/manager'
-import useStartPipeline from './hooks/useDeployPipeline'
+import useStartPipeline from './hooks/useStartPipeline'
 import { ThemeColor } from 'src/@core/layouts/types'
 
 interface ErrorProps {

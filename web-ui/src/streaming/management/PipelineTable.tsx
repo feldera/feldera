@@ -40,7 +40,6 @@ import { humanSize } from 'src/utils'
 import { format } from 'd3-format'
 import { PipelineRevisionStatusChip } from 'src/streaming/management/RevisionStatus'
 import { ClientPipelineStatus, usePipelineStateStore } from './StatusContext'
-import useDeployPipeline from './hooks/useDeployPipeline'
 import usePausePipeline from './hooks/usePausePipeline'
 import useShutdownPipeline from './hooks/useShutdownPipeline'
 import useDeletePipeline from './hooks/useDeletePipeline'
@@ -305,9 +304,6 @@ const statusToChip = (
     .with(ClientPipelineStatus.CREATE_FAILURE, () => (
       <CustomChip rounded size='small' skin='light' color='error' label={status} />
     ))
-    .with(ClientPipelineStatus.DEPLOYED, () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
-    ))
     .with(ClientPipelineStatus.STARTING, () => (
       <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
@@ -354,7 +350,7 @@ export default function PipelineTable() {
   const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
   const setPipelineStatus = usePipelineStateStore(state => state.setStatus)
 
-  const deployPipelineClick = useDeployPipeline()
+  const startPipelineClick = useStartPipeline()
   const pausePipelineClick = usePausePipeline()
   const shutdownPipelineClick = useShutdownPipeline()
   const deletePipelineClick = useDeletePipeline()
@@ -376,24 +372,6 @@ export default function PipelineTable() {
       }
     }
   }, [isLoading, isError, data, setRows, setPipelineStatus])
-
-  // When we deploy a pipeline we go from Shutdown to Paused. But if our
-  // start button was pressed we should just go to start. This makes sure we
-  // immediately start it after a the run button is pressed (which calls
-  // deploy).
-  const startPipeline = useStartPipeline()
-  useEffect(() => {
-    if (!isLoading && !isError) {
-      for (const { descriptor, state } of data) {
-        if (
-          state.current_status === PipelineStatus.PAUSED &&
-          pipelineStatus.get(descriptor.pipeline_id) === ClientPipelineStatus.PROVISIONING
-        ) {
-          startPipeline(descriptor.pipeline_id)
-        }
-      }
-    }
-  }, [isLoading, isError, data, pipelineStatus, startPipeline])
 
   const getDetailPanelContent = useCallback<NonNullable<DataGridProProps['getDetailPanelContent']>>(
     ({ row }) => <DetailPanelContent row={row} />,
@@ -469,11 +447,8 @@ export default function PipelineTable() {
         const currentStatus = pipelineStatus.get(descriptor.pipeline_id)
         const needsPause = currentStatus === ClientPipelineStatus.RUNNING
         const needsStart =
-          currentStatus === ClientPipelineStatus.INACTIVE ||
-          currentStatus === ClientPipelineStatus.PAUSED ||
-          currentStatus === ClientPipelineStatus.DEPLOYED
-        const needsShutdown =
-          currentStatus === ClientPipelineStatus.PAUSED || currentStatus === ClientPipelineStatus.DEPLOYED
+          currentStatus === ClientPipelineStatus.INACTIVE || currentStatus === ClientPipelineStatus.PAUSED
+        const needsShutdown = currentStatus === ClientPipelineStatus.PAUSED
         const needsDelete = currentStatus === ClientPipelineStatus.INACTIVE
         const needsEdit = currentStatus === ClientPipelineStatus.INACTIVE
         const needsInspect = currentStatus === ClientPipelineStatus.RUNNING
@@ -503,15 +478,7 @@ export default function PipelineTable() {
                 <IconButton
                   className='startButton'
                   size='small'
-                  onClick={() => {
-                    // We re-use the same button for start/deploy so in case the
-                    // pipeline is paused we just start it and don't re-depoy it.
-                    if (pipelineStatus.get(descriptor.pipeline_id) == ClientPipelineStatus.PAUSED) {
-                      startPipeline(params.row.descriptor.pipeline_id)
-                    } else {
-                      deployPipelineClick(params.row.descriptor.pipeline_id)
-                    }
-                  }}
+                  onClick={() => startPipelineClick(params.row.descriptor.pipeline_id)}
                 >
                   <Icon icon='bx:play-circle' fontSize={20} />
                 </IconButton>

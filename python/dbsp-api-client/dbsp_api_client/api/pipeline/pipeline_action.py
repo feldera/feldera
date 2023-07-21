@@ -88,8 +88,6 @@ def sync_detailed(
 
     The following values of the `action` argument are accepted by this endpoint:
 
-    - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
-    (cloud deployment) to execute the pipeline and initialize its connectors.
     - 'start': Start processing data.
     - 'pause': Pause the pipeline.
     - 'shutdown': Terminate the execution of the pipeline.
@@ -143,8 +141,6 @@ def sync(
 
     The following values of the `action` argument are accepted by this endpoint:
 
-    - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
-    (cloud deployment) to execute the pipeline and initialize its connectors.
     - 'start': Start processing data.
     - 'pause': Pause the pipeline.
     - 'shutdown': Terminate the execution of the pipeline.
@@ -191,8 +187,6 @@ async def asyncio_detailed(
 
     The following values of the `action` argument are accepted by this endpoint:
 
-    - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
-    (cloud deployment) to execute the pipeline and initialize its connectors.
     - 'start': Start processing data.
     - 'pause': Pause the pipeline.
     - 'shutdown': Terminate the execution of the pipeline.
@@ -244,8 +238,6 @@ async def asyncio(
 
     The following values of the `action` argument are accepted by this endpoint:
 
-    - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
-    (cloud deployment) to execute the pipeline and initialize its connectors.
     - 'start': Start processing data.
     - 'pause': Pause the pipeline.
     - 'shutdown': Terminate the execution of the pipeline.
