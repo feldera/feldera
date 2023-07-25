@@ -45,6 +45,9 @@ public class BaseSQLTests {
     public static final String rustDirectory = "../temp/src";
     public static final String testFilePath = rustDirectory + "/lib.rs";
 
+    static int testsExecuted = 0;
+    static int jitTestsExecuted = 0;
+
     /**
      * Collect here all the tests to run and execute them using a single Rust compilation.
      */
@@ -80,16 +83,20 @@ public class BaseSQLTests {
                     extraArgs[0] = "--features";
                     extraArgs[1] = "jit";
                 }
+                jitTestsExecuted++;
             } else {
                 // Standard test
                 writer.add(test.circuit);
                 DBSPFunction tester = test.createTesterCode(testNumber);
                 writer.add(tester);
+                testsExecuted++;
             }
             testNumber++;
         }
         writer.writeAndClose();
         Utilities.compileAndTestRust(rustDirectory, true, extraArgs);
+        System.out.println("Executed " + testsExecuted + " Rust tests and "
+                + jitTestsExecuted + " JIT tests");
         testsToRun.clear();
     }
 

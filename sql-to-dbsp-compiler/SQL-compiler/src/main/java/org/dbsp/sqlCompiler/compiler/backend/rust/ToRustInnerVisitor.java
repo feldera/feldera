@@ -184,6 +184,20 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPTimeLiteral literal) {
+        if (literal.isNull)
+            return this.doNull(literal);
+        if (literal.mayBeNull())
+            this.builder.append("Some(");
+        this.builder.append("Time::new(");
+        this.builder.append(Objects.requireNonNull(literal.value).toString());
+        this.builder.append(")");
+        if (literal.mayBeNull())
+            this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPIntervalMillisLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);
@@ -324,6 +338,16 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPI8Literal literal) {
+        if (literal.isNull)
+            return this.doNull(literal);
+        String val = Byte.toString(Objects.requireNonNull(literal.value));
+        this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
+        return VisitDecision.STOP;
+    }
+
+
+    @Override
     public VisitDecision preorder(DBSPI16Literal literal) {
         if (literal.isNull)
             return this.doNull(literal);
@@ -451,6 +475,27 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPConditionalAggregateExpression expression) {
+        this.builder.append(expression.opcode.toString());
+        if (expression.condition != null)
+            this.builder.append("_conditional");
+        this.builder.append("_")
+                .append(expression.left.getType().nullableSuffix())
+                .append("_")
+                .append(expression.right.getType().nullableSuffix())
+                .append("(");
+        expression.left.accept(this);
+        this.builder.append(", ");
+        expression.right.accept(this);
+        if (expression.condition != null) {
+            this.builder.append(", ");
+            expression.condition.accept(this);
+        }
+        this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
         if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
             expression.left.accept(this);
@@ -464,7 +509,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 expression.getType(),
                 expression.left.getType(),
                 expression.right.getType());
-        this.builder.append(function.function).append("(");
+        String func = function.function;
+        this.builder.append(func).append("(");
         expression.left.accept(this);
         this.builder.append(", ");
         expression.right.accept(this);

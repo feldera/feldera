@@ -17,6 +17,7 @@ pub use order::{PartialOrder, TotalOrder};
 pub use present::Present;
 pub use zset::{IndexedZSet, ZSet};
 
+use rust_decimal::Decimal;
 use size_of::SizeOf;
 use std::{
     marker::PhantomData,
@@ -327,6 +328,24 @@ impl MulByRef<isize> for F64 {
     }
 }
 
+impl MulByRef<isize> for Decimal {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
+        *self * Decimal::from(*w)
+    }
+}
+
+impl MulByRef<isize> for Option<Decimal> {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
+        self.as_ref().map(|x| (*x * Decimal::from(*w)))
+    }
+}
+
 impl MulByRef<isize> for Option<i32> {
     type Output = Self;
 
@@ -434,6 +453,24 @@ impl MulByRef<i64> for F64 {
     #[inline]
     fn mul_by_ref(&self, w: &i64) -> Self::Output {
         *self * ((*w) as f64)
+    }
+}
+
+impl MulByRef<i64> for Decimal {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        *self * Decimal::from(*w)
+    }
+}
+
+impl MulByRef<i64> for Option<Decimal> {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        self.as_ref().map(|x| (*x * Decimal::from(*w)))
     }
 }
 

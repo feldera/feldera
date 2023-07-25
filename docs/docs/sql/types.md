@@ -24,6 +24,7 @@ The compiler supports the following SQL data types:
 - `INTERVAL`, a SQL interval.  Two types of intervals are supported:
   long intervals (comprising years and months), and short intervals,
   comprising days, hours, minutes, seconds.
+- `TIME`, the time of the day, with a precision of nanoseconds.
 - `TIMESTAMP`, a SQL timestamp without a timezone.  A timestamp
   represents a value containing a date and a time, with a precision up
   to a millisecond.

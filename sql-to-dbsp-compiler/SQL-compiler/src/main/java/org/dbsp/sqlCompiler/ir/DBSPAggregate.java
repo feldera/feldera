@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.ir;
 
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.logical.LogicalAggregate;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
@@ -34,17 +35,21 @@ import java.util.Objects;
 public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
     public final DBSPVariablePath rowVar;
     public final Implementation[] components;
+    public final boolean isWindowAggregate;
 
     public DBSPAggregate(RelNode node, DBSPVariablePath rowVar, int size) {
         super(new CalciteObject(node));
         this.rowVar = rowVar;
         this.components = new Implementation[size];
+        this.isWindowAggregate = !(node instanceof LogicalAggregate);
     }
 
-    public DBSPAggregate(CalciteObject node, DBSPVariablePath rowVar, Implementation[] components) {
+    public DBSPAggregate(CalciteObject node, DBSPVariablePath rowVar,
+                         Implementation[] components, boolean isWindowAggregate) {
         super(node);
         this.rowVar = rowVar;
         this.components = components;
+        this.isWindowAggregate = isWindowAggregate;
     }
 
     public void set(int i, Implementation implementation) {
@@ -316,7 +321,6 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             this.emptySetResult = emptySetResult;
             this.semigroup = semigroup;
             this.linearFunction = linearFunction;
-            this.validate();
         }
 
         public Implementation(
@@ -330,19 +334,19 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             this(operator, zero, increment, null, emptySetResult, semigroup, linearFunction);
         }
 
-        void validate() {
-            if (true)
-                return;
+        public void validate() {
             // These validation rules actually don't apply for window-based aggregates.
-            // TODO: check them for standard aggregates.
+            DBSPType emptyResultType = this.emptySetResult.getType();
             if (this.postProcess != null) {
-                if (!this.emptySetResult.getType().sameType(this.postProcess.getResultType()))
-                    throw new InternalCompilerError("Post-process result type " + this.postProcess.getResultType() +
-                            " different from empty set type " + this.emptySetResult.getType(), this);
+                DBSPType postProcessType = this.postProcess.getResultType();
+                if (!emptyResultType.sameType(postProcessType))
+                    throw new InternalCompilerError("Post-process result type " + postProcessType +
+                            " different from empty set type " + emptyResultType, this);
             } else {
-                if (!this.emptySetResult.getType().sameType(this.increment.getResultType())) {
-                    throw new InternalCompilerError("Increment result type " + this.increment.getResultType() +
-                            " different from empty set type " + this.emptySetResult.getType(), this);
+                DBSPType incrementResultType = this.increment.getResultType();
+                if (!emptyResultType.sameType(incrementResultType)) {
+                    throw new InternalCompilerError("Increment result type " + incrementResultType +
+                            " different from empty set type " + emptyResultType, this);
                 }
             }
         }
@@ -510,7 +514,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                 weightVar.asParameter());
         DBSPClosureExpression postClosure = new DBSPTupleExpression(posts).closure(postAccumulator.asParameter());
         DBSPType semigroup = new DBSPTypeSemigroup(semigroups, accumulatorTypes);
-        return new DBSPAggregate.Implementation(this.getNode(), new DBSPRawTupleExpression(zeros),
+        return new Implementation(this.getNode(), new DBSPRawTupleExpression(zeros),
                 accumFunction, postClosure, new DBSPRawTupleExpression(emptySetResults), semigroup, null);
     }
 }

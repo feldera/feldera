@@ -1,34 +1,70 @@
 //! Implementation of various cast operations.
-// Map of type names
-// * Bool -> b
-// * Date -> Date
-// * Decimal -> decimal
-// * Double -> d
-// * Float -> f
-// * GeoPoint -> geopoint
-// * Null -> null
-// * String -> s
-// * Timestamp -> Timestamp
-// * Interval -> ShortInteval or LongInterval
-// * isize -> i         (not a SQL type, never nullable)
-// * signed16 -> i16
-// * signed32 -> i32
-// * signed64 -> i64
-// * str -> str         (not a SQL type, never nullable)
-// * usize -> u         (not a SQL type, never nullable)
-// * nullN -> null
 
 #![allow(non_snake_case)]
 
 use std::cmp::Ordering;
 
 use crate::{geopoint::*, interval::*, timestamp::*};
-use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike, NaiveTime};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
 use rust_decimal::Decimal;
 
 /////////// cast to b
+
+macro_rules! cast_to_b {
+    ($type_name: ident, $arg_type: ty) => {
+        ::paste::paste! {
+            #[inline]
+            pub fn [<cast_to_b_ $type_name>]( value: $arg_type ) -> bool {
+                value != <$arg_type as num::Zero>::zero()
+            }
+
+            #[inline]
+            pub fn [<cast_to_b_ $type_name N >]( value: Option<$arg_type> ) -> bool {
+                [<cast_to_b_ $type_name>](value.unwrap())
+            }
+
+            #[inline]
+            pub fn [<cast_to_bN_ $type_name >]( value: $arg_type ) -> Option<bool> {
+                Some([< cast_to_b_ $type_name >](value))
+            }
+
+            #[inline]
+            pub fn [<cast_to_bN_ $type_name N >]( value: Option<$arg_type> ) -> Option<bool> {
+                let value = value?;
+                [<cast_to_bN_ $type_name >](value)
+            }
+        }
+    }
+}
+
+macro_rules! cast_to_b_fp {
+    ($type_name: ident, $arg_type: ty) => {
+        ::paste::paste! {
+            #[inline]
+            pub fn [<cast_to_b_ $type_name>]( value: $arg_type ) -> bool {
+                value != $arg_type::zero()
+            }
+
+            #[inline]
+            pub fn [<cast_to_b_ $type_name N >]( value: Option<$arg_type> ) -> bool {
+                [<cast_to_b_ $type_name>](value.unwrap())
+            }
+
+            #[inline]
+            pub fn [<cast_to_bN_ $type_name >]( value: $arg_type ) -> Option<bool> {
+                Some([< cast_to_b_ $type_name >](value))
+            }
+
+            #[inline]
+            pub fn [<cast_to_bN_ $type_name N >]( value: Option<$arg_type> ) -> Option<bool> {
+                let value = value?;
+                [<cast_to_bN_ $type_name >](value)
+            }
+        }
+    }
+}
 
 #[inline]
 pub fn cast_to_b_b(value: bool) -> bool {
@@ -40,35 +76,15 @@ pub fn cast_to_b_bN(value: Option<bool>) -> bool {
     value.unwrap()
 }
 
-#[inline]
-pub fn cast_to_b_decimal(value: Decimal) -> bool {
-    value != Decimal::zero()
-}
-
-#[inline]
-pub fn cast_to_b_decimalN(value: Option<Decimal>) -> bool {
-    value.unwrap() != Decimal::zero()
-}
-
-#[inline]
-pub fn cast_to_b_d(value: F64) -> bool {
-    value != 0.0
-}
-
-#[inline]
-pub fn cast_to_b_dN(value: Option<F64>) -> bool {
-    value.unwrap() != F64::zero()
-}
-
-#[inline]
-pub fn cast_to_b_f(value: F32) -> bool {
-    value != F32::zero()
-}
-
-#[inline]
-pub fn cast_to_b_fN(value: Option<F32>) -> bool {
-    value.unwrap() != F32::zero()
-}
+cast_to_b!(decimal, Decimal);
+cast_to_b_fp!(d, F64);
+cast_to_b_fp!(f, F32);
+cast_to_b!(i8, i8);
+cast_to_b!(i16, i16);
+cast_to_b!(i32, i32);
+cast_to_b!(i64, i64);
+cast_to_b!(i, isize);
+cast_to_b!(u, usize);
 
 #[inline]
 pub fn cast_to_b_s(value: String) -> bool {
@@ -78,46 +94,6 @@ pub fn cast_to_b_s(value: String) -> bool {
 #[inline]
 pub fn cast_to_b_sN(value: Option<String>) -> bool {
     value.unwrap().trim().parse().unwrap_or(false)
-}
-
-#[inline]
-pub fn cast_to_b_i(value: isize) -> bool {
-    value != 0
-}
-
-#[inline]
-pub fn cast_to_b_i16(value: i16) -> bool {
-    value != 0
-}
-
-#[inline]
-pub fn cast_to_b_i16N(value: Option<i16>) -> bool {
-    value.unwrap() != 0
-}
-
-#[inline]
-pub fn cast_to_b_i32(value: i32) -> bool {
-    value != 0
-}
-
-#[inline]
-pub fn cast_to_b_i32N(value: Option<i32>) -> bool {
-    value.unwrap() != 0
-}
-
-#[inline]
-pub fn cast_to_b_i64(value: i64) -> bool {
-    value != 0
-}
-
-#[inline]
-pub fn cast_to_b_i64N(value: Option<i64>) -> bool {
-    value.unwrap() != 0
-}
-
-#[inline]
-pub fn cast_to_b_u(value: usize) -> bool {
-    value != 0
 }
 
 /////////// cast to bN
@@ -135,95 +111,6 @@ pub fn cast_to_bN_b(value: bool) -> Option<bool> {
 #[inline]
 pub fn cast_to_bN_bN(value: Option<bool>) -> Option<bool> {
     value
-}
-
-#[inline]
-pub fn cast_to_bN_decimal(value: Decimal) -> Option<bool> {
-    Some(value != Decimal::zero())
-}
-
-#[inline]
-pub fn cast_to_bN_decimalN(value: Option<Decimal>) -> Option<bool> {
-    value.map(|x| x != Decimal::zero())
-}
-
-#[inline]
-pub fn cast_to_bN_d(value: F64) -> Option<bool> {
-    Some(value != F64::zero())
-}
-
-#[inline]
-pub fn cast_to_bN_dN(value: Option<F64>) -> Option<bool> {
-    value.map(|x| x != F64::zero())
-}
-
-#[inline]
-pub fn cast_to_bN_f(value: F32) -> Option<bool> {
-    Some(value != F32::zero())
-}
-
-#[inline]
-pub fn cast_to_bN_fN(value: Option<F32>) -> Option<bool> {
-    value.map(|x| x != F32::zero())
-}
-
-#[inline]
-pub fn cast_to_bN_s(value: String) -> Option<bool> {
-    match value.trim().parse() {
-        Err(_) => Some(false),
-        Ok(x) => Some(x),
-    }
-}
-
-#[inline]
-pub fn cast_to_bN_sN(value: Option<String>) -> Option<bool> {
-    match value {
-        None => None,
-        Some(x) => match x.trim().parse() {
-            Err(_) => Some(false),
-            Ok(y) => Some(y),
-        },
-    }
-}
-
-#[inline]
-pub fn cast_to_bN_i(value: isize) -> Option<bool> {
-    Some(value != 0)
-}
-
-#[inline]
-pub fn cast_to_bN_i16(value: i16) -> Option<bool> {
-    Some(value != 0)
-}
-
-#[inline]
-pub fn cast_to_bN_i16N(value: Option<i16>) -> Option<bool> {
-    value.map(|x| x != 0)
-}
-
-#[inline]
-pub fn cast_to_bN_i32(value: i32) -> Option<bool> {
-    Some(value != 0)
-}
-
-#[inline]
-pub fn cast_to_bN_i32N(value: Option<i32>) -> Option<bool> {
-    value.map(|x| x != 0)
-}
-
-#[inline]
-pub fn cast_to_bN_i64(value: i64) -> Option<bool> {
-    Some(value != 0)
-}
-
-#[inline]
-pub fn cast_to_bN_i64N(value: Option<i64>) -> Option<bool> {
-    value.map(|x| x != 0)
-}
-
-#[inline]
-pub fn cast_to_bN_u(value: usize) -> Option<bool> {
-    Some(value != 0)
 }
 
 /////////// cast to date
@@ -255,6 +142,37 @@ pub fn cast_to_DateN_s(value: String) -> Option<Date> {
 
 #[inline]
 pub fn cast_to_DateN_date(value: Date) -> Option<Date> {
+    Some(value)
+}
+
+/////////// cast to Time
+
+// TODO
+
+#[inline]
+pub fn cast_to_Time_s(value: String) -> Time {
+    let time = NaiveTime::parse_from_str(&value, "%H:%M:%S.f").ok();
+    match time {
+        None => Time::default(),
+        Some(value) => Time::from_time(value),
+    }
+}
+
+/////////// cast to TimeN
+
+#[inline]
+pub fn cast_to_TimeN_nullN(_value: Option<()>) -> Option<Time> {
+    None
+}
+
+#[inline]
+pub fn cast_to_TimeN_s(value: String) -> Option<Time> {
+    let time = NaiveTime::parse_from_str(&value, "%H:%M:%S.f");
+    time.ok().map(|time| Time::from_time(time))
+}
+
+#[inline]
+pub fn cast_to_TimeN_time(value: Time) -> Option<Time> {
     Some(value)
 }
 
@@ -339,53 +257,42 @@ pub fn cast_to_decimal_sN(value: Option<String>, precision: u32, scale: i32) -> 
     cast_to_decimal_decimal(result, precision, scale)
 }
 
-#[inline]
-pub fn cast_to_decimal_i(value: isize, precision: u32, scale: i32) -> Decimal {
-    let result = Decimal::from_isize(value).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
+macro_rules! cast_to_decimal {
+    ($type_name: ident, $arg_type: ty) => {
+        ::paste::paste! {
+            #[inline]
+            pub fn [<cast_to_decimal_ $type_name> ]( value: $arg_type, precision: u32, scale: i32 ) -> Decimal {
+                let result = Decimal::[<from_ $arg_type>](value).unwrap();
+                cast_to_decimal_decimal(result, precision, scale)
+            }
+
+            #[inline]
+            pub fn [<cast_to_decimal_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: i32 ) -> Decimal {
+                let result = Decimal::[<from_ $arg_type>](value.unwrap()).unwrap();
+                cast_to_decimal_decimal(result, precision, scale)
+            }
+
+            #[inline]
+            pub fn [<cast_to_decimalN_ $type_name> ]( value: $arg_type, precision: u32, scale: i32 ) -> Option<Decimal> {
+                let result = Some(Decimal::[<from_ $arg_type>](value).unwrap());
+                set_ps(result, precision, scale)
+            }
+
+            #[inline]
+            pub fn [<cast_to_decimalN_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: i32 ) -> Option<Decimal> {
+                let value = value?;
+                [<cast_to_decimalN_ $type_name >](value, precision, scale)
+            }
+        }
+    }
 }
 
-#[inline]
-pub fn cast_to_decimal_i16(value: i16, precision: u32, scale: i32) -> Decimal {
-    let result = Decimal::from_i16(value).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimal_i16N(value: Option<i16>, precision: u32, scale: i32) -> Decimal {
-    let result = Decimal::from_i16(value.unwrap()).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimal_i32(value: i32, precision: u32, scale: i32) -> Decimal {
-    let result = Decimal::from_i32(value).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimal_i32N(value: Option<i32>, precision: u32, scale: i32) -> Decimal {
-    let result = Decimal::from_i32(value.unwrap()).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimal_i64(value: i64, precision: u32, scale: i32) -> Decimal {
-    let result = Decimal::from_i64(value).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimal_i64N(value: Option<i64>, precision: u32, scale: i32) -> Decimal {
-    let result = Decimal::from_i64(value.unwrap()).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimal_u(value: usize, precision: u32, scale: i32) -> Decimal {
-    let result = Decimal::from_usize(value).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
-}
+cast_to_decimal!(i, isize);
+cast_to_decimal!(i8, i8);
+cast_to_decimal!(i16, i16);
+cast_to_decimal!(i32, i32);
+cast_to_decimal!(i64, i64);
+cast_to_decimal!(u, usize);
 
 /////////// cast to decimalN
 
@@ -481,64 +388,43 @@ pub fn cast_to_decimalN_sN(value: Option<String>, precision: u32, scale: i32) ->
     set_ps(result, precision, scale)
 }
 
-#[inline]
-pub fn cast_to_decimalN_i(value: isize, precision: u32, scale: i32) -> Option<Decimal> {
-    let result = Decimal::from_isize(value);
-    set_ps(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimalN_i16(value: i16, precision: u32, scale: i32) -> Option<Decimal> {
-    let result = Decimal::from_i16(value);
-    set_ps(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimalN_i16N(value: Option<i16>, precision: u32, scale: i32) -> Option<Decimal> {
-    let result = match value {
-        None => None,
-        Some(x) => Decimal::from_i16(x),
-    };
-    set_ps(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimalN_i32(value: i32, precision: u32, scale: i32) -> Option<Decimal> {
-    let result = Decimal::from_i32(value);
-    set_ps(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimalN_i32N(value: Option<i32>, precision: u32, scale: i32) -> Option<Decimal> {
-    let result = match value {
-        None => None,
-        Some(x) => Decimal::from_i32(x),
-    };
-    set_ps(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimalN_i64(value: i64, precision: u32, scale: i32) -> Option<Decimal> {
-    let result = Decimal::from_i64(value);
-    set_ps(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimalN_i64N(value: Option<i64>, precision: u32, scale: i32) -> Option<Decimal> {
-    let result = match value {
-        None => None,
-        Some(x) => Decimal::from_i64(x),
-    };
-    set_ps(result, precision, scale)
-}
-
-#[inline]
-pub fn cast_to_decimalN_u(value: usize, precision: u32, scale: i32) -> Option<Decimal> {
-    let result = Decimal::from_usize(value);
-    set_ps(result, precision, scale)
-}
-
 /////////// cast to double
+
+macro_rules! cast_to_fp {
+    ($type_name: ident, $arg_type: ty,
+     $result_type_name: ident, $result_type: ty, $result_base_type: ty) => {
+        ::paste::paste! {
+            #[inline]
+            pub fn [<cast_to_ $result_type_name _ $type_name >]( value: $arg_type ) -> $result_type {
+                $result_type ::from(value as $result_base_type)
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_type_name _ $type_name N >]( value: Option<$arg_type> ) -> $result_type {
+                $result_type ::from(value.unwrap() as $result_base_type)
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_type_name N_ $type_name >]( value: $arg_type ) -> Option<$result_type> {
+                Some([<cast_to_ $result_type_name _ $type_name >](value))
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_type_name N_ $type_name N >]( value: Option<$arg_type> ) -> Option<$result_type> {
+                let value = value?;
+                [<cast_to_ $result_type_name N_ $type_name >](value)
+            }
+        }
+    }
+}
+
+macro_rules! cast_to_fps {
+    ($type_name: ident, $arg_type: ty) => {
+        cast_to_fp!($type_name, $arg_type, d, F64, f64);
+        cast_to_fp!($type_name, $arg_type, f, F32, f32);
+    }
+}
+
 
 #[inline]
 pub fn cast_to_d_b(value: bool) -> F64 {
@@ -602,46 +488,6 @@ pub fn cast_to_d_sN(value: Option<String>) -> F64 {
         Err(_) => F64::zero(),
         Ok(x) => x,
     }
-}
-
-#[inline]
-pub fn cast_to_d_i(value: isize) -> F64 {
-    F64::from(value as f64)
-}
-
-#[inline]
-pub fn cast_to_d_i16(value: i16) -> F64 {
-    F64::from(value)
-}
-
-#[inline]
-pub fn cast_to_d_i16N(value: Option<i16>) -> F64 {
-    F64::from(value.unwrap())
-}
-
-#[inline]
-pub fn cast_to_d_i32(value: i32) -> F64 {
-    F64::from(value)
-}
-
-#[inline]
-pub fn cast_to_d_i32N(value: Option<i32>) -> F64 {
-    F64::from(value.unwrap())
-}
-
-#[inline]
-pub fn cast_to_d_i64(value: i64) -> F64 {
-    F64::from(value as f64)
-}
-
-#[inline]
-pub fn cast_to_d_i64N(value: Option<i64>) -> F64 {
-    F64::from(value.unwrap() as f64)
-}
-
-#[inline]
-pub fn cast_to_d_u(value: usize) -> F64 {
-    F64::from(value as f64)
 }
 
 /////////// cast to doubleN
@@ -717,45 +563,12 @@ pub fn cast_to_dN_sN(value: Option<String>) -> Option<F64> {
     }
 }
 
-#[inline]
-pub fn cast_to_dN_i(value: isize) -> Option<F64> {
-    Some(F64::from(value as f64))
-}
-
-#[inline]
-pub fn cast_to_dN_i16(value: i16) -> Option<F64> {
-    Some(F64::from(value as f64))
-}
-
-#[inline]
-pub fn cast_to_dN_i16N(value: Option<i16>) -> Option<F64> {
-    value.map(F64::from)
-}
-
-#[inline]
-pub fn cast_to_dN_i32(value: i32) -> Option<F64> {
-    Some(F64::from(value))
-}
-
-#[inline]
-pub fn cast_to_dN_i32N(value: Option<i32>) -> Option<F64> {
-    value.map(F64::from)
-}
-
-#[inline]
-pub fn cast_to_dN_i64(value: i64) -> Option<F64> {
-    Some(F64::from(value as f64))
-}
-
-#[inline]
-pub fn cast_to_dN_i64N(value: Option<i64>) -> Option<F64> {
-    value.map(|x| F64::from(x as f64))
-}
-
-#[inline]
-pub fn cast_to_dN_u(value: usize) -> Option<F64> {
-    Some(F64::from(value as f64))
-}
+cast_to_fps!(i, isize);
+cast_to_fps!(i8, i8);
+cast_to_fps!(i16, i16);
+cast_to_fps!(i32, i32);
+cast_to_fps!(i64, i64);
+cast_to_fps!(u, usize);
 
 /////////// Cast to float
 
@@ -821,46 +634,6 @@ pub fn cast_to_f_sN(value: Option<String>) -> F32 {
         Err(_) => F32::zero(),
         Ok(x) => x,
     }
-}
-
-#[inline]
-pub fn cast_to_f_i(value: isize) -> F32 {
-    F32::from(value as f32)
-}
-
-#[inline]
-pub fn cast_to_f_i16(value: i16) -> F32 {
-    F32::from(value)
-}
-
-#[inline]
-pub fn cast_to_f_i16N(value: Option<i16>) -> F32 {
-    F32::from(value.unwrap())
-}
-
-#[inline]
-pub fn cast_to_f_i32(value: i32) -> F32 {
-    F32::from(value as f32)
-}
-
-#[inline]
-pub fn cast_to_f_i32N(value: Option<i32>) -> F32 {
-    F32::from(value.unwrap() as f32)
-}
-
-#[inline]
-pub fn cast_to_f_i64(value: i64) -> F32 {
-    F32::from(value as f32)
-}
-
-#[inline]
-pub fn cast_to_f_i64N(value: Option<i64>) -> F32 {
-    F32::from(value.unwrap() as f32)
-}
-
-#[inline]
-pub fn cast_to_f_u(value: usize) -> F32 {
-    F32::from(value as f32)
 }
 
 /////////// cast to floatN
@@ -934,46 +707,6 @@ pub fn cast_to_fN_sN(value: Option<String>) -> Option<F32> {
             Ok(x) => Some(F32::from(x)),
         },
     }
-}
-
-#[inline]
-pub fn cast_to_fN_i(value: isize) -> Option<F32> {
-    Some(F32::from(value as f32))
-}
-
-#[inline]
-pub fn cast_to_fN_i16(value: i16) -> Option<F32> {
-    Some(F32::from(value as f32))
-}
-
-#[inline]
-pub fn cast_to_fN_i16N(value: Option<i16>) -> Option<F32> {
-    value.map(F32::from)
-}
-
-#[inline]
-pub fn cast_to_fN_i32(value: i32) -> Option<F32> {
-    Some(F32::from(value as f32))
-}
-
-#[inline]
-pub fn cast_to_fN_i32N(value: Option<i32>) -> Option<F32> {
-    value.map(|x| F32::from(x as f32))
-}
-
-#[inline]
-pub fn cast_to_fN_i64(value: i64) -> Option<F32> {
-    Some(F32::from(value as f32))
-}
-
-#[inline]
-pub fn cast_to_fN_i64N(value: Option<i64>) -> Option<F32> {
-    value.map(|x| F32::from(x as f32))
-}
-
-#[inline]
-pub fn cast_to_fN_u(value: usize) -> Option<F32> {
-    Some(F32::from(value as f32))
 }
 
 /////////// cast to GeoPoint
@@ -1288,660 +1021,138 @@ pub fn cast_to_sN_u(value: usize, size: i32, fixed: bool) -> Option<String> {
     Some(limit_or_size_string(result, size, fixed))
 }
 
-/////////// cast to i16
+/////////// cast to integer
 
-#[inline]
-pub fn cast_to_i16_b(value: bool) -> i16 {
-    if value {
-        1
-    } else {
-        0
+macro_rules! cast_to_i_i {
+    ($result_type: ty, $arg_type_name: ident, $arg_type: ty) => {
+        ::paste::paste! {
+            #[inline]
+            pub fn [<cast_to_ $result_type _ $arg_type_name>]( value: $arg_type ) -> $result_type {
+                value as $result_type
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_type _ $arg_type_name N>]( value: Option<$arg_type> ) -> $result_type {
+                value.unwrap() as $result_type
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_type N_ $arg_type_name >]( value: $arg_type ) -> Option<$result_type> {
+                Some(value as $result_type)
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_type N_ $arg_type_name N>]( value: Option<$arg_type> ) -> Option<$result_type> {
+                let value = value?;
+                [<cast_to_ $result_type N_ $arg_type_name >](value)
+            }
+        }
     }
 }
 
-#[inline]
-pub fn cast_to_i16_bN(value: Option<bool>) -> i16 {
-    if value.unwrap() {
-        1
-    } else {
-        0
+macro_rules! cast_to_i {
+    ($result_type: ty) => {
+        ::paste::paste! {
+            #[inline]
+            pub fn [< cast_to_ $result_type N_nullN >](_value: Option<()>) -> Option<$result_type> {
+                None
+            }
+
+            // From bool
+
+            #[inline]
+            pub fn [<cast_to_ $result_type _ b >]( value: bool ) -> $result_type {
+                if value { 1 } else { 0 }
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_type _ bN >]( value: Option<bool> ) -> $result_type {
+                [< cast_to_ $result_type _ b >]( value.unwrap() )
+            }
+
+            #[inline]
+            pub fn [< cast_to_ $result_type N_b >](value: bool) -> Option<$result_type> {
+                Some(if value { 1 } else { 0 })
+            }
+
+            #[inline]
+            pub fn [< cast_to_ $result_type N_bN >](value: Option<bool>) -> Option<$result_type> {
+                value.map(|x| if x { 1 } else { 0 })
+            }
+
+            // From decimal
+
+            #[inline]
+            pub fn [< cast_to_ $result_type _decimal >](value: Decimal) -> $result_type {
+                value.[<to_ $result_type >]().unwrap()
+            }
+
+            #[inline]
+            pub fn [< cast_to_ $result_type N_decimal >](value: Decimal) -> Option<$result_type> {
+                Some(value.[<to_ $result_type >]().unwrap())
+            }
+
+            #[inline]
+            pub fn [< cast_to_ $result_type N_decimalN >](value: Option<Decimal>) -> Option<$result_type> {
+                let value = value?;
+                [< cast_to_ $result_type N_decimal >](value)
+            }
+
+            #[inline]
+            pub fn [< cast_to_ $result_type _decimalN >](value: Option<Decimal>) -> $result_type {
+                [< cast_to_ $result_type _decimal >](value.unwrap())
+            }
+
+            // From floats
+
+            #[inline]
+            pub fn [< cast_to_ $result_type _d >](value: F64) -> $result_type {
+                value.into_inner() as $result_type
+            }
+
+            #[inline]
+            pub fn [< cast_to_ $result_type _dN >](value: Option<F64>) -> $result_type {
+                value.unwrap().into_inner() as $result_type
+            }
+
+            #[inline]
+            pub fn [< cast_to_ $result_type _f >](value: F32) -> $result_type {
+                value.into_inner() as $result_type
+            }
+
+            #[inline]
+            pub fn [< cast_to_ $result_type _fN >](value: Option<F32>) -> $result_type {
+                value.unwrap().into_inner() as $result_type
+            }
+
+            // From string
+
+            #[inline]
+            pub fn [< cast_to_ $result_type _s >](value: String) -> $result_type {
+                value.trim().parse().unwrap_or(0)
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_type _sN >](value: Option<String>) -> $result_type {
+                value.unwrap().trim().parse().unwrap_or(0)
+            }
+
+            // From other integers
+
+            cast_to_i_i!($result_type, i8, i8);
+            cast_to_i_i!($result_type, i16, i16);
+            cast_to_i_i!($result_type, i32, i32);
+            cast_to_i_i!($result_type, i64, i64);
+            cast_to_i_i!($result_type, i, isize);
+            cast_to_i_i!($result_type, u, usize);
+        }
     }
 }
 
-#[inline]
-pub fn cast_to_i16_decimal(value: Decimal) -> i16 {
-    value.to_i16().unwrap()
-}
-
-#[inline]
-pub fn cast_to_i16_decimalN(value: Option<Decimal>) -> i16 {
-    value.unwrap().to_i16().unwrap()
-}
-
-#[inline]
-pub fn cast_to_i16_d(value: F64) -> i16 {
-    value.into_inner() as i16
-}
-
-#[inline]
-pub fn cast_to_i16_dN(value: Option<F64>) -> i16 {
-    value.unwrap().into_inner() as i16
-}
-
-#[inline]
-pub fn cast_to_i16_f(value: F32) -> i16 {
-    value.into_inner() as i16
-}
-
-#[inline]
-pub fn cast_to_i16_fN(value: Option<F32>) -> i16 {
-    value.unwrap().into_inner() as i16
-}
-
-#[inline]
-pub fn cast_to_i16_s(value: String) -> i16 {
-    value.trim().parse().unwrap_or(0)
-}
-
-#[inline]
-pub fn cast_to_i16_sN(value: Option<String>) -> i16 {
-    value.unwrap().trim().parse().unwrap_or(0)
-}
-
-#[inline]
-pub fn cast_to_i16_i(value: isize) -> i16 {
-    value as i16
-}
-
-#[inline]
-pub fn cast_to_i16_i16(value: i16) -> i16 {
-    value
-}
-
-#[inline]
-pub fn cast_to_i16_i16N(value: Option<i16>) -> i16 {
-    value.unwrap()
-}
-
-#[inline]
-pub fn cast_to_i16_i32(value: i32) -> i16 {
-    value as i16
-}
-
-#[inline]
-pub fn cast_to_i16_i32N(value: Option<i32>) -> i16 {
-    value.unwrap() as i16
-}
-
-#[inline]
-pub fn cast_to_i16_i64(value: i64) -> i16 {
-    value as i16
-}
-
-#[inline]
-pub fn cast_to_i16_i64N(value: Option<i64>) -> i16 {
-    value.unwrap() as i16
-}
-
-#[inline]
-pub fn cast_to_i16_u(value: usize) -> i16 {
-    value as i16
-}
-
-/////////// cast to i16N
-
-#[inline]
-pub fn cast_to_i16N_nullN(_value: Option<()>) -> Option<i16> {
-    None
-}
-
-#[inline]
-pub fn cast_to_i16N_b(value: bool) -> Option<i16> {
-    if value {
-        Some(1)
-    } else {
-        Some(0)
-    }
-}
-
-#[inline]
-pub fn cast_to_i16N_bN(value: Option<bool>) -> Option<i16> {
-    value.map(|x| if x { 1 } else { 0 })
-}
-
-#[inline]
-pub fn cast_to_i16N_decimal(value: Decimal) -> Option<i16> {
-    value.to_i16()
-}
-
-#[inline]
-pub fn cast_to_i16N_decimalN(value: Option<Decimal>) -> Option<i16> {
-    match value {
-        None => None,
-        Some(x) => x.to_i16(),
-    }
-}
-
-#[inline]
-pub fn cast_to_i16N_d(value: F64) -> Option<i16> {
-    Some(value.into_inner() as i16)
-}
-
-#[inline]
-pub fn cast_to_i16N_dN(value: Option<F64>) -> Option<i16> {
-    value.map(|x| x.into_inner() as i16)
-}
-
-#[inline]
-pub fn cast_to_i16N_f(value: F32) -> Option<i16> {
-    Some(value.into_inner() as i16)
-}
-
-#[inline]
-pub fn cast_to_i16N_fN(value: Option<F32>) -> Option<i16> {
-    value.map(|x| x.into_inner() as i16)
-}
-
-#[inline]
-pub fn cast_to_i16N_s(value: String) -> Option<i16> {
-    match value.trim().parse() {
-        Err(_) => Some(0),
-        Ok(x) => Some(x),
-    }
-}
-
-#[inline]
-pub fn cast_to_i16N_sN(value: Option<String>) -> Option<i16> {
-    match value {
-        None => None,
-        Some(x) => match x.trim().parse() {
-            Err(_) => Some(0),
-            Ok(y) => Some(y),
-        },
-    }
-}
-
-#[inline]
-pub fn cast_to_i16N_i(value: isize) -> Option<i16> {
-    Some(value as i16)
-}
-
-#[inline]
-pub fn cast_to_i16N_i16(value: i16) -> Option<i16> {
-    Some(value)
-}
-
-#[inline]
-pub fn cast_to_i16N_i16N(value: Option<i16>) -> Option<i16> {
-    value
-}
-
-#[inline]
-pub fn cast_to_i16N_i32(value: i32) -> Option<i16> {
-    Some(value as i16)
-}
-
-#[inline]
-pub fn cast_to_i16N_i32N(value: Option<i32>) -> Option<i16> {
-    value.map(|x| x as i16)
-}
-
-#[inline]
-pub fn cast_to_i16N_i64(value: i64) -> Option<i16> {
-    Some(value as i16)
-}
-
-#[inline]
-pub fn cast_to_i16N_i64N(value: Option<i64>) -> Option<i16> {
-    value.map(|x| x as i16)
-}
-
-#[inline]
-pub fn cast_to_i16N_u(value: usize) -> Option<i16> {
-    Some(value as i16)
-}
-
-/////////// cast to i32
-
-#[inline]
-pub fn cast_to_i32_b(value: bool) -> i32 {
-    if value {
-        1
-    } else {
-        0
-    }
-}
-
-#[inline]
-pub fn cast_to_i32_bN(value: Option<bool>) -> i32 {
-    if value.unwrap() {
-        1
-    } else {
-        0
-    }
-}
-
-#[inline]
-pub fn cast_to_i32_decimal(value: Decimal) -> i32 {
-    value.to_i32().unwrap()
-}
-
-#[inline]
-pub fn cast_to_i32_decimalN(value: Option<Decimal>) -> i32 {
-    value.unwrap().to_i32().unwrap()
-}
-
-#[inline]
-pub fn cast_to_i32_d(value: F64) -> i32 {
-    value.into_inner() as i32
-}
-
-#[inline]
-pub fn cast_to_i32_dN(value: Option<F64>) -> i32 {
-    value.unwrap().into_inner() as i32
-}
-
-#[inline]
-pub fn cast_to_i32_f(value: F32) -> i32 {
-    value.into_inner() as i32
-}
-
-#[inline]
-pub fn cast_to_i32_fN(value: Option<F32>) -> i32 {
-    value.unwrap().into_inner() as i32
-}
-
-#[inline]
-pub fn cast_to_i32_s(value: String) -> i32 {
-    value.trim().parse().unwrap_or(0)
-}
-
-#[inline]
-pub fn cast_to_i32_sN(value: Option<String>) -> i32 {
-    value.unwrap().trim().parse().unwrap_or(0)
-}
-
-#[inline]
-pub fn cast_to_i32_i(value: isize) -> i32 {
-    value as i32
-}
-
-#[inline]
-pub fn cast_to_i32_i16(value: i16) -> i32 {
-    value as i32
-}
-
-#[inline]
-pub fn cast_to_i32_i16N(value: Option<i16>) -> i32 {
-    value.unwrap() as i32
-}
-
-#[inline]
-pub fn cast_to_i32_i32(value: i32) -> i32 {
-    value
-}
-
-#[inline]
-pub fn cast_to_i32_i32N(value: Option<i32>) -> i32 {
-    value.unwrap()
-}
-
-#[inline]
-pub fn cast_to_i32_i64(value: i64) -> i32 {
-    value as i32
-}
-
-#[inline]
-pub fn cast_to_i32_i64N(value: Option<i64>) -> i32 {
-    value.unwrap() as i32
-}
-
-#[inline]
-pub fn cast_to_i32_u(value: usize) -> i32 {
-    value as i32
-}
-
-/////////// cast to i32N
-
-#[inline]
-// TODO: this will panic when the array is too large.
-pub fn cast_to_i32N_usize(value: usize) -> Option<i32> {
-    Some(i32::try_from(value).unwrap())
-}
-
-#[inline]
-pub fn cast_to_i32N_nullN(_value: Option<()>) -> Option<i32> {
-    None
-}
-
-#[inline]
-pub fn cast_to_i32N_b(value: bool) -> Option<i32> {
-    if value {
-        Some(1)
-    } else {
-        Some(0)
-    }
-}
-
-#[inline]
-pub fn cast_to_i32N_bN(value: Option<bool>) -> Option<i32> {
-    value.map(|x| if x { 1 } else { 0 })
-}
-
-#[inline]
-pub fn cast_to_i32N_decimal(value: Decimal) -> Option<i32> {
-    value.to_i32()
-}
-
-#[inline]
-pub fn cast_to_i32N_decimalN(value: Option<Decimal>) -> Option<i32> {
-    match value {
-        None => None,
-        Some(x) => x.to_i32(),
-    }
-}
-
-#[inline]
-pub fn cast_to_i32N_d(value: F64) -> Option<i32> {
-    Some(value.into_inner() as i32)
-}
-
-#[inline]
-pub fn cast_to_i32N_dN(value: Option<F64>) -> Option<i32> {
-    value.map(|x| x.into_inner() as i32)
-}
-
-#[inline]
-pub fn cast_to_i32N_f(value: F32) -> Option<i32> {
-    Some(value.into_inner() as i32)
-}
-
-#[inline]
-pub fn cast_to_i32N_fN(value: Option<F32>) -> Option<i32> {
-    value.map(|x| x.into_inner() as i32)
-}
-
-#[inline]
-pub fn cast_to_i32N_s(value: String) -> Option<i32> {
-    match value.trim().parse() {
-        Err(_) => Some(0),
-        Ok(x) => Some(x),
-    }
-}
-
-#[inline]
-pub fn cast_to_i32N_sN(value: Option<String>) -> Option<i32> {
-    match value {
-        None => None,
-        Some(x) => match x.trim().parse() {
-            Err(_) => Some(0),
-            Ok(y) => Some(y),
-        },
-    }
-}
-
-#[inline]
-pub fn cast_to_i32N_i(value: isize) -> Option<i32> {
-    Some(value as i32)
-}
-
-#[inline]
-pub fn cast_to_i32N_i16(value: i16) -> Option<i32> {
-    Some(value as i32)
-}
-
-#[inline]
-pub fn cast_to_i32N_i16N(value: Option<i16>) -> Option<i32> {
-    value.map(|x| x as i32)
-}
-
-#[inline]
-pub fn cast_to_i32N_i32(value: i32) -> Option<i32> {
-    Some(value)
-}
-
-#[inline]
-pub fn cast_to_i32N_i32N(value: Option<i32>) -> Option<i32> {
-    value
-}
-
-#[inline]
-pub fn cast_to_i32N_i64(value: i64) -> Option<i32> {
-    Some(value as i32)
-}
-
-#[inline]
-pub fn cast_to_i32N_i64N(value: Option<i64>) -> Option<i32> {
-    value.map(|x| x as i32)
-}
-
-#[inline]
-pub fn cast_to_i32N_u(value: usize) -> Option<i32> {
-    Some(value as i32)
-}
-
-/////////// cast to i64
-
-#[inline]
-pub fn cast_to_i64_b(value: bool) -> i64 {
-    if value {
-        1
-    } else {
-        0
-    }
-}
-
-#[inline]
-pub fn cast_to_i64_bN(value: Option<bool>) -> i64 {
-    if value.unwrap() {
-        1
-    } else {
-        0
-    }
-}
-
-#[inline]
-pub fn cast_to_i64_decimal(value: Decimal) -> i64 {
-    value.to_i64().unwrap()
-}
-
-#[inline]
-pub fn cast_to_i64_decimalN(value: Option<Decimal>) -> i64 {
-    value.unwrap().to_i64().unwrap()
-}
-
-#[inline]
-pub fn cast_to_i64_d(value: F64) -> i64 {
-    value.into_inner() as i64
-}
-
-#[inline]
-pub fn cast_to_i64_dN(value: Option<F64>) -> i64 {
-    value.unwrap().into_inner() as i64
-}
-
-#[inline]
-pub fn cast_to_i64_f(value: F32) -> i64 {
-    value.into_inner() as i64
-}
-
-#[inline]
-pub fn cast_to_i64_fN(value: Option<F32>) -> i64 {
-    value.unwrap().into_inner() as i64
-}
-
-#[inline]
-pub fn cast_to_i64_s(value: String) -> i64 {
-    value.trim().parse().unwrap_or(0)
-}
-
-#[inline]
-pub fn cast_to_i64_sN(value: Option<String>) -> i64 {
-    value.unwrap().trim().parse().unwrap_or(0)
-}
-
-#[inline]
-pub fn cast_to_i64_i(value: isize) -> i64 {
-    value as i64
-}
-
-#[inline]
-pub fn cast_to_i64_i16(value: i16) -> i64 {
-    value as i64
-}
-
-#[inline]
-pub fn cast_to_i64_i16N(value: Option<i16>) -> i64 {
-    value.unwrap() as i64
-}
-
-#[inline]
-pub fn cast_to_i64_i32(value: i32) -> i64 {
-    value as i64
-}
-
-#[inline]
-pub fn cast_to_i64_i32N(value: Option<i32>) -> i64 {
-    value.unwrap() as i64
-}
-
-#[inline]
-pub fn cast_to_i64_i64(value: i64) -> i64 {
-    value
-}
-
-#[inline]
-pub fn cast_to_i64_i64N(value: Option<i64>) -> i64 {
-    value.unwrap()
-}
-
-#[inline]
-pub fn cast_to_i64_u(value: usize) -> i64 {
-    value as i64
-}
-
-#[inline]
-pub fn cast_to_i64_ShortInterval(value: ShortInterval) -> i64 {
-    value.milliseconds()
-}
-
-#[inline]
-pub fn cast_to_i64_LongInterval(value: LongInterval) -> i64 {
-    value.days() as i64
-}
-
-/////////// cast to i64N
-
-#[inline]
-pub fn cast_to_i64N_nullN(_value: Option<()>) -> Option<i64> {
-    None
-}
-
-#[inline]
-pub fn cast_to_i64N_b(value: bool) -> Option<i64> {
-    if value {
-        Some(1)
-    } else {
-        Some(0)
-    }
-}
-
-#[inline]
-pub fn cast_to_i64N_bN(value: Option<bool>) -> Option<i64> {
-    value.map(|x| if x { 1 } else { 0 })
-}
-
-#[inline]
-pub fn cast_to_i64N_decimal(value: Decimal) -> Option<i64> {
-    value.to_i64()
-}
-
-#[inline]
-pub fn cast_to_i64N_decimalN(value: Option<Decimal>) -> Option<i64> {
-    match value {
-        None => None,
-        Some(x) => x.to_i64(),
-    }
-}
-
-#[inline]
-pub fn cast_to_i64N_d(value: F64) -> Option<i64> {
-    Some(value.into_inner() as i64)
-}
-
-#[inline]
-pub fn cast_to_i64N_dN(value: Option<F64>) -> Option<i64> {
-    value.map(|x| x.into_inner() as i64)
-}
-
-#[inline]
-pub fn cast_to_i64N_f(value: F32) -> Option<i64> {
-    Some(value.into_inner() as i64)
-}
-
-#[inline]
-pub fn cast_to_i64N_fN(value: Option<F32>) -> Option<i64> {
-    value.map(|x| x.into_inner() as i64)
-}
-
-#[inline]
-pub fn cast_to_i64N_s(value: String) -> Option<i64> {
-    match value.trim().parse() {
-        Err(_) => Some(0),
-        Ok(x) => Some(x),
-    }
-}
-
-#[inline]
-pub fn cast_to_i64N_sN(value: Option<String>) -> Option<i64> {
-    match value {
-        None => None,
-        Some(x) => match x.trim().parse() {
-            Err(_) => Some(0),
-            Ok(y) => Some(y),
-        },
-    }
-}
-
-#[inline]
-pub fn cast_to_i64N_i(value: isize) -> Option<i64> {
-    Some(value as i64)
-}
-
-#[inline]
-pub fn cast_to_i64N_i16(value: i16) -> Option<i64> {
-    Some(value as i64)
-}
-
-#[inline]
-pub fn cast_to_i64N_i16N(value: Option<i16>) -> Option<i64> {
-    value.map(|x| x as i64)
-}
-
-#[inline]
-pub fn cast_to_i64N_i32(value: i32) -> Option<i64> {
-    Some(value as i64)
-}
-
-#[inline]
-pub fn cast_to_i64N_i32N(value: Option<i32>) -> Option<i64> {
-    value.map(|x| x as i64)
-}
-
-#[inline]
-pub fn cast_to_i64N_i64(value: i64) -> Option<i64> {
-    Some(value)
-}
-
-#[inline]
-pub fn cast_to_i64N_i64N(value: Option<i64>) -> Option<i64> {
-    value
-}
-
-#[inline]
-pub fn cast_to_i64N_u(value: usize) -> Option<i64> {
-    Some(value as i64)
-}
+cast_to_i!(i8);
+cast_to_i!(i16);
+cast_to_i!(i32);
+cast_to_i!(i64);
 
 #[inline]
 pub fn cast_to_i64N_ShortIntervalN(value: Option<ShortInterval>) -> Option<i64> {

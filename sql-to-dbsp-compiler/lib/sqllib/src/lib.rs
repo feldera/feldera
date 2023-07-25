@@ -332,6 +332,7 @@ macro_rules! some_operator {
 #[macro_export]
 macro_rules! for_all_int_compare {
     ($func_name: ident, $ret_type: ty) => {
+        some_operator!($func_name, i8, i8, bool);
         some_operator!($func_name, i16, i16, bool);
         some_operator!($func_name, i32, i32, bool);
         some_operator!($func_name, i64, i64, bool);
@@ -360,6 +361,7 @@ macro_rules! for_all_compare {
 #[macro_export]
 macro_rules! for_all_int_operator {
     ($func_name: ident) => {
+        some_operator!($func_name, i8, i8, i8);
         some_operator!($func_name, i16, i16, i16);
         some_operator!($func_name, i32, i32, i32);
         some_operator!($func_name, i64, i64, i64);
@@ -588,6 +590,112 @@ where
     left + right
 }
 
+pub fn agg_max_conditional_N_N<T>(left: Option<T>, right: Option<T>, predicate: bool) -> Option<T>
+where
+    T: Ord + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => right,
+        (_, None, _) => left,
+        (Some(x), Some(y), _) => Some(x.max(y)),
+    }
+}
+
+pub fn agg_min_conditional_N_N<T>(left: Option<T>, right: Option<T>, predicate: bool) -> Option<T>
+where
+    T: Ord + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => right,
+        (_, None, _) => left,
+        (Some(x), Some(y), _) => Some(x.min(y)),
+    }
+}
+
+pub fn agg_max_conditional_N_<T>(left: Option<T>, right: T, predicate: bool) -> Option<T>
+where
+    T: Ord + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => Some(right),
+        (Some(x), y, _) => Some(x.max(y)),
+    }
+}
+
+pub fn agg_min_conditional_N_<T>(left: Option<T>, right: T, predicate: bool) -> Option<T>
+where
+    T: Ord + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => Some(right),
+        (Some(x), y, _) => Some(x.min(y)),
+    }
+}
+
+pub fn agg_max_conditional__<T>(left: T, right: T, predicate: bool) -> T
+where
+    T: Ord + Copy,
+{
+    if predicate { left.max(right) } else { left }
+}
+
+pub fn agg_min_conditional__<T>(left: T, right: T, predicate: bool) -> T
+where
+    T: Ord + Copy,
+{
+    if predicate { left.min(right) } else { left }
+}
+
+pub fn agg_plus_conditional_N_N<T>(left: Option<T>, right: Option<T>, predicate: bool) -> Option<T>
+where
+    T: Add<T, Output = T> + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => right,
+        (_, None, _) => left,
+        (Some(x), Some(y), _) => Some(x + y),
+    }
+}
+
+pub fn agg_plus_conditional_N_<T>(left: Option<T>, right: T, predicate: bool) -> Option<T>
+where
+    T: Add<T, Output = T> + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => Some(right),
+        (Some(x), y, _) => Some(x + y),
+    }
+}
+
+pub fn agg_plus_conditional__N<T>(left: T, right: Option<T>, predicate: bool) -> Option<T>
+where
+    T: Add<T, Output = T> + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => Some(left),
+        (_, None, _) => Some(left),
+        (x, Some(y), _) => Some(x + y),
+    }
+}
+
+pub fn agg_plus_conditional__<T>(left: T, right: T, predicate: bool) -> T
+where
+    T: Add<T, Output = T> + Copy,
+{
+    if predicate { left + right } else { left }
+}
+
+#[inline(always)]
+pub fn abs_i8(left: i8) -> i8 {
+    left.abs()
+}
+
 #[inline(always)]
 pub fn abs_i16(left: i16) -> i16 {
     left.abs()
@@ -618,6 +726,7 @@ pub fn abs_decimal(left: Decimal) -> Decimal {
     left.abs()
 }
 
+some_polymorphic_function1!(abs, i8, i8, i8);
 some_polymorphic_function1!(abs, i16, i16, i16);
 some_polymorphic_function1!(abs, i32, i32, i32);
 some_polymorphic_function1!(abs, i64, i64, i64);

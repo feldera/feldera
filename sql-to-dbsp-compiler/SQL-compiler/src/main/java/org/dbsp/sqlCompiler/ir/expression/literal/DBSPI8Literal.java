@@ -10,25 +10,25 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPI16Literal extends DBSPIntLiteral {
+public class DBSPI8Literal extends DBSPIntLiteral {
     @Nullable
-    public final Short value;
+    public final Byte value;
 
-    public DBSPI16Literal() {
+    public DBSPI8Literal() {
         this(null, true);
     }
 
-    public DBSPI16Literal(short value) {
+    public DBSPI8Literal(Byte value) {
         this(value, false);
     }
 
-    public DBSPI16Literal(CalciteObject node, DBSPType type , @Nullable Short value) {
+    public DBSPI8Literal(CalciteObject node, DBSPType type , @Nullable Byte value) {
         super(node, type, value == null);
         this.value = value;
     }
 
-    public DBSPI16Literal(@Nullable Short value, boolean nullable) {
-        this(CalciteObject.EMPTY, DBSPTypeInteger.SIGNED_16.setMayBeNull(nullable), value);
+    public DBSPI8Literal(@Nullable Byte value, boolean nullable) {
+        this(CalciteObject.EMPTY, DBSPTypeInteger.SIGNED_8.setMayBeNull(nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
@@ -43,14 +43,14 @@ public class DBSPI16Literal extends DBSPIntLiteral {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPI16Literal(this.checkIfNull(this.value, mayBeNull), mayBeNull);
+        return new DBSPI8Literal(this.checkIfNull(this.value, mayBeNull), mayBeNull);
     }
 
     @Override
     public boolean sameValue(@Nullable DBSPLiteral o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPI16Literal that = (DBSPI16Literal) o;
+        DBSPI8Literal that = (DBSPI8Literal) o;
         return Objects.equals(value, that.value);
     }
 

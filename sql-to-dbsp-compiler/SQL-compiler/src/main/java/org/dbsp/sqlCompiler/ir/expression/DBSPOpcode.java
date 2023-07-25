@@ -10,6 +10,7 @@ public enum DBSPOpcode {
     NEG("-", false),
     UNARY_PLUS("+", false),
     NOT("!", false),
+    // Indicator(x) = if x == null { 0 } else { 1 }
     INDICATOR("indicator", false),
     IS_FALSE("is_false", false),
     IS_TRUE("is_true", false),

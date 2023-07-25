@@ -340,6 +340,54 @@ public class EndToEndTests extends BaseSQLTests {
                         new DBSPTupleExpression(DBSPBoolLiteral.FALSE)));
     }
 
+    @Test
+    public void testSumFilter() {
+        String query = "SELECT T.COL3, " +
+                "SUM(T.COL1) FILTER (WHERE T.COL1 > 20)\n" +
+                "FROM T GROUP BY T.COL3";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        DBSPBoolLiteral.TRUE,
+                        DBSPLiteral.none(DBSPTypeInteger.SIGNED_32)
+                ),
+                new DBSPTupleExpression(DBSPBoolLiteral.FALSE,
+                        DBSPLiteral.none(DBSPTypeInteger.SIGNED_32)
+                )));
+    }
+
+    @Test
+    public void testCountFilter() {
+        String query = "SELECT T.COL3, " +
+                "COUNT(*) FILTER (WHERE T.COL1 > 20)\n" +
+                "FROM T GROUP BY T.COL3";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        DBSPBoolLiteral.TRUE,
+                        new DBSPI64Literal(0, false)
+                ),
+                new DBSPTupleExpression(DBSPBoolLiteral.FALSE,
+                        new DBSPI64Literal(0, false)
+                )));
+    }
+
+    @Test
+    public void testSumCountFilter() {
+        String query = "SELECT T.COL3, " +
+                "COUNT(*) FILTER (WHERE T.COL1 > 20),\n" +
+                "SUM(T.COL1) FILTER (WHERE T.COL1 > 20)\n" +
+                "FROM T GROUP BY T.COL3";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        DBSPBoolLiteral.TRUE,
+                        new DBSPI64Literal(0, false),
+                        DBSPLiteral.none(DBSPTypeInteger.SIGNED_32)
+                ),
+                new DBSPTupleExpression(DBSPBoolLiteral.FALSE,
+                        new DBSPI64Literal(0, false),
+                        DBSPLiteral.none(DBSPTypeInteger.SIGNED_32)
+                )));
+    }
+
     @Test @Ignore("JSON_OBJECT not yet implemented")
     public void jsonTest() {
         String query = "select JSON_OBJECT(\n" +

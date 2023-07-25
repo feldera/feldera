@@ -2,9 +2,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![CI workflow](https://github.com/feldera/dbsp/actions/workflows/ci.yml/badge.svg)](https://github.com/feldera/dbsp/actions)
+<!--
 [![codecov](https://codecov.io/gh/feldera/dbsp/branch/main/graph/badge.svg?token=0wZcmD11gt)](https://codecov.io/gh/feldera/dbsp)
+-->
 [![nightly](https://github.com/feldera/dbsp/actions/workflows/containers.yml/badge.svg)](https://github.com/feldera/dbsp/actions/workflows/containers.yml)
-
 
 The [Feldera Continuous Analytics Platform](https://www.feldera.com/), or Feldera in short, is a
 fast computational engine for *continuous analytics* over data in-motion. It
@@ -91,6 +92,11 @@ To learn more about Feldera, we recommend going through the [documentation](http
 * [Demos](https://docs.feldera.io/docs/category/demos)
 * [SQL reference](https://docs.feldera.io/docs/sql/intro)
 * [API reference](https://docs.feldera.io/docs/api/rest/)
+
+## Contributing
+
+Most of the software in this repository is governed by an open-source license.
+We welcome contributions.  Here are some [guidelines](CONTRIBUTING.md).
 
 ## Theory
 

@@ -43,6 +43,8 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     private final int width;
     public final boolean signed;
 
+    public static final DBSPTypeInteger SIGNED_8 =
+            new DBSPTypeInteger(CalciteObject.EMPTY, INT8,  8, true,false);
     public static final DBSPTypeInteger SIGNED_16 =
             new DBSPTypeInteger(CalciteObject.EMPTY, INT16, 16, true,false);
     public static final DBSPTypeInteger SIGNED_32 =

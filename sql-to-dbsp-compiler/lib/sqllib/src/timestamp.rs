@@ -321,7 +321,7 @@ pub fn floor_week_Timestamp(value: Timestamp) -> Timestamp {
 
 some_polymorphic_function1!(floor_week, Timestamp, Timestamp, Timestamp);
 
-////////////////////////////
+//////////////////////////// Date
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
 pub struct Date {
@@ -558,3 +558,69 @@ some_polymorphic_function1!(extract_microsecond, Date, Date, i64);
 some_polymorphic_function1!(extract_second, Date, Date, i64);
 some_polymorphic_function1!(extract_minute, Date, Date, i64);
 some_polymorphic_function1!(extract_hour, Date, Date, i64);
+
+//////////////////////////// Time
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
+pub struct Time {
+    nanoseconds: u64,
+}
+
+const BILLION: u64 = 1000000000;
+
+impl Time {
+    pub const fn new(nanoseconds: u64) -> Self {
+        Self { nanoseconds }
+    }
+
+    pub fn from_time(time: NaiveTime) -> Self {
+        Self { nanoseconds: (time.num_seconds_from_midnight() as u64) * BILLION +
+               (time.nanosecond() as u64) }
+    }
+
+    pub fn to_time(self: &Self) -> NaiveTime {
+        NaiveTime::from_num_seconds_from_midnight_opt(
+            (self.nanoseconds / BILLION) as u32,
+            (self.nanoseconds % BILLION) as u32).unwrap()
+    }
+}
+
+impl<T> From<T> for Time
+where
+    u64: From<T>,
+{
+    fn from(value: T) -> Self {
+        Self {
+            nanoseconds: u64::from(value),
+        }
+    }
+}
+
+impl Serialize for Time {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let time = self.to_time();
+        serializer.serialize_str(&time.format("%H:%M:%S.9f").to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for Time {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let str: &'de str = Deserialize::deserialize(deserializer)?;
+        let time = NaiveTime::parse_from_str(str, "%H:%M:%S.f")
+            .map_err(|e| D::Error::custom(format!("invalid time string '{str}': {e}")))?;
+        Ok(Self::from_time(time))
+    }
+}
+
+some_operator!(lt, Time, Time, bool);
+some_operator!(gt, Time, Time, bool);
+some_operator!(eq, Time, Time, bool);
+some_operator!(neq, Time, Time, bool);
+some_operator!(gte, Time, Time, bool);
+some_operator!(lte, Time, Time, bool);

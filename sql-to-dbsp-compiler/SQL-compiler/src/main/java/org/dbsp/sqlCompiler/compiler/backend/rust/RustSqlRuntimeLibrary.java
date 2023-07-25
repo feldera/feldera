@@ -66,9 +66,6 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put("min", DBSPOpcode.MIN);
         this.arithmeticFunctions.put("max", DBSPOpcode.MAX);
         this.arithmeticFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
-        this.arithmeticFunctions.put("agg_plus", DBSPOpcode.AGG_ADD);
-        this.arithmeticFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
-        this.arithmeticFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
         this.arithmeticFunctions.put("mul_by_ref", DBSPOpcode.MUL_WEIGHT);
 
         this.dateFunctions.put("plus", DBSPOpcode.ADD);
@@ -84,6 +81,10 @@ public class RustSqlRuntimeLibrary {
         this.stringFunctions.put("concat", DBSPOpcode.CONCAT);
         this.stringFunctions.put("eq", DBSPOpcode.EQ);
         this.stringFunctions.put("neq", DBSPOpcode.NEQ);
+        this.stringFunctions.put("lt", DBSPOpcode.LT);
+        this.stringFunctions.put("gt", DBSPOpcode.GT);
+        this.stringFunctions.put("lte", DBSPOpcode.LTE);
+        this.stringFunctions.put("gte", DBSPOpcode.GTE);
 
         this.booleanFunctions.put("eq", DBSPOpcode.EQ);
         this.booleanFunctions.put("neq", DBSPOpcode.NEQ);

@@ -33,7 +33,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPU32Literal extends DBSPLiteral {
+public class DBSPU32Literal extends DBSPIntLiteral {
     @Nullable
     public final Integer value;
 
@@ -73,10 +73,6 @@ public class DBSPU32Literal extends DBSPLiteral {
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
         return new DBSPU32Literal(this.checkIfNull(this.value, mayBeNull), mayBeNull);
-    }
-
-    public DBSPTypeInteger getIntegerType() {
-        return this.type.to(DBSPTypeInteger.class);
     }
 
     @Override

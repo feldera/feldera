@@ -74,6 +74,8 @@ public abstract class DBSPLiteral extends DBSPExpression {
             if (!it.signed)
                 throw new UnimplementedException("Null of type ", type);
             switch (it.getWidth()) {
+                case 8:
+                    return new DBSPI8Literal();
                 case 16:
                     return new DBSPI16Literal();
                 case 32:

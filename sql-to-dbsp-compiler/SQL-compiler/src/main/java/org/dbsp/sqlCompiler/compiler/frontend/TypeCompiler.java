@@ -129,7 +129,6 @@ public class TypeCompiler implements ICompilerComponent {
                 case COLUMN_LIST:
                 case DYNAMIC_STAR:
                 case SARG:
-                case TIME:
                 case TIME_WITH_LOCAL_TIME_ZONE:
                 case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
                     throw new UnimplementedException(node);
@@ -154,6 +153,8 @@ public class TypeCompiler implements ICompilerComponent {
                     return DBSPTypeTimestamp.INSTANCE.setMayBeNull(nullable);
                 case DATE:
                     return DBSPTypeDate.INSTANCE.setMayBeNull(nullable);
+                case TIME:
+                    return DBSPTypeTime.INSTANCE.setMayBeNull(nullable);
             }
         }
         throw new UnimplementedException(node);
