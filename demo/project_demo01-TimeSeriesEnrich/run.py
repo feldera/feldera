@@ -35,7 +35,7 @@ def prepare():
     if not os.path.exists(transactions_csv):
         from plumbum.cmd import gdown
         print("Downloading transactions.csv (~2 GiB)...")
-        gdown['1RBEDUuvb-L15dk_UE9PPv3PgVPmkXJy6',
+        gdown['1YuiKl-MMbEujTOwPOyxEoVCh088y9jxI',
               '--output', transactions_csv]()
 
     # Push test data to topics

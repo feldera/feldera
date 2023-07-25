@@ -30,7 +30,7 @@ def prepare():
     if not os.path.exists(green_tripdata_csv):
         print("Downloading green_tripdata.csv...")
         from plumbum.cmd import gdown
-        gdown['14cKfJjwhsVPosshmSP7MBrolsTJfz9Xh',
+        gdown['1R1LdIRDlvN50cq1nMzhRWl8hw-rjCbr6',
               '--output', green_tripdata_csv]()
 
     # Push test data to topics
