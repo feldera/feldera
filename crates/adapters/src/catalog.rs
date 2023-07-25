@@ -149,17 +149,22 @@ impl Catalog {
     }
 
     /// Add an input stream of Z-sets to the catalog.
-    pub fn register_input_zset<Z>(
+    ///
+    /// Adds a `DeCollectionHandle` to the catalog, which will deserialize
+    /// input records into type `D` before converting them to `Z::Key` using
+    /// the `From` trait.
+    pub fn register_input_zset<Z, D>(
         &mut self,
         name: &str,
         stream: Stream<RootCircuit, Z>,
         handle: CollectionHandle<Z::Key, Z::R>,
     ) where
+        D: for<'de> Deserialize<'de> + Clone + Send + 'static,
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
-        Z::Key: for<'de> Deserialize<'de> + Serialize + Sync,
+        Z::Key: Serialize + Sync + From<D>,
     {
-        self.register_input_collection_handle(name, DeZSetHandle::new(handle));
+        self.register_input_collection_handle(name, <DeZSetHandle<Z::Key, D, Z::R>>::new(handle));
 
         // Inputs are also outputs.
         self.register_output_zset(name, stream);
@@ -175,11 +180,12 @@ impl Catalog {
     }
 
     /// Add an output stream of Z-sets to the catalog.
-    pub fn register_output_zset<Z>(&mut self, name: &str, stream: Stream<RootCircuit, Z>)
+    pub fn register_output_zset<Z, D>(&mut self, name: &str, stream: Stream<RootCircuit, Z>)
     where
+        D: for<'de> Deserialize<'de> + Clone + Send + 'static,
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
-        Z::Key: for<'de> Deserialize<'de> + Serialize + Sync,
+        Z::Key: Serialize + Sync + From<D>,
     {
         let circuit = stream.circuit();
 
@@ -188,12 +194,12 @@ impl Catalog {
 
         // Create handles for the neighborhood query.
         let (neighborhood_descr_stream, neighborhood_descr_handle) =
-            circuit.add_input_stream::<(bool, Option<NeighborhoodDescr<Z::Key, Z::Val>>)>();
+            circuit.add_input_stream::<(bool, Option<NeighborhoodDescr<D, ()>>)>();
         let neighborhood_stream = {
             // Create a feedback loop to latch the latest neighborhood descriptor
             // when `reset=true`.
             let feedback =
-                <DelayedFeedback<RootCircuit, Option<NeighborhoodDescr<Z::Key, Z::Val>>>>::new(
+                <DelayedFeedback<RootCircuit, Option<NeighborhoodDescr<Z::Key, ()>>>>::new(
                     stream.circuit(),
                 );
             let new_neighborhood =
@@ -201,7 +207,15 @@ impl Catalog {
                     .stream()
                     .apply2(&neighborhood_descr_stream, |old, (reset, new)| {
                         if *reset {
-                            new.clone()
+                            // Convert anchor of type `D` into `Z::Key`.
+                            new.clone().map(|new| {
+                                NeighborhoodDescr::new(
+                                    new.anchor.map(From::from),
+                                    (),
+                                    new.before,
+                                    new.after,
+                                )
+                            })
                         } else {
                             old.clone()
                         }

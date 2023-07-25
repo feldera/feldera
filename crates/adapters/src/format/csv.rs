@@ -1,13 +1,16 @@
 use crate::{
     format::{Encoder, InputFormat, OutputFormat, Parser},
+    util::split_on_newline,
     DeCollectionHandle, OutputConsumer, SerBatch,
 };
+#[cfg(feature = "server")]
+use actix_web::HttpRequest;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use csv::{
     Reader as CsvReader, ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder,
 };
-use erased_serde::Deserializer as ErasedDeserializer;
-use serde::Deserialize;
+use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerialize};
+use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, io::Read, mem::take, sync::Arc};
 use utoipa::ToSchema;
 
@@ -18,12 +21,23 @@ pub use deserializer::string_record_deserializer;
 /// CSV format parser.
 pub struct CsvInputFormat;
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize, Serialize, ToSchema)]
 pub struct CsvParserConfig {}
 
 impl InputFormat for CsvInputFormat {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("csv")
+    }
+
+    #[cfg(feature = "server")]
+    /// Create a parser using configuration extracted from an HTTP request.
+    // We could just rely on serde to deserialize the config from the
+    // HTTP query, but a specialized method gives us more flexibility.
+    fn config_from_http_request(
+        &self,
+        _request: &HttpRequest,
+    ) -> AnyResult<Box<dyn ErasedSerialize>> {
+        Ok(Box::new(CsvParserConfig {}))
     }
 
     fn new_parser(
@@ -85,29 +99,16 @@ impl CsvParser {
 
         Ok(num_records)
     }
-
-    /// Returns the index of the first character following the last newline
-    /// in `data`.
-    fn split_on_newline(data: &[u8]) -> usize {
-        let data_len = data.len();
-        let index = data
-            .iter()
-            .rev()
-            .position(|&x| x == b'\n')
-            .unwrap_or(data_len);
-
-        data_len - index
-    }
 }
 
 impl Parser for CsvParser {
-    fn input(&mut self, data: &[u8]) -> AnyResult<usize> {
+    fn input_fragment(&mut self, data: &[u8]) -> AnyResult<usize> {
         // println!("input {} bytes:\n{}\nself.leftover:\n{}", data.len(),
         //    std::str::from_utf8(data).map(|s| s.to_string()).unwrap_or_else(|e|
         // format!("invalid csv: {e}")),    std::str::from_utf8(&self.leftover).
         // map(|s| s.to_string()).unwrap_or_else(|e| format!("invalid csv: {e}")));
 
-        let leftover = Self::split_on_newline(data);
+        let leftover = split_on_newline(data);
 
         // println!("leftover: {leftover}");
 
@@ -140,7 +141,9 @@ impl Parser for CsvParser {
         // Try to interpret the leftover chunk as a complete CSV line.
         let reader = self.builder.from_reader(&*self.leftover);
 
-        Self::parse_from_reader(&mut *self.input_stream, reader)
+        let res = Self::parse_from_reader(&mut *self.input_stream, reader);
+        self.leftover.clear();
+        res
     }
 
     fn flush(&mut self) {

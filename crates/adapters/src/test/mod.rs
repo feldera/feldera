@@ -1,6 +1,8 @@
 //! Test framework for the `adapters` crate.
 
-use crate::{controller::InputEndpointConfig, Catalog, InputEndpoint, InputTransport};
+use crate::{
+    controller::InputEndpointConfig, Catalog, FormatConfig, InputEndpoint, InputTransport,
+};
 use anyhow::Result as AnyResult;
 use dbsp::{DBSPHandle, Runtime};
 use log::{Log, Metadata, Record};
@@ -61,6 +63,25 @@ where
     Some(start.elapsed().as_millis())
 }
 
+/// Build an input pipeline that allows testing a parser
+/// standalone, without a DBSP circuit or controller.
+///
+/// ```text
+/// ┌─────────────────┐   ┌──────┐   ┌──────────┐
+/// │MockInputConsumer├──►│parser├──►│MockDeZSet│
+/// └─────────────────┘   └──────┘   └──────────┘
+/// ```
+pub fn mock_parser_pipeline<T>(
+    config: &FormatConfig,
+) -> AnyResult<(MockInputConsumer, MockDeZSet<T>)>
+where
+    T: for<'de> Deserialize<'de> + Send + 'static,
+{
+    let input_handle = <MockDeZSet<T>>::new();
+    let consumer = MockInputConsumer::from_handle(&input_handle, &config);
+    Ok((consumer, input_handle))
+}
+
 /// Build an input pipeline that allows testing a transport endpoint and parser
 /// standalone, without a DBSP circuit or controller.
 ///
@@ -79,9 +100,7 @@ pub fn mock_input_pipeline<T>(
 where
     T: for<'de> Deserialize<'de> + Send + 'static,
 {
-    let input_handle = <MockDeZSet<T>>::new();
-
-    let consumer = MockInputConsumer::from_handle(&input_handle, &config.connector_config.format);
+    let (consumer, input_handle) = mock_parser_pipeline(&config.connector_config.format)?;
 
     let transport =
         <dyn InputTransport>::get_transport(&config.connector_config.transport.name).unwrap();

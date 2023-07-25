@@ -5,11 +5,15 @@
 //! endpoint configs.  We represent these configs as opaque yaml values, so
 //! that the entire configuration tree can be deserialized from a yaml file.
 
-use crate::OutputQuery;
+use crate::{ControllerError, InputFormat, OutputQuery};
+use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, collections::BTreeMap};
 use utoipa::ToSchema;
+
+#[cfg(feature = "server")]
+use actix_web::HttpRequest;
 
 /// Default value of `InputEndpointConfig::max_buffered_records`.
 /// It is declared as a function and not as a constant, so it can
@@ -165,4 +169,32 @@ pub struct FormatConfig {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub config: YamlValue,
+}
+
+impl FormatConfig {
+    /// Create an instance of `FormatConfig` from format name and
+    /// HTTP request using the `InputFormat::config_from_http_request` method.
+    #[cfg(feature = "server")]
+    pub fn from_http_request(
+        endpoint_name: &str,
+        format_name: &str,
+        request: &HttpRequest,
+    ) -> Result<Self, ControllerError> {
+        let format = <dyn InputFormat>::get_format(format_name)
+            .ok_or_else(|| ControllerError::unknown_input_format(endpoint_name, format_name))?;
+
+        let config = format
+            .config_from_http_request(request)
+            .map_err(|e| ControllerError::parse_error(endpoint_name, e))?;
+
+        // Convert config to YAML format.
+        // FIXME: this is hacky. Perhaps we can parameterize `FormatConfig` with the
+        // exact type stored in the `config` field, so it can be either YAML or a
+        // strongly typed format-specific config.
+        Ok(Self {
+            name: Cow::from(format_name.to_string()),
+            config: serde_yaml::to_value(config)
+                .map_err(|e| ControllerError::parse_error(endpoint_name, anyhow!(e)))?,
+        })
+    }
 }

@@ -211,22 +211,17 @@ impl Controller {
     ///
     /// * `endpoint_name` - endpoint name unique within the pipeline.
     ///
-    /// * `endpoint_config` - (partial) endpoint config.  Only `format.name` and
-    ///   `stream` fields need to be initialized.
-    ///
-    /// * `format_config` - a deserializer used to extract format-specific
-    ///   configuration.
+    /// * `endpoint_config` - endpoint config.
     ///
     /// * `endpoint` - transport endpoint object.
     pub fn add_input_endpoint(
         &self,
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
-        format_config: &mut dyn ErasedDeserializer,
         endpoint: Box<dyn InputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
         self.inner
-            .add_input_endpoint(endpoint_name, endpoint_config, format_config, endpoint)
+            .add_input_endpoint(endpoint_name, endpoint_config, endpoint)
     }
 
     /// Disconnect an existing output endpoint.
@@ -814,12 +809,7 @@ impl ControllerInner {
             )
             .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
 
-        self.add_input_endpoint(
-            endpoint_name,
-            endpoint_config.clone(),
-            &mut <dyn ErasedDeserializer>::erase(&endpoint_config.connector_config.format.config),
-            endpoint,
-        )
+        self.add_input_endpoint(endpoint_name, endpoint_config.clone(), endpoint)
     }
 
     fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
@@ -837,7 +827,6 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
-        format_config: &mut dyn ErasedDeserializer,
         mut endpoint: Box<dyn InputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
         let mut inputs = self.inputs.lock().unwrap();
@@ -870,7 +859,12 @@ impl ControllerInner {
         })?;
 
         let parser = format
-            .new_parser(input_stream, format_config)
+            .new_parser(
+                input_stream,
+                &mut <dyn ErasedDeserializer>::erase(
+                    &endpoint_config.connector_config.format.config,
+                ),
+            )
             .map_err(|e| ControllerError::parse_error(endpoint_name, e))?;
 
         // Create probe.
@@ -1244,10 +1238,42 @@ impl InputProbe {
 
 /// `InputConsumer` interface exposed to the transport endpoint.
 impl InputConsumer for InputProbe {
-    fn input(&mut self, data: &[u8]) -> AnyResult<()> {
+    fn input_fragment(&mut self, data: &[u8]) -> AnyResult<()> {
         // println!("input consumer {} bytes", data.len());
         // Pass input buffer to the parser.
-        match self.parser.input(data) {
+        match self.parser.input_fragment(data) {
+            Ok(num_records) => {
+                // Success: push data to the input handle, update stats.
+                self.parser.flush();
+                self.controller.status.input_batch(
+                    self.endpoint_id,
+                    data.len(),
+                    num_records,
+                    &self.controller.status.global_config,
+                    &self.circuit_thread_unparker,
+                    &self.backpressure_thread_unparker,
+                );
+                Ok(())
+            }
+            Err(error) => {
+                // Wrap it in Arc, so we can pass it to `parse_error` and return from this
+                // function as well.
+                let error = Arc::new(error);
+                self.parser.clear();
+                self.controller.parse_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    anyhow!(error.clone()),
+                );
+                Err(anyhow!(error))
+            }
+        }
+    }
+
+    fn input_chunk(&mut self, data: &[u8]) -> AnyResult<()> {
+        // println!("input consumer {} bytes", data.len());
+        // Pass input buffer to the parser.
+        match self.parser.input_chunk(data) {
             Ok(num_records) => {
                 // Success: push data to the input handle, update stats.
                 self.parser.flush();

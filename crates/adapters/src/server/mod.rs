@@ -546,10 +546,7 @@ async fn input_endpoint(
         stream: Cow::from(table_name),
         connector_config: ConnectorConfig {
             transport: HttpInputTransport::config(),
-            format: FormatConfig {
-                name: Cow::from(args.format.clone()),
-                config: YamlValue::Null,
-            },
+            format: FormatConfig::from_http_request(&endpoint_name, &args.format, &req)?,
             max_buffered_records: HttpInputTransport::default_max_buffered_records(),
         },
     };
@@ -564,9 +561,6 @@ async fn input_endpoint(
             match controller.add_input_endpoint(
                 &endpoint_name,
                 config,
-                &mut <dyn ErasedDeserializer>::erase(UrlDeserializer::new(form_urlencoded::parse(
-                    req.query_string().as_bytes(),
-                ))),
                 Box::new(endpoint.clone()) as Box<dyn InputEndpoint>,
             ) {
                 Ok(endpoint_id) => endpoint_id,

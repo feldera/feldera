@@ -154,8 +154,18 @@ pub trait InputEndpoint: Send {
 /// trait.
 // TODO: `input_owned`.
 pub trait InputConsumer: Send {
+    /// Push a fragment of the input stream to the consumer.
+    ///
+    /// `data` is not guaranteed to start or end on a record boundary.
+    /// The parser is responsible for identifying record boundaries and
+    /// buffering incomplete records to get prepended to the next
+    /// input fragment.
+    fn input_fragment(&mut self, data: &[u8]) -> AnyResult<()>;
+
     /// Push a chunk of data to the consumer.
-    fn input(&mut self, data: &[u8]) -> AnyResult<()>;
+    ///
+    /// The chunk is expected to contain complete records only.
+    fn input_chunk(&mut self, data: &[u8]) -> AnyResult<()>;
 
     /// Endpoint failed.
     ///

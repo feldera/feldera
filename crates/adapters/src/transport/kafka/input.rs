@@ -389,7 +389,7 @@ impl KafkaInputEndpoint {
                     if let Some(payload) = message.payload() {
                         // Leave it to the controller to handle errors.  There is noone we can
                         // forward the error to upstream.
-                        let _ = consumer.input(payload);
+                        let _ = consumer.input_chunk(payload);
                     }
                 }
             }
@@ -444,7 +444,7 @@ impl InputEndpoint for KafkaInputEndpoint {
                     if let Some(payload) = message.payload() {
                         // Leave it to the controller to handle errors.  There is noone we can
                         // forward the error to upstream.
-                        let _ = consumer.input(payload);
+                        let _ = consumer.input_chunk(payload);
                     }
                 }
                 _ => (),

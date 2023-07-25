@@ -164,7 +164,7 @@ def main():
     print("Pipeline is running")
 
     if (connector_type == "http"):
-        output = requests.get(
+        output = requests.post(
                 f'{url}/pipelines/{pipeline.pipeline_id}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS',
                 stream = True)
 
@@ -191,7 +191,7 @@ def main():
         assert data.strip() == expected.strip(), "Data: %s, Expected: %s" % (data, expected)
 
         print("Sending neighborhood request")
-        neighborhood = requests.get(
+        neighborhood = requests.post(
                 f'{url}/pipelines/{pipeline.pipeline_id}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS?query=neighborhood&mode=snapshot&format=csv',
                 json = {'before': 10, 'after': 20, 'anchor': ['2008-01-03 05:38:14', 0.0, 'John', 'New York'] })
         print("result: " + str(neighborhood))
@@ -202,7 +202,7 @@ def main():
         print(csv.strip())
 
         print("Sending invalid neighborhood request")
-        response = requests.get(
+        response = requests.post(
                 f'{url}/pipelines/{pipeline.pipeline_id}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS?query=neighborhood&mode=snapshot&format=csv',
                 json = {'before': 10, 'after': 20, 'anchor': ['not_a_date', 0.0, 'John', 'New York'] })
         print("result: " + str(response))
@@ -211,7 +211,7 @@ def main():
         print(response.json())
 
         print("Sending quantiles request")
-        quantiles = requests.get(
+        quantiles = requests.post(
                 f'{url}/pipelines/{pipeline.pipeline_id}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS?query=quantiles&mode=snapshot&format=csv&quntiles=100')
         print("result: " + str(quantiles))
         assert quantiles.status_code == requests.codes.ok

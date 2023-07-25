@@ -70,11 +70,11 @@ pub type Neighborhood<K, V, R> = OrdZSet<(isize, (K, V)), R>;
 /// smallest value of type `K`.
 #[derive(Clone, Debug, Deserialize, PartialOrd, Ord, PartialEq, Eq, Hash, SizeOf)]
 pub struct NeighborhoodDescr<K, V> {
-    anchor: Option<K>,
+    pub anchor: Option<K>,
     #[serde(default)]
-    anchor_val: V,
-    before: usize,
-    after: usize,
+    pub anchor_val: V,
+    pub before: usize,
+    pub after: usize,
 }
 
 impl<K, V> NumEntries for NeighborhoodDescr<K, V> {
