@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 if TYPE_CHECKING:
     from ..models.input_endpoint_config import InputEndpointConfig
@@ -9,11 +9,11 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="PipelineConfigInputs")
 
 
-@attr.s(auto_attribs=True)
+@define
 class PipelineConfigInputs:
     """Input endpoint configuration."""
 
-    additional_properties: Dict[str, "InputEndpointConfig"] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, "InputEndpointConfig"] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         pass

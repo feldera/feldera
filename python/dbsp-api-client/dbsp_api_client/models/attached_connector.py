@@ -1,11 +1,11 @@
 from typing import Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 T = TypeVar("T", bound="AttachedConnector")
 
 
-@attr.s(auto_attribs=True)
+@define
 class AttachedConnector:
     """Format to add attached connectors during a config update.
 
@@ -20,7 +20,7 @@ class AttachedConnector:
     connector_id: str
     is_input: bool
     name: str
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         config = self.config

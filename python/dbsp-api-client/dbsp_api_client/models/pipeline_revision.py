@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 if TYPE_CHECKING:
     from ..models.connector_descr import ConnectorDescr
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="PipelineRevision")
 
 
-@attr.s(auto_attribs=True)
+@define
 class PipelineRevision:
     """A pipeline revision is a versioned, immutable configuration struct that
     contains all information necessary to run a pipeline.
@@ -31,7 +31,7 @@ class PipelineRevision:
     pipeline: "PipelineDescr"
     program: "ProgramDescr"
     revision: str
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         code = self.code

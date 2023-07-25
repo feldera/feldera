@@ -1,13 +1,13 @@
 from typing import Any, Dict, List, Type, TypeVar, Union
 
-import attr
+from attrs import define, field
 
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="NewProgramRequest")
 
 
-@attr.s(auto_attribs=True)
+@define
 class NewProgramRequest:
     """Request to create a new DBSP program.
 
@@ -22,7 +22,7 @@ class NewProgramRequest:
     description: str
     name: str
     overwrite_existing: Union[Unset, bool] = UNSET
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         code = self.code

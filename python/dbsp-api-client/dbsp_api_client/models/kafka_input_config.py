@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Type, TypeVar, Union, cast
 
-import attr
+from attrs import define, field
 
 from ..models.kafka_input_config_log_level import KafkaInputConfigLogLevel
 from ..types import UNSET, Unset
@@ -8,7 +8,7 @@ from ..types import UNSET, Unset
 T = TypeVar("T", bound="KafkaInputConfig")
 
 
-@attr.s(auto_attribs=True)
+@define
 class KafkaInputConfig:
     """
     Attributes:
@@ -21,7 +21,7 @@ class KafkaInputConfig:
     topics: List[str]
     group_join_timeout_secs: Union[Unset, int] = UNSET
     log_level: Union[Unset, KafkaInputConfigLogLevel] = UNSET
-    additional_properties: Dict[str, str] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, str] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         topics = self.topics

@@ -1,11 +1,11 @@
 from typing import Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 T = TypeVar("T", bound="ProgramStatusType7")
 
 
-@attr.s(auto_attribs=True)
+@define
 class ProgramStatusType7:
     """
     Attributes:
@@ -13,7 +13,7 @@ class ProgramStatusType7:
     """
 
     system_error: str
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         system_error = self.system_error

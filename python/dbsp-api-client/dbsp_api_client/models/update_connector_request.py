@@ -1,13 +1,13 @@
 from typing import Any, Dict, List, Type, TypeVar, Union
 
-import attr
+from attrs import define, field
 
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="UpdateConnectorRequest")
 
 
-@attr.s(auto_attribs=True)
+@define
 class UpdateConnectorRequest:
     """Request to update an existing data-connector.
 
@@ -22,7 +22,7 @@ class UpdateConnectorRequest:
     description: str
     name: str
     config: Union[Unset, None, str] = UNSET
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         connector_id = self.connector_id

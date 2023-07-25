@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 if TYPE_CHECKING:
     from ..models.error_response_details import ErrorResponseDetails
@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="ErrorResponse")
 
 
-@attr.s(auto_attribs=True)
+@define
 class ErrorResponse:
     """Information returned by REST API endpoints on error.
 
@@ -23,7 +23,7 @@ class ErrorResponse:
     details: "ErrorResponseDetails"
     error_code: str
     message: str
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         details = self.details.to_dict()

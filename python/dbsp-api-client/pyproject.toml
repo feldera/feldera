@@ -13,7 +13,7 @@ include = ["CHANGELOG.md", "dbsp_api_client/py.typed"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
-httpx = ">=0.15.4,<0.25.0"
+httpx = ">=0.20.0,<0.25.0"
 attrs = ">=21.3.0"
 python-dateutil = "^2.8.0"
 

@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional, Union
 import httpx
 
 from ... import errors
-from ...client import Client
+from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
 from ...models.update_program_request import UpdateProgramRequest
 from ...models.update_program_response import UpdateProgramResponse
@@ -13,29 +13,21 @@ from ...types import Response
 
 def _get_kwargs(
     *,
-    client: Client,
     json_body: UpdateProgramRequest,
 ) -> Dict[str, Any]:
-    url = "{}/programs".format(client.base_url)
-
-    headers: Dict[str, str] = client.get_headers()
-    cookies: Dict[str, Any] = client.get_cookies()
+    pass
 
     json_json_body = json_body.to_dict()
 
     return {
         "method": "patch",
-        "url": url,
-        "headers": headers,
-        "cookies": cookies,
-        "timeout": client.get_timeout(),
-        "follow_redirects": client.follow_redirects,
+        "url": "/programs",
         "json": json_json_body,
     }
 
 
 def _parse_response(
-    *, client: Client, response: httpx.Response
+    *, client: Union[AuthenticatedClient, Client], response: httpx.Response
 ) -> Optional[Union[ErrorResponse, UpdateProgramResponse]]:
     if response.status_code == HTTPStatus.OK:
         response_200 = UpdateProgramResponse.from_dict(response.json())
@@ -56,7 +48,7 @@ def _parse_response(
 
 
 def _build_response(
-    *, client: Client, response: httpx.Response
+    *, client: Union[AuthenticatedClient, Client], response: httpx.Response
 ) -> Response[Union[ErrorResponse, UpdateProgramResponse]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
@@ -68,7 +60,7 @@ def _build_response(
 
 def sync_detailed(
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     json_body: UpdateProgramRequest,
 ) -> Response[Union[ErrorResponse, UpdateProgramResponse]]:
     """Change program code and/or name.
@@ -92,12 +84,10 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        client=client,
         json_body=json_body,
     )
 
-    response = httpx.request(
-        verify=client.verify_ssl,
+    response = client.get_httpx_client().request(
         **kwargs,
     )
 
@@ -106,7 +96,7 @@ def sync_detailed(
 
 def sync(
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     json_body: UpdateProgramRequest,
 ) -> Optional[Union[ErrorResponse, UpdateProgramResponse]]:
     """Change program code and/or name.
@@ -137,7 +127,7 @@ def sync(
 
 async def asyncio_detailed(
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     json_body: UpdateProgramRequest,
 ) -> Response[Union[ErrorResponse, UpdateProgramResponse]]:
     """Change program code and/or name.
@@ -161,19 +151,17 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        client=client,
         json_body=json_body,
     )
 
-    async with httpx.AsyncClient(verify=client.verify_ssl) as _client:
-        response = await _client.request(**kwargs)
+    response = await client.get_async_httpx_client().request(**kwargs)
 
     return _build_response(client=client, response=response)
 
 
 async def asyncio(
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     json_body: UpdateProgramRequest,
 ) -> Optional[Union[ErrorResponse, UpdateProgramResponse]]:
     """Change program code and/or name.

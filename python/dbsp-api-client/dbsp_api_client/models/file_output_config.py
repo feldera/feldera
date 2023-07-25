@@ -1,11 +1,11 @@
 from typing import Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 T = TypeVar("T", bound="FileOutputConfig")
 
 
-@attr.s(auto_attribs=True)
+@define
 class FileOutputConfig:
     """Configuration for writing data to a file with [`FileOutputTransport`].
 
@@ -14,7 +14,7 @@ class FileOutputConfig:
     """
 
     path: str
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         path = self.path

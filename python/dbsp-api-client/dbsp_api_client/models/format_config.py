@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar, Union
 
-import attr
+from attrs import define, field
 
 from ..types import UNSET, Unset
 
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="FormatConfig")
 
 
-@attr.s(auto_attribs=True)
+@define
 class FormatConfig:
     """Data format specification used to parse raw data received from the
     endpoint or to encode data sent to the endpoint.
@@ -23,7 +23,7 @@ class FormatConfig:
 
     name: str
     config: Union[Unset, "FormatConfigConfig"] = UNSET
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         name = self.name

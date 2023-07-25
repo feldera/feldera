@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 if TYPE_CHECKING:
     from ..models.relation import Relation
@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="ProgramSchema")
 
 
-@attr.s(auto_attribs=True)
+@define
 class ProgramSchema:
     """A struct containting the tables (inputs) and views for a program.
 
@@ -22,7 +22,7 @@ class ProgramSchema:
 
     inputs: List["Relation"]
     outputs: List["Relation"]
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         inputs = []
