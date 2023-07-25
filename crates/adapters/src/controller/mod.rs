@@ -473,7 +473,11 @@ impl Controller {
                                 if !endpoint.snapshot_sent.load(Ordering::Acquire)
                                     && output_handles.snapshot.is_some()
                                 {
-                                    if snapshot_batch.is_some() {
+                                    if snapshot_batch
+                                        .as_ref()
+                                        .map(|batches| !batches.is_empty())
+                                        .unwrap_or(false)
+                                    {
                                         // Increment stats first, so we don't end up with negative
                                         // counts.
                                         controller.status.enqueue_batch(
