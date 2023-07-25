@@ -508,13 +508,13 @@ fn example_program_has_errors() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::ProgramFailedToCompile)
 }
 
-fn example_pipline_invalid_input_ac() -> ErrorResponse {
+fn example_pipeline_invalid_input_ac() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::TablesNotInSchema {
         missing: vec![("ac_name".to_string(), "my_table".to_string())],
     })
 }
 
-fn example_pipline_invalid_output_ac() -> ErrorResponse {
+fn example_pipeline_invalid_output_ac() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::ViewsNotInSchema {
         missing: vec![("ac_name".to_string(), "my_view".to_string())],
     })
@@ -1286,11 +1286,11 @@ async fn pipeline_status(
         (status = BAD_REQUEST
             , description = "The connectors in the config reference a table that doesn't exist."
             , body = ErrorResponse
-            , example = json!(example_pipline_invalid_input_ac())),
+            , example = json!(example_pipeline_invalid_input_ac())),
         (status = BAD_REQUEST
             , description = "The connectors in the config reference a view that doesn't exist."
             , body = ErrorResponse
-            , example = json!(example_pipline_invalid_output_ac())),
+            , example = json!(example_pipeline_invalid_output_ac())),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
@@ -1361,11 +1361,11 @@ async fn pipeline_validate(
         (status = BAD_REQUEST
             , description = "The connectors in the config references a table that doesn't exist."
             , body = ErrorResponse
-            , example = json!(example_pipline_invalid_input_ac())),
+            , example = json!(example_pipeline_invalid_input_ac())),
         (status = BAD_REQUEST
             , description = "The connectors in the config references a view that doesn't exist."
             , body = ErrorResponse
-            , example = json!(example_pipline_invalid_output_ac())),
+            , example = json!(example_pipeline_invalid_output_ac())),
         (status = BAD_REQUEST
             , description = "Action is not applicable in the current state of the pipeline."
             , body = ErrorResponse
