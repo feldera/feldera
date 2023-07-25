@@ -2524,7 +2524,6 @@ impl ProjectDB {
         err: DBError,
         program_id: Option<ProgramId>,
     ) -> DBError {
-        println!("HAAAAAAAAAAAAAAAAAAAAAAAAA {:?}", program_id);
         if let DBError::PostgresError { error, .. } = &err {
             let db_err = error.as_db_error();
             if let Some(db_err) = db_err {

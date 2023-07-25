@@ -84,24 +84,23 @@ impl Modify for ServerAddon {
     info(
         title = "DBSP API",
         description = r"
-With Feldera, users create data pipelines out of SQL programs and data connectors. An SQL program comprises tables and views. Connectors feed data to input tables in a program or receive outputs computed by views.
+With Feldera, users create data pipelines out of SQL programs and data connectors. A SQL program comprises tables and views. Connectors feed data to input tables in a program or receive outputs computed by views.
 
 This API allows users to create and manage data pipelines, and the programs
 and connectors that comprise these pipelines.
 
 # API concepts
 
-* *Program*.  An SQL program with a unique name and a unique ID
+* *Program*.  A SQL program with a unique name and a unique ID
   attached to it. A program contains tables and views. A program
   needs to be compiled before it can be executed in a pipeline.
-  Compiling a program also reports errors in the program if
-  they exist.
 
-* *Connector*.  A data connector that can be used to feed input data to
-a program (tables) or consume outputs from a program (views). Every connector
-has a unique name and identifier. We currently support Kafka, Redpanda
-and HTTP connectors. HTTP connectors are implicitly created for every pipeline
-for convenience.
+* *Connector*. A data connector that can be used to feed input data to
+SQL tables or consume outputs from SQL views. Every connector
+has a unique name and identifier. We currently support Kafka and Redpanda.
+We also support directly ingesting and consuming data via HTTP;
+see the `pipelines/{pipeline_id}/ingress` and `pipelines/{pipeline_id}/egress`
+endpoints.
 
 * *Pipeline*.  A pipeline is a running instance of a program and
 some attached connectors. A client can create multiple pipelines that make use of
@@ -119,7 +118,7 @@ program or configuration concurrently.  An example is user 1 modifying the progr
 while user 2 is starting a pipeline for the same program. It would be confusing
 if the pipeline could end up running the old or the new version.
 
-A version is a monotonically increasing version number, associated with each
+A version is a monotonically increasing number, associated with each
 program and pipeline. Every request to compile the program or start a
 pipeline must include the program id and version number. If the version number
 isn't equal to the current version in the database, this means that the
@@ -599,13 +598,13 @@ struct ProgramCodeResponse {
     responses(
         (status = OK, description = "Programs retrieved successfully.", body = [ProgramDescr]),
         (status = NOT_FOUND
-            , description = "Specified program name does not exist in the database."
+            , description = "Specified program name or ID does not exist in the database."
             , body = ErrorResponse
-            , example = json!(example_unknown_name())),
-        (status = NOT_FOUND
-            , description = "Specified program id does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(example_unknown_program())),
+            , examples(
+                ("Unknown program name" = (value = json!(example_unknown_name()))),
+                ("Unknown program ID" = (value = json!(example_unknown_program())))
+            ),
+        )
     ),
     params(ProgramIdOrNameQuery, WithCodeQuery),
     tag = "Program"
@@ -883,6 +882,8 @@ async fn compile_program(
 }
 
 /// Delete a program.
+///
+/// Deletion fails if there is at least one pipeline associated with the program.
 #[utoipa::path(
     responses(
         (status = OK, description = "Program successfully deleted."),

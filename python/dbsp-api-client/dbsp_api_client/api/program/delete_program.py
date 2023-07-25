@@ -62,6 +62,8 @@ def sync_detailed(
 
      Delete a program.
 
+    Deletion fails if there is at least one pipeline associated with the program.
+
     Args:
         program_id (str):
 
@@ -93,6 +95,8 @@ def sync(
 
      Delete a program.
 
+    Deletion fails if there is at least one pipeline associated with the program.
+
     Args:
         program_id (str):
 
@@ -118,6 +122,8 @@ async def asyncio_detailed(
     """Delete a program.
 
      Delete a program.
+
+    Deletion fails if there is at least one pipeline associated with the program.
 
     Args:
         program_id (str):
@@ -147,6 +153,8 @@ async def asyncio(
     """Delete a program.
 
      Delete a program.
+
+    Deletion fails if there is at least one pipeline associated with the program.
 
     Args:
         program_id (str):
