@@ -105,6 +105,9 @@ impl TestConfig {
         let pipelines: Value = req.json().await.unwrap();
         for pipeline in pipelines.as_array().unwrap() {
             let id = pipeline["descriptor"]["pipeline_id"].as_str().unwrap();
+            let _ = config
+                .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+                .await;
             let req = config.delete(format!("/v0/pipelines/{}", id)).await;
             assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
         }
@@ -221,11 +224,11 @@ impl TestConfig {
     ) -> Pipeline {
         let start = Instant::now();
         loop {
-            let mut response = self.get(format!("/v0/pipeline?id={}", id)).await;
+            let mut response = self.get(format!("/v0/pipelines/{}", id)).await;
 
             let pipeline = response.json::<Pipeline>().await.unwrap();
 
-            // println!("Pipeline:\n{pipeline:#?}");
+            println!("Pipeline:\n{pipeline:#?}");
             if pipeline.state.current_status == status {
                 return pipeline;
             }
@@ -325,7 +328,7 @@ async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> S
         "name":  "test",
         "description": "desc",
         "program_id": Some(id.to_string()),
-        "config": "",
+        "config": null,
         "connectors": null
     });
     let mut req = config.post("/v0/pipelines", &pipeline_request).await;
@@ -543,14 +546,14 @@ async fn program_delete_with_pipeline() {
         "name":  "test",
         "description": "desc",
         "program_id": Some(program_id.to_string()),
-        "config": "",
+        "config": null,
         "connectors": null
     });
     let mut req = config.post("/v0/pipelines", &pipeline_request).await;
     assert_eq!(StatusCode::OK, req.status());
     let resp: Value = req.json().await.unwrap();
     let pipeline_id = resp["pipeline_id"].as_str().unwrap();
-    let req = config.get(format!("/v0/pipeline?id={pipeline_id}")).await;
+    let req = config.get(format!("/v0/pipelines/{pipeline_id}")).await;
     assert_eq!(StatusCode::OK, req.status());
 
     // Now delete the program and check that the pipeline still exists
@@ -560,6 +563,6 @@ async fn program_delete_with_pipeline() {
     let req = config.get(format!("/v0/programs/{program_id}")).await;
     assert_eq!(StatusCode::OK, req.status());
 
-    let req = config.get(format!("/v0/pipeline?id={pipeline_id}")).await;
+    let req = config.get(format!("/v0/pipelines/{pipeline_id}")).await;
     assert_eq!(StatusCode::OK, req.status());
 }

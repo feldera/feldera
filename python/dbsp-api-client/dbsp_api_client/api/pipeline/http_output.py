@@ -108,9 +108,9 @@ def sync_detailed(
     mode: Union[Unset, None, EgressMode] = UNSET,
     quantiles: Union[Unset, None, int] = UNSET,
 ) -> Response[Union[Chunk, ErrorResponse]]:
-    """Subscribe to a stream of updates to a SQL view or table.
+    """Subscribe to a stream of updates from a SQL view or table.
 
-     Subscribe to a stream of updates to a SQL view or table.
+     Subscribe to a stream of updates from a SQL view or table.
 
     The pipeline responds with a continuous stream of changes to the specified
     table or view, encoded using the format specified in the `?format=`
@@ -170,9 +170,9 @@ def sync(
     mode: Union[Unset, None, EgressMode] = UNSET,
     quantiles: Union[Unset, None, int] = UNSET,
 ) -> Optional[Union[Chunk, ErrorResponse]]:
-    """Subscribe to a stream of updates to a SQL view or table.
+    """Subscribe to a stream of updates from a SQL view or table.
 
-     Subscribe to a stream of updates to a SQL view or table.
+     Subscribe to a stream of updates from a SQL view or table.
 
     The pipeline responds with a continuous stream of changes to the specified
     table or view, encoded using the format specified in the `?format=`
@@ -227,9 +227,9 @@ async def asyncio_detailed(
     mode: Union[Unset, None, EgressMode] = UNSET,
     quantiles: Union[Unset, None, int] = UNSET,
 ) -> Response[Union[Chunk, ErrorResponse]]:
-    """Subscribe to a stream of updates to a SQL view or table.
+    """Subscribe to a stream of updates from a SQL view or table.
 
-     Subscribe to a stream of updates to a SQL view or table.
+     Subscribe to a stream of updates from a SQL view or table.
 
     The pipeline responds with a continuous stream of changes to the specified
     table or view, encoded using the format specified in the `?format=`
@@ -287,9 +287,9 @@ async def asyncio(
     mode: Union[Unset, None, EgressMode] = UNSET,
     quantiles: Union[Unset, None, int] = UNSET,
 ) -> Optional[Union[Chunk, ErrorResponse]]:
-    """Subscribe to a stream of updates to a SQL view or table.
+    """Subscribe to a stream of updates from a SQL view or table.
 
-     Subscribe to a stream of updates to a SQL view or table.
+     Subscribe to a stream of updates from a SQL view or table.
 
     The pipeline responds with a continuous stream of changes to the specified
     table or view, encoded using the format specified in the `?format=`

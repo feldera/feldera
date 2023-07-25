@@ -7,14 +7,21 @@ use crate::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use dbsp_adapters::ErrorResponse;
+use dbsp_adapters::{
+    ErrorResponse, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
+};
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use futures_util::TryFutureExt;
 use log::{debug, error};
 use openssl::sha;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{collections::HashSet, fmt, fmt::Display};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashSet},
+    fmt,
+    fmt::Display,
+};
 use storage::Storage;
 use tokio_postgres::{error::Error as PgError, NoTls, Row};
 use utoipa::ToSchema;
@@ -473,8 +480,8 @@ pub(crate) struct PipelineRevision {
     pub(crate) connectors: Vec<ConnectorDescr>,
     /// The versioned program descriptor.
     pub(crate) program: ProgramDescr,
-    /// The generated TOML config for the pipeline.
-    pub(crate) config: String,
+    /// The generated expanded configuration for the pipeline.
+    pub(crate) config: PipelineConfig,
     // So new must be called if used outside of this module.
     #[serde(skip)]
     _private: (),
@@ -497,7 +504,7 @@ impl PipelineRevision {
         );
         // This unwrap() will succeed because the pre-conditions above make sure that
         // the config is valid
-        let config = PipelineRevision::generate_toml_config(&pipeline, &connectors).unwrap();
+        let config = PipelineRevision::generate_pipeline_config(&pipeline, &connectors).unwrap();
 
         PipelineRevision {
             revision,
@@ -561,8 +568,8 @@ impl PipelineRevision {
         let acs_with_missing_tables: Vec<(String, String)> = pipeline
             .attached_connectors
             .iter()
-            .filter(|ac| ac.is_input && !tables.contains(&ac.config))
-            .map(|ac| (ac.name.clone(), ac.config.clone()))
+            .filter(|ac| ac.is_input && !tables.contains(&ac.relation_name))
+            .map(|ac| (ac.name.clone(), ac.relation_name.clone()))
             .collect();
         if !acs_with_missing_tables.is_empty() {
             return Err(DBError::TablesNotInSchema {
@@ -574,8 +581,8 @@ impl PipelineRevision {
         let acs_with_missing_views: Vec<(String, String)> = pipeline
             .attached_connectors
             .iter()
-            .filter(|ac| !ac.is_input && !views.contains(&ac.config))
-            .map(|ac| (ac.name.clone(), ac.config.clone()))
+            .filter(|ac| !ac.is_input && !views.contains(&ac.relation_name))
+            .map(|ac| (ac.name.clone(), ac.relation_name.clone()))
             .collect();
         if !acs_with_missing_views.is_empty() {
             return Err(DBError::ViewsNotInSchema {
@@ -590,65 +597,74 @@ impl PipelineRevision {
     ///
     /// Returns an error in case the config is invalid (e.g., a connector is
     /// missing during generation)
-    pub(crate) fn generate_toml_config(
+    pub(crate) fn generate_pipeline_config(
         pipeline: &PipelineDescr,
         connectors: &[ConnectorDescr],
-    ) -> Result<String, DBError> {
+    ) -> Result<PipelineConfig, DBError> {
         let pipeline_id = pipeline.pipeline_id;
-
-        // Assemble the final config by including all attached connectors.
-        let generate_attached_connector_config = |config: &mut String, ac: &AttachedConnector| {
-            let ident = 4;
-            config.push_str(format!("{:ident$}{}:\n", "", ac.name.as_str()).as_str());
-            let ident = 8;
-            config.push_str(format!("{:ident$}stream: {}\n", "", ac.config.as_str()).as_str());
-            let connector = connectors
-                .iter()
-                .find(|c| ac.connector_id == c.connector_id);
-
-            if let Some(connector) = connector {
-                for config_line in connector.config.lines() {
-                    config.push_str(format!("{:ident$}{config_line}\n", "").as_str());
-                }
-            } else {
-                return Err(DBError::UnknownConnector {
-                    connector_id: ac.connector_id,
-                });
-            }
-
-            Ok(())
-        };
-
-        let mut config = pipeline.config.clone();
-        config.push_str(format!("name: pipeline-{pipeline_id}\n").as_str());
-        config.push_str("inputs:\n");
-
-        let mut inputs: Vec<AttachedConnector> = pipeline
+        // input attached connectors
+        let inputs: Vec<AttachedConnector> = pipeline
             .attached_connectors
             .iter()
             .filter(|ac| ac.is_input)
             .cloned()
             .collect();
-        inputs
-            .sort_unstable_by(|ac1, ac2| ac1.name.cmp(&ac2.name).then(ac1.config.cmp(&ac2.config)));
-        for ac in inputs.iter() {
-            generate_attached_connector_config(&mut config, ac)?;
-        }
-
-        config.push_str("outputs:\n");
-        let mut outputs: Vec<AttachedConnector> = pipeline
+        // Sort output attached connectors
+        let outputs: Vec<AttachedConnector> = pipeline
             .attached_connectors
             .iter()
             .filter(|ac| !ac.is_input)
             .cloned()
             .collect();
-        outputs
-            .sort_unstable_by(|ac1, ac2| ac1.name.cmp(&ac2.name).then(ac1.config.cmp(&ac2.config)));
+
+        // Expand input and output attached connectors
+        let mut expanded_inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
+        for ac in inputs.iter() {
+            let expanded = Self::generate_expanded_connector_config(connectors, ac)?;
+            let input_endpoint_config: InputEndpointConfig =
+                serde_yaml::from_str(&expanded).unwrap();
+            expanded_inputs.insert(Cow::from(ac.name.clone()), input_endpoint_config);
+        }
+        let mut expanded_outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig> =
+            BTreeMap::new();
         for ac in outputs.iter() {
-            generate_attached_connector_config(&mut config, ac)?;
+            let expanded = Self::generate_expanded_connector_config(connectors, ac)?;
+            let output_endpoint_config: OutputEndpointConfig =
+                serde_yaml::from_str(&expanded).unwrap();
+            expanded_outputs.insert(Cow::from(ac.name.clone()), output_endpoint_config);
         }
 
-        Ok(config)
+        let pc = PipelineConfig {
+            name: Some(format!("pipeline-{pipeline_id}")),
+            global: pipeline
+                .config
+                .clone()
+                .unwrap_or_else(|| serde_yaml::from_str("").unwrap()),
+            inputs: expanded_inputs.clone(),
+            outputs: expanded_outputs.clone(),
+        };
+
+        Ok(pc)
+    }
+
+    // Temporary measure while Connector configs are still plain strings
+    fn generate_expanded_connector_config(
+        connectors: &[ConnectorDescr],
+        ac: &AttachedConnector,
+    ) -> Result<String, DBError> {
+        let connector = connectors
+            .iter()
+            .find(|c| ac.connector_id == c.connector_id);
+
+        if let Some(connector) = connector {
+            let mut config = format!("stream: {}\n", ac.relation_name);
+            config.push_str(&connector.config);
+            Ok(config)
+        } else {
+            Err(DBError::UnknownConnector {
+                connector_id: ac.connector_id,
+            })
+        }
     }
 }
 
@@ -660,7 +676,7 @@ pub(crate) struct PipelineDescr {
     pub version: Version,
     pub name: String,
     pub description: String,
-    pub config: String,
+    pub config: Option<RuntimeConfig>,
     pub attached_connectors: Vec<AttachedConnector>,
 }
 
@@ -744,9 +760,9 @@ pub(crate) struct AttachedConnector {
     pub is_input: bool,
     /// The id of the connector to attach.
     pub connector_id: ConnectorId,
-    /// The YAML config for this attached connector.
+    /// The table or view this connector is attached to.
     #[cfg_attr(test, proptest(regex = "relation1|relation2|relation3|"))]
-    pub config: String,
+    pub relation_name: String,
 }
 
 /// Connector descriptor.
@@ -1483,17 +1499,18 @@ impl Storage for ProjectDB {
         program_id: Option<ProgramId>,
         pipline_name: &str,
         pipeline_description: &str,
-        config: &str,
+        config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> Result<(PipelineId, Version), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
+        let config_str = RuntimeConfig::to_string(config);
         txn.execute(
             "INSERT INTO pipeline (id, program_id, version, name, description, config, tenant_id) VALUES($1, $2, 1, $3, $4, $5, $6)",
             &[&id, &program_id.map(|id| id.0),
             &pipline_name,
             &pipeline_description,
-            &config,
+            &config_str,
             &tenant_id.0])
             .await
             .map_err(ProjectDB::maybe_unique_violation)
@@ -1527,7 +1544,7 @@ impl Storage for ProjectDB {
         program_id: Option<ProgramId>,
         pipline_name: &str,
         pipeline_description: &str,
-        config: &Option<String>,
+        config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> Result<Version, DBError> {
         log::trace!(
@@ -1569,6 +1586,7 @@ impl Storage for ProjectDB {
                     .await?;
             }
         }
+        let config = RuntimeConfig::to_string(config);
         let row = txn.query_opt("UPDATE pipeline SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), program_id = $4 WHERE id = $5 AND tenant_id = $6 RETURNING version",
             &[&pipline_name, &pipeline_description, &config, &program_id.map(|id| id.0), &pipeline_id.0, &tenant_id.0])
             .await
@@ -2132,14 +2150,13 @@ impl ProjectDB {
     async fn row_to_pipeline_descr(&self, row: &Row) -> Result<PipelineDescr, DBError> {
         let pipeline_id = PipelineId(row.get(0));
         let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
-
         Ok(PipelineDescr {
             pipeline_id,
             program_id,
             version: Version(row.get(1)),
             name: row.get(2),
             description: row.get(3),
-            config: row.get(4),
+            config: RuntimeConfig::from_string(row.get(4)),
             attached_connectors: self.json_to_attached_connectors(row.get(6)).await?,
         })
     }
@@ -2169,14 +2186,13 @@ impl ProjectDB {
     async fn row_to_pipeline(&self, row: &Row) -> Result<Pipeline, DBError> {
         let pipeline_id = PipelineId(row.get(0));
         let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
-
         let descriptor = PipelineDescr {
             pipeline_id,
             program_id,
             version: Version(row.get(1)),
             name: row.get(2),
             description: row.get(3),
-            config: row.get(4),
+            config: RuntimeConfig::from_string(row.get(4)),
             attached_connectors: self.json_to_attached_connectors(row.get(6)).await?,
         };
 
@@ -2246,18 +2262,18 @@ impl ProjectDB {
         Ok((pipeline, program, connectors))
     }
 
-    pub(crate) async fn pipeline_to_toml(
+    pub(crate) async fn pipeline_config(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<String, DBError> {
+    ) -> Result<PipelineConfig, DBError> {
         let pipeline = self
             .get_pipeline_descr_by_id(tenant_id, pipeline_id)
             .await?;
         let connectors: Vec<ConnectorDescr> = self
             .get_connectors_for_pipeline_id(tenant_id, pipeline_id)
             .await?;
-        PipelineRevision::generate_toml_config(&pipeline, &connectors)
+        PipelineRevision::generate_pipeline_config(&pipeline, &connectors)
     }
 
     async fn get_committed_program_by_id(
@@ -2433,7 +2449,7 @@ impl ProjectDB {
                     &pipeline_id.0,
                     &ac.connector_id.0,
                     &ac.is_input,
-                    &ac.config,
+                    &ac.relation_name,
                 ],
             )
             .map_err(Self::maybe_unique_violation)
@@ -2466,7 +2482,7 @@ impl ProjectDB {
             attached_connectors.push(AttachedConnector {
                 name: obj.get("name").unwrap().as_str().unwrap().to_owned(),
                 connector_id,
-                config: obj.get("config").unwrap().as_str().unwrap().to_owned(),
+                relation_name: obj.get("config").unwrap().as_str().unwrap().to_owned(),
                 is_input,
             });
         }

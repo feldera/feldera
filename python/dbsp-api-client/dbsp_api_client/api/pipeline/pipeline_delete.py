@@ -58,11 +58,9 @@ def sync_detailed(
     *,
     client: Union[AuthenticatedClient, Client],
 ) -> Response[Union[Any, ErrorResponse]]:
-    """Delete a pipeline.
+    """Delete a pipeline. The pipeline must be in the shutdown state.
 
-     Delete a pipeline.
-
-    Deletes the pipeline.  The pipeline must not be executing.
+     Delete a pipeline. The pipeline must be in the shutdown state.
 
     Args:
         pipeline_id (str):
@@ -91,11 +89,9 @@ def sync(
     *,
     client: Union[AuthenticatedClient, Client],
 ) -> Optional[Union[Any, ErrorResponse]]:
-    """Delete a pipeline.
+    """Delete a pipeline. The pipeline must be in the shutdown state.
 
-     Delete a pipeline.
-
-    Deletes the pipeline.  The pipeline must not be executing.
+     Delete a pipeline. The pipeline must be in the shutdown state.
 
     Args:
         pipeline_id (str):
@@ -119,11 +115,9 @@ async def asyncio_detailed(
     *,
     client: Union[AuthenticatedClient, Client],
 ) -> Response[Union[Any, ErrorResponse]]:
-    """Delete a pipeline.
+    """Delete a pipeline. The pipeline must be in the shutdown state.
 
-     Delete a pipeline.
-
-    Deletes the pipeline.  The pipeline must not be executing.
+     Delete a pipeline. The pipeline must be in the shutdown state.
 
     Args:
         pipeline_id (str):
@@ -150,11 +144,9 @@ async def asyncio(
     *,
     client: Union[AuthenticatedClient, Client],
 ) -> Optional[Union[Any, ErrorResponse]]:
-    """Delete a pipeline.
+    """Delete a pipeline. The pipeline must be in the shutdown state.
 
-     Delete a pipeline.
-
-    Deletes the pipeline.  The pipeline must not be executing.
+     Delete a pipeline. The pipeline must be in the shutdown state.
 
     Args:
         pipeline_id (str):

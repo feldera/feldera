@@ -4,6 +4,7 @@ from attrs import define, field
 
 if TYPE_CHECKING:
     from ..models.connector_descr import ConnectorDescr
+    from ..models.pipeline_config import PipelineConfig
     from ..models.pipeline_descr import PipelineDescr
     from ..models.program_descr import ProgramDescr
 
@@ -17,14 +18,15 @@ class PipelineRevision:
     contains all information necessary to run a pipeline.
 
         Attributes:
-            config (str): The generated TOML config for the pipeline.
+            config (PipelineConfig): Pipeline configuration specified by the user when creating
+                a new pipeline instance.
             connectors (List['ConnectorDescr']): The versioned connectors.
             pipeline (PipelineDescr): Pipeline descriptor.
             program (ProgramDescr): Program descriptor.
             revision (str): Revision number.
     """
 
-    config: str
+    config: "PipelineConfig"
     connectors: List["ConnectorDescr"]
     pipeline: "PipelineDescr"
     program: "ProgramDescr"
@@ -32,7 +34,8 @@ class PipelineRevision:
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        config = self.config
+        config = self.config.to_dict()
+
         connectors = []
         for connectors_item_data in self.connectors:
             connectors_item = connectors_item_data.to_dict()
@@ -62,11 +65,12 @@ class PipelineRevision:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         from ..models.connector_descr import ConnectorDescr
+        from ..models.pipeline_config import PipelineConfig
         from ..models.pipeline_descr import PipelineDescr
         from ..models.program_descr import ProgramDescr
 
         d = src_dict.copy()
-        config = d.pop("config")
+        config = PipelineConfig.from_dict(d.pop("config"))
 
         connectors = []
         _connectors = d.pop("connectors")

@@ -25,12 +25,12 @@ const fn default_workers() -> u16 {
 
 /// Pipeline configuration specified by the user when creating
 /// a new pipeline instance.
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PipelineConfig {
     /// Global controller configuration.
     #[serde(flatten)]
     #[schema(inline)]
-    pub global: GlobalPipelineConfig,
+    pub global: RuntimeConfig,
 
     /// Pipeline name
     pub name: Option<String>,
@@ -44,8 +44,8 @@ pub struct PipelineConfig {
 }
 
 /// Global pipeline configuration settings.
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
-pub struct GlobalPipelineConfig {
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
     #[serde(default = "default_workers")]
     pub workers: u16,
@@ -70,7 +70,24 @@ pub struct GlobalPipelineConfig {
     pub max_buffering_delay_usecs: u64,
 }
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+impl RuntimeConfig {
+    pub fn from_string(s: &str) -> Option<Self> {
+        if s.is_empty() {
+            None
+        } else {
+            serde_yaml::from_str(s).unwrap()
+        }
+    }
+
+    pub fn to_string(config: &Option<Self>) -> String {
+        match config {
+            None => "".to_string(),
+            Some(c) => serde_yaml::to_string(&c).unwrap(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct InputEndpointConfig {
     /// Transport endpoint configuration.
     pub transport: TransportConfig,
@@ -95,7 +112,7 @@ pub struct InputEndpointConfig {
     pub max_buffered_records: u64,
 }
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct OutputEndpointConfig {
     /// The name of the output stream of the circuit that this endpoint is
     /// connected to.
@@ -119,7 +136,7 @@ pub struct OutputEndpointConfig {
 }
 
 /// Transport endpoint configuration.
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct TransportConfig {
     /// Data transport name, e.g., "file", "kafka", "kinesis", etc.
     pub name: Cow<'static, str>,
@@ -135,7 +152,7 @@ pub struct TransportConfig {
 
 /// Data format specification used to parse raw data received from the
 /// endpoint or to encode data sent to the endpoint.
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct FormatConfig {
     /// Format name, e.g., "csv", "json", "bincode", etc.
     pub name: Cow<'static, str>,
