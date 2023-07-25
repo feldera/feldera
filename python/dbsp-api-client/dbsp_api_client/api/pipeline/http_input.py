@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional, Union, cast
 import httpx
 
 from ... import errors
-from ...client import Client
+from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
 from ...types import UNSET, Response
 
@@ -13,15 +13,9 @@ def _get_kwargs(
     pipeline_id: str,
     table_name: str,
     *,
-    client: Client,
     format_: str,
 ) -> Dict[str, Any]:
-    url = "{}/pipelines/{pipeline_id}/ingress/{table_name}".format(
-        client.base_url, pipeline_id=pipeline_id, table_name=table_name
-    )
-
-    headers: Dict[str, str] = client.get_headers()
-    cookies: Dict[str, Any] = client.get_cookies()
+    pass
 
     params: Dict[str, Any] = {}
     params["format"] = format_
@@ -30,16 +24,17 @@ def _get_kwargs(
 
     return {
         "method": "post",
-        "url": url,
-        "headers": headers,
-        "cookies": cookies,
-        "timeout": client.get_timeout(),
-        "follow_redirects": client.follow_redirects,
+        "url": "/pipelines/{pipeline_id}/ingress/{table_name}".format(
+            pipeline_id=pipeline_id,
+            table_name=table_name,
+        ),
         "params": params,
     }
 
 
-def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[Any, ErrorResponse]]:
+def _parse_response(
+    *, client: Union[AuthenticatedClient, Client], response: httpx.Response
+) -> Optional[Union[Any, ErrorResponse]]:
     if response.status_code == HTTPStatus.OK:
         response_200 = cast(Any, None)
         return response_200
@@ -65,7 +60,9 @@ def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Uni
         return None
 
 
-def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[Any, ErrorResponse]]:
+def _build_response(
+    *, client: Union[AuthenticatedClient, Client], response: httpx.Response
+) -> Response[Union[Any, ErrorResponse]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -78,7 +75,7 @@ def sync_detailed(
     pipeline_id: str,
     table_name: str,
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     format_: str,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Push data to a SQL table.
@@ -109,12 +106,10 @@ def sync_detailed(
     kwargs = _get_kwargs(
         pipeline_id=pipeline_id,
         table_name=table_name,
-        client=client,
         format_=format_,
     )
 
-    response = httpx.request(
-        verify=client.verify_ssl,
+    response = client.get_httpx_client().request(
         **kwargs,
     )
 
@@ -125,7 +120,7 @@ def sync(
     pipeline_id: str,
     table_name: str,
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     format_: str,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Push data to a SQL table.
@@ -165,7 +160,7 @@ async def asyncio_detailed(
     pipeline_id: str,
     table_name: str,
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     format_: str,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Push data to a SQL table.
@@ -196,12 +191,10 @@ async def asyncio_detailed(
     kwargs = _get_kwargs(
         pipeline_id=pipeline_id,
         table_name=table_name,
-        client=client,
         format_=format_,
     )
 
-    async with httpx.AsyncClient(verify=client.verify_ssl) as _client:
-        response = await _client.request(**kwargs)
+    response = await client.get_async_httpx_client().request(**kwargs)
 
     return _build_response(client=client, response=response)
 
@@ -210,7 +203,7 @@ async def asyncio(
     pipeline_id: str,
     table_name: str,
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     format_: str,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Push data to a SQL table.

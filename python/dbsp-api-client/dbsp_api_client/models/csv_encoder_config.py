@@ -1,13 +1,13 @@
 from typing import Any, Dict, List, Type, TypeVar, Union
 
-import attr
+from attrs import define, field
 
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="CsvEncoderConfig")
 
 
-@attr.s(auto_attribs=True)
+@define
 class CsvEncoderConfig:
     """
     Attributes:
@@ -15,7 +15,7 @@ class CsvEncoderConfig:
     """
 
     buffer_size_records: Union[Unset, int] = UNSET
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         buffer_size_records = self.buffer_size_records

@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Type, TypeVar, Union
 
-import attr
+from attrs import define, field
 
 from ..models.kafka_output_config_log_level import KafkaOutputConfigLogLevel
 from ..types import UNSET, Unset
@@ -8,7 +8,7 @@ from ..types import UNSET, Unset
 T = TypeVar("T", bound="KafkaOutputConfig")
 
 
-@attr.s(auto_attribs=True)
+@define
 class KafkaOutputConfig:
     """
     Attributes:
@@ -29,7 +29,7 @@ class KafkaOutputConfig:
     topic: str
     log_level: Union[Unset, KafkaOutputConfigLogLevel] = UNSET
     max_inflight_messages: Union[Unset, int] = UNSET
-    additional_properties: Dict[str, str] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, str] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         topic = self.topic

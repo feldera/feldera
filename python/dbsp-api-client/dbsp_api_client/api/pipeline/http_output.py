@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional, Union
 import httpx
 
 from ... import errors
-from ...client import Client
+from ...client import AuthenticatedClient, Client
 from ...models.chunk import Chunk
 from ...models.egress_mode import EgressMode
 from ...models.error_response import ErrorResponse
@@ -17,19 +17,13 @@ def _get_kwargs(
     pipeline_id: str,
     table_name: str,
     *,
-    client: Client,
     json_body: Optional[NeighborhoodQuery],
     format_: str,
     query: Union[Unset, None, OutputQuery] = UNSET,
     mode: Union[Unset, None, EgressMode] = UNSET,
     quantiles: Union[Unset, None, int] = UNSET,
 ) -> Dict[str, Any]:
-    url = "{}/pipelines/{pipeline_id}/egress/{table_name}".format(
-        client.base_url, pipeline_id=pipeline_id, table_name=table_name
-    )
-
-    headers: Dict[str, str] = client.get_headers()
-    cookies: Dict[str, Any] = client.get_cookies()
+    pass
 
     params: Dict[str, Any] = {}
     params["format"] = format_
@@ -54,17 +48,18 @@ def _get_kwargs(
 
     return {
         "method": "get",
-        "url": url,
-        "headers": headers,
-        "cookies": cookies,
-        "timeout": client.get_timeout(),
-        "follow_redirects": client.follow_redirects,
+        "url": "/pipelines/{pipeline_id}/egress/{table_name}".format(
+            pipeline_id=pipeline_id,
+            table_name=table_name,
+        ),
         "json": json_json_body,
         "params": params,
     }
 
 
-def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Union[Chunk, ErrorResponse]]:
+def _parse_response(
+    *, client: Union[AuthenticatedClient, Client], response: httpx.Response
+) -> Optional[Union[Chunk, ErrorResponse]]:
     if response.status_code == HTTPStatus.OK:
         response_200 = Chunk.from_dict(response.json())
 
@@ -91,7 +86,9 @@ def _parse_response(*, client: Client, response: httpx.Response) -> Optional[Uni
         return None
 
 
-def _build_response(*, client: Client, response: httpx.Response) -> Response[Union[Chunk, ErrorResponse]]:
+def _build_response(
+    *, client: Union[AuthenticatedClient, Client], response: httpx.Response
+) -> Response[Union[Chunk, ErrorResponse]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -104,7 +101,7 @@ def sync_detailed(
     pipeline_id: str,
     table_name: str,
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     json_body: Optional[NeighborhoodQuery],
     format_: str,
     query: Union[Unset, None, OutputQuery] = UNSET,
@@ -148,7 +145,6 @@ def sync_detailed(
     kwargs = _get_kwargs(
         pipeline_id=pipeline_id,
         table_name=table_name,
-        client=client,
         json_body=json_body,
         format_=format_,
         query=query,
@@ -156,8 +152,7 @@ def sync_detailed(
         quantiles=quantiles,
     )
 
-    response = httpx.request(
-        verify=client.verify_ssl,
+    response = client.get_httpx_client().request(
         **kwargs,
     )
 
@@ -168,7 +163,7 @@ def sync(
     pipeline_id: str,
     table_name: str,
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     json_body: Optional[NeighborhoodQuery],
     format_: str,
     query: Union[Unset, None, OutputQuery] = UNSET,
@@ -225,7 +220,7 @@ async def asyncio_detailed(
     pipeline_id: str,
     table_name: str,
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     json_body: Optional[NeighborhoodQuery],
     format_: str,
     query: Union[Unset, None, OutputQuery] = UNSET,
@@ -269,7 +264,6 @@ async def asyncio_detailed(
     kwargs = _get_kwargs(
         pipeline_id=pipeline_id,
         table_name=table_name,
-        client=client,
         json_body=json_body,
         format_=format_,
         query=query,
@@ -277,8 +271,7 @@ async def asyncio_detailed(
         quantiles=quantiles,
     )
 
-    async with httpx.AsyncClient(verify=client.verify_ssl) as _client:
-        response = await _client.request(**kwargs)
+    response = await client.get_async_httpx_client().request(**kwargs)
 
     return _build_response(client=client, response=response)
 
@@ -287,7 +280,7 @@ async def asyncio(
     pipeline_id: str,
     table_name: str,
     *,
-    client: Client,
+    client: Union[AuthenticatedClient, Client],
     json_body: Optional[NeighborhoodQuery],
     format_: str,
     query: Union[Unset, None, OutputQuery] = UNSET,

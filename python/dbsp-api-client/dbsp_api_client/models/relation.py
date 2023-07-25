@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 if TYPE_CHECKING:
     from ..models.field import Field
@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="Relation")
 
 
-@attr.s(auto_attribs=True)
+@define
 class Relation:
     """A SQL table or view. It has a name and a list of fields.
 
@@ -20,7 +20,7 @@ class Relation:
 
     fields: List["Field"]
     name: str
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         fields = []

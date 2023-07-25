@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 if TYPE_CHECKING:
     from ..models.pipeline_descr import PipelineDescr
@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="Pipeline")
 
 
-@attr.s(auto_attribs=True)
+@define
 class Pipeline:
     """State of a pipeline, including static configuration
     and runtime status.
@@ -22,7 +22,7 @@ class Pipeline:
 
     descriptor: "PipelineDescr"
     state: "PipelineRuntimeState"
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         descriptor = self.descriptor.to_dict()

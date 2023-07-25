@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar, Union
 
-import attr
+from attrs import define, field
 
 from ..models.program_status_type_0 import ProgramStatusType0
 from ..models.program_status_type_1 import ProgramStatusType1
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="ProgramDescr")
 
 
-@attr.s(auto_attribs=True)
+@define
 class ProgramDescr:
     """Program descriptor.
 
@@ -50,7 +50,7 @@ class ProgramDescr:
     ]
     version: int
     schema: Union[Unset, None, "ProgramSchema"] = UNSET
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         from ..models.program_status_type_5 import ProgramStatusType5

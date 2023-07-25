@@ -1,11 +1,11 @@
 from typing import Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 T = TypeVar("T", bound="CompileProgramRequest")
 
 
-@attr.s(auto_attribs=True)
+@define
 class CompileProgramRequest:
     """Request to queue a program for compilation.
 
@@ -16,7 +16,7 @@ class CompileProgramRequest:
 
     program_id: str
     version: int
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         program_id = self.program_id

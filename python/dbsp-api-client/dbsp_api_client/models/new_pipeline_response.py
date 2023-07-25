@@ -1,11 +1,11 @@
 from typing import Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 T = TypeVar("T", bound="NewPipelineResponse")
 
 
-@attr.s(auto_attribs=True)
+@define
 class NewPipelineResponse:
     """Response to a config creation request.
 
@@ -16,7 +16,7 @@ class NewPipelineResponse:
 
     pipeline_id: str
     version: int
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         pipeline_id = self.pipeline_id

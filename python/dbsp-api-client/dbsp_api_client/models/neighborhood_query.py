@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar, Union
 
-import attr
+from attrs import define, field
 
 from ..types import UNSET, Unset
 
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="NeighborhoodQuery")
 
 
-@attr.s(auto_attribs=True)
+@define
 class NeighborhoodQuery:
     """A request to output a specific neighborhood of a table or view.
     The neighborhood is defined in terms of its central point (`anchor`)
@@ -26,7 +26,7 @@ class NeighborhoodQuery:
     after: int
     before: int
     anchor: Union[Unset, None, "NeighborhoodQueryAnchor"] = UNSET
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         after = self.after

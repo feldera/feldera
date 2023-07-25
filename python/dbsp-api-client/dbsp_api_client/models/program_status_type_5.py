@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 if TYPE_CHECKING:
     from ..models.sql_compiler_message import SqlCompilerMessage
@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="ProgramStatusType5")
 
 
-@attr.s(auto_attribs=True)
+@define
 class ProgramStatusType5:
     """
     Attributes:
@@ -17,7 +17,7 @@ class ProgramStatusType5:
     """
 
     sql_error: List["SqlCompilerMessage"]
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         sql_error = []

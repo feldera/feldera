@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar, Union
 
-import attr
+from attrs import define, field
 
 from ..types import UNSET, Unset
 
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="NewPipelineRequest")
 
 
-@attr.s(auto_attribs=True)
+@define
 class NewPipelineRequest:
     """Request to create a new program configuration.
 
@@ -28,7 +28,7 @@ class NewPipelineRequest:
     name: str
     connectors: Union[Unset, None, List["AttachedConnector"]] = UNSET
     program_id: Union[Unset, None, str] = UNSET
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         config = self.config

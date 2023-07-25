@@ -1,18 +1,18 @@
 from typing import Any, Dict, List, Type, TypeVar
 
-import attr
+from attrs import define, field
 
 T = TypeVar("T", bound="ErrorResponseDetails")
 
 
-@attr.s(auto_attribs=True)
+@define
 class ErrorResponseDetails:
     """Detailed error metadata.
     The contents of this field is determined by `error_code`.
 
     """
 
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         field_dict: Dict[str, Any] = {}

@@ -1,7 +1,7 @@
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar, Union
 
-import attr
+from attrs import define, field
 
 from ..types import UNSET, File, FileJsonType, Unset
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="Chunk")
 
 
-@attr.s(auto_attribs=True)
+@define
 class Chunk:
     """A set of updates to a SQL table or view.
 
@@ -32,7 +32,7 @@ class Chunk:
     bin_data: Union[Unset, None, File] = UNSET
     json_data: Union[Unset, None, "ChunkJsonData"] = UNSET
     text_data: Union[Unset, None, str] = UNSET
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         sequence_number = self.sequence_number

@@ -1,13 +1,13 @@
 from typing import Any, Dict, List, Type, TypeVar, Union
 
-import attr
+from attrs import define, field
 
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="FileInputConfig")
 
 
-@attr.s(auto_attribs=True)
+@define
 class FileInputConfig:
     """Configuration for reading data from a file with [`FileInputTransport`].
 
@@ -28,7 +28,7 @@ class FileInputConfig:
     path: str
     buffer_size_bytes: Union[Unset, None, int] = UNSET
     follow: Union[Unset, bool] = UNSET
-    additional_properties: Dict[str, Any] = attr.ib(init=False, factory=dict)
+    additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         path = self.path
