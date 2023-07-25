@@ -36,10 +36,6 @@ def _parse_response(
         response_404 = ErrorResponse.from_dict(response.json())
 
         return response_404
-    if response.status_code == HTTPStatus.SERVICE_UNAVAILABLE:
-        response_503 = ErrorResponse.from_dict(response.json())
-
-        return response_503
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -62,12 +58,14 @@ def sync_detailed(
     *,
     client: Union[AuthenticatedClient, Client],
 ) -> Response[Union[ErrorResponse, str]]:
-    """Validate the configuration of a  a pipeline.
+    """Validate a pipeline.
 
-     Validate the configuration of a  a pipeline.
+     Validate a pipeline.
 
-    Validate configuration, usable as a pre-cursor for deploy to
-    check if pipeline configuration is valid and can be deployed.
+    Checks whether a pipeline is configured correctly. This includes
+    checking whether the pipeline references a valid compiled program,
+    whether the connectors reference valid tables/views in the program,
+    and more.
 
     Args:
         pipeline_id (str):
@@ -96,12 +94,14 @@ def sync(
     *,
     client: Union[AuthenticatedClient, Client],
 ) -> Optional[Union[ErrorResponse, str]]:
-    """Validate the configuration of a  a pipeline.
+    """Validate a pipeline.
 
-     Validate the configuration of a  a pipeline.
+     Validate a pipeline.
 
-    Validate configuration, usable as a pre-cursor for deploy to
-    check if pipeline configuration is valid and can be deployed.
+    Checks whether a pipeline is configured correctly. This includes
+    checking whether the pipeline references a valid compiled program,
+    whether the connectors reference valid tables/views in the program,
+    and more.
 
     Args:
         pipeline_id (str):
@@ -125,12 +125,14 @@ async def asyncio_detailed(
     *,
     client: Union[AuthenticatedClient, Client],
 ) -> Response[Union[ErrorResponse, str]]:
-    """Validate the configuration of a  a pipeline.
+    """Validate a pipeline.
 
-     Validate the configuration of a  a pipeline.
+     Validate a pipeline.
 
-    Validate configuration, usable as a pre-cursor for deploy to
-    check if pipeline configuration is valid and can be deployed.
+    Checks whether a pipeline is configured correctly. This includes
+    checking whether the pipeline references a valid compiled program,
+    whether the connectors reference valid tables/views in the program,
+    and more.
 
     Args:
         pipeline_id (str):
@@ -157,12 +159,14 @@ async def asyncio(
     *,
     client: Union[AuthenticatedClient, Client],
 ) -> Optional[Union[ErrorResponse, str]]:
-    """Validate the configuration of a  a pipeline.
+    """Validate a pipeline.
 
-     Validate the configuration of a  a pipeline.
+     Validate a pipeline.
 
-    Validate configuration, usable as a pre-cursor for deploy to
-    check if pipeline configuration is valid and can be deployed.
+    Checks whether a pipeline is configured correctly. This includes
+    checking whether the pipeline references a valid compiled program,
+    whether the connectors reference valid tables/views in the program,
+    and more.
 
     Args:
         pipeline_id (str):

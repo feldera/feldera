@@ -52,6 +52,7 @@ from .program_status_type_5 import ProgramStatusType5
 from .program_status_type_6 import ProgramStatusType6
 from .program_status_type_7 import ProgramStatusType7
 from .relation import Relation
+from .runtime_config import RuntimeConfig
 from .sql_compiler_message import SqlCompilerMessage
 from .transport_config import TransportConfig
 from .transport_config_config import TransportConfigConfig
@@ -115,6 +116,7 @@ __all__ = (
     "ProgramStatusType6",
     "ProgramStatusType7",
     "Relation",
+    "RuntimeConfig",
     "SqlCompilerMessage",
     "TransportConfig",
     "TransportConfigConfig",

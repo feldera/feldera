@@ -6,7 +6,7 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
-from ...models.pipeline_revision import PipelineRevision
+from ...models.pipeline import Pipeline
 from ...types import Response
 
 
@@ -17,7 +17,7 @@ def _get_kwargs(
 
     return {
         "method": "get",
-        "url": "/pipelines/{pipeline_id}/committed".format(
+        "url": "/pipelines/{pipeline_id}".format(
             pipeline_id=pipeline_id,
         ),
     }
@@ -25,14 +25,9 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Optional[Union[ErrorResponse, Optional[PipelineRevision]]]:
+) -> Optional[Union[ErrorResponse, Pipeline]]:
     if response.status_code == HTTPStatus.OK:
-        _response_200 = response.json()
-        response_200: Optional[PipelineRevision]
-        if _response_200 is None:
-            response_200 = None
-        else:
-            response_200 = PipelineRevision.from_dict(_response_200)
+        response_200 = Pipeline.from_dict(response.json())
 
         return response_200
     if response.status_code == HTTPStatus.NOT_FOUND:
@@ -47,7 +42,7 @@ def _parse_response(
 
 def _build_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Response[Union[ErrorResponse, Optional[PipelineRevision]]]:
+) -> Response[Union[ErrorResponse, Pipeline]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -60,11 +55,10 @@ def sync_detailed(
     pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-) -> Response[Union[ErrorResponse, Optional[PipelineRevision]]]:
-    """Return the last committed (and running, if pipeline is started)
+) -> Response[Union[ErrorResponse, Pipeline]]:
+    """Fetch a pipeline by ID.
 
-     Return the last committed (and running, if pipeline is started)
-    configuration of the pipeline.
+     Fetch a pipeline by ID.
 
     Args:
         pipeline_id (str):
@@ -74,7 +68,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, Optional[PipelineRevision]]]
+        Response[Union[ErrorResponse, Pipeline]]
     """
 
     kwargs = _get_kwargs(
@@ -92,11 +86,10 @@ def sync(
     pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-) -> Optional[Union[ErrorResponse, Optional[PipelineRevision]]]:
-    """Return the last committed (and running, if pipeline is started)
+) -> Optional[Union[ErrorResponse, Pipeline]]:
+    """Fetch a pipeline by ID.
 
-     Return the last committed (and running, if pipeline is started)
-    configuration of the pipeline.
+     Fetch a pipeline by ID.
 
     Args:
         pipeline_id (str):
@@ -106,7 +99,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, Optional[PipelineRevision]]
+        Union[ErrorResponse, Pipeline]
     """
 
     return sync_detailed(
@@ -119,11 +112,10 @@ async def asyncio_detailed(
     pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-) -> Response[Union[ErrorResponse, Optional[PipelineRevision]]]:
-    """Return the last committed (and running, if pipeline is started)
+) -> Response[Union[ErrorResponse, Pipeline]]:
+    """Fetch a pipeline by ID.
 
-     Return the last committed (and running, if pipeline is started)
-    configuration of the pipeline.
+     Fetch a pipeline by ID.
 
     Args:
         pipeline_id (str):
@@ -133,7 +125,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, Optional[PipelineRevision]]]
+        Response[Union[ErrorResponse, Pipeline]]
     """
 
     kwargs = _get_kwargs(
@@ -149,11 +141,10 @@ async def asyncio(
     pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-) -> Optional[Union[ErrorResponse, Optional[PipelineRevision]]]:
-    """Return the last committed (and running, if pipeline is started)
+) -> Optional[Union[ErrorResponse, Pipeline]]:
+    """Fetch a pipeline by ID.
 
-     Return the last committed (and running, if pipeline is started)
-    configuration of the pipeline.
+     Fetch a pipeline by ID.
 
     Args:
         pipeline_id (str):
@@ -163,7 +154,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, Optional[PipelineRevision]]
+        Union[ErrorResponse, Pipeline]
     """
 
     return (

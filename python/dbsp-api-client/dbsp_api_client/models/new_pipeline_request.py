@@ -6,6 +6,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.attached_connector import AttachedConnector
+    from ..models.runtime_config import RuntimeConfig
 
 
 T = TypeVar("T", bound="NewPipelineRequest")
@@ -13,27 +14,30 @@ T = TypeVar("T", bound="NewPipelineRequest")
 
 @define
 class NewPipelineRequest:
-    """Request to create a new program configuration.
+    """Request to create a new pipeline.
 
     Attributes:
-        config (str): YAML code for the config.
         description (str): Config description.
         name (str): Config name.
+        config (Union[Unset, None, RuntimeConfig]): Global pipeline configuration settings.
         connectors (Union[Unset, None, List['AttachedConnector']]): Attached connectors.
         program_id (Union[Unset, None, str]): Unique program id.
     """
 
-    config: str
     description: str
     name: str
+    config: Union[Unset, None, "RuntimeConfig"] = UNSET
     connectors: Union[Unset, None, List["AttachedConnector"]] = UNSET
     program_id: Union[Unset, None, str] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        config = self.config
         description = self.description
         name = self.name
+        config: Union[Unset, None, Dict[str, Any]] = UNSET
+        if not isinstance(self.config, Unset):
+            config = self.config.to_dict() if self.config else None
+
         connectors: Union[Unset, None, List[Dict[str, Any]]] = UNSET
         if not isinstance(self.connectors, Unset):
             if self.connectors is None:
@@ -51,11 +55,12 @@ class NewPipelineRequest:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "config": config,
                 "description": description,
                 "name": name,
             }
         )
+        if config is not UNSET:
+            field_dict["config"] = config
         if connectors is not UNSET:
             field_dict["connectors"] = connectors
         if program_id is not UNSET:
@@ -66,13 +71,21 @@ class NewPipelineRequest:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         from ..models.attached_connector import AttachedConnector
+        from ..models.runtime_config import RuntimeConfig
 
         d = src_dict.copy()
-        config = d.pop("config")
-
         description = d.pop("description")
 
         name = d.pop("name")
+
+        _config = d.pop("config", UNSET)
+        config: Union[Unset, None, RuntimeConfig]
+        if _config is None:
+            config = None
+        elif isinstance(_config, Unset):
+            config = UNSET
+        else:
+            config = RuntimeConfig.from_dict(_config)
 
         connectors = []
         _connectors = d.pop("connectors", UNSET)
@@ -84,9 +97,9 @@ class NewPipelineRequest:
         program_id = d.pop("program_id", UNSET)
 
         new_pipeline_request = cls(
-            config=config,
             description=description,
             name=name,
+            config=config,
             connectors=connectors,
             program_id=program_id,
         )

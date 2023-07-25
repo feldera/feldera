@@ -6,6 +6,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.attached_connector import AttachedConnector
+    from ..models.runtime_config import RuntimeConfig
 
 
 T = TypeVar("T", bound="UpdatePipelineRequest")
@@ -13,13 +14,12 @@ T = TypeVar("T", bound="UpdatePipelineRequest")
 
 @define
 class UpdatePipelineRequest:
-    """Request to update an existing program configuration.
+    """Request to update an existing pipeline.
 
     Attributes:
-        description (str): New config description.
-        name (str): New config name.
-        pipeline_id (str): Unique pipeline id.
-        config (Union[Unset, None, str]): New config YAML. If absent, existing YAML will be kept unmodified.
+        description (str): New pipeline description.
+        name (str): New pipeline name.
+        config (Union[Unset, None, RuntimeConfig]): Global pipeline configuration settings.
         connectors (Union[Unset, None, List['AttachedConnector']]): Attached connectors.
 
             - If absent, existing connectors will be kept unmodified.
@@ -31,8 +31,7 @@ class UpdatePipelineRequest:
 
     description: str
     name: str
-    pipeline_id: str
-    config: Union[Unset, None, str] = UNSET
+    config: Union[Unset, None, "RuntimeConfig"] = UNSET
     connectors: Union[Unset, None, List["AttachedConnector"]] = UNSET
     program_id: Union[Unset, None, str] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
@@ -40,8 +39,10 @@ class UpdatePipelineRequest:
     def to_dict(self) -> Dict[str, Any]:
         description = self.description
         name = self.name
-        pipeline_id = self.pipeline_id
-        config = self.config
+        config: Union[Unset, None, Dict[str, Any]] = UNSET
+        if not isinstance(self.config, Unset):
+            config = self.config.to_dict() if self.config else None
+
         connectors: Union[Unset, None, List[Dict[str, Any]]] = UNSET
         if not isinstance(self.connectors, Unset):
             if self.connectors is None:
@@ -61,7 +62,6 @@ class UpdatePipelineRequest:
             {
                 "description": description,
                 "name": name,
-                "pipeline_id": pipeline_id,
             }
         )
         if config is not UNSET:
@@ -76,15 +76,21 @@ class UpdatePipelineRequest:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         from ..models.attached_connector import AttachedConnector
+        from ..models.runtime_config import RuntimeConfig
 
         d = src_dict.copy()
         description = d.pop("description")
 
         name = d.pop("name")
 
-        pipeline_id = d.pop("pipeline_id")
-
-        config = d.pop("config", UNSET)
+        _config = d.pop("config", UNSET)
+        config: Union[Unset, None, RuntimeConfig]
+        if _config is None:
+            config = None
+        elif isinstance(_config, Unset):
+            config = UNSET
+        else:
+            config = RuntimeConfig.from_dict(_config)
 
         connectors = []
         _connectors = d.pop("connectors", UNSET)
@@ -98,7 +104,6 @@ class UpdatePipelineRequest:
         update_pipeline_request = cls(
             description=description,
             name=name,
-            pipeline_id=pipeline_id,
             config=config,
             connectors=connectors,
             program_id=program_id,
