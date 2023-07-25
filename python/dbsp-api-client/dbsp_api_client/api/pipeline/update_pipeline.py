@@ -12,6 +12,7 @@ from ...types import Response
 
 
 def _get_kwargs(
+    pipeline_id: str,
     *,
     json_body: UpdatePipelineRequest,
 ) -> Dict[str, Any]:
@@ -21,7 +22,9 @@ def _get_kwargs(
 
     return {
         "method": "patch",
-        "url": "/pipelines",
+        "url": "/pipelines/{pipeline_id}".format(
+            pipeline_id=pipeline_id,
+        ),
         "json": json_json_body,
     }
 
@@ -55,18 +58,19 @@ def _build_response(
 
 
 def sync_detailed(
+    pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: UpdatePipelineRequest,
 ) -> Response[Union[ErrorResponse, UpdatePipelineResponse]]:
-    """Update existing pipeline configuration.
+    """Change a pipeline's name, description, code, configuration, or connectors.
 
-     Update existing pipeline configuration.
-
-    Updates pipeline configuration. On success, increments pipeline version by 1.
+     Change a pipeline's name, description, code, configuration, or connectors.
+    On success, increments the pipeline's version by 1.
 
     Args:
-        json_body (UpdatePipelineRequest): Request to update an existing program configuration.
+        pipeline_id (str):
+        json_body (UpdatePipelineRequest): Request to update an existing pipeline.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -77,6 +81,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
+        pipeline_id=pipeline_id,
         json_body=json_body,
     )
 
@@ -88,18 +93,19 @@ def sync_detailed(
 
 
 def sync(
+    pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: UpdatePipelineRequest,
 ) -> Optional[Union[ErrorResponse, UpdatePipelineResponse]]:
-    """Update existing pipeline configuration.
+    """Change a pipeline's name, description, code, configuration, or connectors.
 
-     Update existing pipeline configuration.
-
-    Updates pipeline configuration. On success, increments pipeline version by 1.
+     Change a pipeline's name, description, code, configuration, or connectors.
+    On success, increments the pipeline's version by 1.
 
     Args:
-        json_body (UpdatePipelineRequest): Request to update an existing program configuration.
+        pipeline_id (str):
+        json_body (UpdatePipelineRequest): Request to update an existing pipeline.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -110,24 +116,26 @@ def sync(
     """
 
     return sync_detailed(
+        pipeline_id=pipeline_id,
         client=client,
         json_body=json_body,
     ).parsed
 
 
 async def asyncio_detailed(
+    pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: UpdatePipelineRequest,
 ) -> Response[Union[ErrorResponse, UpdatePipelineResponse]]:
-    """Update existing pipeline configuration.
+    """Change a pipeline's name, description, code, configuration, or connectors.
 
-     Update existing pipeline configuration.
-
-    Updates pipeline configuration. On success, increments pipeline version by 1.
+     Change a pipeline's name, description, code, configuration, or connectors.
+    On success, increments the pipeline's version by 1.
 
     Args:
-        json_body (UpdatePipelineRequest): Request to update an existing program configuration.
+        pipeline_id (str):
+        json_body (UpdatePipelineRequest): Request to update an existing pipeline.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -138,6 +146,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
+        pipeline_id=pipeline_id,
         json_body=json_body,
     )
 
@@ -147,18 +156,19 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
     json_body: UpdatePipelineRequest,
 ) -> Optional[Union[ErrorResponse, UpdatePipelineResponse]]:
-    """Update existing pipeline configuration.
+    """Change a pipeline's name, description, code, configuration, or connectors.
 
-     Update existing pipeline configuration.
-
-    Updates pipeline configuration. On success, increments pipeline version by 1.
+     Change a pipeline's name, description, code, configuration, or connectors.
+    On success, increments the pipeline's version by 1.
 
     Args:
-        json_body (UpdatePipelineRequest): Request to update an existing program configuration.
+        pipeline_id (str):
+        json_body (UpdatePipelineRequest): Request to update an existing pipeline.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -170,6 +180,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
+            pipeline_id=pipeline_id,
             client=client,
             json_body=json_body,
         )

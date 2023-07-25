@@ -42,10 +42,6 @@ def _parse_response(
         response_500 = ErrorResponse.from_dict(response.json())
 
         return response_500
-    if response.status_code == HTTPStatus.SERVICE_UNAVAILABLE:
-        response_503 = ErrorResponse.from_dict(response.json())
-
-        return response_503
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:

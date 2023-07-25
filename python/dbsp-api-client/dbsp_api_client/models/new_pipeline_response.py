@@ -7,7 +7,7 @@ T = TypeVar("T", bound="NewPipelineResponse")
 
 @define
 class NewPipelineResponse:
-    """Response to a config creation request.
+    """Response to a pipeline creation request.
 
     Attributes:
         pipeline_id (str): Unique pipeline id.

@@ -59,12 +59,12 @@ def sync_detailed(
     client: Union[AuthenticatedClient, Client],
     json_body: NewPipelineRequest,
 ) -> Response[Union[ErrorResponse, NewPipelineResponse]]:
-    """Create a new program configuration.
+    """Create a new pipeline.
 
-     Create a new program configuration.
+     Create a new pipeline.
 
     Args:
-        json_body (NewPipelineRequest): Request to create a new program configuration.
+        json_body (NewPipelineRequest): Request to create a new pipeline.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -90,12 +90,12 @@ def sync(
     client: Union[AuthenticatedClient, Client],
     json_body: NewPipelineRequest,
 ) -> Optional[Union[ErrorResponse, NewPipelineResponse]]:
-    """Create a new program configuration.
+    """Create a new pipeline.
 
-     Create a new program configuration.
+     Create a new pipeline.
 
     Args:
-        json_body (NewPipelineRequest): Request to create a new program configuration.
+        json_body (NewPipelineRequest): Request to create a new pipeline.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -116,12 +116,12 @@ async def asyncio_detailed(
     client: Union[AuthenticatedClient, Client],
     json_body: NewPipelineRequest,
 ) -> Response[Union[ErrorResponse, NewPipelineResponse]]:
-    """Create a new program configuration.
+    """Create a new pipeline.
 
-     Create a new program configuration.
+     Create a new pipeline.
 
     Args:
-        json_body (NewPipelineRequest): Request to create a new program configuration.
+        json_body (NewPipelineRequest): Request to create a new pipeline.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -145,12 +145,12 @@ async def asyncio(
     client: Union[AuthenticatedClient, Client],
     json_body: NewPipelineRequest,
 ) -> Optional[Union[ErrorResponse, NewPipelineResponse]]:
-    """Create a new program configuration.
+    """Create a new pipeline.
 
-     Create a new program configuration.
+     Create a new pipeline.
 
     Args:
-        json_body (NewPipelineRequest): Request to create a new program configuration.
+        json_body (NewPipelineRequest): Request to create a new pipeline.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

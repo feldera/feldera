@@ -1044,7 +1044,7 @@ impl PipelineAutomaton {
         let pipeline_id = pr.pipeline.pipeline_id;
         let program_id = pr.pipeline.program_id.unwrap();
 
-        log::debug!("Pipeline config is '{}'", pr.config);
+        log::debug!("Pipeline config is '{:?}'", pr.config);
 
         // Create pipeline directory (delete old directory if exists); write metadata
         // and config files to it.
@@ -1058,7 +1058,8 @@ impl PipelineAutomaton {
             )
         })?;
         let config_file_path = self.config.config_file_path(pipeline_id);
-        fs::write(&config_file_path, &pr.config)
+        let expanded_config = serde_yaml::to_string(&pr.config).unwrap();
+        fs::write(&config_file_path, &expanded_config)
             .await
             .map_err(|e| {
                 ManagerError::io_error(

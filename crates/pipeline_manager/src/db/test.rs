@@ -8,6 +8,7 @@ use crate::auth::{self, TenantId, TenantRecord};
 use crate::db::Relation;
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use dbsp_adapters::RuntimeConfig;
 use openssl::sha::{self};
 use pretty_assertions::assert_eq;
 use proptest::test_runner::{Config, TestRunner};
@@ -395,14 +396,14 @@ async fn program_config() {
     let tenant_id = TenantRecord::default().id;
     let connector_id = handle
         .db
-        .new_connector(tenant_id, Uuid::now_v7(), "a", "b", "c")
+        .new_connector(tenant_id, Uuid::now_v7(), "a", "b", "")
         .await
         .unwrap();
     let ac = AttachedConnector {
         name: "foo".to_string(),
         is_input: true,
         connector_id,
-        config: "".to_string(),
+        relation_name: "".to_string(),
     };
     let _ = handle
         .db
@@ -412,7 +413,7 @@ async fn program_config() {
             None,
             "1",
             "2",
-            "3",
+            &None,
             &Some(vec![ac.clone()]),
         )
         .await
@@ -422,7 +423,7 @@ async fn program_config() {
     let config = res.get(0).unwrap();
     assert_eq!("1", config.descriptor.name);
     assert_eq!("2", config.descriptor.description);
-    assert_eq!("3", config.descriptor.config);
+    assert_eq!(None, config.descriptor.config);
     assert_eq!(None, config.descriptor.program_id);
     let connectors = &config.descriptor.attached_connectors;
     assert_eq!(1, connectors.len());
@@ -524,13 +525,13 @@ async fn duplicate_attached_conn_name() {
         name: "foo".to_string(),
         is_input: true,
         connector_id,
-        config: "".to_string(),
+        relation_name: "".to_string(),
     };
     let ac2 = AttachedConnector {
         name: "foo".to_string(),
         is_input: true,
         connector_id,
-        config: "".to_string(),
+        relation_name: "".to_string(),
     };
     let _ = handle
         .db
@@ -540,7 +541,7 @@ async fn duplicate_attached_conn_name() {
             None,
             "1",
             "2",
-            "3",
+            &None,
             &Some(vec![ac, ac2]),
         )
         .await
@@ -676,7 +677,7 @@ async fn versioning() {
         name: "ac1".to_string(),
         is_input: true,
         connector_id: connector_id1,
-        config: "t1".to_string(),
+        relation_name: "t1".to_string(),
     };
     let connector_id2 = handle
         .db
@@ -687,7 +688,7 @@ async fn versioning() {
         name: "ac2".to_string(),
         is_input: false,
         connector_id: connector_id2,
-        config: "v1".to_string(),
+        relation_name: "v1".to_string(),
     };
     let (pipeline_id, _version) = handle
         .db
@@ -697,7 +698,7 @@ async fn versioning() {
             Some(program_id),
             "1",
             "2",
-            "3",
+            &None,
             &Some(vec![ac1.clone(), ac2.clone()]),
         )
         .await
@@ -747,7 +748,13 @@ async fn versioning() {
         .await
         .is_err());
     ac1.is_input = true;
-    ac1.config = "tnew1".into();
+    ac1.relation_name = "tnew1".into();
+    let gp_config = RuntimeConfig {
+        workers: 1,
+        cpu_profiler: true,
+        min_batch_size_records: 0,
+        max_buffering_delay_usecs: 0,
+    };
     handle
         .db
         .update_pipeline(
@@ -756,7 +763,7 @@ async fn versioning() {
             Some(program_id),
             "1",
             "2",
-            &Some("3".into()),
+            &Some(gp_config.clone()),
             &Some(vec![ac1.clone(), ac2.clone()]),
         )
         .await
@@ -769,7 +776,7 @@ async fn versioning() {
         .is_err());
     // Let's fix ac2
     ac2.is_input = false;
-    ac2.config = "vnew1".into();
+    ac2.relation_name = "vnew1".into();
     handle
         .db
         .update_pipeline(
@@ -778,7 +785,7 @@ async fn versioning() {
             Some(program_id),
             "1",
             "2",
-            &Some("3".into()),
+            &Some(gp_config.clone()),
             &Some(vec![ac1.clone(), ac2.clone()]),
         )
         .await
@@ -807,7 +814,7 @@ async fn versioning() {
             Some(program_id),
             "1",
             "2",
-            &Some("3".into()),
+            &Some(gp_config.clone()),
             &Some(vec![ac1.clone(), ac2.clone()]),
         )
         .await
@@ -824,7 +831,7 @@ async fn versioning() {
             Some(program_id),
             "1",
             "2",
-            &Some("3".into()),
+            &Some(gp_config.clone()),
             &Some(vec![ac1.clone()]),
         )
         .await
@@ -841,7 +848,10 @@ async fn versioning() {
             Some(program_id),
             "1",
             "2",
-            &Some("test".into()),
+            &Some(RuntimeConfig {
+                workers: gp_config.workers + 1,
+                ..gp_config
+            }),
             &Some(vec![ac1.clone()]),
         )
         .await
@@ -899,7 +909,10 @@ enum StorageAction {
         Option<ProgramId>,
         String,
         String,
-        String,
+        // TODO: Somehow, deriving Arbitrary for GlobalPipelineConfig isn't visible
+        // to the Arbitrary trait implementation here.
+        // We'll prepare the struct ourselves from its constintuent parts
+        Option<(u16, bool, u64, u64)>,
         Option<Vec<AttachedConnector>>,
     ),
     UpdatePipeline(
@@ -908,7 +921,8 @@ enum StorageAction {
         Option<ProgramId>,
         String,
         String,
-        Option<String>,
+        // TODO: Should be GlobalPipelineConfig.
+        Option<(u16, bool, u64, u64)>,
         Option<Vec<AttachedConnector>>,
     ),
     UpdatePipelineRuntimeState(TenantId, PipelineId, PipelineRuntimeState),
@@ -1241,6 +1255,12 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::NewPipeline(tenant_id, id, program_id, name, description, config, connectors) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let config = config.map(|config| RuntimeConfig {
+                                    workers: config.0,
+                                    cpu_profiler: config.1,
+                                    min_batch_size_records: config.2,
+                                    max_buffering_delay_usecs: config.3,
+                                });
                                 let model_response =
                                     model.new_pipeline(tenant_id, id, program_id, &name, &description, &config, &connectors.clone()).await;
                                 let impl_response =
@@ -1249,6 +1269,12 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::UpdatePipeline(tenant_id,pipeline_id, program_id, name, description, config, connectors) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let config = config.map(|config| RuntimeConfig {
+                                    workers: config.0,
+                                    cpu_profiler: config.1,
+                                    min_batch_size_records: config.2,
+                                    max_buffering_delay_usecs: config.3,
+                                });
                                 let model_response = model
                                     .update_pipeline(tenant_id, pipeline_id, program_id, &name, &description, &config, &connectors.clone())
                                     .await;
@@ -1654,12 +1680,12 @@ impl Storage for Mutex<DbModel> {
                     || cur_pipeline
                         .attached_connectors
                         .iter()
-                        .map(|ac| (&ac.name, ac.is_input, &ac.config))
+                        .map(|ac| (&ac.name, ac.is_input, &ac.relation_name))
                         .ne(prev
                             .pipeline
                             .attached_connectors
                             .iter()
-                            .map(|ach| (&ach.name, ach.is_input, &ach.config)))
+                            .map(|ach| (&ach.name, ach.is_input, &ach.relation_name)))
                     || cur_connectors
                         .iter()
                         .map(|c| &c.config)
@@ -1723,7 +1749,7 @@ impl Storage for Mutex<DbModel> {
         program_id: Option<super::ProgramId>,
         pipeline_name: &str,
         pipeline_description: &str,
-        config: &str,
+        config: &Option<RuntimeConfig>,
         // TODO: not clear why connectors is an option here
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> DBResult<(super::PipelineId, super::Version)> {
@@ -1779,7 +1805,7 @@ impl Storage for Mutex<DbModel> {
                     program_id,
                     name: pipeline_name.to_owned(),
                     description: pipeline_description.to_owned(),
-                    config: config.to_owned(),
+                    config: config.clone(),
                     attached_connectors: new_acs,
                     version: Version(1),
                 },
@@ -1804,7 +1830,7 @@ impl Storage for Mutex<DbModel> {
         program_id: Option<ProgramId>,
         pipeline_name: &str,
         pipeline_description: &str,
-        config: &Option<String>,
+        config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> DBResult<Version> {
         let mut s = self.lock().await;
@@ -1883,10 +1909,7 @@ impl Storage for Mutex<DbModel> {
         c.name = pipeline_name.to_owned();
         c.description = pipeline_description.to_owned();
         c.version = c.version.increment();
-        if let Some(config) = config {
-            c.config = config.clone();
-        }
-
+        c.config = config.clone();
         Ok(c.version)
     }
 
