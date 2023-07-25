@@ -117,8 +117,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             if (type.is(DBSPTypeInteger.class)) {
                 DBSPTypeInteger intType = type.to(DBSPTypeInteger.class);
                 switch (intType.getWidth()) {
+                    case 8:
+                        return new DBSPI8Literal(Objects.requireNonNull(literal.getValueAs(Byte.class)));
                     case 16:
-                        return new DBSPI32Literal(Objects.requireNonNull(literal.getValueAs(Short.class)));
+                        return new DBSPI16Literal(Objects.requireNonNull(literal.getValueAs(Short.class)));
                     case 32:
                         return new DBSPI32Literal(Objects.requireNonNull(literal.getValueAs(Integer.class)));
                     case 64:
@@ -220,20 +222,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return left.setMayBeNull(false);
         }
         throw new UnimplementedException("Cast from " + right + " to " + left);
-    }
-
-    public static DBSPExpression aggregateOperation(
-            CalciteObject node, DBSPOpcode op,
-            DBSPType type, DBSPExpression left, DBSPExpression right) {
-        DBSPType leftType = left.getType();
-        DBSPType rightType = right.getType();
-        DBSPType commonBase = reduceType(leftType, rightType);
-        if (commonBase.is(DBSPTypeNull.class)) {
-            return DBSPLiteral.none(type);
-        }
-        DBSPType resultType = commonBase.setMayBeNull(leftType.mayBeNull || rightType.mayBeNull);
-        DBSPExpression binOp = new DBSPBinaryExpression(node, resultType, op, left, right);
-        return binOp.cast(type);
     }
 
     // Like makeBinaryExpression, but accepts multiple operands.

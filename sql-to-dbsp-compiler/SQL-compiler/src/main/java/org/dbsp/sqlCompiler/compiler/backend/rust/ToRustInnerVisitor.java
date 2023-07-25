@@ -475,6 +475,27 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPConditionalAggregateExpression expression) {
+        this.builder.append(expression.opcode.toString());
+        if (expression.condition != null)
+            this.builder.append("_conditional");
+        this.builder.append("_")
+                .append(expression.left.getType().nullableSuffix())
+                .append("_")
+                .append(expression.right.getType().nullableSuffix())
+                .append("(");
+        expression.left.accept(this);
+        this.builder.append(", ");
+        expression.right.accept(this);
+        if (expression.condition != null) {
+            this.builder.append(", ");
+            expression.condition.accept(this);
+        }
+        this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
         if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
             expression.left.accept(this);
@@ -489,8 +510,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 expression.left.getType(),
                 expression.right.getType());
         String func = function.function;
-        if (expression.operation.equals(DBSPOpcode.IF_SELECTED))
-            func = "if_selected" + expression.getType().nullableSuffix() + expression.left.getType().nullableSuffix();
         this.builder.append(func).append("(");
         expression.left.accept(this);
         this.builder.append(", ");

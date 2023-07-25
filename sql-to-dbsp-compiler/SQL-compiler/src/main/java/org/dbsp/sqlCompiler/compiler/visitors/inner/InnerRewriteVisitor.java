@@ -735,6 +735,20 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPConditionalAggregateExpression expression) {
+        this.push(expression);
+        DBSPType type = this.transform(expression.type);
+        DBSPExpression left = this.transform(expression.left);
+        DBSPExpression right = this.transform(expression.right);
+        DBSPExpression cond = this.transformN(expression.condition);
+        this.pop(expression);
+        DBSPExpression result = new DBSPConditionalAggregateExpression(
+                expression.getNode(), expression.opcode, type, left, right, cond);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPIfExpression expression) {
         this.push(expression);
         DBSPExpression cond = this.transform(expression.condition);
@@ -929,6 +943,7 @@ public abstract class InnerRewriteVisitor
                 postProcess != null ? postProcess.to(DBSPClosureExpression.class) : null,
                 emptySetResult, semiGroup,
                 linear != null ? linear.to(DBSPClosureExpression.class) : null);
+        result.validate();
         this.map(implementation, result);
         return VisitDecision.STOP;
     }
@@ -945,7 +960,7 @@ public abstract class InnerRewriteVisitor
                         DBSPAggregate.Implementation.class);
         this.pop(aggregate);
         DBSPAggregate result = new DBSPAggregate(
-                aggregate.getNode(), rowVar.to(DBSPVariablePath.class), implementations);
+                aggregate.getNode(), rowVar.to(DBSPVariablePath.class), implementations, aggregate.isWindowAggregate);
         this.map(aggregate, result);
         return VisitDecision.STOP;
     }

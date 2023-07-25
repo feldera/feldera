@@ -8,6 +8,29 @@ it on as an open-source patch.  The e-mail address used to sign must match the e
 author. If you set your `user.name` and `user.email` git config values, you can sign your commit automatically
 with `git commit -s`.
 
+## Dependencies
+
+We develop and test under Linux.  Windows Subsystem for Linux works fine.
+The setup can be seen in this [Earthfile](Earthfile).
+
+Our known dependencies are:
+- Runtime
+  - a Rust tool chain (install rustup and the default toolchain)
+    - this will need a C and C++ compiler installed (e.g., gcc, gcc++)
+    - cmake
+    - libdev-ssl
+- SQL Compiler
+  - a Java Virtual Machine (at least Java 8)
+    - maven
+  - graphviz
+- Cloud and UI
+  - Python 3
+  - typescript
+  - Redpanda or Kafka
+
+Additional dependencies are automatically installed by the Rust,
+maven, Python, and typescript build tools.
+
 ## Contribution Flow
 
 ### Forking

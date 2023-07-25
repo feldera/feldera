@@ -1,11 +1,17 @@
 package org.dbsp.sqlCompiler.compiler.foodmart;
 
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.postgres.PostgresBaseTest;
+import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
+/**
+ * https://github.com/apache/calcite/blob/bdfb17029f7e205f895dc3dfd0f37c8ff2520823/core/src/test/resources/sql/scalar.iq
+ */
 public class FoodmartBaseTests extends PostgresBaseTest {
+    // https://github.com/apache/calcite/blob/bdfb17029f7e205f895dc3dfd0f37c8ff2520823/innodb/src/test/resources/scott.sq
     @Override
     public void prepareData(DBSPCompiler compiler) {
         compiler.compileStatements("DROP TABLE IF EXISTS DEPT;\n" +
@@ -63,40 +69,185 @@ public class FoodmartBaseTests extends PostgresBaseTest {
     }
 
     @Test
-    public void testSelect1() {
-        this.q("select deptno, (select min(empno) from emp where deptno = dept.deptno) as x from dept;\n" +
+    public void testScalar() {
+        this.qs("select deptno, (select min(empno) from emp where deptno = dept.deptno) as x from dept;\n" +
                 "+--------+------+\n" +
                 "| DEPTNO | X    |\n" +
                 "+--------+------+\n" +
                 "|     10 | 7782 |\n" +
                 "|     20 | 7369 |\n" +
                 "|     30 | 7499 |\n" +
-                "|     40 |      |");
-    }
-
-    @Test
-    public void testCount() {
-        this.q("select deptno, (select count(*) from emp where deptno = dept.deptno) as x from dept;\n" +
+                "|     40 |      |\n" +
+                "+--------+------+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select count(*) from emp where deptno = dept.deptno) as x from dept;\n" +
                 "+--------+---+\n" +
                 "| DEPTNO | X |\n" +
                 "+--------+---+\n" +
                 "|     10 | 3 |\n" +
                 "|     20 | 5 |\n" +
                 "|     30 | 6 |\n" +
-                "|     40 | 0 |");
+                "|     40 | 0 |\n" +
+                "+--------+---+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select count(*) from emp where deptno = dept.deptno group by deptno) as x from dept;\n" +
+                "+--------+---+\n" +
+                "| DEPTNO | X |\n" +
+                "+--------+---+\n" +
+                "|     10 | 3 |\n" +
+                "|     20 | 5 |\n" +
+                "|     30 | 6 |\n" +
+                "|     40 |   |\n" +
+                "+--------+---+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select sum(cast(empno as int)) from emp where deptno = dept.deptno group by deptno) as x from dept;\n" +
+                "+--------+-------+\n" +
+                "| DEPTNO | X     |\n" +
+                "+--------+-------+\n" +
+                "|     10 | 23555 |\n" +
+                "|     20 | 38501 |\n" +
+                "|     30 | 46116 |\n" +
+                "|     40 |       |\n" +
+                "+--------+-------+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select count(*) from emp where 1 = 0) as x from dept;\n" +
+                "+--------+---+\n" +
+                "| DEPTNO | X |\n" +
+                "+--------+---+\n" +
+                "|     10 | 0 |\n" +
+                "|     20 | 0 |\n" +
+                "|     30 | 0 |\n" +
+                "|     40 | 0 |\n" +
+                "+--------+---+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select count(*) from emp where 1 = 0 group by ()) as x from dept;\n" +
+                "+--------+---+\n" +
+                "| DEPTNO | X |\n" +
+                "+--------+---+\n" +
+                "|     10 | 0 |\n" +
+                "|     20 | 0 |\n" +
+                "|     30 | 0 |\n" +
+                "|     40 | 0 |\n" +
+                "+--------+---+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select sum(empno) from emp where 1 = 0) as x from dept;\n" +
+                "+--------+---+\n" +
+                "| DEPTNO | X |\n" +
+                "+--------+---+\n" +
+                "|     10 |   |\n" +
+                "|     20 |   |\n" +
+                "|     30 |   |\n" +
+                "|     40 |   |\n" +
+                "+--------+---+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select empno from emp where 1 = 0) as x from dept;\n" +
+                "+--------+---+\n" +
+                "| DEPTNO | X |\n" +
+                "+--------+---+\n" +
+                "|     10 |   |\n" +
+                "|     20 |   |\n" +
+                "|     30 |   |\n" +
+                "|     40 |   |\n" +
+                "+--------+---+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select empno from emp where emp.deptno = dept.deptno and job = 'PRESIDENT') as x from dept;\n" +
+                "+--------+------+\n" +
+                "| DEPTNO | X    |\n" +
+                "+--------+------+\n" +
+                "|     10 | 7839 |\n" +
+                "|     20 |      |\n" +
+                "|     30 |      |\n" +
+                "|     40 |      |\n" +
+                "+--------+------+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select sum(empno) from emp where 1 = 0 group by ()) as x from dept;\n" +
+                "+--------+---+\n" +
+                "| DEPTNO | X |\n" +
+                "+--------+---+\n" +
+                "|     10 |   |\n" +
+                "|     20 |   |\n" +
+                "|     30 |   |\n" +
+                "|     40 |   |\n" +
+                "+--------+---+\n" +
+                "(4 rows)\n");
     }
 
-    @Test @Ignore("This seems to be the wrong input or output")
-    public void testPivot() {
-        this.q("SELECT *\n" +
-                "FROM   (SELECT deptno, job, sal\n" +
-                "        FROM   emp)\n" +
-                "PIVOT  (SUM(sal) AS sum_sal, COUNT(*) AS \"COUNT\"\n" +
-                "        FOR (job) IN ('CLERK', 'MANAGER' mgr, 'ANALYST' AS \"a\"));\n" +
-                "| DEPTNO | 'CLERK'_SUM_SAL | 'CLERK'_COUNT | MGR_SUM_SAL | MGR_COUNT | a_SUM_SAL | a_COUNT |\n" +
-                "+--------+-----------------+---------------+-------------+-----------+-----------+---------+\n" +
-                "|     10 |         1300.00 |             1 |     2450.00 |         1 |           |       0 |\n" +
-                "|     20 |         1900.00 |             2 |     2975.00 |         1 |   6000.00 |       2 |\n" +
-                "|     30 |          950.00 |             1 |     2850.00 |         1 |           |       0 |");
+    @Test @Ignore("LIMIT not yet implemented")
+    public void limitTests() {
+        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 4);
+        this.qs("select deptno, (select sum(empno) from emp where deptno = dept.deptno limit 1) as x from dept;\n" +
+                "+--------+----------------------+\n" +
+                "| DEPTNO |          X           |\n" +
+                "+--------+----------------------+\n" +
+                "| 10     | 23555                |\n" +
+                "| 20     | 38501                |\n" +
+                "| 30     | 46116                |\n" +
+                "| 40     | null                 |\n" +
+                "+--------+----------------------+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select sum(empno) from emp where deptno = dept.deptno limit 0) as x from dept;\n" +
+                "+--------+----------------------+\n" +
+                "| DEPTNO |          X           |\n" +
+                "+--------+----------------------+\n" +
+                "| 10     | 23555                |\n" +
+                "| 20     | 38501                |\n" +
+                "| 30     | 46116                |\n" +
+                "| 40     | null                 |\n" +
+                "+--------+----------------------+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select deptno from emp where deptno = dept.deptno limit 1) as x from dept;\n" +
+                "+--------+------+\n" +
+                "| DEPTNO |  X   |\n" +
+                "+--------+------+\n" +
+                "| 10     | 10   |\n" +
+                "| 20     | 20   |\n" +
+                "| 30     | 30   |\n" +
+                "| 40     | null |\n" +
+                "+--------+------+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select deptno from emp where deptno = dept.deptno limit 0) as x from dept;\n" +
+                "+--------+---+\n" +
+                "| DEPTNO | X |\n" +
+                "+--------+---+\n" +
+                "|     10 |   |\n" +
+                "|     20 |   |\n" +
+                "|     30 |   |\n" +
+                "|     40 |   |\n" +
+                "+--------+---+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select empno from emp where deptno = dept.deptno order by empno limit 1) as x from dept;\n" +
+                "+--------+--------+\n" +
+                "| DEPTNO |   X    |\n" +
+                "+--------+--------+\n" +
+                "| 10     | 7369   |\n" +
+                "| 20     | 7369   |\n" +
+                "| 30     | 7369   |\n" +
+                "| 40     | 7369   |\n" +
+                "+--------+--------+\n" +
+                "(4 rows)\n" +
+                "\n" +
+                "select deptno, (select empno from emp order by empno limit 1) as x from dept;\n" +
+                "+--------+------+\n" +
+                "| DEPTNO | X    |\n" +
+                "+--------+------+\n" +
+                "|     10 | 7369 |\n" +
+                "|     20 | 7369 |\n" +
+                "|     30 | 7369 |\n" +
+                "|     40 | 7369 |\n" +
+                "+--------+------+\n" +
+                "(4 rows)");
     }
 }

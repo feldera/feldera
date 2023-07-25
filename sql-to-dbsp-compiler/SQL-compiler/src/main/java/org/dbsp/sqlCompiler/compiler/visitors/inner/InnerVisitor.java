@@ -360,6 +360,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
         return this.preorder((DBSPExpression) node);
     }
 
+    public VisitDecision preorder(DBSPConditionalAggregateExpression node) {
+        return this.preorder((DBSPExpression) node);
+    }
+
     public VisitDecision preorder(DBSPBorrowExpression node) {
         return this.preorder((DBSPExpression) node);
     }
@@ -809,6 +813,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPStructExpression node) {
+        this.postorder((DBSPExpression) node);
+    }
+
+    public void postorder(DBSPConditionalAggregateExpression node) {
         this.postorder((DBSPExpression) node);
     }
 

@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -40,6 +41,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
@@ -139,97 +141,126 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         return new DBSPTimeLiteral(CalciteObject.EMPTY, DBSPTypeTime.NULLABLE_INSTANCE, new TimeString(time));
     }
 
+    public DBSPTupleExpression parseRow(String line, DBSPTypeTupleBase rowType) {
+        String[] columns = line.split("[|]");
+        if (columns.length != rowType.size())
+            throw new RuntimeException("Row has " + columns.length +
+                    " columns, but expected " + rowType.size() + ": " +
+                    Utilities.singleQuote(line));
+        DBSPExpression[] values = new DBSPExpression[columns.length];
+        for (int i = 0; i < columns.length; i++) {
+            String column = columns[i].trim();
+            DBSPType fieldType = rowType.getFieldType(i);
+            if (!fieldType.is(DBSPTypeString.class) &&
+                    (column.isEmpty() ||
+                            column.equalsIgnoreCase("null"))) {
+                if (!fieldType.mayBeNull)
+                    throw new RuntimeException("Null value in non-nullable column " + fieldType);
+                values[i] = fieldType.to(DBSPTypeBaseType.class).nullValue();
+                continue;
+            }
+            DBSPExpression columnValue;
+            if (fieldType.is(DBSPTypeDouble.class)) {
+                double value = Double.parseDouble(column);
+                columnValue = new DBSPDoubleLiteral(value, fieldType.mayBeNull);
+            } else if (fieldType.is(DBSPTypeFloat.class)) {
+                float value = Float.parseFloat(column);
+                columnValue = new DBSPFloatLiteral(value, fieldType.mayBeNull);
+            } else if (fieldType.is(DBSPTypeDecimal.class)) {
+                BigDecimal value = new BigDecimal(column);
+                columnValue = new DBSPDecimalLiteral(fieldType, value);
+            } else if (fieldType.is(DBSPTypeTimestamp.class)) {
+                columnValue = convertTimestamp(column, fieldType.mayBeNull);
+            } else if (fieldType.is(DBSPTypeDate.class)) {
+                columnValue = convertDate(column);
+            } else if (fieldType.is(DBSPTypeTime.class)) {
+                columnValue = convertTime(column);
+            } else if (fieldType.is(DBSPTypeInteger.class)) {
+                DBSPTypeInteger intType = fieldType.to(DBSPTypeInteger.class);
+                switch (intType.getWidth()) {
+                    case 8:
+                        columnValue = new DBSPI8Literal(Byte.parseByte(column), fieldType.mayBeNull);
+                        break;
+                    case 16:
+                        columnValue = new DBSPI16Literal(Short.parseShort(column), fieldType.mayBeNull);
+                        break;
+                    case 32:
+                        columnValue = new DBSPI32Literal(Integer.parseInt(column), fieldType.mayBeNull);
+                        break;
+                    case 64:
+                        columnValue = new DBSPI64Literal(Long.parseLong(column), fieldType.mayBeNull);
+                        break;
+                    default:
+                        throw new UnimplementedException(intType);
+                }
+            } else if (fieldType.is(DBSPTypeMillisInterval.class)) {
+                long value = Long.parseLong(column);
+                columnValue = new DBSPIntervalMillisLiteral(value * 86400000, fieldType.mayBeNull);
+            } else if (fieldType.is(DBSPTypeString.class)) {
+                // No trim
+                columnValue = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, columns[i], StandardCharsets.UTF_8);
+            } else if (fieldType.is(DBSPTypeBool.class)) {
+                boolean value = column.equalsIgnoreCase("t") || column.equalsIgnoreCase("true");
+                columnValue = new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, value);
+            } else {
+                throw new UnimplementedException(fieldType);
+            }
+            values[i] = columnValue;
+        }
+        return new DBSPTupleExpression(values);
+    }
+
     public DBSPZSetLiteral.Contents parseTable(String table, DBSPType outputType) {
         DBSPTypeZSet zset = outputType.to(DBSPTypeZSet.class);
         DBSPZSetLiteral.Contents result = DBSPZSetLiteral.Contents.emptyWithElementType(zset.elementType);
         DBSPTypeTuple tuple = zset.elementType.to(DBSPTypeTuple.class);
 
+        // We parse tables in two formats:
+        // Postgres
+        // t | t | f
+        //---+---+---
+        // t | t | f
+        // and MySQL
+        // +-----------+----------+----------+----------+
+        // | JOB       | 10_COUNT | 50_COUNT | 20_COUNT |
+        // +-----------+----------+----------+----------+
+        // | ANALYST   |        0 |        0 |        2 |
+        // | CLERK     |        1 |        0 |        2 |
+        // | MANAGER   |        1 |        0 |        1 |
+        // | PRESIDENT |        1 |        0 |        0 |
+        // | SALESMAN  |        0 |        0 |        0 |
+        // +-----------+----------+----------+----------+
+        boolean mysqlStyle = false;
+
         String[] lines = table.split("\n", -1);
         boolean inHeader = true;
-        boolean first = true;
+        int horizontalLines = 0;
         for (String line: lines) {
-            if (line.isEmpty() && first)
-                continue;
-            if (line.startsWith("+---")) {
-                if (first)
+            if (inHeader) {
+                if (line.isEmpty())
                     continue;
+                if (line.startsWith("+---"))
+                    mysqlStyle = true;
             }
-            first = false;
             if (line.contains("---")) {
-                inHeader = false;
+                horizontalLines++;
+                if (mysqlStyle) {
+                    if (horizontalLines == 2)
+                        inHeader = false;
+                } else {
+                    inHeader = false;
+                }
                 continue;
             }
+            if (horizontalLines == 3)
+                // After table.
+                continue;
             if (inHeader)
                 continue;
-            int comment = line.indexOf("--");
-            if (comment >= 0)
-                line = line.substring(0, comment);
-            if (line.startsWith("|") && line.endsWith("|"))
+            if (mysqlStyle && line.startsWith("|") && line.endsWith("|"))
                 line = line.substring(1, line.length() - 2);
-            String[] columns = line.split("[|]");
-            if (columns.length != tuple.size())
-                throw new RuntimeException("Row has " + columns.length + " columns, but expected " + tuple.size());
-            DBSPExpression[] values = new DBSPExpression[columns.length];
-            for (int i = 0; i < columns.length; i++) {
-                String column = columns[i].trim();
-                DBSPType fieldType = tuple.getFieldType(i);
-                if (!fieldType.is(DBSPTypeString.class) &&
-                        (column.isEmpty() ||
-                         column.equalsIgnoreCase("null"))) {
-                    if (!fieldType.mayBeNull)
-                        throw new RuntimeException("Null value in non-nullable column " + fieldType);
-                    values[i] = fieldType.to(DBSPTypeBaseType.class).nullValue();
-                    continue;
-                }
-                DBSPExpression columnValue;
-                if (fieldType.is(DBSPTypeDouble.class)) {
-                    double value = Double.parseDouble(column);
-                    columnValue = new DBSPDoubleLiteral(value, fieldType.mayBeNull);
-                } else if (fieldType.is(DBSPTypeFloat.class)) {
-                    float value = Float.parseFloat(column);
-                    columnValue = new DBSPFloatLiteral(value, fieldType.mayBeNull);
-                } else if (fieldType.is(DBSPTypeDecimal.class)) {
-                    BigDecimal value = new BigDecimal(column);
-                    columnValue = new DBSPDecimalLiteral(fieldType, value);
-                } else if (fieldType.is(DBSPTypeTimestamp.class)) {
-                    columnValue = convertTimestamp(column, fieldType.mayBeNull);
-                } else if (fieldType.is(DBSPTypeDate.class)) {
-                    columnValue = convertDate(column);
-                } else if (fieldType.is(DBSPTypeTime.class)) {
-                    columnValue = convertTime(column);
-                } else if (fieldType.is(DBSPTypeInteger.class)) {
-                    DBSPTypeInteger intType = fieldType.to(DBSPTypeInteger.class);
-                    switch (intType.getWidth()) {
-                        case 8:
-                            columnValue = new DBSPI8Literal(Byte.parseByte(column), fieldType.mayBeNull);
-                            break;
-                        case 16:
-                            columnValue = new DBSPI16Literal(Short.parseShort(column), fieldType.mayBeNull);
-                            break;
-                        case 32:
-                            columnValue = new DBSPI32Literal(Integer.parseInt(column), fieldType.mayBeNull);
-                            break;
-                        case 64:
-                            columnValue = new DBSPI64Literal(Long.parseLong(column), fieldType.mayBeNull);
-                            break;
-                        default:
-                            throw new UnimplementedException(intType);
-                    }
-                } else if (fieldType.is(DBSPTypeMillisInterval.class)) {
-                    long value = Long.parseLong(column);
-                    columnValue = new DBSPIntervalMillisLiteral(value * 86400000, fieldType.mayBeNull);
-                } else if (fieldType.is(DBSPTypeString.class)) {
-                    // No trim
-                    columnValue = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, columns[i], StandardCharsets.UTF_8);
-                } else if (fieldType.is(DBSPTypeBool.class)) {
-                    boolean value = column.equalsIgnoreCase("t") || column.equalsIgnoreCase("true");
-                    columnValue = new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, value);
-                } else {
-                    throw new UnimplementedException(fieldType);
-                }
-                values[i] = columnValue;
-            }
-            result.add(new DBSPTupleExpression(values));
+            DBSPExpression row = this.parseRow(line, tuple);
+            result.add(row);
         }
         if (inHeader)
             throw new RuntimeException("Could not find end of header for table");

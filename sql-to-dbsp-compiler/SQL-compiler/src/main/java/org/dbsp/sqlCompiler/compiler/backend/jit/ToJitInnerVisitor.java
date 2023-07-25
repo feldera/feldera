@@ -726,6 +726,123 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     }
 
     @Override
+    public VisitDecision preorder(DBSPConditionalAggregateExpression expression) {
+        JITInstructionPair leftId = this.accept(expression.left);
+        JITInstructionPair rightId = this.accept(expression.right);
+        JITBinaryInstruction.Operation op = Utilities.getExists(opNames, expression.opcode);
+        JITScalarType type = this.convertScalarType(expression);
+
+        JITInstructionPair result;
+        // If either operand is null, the result is the other operand.
+        if (leftId.hasNull()) {
+            JITBlock ifNull = this.newBlock();
+            JITBlock ifNotNull = this.newBlock();
+            JITBlock next = this.newBlock();
+            JITBranchTerminator branch = new JITBranchTerminator(
+                    leftId.isNull, ifNull.createDestination(), ifNotNull.createDestination());
+            this.getCurrentBlock().terminate(branch);
+
+            this.setCurrentBlock(ifNull);
+            JITBlockDestination nextDestination = next.createDestination();
+            nextDestination.addArgument(rightId.value);
+            nextDestination.addArgument(rightId.hasNull() ? rightId.isNull : this.constantBool(false));
+            JITJumpTerminator jump = new JITJumpTerminator(nextDestination);
+            this.getCurrentBlock().terminate(jump);
+
+            this.setCurrentBlock(ifNotNull);
+            if (rightId.hasNull()) {
+                JITBlock ifRightNull = this.newBlock();
+                JITBlock ifRightNotNull = this.newBlock();
+                branch = new JITBranchTerminator(
+                        rightId.isNull, ifRightNull.createDestination(), ifRightNotNull.createDestination());
+                this.getCurrentBlock().terminate(branch);
+
+                this.setCurrentBlock(ifRightNull);
+                nextDestination = next.createDestination();
+                nextDestination.addArgument(leftId.value);
+                nextDestination.addArgument(leftId.hasNull() ? leftId.isNull : this.constantBool(false));
+                jump = new JITJumpTerminator(nextDestination);
+                this.getCurrentBlock().terminate(jump);
+
+                this.setCurrentBlock(ifRightNotNull);
+                JITInstructionRef value = this.insertBinary(op, leftId.value, rightId.value,
+                        convertScalarType(expression.left), expression.toString());
+                nextDestination = next.createDestination();
+                nextDestination.addArgument(value);
+                nextDestination.addArgument(this.constantBool(false));
+            } else {
+                JITInstructionRef value = this.insertBinary(op, leftId.value, rightId.value,
+                        convertScalarType(expression.left), expression.toString());
+                nextDestination = next.createDestination();
+                nextDestination.addArgument(value);
+                nextDestination.addArgument(this.constantBool(false));
+            }
+            jump = new JITJumpTerminator(nextDestination);
+            this.getCurrentBlock().terminate(jump);
+
+            this.setCurrentBlock(next);
+            JITInstructionRef resultValue = this.addParameter(next, type);
+            JITInstructionRef resultIsNull = this.addParameter(next, JITBoolType.INSTANCE);
+            result = new JITInstructionPair(resultValue, resultIsNull);
+        } else {
+            if (rightId.hasNull()) {
+                JITBlock ifNull = this.newBlock();
+                JITBlock ifNotNull = this.newBlock();
+                JITBlock next = this.newBlock();
+                JITBranchTerminator branch = new JITBranchTerminator(
+                        rightId.isNull, ifNull.createDestination(), ifNotNull.createDestination());
+                this.getCurrentBlock().terminate(branch);
+
+                this.setCurrentBlock(ifNull);
+                JITBlockDestination nextDestination = next.createDestination();
+                nextDestination.addArgument(leftId.value);
+                nextDestination.addArgument(leftId.hasNull() ? leftId.isNull : this.constantBool(false));
+                JITJumpTerminator jump = new JITJumpTerminator(nextDestination);
+                this.getCurrentBlock().terminate(jump);
+
+                this.setCurrentBlock(ifNotNull);
+                JITInstructionRef value = this.insertBinary(op, leftId.value, rightId.value,
+                        convertScalarType(expression.left), expression.toString());
+                nextDestination = next.createDestination();
+                nextDestination.addArgument(value);
+                nextDestination.addArgument(this.constantBool(false));
+                jump = new JITJumpTerminator(nextDestination);
+                this.getCurrentBlock().terminate(jump);
+
+                this.setCurrentBlock(next);
+                JITInstructionRef resultValue = this.addParameter(next, type);
+                JITInstructionRef resultIsNull = this.addParameter(next, JITBoolType.INSTANCE);
+                result = new JITInstructionPair(resultValue, resultIsNull);
+            } else {
+                JITInstructionRef value = this.insertBinary(op, leftId.value, rightId.value,
+                        type, expression.toString());
+                result = new JITInstructionPair(value);
+            }
+        }
+        // If we have a conditional, and it's false, the result is the left.
+        if (expression.condition != null) {
+            JITInstructionPair cond = this.accept(expression.condition);
+            JITInstructionRef mux = this.insertMux(cond.value, result.value, leftId.value, type, expression.toString());
+            JITInstructionRef isNull = JITInstructionRef.INVALID;
+            if (result.hasNull()) {
+                if (leftId.hasNull())
+                    isNull = this.insertMux(
+                            cond.value, result.isNull, leftId.isNull, JITBoolType.INSTANCE, "");
+                else
+                    isNull = result.isNull;
+            } else {
+                if (leftId.hasNull())
+                    isNull = leftId.isNull;
+                else if (needsNull(expression))
+                    isNull = this.constantBool(false);
+            }
+            result = new JITInstructionPair(mux, isNull);
+        }
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
         if (expression.operation.equals(DBSPOpcode.CONCAT)) {
             JITInstructionPair result = this.createFunctionCall(
@@ -820,7 +937,6 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 //                              : (b.is_null ? a.value : false)
 
                 // cond1 = (b.is_null ? true : b.value)
-                this.insertMux(rightNullId, True, rightId.value, JITBoolType.INSTANCE, "");
                 JITInstructionRef cond1 = this.insertMux(rightNullId, True, rightId.value, JITBoolType.INSTANCE, "");
                 // cond2 = (b.is_null ? !a.value   : false)
                 JITInstructionRef cond2 = this.insertMux(rightNullId, leftId.value, False, JITBoolType.INSTANCE, "");
@@ -868,97 +984,6 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 JITInstructionRef isNull = this.insertMux(leftNullId, rightId.value, or, JITBoolType.INSTANCE,
                         expression.is_null().toString());
                 this.map(expression, new JITInstructionPair(value, isNull));
-            }
-            return VisitDecision.STOP;
-        } else if (expression.operation.isAggregate) {
-            JITBinaryInstruction.Operation op = Utilities.getExists(opNames, expression.operation);
-            // If either operand is null, the result is the other operand.
-            if (leftId.hasNull()) {
-                JITBlock ifNull = this.newBlock();
-                JITBlock ifNotNull = this.newBlock();
-                JITBlock next = this.newBlock();
-                JITBranchTerminator branch = new JITBranchTerminator(
-                        leftId.isNull, ifNull.createDestination(), ifNotNull.createDestination());
-                this.getCurrentBlock().terminate(branch);
-
-                this.setCurrentBlock(ifNull);
-                JITBlockDestination nextDestination = next.createDestination();
-                nextDestination.addArgument(rightId.value);
-                nextDestination.addArgument(rightId.hasNull() ? rightId.isNull : this.constantBool(false));
-                JITJumpTerminator jump = new JITJumpTerminator(nextDestination);
-                this.getCurrentBlock().terminate(jump);
-
-                this.setCurrentBlock(ifNotNull);
-                if (rightId.hasNull()) {
-                    JITBlock ifRightNull = this.newBlock();
-                    JITBlock ifRightNotNull = this.newBlock();
-                    branch = new JITBranchTerminator(
-                            rightId.isNull, ifRightNull.createDestination(), ifRightNotNull.createDestination());
-                    this.getCurrentBlock().terminate(branch);
-
-                    this.setCurrentBlock(ifRightNull);
-                    nextDestination = next.createDestination();
-                    nextDestination.addArgument(leftId.value);
-                    nextDestination.addArgument(leftId.hasNull() ? leftId.isNull : this.constantBool(false));
-                    jump = new JITJumpTerminator(nextDestination);
-                    this.getCurrentBlock().terminate(jump);
-
-                    this.setCurrentBlock(ifRightNotNull);
-                    JITInstructionRef value = this.insertBinary(op, leftId.value, rightId.value,
-                            convertScalarType(expression.left), expression.toString());
-                    nextDestination = next.createDestination();
-                    nextDestination.addArgument(value);
-                    nextDestination.addArgument(this.constantBool(false));
-                } else {
-                    JITInstructionRef value = this.insertBinary(op, leftId.value, rightId.value,
-                            convertScalarType(expression.left), expression.toString());
-                    nextDestination = next.createDestination();
-                    nextDestination.addArgument(value);
-                    nextDestination.addArgument(this.constantBool(false));
-                }
-                jump = new JITJumpTerminator(nextDestination);
-                this.getCurrentBlock().terminate(jump);
-
-                this.setCurrentBlock(next);
-                JITInstructionRef resultValue = this.addParameter(next, convertScalarType(expression));
-                JITInstructionRef resultIsNull = this.addParameter(next, JITBoolType.INSTANCE);
-                JITInstructionPair result = new JITInstructionPair(resultValue, resultIsNull);
-                this.map(expression, result);
-            } else {
-                if (rightId.hasNull()) {
-                    JITBlock ifNull = this.newBlock();
-                    JITBlock ifNotNull = this.newBlock();
-                    JITBlock next = this.newBlock();
-                    JITBranchTerminator branch = new JITBranchTerminator(
-                            rightId.isNull, ifNull.createDestination(), ifNotNull.createDestination());
-                    this.getCurrentBlock().terminate(branch);
-
-                    this.setCurrentBlock(ifNull);
-                    JITBlockDestination nextDestination = next.createDestination();
-                    nextDestination.addArgument(leftId.value);
-                    nextDestination.addArgument(leftId.hasNull() ? leftId.isNull : this.constantBool(false));
-                    JITJumpTerminator jump = new JITJumpTerminator(nextDestination);
-                    this.getCurrentBlock().terminate(jump);
-
-                    this.setCurrentBlock(ifNotNull);
-                    JITInstructionRef value = this.insertBinary(op, leftId.value, rightId.value,
-                            convertScalarType(expression.left), expression.toString());
-                    nextDestination = next.createDestination();
-                    nextDestination.addArgument(value);
-                    nextDestination.addArgument(this.constantBool(false));
-                    jump = new JITJumpTerminator(nextDestination);
-                    this.getCurrentBlock().terminate(jump);
-
-                    this.setCurrentBlock(next);
-                    JITInstructionRef resultValue = this.addParameter(next, convertScalarType(expression));
-                    JITInstructionRef resultIsNull = this.addParameter(next, JITBoolType.INSTANCE);
-                    JITInstructionPair result = new JITInstructionPair(resultValue, resultIsNull);
-                    this.map(expression, result);
-                } else {
-                    JITInstructionRef value = this.insertBinary(op, leftId.value, rightId.value,
-                            convertScalarType(expression.left), expression.toString());
-                    this.map(expression, new JITInstructionPair(value));
-                }
             }
             return VisitDecision.STOP;
         } else if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {

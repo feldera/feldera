@@ -8,7 +8,7 @@ pub mod string;
 pub mod timestamp;
 
 use crate::interval::ShortInterval;
-use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64, HasZero};
+use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
 use geopoint::GeoPoint;
 use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
@@ -496,24 +496,6 @@ pub fn indicator<T>(value: Option<T>) -> i64 {
     }
 }
 
-#[inline(always)]
-pub fn if_selected<T>(value: T, predicate: bool) -> T
-where
-    T: HasZero
-{
-    if predicate { value } else { T::zero() }
-}
-
-#[inline(always)]
-pub fn if_selectedN<T>(value: T, predicate: bool) -> Option<T> {
-    if predicate { Some(value) } else { None }
-}
-
-#[inline(always)]
-pub fn if_selectedNN<T>(value: Option<T>, predicate: bool) -> Option<T> {
-    if predicate { value } else { None }
-}
-
 pub fn agg_max_N_N<T>(left: Option<T>, right: Option<T>) -> Option<T>
 where
     T: Ord + Copy,
@@ -606,6 +588,107 @@ where
     T: Add<T, Output = T> + Copy,
 {
     left + right
+}
+
+pub fn agg_max_conditional_N_N<T>(left: Option<T>, right: Option<T>, predicate: bool) -> Option<T>
+where
+    T: Ord + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => right,
+        (_, None, _) => left,
+        (Some(x), Some(y), _) => Some(x.max(y)),
+    }
+}
+
+pub fn agg_min_conditional_N_N<T>(left: Option<T>, right: Option<T>, predicate: bool) -> Option<T>
+where
+    T: Ord + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => right,
+        (_, None, _) => left,
+        (Some(x), Some(y), _) => Some(x.min(y)),
+    }
+}
+
+pub fn agg_max_conditional_N_<T>(left: Option<T>, right: T, predicate: bool) -> Option<T>
+where
+    T: Ord + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => Some(right),
+        (Some(x), y, _) => Some(x.max(y)),
+    }
+}
+
+pub fn agg_min_conditional_N_<T>(left: Option<T>, right: T, predicate: bool) -> Option<T>
+where
+    T: Ord + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => Some(right),
+        (Some(x), y, _) => Some(x.min(y)),
+    }
+}
+
+pub fn agg_max_conditional__<T>(left: T, right: T, predicate: bool) -> T
+where
+    T: Ord + Copy,
+{
+    if predicate { left.max(right) } else { left }
+}
+
+pub fn agg_min_conditional__<T>(left: T, right: T, predicate: bool) -> T
+where
+    T: Ord + Copy,
+{
+    if predicate { left.min(right) } else { left }
+}
+
+pub fn agg_plus_conditional_N_N<T>(left: Option<T>, right: Option<T>, predicate: bool) -> Option<T>
+where
+    T: Add<T, Output = T> + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => right,
+        (_, None, _) => left,
+        (Some(x), Some(y), _) => Some(x + y),
+    }
+}
+
+pub fn agg_plus_conditional_N_<T>(left: Option<T>, right: T, predicate: bool) -> Option<T>
+where
+    T: Add<T, Output = T> + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => left,
+        (None, _, _) => Some(right),
+        (Some(x), y, _) => Some(x + y),
+    }
+}
+
+pub fn agg_plus_conditional__N<T>(left: T, right: Option<T>, predicate: bool) -> Option<T>
+where
+    T: Add<T, Output = T> + Copy,
+{
+    match (left, right, predicate) {
+        (_, _, false) => Some(left),
+        (_, None, _) => Some(left),
+        (x, Some(y), _) => Some(x + y),
+    }
+}
+
+pub fn agg_plus_conditional__<T>(left: T, right: T, predicate: bool) -> T
+where
+    T: Add<T, Output = T> + Copy,
+{
+    if predicate { left + right } else { left }
 }
 
 #[inline(always)]

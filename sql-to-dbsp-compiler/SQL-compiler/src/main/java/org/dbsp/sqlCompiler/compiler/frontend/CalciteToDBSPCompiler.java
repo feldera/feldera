@@ -179,7 +179,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         for (AggregateCall call: aggregates) {
             DBSPType resultFieldType = resultType.getFieldType(aggIndex + groupCount);
-            AggregateCompiler compiler = new AggregateCompiler(new CalciteObject(node),
+            AggregateCompiler compiler = new AggregateCompiler(node,
                     this.getCompiler(), call, resultFieldType, rowVar);
             DBSPAggregate.Implementation implementation = compiler.compile();
             result.set(aggIndex, implementation);

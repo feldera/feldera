@@ -33,28 +33,28 @@ pub(crate) fn lt<T>(left: T, right: T) -> bool
 where T: Ord
 { left < right }
 
-for_all_numeric_compare!(lt, bool);
+for_all_compare!(lt, bool);
 
 #[inline(always)]
 pub(crate) fn gt<T>(left: T, right: T) -> bool
 where T: Ord
 { left > right }
 
-for_all_numeric_compare!(gt, bool);
+for_all_compare!(gt, bool);
 
 #[inline(always)]
 pub(crate) fn lte<T>(left: T, right: T) -> bool
 where T: Ord
 { left <= right }
 
-for_all_numeric_compare!(lte, bool);
+for_all_compare!(lte, bool);
 
 #[inline(always)]
 pub(crate) fn gte<T>(left: T, right: T) -> bool
 where T: Ord
 { left >= right }
 
-for_all_numeric_compare!(gte, bool);
+for_all_compare!(gte, bool);
 
 #[inline(always)]
 fn plus<T>(left: T, right: T) -> T

@@ -69,21 +69,29 @@ aggregate function.
   </tr>
 </table>
 
+If `FILTER` is specified, then only the input rows for which the
+filter_clause evaluates to true are fed to the aggregate function;
+other rows are discarded. For example:
+
+```sql
+SELECT
+    count(*) AS unfiltered,
+    count(*) FILTER (WHERE i < 5) AS filtered
+FROM TABLE
+```
+
 ## Pivots
 
-The SQL `PIVOT` operation can be used to turn rows into columns.
-It is usually performed in lieu of a `GROUP-BY` operation when
-the group keys are known in advance.  Instead of producing one row for
-each group, `PIVOT` can produce one *column* for each group.
-
-This documentation is adapted from the [SPARK documentation for PIVOT](
-https://spark.apache.org/docs/latest/sql-ref-syntax-qry-select-pivot.html).
+The SQL `PIVOT` operation can be used to turn rows into columns.  It
+usually replaces a `GROUP-BY` operation when the group keys are known
+in advance.  Instead of producing one row for each group, `PIVOT` can
+produce one *column* for each group.
 
 ### Syntax
 
 ```
 PIVOT ( { aggregate_expression [ AS aggregate_expression_alias ] } [ , ... ]
-    FOR column_list IN ( expression_list ) )
+    FOR column_with_data IN ( column_list ) )
 ```
 
 ### Parameters
@@ -92,51 +100,84 @@ PIVOT ( { aggregate_expression [ AS aggregate_expression_alias ] } [ , ... ]
   Specifies an aggregate expression (`SUM`, `COUNT(DISTINCT )`, etc.).
 
 - aggregate_expression_alias
-  Specifies an alias for the aggregate expression.
+  Specifies a column name for the aggregate expression.
+
+- column_with_data
+  A column that produces all the values that will become new
+  column names.
 
 - column_list
-  Contains columns in the `FROM` clause, which specifies the columns we
-  want to replace with new columns.
+  Columns that show the pivoted data.
 
-- expression_list
-  Specifies new columns, which are used to match values in column_list
-  as the aggregating condition. We can also add aliases for them.
-
-### Examples
+### Example
 
 ```sql
-CREATE TABLE person (id INT, name STRING, age INT, class INT, address STRING);
-INSERT INTO person VALUES
-    (100, 'John', 30, 1, 'Street 1'),
-    (200, 'Mary', NULL, 1, 'Street 2'),
-    (300, 'Mike', 80, 3, 'Street 3'),
-    (400, 'Dan', 50, 4, 'Street 4');
+CREATE TABLE FURNITURE (
+   type VARCHAR,
+   year INTEGER,
+   count INTEGER
+);
+INSERT INTO FURNITURE VALUES
+  ('chair', 2020, 4),
+  ('table', 2021, 3),
+  ('chair', 2021, 4),
+  ('desk', 2023, 1),
+  ('table', 2023, 2);
 
-SELECT * FROM person
-    PIVOT (
-        SUM(age) AS a, AVG(class) AS c
-        FOR name IN ('John' AS john, 'Mike' AS mike)
-    );
-+------+-----------+---------+---------+---------+---------+
-|  id  |  address  | john_a  | john_c  | mike_a  | mike_c  |
-+------+-----------+---------+---------+---------+---------+
-| 200  | Street 2  | NULL    | NULL    | NULL    | NULL    |
-| 100  | Street 1  | 30      | 1.0     | NULL    | NULL    |
-| 300  | Street 3  | NULL    | NULL    | 80      | 3.0     |
-| 400  | Street 4  | NULL    | NULL    | NULL    | NULL    |
-+------+-----------+---------+---------+---------+---------+
+SELECT year, type, SUM(count) FROM FURNITURE GROUP BY year,type;
+year | type  | sum
+-------------------
+2020 | chair | 4
+2021 | table | 3
+2021 | chair | 4
+2023 | desk  | 1
+2023 | table | 2
+(5 rows)
 
-SELECT * FROM person
-    PIVOT (
-        SUM(age) AS a, AVG(class) AS c
-        FOR (name, age) IN (('John', 30) AS c1, ('Mike', 40) AS c2)
-    );
-+------+-----------+-------+-------+-------+-------+
-|  id  |  address  | c1_a  | c1_c  | c2_a  | c2_c  |
-+------+-----------+-------+-------+-------+-------+
-| 200  | Street 2  | NULL  | NULL  | NULL  | NULL  |
-| 100  | Street 1  | 30    | 1.0   | NULL  | NULL  |
-| 300  | Street 3  | NULL  | NULL  | NULL  | NULL  |
-| 400  | Street 4  | NULL  | NULL  | NULL  | NULL  |
-+------+-----------+-------+-------+-------+-------+
+SELECT * FROM FURNITURE
+PIVOT (
+    SUM(count) AS ct
+    FOR type IN ('desk' AS desks, 'table' AS tables, 'chair' as chairs)
+);
+
+year | desks | tables | chairs
+------------------------------
+2020 |       |        |    4
+2021 |       |     3  |    4
+2023 |     1 |     2  |
+(3 rows)
 ```
+
+Notice how the same information is presented in a tabular form where
+we have a column for each type of object.  PIVOTs require all the
+possible "type"s to be specified when the query is written.  Notice
+that if we add an additional type, the `GROUP BY` query will produce a
+correct result, while the `PIVOT` query will produce the same result.
+
+```sql
+INSERT INTO FURNITURE VALUES ('bed', 2020, 5);
+SELECT year, type, SUM(count) FROM FURNITURE GROUP BY year,type;
+year | type  | sum
+-------------------
+2020 | chair | 4
+2020 | bed   | 5
+2021 | table | 3
+2021 | chair | 4
+2023 | desk  | 1
+2023 | table | 2
+(6 rows)
+
+SELECT * FROM FURNITURE
+PIVOT (
+    SUM(count) AS ct
+    FOR type IN ('desk' AS desks, 'table' AS tables, 'chair' as chairs)
+);
+
+year | desks | tables | chairs
+------------------------------
+2020 |       |        |    4
+2021 |       |     3  |    4
+2023 |     1 |     2  |
+(3 rows)
+```
+
