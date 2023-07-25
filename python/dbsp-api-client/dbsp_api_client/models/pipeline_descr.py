@@ -6,6 +6,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.attached_connector import AttachedConnector
+    from ..models.runtime_config import RuntimeConfig
 
 
 T = TypeVar("T", bound="PipelineDescr")
@@ -17,20 +18,20 @@ class PipelineDescr:
 
     Attributes:
         attached_connectors (List['AttachedConnector']):
-        config (str):
         description (str):
         name (str):
         pipeline_id (str): Unique pipeline id.
         version (int): Version number.
+        config (Union[Unset, None, RuntimeConfig]): Global pipeline configuration settings.
         program_id (Union[Unset, None, str]): Unique program id.
     """
 
     attached_connectors: List["AttachedConnector"]
-    config: str
     description: str
     name: str
     pipeline_id: str
     version: int
+    config: Union[Unset, None, "RuntimeConfig"] = UNSET
     program_id: Union[Unset, None, str] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
@@ -41,11 +42,14 @@ class PipelineDescr:
 
             attached_connectors.append(attached_connectors_item)
 
-        config = self.config
         description = self.description
         name = self.name
         pipeline_id = self.pipeline_id
         version = self.version
+        config: Union[Unset, None, Dict[str, Any]] = UNSET
+        if not isinstance(self.config, Unset):
+            config = self.config.to_dict() if self.config else None
+
         program_id = self.program_id
 
         field_dict: Dict[str, Any] = {}
@@ -53,13 +57,14 @@ class PipelineDescr:
         field_dict.update(
             {
                 "attached_connectors": attached_connectors,
-                "config": config,
                 "description": description,
                 "name": name,
                 "pipeline_id": pipeline_id,
                 "version": version,
             }
         )
+        if config is not UNSET:
+            field_dict["config"] = config
         if program_id is not UNSET:
             field_dict["program_id"] = program_id
 
@@ -68,6 +73,7 @@ class PipelineDescr:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         from ..models.attached_connector import AttachedConnector
+        from ..models.runtime_config import RuntimeConfig
 
         d = src_dict.copy()
         attached_connectors = []
@@ -77,8 +83,6 @@ class PipelineDescr:
 
             attached_connectors.append(attached_connectors_item)
 
-        config = d.pop("config")
-
         description = d.pop("description")
 
         name = d.pop("name")
@@ -87,15 +91,24 @@ class PipelineDescr:
 
         version = d.pop("version")
 
+        _config = d.pop("config", UNSET)
+        config: Union[Unset, None, RuntimeConfig]
+        if _config is None:
+            config = None
+        elif isinstance(_config, Unset):
+            config = UNSET
+        else:
+            config = RuntimeConfig.from_dict(_config)
+
         program_id = d.pop("program_id", UNSET)
 
         pipeline_descr = cls(
             attached_connectors=attached_connectors,
-            config=config,
             description=description,
             name=name,
             pipeline_id=pipeline_id,
             version=version,
+            config=config,
             program_id=program_id,
         )
 

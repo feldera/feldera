@@ -43,7 +43,7 @@ use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 #[cfg(unix)]
 use daemonize::Daemonize;
-use dbsp_adapters::{ControllerError, ErrorResponse};
+use dbsp_adapters::{ControllerError, ErrorResponse, PipelineConfig, RuntimeConfig};
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::{env, net::TcpListener, sync::Arc, time::Duration};
@@ -105,10 +105,9 @@ endpoints.
 * *Pipeline*.  A pipeline is a running instance of a program and
 some attached connectors. A client can create multiple pipelines that make use of
 the same program and connectors. Every pipeline has a unique name and identifier.
-Pipelines need to be explicitly *committed* before use. Committing a pipeline
-instantiates the pipeline with the then latest version of the referenced program and
-connectors. This allows the API to accumulate edits to programs and connectors
-before use.
+Deploying a pipeline instantiates the pipeline with the then latest version of
+the referenced program and connectors. This allows the API to accumulate edits
+to programs and connectors before use in a pipeline.
 
 # Concurrency
 
@@ -136,10 +135,10 @@ request is rejected."
         update_pipeline,
         list_pipelines,
         pipeline_stats,
-        pipeline_status,
+        get_pipeline,
         pipeline_validate,
         pipeline_action,
-        pipeline_committed,
+        pipeline_deployed,
         pipeline_delete,
         list_connectors,
         new_connector,
@@ -171,6 +170,7 @@ request is rejected."
         dbsp_adapters::OutputQuery,
         dbsp_adapters::TransportConfig,
         dbsp_adapters::FormatConfig,
+        dbsp_adapters::RuntimeConfig,
         dbsp_adapters::transport::FileInputConfig,
         dbsp_adapters::transport::FileOutputConfig,
         dbsp_adapters::transport::KafkaInputConfig,
@@ -359,10 +359,11 @@ fn api_scope() -> Scope {
         .service(update_pipeline)
         .service(list_pipelines)
         .service(pipeline_stats)
-        .service(pipeline_status)
+        .service(get_pipeline)
+        .service(get_pipeline_config)
         .service(pipeline_action)
         .service(pipeline_validate)
-        .service(pipeline_committed)
+        .service(pipeline_deployed)
         .service(pipeline_delete)
         .service(list_connectors)
         .service(new_connector)
@@ -375,43 +376,61 @@ fn api_scope() -> Scope {
 
 // Example errors for use in OpenApi docs.
 
-fn example_pipeline_toml() -> String {
+fn example_pipeline_config() -> PipelineConfig {
     let input_connector = crate::db::ConnectorDescr {
         connector_id: ConnectorId(uuid!("01890c99-376f-743e-ac30-87b6c0ce74ef")),
         name: "Input".into(),
         description: "My Input Connector".into(),
-        config: "format: csv\n".into(),
+        config: r#"
+transport:
+    name: kafka
+    config:
+        auto.offset.reset: "earliest"
+        group.instance.id: "group0"
+        topics: [test_input1]
+format:
+    name: csv"#
+            .into(),
     };
     let input = crate::db::AttachedConnector {
         name: "Input-To-Table".into(),
         is_input: true,
         connector_id: input_connector.connector_id,
-        config: "my_input_table".into(),
+        relation_name: "my_input_table".into(),
     };
     let output_connector = crate::db::ConnectorDescr {
         connector_id: ConnectorId(uuid!("01890c99-3734-7052-9e97-55c0679a5adb")),
         name: "Output ".into(),
         description: "My Output Connector".into(),
-        config: "format: csv\n".into(),
+        config: r#"
+transport:
+    name: kafka
+    config:
+        auto.offset.reset: "earliest"
+        group.instance.id: "group0"
+        topics: [test_input2]
+format:
+    name: csv"#
+            .into(),
     };
     let output = crate::db::AttachedConnector {
         name: "Output-To-View".into(),
         is_input: false,
         connector_id: output_connector.connector_id,
-        config: "my_output_view".into(),
+        relation_name: "my_output_view".into(),
     };
     let pipeline = crate::db::PipelineDescr {
         pipeline_id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
         program_id: Some(ProgramId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0"))),
         name: "My Pipeline".into(),
         description: "My Description".into(),
-        config: "workers: 8\n".into(),
+        config: RuntimeConfig::from_string("workers: 8\n"),
         attached_connectors: vec![input, output],
         version: Version(1),
     };
 
     let connectors = vec![input_connector, output_connector];
-    PipelineRevision::generate_toml_config(&pipeline, &connectors).unwrap()
+    PipelineRevision::generate_pipeline_config(&pipeline, &connectors).unwrap()
 }
 
 fn example_unknown_program() -> ErrorResponse {
@@ -528,10 +547,6 @@ fn example_pipeline_timeout() -> ErrorResponse {
 
 fn example_invalid_uuid_param() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&ManagerError::InvalidUuidParam{value: "not_a_uuid".to_string(), error: "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1".to_string()})
-}
-
-fn example_pipeline_not_specified() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ManagerError::PipelineNotSpecified)
 }
 
 fn example_connector_not_specified() -> ErrorResponse {
@@ -931,7 +946,7 @@ async fn do_delete_program(
         .map(|_| HttpResponse::Ok().finish())
 }
 
-/// Request to create a new program configuration.
+/// Request to create a new pipeline.
 #[derive(Debug, Deserialize, ToSchema)]
 struct NewPipelineRequest {
     /// Config name.
@@ -940,13 +955,14 @@ struct NewPipelineRequest {
     description: String,
     /// Program to create config for.
     program_id: Option<ProgramId>,
-    /// YAML code for the config.
-    config: String,
+    /// Pipeline configuration parameters.
+    /// These knobs are independent of any connector
+    config: Option<RuntimeConfig>,
     /// Attached connectors.
     connectors: Option<Vec<AttachedConnector>>,
 }
 
-/// Response to a config creation request.
+/// Response to a pipeline creation request.
 #[derive(Serialize, ToSchema)]
 struct NewPipelineResponse {
     /// Id of the newly created config.
@@ -955,15 +971,23 @@ struct NewPipelineResponse {
     version: Version,
 }
 
-/// Create a new program configuration.
+/// Create a new pipeline.
 #[utoipa::path(
     request_body = NewPipelineRequest,
     responses(
-        (status = OK, description = "Configuration successfully created.", body = NewPipelineResponse),
+        (status = OK, description = "Pipeline successfully created.", body = NewPipelineResponse),
         (status = NOT_FOUND
-            , description = "Specified program id does not exist in the database."
+            , description = "Specified program id or connector ids do not exist."
             , body = ErrorResponse
-            , example = json!(example_unknown_program())),
+            , examples (
+                ("Unknown program" =
+                    (description = "Specified program id does not exist",
+                      value = json!(example_unknown_program()))),
+                ("Unknown connector" =
+                    (description = "One or more connector ids do not exist.",
+                     value = json!(example_unknown_connector()))),
+            )
+        ),
     ),
     tag = "Pipeline"
 )]
@@ -972,7 +996,7 @@ async fn new_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: web::Json<NewPipelineRequest>,
-) -> Result<HttpResponse, DBError> {
+) -> Result<HttpResponse, ManagerError> {
     debug!("Received new-pipeline request: {request:?}");
     let (pipeline_id, version) = state
         .db
@@ -997,20 +1021,17 @@ async fn new_pipeline(
         }))
 }
 
-/// Request to update an existing program configuration.
+/// Request to update an existing pipeline.
 #[derive(Deserialize, ToSchema)]
 struct UpdatePipelineRequest {
-    /// Config id.
-    pipeline_id: PipelineId,
-    /// New config name.
+    /// New pipeline name.
     name: String,
-    /// New config description.
+    /// New pipeline description.
     description: String,
-    /// New program to create config for. If absent, program will be set to
-    /// NULL.
+    /// New program to create a pipeline for. If absent, program will be set to NULL.
     program_id: Option<ProgramId>,
-    /// New config YAML. If absent, existing YAML will be kept unmodified.
-    config: Option<String>,
+    /// New pipeline configuration. If absent, the existing configuration will be kept unmodified.
+    config: Option<RuntimeConfig>,
     /// Attached connectors.
     ///
     /// - If absent, existing connectors will be kept unmodified.
@@ -1027,42 +1048,45 @@ struct UpdatePipelineResponse {
     version: Version,
 }
 
-/// Update existing pipeline configuration.
-///
-/// Updates pipeline configuration. On success, increments pipeline version by 1.
+/// Change a pipeline's name, description, code, configuration, or connectors.
+/// On success, increments the pipeline's version by 1.
 #[utoipa::path(
     request_body = UpdatePipelineRequest,
     responses(
         (status = OK, description = "Pipeline successfully updated.", body = UpdatePipelineResponse),
         (status = NOT_FOUND
-            , description = "Specified pipeline id does not exist in the database."
+            , description = "Specified pipeline or connector id does not exist."
             , body = ErrorResponse
-            , example = json!(example_unknown_pipeline())),
-        (status = NOT_FOUND
-            , description = "Specified connector id does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(example_unknown_connector())),
+            , examples (
+                ("Unknown pipeline ID" = (value = json!(example_unknown_pipeline()))),
+                ("Unknown connector ID" = (value = json!(example_unknown_connector()))),
+            )),
+    ),
+    params(
+        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
     ),
     tag = "Pipeline"
 )]
-#[patch("/pipelines")]
+#[patch("/pipelines/{pipeline_id}")]
 async fn update_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    request: web::Json<UpdatePipelineRequest>,
-) -> Result<HttpResponse, DBError> {
+    req: HttpRequest,
+    body: web::Json<UpdatePipelineRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
     let version = state
         .db
         .lock()
         .await
         .update_pipeline(
             *tenant_id,
-            request.pipeline_id,
-            request.program_id,
-            &request.name,
-            &request.description,
-            &request.config,
-            &request.connectors,
+            pipeline_id,
+            body.program_id,
+            &body.name,
+            &body.description,
+            &body.config,
+            &body.connectors,
         )
         .await?;
 
@@ -1071,30 +1095,48 @@ async fn update_pipeline(
         .json(&UpdatePipelineResponse { version }))
 }
 
-/// List pipelines.
+/// Fetch pipelines, optionally filtered by name or ID.
 #[utoipa::path(
     responses(
         (status = OK, description = "Pipeline list retrieved successfully.", body = [Pipeline])
     ),
+    params(PipelineIdOrNameQuery),
     tag = "Pipeline"
 )]
 #[get("/pipelines")]
 async fn list_pipelines(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    query: web::Query<PipelineIdOrNameQuery>,
 ) -> Result<HttpResponse, DBError> {
-    let pipelines = state.db.lock().await.list_pipelines(*tenant_id).await?;
-
+    let pipelines = if let Some(id) = query.id {
+        let pipeline = state
+            .db
+            .lock()
+            .await
+            .get_pipeline_by_id(*tenant_id, PipelineId(id))
+            .await?;
+        vec![pipeline]
+    } else if let Some(name) = query.name.clone() {
+        let pipeline = state
+            .db
+            .lock()
+            .await
+            .get_pipeline_by_name(*tenant_id, name)
+            .await?;
+        vec![pipeline]
+    } else {
+        state.db.lock().await.list_pipelines(*tenant_id).await?
+    };
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(pipelines))
 }
 
-/// Return the last committed (and running, if pipeline is started)
-/// configuration of the pipeline.
+/// Return the currently deployed version of the pipeline, if any.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Last committed configuration of the pipeline retrieved successfully (returns null if pipeline was never deployed yet).", body = Option<PipelineRevision>),
+        (status = OK, description = "Last deployed version of the pipeline retrieved successfully (returns null if pipeline was never deployed yet).", body = Option<PipelineRevision>),
         (status = NOT_FOUND
             , description = "Specified `pipeline_id` does not exist in the database."
             , body = ErrorResponse
@@ -1105,8 +1147,8 @@ async fn list_pipelines(
     ),
     tag = "Pipeline"
 )]
-#[get("/pipelines/{pipeline_id}/committed")]
-async fn pipeline_committed(
+#[get("/pipelines/{pipeline_id}/deployed")]
+async fn pipeline_deployed(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
@@ -1169,95 +1211,88 @@ async fn pipeline_stats(
         .await
 }
 
-/// Retrieve pipeline configuration and runtime state.
-///
-/// When invoked without the `?toml` flag, this endpoint
-/// returns pipeline state, including static configuration and runtime status,
-/// in the JSON format.  The `?toml` flag changes the behavior of this
-/// endpoint to return static pipeline configuratiin in the TOML format.
-// TODO: explain what this TOML is for.
+/// Fetch a pipeline by ID.
 #[utoipa::path(
     responses(
         (status = OK, description = "Pipeline descriptor retrieved successfully.",content(
-            ("text/plain" = String, example = json!(example_pipeline_toml())),
+            ("text/plain" = String, example = json!(example_pipeline_config())),
             ("application/json" = Pipeline),
         )),
-        (status = BAD_REQUEST
-            , description = "Pipeline not specified. Use ?id or ?name query strings in the URL."
-            , body = ErrorResponse
-            , example = json!(example_pipeline_not_specified())),
         (status = NOT_FOUND
-            , description = "Specified pipeline name does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(example_unknown_name())),
-        (status = NOT_FOUND
-            , description = "Specified pipeline id does not exist in the database."
+            , description = "Specified pipeline ID does not exist in the database."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
     ),
     params(
-        ("id" = Option<Uuid>, Query, description = "Unique pipeline identifier"),
-        ("name" = Option<String>, Query, description = "Unique pipeline name"),
-        ("toml" = Option<bool>, Query, description = "Set to true to request the configuration of the pipeline as a toml file."),
+        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
     ),
     tag = "Pipeline"
 )]
-#[get("/pipeline")]
-async fn pipeline_status(
+#[get("/pipelines/{pipeline_id}")]
+async fn get_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: web::Query<PipelineIdOrNameTomlQuery>,
+    req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    if req.toml.unwrap_or(false) {
-        let toml: String = if let Some(id) = req.id {
-            state
-                .db
-                .lock()
-                .await
-                .pipeline_to_toml(*tenant_id, PipelineId(id))
-                .await?
-        } else if let Some(name) = req.name.clone() {
-            let db: tokio::sync::MutexGuard<'_, ProjectDB> = state.db.lock().await;
-            let pipeline = db.get_pipeline_descr_by_name(*tenant_id, name).await?;
-            db.pipeline_to_toml(*tenant_id, pipeline.pipeline_id)
-                .await?
-        } else {
-            Err(ManagerError::PipelineNotSpecified)?
-        };
-
-        Ok(HttpResponse::Ok()
-            .content_type("text/plain")
-            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .body(toml))
-    } else {
-        let pipeline: crate::db::Pipeline = if let Some(id) = req.id {
-            state
-                .db
-                .lock()
-                .await
-                .get_pipeline_by_id(*tenant_id, PipelineId(id))
-                .await?
-        } else if let Some(name) = req.name.clone() {
-            state
-                .db
-                .lock()
-                .await
-                .get_pipeline_by_name(*tenant_id, name)
-                .await?
-        } else {
-            Err(ManagerError::PipelineNotSpecified)?
-        };
-
-        Ok(HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(&pipeline))
-    }
+    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
+    let pipeline: crate::db::Pipeline = state
+        .db
+        .lock()
+        .await
+        .get_pipeline_by_id(*tenant_id, pipeline_id)
+        .await?;
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&pipeline))
 }
 
-/// Validate the configuration of a  a pipeline.
+/// Fetch a pipeline's configuration.
 ///
-/// Validate configuration, usable as a pre-cursor for deploy to
-/// check if pipeline configuration is valid and can be deployed.
+/// When defining a pipeline, clients have to provide an optional
+/// `RuntimeConfig` for the pipelines and references to existing
+/// connectors to attach to the pipeline. This endpoint retrieves
+/// the *expanded* definition of the pipeline's configuration,
+/// which comprises both the `RuntimeConfig` and the complete
+/// definitions of the attached connectors.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Expanded pipeline configuration retrieved successfully.",content(
+            ("application/json" = PipelineConfig),
+        )),
+        (status = NOT_FOUND
+            , description = "Specified pipeline ID does not exist."
+            , body = ErrorResponse
+            , example = json!(example_unknown_pipeline())),
+    ),
+    params(
+        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
+    ),
+    tag = "Pipeline"
+)]
+#[get("/pipelines/{pipeline_id}/config")]
+async fn get_pipeline_config(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
+    let expanded_config = state
+        .db
+        .lock()
+        .await
+        .pipeline_config(*tenant_id, pipeline_id)
+        .await?;
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&expanded_config))
+}
+
+/// Validate a pipeline.
+///
+/// Checks whether a pipeline is configured correctly. This includes
+/// checking whether the pipeline references a valid compiled program,
+/// whether the connectors reference valid tables/views in the program,
+/// and more.
 #[utoipa::path(
     responses(
         (status = OK
@@ -1265,33 +1300,21 @@ async fn pipeline_status(
             , content_type = "application/json"
             , body = String),
         (status = BAD_REQUEST
-            , description = "Specified pipeline id is not a valid uuid."
+            , description = "Invalid pipeline."
             , body = ErrorResponse
-            , example = json!(example_invalid_uuid_param())),
+            , examples(
+                ("Invalid Pipeline ID" = (description = "Specified pipeline id is not a valid uuid.", value = json!(example_invalid_uuid_param()))),
+                ("Program not set" = (description = "Pipeline does not have a program set.", value = json!(example_program_not_set()))),
+                ("Program not compiled" = (description = "The program associated with this pipeline has not been compiled.", value = json!(example_program_not_compiled()))),
+                ("Program has compilation errors" = (description = "The program associated with the pipeline raised compilation error.", value = json!(example_program_has_errors()))),
+                ("Invalid table reference" = (description = "Connectors reference a table that doesn't exist.", value = json!(example_pipeline_invalid_input_ac()))),
+                ("Invalid table or view reference" = (description = "Connectors reference a view that doesn't exist.", value = json!(example_pipeline_invalid_output_ac()))),
+            )
+        ),
         (status = NOT_FOUND
             , description = "Specified pipeline id does not exist in the database."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
-        (status = BAD_REQUEST
-            , description = "Pipeline does not have a program set."
-            , body = ErrorResponse
-            , example = json!(example_program_not_set())),
-        (status = SERVICE_UNAVAILABLE
-            , description = "The program associated with this pipeline has not been compiled."
-            , body = ErrorResponse
-            , example = json!(example_program_not_compiled())),
-        (status = BAD_REQUEST
-            , description = "The program associated with the pipeline raised compilation error."
-            , body = ErrorResponse
-            , example = json!(example_program_has_errors())),
-        (status = BAD_REQUEST
-            , description = "The connectors in the config reference a table that doesn't exist."
-            , body = ErrorResponse
-            , example = json!(example_pipeline_invalid_input_ac())),
-        (status = BAD_REQUEST
-            , description = "The connectors in the config reference a view that doesn't exist."
-            , body = ErrorResponse
-            , example = json!(example_pipeline_invalid_output_ac())),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
@@ -1336,41 +1359,24 @@ async fn pipeline_validate(
         (status = ACCEPTED
             , description = "Request accepted."),
         (status = BAD_REQUEST
-            , description = "Invalid action specified."
+            , description = "Pipeline desired state is not valid."
             , body = ErrorResponse
-            , example = json!(example_invalid_pipeline_action())),
-        (status = BAD_REQUEST
-            , description = "Specified pipeline id is not a valid uuid."
-            , body = ErrorResponse
-            , example = json!(example_invalid_uuid_param())),
+            , examples(
+                ("Invalid Pipeline ID" = (description = "Specified pipeline id is not a valid uuid.", value = json!(example_invalid_uuid_param()))),
+                ("Program not set" = (description = "Pipeline does not have a program set.", value = json!(example_program_not_set()))),
+                ("Program not compiled" = (description = "The program associated with this pipeline has not been compiled.", value = json!(example_program_not_compiled()))),
+                ("Program has compilation errors" = (description = "The program associated with the pipeline raised compilation error.", value = json!(example_program_has_errors()))),
+                ("Invalid table reference" = (description = "Connectors reference a table that doesn't exist.", value = json!(example_pipeline_invalid_input_ac()))),
+                ("Invalid table or view reference" = (description = "Connectors reference a view that doesn't exist.", value = json!(example_pipeline_invalid_output_ac()))),
+                ("Invalidtable or view reference" = (description = "Connectors reference a view that doesn't exist.", value = json!(example_pipeline_invalid_output_ac()))),
+                ("Invalid action" = (description = "Invalid action specified", value = json!(example_invalid_pipeline_action()))),
+                ("Action cannot be applied" = (description = "Action is not applicable in the current state of the pipeline.", value = json!(example_illegal_pipeline_action()))),
+            )
+        ),
         (status = NOT_FOUND
             , description = "Specified pipeline id does not exist in the database."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
-        (status = BAD_REQUEST
-            , description = "Pipeline does not have a program set."
-            , body = ErrorResponse
-            , example = json!(example_program_not_set())),
-        (status = SERVICE_UNAVAILABLE
-            , description = "The program associated with this pipeline has not been compiled."
-            , body = ErrorResponse
-            , example = json!(example_program_not_compiled())),
-        (status = BAD_REQUEST
-            , description = "The program associated with the pipeline raised compilation error."
-            , body = ErrorResponse
-            , example = json!(example_program_has_errors())),
-        (status = BAD_REQUEST
-            , description = "The connectors in the config references a table that doesn't exist."
-            , body = ErrorResponse
-            , example = json!(example_pipeline_invalid_input_ac())),
-        (status = BAD_REQUEST
-            , description = "The connectors in the config references a view that doesn't exist."
-            , body = ErrorResponse
-            , example = json!(example_pipeline_invalid_output_ac())),
-        (status = BAD_REQUEST
-            , description = "Action is not applicable in the current state of the pipeline."
-            , body = ErrorResponse
-            , example = json!(example_illegal_pipeline_action())),
         (status = INTERNAL_SERVER_ERROR
             , description = "Timeout waiting for the pipeline to initialize."
             , body = ErrorResponse
@@ -1408,25 +1414,25 @@ async fn pipeline_action(
     Ok(HttpResponse::Accepted().finish())
 }
 
-/// Delete a pipeline.
-///
-/// Deletes the pipeline.  The pipeline must not be executing.
+/// Delete a pipeline. The pipeline must be in the shutdown state.
 #[utoipa::path(
     responses(
         (status = OK
             , description = "Pipeline successfully deleted."),
-        (status = BAD_REQUEST
-            , description = "Specified pipeline id is not a valid uuid."
-            , body = ErrorResponse
-            , example = json!(example_invalid_uuid_param())),
         (status = NOT_FOUND
             , description = "Specified pipeline id does not exist in the database."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
         (status = BAD_REQUEST
-            , description = "Pipeline cannot be deleted while executing. Shutdown the pipeine first."
+            , description = "Pipeline ID is invalid or pipeline is already running."
             , body = ErrorResponse
-            , example = json!(example_cannot_delete_when_running())),
+            , examples(
+                ("Pipeline is running" =
+                    (description = "Pipeline cannot be deleted while executing. Shutdown the pipeline first.",
+                    value = json!(example_cannot_delete_when_running()))),
+                ("Invalid Pipeline ID" =
+                    (value = json!(example_invalid_uuid_param())))
+        )),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
@@ -1639,13 +1645,11 @@ pub struct WithCodeQuery {
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
-pub struct PipelineIdOrNameTomlQuery {
+pub struct PipelineIdOrNameQuery {
     /// Unique pipeline id.
     id: Option<Uuid>,
     /// Unique pipeline name.
     name: Option<String>,
-    /// Set to true to request the configuration of the pipeline as a toml file.
-    toml: Option<bool>,
 }
 
 /// Returns connector descriptor.
@@ -1671,7 +1675,7 @@ pub struct PipelineIdOrNameTomlQuery {
     ),
     params(
         ("id" = Option<Uuid>, Query, description = "Unique connector identifier"),
-        ("name" = Option<String>, Query, description = "Unique connector name")
+        ("name" = Option<String>, Query, description = "Unique connector name"),
     ),
     tag = "Connector"
 )]
@@ -1784,7 +1788,7 @@ async fn http_input(
         .await
 }
 
-/// Subscribe to a stream of updates to a SQL view or table.
+/// Subscribe to a stream of updates from a SQL view or table.
 ///
 /// The pipeline responds with a continuous stream of changes to the specified
 /// table or view, encoded using the format specified in the `?format=`

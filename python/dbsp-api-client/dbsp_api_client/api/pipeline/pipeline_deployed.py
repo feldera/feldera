@@ -1,47 +1,44 @@
 from http import HTTPStatus
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.pipeline import Pipeline
-from ...types import UNSET, Response, Unset
+from ...models.error_response import ErrorResponse
+from ...models.pipeline_revision import PipelineRevision
+from ...types import Response
 
 
 def _get_kwargs(
-    *,
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
+    pipeline_id: str,
 ) -> Dict[str, Any]:
     pass
 
-    params: Dict[str, Any] = {}
-    params["id"] = id
-
-    params["name"] = name
-
-    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
-
     return {
         "method": "get",
-        "url": "/pipelines",
-        "params": params,
+        "url": "/pipelines/{pipeline_id}/deployed".format(
+            pipeline_id=pipeline_id,
+        ),
     }
 
 
 def _parse_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Optional[List["Pipeline"]]:
+) -> Optional[Union[ErrorResponse, Optional[PipelineRevision]]]:
     if response.status_code == HTTPStatus.OK:
-        response_200 = []
         _response_200 = response.json()
-        for response_200_item_data in _response_200:
-            response_200_item = Pipeline.from_dict(response_200_item_data)
-
-            response_200.append(response_200_item)
+        response_200: Optional[PipelineRevision]
+        if _response_200 is None:
+            response_200 = None
+        else:
+            response_200 = PipelineRevision.from_dict(_response_200)
 
         return response_200
+    if response.status_code == HTTPStatus.NOT_FOUND:
+        response_404 = ErrorResponse.from_dict(response.json())
+
+        return response_404
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -50,7 +47,7 @@ def _parse_response(
 
 def _build_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Response[List["Pipeline"]]:
+) -> Response[Union[ErrorResponse, Optional[PipelineRevision]]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -60,30 +57,27 @@ def _build_response(
 
 
 def sync_detailed(
+    pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-) -> Response[List["Pipeline"]]:
-    """Fetch pipelines, optionally filtered by name or ID.
+) -> Response[Union[ErrorResponse, Optional[PipelineRevision]]]:
+    """Return the currently deployed version of the pipeline, if any.
 
-     Fetch pipelines, optionally filtered by name or ID.
+     Return the currently deployed version of the pipeline, if any.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
+        pipeline_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[List['Pipeline']]
+        Response[Union[ErrorResponse, Optional[PipelineRevision]]]
     """
 
     kwargs = _get_kwargs(
-        id=id,
-        name=name,
+        pipeline_id=pipeline_id,
     )
 
     response = client.get_httpx_client().request(
@@ -94,59 +88,53 @@ def sync_detailed(
 
 
 def sync(
+    pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-) -> Optional[List["Pipeline"]]:
-    """Fetch pipelines, optionally filtered by name or ID.
+) -> Optional[Union[ErrorResponse, Optional[PipelineRevision]]]:
+    """Return the currently deployed version of the pipeline, if any.
 
-     Fetch pipelines, optionally filtered by name or ID.
+     Return the currently deployed version of the pipeline, if any.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
+        pipeline_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        List['Pipeline']
+        Union[ErrorResponse, Optional[PipelineRevision]]
     """
 
     return sync_detailed(
+        pipeline_id=pipeline_id,
         client=client,
-        id=id,
-        name=name,
     ).parsed
 
 
 async def asyncio_detailed(
+    pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-) -> Response[List["Pipeline"]]:
-    """Fetch pipelines, optionally filtered by name or ID.
+) -> Response[Union[ErrorResponse, Optional[PipelineRevision]]]:
+    """Return the currently deployed version of the pipeline, if any.
 
-     Fetch pipelines, optionally filtered by name or ID.
+     Return the currently deployed version of the pipeline, if any.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
+        pipeline_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[List['Pipeline']]
+        Response[Union[ErrorResponse, Optional[PipelineRevision]]]
     """
 
     kwargs = _get_kwargs(
-        id=id,
-        name=name,
+        pipeline_id=pipeline_id,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -155,31 +143,28 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    pipeline_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-) -> Optional[List["Pipeline"]]:
-    """Fetch pipelines, optionally filtered by name or ID.
+) -> Optional[Union[ErrorResponse, Optional[PipelineRevision]]]:
+    """Return the currently deployed version of the pipeline, if any.
 
-     Fetch pipelines, optionally filtered by name or ID.
+     Return the currently deployed version of the pipeline, if any.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
+        pipeline_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        List['Pipeline']
+        Union[ErrorResponse, Optional[PipelineRevision]]
     """
 
     return (
         await asyncio_detailed(
+            pipeline_id=pipeline_id,
             client=client,
-            id=id,
-            name=name,
         )
     ).parsed

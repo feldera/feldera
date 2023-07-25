@@ -1,6 +1,5 @@
 import uuid
 import dbsp_api_client
-import yaml
 import sys
 from typing import Dict, Any
 import time
@@ -21,10 +20,11 @@ from dbsp_api_client.models.attached_connector import AttachedConnector
 from dbsp_api_client.models.pipeline_status import PipelineStatus
 from dbsp_api_client.models.pipeline_descr import PipelineDescr
 from dbsp_api_client.models.pipeline import Pipeline
+from dbsp_api_client.models.runtime_config import RuntimeConfig
 from dbsp_api_client.api.pipeline import new_pipeline
 from dbsp_api_client.api.pipeline import update_pipeline
 from dbsp_api_client.api.pipeline import pipeline_stats
-from dbsp_api_client.api.pipeline import pipeline_status
+from dbsp_api_client.api.pipeline import get_pipeline
 from dbsp_api_client.api.pipeline import pipeline_delete
 from dbsp_api_client.api.pipeline import pipeline_action
 from dbsp.program import DBSPProgram
@@ -63,7 +63,7 @@ class DBSPPipelineConfig:
             connector_id=connector.connector_id,
             is_input=True,
             name=uuid.uuid4().hex if name is None else name,
-            config=stream,
+            relation_name=stream,
         ))
 
     def add_kafka_input(self, name: str, stream: str, config: KafkaInputConfig, format: FormatConfig):
@@ -122,7 +122,7 @@ class DBSPPipelineConfig:
             connector_id=connector.connector_id,
             is_input=False,
             name=uuid.uuid4().hex if name is None else name,
-            config=stream,
+            relation_name=stream,
         ))
 
     def add_file_input(self, stream: str, filepath: str, format: FormatConfig):
@@ -166,22 +166,21 @@ class DBSPPipelineConfig:
                 name="http"), format=format),
             name)
 
-    def yaml(self) -> str:
-        """Convert pipeline configuration to YAML format."""
+    def runtime_config(self) -> str:
+        """Produce a pipeline configuration object."""
         config = self.pipeline_config.to_dict().copy()
         del config['inputs']
         del config['outputs']
-        return yaml.dump(config)
+        return RuntimeConfig.from_dict(config)
 
     def save(self):
         "Save the pipeline configuration to DBSP."
-        # print("yaml:\n" + self.yaml())
         if self.pipeline_id == None:
             body = NewPipelineRequest(
                 program_id=self.project.program_id,
                 name=self.name,
                 description=self.description,
-                config=self.yaml(),
+                config=self.runtime_config(),
                 connectors=self.attached_connectors,
             )
             response = new_pipeline.sync_detailed(client=self.api_client, json_body=body).unwrap(
@@ -194,7 +193,7 @@ class DBSPPipelineConfig:
                 program_id=self.project.program_id,
                 name=self.name,
                 description=self.description,
-                config=self.yaml(),
+                config=self.runtime_config(),
                 connectors=self.attached_connectors,
             )
             response = update_pipeline.sync_detailed(
@@ -280,7 +279,7 @@ class DBSPPipelineConfig:
             httpx.TimeoutException: If the request takes longer than Client.timeout.
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
-        status = pipeline_status.sync_detailed(client=self.api_client, id=self.pipeline_id).unwrap(
+        status = get_pipeline.sync_detailed(client=self.api_client, pipeline_id=self.pipeline_id).unwrap(
             "Failed to retrieve pipeline status")
         return status
 

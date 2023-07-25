@@ -6,6 +6,7 @@ use super::{
 use crate::auth::TenantId;
 use crate::pipeline_manager::ProgramStatus;
 use async_trait::async_trait;
+use dbsp_adapters::RuntimeConfig;
 use uuid::Uuid;
 
 /// The storage trait contains the methods to interact with the pipeline manager
@@ -245,7 +246,7 @@ pub(crate) trait Storage {
         program_id: Option<ProgramId>,
         pipline_name: &str,
         pipeline_description: &str,
-        config: &str,
+        config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> Result<(PipelineId, Version), DBError>;
 
@@ -260,7 +261,7 @@ pub(crate) trait Storage {
         program_id: Option<ProgramId>,
         pipline_name: &str,
         pipeline_description: &str,
-        config: &Option<String>,
+        config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> Result<Version, DBError>;
 
