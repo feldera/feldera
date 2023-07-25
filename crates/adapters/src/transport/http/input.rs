@@ -112,7 +112,7 @@ impl HttpInputEndpoint {
             .unwrap()
             .as_mut()
             .unwrap()
-            .input(bytes)
+            .input_fragment(bytes)
     }
 
     fn eoi(&self) -> AnyResult<()> {

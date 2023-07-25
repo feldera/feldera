@@ -122,6 +122,7 @@ mod seroutput;
 #[cfg(feature = "server")]
 pub mod server;
 pub mod transport;
+pub(crate) mod util;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test;

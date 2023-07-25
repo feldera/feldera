@@ -176,6 +176,28 @@ impl TestConfig {
             .unwrap()
     }
 
+    async fn post_json<S: AsRef<str>>(
+        &self,
+        endpoint: S,
+        json: String,
+    ) -> ClientResponse<Decoder<Payload>> {
+        self.maybe_attach_bearer_token(self.client.post(self.endpoint_url(endpoint)))
+            .send_body(json)
+            .await
+            .unwrap()
+    }
+
+    async fn quantiles(&self, id: &str, table: &str) -> String {
+        let mut resp = self
+            .post_no_body(format!(
+                "/v0/pipelines/{id}/egress/{table}?query=quantiles&mode=snapshot"
+            ))
+            .await;
+        assert!(resp.status().is_success());
+        let resp: Value = resp.json().await.unwrap();
+        resp.get("text_data").unwrap().as_str().unwrap().to_string()
+    }
+
     async fn delete<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
         self.maybe_attach_bearer_token(self.client.delete(self.endpoint_url(endpoint)))
             .send()
@@ -442,18 +464,8 @@ async fn deploy_pipeline() {
         .await;
 
     // Querying quantiles should work in paused state.
-    let mut resp = config
-        .post_no_body(format!(
-            "/v0/pipelines/{}/egress/T1?query=quantiles&mode=snapshot",
-            id
-        ))
-        .await;
-    assert!(resp.status().is_success());
-    let resp: Value = resp.json().await.unwrap();
-    assert_eq!(
-        resp.get("text_data").unwrap().as_str().unwrap(),
-        "1,1\n2,1\n3,1\n"
-    );
+    let quantiles = config.quantiles(&id, "T1").await;
+    assert_eq!(&quantiles, "1,1\n2,1\n3,1\n");
 
     // Start the pipeline
     let resp = config
@@ -565,4 +577,107 @@ async fn program_delete_with_pipeline() {
 
     let req = config.get(format!("/v0/pipelines/{pipeline_id}")).await;
     assert_eq!(StatusCode::OK, req.status());
+}
+
+#[actix_web::test]
+#[serial]
+async fn json_ingress() {
+    let config = setup().await;
+    let id = deploy_pipeline_without_connectors(
+        &config,
+        "create table t1(c1 integer, c2 bool, c3 varchar); create view v1 as select * from t1;",
+    )
+    .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .await;
+
+    // Push some data using default json config.
+    let req = config
+        .post_json(
+            format!("/v0/pipelines/{}/ingress/T1?format=json", id),
+            r#"{"C1": 10, "C2": true}
+            {"C1": 20, "C3": "foo"}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let quantiles = config.quantiles(&id, "T1").await;
+    assert_eq!(quantiles, "10,true,,1\n20,,foo,1\n");
+
+    // Push more data using insert/delete format.
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
+                id
+            ),
+            r#"{"delete": {"C1": 10, "C2": true}}
+            {"insert": {"C1": 30, "C3": "bar"}}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let quantiles = config.quantiles(&id, "T1").await;
+    assert_eq!(quantiles, "20,,foo,1\n30,,bar,1\n");
+
+    // Format data as json array.
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
+                id
+            ),
+            r#"{"insert": [40, true, "buzz"]}"#.to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    // Use array of updates instead of newline-delimited JSON
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete&array=true",
+                id
+            ),
+            r#"[{"delete": [40, true, "buzz"]}, {"insert": [50, true, ""]}]"#.to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let quantiles = config.quantiles(&id, "T1").await;
+    assert_eq!(quantiles, "20,,foo,1\n30,,bar,1\n50,true,,1\n");
+
+    // Debezium CDC format
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=debezium",
+                id
+            ),
+            r#"{"payload": {"op": "u", "before": [50, true, ""], "after": [60, true, "hello"]}}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let quantiles = config.quantiles(&id, "T1").await;
+    assert_eq!(quantiles, "20,,foo,1\n30,,bar,1\n60,true,hello,1\n");
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .await;
 }

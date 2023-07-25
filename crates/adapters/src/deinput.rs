@@ -1,6 +1,7 @@
 use dbsp::{algebra::ZRingValue, CollectionHandle, DBData, DBWeight, InputHandle, UpsertHandle};
 use erased_serde::{deserialize, Deserializer as ErasedDeserializer, Error as EError};
 use serde::Deserialize;
+use std::marker::PhantomData;
 
 /// Maximal buffer size reused across clock cycles.
 ///
@@ -196,27 +197,28 @@ pub trait DeCollectionHandle: Send {
     fn fork(&self) -> Box<dyn DeCollectionHandle>;
 }
 
-/// An input handle that wraps a [`CollectionHandle<V, R>`](`CollectionHandle`)
+/// An input handle that wraps a [`CollectionHandle<K, R>`](`CollectionHandle`)
 /// returned by
 /// [`RootCircuit::add_input_zset`](`dbsp::RootCircuit::add_input_zset`).
 ///
 /// The [`insert`](`Self::insert`) method of this handle deserializes value
-/// `v` type `V` and buffers a `(v, +1)` update for the underlying
-/// `CollectionHandle`.
+/// `d` of type `D`, converts it to value `k: K` using the `From` trait and
+/// buffers a `(k, +1)` update for the underlying `CollectionHandle`.
 ///
-/// The [`delete`](`Self::delete`) method of this handle deserializes value
-/// `v` type `V` and buffers a `(v, -1)` update for the underlying
-/// `CollectionHandle`.
-pub struct DeZSetHandle<K, R> {
+/// The [`delete`](`Self::delete`) method of this handle buffers a `(k, -1)`
+/// update for the underlying `CollectionHandle`.
+pub struct DeZSetHandle<K, D, R> {
     updates: Vec<(K, R)>,
     handle: CollectionHandle<K, R>,
+    phantom: PhantomData<D>,
 }
 
-impl<K, R> DeZSetHandle<K, R> {
+impl<K, D, R> DeZSetHandle<K, D, R> {
     pub fn new(handle: CollectionHandle<K, R>) -> Self {
         Self {
             updates: Vec::new(),
             handle,
+            phantom: PhantomData,
         }
     }
 
@@ -227,20 +229,21 @@ impl<K, R> DeZSetHandle<K, R> {
     }
 }
 
-impl<K, R> DeCollectionHandle for DeZSetHandle<K, R>
+impl<K, D, R> DeCollectionHandle for DeZSetHandle<K, D, R>
 where
-    K: DBData + for<'de> Deserialize<'de>,
+    K: DBData + From<D>,
+    D: for<'de> Deserialize<'de> + Send + 'static,
     R: DBWeight + ZRingValue,
 {
     fn insert(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let key = deserialize::<K>(deserializer)?;
+        let key = <K as From<D>>::from(deserialize::<D>(deserializer)?);
 
         self.updates.push((key, R::one()));
         Ok(())
     }
 
     fn delete(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let key = deserialize::<K>(deserializer)?;
+        let key = <K as From<D>>::from(deserialize::<D>(deserializer)?);
 
         self.updates.push((key, R::one().neg()));
         Ok(())
@@ -398,8 +401,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        DeCollectionHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle,
-        DeZSetHandle, format::string_record_deserializer,
+        format::string_record_deserializer, DeCollectionHandle, DeMapHandle, DeScalarHandle,
+        DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
     };
     use bincode::{Decode, Encode};
     use csv::{Reader as CsvReader, Writer as CsvWriter};

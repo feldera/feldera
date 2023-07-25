@@ -89,15 +89,17 @@ impl MockInputConsumer {
     pub fn on_error(&self, error_cb: Option<ErrorCallback>) {
         self.state().error_cb = error_cb;
     }
-}
 
-impl InputConsumer for MockInputConsumer {
-    fn input(&mut self, data: &[u8]) -> AnyResult<()> {
+    fn input(&mut self, data: &[u8], fragment: bool) -> AnyResult<()> {
         // println!("input");
         let mut state = self.state();
 
         state.data.extend_from_slice(data);
-        let parser_result = state.parser.input(data);
+        let parser_result = if fragment {
+            state.parser.input_fragment(data)
+        } else {
+            state.parser.input_chunk(data)
+        };
         // println!("parser returned '{:?}'", state.parser_result);
         if let Err(e) = &parser_result {
             if let Some(error_cb) = &mut state.error_cb {
@@ -115,6 +117,16 @@ impl InputConsumer for MockInputConsumer {
         state.parser.flush();
         parser_result_clone.map(|_| ()).map_err(|e| anyhow!(e))
     }
+}
+
+impl InputConsumer for MockInputConsumer {
+    fn input_fragment(&mut self, data: &[u8]) -> AnyResult<()> {
+        self.input(data, true)
+    }
+
+    fn input_chunk(&mut self, data: &[u8]) -> AnyResult<()> {
+        self.input(data, false)
+    }
 
     fn error(&mut self, _fatal: bool, error: AnyError) {
         let mut state = self.state();
@@ -128,8 +140,22 @@ impl InputConsumer for MockInputConsumer {
     }
 
     fn eoi(&mut self) -> AnyResult<()> {
-        self.state().eoi = true;
-        Ok(())
+        let mut state = self.state();
+
+        match state.parser.eoi() {
+            Ok(_num_records) => {
+                state.parser.flush();
+                Ok(())
+            }
+            Err(error) => {
+                if let Some(error_cb) = &mut state.error_cb {
+                    error_cb(&error);
+                } else {
+                    panic!("mock_input_consumer: parse error '{error}'");
+                }
+                Err(error)
+            }
+        }
     }
 
     fn fork(&self) -> Box<dyn InputConsumer> {

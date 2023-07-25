@@ -114,7 +114,7 @@ impl FileInputEndpoint {
 
                             // Leave it to the controller to handle errors.  There is noone we can
                             // forward the error to upstream.
-                            let _ = consumer.input(data);
+                            let _ = consumer.input_fragment(data);
                             let len = data.len();
                             reader.consume(len);
                         }
