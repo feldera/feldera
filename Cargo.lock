@@ -534,10 +534,11 @@ dependencies = [
 
 [[package]]
 name = "arcstr"
-version = "1.1.4"
-source = "git+https://github.com/gz/arcstr.git?rev=b43120c#b43120cd13db16a1c1f61a12d1637b047b9bcd89"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f907281554a3d0312bb7aab855a8e0ef6cbf1614d06de54105039ca8b34460e"
 dependencies = [
- "bincode",
+ "serde",
 ]
 
 [[package]]
@@ -2323,6 +2324,7 @@ dependencies = [
  "rand_xoshiro",
  "reqwest",
  "rocksdb",
+ "rust_decimal",
  "serde",
  "serde_json",
  "size-of",

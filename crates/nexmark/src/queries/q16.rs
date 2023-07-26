@@ -82,8 +82,11 @@ use time::{
     bincode::Decode,
 )]
 pub struct Q16Output {
+    #[bincode(with_serde)]
     channel: ArcStr,
+    #[bincode(with_serde)]
     day: ArcStr,
+    #[bincode(with_serde)]
     minute: ArcStr,
     total_bids: usize,
     rank1_bids: usize,
