@@ -1,3 +1,3 @@
 # Python
 
-Write Feldera Programs using Python.
+Write Feldera Platform programs using Python.

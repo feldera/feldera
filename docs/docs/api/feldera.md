@@ -1,3 +1,3 @@
-# DBSP
+# Feldera DBSP
 
-DBSP API on docs.rs
+Feldera DBSP API on docs.rs

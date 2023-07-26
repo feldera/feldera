@@ -10,19 +10,20 @@ Parts of this documentation are adapted from the Calcite
 documentation, governed by the [Apache 2.0
 License](https://github.com/apache/calcite/blob/main/LICENSE).
 
-## DBSP and incremental view maintenance
+## Feldera Analytics Platform, DBSP and incremental view maintenance
 
-DBSP stands for Database Stream Processor.  DBSP is a query engine
-optimized for *incremental view maintenance*.
+Feldera Analytics Platform's implementation is based on a query engine optimized
+for *incremental view maintenance*. This engine is called Database Stream
+Processor, DBSP.
 
-DBSP is used in the following way:
+Feldera Platform is used in the following way:
 
-- users define a set of database tables.  These tables become *inputs*
-  for DBSP.
-- users define a set of database views.  The views become *outputs* for
-  DBSP.  The views can be defined either in Rust, using the DBSP library,
-  or can be implemented in standard SQL, and compiled to Rust using the
-  SQL to DBSP compiler.
+- users define a set of database tables in the Feldera Platform. These tables
+  become *inputs* for DBSP.
+- users define a set of database views.  The views become *outputs* for DBSP.
+  The views can be defined either in Rust, using the DBSP library, or can be
+  implemented in standard SQL, and compiled to Rust using the SQL to DBSP
+  compiler.
 - the compiled DBSP program is started
 - DBSP assumes that the tables are initially empty
 - users inform DBSP of any *changes* of the input tables

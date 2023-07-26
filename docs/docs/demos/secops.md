@@ -1,9 +1,9 @@
 # Developer Security Operations
 
-This demo walks through a developer security operations (DevSecOps)
-scenario.  This scenario uses Feldera to analyze streams of data about
-software as it is transformed from source code to binary artifacts
-through CI build pipelines and deployed using Kubernetes.
+This demo walks through a developer security operations (DevSecOps) scenario.
+This scenario uses the Feldera Platform to analyze streams of data about
+software as it is transformed from source code to binary artifacts through CI
+build pipelines and deployed using Kubernetes.
 
 The data streams also report vulnerabilities discovered in software
 source code.  Our goal is to link source code vulnerabilities to the
@@ -130,7 +130,7 @@ erDiagram
 ## Program and Pipeline
 
 The demo includes a program and a pipeline.  To see the SQL for these
-tables and views, start the Feldera demo, visit <http://localhost:8085/>,
+tables and views, start the Feldera Platform demo, visit <http://localhost:8085/>,
 click on Existing Programs in the sidebar, and then click on the
 pencil icon next to SecOps demo.  It shows a SQL program with a
 `CREATE TABLE` command for each table and a `CREATE VIEW` command for

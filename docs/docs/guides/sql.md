@@ -1,11 +1,18 @@
-# Writing Feldera programs using SQL
+# Writing Feldera Platform programs using SQL
+
+:::
+
+This document is tailored for developers who want to develop or use
+components and libraries of the Feldera Platform directly.
+
+:::
 
 ## High-level program structure
 
-Feldera only supports two kinds of SQL statements: table definition
-statements, and view definition statements.  Each table definition
-becomes an input, and each view definition becomes an output.
-Here is an example program:
+Feldera Platform only supports two kinds of SQL Data Definition Language (DDL)
+statements: table definitions, and view definitions. Each table definition
+becomes an input, and each view definition becomes an output. Here is an example
+program:
 
 ```sql
 -- define Person table
@@ -22,10 +29,10 @@ Statements need to be separated by semicolons.
 
 ## Incremental view maintenance
 
-The Feldera runtime is optimized for performing incremental view
-maintenance.  In consequence, Feldera programs in SQL are expressed as
-VIEWS, or *standing queries*.  A view is essentially a computation
-that describes a relation that is computed from other tables or views.
+The Feldera Platform is optimized for performing incremental view
+maintenance. In consequence, Feldera Platform programs in SQL are expressed as
+VIEWS, or *standing queries*.  A view is a virtual table that is
+formed by a query on other tables or views.
 
 For example, the following query defines a view:
 
@@ -35,7 +42,7 @@ CREATE VIEW Adulg AS SELECT Person.name FROM Person WHERE Person.age > 18
 
 In order to interpret this query the compiler needs to have been given
 a definition of table (or view) Person.  The table `Person` must be
-defined using a SQL Data Definition Language (DDL) statement, e.g.:
+defined using a SQL DDL statement, e.g.:
 
 ```SQL
 CREATE TABLE Person
@@ -46,10 +53,10 @@ CREATE TABLE Person
 )
 ```
 
-The compiler must be given the table definition first, and then the
-view definition.  The compiler generates a Rust function which
-implements the query as a function: given the input data, it produces
-the output data.
+The compiler, which runs internally in the Feldera Platform, must be given the
+table definition first, and then the view definition.  The compiler generates a
+Rust function which implements the query as a function: given the input data, it
+produces the output data.
 
 
 

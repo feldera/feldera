@@ -2,11 +2,11 @@
 
 Once you've started the Feldera Platform demo, as described in [Get
 Started](../intro), navigate to [localhost:8085](http://localhost:8085)
-in your web browser to view the Feldera Web Console UI. A status
+in your web browser to view the Feldera Platform user interface.  A status
 dashboard fills most of the home screen, as shown below, and a
-sidebar on the left offers access to tabs for Feldera features:
+sidebar on the left offers access to tabs for Feldera Platform features:
 
-![Feldera home screen](home.png)
+![Feldera Platform home screen](home.png)
 
 Let's take a quick tour around the options on the sidebar.
 
@@ -14,10 +14,10 @@ Let's take a quick tour around the options on the sidebar.
 
 ![Analytics](analytics.png)
 
-The top group of tabs allows a user to define the structure of
+The top group of tabs allows a Feldera Platform user to define the structure of
 data and specify analyses.  The user writes both of these in SQL: data
 definitions as `CREATE TABLE` commands, and analyses as `CREATE VIEW`
-commands. Feldera Platform implements a rich SQL feature set that permits
+commands.  Feldera Platform implements a rich SQL feature set that permits
 sophisticated SQL written for popular SQL databases to run with only
 minimal changes.
 
@@ -43,7 +43,7 @@ Scroll through the SQL code. It should consist of `CREATE TABLE` and
 `CREATE VIEW` commands:
 
 * `CREATE TABLE` specifies a data format.  Feldera Platform processes streaming
-  data, rather than storing it, so the platform does not reserve disk space in
+  data, rather than storing it, so Feldera Platform does not reserve disk space in
   response to table definitions.
 
 * `CREATE VIEW` describes an analysis in terms of tables or views.
@@ -66,7 +66,7 @@ to form streaming pipelines.
 Click on "Connector Creator" to see the types of connectors that Feldera Platform
 supports.  Input and output connectors are listed separately.  Apache
 [Kafka], the most widely used kind of connector, is listed twice
-because Feldera supports it for both input and outputa:
+because Feldera Platform supports it for both input and outputa:
 
 ![Connector Creator](connector-creator.png)
 

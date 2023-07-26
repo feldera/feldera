@@ -1,3 +1,3 @@
-# Contribute to DBSP
+# Contribute to Feldera's DBSP implementation
 
 Lorem.
