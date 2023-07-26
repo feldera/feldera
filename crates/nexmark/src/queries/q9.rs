@@ -59,7 +59,9 @@ use size_of::SizeOf;
 #[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, bincode::Decode, bincode::Encode)]
 pub struct Q9Output(
     u64,
+    #[bincode(with_serde)]
     ArcStr,
+    #[bincode(with_serde)]
     ArcStr,
     usize,
     usize,
@@ -67,11 +69,13 @@ pub struct Q9Output(
     u64,
     u64,
     usize,
+    #[bincode(with_serde)]
     ArcStr,
     u64,
     u64,
     usize,
     u64,
+    #[bincode(with_serde)]
     ArcStr,
 );
 

@@ -44,18 +44,28 @@ use std::ops::Deref;
 /// WHERE 0.908 * price > 1000000 AND 0.908 * price < 50000000;
 /// ```
 
-#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, bincode::Decode, bincode::Encode)]
-pub struct Q14Output(u64, u64, BincodeDecimal, BidTimeType, u64, ArcStr, usize);
+#[derive(
+    Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, bincode::Decode, bincode::Encode,
+)]
+pub struct Q14Output(
+    u64,
+    u64,
+    BincodeDecimal,
+    BidTimeType,
+    u64,
+    #[bincode(with_serde)] ArcStr,
+    usize,
+);
 
 type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output, isize>>;
 
 /// Wrapper type for `Decimal` that implements Decode and Encode.
-/// 
+///
 /// # Note
 /// Since the query doesn't use spine we don't actually end up
 /// serializing/deserializing Decimals but we still need to implement it to
 /// satisfy trait constraints.
-/// 
+///
 /// For the future we can submit a PR to `rust_decimal` to implement `Decode`
 /// and `Encode` for `Decimal` directly or if we end up using rykv anyways
 /// `rust_decimal` has support for it already.
