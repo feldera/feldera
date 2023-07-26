@@ -93,28 +93,31 @@ impl HttpOutputEndpointInner {
         }
     }
 
-    fn push_buffer(&self, buffer: &[u8]) -> AnyResult<()> {
+    fn push_buffer(&self, buffer: Option<&[u8]>) -> AnyResult<()> {
         let seq_number = self.total_buffers.fetch_add(1, Ordering::AcqRel);
 
-        let json_buf = Vec::with_capacity(buffer.len() + 1024);
+        let json_buf = Vec::with_capacity(buffer.map(|b| b.len()).unwrap_or(0) + 1024);
         let mut serializer = serde_json::Serializer::new(json_buf);
         let mut struct_serializer = serializer
-            .serialize_struct("Chunk", 2)
+            .serialize_struct("Chunk", if buffer.is_some() { 2 } else { 1 })
             .map_err(|e| anyhow!("error serializing 'Chunk' struct: '{e}'"))?;
         struct_serializer
             .serialize_field("sequence_number", &seq_number)
             .map_err(|e| anyhow!("error serializing 'sequence_number' field: '{e}'"))?;
 
-        match self.format {
-            Format::Binary => unimplemented!(),
-            Format::Text => {
-                let data_str = std::str::from_utf8(buffer)
-                    .map_err(|e| anyhow!("received an invalid UTF8 string from encoder: '{e}'"))?;
-                struct_serializer
-                    .serialize_field("text_data", data_str)
-                    .map_err(|e| anyhow!("error serializing 'text_data' field: '{e}'"))?;
+        if let Some(buffer) = buffer {
+            match self.format {
+                Format::Binary => unimplemented!(),
+                Format::Text => {
+                    let data_str = std::str::from_utf8(buffer).map_err(|e| {
+                        anyhow!("received an invalid UTF8 string from encoder: '{e}'")
+                    })?;
+                    struct_serializer
+                        .serialize_field("text_data", data_str)
+                        .map_err(|e| anyhow!("error serializing 'text_data' field: '{e}'"))?;
+                }
+                Format::Json => unimplemented!(),
             }
-            Format::Json => unimplemented!(),
         }
         struct_serializer
             .end()
@@ -215,7 +218,7 @@ impl HttpOutputEndpoint {
                         Err(_) => {
                             // Send the empty chunk via the `push_buffer` method to
                             // make sure it gets assigned correct sequence number.
-                            let _ = inner.push_buffer(&[]);
+                            let _ = inner.push_buffer(None);
                         }
                         Ok(Err(RecvError::Closed)) => break,
                         Ok(Err(RecvError::Lagged(_))) => (),
@@ -242,22 +245,22 @@ impl OutputEndpoint for HttpOutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
-        self.inner.push_buffer(buffer)
+        self.inner.push_buffer(Some(buffer))
     }
 
     fn batch_end(&mut self) -> AnyResult<()> {
+        // If we're sending an empty snapshot, output an explicit empty
+        // batch to give the client a hint that the snapshot is empty
+        // (but any correct client must handle any number of batches in
+        // a snapshot, including 0, 1, and more).
+        // Drop the sender after receiving the first batch of updates in
+        // the snapshot mode.  The receiver will receive all buffered
+        // messages followed by a `RecvError::Closed` notification.
         if self.inner.snapshot && self.inner.total_buffers.load(Ordering::Acquire) == 0 {
-            let _ = self.inner.push_buffer(&[]);
+            let _ = self.inner.push_buffer(Some(&[]));
         }
 
         if !self.inner.stream {
-            // If we're sending an empty snapshot, output an explicit empty
-            // batch to give the client a hint that the snapshot is empty
-            // (but any correct client must handle any number of batches in
-            // a snapshot, including 0, 1, and more).
-            // Drop the sender after receiving the first batch of updates in
-            // the snapshot mode.  The receiver will receive all buffered
-            // messages followed by a `RecvError::Closed` notification.
             *self.inner.sender.write().unwrap() = None;
         }
         Ok(())
