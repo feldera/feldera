@@ -56,6 +56,11 @@ function useTableUpdater() {
       try {
         for await (const line of readLineFromStream(response)) {
           const obj = JSON.parse(line)
+          if (obj.text_data === undefined) {
+            // A ping message, we ignore this.
+            continue
+          }
+
           parse(
             obj.text_data,
             {
