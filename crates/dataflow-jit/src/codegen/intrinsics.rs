@@ -450,18 +450,18 @@ intrinsics! {
     timestamp_floor_week = fn(timestamp) -> i64,
 
     // Date functions
-    date_year = fn(date) -> i32,
-    date_month = fn(date) -> i32,
-    date_day = fn(date) -> i32,
-    date_quarter = fn(date) -> i32,
-    date_decade = fn(date) -> i32,
-    date_century = fn(date) -> i32,
-    date_millennium = fn(date) -> i32,
-    date_iso_year = fn(date) -> i32,
-    date_week = fn(date) -> i32,
-    date_day_of_week = fn(date) -> i32,
-    date_iso_day_of_week = fn(date) -> i32,
-    date_day_of_year = fn(date) -> i32,
+    date_year = fn(date) -> i64,
+    date_month = fn(date) -> i64,
+    date_day = fn(date) -> i64,
+    date_quarter = fn(date) -> i64,
+    date_decade = fn(date) -> i64,
+    date_century = fn(date) -> i64,
+    date_millennium = fn(date) -> i64,
+    date_iso_year = fn(date) -> i64,
+    date_week = fn(date) -> i64,
+    date_day_of_week = fn(date) -> i64,
+    date_iso_day_of_week = fn(date) -> i64,
+    date_day_of_year = fn(date) -> i64,
 
     // Float functions
     fmod = fn(f64, f64) -> f64,
@@ -730,7 +730,7 @@ write_primitives! {
 
 unsafe extern "C" fn write_timestamp_to_string(mut string: ThinStr, millis: i64) -> ThinStr {
     if let LocalResult::Single(timestamp) = Utc.timestamp_millis_opt(millis) {
-        if let Err(error) = write!(string, "{}", timestamp.format("%+")) {
+        if let Err(error) = write!(string, "{}", timestamp.format("%Y-%m-%d %H:%M:%S")) {
             tracing::error!("error while writing timestamp {timestamp} to string: {error}");
         }
     } else {
@@ -991,9 +991,9 @@ macro_rules! date_intrinsics {
     ($($name:ident => $expr:expr),+ $(,)?) => {
         paste::paste! {
             $(
-                unsafe extern "C" fn [<date_ $name>](days: i32) -> i32 {
+                unsafe extern "C" fn [<date_ $name>](days: i32) -> i64 {
                     if let LocalResult::Single(date) = Utc.timestamp_opt(days as i64 * 86400, 0) {
-                        let expr: fn(DateTime<Utc>) -> i32 = $expr;
+                        let expr: fn(DateTime<Utc>) -> i64 = $expr;
                         expr(date)
                     } else {
                         tracing::error!(
@@ -1010,18 +1010,18 @@ macro_rules! date_intrinsics {
 
 // TODO: Some of these really return u32s
 date_intrinsics! {
-    year => |date| date.year(),
-    month => |date| date.month() as i32,
-    day => |date| date.day() as i32,
-    quarter => |date| date.month0() as i32 / 3 + 1,
-    decade => |date| date.year() / 10,
-    century => |date| (date.year() + 99) / 100,
-    millennium => |date| (date.year() + 999) / 1000,
-    iso_year => |date| date.iso_week().year(),
-    week => |date| date.iso_week().week() as i32,
-    day_of_week => |date| date.weekday().num_days_from_sunday() as i32 + 1,
-    iso_day_of_week => |date| date.weekday().num_days_from_monday() as i32 + 1,
-    day_of_year => |date| date.ordinal() as i32,
+    year => |date| date.year() as i64,
+    month => |date| date.month() as i64,
+    day => |date| date.day() as i64,
+    quarter => |date| date.month0() as i64 / 3 + 1,
+    decade => |date| date.year() as i64 / 10,
+    century => |date| (date.year() as i64 + 99) / 100,
+    millennium => |date| (date.year() as i64 + 999) / 1000,
+    iso_year => |date| date.iso_week().year() as i64,
+    week => |date| date.iso_week().week() as i64,
+    day_of_week => |date| date.weekday().num_days_from_sunday() as i64 + 1,
+    iso_day_of_week => |date| date.weekday().num_days_from_monday() as i64 + 1,
+    day_of_year => |date| date.ordinal() as i64,
 }
 
 macro_rules! hash {

@@ -65,12 +65,6 @@ public class NaiveIncrementalTests extends EndToEndTests {
         );
     }
 
-    @Test @Override @Ignore("Crashes https://github.com/feldera/dbsp/issues/34")
-    public void idTest() {
-        String query = "SELECT * FROM T";
-        this.testQuery(query, this.createInput());
-    }
-
     void testConstantOutput(String query, DBSPZSetLiteral.Contents output) {
         DBSPZSetLiteral.Contents input = this.createInput();
         DBSPZSetLiteral.Contents e = DBSPZSetLiteral.Contents.emptyWithElementType(output.getElementType());

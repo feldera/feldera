@@ -40,13 +40,7 @@ public class JitTimeTests extends TimeTests {
         );
     }
 
-    @Test @Ignore("Cast to string not supported https://github.com/feldera/dbsp/issues/310")
-    public void castTimestampToString() {
-        String query = "SELECT CAST(T.COL1 AS STRING) FROM T";
-        this.testQuery(query, new DBSPStringLiteral("1970-01-01 00:00:00"));
-    }
-
-    @Test @Ignore("Cast to string not supported https://github.com/feldera/dbsp/issues/310")
+    @Test @Ignore("IString parsing not supported https://github.com/feldera/dbsp/issues/338")
     public void castTimestampToStringToTimestamp() {
         String query = "SELECT CAST(CAST(T.COL1 AS STRING) AS Timestamp) FROM T";
         this.testQuery(query, new DBSPTimestampLiteral(0));

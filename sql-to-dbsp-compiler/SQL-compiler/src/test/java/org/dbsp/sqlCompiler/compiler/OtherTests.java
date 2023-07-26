@@ -654,7 +654,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         }
     }
 
-    @SuppressWarnings("SqlDialectInspection")
     @Test @Ignore("Fails due to a bug in HSQLDB")
     public void HSQLDBDoubleNegTest() throws SQLException {
         // Reproduction for https://sourceforge.net/p/hsqldb/bugs/1680/
@@ -667,7 +666,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         }
     }
 
-    @SuppressWarnings("SqlDialectInspection")
     @Test
     public void rawCalciteTest() throws SQLException {
         Connection connection = DriverManager.getConnection("jdbc:calcite:");
