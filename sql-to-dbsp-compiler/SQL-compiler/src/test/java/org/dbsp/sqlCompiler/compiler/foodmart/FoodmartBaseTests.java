@@ -7,7 +7,7 @@ import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
-/**
+/*
  * https://github.com/apache/calcite/blob/bdfb17029f7e205f895dc3dfd0f37c8ff2520823/core/src/test/resources/sql/scalar.iq
  */
 public class FoodmartBaseTests extends PostgresBaseTest {

@@ -272,6 +272,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     public void compileStatement(String statement) {
+        Logger.INSTANCE.belowLevel(this, 3)
+                .append("Compiling ")
+                .append(statement);
         this.compileStatement(statement, null);
     }
 

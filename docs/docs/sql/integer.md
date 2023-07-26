@@ -12,11 +12,6 @@ unary and binary), `*` (multiplication), `/` (division), `%`
 
 Division or modulus by zero return `NULL`.
 
-SQL performs a range of implicit casts when operating on values with
-different types.
-
-TODO: document the implicit casts.
-
 ## Predefined functions on integer values
 
 <table>
@@ -37,5 +32,5 @@ TODO: document the implicit casts.
 
 ## Operations not supported
 
-Non-deterministic functions, such as `RAND` cannot be supported in
-DBSP.
+Non-deterministic functions, such as `RAND` are currently not
+supported in DBSP.

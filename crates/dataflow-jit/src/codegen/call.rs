@@ -89,7 +89,7 @@ impl CodegenCtx<'_> {
             // `fn(date) -> timestamp
             "dbsp.date.to_timestamp" => self.date_to_timestamp(expr_id, call, builder),
 
-            // `fn(date) -> i32`
+            // `fn(date) -> i64`
             "dbsp.date.epoch" => self.date_epoch(expr_id, call, builder),
 
             // TODO: Implement these all natively, they're all simple functions
@@ -949,8 +949,8 @@ impl CodegenCtx<'_> {
         function: &str,
         builder: &mut FunctionBuilder<'_>,
     ) {
-        let zero = builder.ins().iconst(types::I32, 0);
-        self.add_expr(expr_id, zero, ColumnType::I32, None);
+        let zero = builder.ins().iconst(types::I64, 0);
+        self.add_expr(expr_id, zero, ColumnType::I64, None);
         self.comment(builder.value_def(zero), || {
             format!("call @{function}({})", self.value(call.args()[0]))
         });

@@ -341,6 +341,15 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void withTest() {
+        String query = "WITH v AS (SELECT COL3 FROM T)\n" +
+                "SELECT * FROM v";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(DBSPBoolLiteral.TRUE),
+                new DBSPTupleExpression(DBSPBoolLiteral.FALSE)));
+    }
+
+    @Test
     public void testSumFilter() {
         String query = "SELECT T.COL3, " +
                 "SUM(T.COL1) FILTER (WHERE T.COL1 > 20)\n" +
