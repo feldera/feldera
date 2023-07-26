@@ -74,17 +74,20 @@ struct HttpOutputEndpointInner {
 
     total_buffers: AtomicU64,
     sender: ShardedLock<Option<broadcast::Sender<Buffer>>>,
+    // This endpoint starts with sending a snapshot of a relation.
+    snapshot: bool,
     stream: bool,
     // async_error_callback: RwLock<Option<AsyncErrorCallback>>,
 }
 
 impl HttpOutputEndpointInner {
-    pub(crate) fn new(name: &str, format: Format, stream: bool) -> Self {
+    pub(crate) fn new(name: &str, format: Format, snapshot: bool, stream: bool) -> Self {
         Self {
             name: name.to_string(),
             format,
             total_buffers: AtomicU64::new(0),
             sender: ShardedLock::new(Some(broadcast::channel(MAX_BUFFERS).0)),
+            snapshot,
             stream,
             // async_error_callback: RwLock::new(None),
         }
@@ -159,13 +162,13 @@ pub(crate) struct HttpOutputEndpoint {
 }
 
 impl HttpOutputEndpoint {
-    pub(crate) fn new(name: &str, format: &str, stream: bool) -> Self {
+    pub(crate) fn new(name: &str, format: &str, snapshot: bool, stream: bool) -> Self {
         let format = match format {
             "csv" => Format::Text,
             _ => Format::Binary,
         };
         Self {
-            inner: Arc::new(HttpOutputEndpointInner::new(name, format, stream)),
+            inner: Arc::new(HttpOutputEndpointInner::new(name, format, snapshot, stream)),
         }
     }
 
@@ -243,7 +246,15 @@ impl OutputEndpoint for HttpOutputEndpoint {
     }
 
     fn batch_end(&mut self) -> AnyResult<()> {
+        if self.inner.snapshot && self.inner.total_buffers.load(Ordering::Acquire) == 0 {
+            let _ = self.inner.push_buffer(&[]);
+        }
+
         if !self.inner.stream {
+            // If we're sending an empty snapshot, output an explicit empty
+            // batch to give the client a hint that the snapshot is empty
+            // (but any correct client must handle any number of batches in
+            // a snapshot, including 0, 1, and more).
             // Drop the sender after receiving the first batch of updates in
             // the snapshot mode.  The receiver will receive all buffered
             // messages followed by a `RecvError::Closed` notification.
