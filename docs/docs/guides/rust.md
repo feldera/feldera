@@ -1,3 +1,3 @@
-# Writing Feldera programs in Rust
+# Using the DBSP Rust API
 
 TODO

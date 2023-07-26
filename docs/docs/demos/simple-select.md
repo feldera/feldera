@@ -94,4 +94,4 @@ with the contents `user1`, `user2`, `user3`.
 Click on the back button, then on the eye icon for the `output_users` output
 view.  The browser will refresh to show the contents of the output connector,
 three records that also have the contents `user1`, `user2`, and `user3`.  This
-shows that the Feldera Platform successfully copied the input to the output.
+shows that the pipeline successfully copied the input to the output.

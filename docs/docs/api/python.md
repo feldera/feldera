@@ -1,3 +1,3 @@
 # Python
 
-Write Feldera Platform programs using Python.
+Manage Feldera Platform pipelines using Python.

@@ -5,6 +5,11 @@ in a configuration suitable for demos, development, and testing.  For production
 use, or for developing parts of Feldera Platform itself, Feldera Platform
 supports other forms of deployment.
 
+These instructions explain how to run the Feldera Platform on a single machine
+in a configuration suitable for demos, development, and testing.  For production
+use, or for developing parts of Feldera Platform itself, Feldera Platform
+supports other forms of deployment.
+
 ## Install prerequisites
 
 To run the demo, you will first need to install Docker and the Docker
@@ -43,7 +48,7 @@ You also need `curl` and a web browser such as Chrome or Firefox.
 [3]: https://docs.docker.com/compose/install/linux
 [4]: https://docs.docker.com/engine/install/linux-postinstall/
 
-## Start the Feldera Platform demo
+## Start the demo
 
 1. Download the `docker-compose.yml` file that tells Docker Compose
    how to set up the demo's containers:
@@ -70,7 +75,7 @@ You also need `curl` and a web browser such as Chrome or Firefox.
    ```
 
    This command takes over the terminal where you run it as long as
-   the Feldera Platform demo is active.  It will print a lot of log messages,
+   the demo is active.  It will print a lot of log messages,
    which can be useful for debugging if something goes wrong but which
    otherwise are not important.
 
@@ -85,9 +90,9 @@ You also need `curl` and a web browser such as Chrome or Firefox.
 
 4. Try out one of the [demos](demos).
 
-## Stop the DBSP demo
+## Stop the demo
 
-To shut down the DBSP demo, type <kbd>Ctrl+C</kbd> in the terminal
+To shut down the demo, type <kbd>Ctrl+C</kbd> in the terminal
 where `docker compose` is running.  Docker Compose will show its
 progress as it shuts down each of the containers in turn.  It can take
 up to about 15 seconds to complete shutdown.
