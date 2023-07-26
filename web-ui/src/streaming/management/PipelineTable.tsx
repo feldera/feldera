@@ -13,7 +13,7 @@ import {
   DataGridPro,
   DataGridProProps,
   GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
-  GridColumns,
+  GridColDef,
   GridRenderCellParams
 } from '@mui/x-data-grid-pro'
 import CustomChip from 'src/@core/components/mui/chip'
@@ -39,7 +39,6 @@ import {
   ErrorResponse
 } from 'src/types/manager'
 import { useQuery } from '@tanstack/react-query'
-import { ErrorOverlay } from 'src/components/table/ErrorOverlay'
 import { escapeRegExp } from 'src/utils'
 import { match } from 'ts-pattern'
 import router from 'next/router'
@@ -213,7 +212,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                         size='small'
                         onClick={e => {
                           e.preventDefault()
-                          router.push('/streaming/introspection/' + descriptor.pipeline_id + '/' + params.row.ac.config)
+                          router.push('/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.ac.config)
                         }}
                       >
                         <Icon icon='bx:show' fontSize={20} />
@@ -272,7 +271,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                         size='small'
                         onClick={e => {
                           e.preventDefault()
-                          router.push('/streaming/introspection/' + descriptor.pipeline_id + '/' + params.row.ac.config)
+                          router.push('/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.ac.config)
                         }}
                       >
                         <Icon icon='bx:show' fontSize={20} />
@@ -351,12 +350,15 @@ const pipelineStatusToClientStatus = (status: PipelineStatus) => {
 }
 
 export default function PipelineTable() {
-  const [pageSize, setPageSize] = useState<number>(7)
   const [searchText, setSearchText] = useState<string>('')
   const [rows, setRows] = useState<Pipeline[]>([])
   const [filteredData, setFilteredData] = useState<Pipeline[]>([])
   const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
   const setPipelineStatus = usePipelineStateStore(state => state.setStatus)
+  const [paginationModel, setPaginationModel] = useState({
+    pageSize: 7,
+    page: 0
+  })
 
   const startPipelineClick = useStartPipeline()
   const pausePipelineClick = usePausePipeline()
@@ -379,7 +381,10 @@ export default function PipelineTable() {
         }
       }
     }
-  }, [isLoading, isError, data, setRows, setPipelineStatus])
+    if (isError) {
+      throw error
+    }
+  }, [isLoading, isError, data, setRows, setPipelineStatus, error])
 
   const getDetailPanelContent = useCallback<NonNullable<DataGridProProps['getDetailPanelContent']>>(
     ({ row }) => <DetailPanelContent row={row} />,
@@ -408,12 +413,12 @@ export default function PipelineTable() {
 
   // Only show the details tab button if this pipeline has a revision
   function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value' | 'row'>) {
-    const { value: isExpanded } = props
+    const { value: isExpanded, row: row } = props
     const [hasRevision, setHasRevision] = useState<boolean>(false)
 
     const pipelineRevisionQuery = useQuery<PipelineRevision | null>([
       'pipelineLastRevision',
-      { pipeline_id: props.row.pipeline_id }
+      { pipeline_id: props.row.descriptor.pipeline_id }
     ])
     useEffect(() => {
       if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
@@ -421,7 +426,10 @@ export default function PipelineTable() {
       }
     }, [pipelineRevisionQuery.isLoading, pipelineRevisionQuery.isError, pipelineRevisionQuery.data])
 
-    return hasRevision ? (
+    return (isExpanded ||
+      row.state.current_status === PipelineStatus.RUNNING ||
+      row.state.current_status === PipelineStatus.PAUSED) &&
+      hasRevision ? (
       <IconButton size='small' tabIndex={-1} aria-label={isExpanded ? 'Close' : 'Open'}>
         <ExpandMoreIcon
           sx={{
@@ -439,7 +447,7 @@ export default function PipelineTable() {
     )
   }
 
-  const columns: GridColumns = [
+  const columns: GridColDef[] = [
     {
       ...GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
       renderCell: params => <CustomDetailPanelToggle id={params.id} value={params.value} row={params.row} />
@@ -598,14 +606,12 @@ export default function PipelineTable() {
         getDetailPanelHeight={() => 'auto'}
         getDetailPanelContent={getDetailPanelContent}
         components={{
-          Toolbar: QuickSearchToolbar,
-          ErrorOverlay: ErrorOverlay
+          Toolbar: QuickSearchToolbar
         }}
         rows={filteredData.length ? filteredData : rows}
-        pageSize={pageSize}
-        rowsPerPageOptions={[7, 10, 25, 50]}
-        onPageSizeChange={newPageSize => setPageSize(newPageSize)}
-        error={error}
+        pageSizeOptions={[7, 10, 25, 50]}
+        paginationModel={paginationModel}
+        onPaginationModelChange={setPaginationModel}
         loading={isLoading}
         componentsProps={{
           baseButton: {
@@ -616,10 +622,6 @@ export default function PipelineTable() {
             value: searchText,
             clearSearch: () => handleSearch(''),
             onChange: (event: React.ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)
-          },
-          errorOverlay: {
-            isError: isError,
-            error: error
           }
         }}
       />

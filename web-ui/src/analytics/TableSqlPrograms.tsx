@@ -8,7 +8,7 @@ import { useState, useCallback } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
-import { GridColumns, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
+import { GridColDef, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { match, P } from 'ts-pattern'
 
@@ -59,7 +59,7 @@ const TableSqlPrograms = () => {
   const queryClient = useQueryClient()
 
   // Table columns
-  const columns: GridColumns = [
+  const columns: GridColDef[] = [
     {
       flex: 0.05,
       minWidth: 50,

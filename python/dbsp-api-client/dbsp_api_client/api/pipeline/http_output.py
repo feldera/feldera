@@ -47,7 +47,7 @@ def _get_kwargs(
     json_json_body = json_body.to_dict() if json_body else None
 
     return {
-        "method": "get",
+        "method": "post",
         "url": "/pipelines/{pipeline_id}/egress/{table_name}".format(
             pipeline_id=pipeline_id,
             table_name=table_name,

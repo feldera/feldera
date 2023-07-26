@@ -15,8 +15,8 @@ export class ConnectorService {
   /**
    * Returns connector descriptor.
    * Returns connector descriptor.
-   * @param id Unique connector identifier.
-   * @param name Unique connector name.
+   * @param id Unique connector identifier
+   * @param name Unique connector name
    * @returns ConnectorDescr connector status retrieved successfully.
    * @throws ApiError
    */

@@ -8,7 +8,7 @@ import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
 import CustomChip from 'src/@core/components/mui/chip'
-import { GridColumns, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
+import { GridColDef, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { ConnectorService } from 'src/types/manager/services/ConnectorService'
@@ -81,7 +81,7 @@ const DataSourceTable = () => {
   )
 
   // Definition of the table columns
-  const columns: GridColumns = [
+  const columns: GridColDef[] = [
     {
       flex: 0.05,
       minWidth: 50,
