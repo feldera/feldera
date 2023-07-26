@@ -3,6 +3,11 @@ name = "dbsp"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "Continuous streaming analytics engine"
+homepage = "https://github.com/feldera/dbsp"
+repository = "https://github.com/feldera/dbsp"
+keywords = ["DBSP", "streaming", "analytics", "database"]
+categories = ["algorithms", "data-structures"]
 
     [package.metadata.docs.rs]
     all-features = true

@@ -3,6 +3,11 @@ name = "pipeline-manager"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "Data pipeline manager for the Feldera continuous analytics platform."
+homepage = "https://github.com/feldera/dbsp"
+repository = "https://github.com/feldera/dbsp"
+keywords = ["DBSP", "streaming", "analytics", "database", "webui"]
+categories = ["database", "gui"]
 
 [package.metadata.cargo-udeps.ignore]
 development = ["pg-client-config"]

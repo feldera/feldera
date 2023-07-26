@@ -3,6 +3,10 @@ name = "webui-tester"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "Tester for Web UI for the Feldera continuous analytics platform"
+homepage = "https://github.com/feldera/dbsp"
+repository = "https://github.com/feldera/dbsp"
+keywords = ["DBSP", "streaming", "analytics", "database", "test"]
 
 [dev-dependencies]
 thirtyfour = "0.32.0-rc.7"
