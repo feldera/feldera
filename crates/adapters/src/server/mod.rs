@@ -702,8 +702,15 @@ async fn output_endpoint(
     // debug!("Endpoint name: '{endpoint_name}'");
 
     // Create HTTP endpoint.
-    let endpoint =
-        HttpOutputEndpoint::new(&endpoint_name, &args.format, args.mode == EgressMode::Watch);
+    let endpoint = HttpOutputEndpoint::new(
+        &endpoint_name,
+        &args.format,
+        matches!(
+            args.query,
+            OutputQuery::Neighborhood | OutputQuery::Quantiles
+        ),
+        args.mode == EgressMode::Watch,
+    );
 
     // Create endpoint config.
     let config = OutputEndpointConfig {
@@ -943,7 +950,10 @@ outputs:
             .unwrap();
         assert!(quantiles_resp1.status().is_success());
         let body = quantiles_resp1.body().await.unwrap();
-        assert_eq!(body, Bytes::new());
+        assert_eq!(
+            body,
+            Bytes::from_static(b"{\"sequence_number\":0,\"text_data\":\"\"}\r\n")
+        );
 
         // Write data to Kafka.
         println!("Send test data");
