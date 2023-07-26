@@ -12,7 +12,7 @@ name = "dataflow-jit"
 required-features = ["binary"]
 
 [dependencies]
-csv = "1.2.1"
+csv = "1.2.2"
 libm = "0.2.6"
 paste = "1.0.9"
 anyhow = "1.0.57"

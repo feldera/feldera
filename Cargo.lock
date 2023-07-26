@@ -2078,23 +2078,11 @@ dependencies = [
 
 [[package]]
 name = "csv"
-version = "1.1.6"
-source = "git+https://github.com/ryzhyk/rust-csv.git#795e411f6bec8a92fd77adb857dcbaa940bc59f0"
-dependencies = [
- "bstr",
- "csv-core 0.1.10 (git+https://github.com/ryzhyk/rust-csv.git)",
- "itoa",
- "ryu",
- "serde",
-]
-
-[[package]]
-name = "csv"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "626ae34994d3d8d668f4269922248239db4ae42d538b14c398b74a52208e8086"
 dependencies = [
- "csv-core 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "csv-core",
  "itoa",
  "ryu",
  "serde",
@@ -2105,14 +2093,6 @@ name = "csv-core"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b2466559f260f48ad25fe6317b3c8dac77b5bdb5763ac7d9d6103530663bc90"
-dependencies = [
- "memchr",
-]
-
-[[package]]
-name = "csv-core"
-version = "0.1.10"
-source = "git+https://github.com/ryzhyk/rust-csv.git#795e411f6bec8a92fd77adb857dcbaa940bc59f0"
 dependencies = [
  "memchr",
 ]
@@ -2264,7 +2244,7 @@ dependencies = [
  "cranelift-codegen",
  "cranelift-jit",
  "cranelift-module",
- "csv 1.2.2",
+ "csv",
  "dbsp",
  "derive_more",
  "enum_dispatch",
@@ -2306,7 +2286,7 @@ dependencies = [
  "criterion",
  "crossbeam",
  "crossbeam-utils",
- "csv 1.1.6",
+ "csv",
  "hashbrown 0.13.2",
  "impl-trait-for-tuples",
  "indicatif",
@@ -2351,12 +2331,13 @@ dependencies = [
  "async-stream",
  "awc",
  "bincode",
+ "bstr",
  "bytestring",
  "chrono",
  "clap 4.3.17",
  "colored",
  "crossbeam",
- "csv 1.1.6",
+ "csv",
  "dbsp",
  "env_logger",
  "erased-serde",
@@ -2394,7 +2375,7 @@ dependencies = [
  "bincode",
  "cached 0.38.0",
  "clap 3.2.25",
- "csv 1.1.6",
+ "csv",
  "dbsp",
  "hdrhist",
  "indicatif",
@@ -4702,7 +4683,7 @@ name = "readers"
 version = "0.1.0"
 dependencies = [
  "async-std",
- "csv 1.2.2",
+ "csv",
  "dbsp",
  "derive_more",
  "paste",

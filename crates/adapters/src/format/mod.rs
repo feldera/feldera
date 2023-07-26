@@ -6,7 +6,7 @@ use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
 
 mod csv;
 
-pub use self::csv::{CsvEncoderConfig, CsvParserConfig};
+pub use self::csv::{CsvEncoderConfig, CsvParserConfig, byte_record_deserializer, string_record_deserializer};
 use self::csv::{CsvInputFormat, CsvOutputFormat};
 
 /// Static map of supported input formats.
