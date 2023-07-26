@@ -1,9 +1,9 @@
-Bringing up a local instance of DBSP
+Bringing up a local instance of Feldera
 ===================================
 
 First, install [Docker compose](https://docs.docker.com/compose/install/).
 
-Next, to bring up a local DBSP instance run the following:
+Next, to bring up a local Feldera instance run the following:
 
 ```
 curl https://raw.githubusercontent.com/feldera/dbsp/main/deploy/docker-compose.yml | docker compose -f - up
@@ -18,7 +18,7 @@ port conflicts on your system (you can view and modify the port mappings in
 
 ## Demo
 
-If you'd like to prepopulate the DBSP instance with a demo project, run:
+If you'd like to prepopulate the Feldera instance with a demo project, run:
 
 ```
 docker compose -f deploy/docker-compose.yml --profile demo up
@@ -36,9 +36,9 @@ You can tune the DBSP container's log level using [`RUST_LOG`](https://docs.rs/e
 RUST_LOG=info docker compose -f deploy/docker-compose.yml up
 ```
 
-## DBSP containers from sources
+## Feldera containers from sources
 
-To bring up a local instance of DBSP from sources, run the following from the
+To bring up a local instance of Feldera from sources, run the following from the
 project root:
 
 ```

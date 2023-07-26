@@ -1,8 +1,8 @@
-# Writing DBSP programs using SQL
+# Writing Feldera programs using SQL
 
 ## High-level program structure
 
-DBSP only supports two kinds of SQL statements: table definition
+Feldera only supports two kinds of SQL statements: table definition
 statements, and view definition statements.  Each table definition
 becomes an input, and each view definition becomes an output.
 Here is an example program:
@@ -22,8 +22,8 @@ Statements need to be separated by semicolons.
 
 ## Incremental view maintenance
 
-The DBSP runtime is optimized for performing incremental view
-maintenance.  In consequence, DBSP programs in SQL are expressed as
+The Feldera runtime is optimized for performing incremental view
+maintenance.  In consequence, Feldera programs in SQL are expressed as
 VIEWS, or *standing queries*.  A view is essentially a computation
 that describes a relation that is computed from other tables or views.
 

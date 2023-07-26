@@ -1,3 +1,3 @@
-# Writing DBSP programs in Rust
+# Writing Feldera programs in Rust
 
 TODO

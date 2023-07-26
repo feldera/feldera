@@ -1,12 +1,12 @@
 # Tour
 
-Once you've started the DBSP demo, as described in [Get
+Once you've started the Feldera Platform demo, as described in [Get
 Started](../intro), navigate to [localhost:8085](http://localhost:8085)
-in your web browser to view the DBSP user interface. A status
+in your web browser to view the Feldera Web Console UI. A status
 dashboard fills most of the home screen, as shown below, and a
-sidebar on the left offers access to tabs for DBSP features:
+sidebar on the left offers access to tabs for Feldera features:
 
-![DBSP home screen](home.png)
+![Feldera home screen](home.png)
 
 Let's take a quick tour around the options on the sidebar.
 
@@ -14,10 +14,10 @@ Let's take a quick tour around the options on the sidebar.
 
 ![Analytics](analytics.png)
 
-The top group of tabs allows a DBSP user to define the structure of
-data and specify analyses. The user writes both of these in SQL: data
+The top group of tabs allows a user to define the structure of
+data and specify analyses.  The user writes both of these in SQL: data
 definitions as `CREATE TABLE` commands, and analyses as `CREATE VIEW`
-commands. DBSP implements a rich SQL feature set that permits
+commands. Feldera Platform implements a rich SQL feature set that permits
 sophisticated SQL written for popular SQL databases to run with only
 minimal changes.
 
@@ -42,18 +42,18 @@ program's name and description and code:
 Scroll through the SQL code. It should consist of `CREATE TABLE` and
 `CREATE VIEW` commands:
 
-- `CREATE TABLE` specifies a data format. DBSP processes streaming
-  data, rather than storing it, so DBSP does not reserve disk space in
+* `CREATE TABLE` specifies a data format.  Feldera Platform processes streaming
+  data, rather than storing it, so the platform does not reserve disk space in
   response to table definitions.
 
-- `CREATE VIEW` describes an analysis in terms of tables or views.
-  DBSP updates views whenever it receives new data in a table.
+* `CREATE VIEW` describes an analysis in terms of tables or views.
+  Feldera Platform updates views whenever it receives new data in a table.
 
 ## Connectors
 
 ![Input & Output](io.png)
 
-For a DBSP program to be useful, it must be able to access data. This
+For a Feldera Platform program to be useful, it must be able to access data.  This
 happens through **connectors**, which are divided into **input
 connectors** for obtaining data from a source to feed into a table and
 **output connectors** that receive data output by views.
@@ -63,10 +63,10 @@ and manage input and output connectors. The following section on
 pipelines will then show how to connect input and output to programs
 to form streaming pipelines.
 
-Click on "Connector Creator" to see the types of connectors that DBSP
-supports. Input and output connectors are listed separately. Apache
+Click on "Connector Creator" to see the types of connectors that Feldera Platform
+supports.  Input and output connectors are listed separately.  Apache
 [Kafka], the most widely used kind of connector, is listed twice
-because DBSP supports it for both input and outputa:
+because Feldera supports it for both input and outputa:
 
 ![Connector Creator](connector-creator.png)
 
@@ -93,8 +93,8 @@ streaming pipelines.
 ![Streaming](streaming.png)
 
 A user assembles a **pipeline** by attaching a program's tables to
-input connectors and its views to output connectors. The "Streaming"
-tabs allow a DBSP user to set up pipelines and to start, stop, manage,
+input connectors and its views to output connectors.  The "Streaming"
+tabs allow a Feldera Platform user to set up pipelines and to start, stop, manage,
 and monitor them.
 
 The "Pipeline Builder" tab allows a user to create new pipelines.

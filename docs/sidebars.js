@@ -14,7 +14,7 @@
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
   docsSidebar: [
-    "what-is-dbsp",
+    "what-is-feldera",
     "intro",
     "tour/tour",
     {
@@ -64,10 +64,10 @@ const sidebars = {
     {
       type: "category",
       label: "API Reference",
-      items: ["api/rest", "api/dbsp", "api/python"],
+      items: ["api/rest", "api/feldera", "api/python"],
     },
     "papers",
-    "contribute-to-dbsp",
+    "contribute-to-feldera",
   ],
 };
 

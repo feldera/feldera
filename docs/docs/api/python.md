@@ -1,3 +1,3 @@
 # Python
 
-Write DBSP Programs using Python.
+Write Feldera Programs using Python.
