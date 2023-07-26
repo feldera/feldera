@@ -440,7 +440,7 @@ async fn deploy_pipeline() {
 
     // Querying quantiles should work in paused state.
     let mut resp = config
-        .get(format!(
+        .post_no_body(format!(
             "/v0/pipelines/{}/egress/T1?query=quantiles&mode=snapshot",
             id
         ))

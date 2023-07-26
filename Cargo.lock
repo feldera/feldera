@@ -2323,6 +2323,7 @@ dependencies = [
  "rand_xoshiro",
  "reqwest",
  "rocksdb",
+ "rust_decimal",
  "serde",
  "serde_json",
  "size-of",

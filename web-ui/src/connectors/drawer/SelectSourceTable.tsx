@@ -5,7 +5,7 @@ import { Dispatch, useState } from 'react'
 
 import Card from '@mui/material/Card'
 import { useQuery } from '@tanstack/react-query'
-import { GridColumns, GridRenderCellParams } from '@mui/x-data-grid-pro'
+import { GridColDef, GridRenderCellParams } from '@mui/x-data-grid-pro'
 
 import EntityTable from 'src/components/table/EntityTable'
 import Button from '@mui/material/Button'
@@ -20,7 +20,7 @@ const SelectSourceTable = (props: {
   const [rows, setRows] = useState<ConnectorDescr[]>([])
   const fetchQuery = useQuery<ConnectorDescr[]>({ queryKey: ['connector'] })
 
-  const columns: GridColumns = [
+  const columns: GridColDef[] = [
     {
       flex: 0.05,
       minWidth: 50,

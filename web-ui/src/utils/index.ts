@@ -1,5 +1,7 @@
 // This file contains some utility functions used throughout the project.
 
+import { useState, useCallback } from 'react'
+
 // Escape regular expressions
 //
 // See: https://stackoverflow.com/questions/3561493/is-there-a-regexp-escape-function-in-javascript
@@ -62,4 +64,59 @@ export const PLACEHOLDER_VALUES = {
   connector_description: 'House price data from the UK Land Registry',
   pipeline_name: 'Price Checker',
   pipeline_description: 'Analyze e-commerce prices'
+}
+
+// A way to throw errors in async code so they can be caught with ErrorBoundary
+// in react. Pretty silly, but it works.
+//
+// See:
+// https://medium.com/trabe/catching-asynchronous-errors-in-react-using-error-boundaries-5e8a5fd7b971
+export const useAsyncError = () => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_, setError] = useState()
+  return useCallback(
+    (e: any) => {
+      setError(() => {
+        throw e
+      })
+    },
+    [setError]
+  )
+}
+
+// Read from a stream, yielding one line at a time.
+//
+// Adapted from:
+// https://developer.mozilla.org/en-US/docs/Web/API/ReadableStreamDefaultReader/read#example_2_-_handling_text_line_by_line
+export async function* readLineFromStream(response: Response) {
+  const utf8Decoder = new TextDecoder('utf-8')
+  if (!response.body) {
+    throw new Error('No body when fetching request.')
+  }
+  const reader = response.body.getReader()
+  let { value: chunk, done: readerDone } = await reader.read()
+  let decodedChunk = chunk ? utf8Decoder.decode(chunk, { stream: true }) : ''
+
+  const re = /\r\n|\n|\r/gm
+  let startIndex = 0
+
+  for (;;) {
+    const result = re.exec(decodedChunk)
+    if (!result) {
+      if (readerDone) {
+        break
+      }
+      const remainder = decodedChunk.substring(startIndex)
+      ;({ value: chunk, done: readerDone } = await reader.read())
+      decodedChunk = remainder + (chunk ? utf8Decoder.decode(chunk, { stream: true }) : '')
+      startIndex = re.lastIndex = 0
+      continue
+    }
+    yield decodedChunk.substring(startIndex, result.index)
+    startIndex = re.lastIndex
+  }
+  if (startIndex < decodedChunk.length) {
+    // last line didn't end in a newline char
+    yield decodedChunk.substring(startIndex)
+  }
 }

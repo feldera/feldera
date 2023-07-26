@@ -34,7 +34,8 @@
     "remark-math": "3",
     "three": "^0.153.0",
     "typed.js": "^2.0.12",
-    "url": "^0.11.1"
+    "url": "^0.11.1",
+    "@iconify/react": "^4.1.0"
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "2.4.1",

@@ -25,8 +25,8 @@ export class PipelineService {
    * returns pipeline state, including static configuration and runtime status,
    * in the JSON format.  The `?toml` flag changes the behavior of this
    * endpoint to return static pipeline configuratiin in the TOML format.
-   * @param id Unique pipeline id.
-   * @param name Unique pipeline name.
+   * @param id Unique pipeline identifier
+   * @param name Unique pipeline name
    * @param toml Set to true to request the configuration of the pipeline as a toml file.
    * @returns string Pipeline descriptor retrieved successfully.
    * @throws ApiError
@@ -178,7 +178,7 @@ export class PipelineService {
     requestBody?: NeighborhoodQuery | null
   ): CancelablePromise<Chunk> {
     return __request(OpenAPI, {
-      method: 'GET',
+      method: 'POST',
       url: '/pipelines/{pipeline_id}/egress/{table_name}',
       path: {
         pipeline_id: pipelineId,

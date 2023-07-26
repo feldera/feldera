@@ -1611,7 +1611,6 @@ impl Storage for Mutex<DbModel> {
             let pipeline = pipeline.descriptor.clone();
             let connectors = connectors.clone();
             let program_data = program_data.clone();
-            PipelineRevision::validate(&pipeline, &connectors, &program_data.0)?;
 
             // Gives an answer if the relevant configuration state for the
             // pipeline has changed since our last commit.
@@ -1648,6 +1647,7 @@ impl Storage for Mutex<DbModel> {
             };
 
             if has_changed {
+                PipelineRevision::validate(&pipeline, &connectors, &program_data.0)?;
                 s.history.insert(
                     (tenant_id, pipeline_id),
                     PipelineRevision::new(

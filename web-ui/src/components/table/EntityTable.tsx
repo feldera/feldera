@@ -15,6 +15,7 @@ import IconButton from '@mui/material/IconButton'
 import { Icon } from '@iconify/react'
 
 import QuickSearchToolbar from 'src/components/table/QuickSearchToolbar'
+import { ErrorBoundary } from 'react-error-boundary'
 
 // This is a workaround for the following issue:
 // https://github.com/mui/mui-x/issues/5239
@@ -49,10 +50,13 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
   const ROWS_DISPLAYED = 7
   // We can choose between these options for the number of rows per page
   const ROWS_PER_PAGE_OPTIONS = [7, 10, 25, 50]
+  const [paginationModel, setPaginationModel] = useState({
+    pageSize: ROWS_DISPLAYED,
+    page: 0
+  })
 
   const { setRows, fetchRows, onUpdateRow, onDeleteRow, onEditClicked, tableProps, addActions } = props
 
-  const [pageSize, setPageSize] = useState<number>(ROWS_DISPLAYED)
   const [searchText, setSearchText] = useState<string>('')
   const [filteredData, setFilteredData] = useState<TData[]>([])
 
@@ -98,7 +102,10 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
     if (!isLoading && !isError) {
       setRows(data)
     }
-  }, [isLoading, isError, data, setRows])
+    if (isError) {
+      throw error
+    }
+  }, [isLoading, isError, data, setRows, error])
 
   const handleSearch = (searchValue: string) => {
     setSearchText(searchValue)
@@ -126,18 +133,15 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
       <DataGridPro
         {...tableProps}
         autoHeight
-        experimentalFeatures={{ newEditingApi: true }}
         apiRef={props.apiRef}
         components={{
-          Toolbar: QuickSearchToolbar,
-          ErrorOverlay: ErrorOverlay
+          Toolbar: QuickSearchToolbar
         }}
         rows={filteredData.length ? filteredData : tableProps.rows}
-        pageSize={pageSize}
-        rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
-        onPageSizeChange={newPageSize => setPageSize(newPageSize)}
+        pageSizeOptions={ROWS_PER_PAGE_OPTIONS}
+        paginationModel={paginationModel}
+        onPaginationModelChange={setPaginationModel}
         processRowUpdate={onUpdateRow}
-        error={error}
         loading={isLoading}
         componentsProps={{
           baseButton: {
@@ -149,10 +153,6 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
             value: searchText,
             clearSearch: () => handleSearch(''),
             onChange: (event: ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)
-          },
-          errorOverlay: {
-            isError: isError,
-            error: error
           }
         }}
       />
@@ -160,4 +160,12 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
   )
 }
 
-export default EntityTable
+const EntityTableWithErrorBoundary = <TData extends GridValidRowModel>(props: EntityTableProps<TData>) => {
+  return (
+    <ErrorBoundary FallbackComponent={ErrorOverlay}>
+      <EntityTable {...props} />
+    </ErrorBoundary>
+  )
+}
+
+export default EntityTableWithErrorBoundary

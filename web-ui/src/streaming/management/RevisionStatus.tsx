@@ -103,8 +103,8 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
 
   const theme = useTheme()
   const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
-  const diffConfigEditorRef = useRef(null)
-  const diffSqlEditorRef = useRef(null)
+  const diffConfigEditorRef = useRef<MonacoDiffEditor | null>(null)
+  const diffSqlEditorRef = useRef<MonacoDiffEditor | null>(null)
 
   // Switch to SQL tab if config doesn't have changes:
   const initialTab = diffCount.config.length == 0 && diffCount.program.length > 0 ? '2' : '1'

@@ -35,8 +35,8 @@ const navigation = (): VerticalNavItemsType => {
       icon: 'bx:git-repo-forked'
     },
     //{
-    //title: 'Introspection',
-    //path: '/streaming/introspection',
+    //title: 'Data Inspection',
+    //path: '/streaming/inspection',
     //icon: 'bx:chart'
     //},
     {

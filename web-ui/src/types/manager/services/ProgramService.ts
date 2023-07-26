@@ -19,8 +19,8 @@ export class ProgramService {
    * Returns program descriptor, including current program version and
    * Returns program descriptor, including current program version and
    * compilation status.
-   * @param id Unique program identifier.
-   * @param name Unique program name.
+   * @param id Unique connector identifier
+   * @param name Unique connector name
    * @returns ProgramDescr Program status retrieved successfully.
    * @throws ApiError
    */
