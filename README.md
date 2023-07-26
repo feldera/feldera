@@ -9,7 +9,7 @@
 
 The [Feldera Continuous Analytics Platform](https://www.feldera.com/), or Feldera Platform in short, is a
 fast computational engine and associated components for *continuous analytics* over data in motion. Feldera Platform
-allows users to configure data pipelines as standing SQL programs (DMLs) that are continuously
+allows users to configure data pipelines as standing SQL programs (DDLs) that are continuously
 evaluated as new data arrives from various sources. What makes Feldera's engine
 [unique](#theory) is its ability to *evaluate arbitrary SQL programs
 incrementally*, making it more expressive and performant than existing
