@@ -11,7 +11,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 dbsp = { path = "../dbsp" }
 anyhow = "1.0.57"
-csv = { git = "https://github.com/ryzhyk/rust-csv.git" }
+csv = "1.2.2"
 arcstr = { version = "1.1.4", features = ["serde"] }
 rust_decimal = { version = "1.26.1" }
 regex = { version = "1.6.0" }

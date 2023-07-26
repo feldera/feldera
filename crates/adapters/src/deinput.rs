@@ -399,10 +399,10 @@ where
 mod test {
     use crate::{
         DeCollectionHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle,
-        DeZSetHandle,
+        DeZSetHandle, format::string_record_deserializer,
     };
     use bincode::{Decode, Encode};
-    use csv::{string_record_deserializer, Reader as CsvReader, Writer as CsvWriter};
+    use csv::{Reader as CsvReader, Writer as CsvWriter};
     use dbsp::{
         algebra::F32, trace::Batch, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
     };

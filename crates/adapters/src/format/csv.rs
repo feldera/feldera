@@ -4,13 +4,16 @@ use crate::{
 };
 use anyhow::{Error as AnyError, Result as AnyResult};
 use csv::{
-    byte_record_deserializer, Reader as CsvReader, ReaderBuilder as CsvReaderBuilder,
-    WriterBuilder as CsvWriterBuilder,
+    Reader as CsvReader, ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder,
 };
 use erased_serde::Deserializer as ErasedDeserializer;
 use serde::Deserialize;
 use std::{borrow::Cow, io::Read, mem::take, sync::Arc};
 use utoipa::ToSchema;
+
+mod deserializer;
+pub use deserializer::byte_record_deserializer;
+pub use deserializer::string_record_deserializer;
 
 /// CSV format parser.
 pub struct CsvInputFormat;
