@@ -11,9 +11,14 @@ import CustomChip from 'src/@core/components/mui/chip'
 import { GridColDef, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { ConnectorsService } from 'src/types/manager/services/ConnectorsService'
-import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
-import { CancelError, ConnectorId, UpdateConnectorRequest, UpdateConnectorResponse } from 'src/types/manager'
+import {
+  ApiError,
+  ConnectorsService,
+  ConnectorDescr,
+  ConnectorId,
+  UpdateConnectorRequest,
+  UpdateConnectorResponse
+} from 'src/types/manager'
 import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { ConnectorDialog, getStatusObj, connectorDescrToType } from 'src/types/connectors'
@@ -30,7 +35,7 @@ const DataSourceTable = () => {
   // Update row name and description if edited in the cells:
   const mutation = useMutation<
     UpdateConnectorResponse,
-    CancelError,
+    ApiError,
     { connector_id: ConnectorId; request: UpdateConnectorRequest }
   >({
     mutationFn: args => ConnectorsService.updateConnector(args.connector_id, args.request)
@@ -50,8 +55,8 @@ const DataSourceTable = () => {
             queryClient.invalidateQueries(['connector'])
             queryClient.invalidateQueries(['connectorStatus', { connector_id: newRow.connector_id }])
           },
-          onError: (error: CancelError) => {
-            pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+          onError: (error: ApiError) => {
+            pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
             apiRef.current.updateRows([oldRow])
           }
         }
@@ -63,7 +68,7 @@ const DataSourceTable = () => {
   )
 
   // Delete a connector entry
-  const deleteMutation = useMutation<void, CancelError, string>(ConnectorsService.deleteConnector)
+  const deleteMutation = useMutation<void, ApiError, string>(ConnectorsService.deleteConnector)
   const deleteSource = useCallback(
     (cur_row: ConnectorDescr) => {
       setTimeout(() => {
@@ -77,7 +82,7 @@ const DataSourceTable = () => {
               setRows(prevRows => prevRows.filter(row => row.connector_id !== cur_row.connector_id))
             },
             onError: error => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
             }
           })
         }

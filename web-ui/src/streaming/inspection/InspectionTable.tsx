@@ -5,29 +5,19 @@ import Card from '@mui/material/Card'
 import { DataGridPro, GridPaginationModel, GridToolbar } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 
-import { Pipeline, OpenAPI, PipelineRevision, NeighborhoodQuery, Relation, Field } from 'src/types/manager'
+import { Pipeline, OpenAPI, PipelineRevision, NeighborhoodQuery, Relation } from 'src/types/manager'
 import useTableUpdater from './hooks/useTableUpdater'
 import { useAsyncError } from 'src/utils'
 import { PercentilePagination } from './PercentilePagination'
 import useQuantiles from './hooks/useQuantiles'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
+import { Row, rowToAnchor } from 'src/types/ddl'
 
 const FETCH_QUANTILES = 100
 
 export type InspectionTableProps = {
   pipeline: Pipeline
   name: string
-}
-
-// We convert a row to a tuple so that we can use it as an anchor in the REST
-// API.
-function objectToAnchor(relation: Relation, obj: Record<string, any>): any[] {
-  const tuple: any[] = []
-  relation.fields.map((col: Field, i: number) => {
-    tuple[i] = obj[col.name]
-  })
-
-  return tuple
 }
 
 // The number of rows we display in the table.
@@ -51,7 +41,7 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   const [neighborhood, setNeighborhood] = useState<NeighborhoodQuery>(DEFAULT_NEIGHBORHOOD)
   const [quantiles, setQuantiles] = useState<any[][] | undefined>(undefined)
   const [quantile, setQuantile] = useState<number>(0)
-  const [rows, setRows] = useState<any[]>([])
+  const [rows, setRows] = useState<Row[]>([])
   const [isLoading, setLoading] = useState<boolean>(true)
 
   const { pushMessage } = useStatusNotification()
@@ -189,7 +179,7 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
         setRows([])
         setNeighborhood({
           ...DEFAULT_NEIGHBORHOOD,
-          anchor: objectToAnchor(relation, minRow)
+          anchor: rowToAnchor(relation, minRow)
         })
       } else {
         if (rows.length > 0 && rows[rows.length - 1].genId === PAGE_SIZE) {
@@ -198,7 +188,7 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
           setRows([])
           setNeighborhood({
             ...DEFAULT_NEIGHBORHOOD,
-            anchor: objectToAnchor(relation, rows[rows.length - 1])
+            anchor: rowToAnchor(relation, rows[rows.length - 1])
           })
         } else {
           pushMessage({
@@ -236,22 +226,41 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
         autoHeight
         pagination
         disableColumnFilter
+        density='compact'
         getRowId={(row: any) => row.genId}
         initialState={{
           columns: {
             columnVisibilityModel: {
               genId: false,
-              weight: false
+              RowCount: false
             }
           }
         }}
         columns={relation.fields
           .map((col: any) => {
-            return { field: col.name, headerName: col.name, flex: 1 }
+            return {
+              field: col.name,
+              headerName: col.name,
+              description: col.name,
+              flex: 1,
+              valueGetter: (params: any) => params.row.record[col.name]
+            }
           })
           .concat([
-            { field: 'genId', headerName: 'genId', flex: 0.5 },
-            { field: 'weight', headerName: 'weight', flex: 0.5 }
+            {
+              field: 'genId',
+              headerName: 'genId',
+              description: 'Index relative to the current paginated set of rows.',
+              flex: 0.5,
+              valueGetter: (params: any) => params.row.genId
+            },
+            {
+              field: 'RowCount',
+              headerName: 'Row Count',
+              description: 'Counts how many times this row appears in the database.',
+              flex: 0.5,
+              valueGetter: (params: any) => params.row.weight
+            }
           ])}
         slots={{
           pagination: PercentilePagination,

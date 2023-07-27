@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react'
 import { ClientPipelineStatus, usePipelineStateStore } from '../StatusContext'
-import { PipelinesService, CancelError, PipelineId } from 'src/types/manager'
+import { PipelinesService, ApiError, PipelineId } from 'src/types/manager'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { invalidatePipeline } from 'src/types/defaultQueryFn'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
@@ -14,7 +14,7 @@ function usePausePipeline() {
   const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
   const setPipelineStatus = usePipelineStateStore(state => state.setStatus)
 
-  const { mutate: piplineAction, isLoading: pipelineActionLoading } = useMutation<string, CancelError, PipelineAction>({
+  const { mutate: piplineAction, isLoading: pipelineActionLoading } = useMutation<string, ApiError, PipelineAction>({
     mutationFn: (action: PipelineAction) => {
       return PipelinesService.pipelineAction(action.pipeline_id, action.command)
     }
@@ -31,7 +31,7 @@ function usePausePipeline() {
               invalidatePipeline(queryClient, pipeline_id)
             },
             onError: error => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
               setPipelineStatus(pipeline_id, ClientPipelineStatus.RUNNING)
             }
           }

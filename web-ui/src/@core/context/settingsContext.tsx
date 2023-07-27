@@ -1,7 +1,9 @@
-import { createContext, useState, ReactNode } from 'react'
+import { createContext, ReactNode } from 'react'
 import { PaletteMode } from '@mui/material'
 import themeConfig from 'src/configs/themeConfig'
 import { ThemeColor, ContentWidth } from 'src/@core/layouts/types'
+import { useLocalStorage } from '@mantine/hooks'
+import { LS_PREFIX } from 'src/types/localStorage'
 
 export type Settings = {
   mode: PaletteMode
@@ -26,7 +28,10 @@ export const SettingsContext = createContext<SettingsContextValue>({
 })
 
 export const SettingsProvider = ({ children }: { children: ReactNode }) => {
-  const [settings, setSettings] = useState<Settings>({ ...initialSettings })
+  const [settings, setSettings] = useLocalStorage({
+    key: LS_PREFIX + 'theme-settings',
+    defaultValue: initialSettings
+  })
 
   const saveSettings = (updatedSettings: Settings) => {
     setSettings(updatedSettings)

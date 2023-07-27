@@ -3,11 +3,9 @@ import Link from 'next/link'
 import Image from 'next/image'
 import Box, { BoxProps } from '@mui/material/Box'
 import { styled } from '@mui/material/styles'
-import Typography, { TypographyProps } from '@mui/material/Typography'
 import { Settings } from 'src/@core/context/settingsContext'
-import themeConfig from 'src/configs/themeConfig'
-import darkLogo from 'public/images/dbsp-primary-dark.svg'
-import lightLogo from 'public/images/dbsp-primary-main.svg'
+import darkLogo from 'public/images/feldera-primary-dark.svg'
+import lightLogo from 'public/images/feldera-primary-main.svg'
 
 interface Props {
   hidden: boolean
@@ -26,14 +24,6 @@ const MenuHeaderWrapper = styled(Box)<BoxProps>(({ theme }) => ({
   minHeight: theme.mixins.toolbar.minHeight
 }))
 
-const HeaderTitle = styled(Typography)<TypographyProps>(({ theme }) => ({
-  fontWeight: 600,
-  lineHeight: 'normal',
-  textTransform: 'uppercase',
-  color: theme.palette.text.primary,
-  transition: 'opacity .25s ease-in-out, margin .25s ease-in-out'
-}))
-
 const StyledLink = styled(Link)({
   display: 'flex',
   alignItems: 'center',
@@ -45,15 +35,12 @@ const VerticalNavHeader = (props: Props) => {
   const logo = props.settings.mode === 'dark' ? darkLogo : lightLogo
 
   return (
-    <MenuHeaderWrapper className='nav-header' sx={{ pl: 6 }}>
+    <MenuHeaderWrapper className='nav-header' sx={{ pl: 3 }}>
       {userVerticalNavMenuBranding ? (
         userVerticalNavMenuBranding(props)
       ) : (
         <StyledLink href='/' passHref>
-          <Image src={logo} alt='Logo' width={30} height={25} />
-          <HeaderTitle variant='h6' sx={{ ml: 3 }}>
-            {themeConfig.templateName}
-          </HeaderTitle>
+          <Image src={logo} alt='Logo' width={130} height={70} />
         </StyledLink>
       )}
     </MenuHeaderWrapper>

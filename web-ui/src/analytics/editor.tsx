@@ -15,7 +15,7 @@ import { match, P } from 'ts-pattern'
 import { useDebouncedCallback } from 'use-debounce'
 
 import {
-  CancelError,
+  ApiError,
   CompileProgramRequest,
   NewProgramRequest,
   NewProgramResponse,
@@ -139,7 +139,7 @@ const useCreateProjectIfNew = (
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate } = useMutation<NewProgramResponse, CancelError, NewProgramRequest>(ProgramsService.newProgram)
+  const { mutate } = useMutation<NewProgramResponse, ApiError, NewProgramRequest>(ProgramsService.newProgram)
   useEffect(() => {
     if (project.program_id == null) {
       if (state === 'isModified') {
@@ -166,7 +166,7 @@ const useCreateProjectIfNew = (
               setState('isUpToDate')
               setFormError({})
             },
-            onError: (error: CancelError) => {
+            onError: (error: ApiError) => {
               // TODO: would be good to have error codes from the API
               if (error.message.includes('name already exists')) {
                 setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
@@ -174,7 +174,7 @@ const useCreateProjectIfNew = (
                 // Saving... until the user changes something:
                 setState('isDebouncing')
               } else {
-                pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+                pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
               }
             }
           }
@@ -204,7 +204,7 @@ const useFetchExistingProject = (
   lastCompiledVersion: number,
   setLastCompiledVersion: Dispatch<SetStateAction<number>>
 ) => {
-  const codeQuery = useQuery<number, CancelError, ProgramDescr>(['programCode', { program_id: project.program_id }], {
+  const codeQuery = useQuery<number, ApiError, ProgramDescr>(['programCode', { program_id: project.program_id }], {
     enabled: project.program_id != null
   })
   useEffect(() => {
@@ -246,7 +246,7 @@ const useUpdateProjectIfChanged = (
 
   const { mutate, isLoading } = useMutation<
     UpdateProgramResponse,
-    CancelError,
+    ApiError,
     { program_id: ProgramId; update_request: UpdateProgramRequest }
   >({
     mutationFn: (args: { program_id: ProgramId; update_request: UpdateProgramRequest }) => {
@@ -275,7 +275,7 @@ const useUpdateProjectIfChanged = (
             setState('isUpToDate')
             setFormError({})
           },
-          onError: (error: CancelError) => {
+          onError: (error: ApiError) => {
             // TODO: would be good to have error codes from the API
             if (error.message.includes('name already exists')) {
               setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
@@ -283,7 +283,7 @@ const useUpdateProjectIfChanged = (
               // Saving... until the user changes something:
               setState('isDebouncing')
             } else {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
             }
           }
         }
@@ -318,7 +318,7 @@ const useCompileProjectIfChanged = (
 
   const { mutate, isLoading, isError } = useMutation<
     CompileProgramRequest,
-    CancelError,
+    ApiError,
     { program_id: ProgramId; request: CompileProgramRequest }
   >({
     mutationFn: args => {
@@ -344,9 +344,9 @@ const useCompileProjectIfChanged = (
             queryClient.invalidateQueries(['program'])
             queryClient.invalidateQueries(['programStatus', { program_id: project.program_id }])
           },
-          onError: (error: CancelError) => {
+          onError: (error: ApiError) => {
             setProject((prevState: ProgramState) => ({ ...prevState, status: 'None' }))
-            pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+            pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           }
         }
       )

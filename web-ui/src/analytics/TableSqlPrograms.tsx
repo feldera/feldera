@@ -13,10 +13,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { match, P } from 'ts-pattern'
 
 import CustomChip from 'src/@core/components/mui/chip'
-import { ProgramsService } from 'src/types/manager/services/ProgramsService'
-import { ProgramDescr } from 'src/types/manager/models/ProgramDescr'
-import { ProgramStatus } from 'src/types/manager/models/ProgramStatus'
-import { CancelError, ProgramId, UpdateProgramRequest, UpdateProgramResponse } from 'src/types/manager'
+import {
+  ApiError,
+  ProgramId,
+  UpdateProgramRequest,
+  UpdateProgramResponse,
+  ProgramStatus,
+  ProgramDescr,
+  ProgramsService
+} from 'src/types/manager'
 import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 
@@ -114,7 +119,7 @@ const TableSqlPrograms = () => {
   // Editing a row
   const mutation = useMutation<
     UpdateProgramResponse,
-    CancelError,
+    ApiError,
     { program_id: ProgramId; request: UpdateProgramRequest }
   >(args => {
     return ProgramsService.updateProgram(args.program_id, args.request)
@@ -126,10 +131,10 @@ const TableSqlPrograms = () => {
         request: { description: newRow.description, name: newRow.name }
       },
       {
-        onError: (error: CancelError) => {
+        onError: (error: ApiError) => {
           queryClient.invalidateQueries(['program'])
           queryClient.invalidateQueries(['programStatus', { program_id: newRow.program_id }])
-          pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+          pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }
       }
@@ -139,7 +144,7 @@ const TableSqlPrograms = () => {
   }
 
   // Deleting a row
-  const deleteMutation = useMutation<void, CancelError, string>(ProgramsService.deleteProgram)
+  const deleteMutation = useMutation<void, ApiError, string>(ProgramsService.deleteProgram)
   const deleteProject = useCallback(
     (curRow: ProgramDescr) => {
       setTimeout(() => {
@@ -150,7 +155,7 @@ const TableSqlPrograms = () => {
               setRows(prevRows => prevRows.filter(row => row.program_id !== curRow.program_id))
             },
             onError: error => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
               queryClient.invalidateQueries(['program'])
             }
           })

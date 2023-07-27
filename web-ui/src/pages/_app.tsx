@@ -11,7 +11,10 @@ import ThemeComponent from 'src/@core/theme/ThemeComponent'
 import { SettingsConsumer, SettingsProvider } from 'src/@core/context/settingsContext'
 import { createEmotionCache } from 'src/@core/utils/create-emotion-cache'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
+import { LocalizationProvider } from '@mui/x-date-pickers'
 import { LicenseInfo } from '@mui/x-license-pro'
+import 'dayjs/locale/en-gb'
 
 import 'react-perfect-scrollbar/dist/css/styles.css'
 import '../../styles/globals.css'
@@ -76,16 +79,18 @@ const App = (props: ExtendedAppProps) => {
         <SettingsConsumer>
           {({ settings }) => {
             return (
-              <ThemeComponent settings={settings}>
-                <QueryClientProvider client={queryClient}>
-                  {getLayout(
-                    <>
-                      <Component {...pageProps} />
-                      <StatusSnackBar />
-                    </>
-                  )}
-                </QueryClientProvider>
-              </ThemeComponent>
+              <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale='en-gb'>
+                <ThemeComponent settings={settings}>
+                  <QueryClientProvider client={queryClient}>
+                    {getLayout(
+                      <>
+                        <Component {...pageProps} />
+                        <StatusSnackBar />
+                      </>
+                    )}
+                  </QueryClientProvider>
+                </ThemeComponent>
+              </LocalizationProvider>
             )
           }}
         </SettingsConsumer>
