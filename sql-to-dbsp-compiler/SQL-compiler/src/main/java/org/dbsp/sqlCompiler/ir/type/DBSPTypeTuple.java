@@ -131,10 +131,13 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("Tuple")
-                .append(this.tupFields.length)
+        return builder.append(this.getName())
                 .append("<")
                 .join(", ", this.tupFields)
                 .append(">");
+    }
+
+    public String getName() {
+        return "Tuple" + this.tupFields.length;
     }
 }

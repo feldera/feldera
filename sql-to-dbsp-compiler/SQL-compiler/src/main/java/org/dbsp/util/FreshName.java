@@ -23,26 +23,27 @@
 
 package org.dbsp.util;
 
-import java.util.HashSet;
 import java.util.Set;
 
 /**
  * Generates a fresh name that does not appear in a set of used names.
+ * The name is a legal identifier in many languages if the prefix supplied to
+ * 'freshName' also is.  The names are composed only of the prefix, underscores, and digits.
  */
 public class FreshName {
     final Set<String> used;
 
-    public FreshName() {
-        this.used = new HashSet<>();
-    }
-
+    /**
+     * @param used Keep track of the used names in this set.
+     *             The used set is modified every time a new name is generated.
+     */
     public FreshName(Set<String> used) {
         this.used = used;
     }
 
     /**
      * Generate a fresh name starting with the specified prefix.
-     * Add this name to the set of used names.
+     * Add the generated name to the set of used names.
      * @param prefix  Prefix for the new name.
      */
     public String freshName(String prefix) {

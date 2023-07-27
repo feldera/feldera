@@ -637,6 +637,20 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
+    public void testSanitizeNames() throws IOException, InterruptedException {
+        String statements = "create table t1(c1 integer); create view v1 as select element(array [2, 3]) from t1;";
+        DBSPCompiler compiler = testCompiler();
+        compiler.compileStatements(statements);
+        DBSPCircuit circuit = getCircuit(compiler);
+        RustFileWriter writer = new RustFileWriter(compiler, testFilePath);
+        // Check that the structs generated have legal names.
+        writer.emitCodeWithHandle(true);
+        writer.add(circuit);
+        writer.writeAndClose();
+        Utilities.compileAndTestRust(rustDirectory, true);
+    }
+
+    @Test
     public void jsonErrorTest() throws FileNotFoundException, UnsupportedEncodingException, JsonProcessingException {
         String[] statements = new String[] {
                 "CREATE VIEW V AS SELECT * FROM T"

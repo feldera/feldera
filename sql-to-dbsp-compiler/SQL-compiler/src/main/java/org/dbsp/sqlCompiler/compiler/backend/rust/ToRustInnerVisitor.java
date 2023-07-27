@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.util.IndentStream;
@@ -52,7 +53,7 @@ import java.util.Objects;
  * This visitor generate a Rust implementation of the program.
  */
 public class ToRustInnerVisitor extends InnerVisitor {
-    private final IndentStream builder;
+    protected final IndentStream builder;
     /**
      * If set use a more compact display, which is not necessarily compilable.
      */
@@ -923,7 +924,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPStructExpression expression) {
+    public VisitDecision preorder(DBSPConstructorExpression expression) {
         expression.function.accept(this);
         this.builder.append("(");
         if (expression.arguments.length > 0) {
@@ -1027,24 +1028,48 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTypeStruct.Field field) {
-        this.builder.append(field.name)
+        if (!field.name.equals(field.sanitizedName)) {
+            this.builder.append("#[serde(rename=\"")
+                    .append(field.name)
+                    .append("\")]")
+                    .newline();
+        }
+        this.builder.append(field.sanitizedName)
                 .append(": ");
         field.type.accept(this);
         return VisitDecision.STOP;
     }
 
     @Override
-    public VisitDecision preorder(DBSPTypeStruct type) {
-        this.builder.append(type.name)
-                .append("{");
-        boolean first = true;
-        for (DBSPTypeStruct.Field field: type.args) {
-            if (!first)
-                this.builder.append(", ");
-            first = false;
+    public VisitDecision preorder(DBSPStructItem item) {
+        this.builder.append("#[derive(Clone, Deserialize)]")
+                .newline();
+        /*
+        if (!item.type.sanitizedName.equals(item.type.name))
+            builder.append("#[serde(rename=\"")
+                    .append(item.type.name)
+                    .append("\")]")
+                    .newline();
+         */
+        builder.append("struct ")
+                    .append(item.type.sanitizedName)
+                .append(" {")
+                .increase();
+        for (DBSPTypeStruct.Field field: item.type.fields.values()) {
             field.accept(this);
+            this.builder.append(",")
+                    .newline();
         }
-        this.builder.append("}");
+        this.builder.decrease()
+                .append("}")
+                .newline();
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTypeStruct type) {
+        // A *reference* to a struct type is just the type name.
+        this.builder.append(type.sanitizedName);
         return VisitDecision.STOP;
     }
 

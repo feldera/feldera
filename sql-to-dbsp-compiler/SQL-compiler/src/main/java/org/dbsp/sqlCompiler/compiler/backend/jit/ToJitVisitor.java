@@ -69,7 +69,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
     final JITProgram program;
 
     public ToJitVisitor(IErrorReporter reporter) {
-        super(reporter, true);
+        super(reporter);
         this.program = new JITProgram();
     }
 

@@ -43,6 +43,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 
@@ -100,13 +101,22 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         throw new InternalCompilerError("Column not found", new CalciteObject(id));
     }
 
-    public DBSPTypeTuple getRowType(TypeCompiler compiler) {
+    public DBSPTypeTuple getRowTypeAsTuple(TypeCompiler compiler) {
         List<DBSPType> fields = new ArrayList<>();
         for (RelDataTypeField col: this.columns) {
-            DBSPType fType = compiler.convertType(col.getType());
+            DBSPType fType = compiler.convertType(col.getType(), true);
             fields.add(fType);
         }
         return new DBSPTypeTuple(fields);
+    }
+
+    public DBSPTypeStruct getRowTypeAsStruct(TypeCompiler compiler) {
+        List<DBSPTypeStruct.Field> fields = new ArrayList<>();
+        for (RelDataTypeField col: this.columns) {
+            DBSPType fType = compiler.convertType(col.getType(), true);
+            fields.add(new DBSPTypeStruct.Field(this.getCalciteObject(), col.getName(), col.getName(), fType));
+        }
+        return new DBSPTypeStruct(this.getCalciteObject(), this.tableName, this.tableName, fields);
     }
 
     @Override

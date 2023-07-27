@@ -55,7 +55,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     private final IndentStream stream;
 
     public ToDotVisitor(IErrorReporter reporter, IndentStream stream) {
-        super(reporter, true);
+        super(reporter);
         this.stream = stream;
     }
 

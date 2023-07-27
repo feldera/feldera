@@ -32,11 +32,11 @@ import org.dbsp.util.Linq;
 /**
  * Invocation of a Rust constructor with some arguments.
  */
-public class DBSPStructExpression extends DBSPExpression {
+public class DBSPConstructorExpression extends DBSPExpression {
     public final DBSPExpression function;
     public final DBSPExpression[] arguments;
 
-    public DBSPStructExpression(DBSPExpression function, DBSPType type, DBSPExpression... arguments) {
+    public DBSPConstructorExpression(DBSPExpression function, DBSPType type, DBSPExpression... arguments) {
         super(function.getNode(), type);
         this.function = function;
         this.arguments = arguments;
@@ -54,10 +54,9 @@ public class DBSPStructExpression extends DBSPExpression {
         visitor.postorder(this);
     }
 
-
     @Override
     public boolean sameFields(IDBSPNode other) {
-        DBSPStructExpression o = other.as(DBSPStructExpression.class);
+        DBSPConstructorExpression o = other.as(DBSPConstructorExpression.class);
         if (o == null)
             return false;
         return this.function == o.function &&

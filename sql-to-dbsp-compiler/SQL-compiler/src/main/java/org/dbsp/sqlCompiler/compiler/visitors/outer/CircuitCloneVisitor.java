@@ -56,7 +56,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     protected final Set<DBSPOperator> visited = new HashSet<>();
 
     public CircuitCloneVisitor(IErrorReporter reporter, boolean force) {
-        super(reporter, true);
+        super(reporter);
         this.remap = new HashMap<>();
         this.force = force;
     }

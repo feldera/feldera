@@ -27,14 +27,23 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
 public class DBSPSourceOperator extends DBSPOperator {
-    public DBSPSourceOperator(CalciteObject node, DBSPType outputType, @Nullable String comment, String name) {
+    /**
+     * Original output row type, as a struct (not a tuple), i.e., with named columns.
+     */
+    public final DBSPTypeStruct originalRowType;
+
+    public DBSPSourceOperator(
+            CalciteObject node, DBSPType outputType, DBSPTypeStruct originalRowType,
+            @Nullable String comment, String name) {
         super(node, "", null, outputType, false, comment, name);
+        this.originalRowType = originalRowType;
     }
 
     @Override
@@ -45,14 +54,16 @@ public class DBSPSourceOperator extends DBSPOperator {
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
-        return new DBSPSourceOperator(this.getNode(), outputType, this.comment, this.outputName);
+        return new DBSPSourceOperator(this.getNode(), outputType, this.originalRowType,
+                this.comment, this.outputName);
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSourceOperator(
-                    this.getNode(), this.outputType, this.comment, this.outputName);
+                    this.getNode(), this.outputType, this.originalRowType,
+                    this.comment, this.outputName);
         return this;
     }
 

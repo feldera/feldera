@@ -212,4 +212,23 @@ public class Utilities {
             throw new RuntimeException("Data is empty");
         return data.get(data.size() - 1);
     }
+
+    public static boolean isLegalRustIdentifier(String identifier) {
+        if (identifier.isEmpty())
+            return false;
+        boolean first = true;
+        final int length = identifier.length();
+        for (int offset = 0; offset < length; ) {
+            int codepoint = identifier.codePointAt(offset);
+            if (first) {
+                if (!Character.isLetter(codepoint))
+                    return false;
+            } else if (!Character.isLetterOrDigit(codepoint) && codepoint != '_') {
+                return false;
+            }
+            first = false;
+            offset += Character.charCount(codepoint);
+        }
+        return true;
+    }
 }

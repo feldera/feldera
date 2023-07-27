@@ -46,7 +46,7 @@ public class ToRustVisitor extends CircuitVisitor {
     public final InnerVisitor innerVisitor;
 
     public ToRustVisitor(IErrorReporter reporter, IndentStream builder) {
-        super(reporter, true);
+        super(reporter);
         this.builder = builder;
         this.innerVisitor = new ToRustInnerVisitor(reporter, builder, false);
     }

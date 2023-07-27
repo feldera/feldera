@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 
 /**
  * This visitor converts a DBSPCircuit into a new circuit which
@@ -52,7 +51,7 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
         DBSPOperator source = this.mapped(operator.input());
         DBSPDifferentialOperator diff = new DBSPDifferentialOperator(operator.getNode(), source);
         DBSPSinkOperator sink = new DBSPSinkOperator(operator.getNode(), operator.outputName,
-                operator.query, operator.comment, diff);
+                operator.query, operator.originalRowType, operator.comment, diff);
         this.addOperator(diff);
         this.map(operator, sink);
     }

@@ -35,7 +35,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
  */
 public class NoIntegralVisitor extends CircuitVisitor {
     public NoIntegralVisitor(IErrorReporter reporter) {
-        super(reporter, true);
+        super(reporter);
     }
 
     @Override
