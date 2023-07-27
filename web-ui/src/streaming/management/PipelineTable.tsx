@@ -36,7 +36,8 @@ import {
   ConnectorDescr,
   PipelineStatus,
   PipelineRevision,
-  ErrorResponse
+  ErrorResponse,
+  Relation
 } from 'src/types/manager'
 import { useQuery } from '@tanstack/react-query'
 import { escapeRegExp } from 'src/utils'
@@ -53,8 +54,39 @@ import useDeletePipeline from './hooks/useDeletePipeline'
 import useStartPipeline from './hooks/useStartPipeline'
 
 interface ConnectorData {
-  ac: AttachedConnector
-  c: ConnectorDescr | undefined
+  relation: Relation
+  connections: [AttachedConnector, ConnectorDescr][]
+}
+type InputOrOutput = 'input' | 'output'
+
+// Joins the relation with attached connectors and connectors and returns it as
+// a list of ConnectorData that has a list of `connections` for each `relation`.
+function getConnectorData(revision: PipelineRevision, direction: InputOrOutput): ConnectorData[] {
+  const schema = revision.program.schema
+  if (!schema) {
+    // This means the backend sent invalid data,
+    // revisions should always have a schema
+    throw Error('Pipeline revision has no schema.')
+  }
+
+  const relations = direction === ('input' as const) ? schema.inputs : schema.outputs
+  const attachedConnectors = revision.pipeline.attached_connectors
+  const connectors = revision.connectors
+
+  return relations.map(relation => {
+    const connections: [AttachedConnector, ConnectorDescr][] = attachedConnectors
+      .filter(ac => ac.relation_name === relation.name)
+      .map(ac => {
+        const connector = connectors.find(c => c.connector_id === ac?.connector_id)
+        if (!connector) {
+          // This can't happen in a revision
+          throw Error('Attached connector has no connector.')
+        }
+        return [ac, connector] as [AttachedConnector, ConnectorDescr]
+      })
+
+    return { relation, connections }
+  })
 }
 
 const DetailPanelContent = (props: { row: Pipeline }) => {
@@ -68,23 +100,11 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   ])
   useEffect(() => {
     if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
-      const connectors = pipelineRevisionQuery.data.connectors
-      const attachedConnectors = pipelineRevisionQuery.data.pipeline.attached_connectors
-      setInputs(
-        attachedConnectors
-          .filter(ac => ac.is_input)
-          .map(ac => {
-            return { ac, c: connectors.find(c => c.connector_id === ac.connector_id) }
-          })
-      )
+      console.log(getConnectorData(pipelineRevisionQuery.data, 'input'))
+      console.log(getConnectorData(pipelineRevisionQuery.data, 'output'))
 
-      setOutputs(
-        attachedConnectors
-          .filter(ac => !ac.is_input)
-          .map(ac => {
-            return { ac, c: connectors.find(c => c.connector_id === ac.connector_id) }
-          })
-      )
+      setInputs(getConnectorData(pipelineRevisionQuery.data, 'input'))
+      setOutputs(getConnectorData(pipelineRevisionQuery.data, 'output'))
     }
   }, [
     pipelineRevisionQuery.isLoading,
@@ -127,6 +147,88 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
       setOutputMetrics(new Map())
     }
   }, [pipelineStatsQuery.isLoading, pipelineStatsQuery.isError, pipelineStatsQuery.data, state.current_status])
+
+  function getRelationColumns(direction: InputOrOutput): GridColDef<ConnectorData>[] {
+    return [
+      {
+        field: 'name',
+        headerName: direction === 'input' ? 'Input' : 'Output',
+        flex: 0.5,
+        renderCell: params => {
+          if (params.row.connections.length > 0) {
+            return params.row.connections.map(c => c[1].name).join(', ')
+          } else {
+            return <Box sx={{ fontStyle: 'italic' }}>No connection.</Box>
+          }
+        }
+      },
+      {
+        field: 'config',
+        valueGetter: params => params.row.relation.name,
+        headerName: direction === 'input' ? 'Table' : 'View',
+        flex: 0.8
+      },
+      {
+        field: 'records',
+        headerName: 'Records',
+        flex: 0.15,
+        renderCell: params => {
+          const records =
+            direction === 'input'
+              ? inputMetrics.get(params.row.relation.name)?.total_records
+              : outputMetrics.get(params.row.relation.name)?.transmitted_records
+          return format('.1s')(records || 0)
+        }
+      },
+      {
+        field: 'traffic',
+        headerName: 'Traffic',
+        flex: 0.15,
+        renderCell: params => {
+          const bytes =
+            direction === 'input'
+              ? inputMetrics.get(params.row.relation.name)?.total_bytes
+              : outputMetrics.get(params.row.relation.name)?.transmitted_bytes
+          return humanSize(bytes || 0)
+        }
+      },
+      {
+        field: 'action',
+        headerName: 'Action',
+        flex: 0.15,
+        renderCell: params => (
+          <>
+            <Tooltip title={direction === 'input' ? 'Inspect Table' : 'Inspect View'}>
+              <IconButton
+                size='small'
+                onClick={e => {
+                  e.preventDefault()
+                  router.push('/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.relation.name)
+                }}
+              >
+                <Icon icon='bx:show' fontSize={20} />
+              </IconButton>
+            </Tooltip>
+            {direction === 'input' && state.current_status == PipelineStatus.RUNNING && (
+              <Tooltip title='Import Data'>
+                <IconButton
+                  size='small'
+                  onClick={e => {
+                    e.preventDefault()
+                    router.push(
+                      '/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.relation.name + '?tab=insert'
+                    )
+                  }}
+                >
+                  <Icon icon='bx:upload' fontSize={20} />
+                </IconButton>
+              </Tooltip>
+            )}
+          </>
+        )
+      }
+    ]
+  }
 
   return !pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError ? (
     <Box display='flex' sx={{ m: 2 }} justifyContent='center'>
@@ -175,55 +277,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           <Paper className='inputStats'>
             <DataGridPro
               autoHeight
-              getRowId={(row: ConnectorData) => row.ac.name}
-              columns={[
-                {
-                  field: 'name',
-                  headerName: 'Input',
-                  flex: 0.5,
-                  valueGetter: params => params.row.c?.name || 'unknown'
-                },
-                {
-                  field: 'config',
-                  valueGetter: params => params.row.ac.relation_name,
-                  headerName: 'Into Table',
-                  flex: 0.8
-                },
-                {
-                  field: 'records',
-                  headerName: 'Records',
-                  flex: 0.15,
-                  renderCell: params =>
-                    format('.1s')(inputMetrics?.get(params.row.ac.relation_name.trim())?.total_records || 0)
-                },
-                {
-                  field: 'traffic',
-                  headerName: 'Traffic',
-                  flex: 0.15,
-                  renderCell: params =>
-                    humanSize(inputMetrics?.get(params.row.ac.relation_name.trim())?.total_bytes || 0)
-                },
-                {
-                  field: 'action',
-                  headerName: 'Action',
-                  flex: 0.15,
-                  renderCell: params => (
-                    <Tooltip title='Inspect Table'>
-                      <IconButton
-                        size='small'
-                        onClick={e => {
-                          e.preventDefault()
-                          router.push(
-                            '/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.ac.relation_name
-                          )
-                        }}
-                      >
-                        <Icon icon='bx:show' fontSize={20} />
-                      </IconButton>
-                    </Tooltip>
-                  )
-                }
-              ]}
+              getRowId={(row: ConnectorData) => row.relation.name}
+              columns={getRelationColumns('input')}
               rows={inputs}
               sx={{ flex: 1 }}
               hideFooter
@@ -236,55 +291,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           <Paper className='outputStats'>
             <DataGridPro
               autoHeight
-              getRowId={(row: ConnectorData) => row.ac.name}
-              columns={[
-                {
-                  field: 'name',
-                  headerName: 'Output',
-                  flex: 0.5,
-                  valueGetter: params => params.row.c?.name || 'unknown'
-                },
-                {
-                  field: 'config',
-                  valueGetter: params => params.row.ac.relation_name,
-                  headerName: 'From View',
-                  flex: 0.8
-                },
-                {
-                  field: 'records',
-                  headerName: 'Records',
-                  flex: 0.15,
-                  renderCell: params =>
-                    format('.1s')(outputMetrics?.get(params.row.ac.relation_name.trim())?.transmitted_records || 0)
-                },
-                {
-                  field: 'traffic',
-                  headerName: 'Traffic',
-                  flex: 0.15,
-                  renderCell: params =>
-                    humanSize(outputMetrics?.get(params.row.ac.relation_name.trim())?.transmitted_bytes || 0)
-                },
-                {
-                  field: 'action',
-                  headerName: 'Action',
-                  flex: 0.15,
-                  renderCell: params => (
-                    <Tooltip title='Inspect View'>
-                      <IconButton
-                        size='small'
-                        onClick={e => {
-                          e.preventDefault()
-                          router.push(
-                            '/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.ac.relation_name
-                          )
-                        }}
-                      >
-                        <Icon icon='bx:show' fontSize={20} />
-                      </IconButton>
-                    </Tooltip>
-                  )
-                }
-              ]}
+              getRowId={(row: ConnectorData) => row.relation.name}
+              columns={getRelationColumns('output')}
               rows={outputs}
               sx={{ flex: 1 }}
               hideFooter
@@ -506,10 +514,11 @@ export default function PipelineTable() {
         const needsPause = currentStatus === ClientPipelineStatus.RUNNING
         const needsStart =
           currentStatus === ClientPipelineStatus.INACTIVE || currentStatus === ClientPipelineStatus.PAUSED
-        const needsShutdown = currentStatus === ClientPipelineStatus.PAUSED
+        const needsShutdown =
+          currentStatus === ClientPipelineStatus.PAUSED || currentStatus === ClientPipelineStatus.RUNNING
         const needsDelete = currentStatus === ClientPipelineStatus.INACTIVE
-        const needsEdit = currentStatus === ClientPipelineStatus.INACTIVE
-        const needsInspect = currentStatus === ClientPipelineStatus.RUNNING
+        const needsEdit = true
+        const needsInspect = false //currentStatus === ClientPipelineStatus.RUNNING
         const needsSpinner =
           currentStatus === ClientPipelineStatus.PROVISIONING ||
           currentStatus === ClientPipelineStatus.INITIALIZING ||
@@ -542,15 +551,31 @@ export default function PipelineTable() {
                 </IconButton>
               </Tooltip>
             )}
-            {needsSpinner &&
-              (pipelineStatus.get(params.row.descriptor.pipeline_id) === ClientPipelineStatus.STARTING ||
-                pipelineStatus.get(params.row.descriptor.pipeline_id) === ClientPipelineStatus.PROVISIONING) && (
-                <Tooltip title={pipelineStatus.get(params.row.descriptor.pipeline_id)}>
-                  <IconButton size='small'>
-                    <Icon icon='svg-spinners:270-ring-with-bg' fontSize={20} />
-                  </IconButton>
-                </Tooltip>
-              )}
+            {needsSpinner && (
+              <Tooltip title={pipelineStatus.get(params.row.descriptor.pipeline_id)}>
+                <IconButton size='small'>
+                  <Icon icon='svg-spinners:270-ring-with-bg' fontSize={20} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {needsShutdown && (
+              <Tooltip title='Shutdown Pipeline'>
+                <IconButton
+                  className='shutdownButton'
+                  size='small'
+                  onClick={() => shutdownPipelineClick(params.row.descriptor.pipeline_id)}
+                >
+                  <Icon icon='bx:stop-circle' fontSize={20} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {needsInspect && (
+              <Tooltip title='Inspect'>
+                <IconButton size='small' component={Link} href='#'>
+                  <Icon icon='bx:show' fontSize={20} />
+                </IconButton>
+              </Tooltip>
+            )}
             {needsEdit && (
               <Tooltip title='Edit Pipeline'>
                 <IconButton
@@ -566,17 +591,6 @@ export default function PipelineTable() {
                 </IconButton>
               </Tooltip>
             )}
-            {needsShutdown && (
-              <Tooltip title='Shutdown Pipeline'>
-                <IconButton
-                  className='shutdownButton'
-                  size='small'
-                  onClick={() => shutdownPipelineClick(params.row.descriptor.pipeline_id)}
-                >
-                  <Icon icon='bx:stop-circle' fontSize={20} />
-                </IconButton>
-              </Tooltip>
-            )}
             {needsDelete && (
               <Tooltip title='Delete Pipeline'>
                 <IconButton
@@ -585,13 +599,6 @@ export default function PipelineTable() {
                   onClick={() => deletePipelineClick(params.row.descriptor.pipeline_id)}
                 >
                   <Icon icon='bx:trash-alt' fontSize={20} />
-                </IconButton>
-              </Tooltip>
-            )}
-            {needsInspect && (
-              <Tooltip title='Inspect'>
-                <IconButton size='small' component={Link} href='#'>
-                  <Icon icon='bx:show' fontSize={20} />
                 </IconButton>
               </Tooltip>
             )}

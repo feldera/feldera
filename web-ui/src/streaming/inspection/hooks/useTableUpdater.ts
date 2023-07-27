@@ -6,7 +6,7 @@
 import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
 import { parse } from 'csv-parse'
 import { NeighborhoodQuery, Relation } from 'src/types/manager'
-import { parseSqlType } from 'src/types/ddl'
+import { Row, csvLineToRow } from 'src/types/ddl'
 import { readLineFromStream } from 'src/utils'
 
 function useTableUpdater() {
@@ -70,21 +70,7 @@ function useTableUpdater() {
               if (error) {
                 console.error(error)
               }
-
-              // Convert a row of strings to an object of typed values this is
-              // important because for sending a row as an anchor later it needs
-              // to have proper types (a number can't be a string etc.)
-              const typedRecords: any[] = result.map(row => {
-                const genId = Number(row[0])
-                const weight = row[row.length - 1]
-                const fields = row.slice(1, row.length - 1)
-                const newRow = { genId, weight: parseInt(weight) } as any
-                relation.fields.forEach((col, i) => {
-                  newRow[col.name] = parseSqlType(col, fields[i])
-                })
-
-                return newRow
-              })
+              const typedRecords: Row[] = result.map(row => csvLineToRow(relation, row))
 
               setLoading(false)
               // We compute the integral and store it in rows
@@ -108,7 +94,7 @@ function useTableUpdater() {
         }
       } catch (e) {
         if (e instanceof TypeError) {
-          if (e.message == 'Error in body stream') {
+          if (e.message == 'Error in body stream' || e.message == 'Error in input stream') {
             // Stream got closed (e.g., navigate away from page, reload), don't
             // throw this.
           } else {

@@ -120,3 +120,17 @@ export async function* readLineFromStream(response: Response) {
     yield decodedChunk.substring(startIndex)
   }
 }
+
+// Clamps a `number` between `min` and `max`.
+//
+// The min and max are inclusive.
+export function clamp(number: number, min: number, max: number) {
+  return Math.max(min, Math.min(number, max))
+}
+
+/// Returns a random date between `start` and `end`.
+//
+// The maximum is exclusive and the minimum is inclusive.
+export function getRandomDate(start: Date, end: Date): Date {
+  return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()))
+}

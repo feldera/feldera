@@ -1760,7 +1760,12 @@ pub struct PipelineIdOrNameQuery {
         ("table_name" = String, Path, description = "SQL table name."),
         ("format" = String, Query, description = "Input data format, e.g., 'csv' or 'json'."),
     ),
-    tag = "Pipelines"
+    tag = "Pipelines",
+    request_body(
+        content = String,
+        description = "Contains the new input data in CSV.",
+        content_type = "text/csv",
+    ),
 )]
 #[post("/pipelines/{pipeline_id}/ingress/{table_name}")]
 async fn http_input(

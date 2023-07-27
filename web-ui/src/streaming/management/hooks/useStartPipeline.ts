@@ -33,10 +33,7 @@ function useStartPipeline() {
             onSettled: () => {
               invalidatePipeline(queryClient, pipeline_id)
             },
-            onError: (error, variable, context) => {
-              console.log(error)
-              console.log(variable)
-              console.log(context)
+            onError: error => {
               pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
               setPipelineStatus(pipeline_id, ClientPipelineStatus.STARTUP_FAILURE)
             }

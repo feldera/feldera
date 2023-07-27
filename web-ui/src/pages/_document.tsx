@@ -21,8 +21,8 @@ class CustomDocument extends Document {
             rel='stylesheet'
             href='https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&display=swap'
           />
-          <link rel='apple-touch-icon' sizes='180x180' href='/images/dbsp-primary-main.svg' />
-          <link rel='shortcut icon' href='/images/dbsp-primary-main.svg' />
+          <link rel='apple-touch-icon' sizes='180x180' href='/favicon.ico' />
+          <link rel='shortcut icon' href='/favicon.ico' />
         </Head>
         <body>
           <Main />

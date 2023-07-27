@@ -4,7 +4,7 @@
 import Image from 'next/image'
 import Box, { BoxProps } from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
-import MainLogo from 'public/images/dbsp-primary-main.svg'
+import MainLogo from 'public/images/feldera-primary-main.svg'
 
 const LoadingScreen = ({ sx }: { sx?: BoxProps['sx'] }) => {
   return (

@@ -6,6 +6,10 @@ const input = (theme: Theme) => {
       styleOverrides: {
         root: {
           color: theme.palette.text.secondary
+        },
+        '& .Mui-error': {
+          backgroundColor: `rgb(126,10,15, ${theme.palette.mode === 'dark' ? 0 : 0.1})`,
+          color: theme.palette.error.main
         }
       }
     },

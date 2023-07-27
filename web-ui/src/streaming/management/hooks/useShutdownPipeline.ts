@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react'
 import { ClientPipelineStatus, usePipelineStateStore } from '../StatusContext'
-import { PipelinesService, CancelError, PipelineId } from 'src/types/manager'
+import { PipelinesService, ApiError, PipelineId } from 'src/types/manager'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { PipelineAction } from 'src/types/pipeline'
@@ -14,7 +14,7 @@ function useShutdownPipeline() {
   const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
   const setPipelineStatus = usePipelineStateStore(state => state.setStatus)
 
-  const { mutate: piplineAction, isLoading: pipelineActionLoading } = useMutation<string, CancelError, PipelineAction>({
+  const { mutate: piplineAction, isLoading: pipelineActionLoading } = useMutation<string, ApiError, PipelineAction>({
     mutationFn: (action: PipelineAction) => {
       return PipelinesService.pipelineAction(action.pipeline_id, action.command)
     }
@@ -25,6 +25,7 @@ function useShutdownPipeline() {
       if (
         !pipelineActionLoading &&
         (pipelineStatus.get(pipeline_id) == ClientPipelineStatus.PAUSED ||
+          pipelineStatus.get(pipeline_id) == ClientPipelineStatus.RUNNING ||
           pipelineStatus.get(pipeline_id) == ClientPipelineStatus.FAILED)
       ) {
         setPipelineStatus(pipeline_id, ClientPipelineStatus.SHUTTING_DOWN)
@@ -35,7 +36,7 @@ function useShutdownPipeline() {
               invalidatePipeline(queryClient, pipeline_id)
             },
             onError: error => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
               setPipelineStatus(pipeline_id, ClientPipelineStatus.PAUSED)
             }
           }

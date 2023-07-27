@@ -11,7 +11,7 @@ import Metadata from 'src/streaming/builder/Metadata'
 import { useBuilderState } from 'src/streaming/builder/useBuilderState'
 import {
   AttachedConnector,
-  CancelError,
+  ApiError,
   Pipeline,
   PipelineId,
   PipelinesService,
@@ -76,12 +76,12 @@ export const PipelineWithProvider = (props: {
 
   const { getNode, getEdges } = useReactFlow()
 
-  const { mutate: newPipelineMutate } = useMutation<NewPipelineResponse, CancelError, NewPipelineRequest>(
+  const { mutate: newPipelineMutate } = useMutation<NewPipelineResponse, ApiError, NewPipelineRequest>(
     PipelinesService.newPipeline
   )
   const { mutate: updatePipelineMutate } = useMutation<
     UpdatePipelineResponse,
-    CancelError,
+    ApiError,
     { pipeline_id: PipelineId; request: UpdatePipelineRequest }
   >({
     mutationFn: args => PipelinesService.updatePipeline(args.pipeline_id, args.request)
@@ -212,7 +212,6 @@ export const PipelineWithProvider = (props: {
 
     if (saveState === 'isModified') {
       setSaveState('isSaving')
-      console.log('update existing config')
 
       // Create a new pipeline
       if (pipelineId === undefined) {
@@ -224,8 +223,8 @@ export const PipelineWithProvider = (props: {
             config
           },
           {
-            onError: (error: CancelError) => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+            onError: (error: ApiError) => {
+              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
               setSaveState('isUpToDate')
               console.log('error', error)
             },
@@ -270,8 +269,8 @@ export const PipelineWithProvider = (props: {
               assert(pipelineId !== undefined)
               invalidatePipeline(queryClient, pipelineId)
             },
-            onError: (error: CancelError) => {
-              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+            onError: (error: ApiError) => {
+              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
               setSaveState('isUpToDate')
             },
             onSuccess: () => {

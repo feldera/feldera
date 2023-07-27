@@ -7,7 +7,7 @@
 import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
 import { parse } from 'csv-parse'
 import { Chunk, Relation } from 'src/types/manager'
-import { parseSqlType } from 'src/types/ddl'
+import { parseValueSafe } from 'src/types/ddl'
 import { readLineFromStream } from 'src/utils'
 
 function useQuantiles() {
@@ -69,7 +69,7 @@ function useQuantiles() {
                   const fields = row
                   const newRow = [] as any
                   relation.fields.forEach((col, i) => {
-                    newRow[i] = parseSqlType(col, fields[i])
+                    newRow[i] = parseValueSafe(col.columntype, fields[i])
                   })
                   return newRow
                 })

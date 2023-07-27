@@ -7,13 +7,12 @@ import { FieldValues, SubmitHandler } from 'react-hook-form'
 import {
   NewConnectorRequest,
   NewConnectorResponse,
-  CancelError,
+  ApiError,
   ConnectorsService,
   UpdateConnectorRequest,
   UpdateConnectorResponse,
   ConnectorDescr,
-  ConnectorId,
-  ApiError
+  ConnectorId
 } from 'src/types/manager'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 
@@ -29,7 +28,7 @@ export const ConnectorFormNewRequest = <TData extends FieldValues>(
 
   const { mutate: newConnector, isLoading: newIsLoading } = useMutation<
     NewConnectorResponse,
-    CancelError,
+    ApiError,
     NewConnectorRequest
   >(ConnectorsService.newConnector)
 
@@ -50,7 +49,7 @@ export const ConnectorFormNewRequest = <TData extends FieldValues>(
           })
         },
         onError: error => {
-          pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+          pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           onFormSubmitted(undefined)
         }
       })
@@ -97,7 +96,7 @@ export const ConnectorFormUpdateRequest = <TData extends FieldValues>(
             })
           },
           onError: error => {
-            pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+            pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
             onFormSubmitted(undefined)
           }
         }

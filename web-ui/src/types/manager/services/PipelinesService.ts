@@ -238,10 +238,16 @@ export class PipelinesService {
    * @param pipelineId Unique pipeline identifier.
    * @param tableName SQL table name.
    * @param format Input data format, e.g., 'csv' or 'json'.
+   * @param requestBody Contains the new input data in CSV.
    * @returns any Data successfully delivered to the pipeline.
    * @throws ApiError
    */
-  public static httpInput(pipelineId: string, tableName: string, format: string): CancelablePromise<any> {
+  public static httpInput(
+    pipelineId: string,
+    tableName: string,
+    format: string,
+    requestBody: string
+  ): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'POST',
       url: '/pipelines/{pipeline_id}/ingress/{table_name}',
@@ -252,6 +258,8 @@ export class PipelinesService {
       query: {
         format: format
       },
+      body: requestBody,
+      mediaType: 'text/csv',
       errors: {
         400: `Unknown data format specified in the '?format=' argument.`,
         404: `Pipeline is not currently running because it has been shutdown or not yet started.`,
