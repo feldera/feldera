@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.util.NameGen;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -48,16 +49,34 @@ public class TypeCompiler implements ICompilerComponent {
         return new DBSPTypeZSet(elementType.getNode(), elementType, weightType);
     }
 
-    public DBSPType convertType(RelDataType dt) {
+    private static final NameGen structNameGen = new NameGen("$");
+
+    /**
+     * Convert a Calcite RelDataType to an equivalent DBSP type.
+     * @param dt         Data type to convert.
+     * @param asStruct   If true convert a Struct type to a DBSPTypeStruct, otherwise
+     *                   convert it to a DBSPTypeTuple.
+     */
+    public DBSPType convertType(RelDataType dt, boolean asStruct) {
         CalciteObject node = new CalciteObject(dt);
         boolean nullable = dt.isNullable();
         if (dt.isStruct()) {
-            List<DBSPType> fields = new ArrayList<>();
-            for (RelDataTypeField field: dt.getFieldList()) {
-                DBSPType type = this.convertType(field.getType());
-                fields.add(type);
+            if (asStruct) {
+                List<DBSPTypeStruct.Field> fields = new ArrayList<>();
+                for (RelDataTypeField field : dt.getFieldList()) {
+                    DBSPType type = this.convertType(field.getType(), asStruct);
+                    fields.add(new DBSPTypeStruct.Field(new CalciteObject(dt), field.getName(), field.getName(), type));
+                }
+                String name = structNameGen.nextName();
+                return new DBSPTypeStruct(node, name, name, fields);
+            } else {
+                List<DBSPType> fields = new ArrayList<>();
+                for (RelDataTypeField field : dt.getFieldList()) {
+                    DBSPType type = this.convertType(field.getType(), asStruct);
+                    fields.add(type);
+                }
+                return new DBSPTypeTuple(node, fields);
             }
-            return new DBSPTypeTuple(node, fields);
         } else {
             SqlTypeName tn = dt.getSqlTypeName();
             switch (tn) {
@@ -112,7 +131,7 @@ public class TypeCompiler implements ICompilerComponent {
                     return DBSPTypeKeyword.INSTANCE;
                 case ARRAY: {
                     RelDataType ct = Objects.requireNonNull(dt.getComponentType());
-                    DBSPType elementType = this.convertType(ct);
+                    DBSPType elementType = this.convertType(ct, true);
                     return new DBSPTypeVec(elementType, dt.isNullable());
                 }
                 case UNKNOWN:

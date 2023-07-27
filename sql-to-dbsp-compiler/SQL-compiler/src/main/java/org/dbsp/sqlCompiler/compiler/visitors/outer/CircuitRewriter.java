@@ -24,6 +24,8 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
@@ -41,6 +43,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
@@ -51,7 +54,7 @@ import java.util.List;
  * and to every type within the operator.
  */
 public class CircuitRewriter extends CircuitCloneVisitor {
-    private final IRTransform transform;
+    public final IRTransform transform;
 
     public CircuitRewriter(IErrorReporter reporter, IRTransform transform) {
         super(reporter, false);
@@ -80,8 +83,6 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     // - DBSPIntegralOperator
     // - DBSPNegateOperator
     // - DBSPNoopOperator
-    // - DBSPSinkOperator
-    // - DBSPSourceOperator
     // - DBSPSubtractOperator
     // - DBSPSumOperator
     @Override
@@ -99,6 +100,34 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         } else {
             super.replace(operator);
         }
+    }
+
+    @Override
+    public void postorder(DBSPSourceOperator operator) {
+        DBSPTypeStruct originalRowType = this.transform(operator.originalRowType).to(DBSPTypeStruct.class);
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPOperator result = operator;
+        if (!originalRowType.sameType(operator.originalRowType)
+                || !outputType.sameType(operator.outputType)) {
+            result = new DBSPSourceOperator(operator.getNode(),
+                    outputType, originalRowType, operator.comment, operator.outputName);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPSinkOperator operator) {
+        DBSPOperator input = this.mapped(operator.input());
+        DBSPTypeStruct originalRowType = this.transform(operator.originalRowType).to(DBSPTypeStruct.class);
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPOperator result = operator;
+        if (!originalRowType.sameType(operator.originalRowType)
+                || !outputType.sameType(operator.outputType)
+                || input != operator.input()) {
+            result = new DBSPSinkOperator(operator.getNode(), operator.outputName, operator.query,
+                    originalRowType, operator.comment, input);
+        }
+        this.map(operator, result);
     }
 
     @Override

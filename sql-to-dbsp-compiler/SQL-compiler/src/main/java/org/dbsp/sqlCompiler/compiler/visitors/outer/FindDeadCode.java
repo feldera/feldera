@@ -52,7 +52,7 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
      * @param warn      If set warn about unused tables.
      */
     public FindDeadCode(IErrorReporter reporter, boolean warn) {
-        super(reporter, true);
+        super(reporter);
         this.warn = warn;
     }
 

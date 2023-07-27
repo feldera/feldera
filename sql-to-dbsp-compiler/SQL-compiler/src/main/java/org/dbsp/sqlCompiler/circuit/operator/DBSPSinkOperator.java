@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
@@ -35,13 +36,15 @@ import java.util.List;
 
 public class DBSPSinkOperator extends DBSPOperator {
     public final String query;
+    public final DBSPTypeStruct originalRowType;
 
     public DBSPSinkOperator(CalciteObject node,
-                            String outputName, String query,
+                            String outputName, String query, DBSPTypeStruct originalRowType,
                             @Nullable String comment, DBSPOperator input) {
         super(node, "inspect", null, input.outputType, input.isMultiset, comment, outputName);
         this.addInput(input);
         this.query = query;
+        this.originalRowType = originalRowType;
     }
 
     public DBSPOperator input() {
@@ -63,7 +66,8 @@ public class DBSPSinkOperator extends DBSPOperator {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSinkOperator(
-                    this.getNode(), this.outputName, this.query, this.comment, newInputs.get(0));
+                    this.getNode(), this.outputName, this.query, this.originalRowType,
+                    this.comment, newInputs.get(0));
         return this;
     }
 

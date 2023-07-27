@@ -34,8 +34,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
@@ -54,6 +56,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -242,12 +245,27 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPTypeStruct.Field field) {
+        this.push(field);
+        DBSPType type = this.transform(field.type);
+        DBSPTypeStruct.Field result = new DBSPTypeStruct.Field(
+                field.getNode(), field.name, field.sanitizedName, type);
+        this.pop(field);
+        this.map(field, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPTypeStruct type) {
         this.push(type);
-        List<DBSPTypeStruct.Field> fields = Linq.map(
-                type.args, f -> new DBSPTypeStruct.Field(f.getNode(), f.name, this.transform(f.type)));
+        List<DBSPTypeStruct.Field> fields = new ArrayList<>();
+        for (DBSPTypeStruct.Field f: type.fields.values()) {
+            f.accept(this);
+            DBSPTypeStruct.Field field = this.getResult().to(DBSPTypeStruct.Field.class);
+            fields.add(field);
+        }
         this.pop(type);
-        DBSPType result = new DBSPTypeStruct(type.getNode(), type.name, fields);
+        DBSPType result = new DBSPTypeStruct(type.getNode(), type.name, type.sanitizedName, fields);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -793,13 +811,13 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPStructExpression expression) {
+    public VisitDecision preorder(DBSPConstructorExpression expression) {
         this.push(expression);
         DBSPExpression function = this.transform(expression.function);
         DBSPExpression[] arguments = this.transform(expression.arguments);
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
-        DBSPExpression result = new DBSPStructExpression(function, type, arguments);
+        DBSPExpression result = new DBSPConstructorExpression(function, type, arguments);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -885,6 +903,16 @@ public abstract class InnerRewriteVisitor
         @Nullable DBSPExpression expression = this.transformN(item.expression);
         this.pop(item);
         DBSPConstItem result = new DBSPConstItem(item.name, type, expression);
+        this.map(item, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPStructItem item) {
+        this.push(item);
+        DBSPType type = this.transform(item.type);
+        this.pop(item);
+        DBSPItem result = new DBSPStructItem(type.to(DBSPTypeStruct.class));
         this.map(item, result);
         return VisitDecision.STOP;
     }

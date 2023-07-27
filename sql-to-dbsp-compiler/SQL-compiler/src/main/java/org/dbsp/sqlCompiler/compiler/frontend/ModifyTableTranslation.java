@@ -73,7 +73,7 @@ class ModifyTableTranslation implements ICompilerComponent {
         this.valuesTranslation = null;
         this.compiler = compiler;
         this.columnPermutation = null;
-        DBSPTypeTuple sourceType = tableDefinition.getRowType(this.compiler.getTypeCompiler());
+        DBSPTypeTuple sourceType = tableDefinition.getRowTypeAsTuple(this.compiler.getTypeCompiler());
         if (columnList != null) {
             // The column list specifies an order for the columns that are assigned,
             // which may not be the order of the columns in the table.  We need to

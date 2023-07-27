@@ -24,13 +24,16 @@
 package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Linq;
 
-import java.util.HashSet;
+import javax.annotation.Nullable;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 
@@ -38,11 +41,19 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STRUCT;
 
 public class DBSPTypeStruct extends DBSPType {
     public static class Field extends DBSPNode implements IHasType, IDBSPInnerNode {
+        /**
+         * Names coming from SQL may not be usable in Rust.
+         * The sanitized name is the one used in code generation.
+         * Initially names may not be "sane", but prior to code generation they
+         * have to be sanitized.
+         */
+        public final String sanitizedName;
         public final String name;
         public final DBSPType type;
 
-        public Field(CalciteObject node, String name, DBSPType type) {
+        public Field(CalciteObject node, String name, String sanitizedName, DBSPType type) {
             super(node);
+            this.sanitizedName = sanitizedName;
             this.name = name;
             this.type = type;
         }
@@ -66,12 +77,14 @@ public class DBSPTypeStruct extends DBSPType {
             if (o == null || getClass() != o.getClass()) return false;
             Field that = (Field) o;
             return this.name.equals(that.name) &&
+                    this.sanitizedName.equals(that.sanitizedName) &&
                     this.type.sameType(that.type);
         }
 
         @Override
         public void accept(InnerVisitor visitor) {
-            if (visitor.preorder(this).stop()) return;
+            VisitDecision decision = visitor.preorder(this);
+            if (decision.stop()) return;
             visitor.push(this);
             this.type.accept(visitor);
             visitor.pop(this);
@@ -84,6 +97,7 @@ public class DBSPTypeStruct extends DBSPType {
             if (o == null)
                 return false;
             return this.name.equals(o.name) &&
+                    this.sanitizedName.equals(o.sanitizedName) &&
                     this.type == o.type;
         }
 
@@ -97,17 +111,18 @@ public class DBSPTypeStruct extends DBSPType {
     }
 
     public final String name;
-    public final List<Field> args;
-    private final HashSet<String> fields = new HashSet<>();
+    public final String sanitizedName;
+    public final LinkedHashMap<String, Field> fields;
 
-    public DBSPTypeStruct(CalciteObject node, String name, List<Field> args) {
+    public DBSPTypeStruct(CalciteObject node, String name, String sanitizedName, List<Field> args) {
         super(node, STRUCT, false);
+        this.sanitizedName = sanitizedName;
         this.name = name;
-        this.args = args;
+        this.fields = new LinkedHashMap<>();
         for (Field f: args) {
             if (this.hasField(f.getName()))
                 this.error("Field name " + f + " is duplicated");
-            fields.add(f.getName());
+            this.fields.put(f.name, f);
         }
     }
 
@@ -121,10 +136,8 @@ public class DBSPTypeStruct extends DBSPType {
     }
 
     public boolean hasField(String fieldName) {
-        return this.fields.contains(fieldName);
+        return this.fields.containsKey(fieldName);
     }
-
-    public List<Field> getFields() { return this.args; }
 
     @Override
     public boolean sameType(DBSPType type) {
@@ -135,24 +148,45 @@ public class DBSPTypeStruct extends DBSPType {
         DBSPTypeStruct other = type.to(DBSPTypeStruct.class);
         if (!this.name.equals(other.name))
             return false;
-        if (this.args.size() != other.args.size())
+        if (!this.sanitizedName.equals(other.sanitizedName))
             return false;
-        for (int i = 0; i < this.args.size(); i++)
-            if (!this.args.get(i).equals(other.args.get(i)))
+        if (this.fields.size() != other.fields.size())
+            return false;
+        for (String name: this.fields.keySet()) {
+            Field otherField = other.getField(name);
+            if (otherField == null)
                 return false;
+            Field field = Objects.requireNonNull(this.getField(name));
+            if (!field.equals(otherField))
+                return false;
+        }
         return true;
+    }
+
+    @Nullable
+    public Field getField(String name) {
+        return this.fields.get(name);
+    }
+
+    public Field getExistingField(String name) {
+        return Objects.requireNonNull(this.fields.get(name));
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), this.name, this.fields.hashCode());
+        return Objects.hash(super.hashCode(), this.name, this.sanitizedName, this.fields.hashCode());
+    }
+
+    public DBSPType getFieldType(String fieldName) {
+        Field field = this.getExistingField(fieldName);
+        return field.type;
     }
 
     @Override
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        for (Field f: this.getFields())
+        for (Field f: this.fields.values())
             f.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
@@ -160,12 +194,24 @@ public class DBSPTypeStruct extends DBSPType {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("struct ")
-                .append(this.name)
+        builder.append("struct ")
+                .append(this.sanitizedName)
                 .append(" {")
-                .increase()
-                .intercalate(System.lineSeparator(), this.fields)
+                .increase();
+        for (DBSPTypeStruct.Field field: this.fields.values()) {
+            builder.append(field)
+                    .newline();
+        }
+        return builder
                 .decrease()
                 .append("}");
+    }
+
+    /**
+     * Generate a tuple type by ignoring the struct and field names.
+     */
+    public DBSPTypeTuple toTuple() {
+        List<DBSPType> types = Linq.list(Linq.map(this.fields.values(), f -> f.type));
+        return new DBSPTypeTuple(this.getNode(), types);
     }
 }

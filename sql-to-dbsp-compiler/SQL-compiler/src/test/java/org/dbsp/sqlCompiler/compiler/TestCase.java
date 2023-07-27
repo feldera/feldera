@@ -18,7 +18,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPStructExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
@@ -134,7 +134,7 @@ class TestCase {
         list.add(graphNodes);
 
         DBSPLetStatement demands = new DBSPLetStatement("demands",
-                new DBSPStructExpression(
+                new DBSPConstructorExpression(
                         DBSPTypeAny.INSTANCE.path(
                                 new DBSPPath("Demands", "new")),
                         DBSPTypeAny.INSTANCE), true);
@@ -144,7 +144,7 @@ class TestCase {
         for (JITSourceOperator source : tables) {
             String table = source.table;
             long index = source.id;
-            DBSPExpression nodeId = new DBSPStructExpression(
+            DBSPExpression nodeId = new DBSPConstructorExpression(
                     DBSPTypeAny.INSTANCE.path(
                             new DBSPPath("NodeId", "new")),
                     DBSPTypeAny.INSTANCE,
@@ -162,10 +162,10 @@ class TestCase {
             list.add(stat);
         }
 
-        DBSPExpression debug = new DBSPStructExpression(
+        DBSPExpression debug = new DBSPConstructorExpression(
                 DBSPTypeAny.INSTANCE.path(new DBSPPath("CodegenConfig", "debug")),
                 DBSPTypeAny.INSTANCE);
-        DBSPExpression allocateCircuit = new DBSPStructExpression(
+        DBSPExpression allocateCircuit = new DBSPConstructorExpression(
                 DBSPTypeAny.INSTANCE.path(new DBSPPath("DbspCircuit", "new")),
                 DBSPTypeAny.INSTANCE,
                 graph.getVarReference(),
@@ -214,7 +214,7 @@ class TestCase {
             for (JITSinkOperator sink : program.getSinks()) {
                 String view = sink.viewName;
                 DBSPZSetLiteral output = new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, pair.outputs[index]);
-                DBSPExpression sinkId = new DBSPStructExpression(
+                DBSPExpression sinkId = new DBSPConstructorExpression(
                         DBSPTypeAny.INSTANCE.path(
                                 new DBSPPath("NodeId", "new")),
                         DBSPTypeAny.INSTANCE,

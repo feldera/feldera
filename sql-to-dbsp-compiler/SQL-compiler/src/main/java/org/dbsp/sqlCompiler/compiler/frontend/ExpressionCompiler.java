@@ -111,7 +111,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     public DBSPExpression visitLiteral(RexLiteral literal) {
         CalciteObject node = new CalciteObject(literal);
         try {
-            DBSPType type = this.typeCompiler.convertType(literal.getType());
+            DBSPType type = this.typeCompiler.convertType(literal.getType(), true);
             if (literal.isNull())
                 return DBSPLiteral.none(type);
             if (type.is(DBSPTypeInteger.class)) {
@@ -438,7 +438,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             call = (RexCall)RexUtil.expandSearch(this.rexBuilder, null, call);
         }
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));
-        DBSPType type = this.typeCompiler.convertType(call.getType());
+        DBSPType type = this.typeCompiler.convertType(call.getType(), false);
         switch (call.op.kind) {
             case TIMES:
                 return makeBinaryExpression(node, type, DBSPOpcode.MUL, ops);

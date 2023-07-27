@@ -27,11 +27,13 @@ import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
@@ -54,29 +56,73 @@ public class ToRustHandleVisitor extends ToRustVisitor {
     private final String functionName;
     int inputHandleIndex = 0;
 
+    /**
+     * @param reporter      Used to report errors.
+     * @param builder       Output is constructed here.
+     * @param functionName  Name of generated function.
+     */
     public ToRustHandleVisitor(IErrorReporter reporter, IndentStream builder, String functionName) {
         super(reporter, builder);
         this.functionName = functionName;
     }
 
+    void generateFromTrait(DBSPTypeStruct type) {
+        DBSPTypeTuple tuple = type.toTuple();
+        this.builder.append("impl From<")
+                .append(type.sanitizedName)
+                .append("> for ");
+        tuple.accept(this.innerVisitor);
+        this.builder.append(" {")
+                .increase()
+                .append("fn from(table: ")
+                .append(type.sanitizedName)
+                .append(") -> Self");
+        this.builder.append(" {")
+                .increase()
+                .append(tuple.getName())
+                .append("::new(");
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            this.builder.append("table.")
+                    .append(field.sanitizedName)
+                    .append(",");
+        }
+        this.builder.append(")").newline();
+        this.builder.decrease()
+                .append("}")
+                .newline()
+                .decrease()
+                .append("}")
+                .newline();
+    }
+
     @Override
     public VisitDecision preorder(DBSPSourceOperator operator) {
+        DBSPTypeStruct type = operator.originalRowType;
+        DBSPStructItem item = new DBSPStructItem(type);
+        item.accept(this.innerVisitor);
+        this.generateFromTrait(type);
+
         this.writeComments(operator)
                 .append("let (")
                 .append(operator.outputName)
                 .append(", handle")
                 .append(this.inputHandleIndex++)
                 .append(") = circuit.add_input_zset::<");
-        DBSPTypeZSet type = operator.getType().to(DBSPTypeZSet.class);
-        type.elementType.accept(this.innerVisitor);
+
+        DBSPTypeZSet zsetType = operator.getType().to(DBSPTypeZSet.class);
+        zsetType.elementType.accept(this.innerVisitor);
         this.builder.append(", ");
-        type.weightType.accept(this.innerVisitor);
+        zsetType.weightType.accept(this.innerVisitor);
         this.builder.append(">();");
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPSinkOperator operator) {
+        DBSPTypeStruct type = operator.originalRowType;
+        DBSPStructItem item = new DBSPStructItem(type);
+        item.accept(this.innerVisitor);
+        this.generateFromTrait(type);
         return VisitDecision.STOP;
     }
 
@@ -103,8 +149,10 @@ public class ToRustHandleVisitor extends ToRustVisitor {
 
         // Register input streams in the catalog.
         int index = 0;
-        for (DBSPOperator i : circuit.inputOperators) {
-            this.builder.append("catalog.register_input_zset(")
+        for (DBSPSourceOperator i : circuit.inputOperators) {
+            this.builder.append("catalog.register_input_zset::<_, ");
+            i.originalRowType.accept(this.innerVisitor);
+            this.builder.append(">(")
                     .append(Utilities.doubleQuote(i.getName()))
                     .append(", ")
                     .append(i.outputName)
@@ -116,7 +164,9 @@ public class ToRustHandleVisitor extends ToRustVisitor {
 
         // Register output streams in the catalog.
         for (DBSPSinkOperator o : circuit.outputOperators) {
-            this.builder.append("catalog.register_output_zset(")
+            this.builder.append("catalog.register_output_zset::<_, ");
+            o.originalRowType.accept(this.innerVisitor);
+            this.builder.append(">(")
                     .append(Utilities.doubleQuote(o.getName()))
                     .append(", ")
                     .append(o.input().getName())
@@ -139,7 +189,8 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         return VisitDecision.STOP;
     }
 
-    public static String toRustString(IErrorReporter reporter, IDBSPOuterNode node, String functionName) {
+    public static String toRustString(
+            IErrorReporter reporter, IDBSPOuterNode node, String functionName) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
         ToRustVisitor visitor = new ToRustHandleVisitor(reporter, stream, functionName);

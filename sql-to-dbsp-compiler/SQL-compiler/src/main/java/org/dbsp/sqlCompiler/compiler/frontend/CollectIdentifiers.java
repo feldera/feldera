@@ -101,7 +101,7 @@ public class CollectIdentifiers extends InnerVisitor {
         @Override
         public VisitDecision preorder(DBSPOperator operator) {
             this.identifiers.add(operator.outputName);
-            return VisitDecision.STOP;
+            return super.preorder(operator);
         }
     }
 
@@ -110,7 +110,7 @@ public class CollectIdentifiers extends InnerVisitor {
      * and its functions.
      */
     @Override
-    public CircuitVisitor getCircuitVisitor() {
+    public CircuitRewriter getCircuitVisitor() {
         return new OuterCollectIdentifiers(this.errorReporter, this.used, this);
     }
 }

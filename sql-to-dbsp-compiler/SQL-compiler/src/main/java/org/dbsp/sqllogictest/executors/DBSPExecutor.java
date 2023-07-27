@@ -437,7 +437,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         list.add(graphNodes);
 
         DBSPLetStatement demands = new DBSPLetStatement("demands",
-                new DBSPStructExpression(
+                new DBSPConstructorExpression(
                         DBSPTypeAny.INSTANCE.path(
                                 new DBSPPath("Demands", "new")),
                         DBSPTypeAny.INSTANCE), true);
@@ -447,7 +447,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         for (JITSourceOperator source : tables) {
             String table = source.table;
             long index = source.id;
-            DBSPExpression nodeId = new DBSPStructExpression(
+            DBSPExpression nodeId = new DBSPConstructorExpression(
                     DBSPTypeAny.INSTANCE.path(
                             new DBSPPath("NodeId", "new")),
                     DBSPTypeAny.INSTANCE,
@@ -465,10 +465,10 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             list.add(stat);
         }
 
-        DBSPExpression debug = new DBSPStructExpression(
+        DBSPExpression debug = new DBSPConstructorExpression(
                 DBSPTypeAny.INSTANCE.path(new DBSPPath("CodegenConfig", "debug")),
                 DBSPTypeAny.INSTANCE);
-        DBSPExpression allocateCircuit = new DBSPStructExpression(
+        DBSPExpression allocateCircuit = new DBSPConstructorExpression(
                 DBSPTypeAny.INSTANCE.path(new DBSPPath("DbspCircuit", "new")),
                 DBSPTypeAny.INSTANCE,
                 graph.getVarReference(),

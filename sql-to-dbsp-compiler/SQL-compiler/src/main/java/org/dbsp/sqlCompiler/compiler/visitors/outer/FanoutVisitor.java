@@ -15,7 +15,7 @@ public class FanoutVisitor extends CircuitVisitor {
     final Map<DBSPOperator, Integer> fanout = new HashMap<>();
 
     public FanoutVisitor(IErrorReporter errorReporter) {
-        super(errorReporter, true);
+        super(errorReporter);
     }
 
     void reference(DBSPOperator node) {

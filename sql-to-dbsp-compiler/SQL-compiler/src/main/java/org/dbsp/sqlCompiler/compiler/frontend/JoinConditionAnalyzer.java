@@ -174,8 +174,8 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
                     this.result.setLeftOver(call);
                     return null;
                 }
-                DBSPType leftType = this.typeCompiler.convertType(left.getType());
-                DBSPType rightType = this.typeCompiler.convertType(right.getType());
+                DBSPType leftType = this.typeCompiler.convertType(left.getType(), true);
+                DBSPType rightType = this.typeCompiler.convertType(right.getType(), true);
                 DBSPType resultType = ExpressionCompiler.reduceType(leftType, rightType).setMayBeNull(false);
                 if (leftIsLeft) {
                     this.result.addEquality(left, right, resultType);

@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.SanitizeNames;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -8,7 +9,6 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeSemigroup;
@@ -34,8 +34,17 @@ public class RustFileWriter implements ICompilerComponent {
     final PrintStream outputStream;
     boolean emitHandles = false;
 
+    /**
+     * Various visitors gather here information about the program prior to generating code.
+     */
     static class StructuresUsed {
+        /**
+         * The set of all tuple sizes used in the program.
+         */
         final Set<Integer> tupleSizesUsed = new HashSet<>();
+        /**
+         * The set of all semigroup sizes used.
+         */
         final Set<Integer> semigroupSizesUsed = new HashSet<>();
     }
     final StructuresUsed used = new StructuresUsed();
@@ -59,15 +68,6 @@ public class RustFileWriter implements ICompilerComponent {
             RustFileWriter.this.used.semigroupSizesUsed.add(type.semigroupSize());
         }
     }
-
-    /**
-     * Find resources used.
-     */
-    final FindResources finder;
-    final CircuitVisitor findInCircuit;
-    final LowerCircuitVisitor lower;
-    final BetaReduction reducer;
-    final CircuitRewriter circuitReducer;
 
     /**
      * If this is called with 'true' the emitted Rust code will use handles
@@ -194,12 +194,6 @@ public class RustFileWriter implements ICompilerComponent {
         this.compiler = compiler;
         this.toWrite = new ArrayList<>();
         this.outputStream = outputStream;
-
-        this.finder = new FindResources(compiler);
-        this.findInCircuit = this.finder.getCircuitVisitor();
-        this.lower = new LowerCircuitVisitor(compiler);
-        this.reducer = new BetaReduction(compiler);
-        this.circuitReducer = reducer.circuitRewriter();
     }
 
     public RustFileWriter(DBSPCompiler compiler, String outputFile)
@@ -212,7 +206,7 @@ public class RustFileWriter implements ICompilerComponent {
         return this.compiler;
     }
 
-    static void generateStructures(StructuresUsed used, IndentStream stream) {
+    void generateStructures(StructuresUsed used, IndentStream stream) {
         /*
         #[derive(Clone)]
         pub struct Semigroup2<T0, T1, TS0, TS1>(PhantomData<(T0, T1, TS0, TS1)>);
@@ -315,7 +309,7 @@ public class RustFileWriter implements ICompilerComponent {
                     .append(this.getCompiler().getWeightTypeImplementation().toString())
                     .append(";")
                     .newline();
-            generateStructures(used, stream);
+            this.generateStructures(used, stream);
         }
         return stream.toString();
     }
@@ -336,20 +330,28 @@ public class RustFileWriter implements ICompilerComponent {
 
     public void write() {
         // Lower the circuits
+        CircuitRewriter reducer = new BetaReduction(this.compiler).getCircuitVisitor();
         List<IDBSPNode> lowered = new ArrayList<>();
+        FindResources findResources = new FindResources(this.compiler);
+        CircuitRewriter findCircuitResources = findResources.getCircuitVisitor();
+        LowerCircuitVisitor lower = new LowerCircuitVisitor(this.compiler);
+        SanitizeNames sanitizer = new SanitizeNames(this.compiler);
+
         for (IDBSPNode node: this.toWrite) {
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {
-                inner.accept(this.finder);
+                inner.accept(findResources);
                 lowered.add(inner);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
                 // Lowering implements aggregates and inlines some calls.
-                outer = this.lower.apply(outer);
+                outer = lower.apply(outer);
                 // Beta reduction is beneficial after implementing aggregates.
-                outer = this.circuitReducer.apply(outer);
+                outer = reducer.apply(outer);
+                // Sanitize structure names
+                outer = sanitizer.apply(outer);
                 // Find the resources used to generate the correct Rust preamble
-                this.findInCircuit.apply(outer);
+                outer = findCircuitResources.apply(outer);
                 lowered.add(outer);
             }
         }
