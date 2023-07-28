@@ -13,9 +13,11 @@ T = TypeVar("T", bound="Relation")
 class Relation:
     """A SQL table or view. It has a name and a list of fields.
 
-    Attributes:
-        fields (List['Field']):
-        name (str):
+    Matches the Calcite JSON format.
+
+        Attributes:
+            fields (List['Field']):
+            name (str):
     """
 
     fields: List["Field"]
