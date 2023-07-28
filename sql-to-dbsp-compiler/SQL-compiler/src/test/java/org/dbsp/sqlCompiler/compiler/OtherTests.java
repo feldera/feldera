@@ -70,7 +70,6 @@ import org.junit.Test;
 import javax.imageio.ImageIO;
 import javax.sql.DataSource;
 import java.io.*;
-import java.nio.file.Files;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -408,23 +407,71 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "CREATE TABLE T (\n" +
                         "COL1 INT NOT NULL" +
                         ", COL2 DOUBLE NOT NULL" +
+                        ", COL3 VARCHAR(3)" +
+                        ", COL4 VARCHAR(3) ARRAY" +
                         ")",
                 "CREATE VIEW V AS SELECT COL1 FROM T"
         };
         File file = this.createInputScript(statements);
         File json = File.createTempFile("out", ".json", new File("."));
+        json.deleteOnExit();
         File tmp = File.createTempFile("out", ".rs", new File("."));
+        tmp.deleteOnExit();
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
         Assert.assertEquals(message.exitCode, 0);
         ObjectMapper mapper = new ObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
+        String jsonContents  = Utilities.readFile(json.toPath());
+        System.out.println(jsonContents);
+        Assert.assertEquals("{\n" +
+                "  \"inputs\" : [ {\n" +
+                "    \"name\" : \"T\",\n" +
+                "    \"fields\" : [ {\n" +
+                "      \"name\" : \"COL1\",\n" +
+                "      \"columntype\" : {\n" +
+                "        \"type\" : \"INTEGER\",\n" +
+                "        \"nullable\" : false\n" +
+                "      }\n" +
+                "    }, {\n" +
+                "      \"name\" : \"COL2\",\n" +
+                "      \"columntype\" : {\n" +
+                "        \"type\" : \"DOUBLE\",\n" +
+                "        \"nullable\" : false\n" +
+                "      }\n" +
+                "    }, {\n" +
+                "      \"name\" : \"COL3\",\n" +
+                "      \"columntype\" : {\n" +
+                "        \"type\" : \"VARCHAR\",\n" +
+                "        \"nullable\" : true,\n" +
+                "        \"precision\" : 3\n" +
+                "      }\n" +
+                "    }, {\n" +
+                "      \"name\" : \"COL4\",\n" +
+                "      \"columntype\" : {\n" +
+                "        \"type\" : \"ARRAY\",\n" +
+                "        \"nullable\" : true,\n" +
+                "        \"component\" : {\n" +
+                "          \"type\" : \"VARCHAR\",\n" +
+                "          \"nullable\" : false,\n" +
+                "          \"precision\" : 3\n" +
+                "        }\n" +
+                "      }\n" +
+                "    } ]\n" +
+                "  } ],\n" +
+                "  \"outputs\" : [ {\n" +
+                "    \"name\" : \"V\",\n" +
+                "    \"fields\" : [ {\n" +
+                "      \"name\" : \"COL1\",\n" +
+                "      \"columntype\" : {\n" +
+                "        \"type\" : \"INTEGER\",\n" +
+                "        \"nullable\" : false\n" +
+                "      }\n" +
+                "    } ]\n" +
+                "  } ]\n" +
+                "}", jsonContents);
         boolean success = file.delete();
-        Assert.assertTrue(success);
-        success = json.delete();
-        Assert.assertTrue(success);
-        success = tmp.delete();
         Assert.assertTrue(success);
     }
 
@@ -453,8 +500,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
-        String jsonContents  = String.join("\n", Files.readAllLines(json.toPath()));
-        System.out.println(jsonContents);
+        String jsonContents  = Utilities.readFile(json.toPath());
         Assert.assertTrue(jsonContents.contains("MYTABLE"));  // checks case sensitivity
         Assert.assertTrue(jsonContents.contains("COL1"));
         Assert.assertTrue(jsonContents.contains("yourtable"));

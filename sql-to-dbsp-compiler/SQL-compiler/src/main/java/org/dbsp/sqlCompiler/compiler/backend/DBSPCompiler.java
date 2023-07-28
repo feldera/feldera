@@ -213,7 +213,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             if (many) {
                 SqlNodeList nodes = this.frontend.parseStatements(statements);
                 for (SqlNode node : nodes) {
-                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, null, this.inputs, this.outputs);
+                    FrontEndStatement fe = this.frontend.compile(
+                            node.toString(), node, null, this.inputs, this.outputs);
                     this.midend.compile(fe);
                 }
             } else {
@@ -223,7 +224,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         .newline()
                         .append(node.toString())
                         .newline();
-                FrontEndStatement fe = this.frontend.compile(statements, node, comment, this.inputs, this.outputs);
+                FrontEndStatement fe = this.frontend.compile(
+                        statements, node, comment, this.inputs, this.outputs);
                 this.midend.compile(fe);
             }
         } catch (SqlParseException e) {

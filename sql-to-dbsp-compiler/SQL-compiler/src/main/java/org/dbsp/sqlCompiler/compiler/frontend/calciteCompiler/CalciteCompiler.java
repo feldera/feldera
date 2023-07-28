@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.*;
@@ -553,7 +554,7 @@ public class CalciteCompiler implements IWritesLogs {
             SqlNode node,
             @Nullable String comment,
             @Nullable ArrayNode inputs,
-            @Nullable ArrayNode outputs) {
+            @Nullable ArrayNode outputs) throws JsonProcessingException {
         CalciteObject object = new CalciteObject(node);
         if (SqlKind.DDL.contains(node.getKind())) {
             if (node.getKind().equals(SqlKind.DROP_TABLE)) {

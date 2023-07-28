@@ -23,12 +23,14 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.linq4j.Enumerable;
+import org.apache.calcite.rel.externalize.RelJson;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
@@ -36,6 +38,7 @@ import org.apache.calcite.schema.ScannableTable;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.util.JsonBuilder;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
@@ -114,7 +117,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
                 '}';
     }
 
-    public JsonNode getDefinedObjectSchema() {
+    public JsonNode getDefinedObjectSchema() throws JsonProcessingException {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode result = mapper.createObjectNode();
         result.put("name", this.tableName);
@@ -122,8 +125,12 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         for (RelDataTypeField col: this.columns) {
             ObjectNode column = fields.addObject();
             column.put("name", col.getName());
-            column.put("type", col.getType().toString());
-            column.put("nullable", col.getType().isNullable());
+            Object object = RelJson.create().withJsonBuilder(new JsonBuilder())
+                    .toJson(col.getType());
+            // Is there a better way to do this?
+            String json = mapper.writeValueAsString(object);
+            JsonNode repr = mapper.readTree(json);
+            column.set("columntype", repr);
         }
         return result;
     }
