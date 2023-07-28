@@ -136,6 +136,7 @@ request is rejected."
         list_pipelines,
         pipeline_stats,
         get_pipeline,
+        get_pipeline_config,
         pipeline_validate,
         pipeline_action,
         pipeline_deployed,
