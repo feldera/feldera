@@ -293,7 +293,7 @@ build-manager:
         SAVE ARTIFACT --keep-ts ./target/release/dbsp_pipeline_manager dbsp_pipeline_manager
     END
 
-test-sql:
+build-sql:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
@@ -310,9 +310,16 @@ test-sql:
     CACHE /root/.m2
 
     COPY sql-to-dbsp-compiler sql-to-dbsp-compiler
-    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package
+    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package -DskipTests
     SAVE ARTIFACT sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies.jar
     SAVE ARTIFACT sql-to-dbsp-compiler
+
+test-sql:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
+
+    FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package
 
 install-docs-deps:
     FROM +install-deps
@@ -438,10 +445,9 @@ python-bindings-checker:
 
     RUN pip3 install openapi-python-client==0.15.0 && openapi-python-client --version
     COPY +build-manager/dbsp_pipeline_manager .
-    COPY +test-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
     COPY python/dbsp-api-client dbsp-api-client-base
 
-    # This line will fail if the pytdochon bindings need to be regenerated
+    # This line will fail if the python bindings need to be regenerated
     RUN mkdir checker
     RUN cd checker && ../dbsp_pipeline_manager --dump-openapi &&  \
         openapi-python-client generate --path openapi.json --fail-on-warning && \
@@ -461,7 +467,7 @@ test-python:
     COPY +install-python/bin /root/.local/bin
 
     COPY +build-manager/dbsp_pipeline_manager .
-    COPY +test-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
+    COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
 
     COPY demo/demo_notebooks demo/demo_notebooks
     COPY python/test.py python/test.py
@@ -501,7 +507,7 @@ build-dbsp-manager-container:
     # First, copy over the artifacts built from previous stages
     RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
     COPY +build-manager/dbsp_pipeline_manager .
-    COPY +test-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
+    COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
 
     # Then copy over the crates needed by the sql compiler
     COPY crates/dbsp database-stream-processor/crates/dbsp
@@ -540,7 +546,7 @@ test-docker-compose:
                 --pull docker.redpanda.com/vectorized/redpanda:v23.1.13 \
                 --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
                 --load ghcr.io/feldera/demo-container=+build-demo-container
-        RUN SECOPS_DEMO_ARGS="--prepare-args 500000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
+        RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 500000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
 # Fetches the test binary from test-manager, and produces a container image out of it
