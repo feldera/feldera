@@ -8,7 +8,8 @@ use crate::{
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use dbsp_adapters::{
-    ErrorResponse, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
+    ConnectorConfig, ErrorResponse, InputEndpointConfig, OutputEndpointConfig, OutputQuery,
+    PipelineConfig, RuntimeConfig,
 };
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use futures_util::TryFutureExt;
@@ -609,7 +610,7 @@ impl PipelineRevision {
             .filter(|ac| ac.is_input)
             .cloned()
             .collect();
-        // Sort output attached connectors
+        // output attached connectors
         let outputs: Vec<AttachedConnector> = pipeline
             .attached_connectors
             .iter()
@@ -620,17 +621,38 @@ impl PipelineRevision {
         // Expand input and output attached connectors
         let mut expanded_inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
         for ac in inputs.iter() {
-            let expanded = Self::generate_expanded_connector_config(connectors, ac)?;
-            let input_endpoint_config: InputEndpointConfig =
-                serde_yaml::from_str(&expanded).unwrap();
+            let connector = connectors
+                .iter()
+                .find(|c| ac.connector_id == c.connector_id);
+            if connector.is_none() {
+                return Err(DBError::UnknownConnector {
+                    connector_id: ac.connector_id,
+                });
+            }
+            let input_endpoint_config = InputEndpointConfig {
+                stream: Cow::from(ac.relation_name.clone()),
+                connector_config: connector.unwrap().config.clone(),
+            };
             expanded_inputs.insert(Cow::from(ac.name.clone()), input_endpoint_config);
         }
         let mut expanded_outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig> =
             BTreeMap::new();
         for ac in outputs.iter() {
-            let expanded = Self::generate_expanded_connector_config(connectors, ac)?;
-            let output_endpoint_config: OutputEndpointConfig =
-                serde_yaml::from_str(&expanded).unwrap();
+            let connector = connectors
+                .iter()
+                .find(|c| ac.connector_id == c.connector_id);
+            if connector.is_none() {
+                return Err(DBError::UnknownConnector {
+                    connector_id: ac.connector_id,
+                });
+            }
+            let output_endpoint_config = OutputEndpointConfig {
+                stream: Cow::from(ac.relation_name.clone()),
+                // This field gets skipped during serialization/deserialization,
+                // so it doesn't matter what value we use here
+                query: OutputQuery::default(),
+                connector_config: connector.unwrap().config.clone(),
+            };
             expanded_outputs.insert(Cow::from(ac.name.clone()), output_endpoint_config);
         }
 
@@ -640,31 +662,11 @@ impl PipelineRevision {
                 .config
                 .clone()
                 .unwrap_or_else(|| serde_yaml::from_str("").unwrap()),
-            inputs: expanded_inputs.clone(),
-            outputs: expanded_outputs.clone(),
+            inputs: expanded_inputs,
+            outputs: expanded_outputs,
         };
 
         Ok(pc)
-    }
-
-    // Temporary measure while Connector configs are still plain strings
-    fn generate_expanded_connector_config(
-        connectors: &[ConnectorDescr],
-        ac: &AttachedConnector,
-    ) -> Result<String, DBError> {
-        let connector = connectors
-            .iter()
-            .find(|c| ac.connector_id == c.connector_id);
-
-        if let Some(connector) = connector {
-            let mut config = format!("stream: {}\n", ac.relation_name);
-            config.push_str(&connector.config);
-            Ok(config)
-        } else {
-            Err(DBError::UnknownConnector {
-                connector_id: ac.connector_id,
-            })
-        }
     }
 }
 
@@ -771,7 +773,7 @@ pub(crate) struct ConnectorDescr {
     pub connector_id: ConnectorId,
     pub name: String,
     pub description: String,
-    pub config: String,
+    pub config: ConnectorConfig,
 }
 
 /// Permission types for invoking pipeline manager APIs
@@ -1744,15 +1746,15 @@ impl Storage for ProjectDB {
         id: Uuid,
         name: &str,
         description: &str,
-        config: &str,
+        config: &ConnectorConfig,
     ) -> Result<ConnectorId, DBError> {
-        debug!("new_connector {name} {description} {config}");
+        debug!("new_connector {name} {description} {config:?}");
         self.pool
             .get()
             .await?
             .execute(
                 "INSERT INTO connector (id, name, description, config, tenant_id) VALUES($1, $2, $3, $4, $5)",
-                &[&id, &name, &description, &config, &tenant_id.0],
+                &[&id, &name, &description, &config.to_yaml(), &tenant_id.0],
             )
             .await
             .map_err(ProjectDB::maybe_unique_violation)
@@ -1778,7 +1780,7 @@ impl Storage for ProjectDB {
                 connector_id: ConnectorId(row.get(0)),
                 name: row.get(1),
                 description: row.get(2),
-                config: row.get(3),
+                config: ConnectorConfig::from_yaml_str(row.get(3)),
             });
         }
 
@@ -1803,7 +1805,7 @@ impl Storage for ProjectDB {
         if let Some(row) = row {
             let connector_id: ConnectorId = ConnectorId(row.get(0));
             let description: String = row.get(1);
-            let config: String = row.get(2);
+            let config = ConnectorConfig::from_yaml_str(row.get(2));
 
             Ok(ConnectorDescr {
                 connector_id,
@@ -1835,6 +1837,7 @@ impl Storage for ProjectDB {
             let name: String = row.get(0);
             let description: String = row.get(1);
             let config: String = row.get(2);
+            let config = ConnectorConfig::from_yaml_str(&config);
 
             Ok(ConnectorDescr {
                 connector_id,
@@ -1853,7 +1856,7 @@ impl Storage for ProjectDB {
         connector_id: ConnectorId,
         connector_name: &str,
         description: &str,
-        config: &Option<String>,
+        config: &Option<ConnectorConfig>,
     ) -> Result<(), DBError> {
         let descr = self.get_connector_by_id(tenant_id, connector_id).await?;
         let config = config.clone().unwrap_or(descr.config);
@@ -1866,7 +1869,7 @@ impl Storage for ProjectDB {
                 &[
                     &connector_name,
                     &description,
-                    &config.as_str(),
+                    &config.to_yaml(),
                     &connector_id.0,
                 ],
             )
@@ -2376,7 +2379,7 @@ impl ProjectDB {
                 let connector_id = ConnectorId(row.get(0));
                 let name = row.get(1);
                 let description = row.get(2);
-                let config = row.get(3);
+                let config = ConnectorConfig::from_yaml_str(row.get(3));
 
                 ConnectorDescr {
                     connector_id,
@@ -2414,7 +2417,7 @@ impl ProjectDB {
                 let connector_id = ConnectorId(row.get(0));
                 let name = row.get(1);
                 let description = row.get(2);
-                let config = row.get(3);
+                let config = ConnectorConfig::from_yaml_str(row.get(3));
 
                 ConnectorDescr {
                     connector_id,

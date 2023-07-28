@@ -314,7 +314,7 @@ impl ControllerStatus {
 
         let max_buffered_records = match self.inputs.read().unwrap().get(endpoint_id) {
             None => return false,
-            Some(endpoint) => endpoint.config.max_buffered_records,
+            Some(endpoint) => endpoint.config.connector_config.max_buffered_records,
         };
 
         buffered_records >= max_buffered_records
@@ -366,8 +366,8 @@ impl ControllerStatus {
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
             let old = endpoint_stats.add_buffered(num_bytes, num_records);
 
-            if old < endpoint_stats.config.max_buffered_records
-                && old + num_records >= endpoint_stats.config.max_buffered_records
+            if old < endpoint_stats.config.connector_config.max_buffered_records
+                && old + num_records >= endpoint_stats.config.connector_config.max_buffered_records
             {
                 backpressure_thread_unparker.unpark();
             }
@@ -429,8 +429,9 @@ impl ControllerStatus {
     ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             let old = endpoint_stats.output_batch(total_processed_records, num_records);
-            if old - (num_records as u64) <= endpoint_stats.config.max_buffered_records
-                && old >= endpoint_stats.config.max_buffered_records
+            if old - (num_records as u64)
+                <= endpoint_stats.config.connector_config.max_buffered_records
+                && old >= endpoint_stats.config.connector_config.max_buffered_records
             {
                 circuit_thread_unparker.unpark();
             }
@@ -449,7 +450,7 @@ impl ControllerStatus {
                 .metrics
                 .buffered_records
                 .load(Ordering::Acquire);
-            num_buffered_records >= endpoint_stats.config.max_buffered_records
+            num_buffered_records >= endpoint_stats.config.connector_config.max_buffered_records
         })
     }
 

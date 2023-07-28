@@ -87,14 +87,23 @@ impl RuntimeConfig {
     }
 }
 
+/// Describes an input connector configuration
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct InputEndpointConfig {
-    /// Transport endpoint configuration.
-    pub transport: TransportConfig,
-
     /// The name of the input stream of the circuit that this endpoint is
     /// connected to.
     pub stream: Cow<'static, str>,
+
+    /// Connector configuration.
+    #[serde(flatten)]
+    pub connector_config: ConnectorConfig,
+}
+
+/// A data connector's configuration
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ConnectorConfig {
+    /// Transport endpoint configuration.
+    pub transport: TransportConfig,
 
     /// Parser configuration.
     pub format: FormatConfig,
@@ -112,6 +121,17 @@ pub struct InputEndpointConfig {
     pub max_buffered_records: u64,
 }
 
+impl ConnectorConfig {
+    pub fn from_yaml_str(s: &str) -> Self {
+        serde_yaml::from_str(s).unwrap()
+    }
+
+    pub fn to_yaml(&self) -> String {
+        serde_yaml::to_string(&self).unwrap()
+    }
+}
+
+/// Describes an output connector configuration
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct OutputEndpointConfig {
     /// The name of the output stream of the circuit that this endpoint is
@@ -122,17 +142,9 @@ pub struct OutputEndpointConfig {
     #[serde(skip)]
     pub query: OutputQuery,
 
-    /// Transport endpoint configuration.
-    pub transport: TransportConfig,
-
-    /// Encoder configuration.
-    pub format: FormatConfig,
-
-    /// Backpressure threshold.
-    ///
-    /// The default is 1 million.
-    #[serde(default = "default_max_buffered_records")]
-    pub max_buffered_records: u64,
+    /// Connector configuration.
+    #[serde(flatten)]
+    pub connector_config: ConnectorConfig,
 }
 
 /// Transport endpoint configuration.

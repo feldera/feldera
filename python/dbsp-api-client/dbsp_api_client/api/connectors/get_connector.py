@@ -5,33 +5,35 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.new_connector_request import NewConnectorRequest
-from ...models.new_connector_response import NewConnectorResponse
+from ...models.connector_descr import ConnectorDescr
+from ...models.error_response import ErrorResponse
 from ...types import Response
 
 
 def _get_kwargs(
-    *,
-    json_body: NewConnectorRequest,
+    connector_id: str,
 ) -> Dict[str, Any]:
     pass
 
-    json_json_body = json_body.to_dict()
-
     return {
-        "method": "post",
-        "url": "/connectors",
-        "json": json_json_body,
+        "method": "get",
+        "url": "/connectors/{connector_id}".format(
+            connector_id=connector_id,
+        ),
     }
 
 
 def _parse_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Optional[NewConnectorResponse]:
+) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
     if response.status_code == HTTPStatus.OK:
-        response_200 = NewConnectorResponse.from_dict(response.json())
+        response_200 = ConnectorDescr.from_dict(response.json())
 
         return response_200
+    if response.status_code == HTTPStatus.BAD_REQUEST:
+        response_400 = ErrorResponse.from_dict(response.json())
+
+        return response_400
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -40,7 +42,7 @@ def _parse_response(
 
 def _build_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Response[NewConnectorResponse]:
+) -> Response[Union[ConnectorDescr, ErrorResponse]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -50,27 +52,27 @@ def _build_response(
 
 
 def sync_detailed(
+    connector_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: NewConnectorRequest,
-) -> Response[NewConnectorResponse]:
-    """Create a new connector configuration.
+) -> Response[Union[ConnectorDescr, ErrorResponse]]:
+    """Fetch a connector by ID.
 
-     Create a new connector configuration.
+     Fetch a connector by ID.
 
     Args:
-        json_body (NewConnectorRequest): Request to create a new connector.
+        connector_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[NewConnectorResponse]
+        Response[Union[ConnectorDescr, ErrorResponse]]
     """
 
     kwargs = _get_kwargs(
-        json_body=json_body,
+        connector_id=connector_id,
     )
 
     response = client.get_httpx_client().request(
@@ -81,53 +83,53 @@ def sync_detailed(
 
 
 def sync(
+    connector_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: NewConnectorRequest,
-) -> Optional[NewConnectorResponse]:
-    """Create a new connector configuration.
+) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
+    """Fetch a connector by ID.
 
-     Create a new connector configuration.
+     Fetch a connector by ID.
 
     Args:
-        json_body (NewConnectorRequest): Request to create a new connector.
+        connector_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        NewConnectorResponse
+        Union[ConnectorDescr, ErrorResponse]
     """
 
     return sync_detailed(
+        connector_id=connector_id,
         client=client,
-        json_body=json_body,
     ).parsed
 
 
 async def asyncio_detailed(
+    connector_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: NewConnectorRequest,
-) -> Response[NewConnectorResponse]:
-    """Create a new connector configuration.
+) -> Response[Union[ConnectorDescr, ErrorResponse]]:
+    """Fetch a connector by ID.
 
-     Create a new connector configuration.
+     Fetch a connector by ID.
 
     Args:
-        json_body (NewConnectorRequest): Request to create a new connector.
+        connector_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[NewConnectorResponse]
+        Response[Union[ConnectorDescr, ErrorResponse]]
     """
 
     kwargs = _get_kwargs(
-        json_body=json_body,
+        connector_id=connector_id,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -136,28 +138,28 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    connector_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: NewConnectorRequest,
-) -> Optional[NewConnectorResponse]:
-    """Create a new connector configuration.
+) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
+    """Fetch a connector by ID.
 
-     Create a new connector configuration.
+     Fetch a connector by ID.
 
     Args:
-        json_body (NewConnectorRequest): Request to create a new connector.
+        connector_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        NewConnectorResponse
+        Union[ConnectorDescr, ErrorResponse]
     """
 
     return (
         await asyncio_detailed(
+            connector_id=connector_id,
             client=client,
-            json_body=json_body,
         )
     ).parsed

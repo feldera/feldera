@@ -21,12 +21,12 @@ from dbsp_api_client.models.pipeline_status import PipelineStatus
 from dbsp_api_client.models.pipeline_descr import PipelineDescr
 from dbsp_api_client.models.pipeline import Pipeline
 from dbsp_api_client.models.runtime_config import RuntimeConfig
-from dbsp_api_client.api.pipeline import new_pipeline
-from dbsp_api_client.api.pipeline import update_pipeline
-from dbsp_api_client.api.pipeline import pipeline_stats
-from dbsp_api_client.api.pipeline import get_pipeline
-from dbsp_api_client.api.pipeline import pipeline_delete
-from dbsp_api_client.api.pipeline import pipeline_action
+from dbsp_api_client.api.pipelines import new_pipeline
+from dbsp_api_client.api.pipelines import update_pipeline
+from dbsp_api_client.api.pipelines import pipeline_stats
+from dbsp_api_client.api.pipelines import get_pipeline
+from dbsp_api_client.api.pipelines import pipeline_delete
+from dbsp_api_client.api.pipelines import pipeline_action
 from dbsp.program import DBSPProgram
 from dbsp.error import TimeoutException
 from dbsp.connector import DBSPConnector
@@ -291,7 +291,7 @@ class DBSPPipelineConfig:
                 break
             if time.time() - start > timeout:
                 raise TimeoutException("Timeout waiting for the pipeline to reach expected status " + str(expected_status) + ".  Current status is" + str(status) + ".")
-
+            time.sleep(0.5)
 
     def stats(self) -> Dict[str, Any]:
         """Retrieve pipeline status and performance counters.

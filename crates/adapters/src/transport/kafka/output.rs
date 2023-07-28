@@ -54,7 +54,7 @@ impl OutputTransport for KafkaOutputTransport {
         _name: &str,
         config: &OutputEndpointConfig,
     ) -> AnyResult<Box<dyn OutputEndpoint>> {
-        let config = KafkaOutputConfig::deserialize(&config.transport.config)?;
+        let config = KafkaOutputConfig::deserialize(&config.connector_config.transport.config)?;
         let ep = KafkaOutputEndpoint::new(config)?;
 
         Ok(Box::new(ep))
