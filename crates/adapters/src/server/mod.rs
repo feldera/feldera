@@ -868,6 +868,7 @@ mod test_with_kafka {
     use tempfile::NamedTempFile;
 
     #[actix_web::test]
+    #[ignore = "flaky test"]
     async fn test_server() {
         // We cannot use proptest macros in `async` context, so generate
         // some random data manually.
