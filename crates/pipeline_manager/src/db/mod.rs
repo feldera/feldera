@@ -1183,40 +1183,43 @@ impl Storage for ProjectDB {
             let change = txn.query_one(
                 "SELECT count(*) FROM (
                     (SELECT progh.code, ch.config, ach.name, ach.config, ach.is_input, ph.config
-                                        FROM pipeline_history ph, program_history progh, attached_connector_history ach, connector_history ch
+                                        FROM pipeline_history ph
+                                        INNER JOIN program_history progh ON ph.program_id = progh.id
+                                        LEFT OUTER JOIN attached_connector_history ach ON ach.pipeline_id = ph.id
+                                        LEFT OUTER JOIN connector_history ch ON ach.connector_id = ch.id
                                         WHERE ph.id = $1
-                                            AND ph.program_id = progh.id
-                                            AND ach.pipeline_id = ph.id
-                                            AND ach.connector_id = ch.id
                                             AND ach.revision = $2
                                             AND progh.revision = $2
                                             AND ph.revision = $2
                                             AND ch.revision = $2
                     EXCEPT
                     SELECT prog.code, c.config, ac.name, ac.config, ac.is_input, p.config
-                                        FROM pipeline p, program prog, attached_connector ac, connector c
+                                        FROM pipeline p
+                                        INNER JOIN program prog ON p.program_id = prog.id
+                                        LEFT OUTER JOIN attached_connector ac ON ac.pipeline_id = p.id
+                                        LEFT OUTER JOIN connector c ON ac.connector_id = c.id
                                         WHERE p.id = $1
-                                            AND p.program_id = prog.id
-                                            AND ac.pipeline_id = p.id
-                                            AND ac.connector_id = c.id)
+                    )
                 UNION ALL
                     (SELECT prog.code, c.config, ac.name, ac.config, ac.is_input, p.config
-                                        FROM pipeline p, program prog, attached_connector ac, connector c
+                                        FROM pipeline p
+                                        INNER JOIN program prog ON p.program_id = prog.id
+                                        LEFT OUTER JOIN attached_connector ac ON ac.pipeline_id = p.id
+                                        LEFT OUTER JOIN connector c ON ac.connector_id = c.id
                                         WHERE p.id = $1
-                                            AND p.program_id = prog.id
-                                            AND ac.pipeline_id = p.id
-                                            AND ac.connector_id = c.id
+
                     EXCEPT
                     SELECT progh.code, ch.config, ach.name, ach.config, ach.is_input, ph.config
-                                        FROM pipeline_history ph, program_history progh, attached_connector_history ach, connector_history ch
+                                        FROM pipeline_history ph
+                                        INNER JOIN program_history progh ON ph.program_id = progh.id
+                                        LEFT OUTER JOIN attached_connector_history ach ON ach.pipeline_id = ph.id
+                                        LEFT OUTER JOIN connector_history ch ON ach.connector_id = ch.id
                                         WHERE ph.id = $1
-                                            AND ph.program_id = progh.id
-                                            AND ach.pipeline_id = ph.id
-                                            AND ach.connector_id = ch.id
                                             AND ach.revision = $2
                                             AND progh.revision = $2
                                             AND ph.revision = $2
-                                            AND ch.revision = $2)
+                                            AND ch.revision = $2
+                    )
                 ) as x",
                 &[&pipeline_id.0, &prev_revision],
             )
