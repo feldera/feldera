@@ -27,6 +27,7 @@ package org.dbsp.util;
 
 import java.io.*;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
@@ -105,6 +106,11 @@ public class Utilities {
             }
             out.println();
         }
+    }
+
+    public static String readFile(Path filename) throws IOException {
+        List<String> lines = Files.readAllLines(filename);
+        return String.join(System.lineSeparator(), lines);
     }
 
     /**
