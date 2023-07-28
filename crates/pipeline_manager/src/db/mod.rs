@@ -207,6 +207,8 @@ pub(crate) struct ProgramSchema {
 }
 
 /// A SQL table or view. It has a name and a list of fields.
+///
+/// Matches the Calcite JSON format.
 #[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub(crate) struct Relation {
@@ -216,13 +218,47 @@ pub(crate) struct Relation {
     pub fields: Vec<Field>,
 }
 /// A SQL field.
+///
+/// Matches the Calcite JSON format.
 #[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub(crate) struct Field {
     pub name: String,
+    pub columntype: ColumnType,
+}
+
+/// A SQL column type description.
+///
+/// Matches the Calcite JSON format.
+#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub(crate) struct ColumnType {
     #[serde(rename = "type")]
+    /// Identifier for the type (e.g., `VARCHAR`, `BIGINT`, `ARRAY` etc.)
     pub typ: String,
+    /// Does the type accept NULL values?
     pub nullable: bool,
+    /// Precision of the type.
+    ///
+    /// # Examples
+    /// - `VARCHAR` sets precision to `-1`.
+    /// - `VARCHAR(255)` sets precision to `255`.
+    /// - `BIGINT`, `DATE`, `FLOAT`, `DOUBLE`, `GEOMETRY`, etc. sets precision to None
+    /// - `TIME`, `TIMESTAMP` set precision to `0`.
+    pub precision: Option<i64>,
+    /// The scale of the type.
+    ///
+    /// # Example
+    /// - `DECIMAL(1,2)` sets scale to `2`.
+    pub scale: Option<i64>,
+    /// A component of the type (if available).
+    ///
+    /// This is in a `Box` because it makes it a recursive types.
+    ///
+    /// For example, this would specify the `VARCHAR(20)` in the `VARCHAR(20)
+    /// ARRAY` type.
+    #[cfg_attr(test, proptest(value = "None"))]
+    pub component: Option<Box<ColumnType>>,
 }
 
 /// Program descriptor.

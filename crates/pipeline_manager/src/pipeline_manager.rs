@@ -158,6 +158,7 @@ request is rejected."
         crate::db::ProgramSchema,
         crate::db::Relation,
         crate::db::Field,
+        crate::db::ColumnType,
         crate::db::ConnectorDescr,
         crate::db::Pipeline,
         crate::db::PipelineRuntimeState,
