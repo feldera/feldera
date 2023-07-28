@@ -13,17 +13,16 @@ import { Field } from './manager'
 // arbitrary precision so we don't loose anything when displaying numbers from
 // dbsp.
 export const parseSqlType = (sqlType: Field, value: string) =>
-  match(sqlType)
+  match(sqlType.columntype)
     .with({ type: 'BOOLEAN' }, () => Boolean(value))
     .with({ type: 'TINYINT' }, () => Number(value))
     .with({ type: 'SMALLINT' }, () => Number(value))
     .with({ type: 'INTEGER' }, () => Number(value))
     .with({ type: 'BIGINT' }, () => Number(value))
     .with({ type: 'DECIMAL' }, () => Number(value))
-    .with({ type: 'NUMERIC' }, () => Number(value))
     .with({ type: 'FLOAT' }, () => Number(value))
     .with({ type: 'DOUBLE' }, () => Number(value))
-    .with({ type: 'TIMESTAMP(0)', nullable: P.select() }, (nullable: boolean) => {
+    .with({ type: 'TIMESTAMP', nullable: P.select() }, (nullable: boolean) => {
       if (!value && nullable) return null
       else return value
     })
