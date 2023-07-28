@@ -1,9 +1,9 @@
-Bringing up a local instance of DBSP
+Bringing up a local instance of Feldera Platform
 ===================================
 
 First, install [Docker compose](https://docs.docker.com/compose/install/).
 
-Next, to bring up a local DBSP instance run the following:
+Next, to bring up a local Feldera Platform instance run the following:
 
 ```
 curl https://raw.githubusercontent.com/feldera/dbsp/main/deploy/docker-compose.yml | docker compose -f - up
@@ -11,14 +11,15 @@ curl https://raw.githubusercontent.com/feldera/dbsp/main/deploy/docker-compose.y
 
 This will bring up a DBSP and Postgres container.
 
-Open your browser and you should now be able to see the pipeline manager
-dashboard on `localhost:8085`. If you don't, double check that there are no
+Open your browser and you should now be able to see the Feldera Console UI
+on `localhost:8085`. If you don't, double check that there are no
 port conflicts on your system (you can view and modify the port mappings in
 `deploy/docker-compose.yml`).
 
 ## Demo
 
-If you'd like to prepopulate the DBSP instance with a demo project, run:
+If you'd like to prepopulate the Feldera Platform instance with a demo project,
+run:
 
 ```
 docker compose -f deploy/docker-compose.yml --profile demo up
@@ -30,16 +31,17 @@ data, and runs the resulting pipeline.
 
 ## Controlling rust logging levels
 
-You can tune the DBSP container's log level using [`RUST_LOG`](https://docs.rs/env_logger/0.10.0/env_logger/).
+You can tune the DBSP container's log level using
+[`RUST_LOG`](https://docs.rs/env_logger/0.10.0/env_logger/).
 
 ```
 RUST_LOG=info docker compose -f deploy/docker-compose.yml up
 ```
 
-## DBSP containers from sources
+## Feldera containers from sources
 
-To bring up a local instance of DBSP from sources, run the following from the
-project root:
+To bring up a local instance of Feldera Plaform from sources, run the following
+from the project root:
 
 ```
 docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml up --build

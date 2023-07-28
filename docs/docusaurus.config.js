@@ -6,8 +6,8 @@ const katex = require('rehype-katex');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: "dbsp",
-  tagline: "Data In-Motion Processing Made Easy",
+  title: "feldera",
+  tagline: "Your Business Cannot Wait For Your Analysis To Catch Up",
   favicon: "img/favicon.ico",
 
   // Set the production url of your site here
@@ -78,9 +78,9 @@ const config = {
         respectPrefersColorScheme: false,
       },
       navbar: {
-        title: "DBSP",
+        title: "Feldera",
         logo: {
-          alt: "DBSP",
+          alt: "Feldera",
           src: "img/logo.svg",
         },
         items: [
@@ -98,7 +98,7 @@ const config = {
             items: [
               {
                 label: "Documentation",
-                to: "/docs/what-is-dbsp",
+                to: "/docs/what-is-feldera",
               },
             ],
           },
@@ -115,7 +115,7 @@ const config = {
               },
               {
                 label: "Stack Overflow",
-                href: "https://stackoverflow.com/questions/tagged/dbsp",
+                href: "https://stackoverflow.com/questions/tagged/feldera",
               },
             ],
           },

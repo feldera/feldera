@@ -1,7 +1,7 @@
 # Time Series Enrichment
 
 The first demo, on [Simple Data Selection](simple-select), was a very
-simple example of a DBSP pipeline.  Let's look at a slightly more
+simple example of a Feldera Platform pipeline.  Let's look at a slightly more
 sophisticated example.
 
 Suppose we have two tables.  One of them, `transactions`, reports
@@ -40,13 +40,13 @@ erDiagram
    }
 ```
 
-We wish to use DBSP to join the two tables on credit card number, so
+We wish to use Feldera Platform to join the two tables on credit card number, so
 that each transaction can be associated with information about the
-purchaser.  In DBSP, this can be implemented with a SQL program with a
+purchaser.  In Feldera Platform, this can be implemented with a SQL program with a
 view that joins the tables on `cc_num`.
 
-The demo includes this example.  To see the SQL for these tables and
-views, start the DBSP demo, visit <http://localhost:8085/>, click on
+The demo includes this example. To see the SQL for these tables and
+views, start the Feldera Platform demo, visit <http://localhost:8085/>, click on
 Existing Programs in the sidebar, and then click on the pencil icon
 next to Time Series Enrichment.  It shows a SQL program with a `CREATE
 TABLE` command for each table and a `CREATE VIEW` command for the

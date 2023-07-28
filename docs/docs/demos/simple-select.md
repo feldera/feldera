@@ -1,8 +1,8 @@
 # Simple Data Selection
 
-This demo is the simplest one in our set that still serves to
-demonstrate the basics of DBSP.  Start by firing up the DBSP demo and
-visiting <http://localhost:8085/>.
+This demo is the simplest one in our set that still serves to demonstrate the
+basics of the Feldera Platform. Start by firing up the Feldera Platform demo
+and visiting <http://localhost:8085/>.
 
 ## SQL program
 
@@ -91,8 +91,7 @@ Click on the eye icon for the `users` input table.  The browser will
 refresh to show the contents of the input connector, three records
 with the contents `user1`, `user2`, `user3`.
 
-Click on the back button, then on the eye icon for the `output_users`
-output view.  The browser will refresh to show the contents of the
-output connector, three records that also have the contents `user1`,
-`user2`, and `user3`.  This shows that DBSP successfully copied the
-input to the output.
+Click on the back button, then on the eye icon for the `output_users` output
+view.  The browser will refresh to show the contents of the output connector,
+three records that also have the contents `user1`, `user2`, and `user3`.  This
+shows that the pipeline successfully copied the input to the output.

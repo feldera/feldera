@@ -1,6 +1,6 @@
 # Using DBSP
 
-DBSP can be used in two ways:
+DBSP engine can be used in two ways to build incremental computation programs:
 
 * You can use the Rust DBSP implementation and write directly Rust
   programs that perform stream processing

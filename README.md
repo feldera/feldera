@@ -7,18 +7,18 @@
 -->
 [![nightly](https://github.com/feldera/dbsp/actions/workflows/containers.yml/badge.svg)](https://github.com/feldera/dbsp/actions/workflows/containers.yml)
 
-The [Feldera Continuous Analytics Platform](https://www.feldera.com/), or Feldera in short, is a
-fast computational engine for *continuous analytics* over data in-motion. It
-allows users to build data pipelines as SQL programs that are continuously
-evaluated as new data arrives from various sources. What makes Feldera
+The [Feldera Continuous Analytics Platform](https://www.feldera.com/), or Feldera Platform in short, is a
+fast computational engine and associated components for *continuous analytics* over data in motion. Feldera Platform
+allows users to configure data pipelines as standing SQL programs (DDLs) that are continuously
+evaluated as new data arrives from various sources. What makes Feldera's engine
 [unique](#theory) is its ability to *evaluate arbitrary SQL programs
 incrementally*, making it more expressive and performant than existing
 alternatives like streaming engines.
 
-With Feldera, software engineers and data scientists building data pipelines
+With the Feldera Platform, software engineers and data scientists configuring data pipelines
 are not exposed to to the complexities of querying changing data, an otherwise
 notoriously hard problem. Instead, they can express their
-computations as declarative queries and have Feldera evaluate
+computations as *standing queries* and have the Feldera Platform evaluate
 these queries incrementally, correctly and efficiently.
 
 To this end we set the following high-level objectives:
@@ -28,7 +28,7 @@ To this end we set the following high-level objectives:
    window functions, complex data types, time series operators, UDFs, and
    recursive queries.
 
-1. **Scalability in multiple dimensions.**  The engine scales with the number
+1. **Scalability in multiple dimensions.**  The platform scales with the number
    and complexity of queries, input data rate and the amount of state the
    system maintains in order to process the queries.
 
@@ -39,39 +39,40 @@ To this end we set the following high-level objectives:
 
 ## Architecture
 
-With Feldera, users create data pipelines out of SQL programs and data
+With Feldera Platform, users create data pipelines out of SQL programs and data
 connectors. An SQL program comprises tables and views. Connectors feed data to
 input tables in a program or receive outputs computed by views. Example
-connectors we currently support are Kafka, Redpanda and an HTTP API to push/pull
+connectors currently supported are Kafka, Redpanda and an HTTP API to push/pull
 directly to and from tables/views. We are working on more connectors such as
-ones for database CDC streams. Let us know of any connectors you'd like us to
-cover.
+ones for database CDC streams. Let us know of any connectors you would like us to
+develop.
 
-Feldera fundamentally operates on changes to data, i.e., inserts and deletes to
+Feldera Platform fundamentally operates on changes to data, i.e., inserts and deletes to
 tables. This model covers all kinds of data in-motion use cases, like
 insert-only streams of event, log, HTTP and timeseries data, as well as changes
 to traditional databases extracted via CDC streams.
 
-The following diagram shows Feldera's architecture.
+The following diagram shows Feldera Platform's architecture.
 
-![Feldera Architecture](architecture.svg)
+![Feldera Platform Architecture](architecture.svg)
 
-## What's in this repository?
+## What is in this repository?
 
-This repository comprises all the buildings blocks to run continuous analytics pipelines using Feldera.
+This repository comprises all the buildings blocks to run continuous analytics
+pipelines using Feldera Platform.
 
 * [web UI](web-ui): a web interface for writing SQL, setting up connectors, and managing pipelines.
 * [pipeline-manager](crates/pipeline_manager): serves the web UI and is the REST API server for building and managing data pipelines.
 * [dbsp](crates/dbsp): the core [engine](#theory) that allows us to evaluate arbitrary queries incrementally.
 * [SQL compiler](sql-to-dbsp-compiler): translates SQL programs into DBSP programs.
-* [connectors](crates/adapters/): to stream data in and out of Feldera pipelines.
+* [connectors](crates/adapters/): to stream data in and out of Feldera Platform pipelines.
 
 ## Quick start
 
 First, make sure you have [Docker Compose](https://docs.docker.com/compose/) installed.
 
 Next, run the following command to download a Docker Compose file, and use it to bring up
-a DBSP deployment suitable for demos, development and testing:
+a Feldera Platform deployment suitable for demos, development and testing:
 
 ```text
 curl https://raw.githubusercontent.com/feldera/dbsp/main/deploy/docker-compose.yml | docker compose -f - --profile demo up
@@ -85,7 +86,8 @@ Our [Getting Started](https://docs.feldera.io/docs/intro) guide has more detaile
 
 ## Documentation
 
-To learn more about Feldera, we recommend going through the [documentation](https://docs.feldera.io/docs/intro).
+To learn more about Feldera Platform, we recommend going through the
+[documentation](https://docs.feldera.io/docs/intro).
 
 * [Getting started](https://docs.feldera.io/docs/intro)
 * [UI tour](https://docs.feldera.io/docs/tour/)
@@ -100,7 +102,7 @@ We welcome contributions.  Here are some [guidelines](CONTRIBUTING.md).
 
 ## Theory
 
-Feldera achieves its objectives by building on a solid mathematical
+Feldera Platform achieves its objectives by building on a solid mathematical
 foundation.  The formal model that underpins our system, called DBSP, is
 described in the accompanying paper:
 

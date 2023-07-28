@@ -1,3 +1,3 @@
 # Python
 
-Write DBSP Programs using Python.
+Manage Feldera Platform pipelines using Python.

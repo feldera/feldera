@@ -7,7 +7,7 @@ demo did a simple join, this does a more sophisticated join using
 time-series analysis.  The goal is to produce features that could be
 used in machine learning for detecting fraud.
 
-To see the SQL for the fraud detection example, start the DBSP demo,
+To see the SQL for the fraud detection example, start the Feldera Platform demo,
 visit <http://localhost:8085/>, click on Existing Programs in the
 sidebar, and then click on the pencil icon next to Fraud Detection
 Continous Feature Update.  It shows a SQL program similar to the one

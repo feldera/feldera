@@ -1,9 +1,14 @@
 # Get Started
 
-These instructions explain how to run DBSP on a single machine in a
-configuration suitable for demos, development, and testing.  For
-production use, or for developing DBSP itself, DBSP supports other
-forms of deployment.
+These instructions explain how to run the Feldera Platform on a single machine
+in a configuration suitable for demos, development, and testing.  For production
+use, or for developing parts of Feldera Platform itself, Feldera Platform
+supports other forms of deployment.
+
+These instructions explain how to run the Feldera Platform on a single machine
+in a configuration suitable for demos, development, and testing.  For production
+use, or for developing parts of Feldera Platform itself, Feldera Platform
+supports other forms of deployment.
 
 ## Install prerequisites
 
@@ -20,7 +25,7 @@ these ways:
   :::tip
 
   The plugin implements Docker Compose v2, invoked as `docker
-  compose`.  DBSP does not support the older Docker Compose v1,
+  compose`. Feldera Platform does not support the older Docker Compose v1,
   which was invoked with `docker-compose` (note the ` ` versus `-`
   distinction).
 
@@ -43,7 +48,7 @@ You also need `curl` and a web browser such as Chrome or Firefox.
 [3]: https://docs.docker.com/compose/install/linux
 [4]: https://docs.docker.com/engine/install/linux-postinstall/
 
-## Start the DBSP demo
+## Start the demo
 
 1. Download the `docker-compose.yml` file that tells Docker Compose
    how to set up the demo's containers:
@@ -70,24 +75,24 @@ You also need `curl` and a web browser such as Chrome or Firefox.
    ```
 
    This command takes over the terminal where you run it as long as
-   the DBSP demo is active.  It will print a lot of log messages,
+   the demo is active.  It will print a lot of log messages,
    which can be useful for debugging if something goes wrong but which
    otherwise are not important.
 
    The first time you run this command, it will download container
    images, which can take a while.  Once `docker compose` begins
-   bringing up the images, it takes about 10 seconds for the DBSP user
+   bringing up the images, it takes about 10 seconds for the Feldera Platform user
    interface to become available.  On fast systems, this includes a
    pause of a few seconds in which nothing is logged.
 
 3. Visit <http://localhost:8085/> in your web browser to bring up the
-   DBSP web-based user interface.
+   Feldera Platform Console UI.
 
 4. Try out one of the [demos](demos).
 
-## Stop the DBSP demo
+## Stop the demo
 
-To shut down the DBSP demo, type <kbd>Ctrl+C</kbd> in the terminal
+To shut down the demo, type <kbd>Ctrl+C</kbd> in the terminal
 where `docker compose` is running.  Docker Compose will show its
 progress as it shuts down each of the containers in turn.  It can take
 up to about 15 seconds to complete shutdown.

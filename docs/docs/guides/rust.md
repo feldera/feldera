@@ -1,3 +1,3 @@
-# Writing DBSP programs in Rust
+# Using the DBSP Rust API
 
 TODO
