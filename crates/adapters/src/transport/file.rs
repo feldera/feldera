@@ -199,7 +199,7 @@ impl OutputTransport for FileOutputTransport {
         _name: &str,
         config: &OutputEndpointConfig,
     ) -> AnyResult<Box<dyn OutputEndpoint>> {
-        let config = FileOutputConfig::deserialize(&config.transport.config)?;
+        let config = FileOutputConfig::deserialize(&config.connector_config.transport.config)?;
         let ep = FileOutputEndpoint::new(config)?;
 
         Ok(Box::new(ep))

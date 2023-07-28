@@ -1,36 +1,46 @@
 from http import HTTPStatus
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.connector_descr import ConnectorDescr
 from ...models.error_response import ErrorResponse
-from ...models.update_connector_request import UpdateConnectorRequest
-from ...models.update_connector_response import UpdateConnectorResponse
-from ...types import Response
+from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
     *,
-    json_body: UpdateConnectorRequest,
+    id: Union[Unset, None, str] = UNSET,
+    name: Union[Unset, None, str] = UNSET,
 ) -> Dict[str, Any]:
     pass
 
-    json_json_body = json_body.to_dict()
+    params: Dict[str, Any] = {}
+    params["id"] = id
+
+    params["name"] = name
+
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     return {
-        "method": "patch",
+        "method": "get",
         "url": "/connectors",
-        "json": json_json_body,
+        "params": params,
     }
 
 
 def _parse_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Optional[Union[ErrorResponse, UpdateConnectorResponse]]:
+) -> Optional[Union[ErrorResponse, List["ConnectorDescr"]]]:
     if response.status_code == HTTPStatus.OK:
-        response_200 = UpdateConnectorResponse.from_dict(response.json())
+        response_200 = []
+        _response_200 = response.json()
+        for response_200_item_data in _response_200:
+            response_200_item = ConnectorDescr.from_dict(response_200_item_data)
+
+            response_200.append(response_200_item)
 
         return response_200
     if response.status_code == HTTPStatus.NOT_FOUND:
@@ -45,7 +55,7 @@ def _parse_response(
 
 def _build_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Response[Union[ErrorResponse, UpdateConnectorResponse]]:
+) -> Response[Union[ErrorResponse, List["ConnectorDescr"]]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -57,28 +67,28 @@ def _build_response(
 def sync_detailed(
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: UpdateConnectorRequest,
-) -> Response[Union[ErrorResponse, UpdateConnectorResponse]]:
-    """Update existing connector.
+    id: Union[Unset, None, str] = UNSET,
+    name: Union[Unset, None, str] = UNSET,
+) -> Response[Union[ErrorResponse, List["ConnectorDescr"]]]:
+    """Fetch connectors, optionally filtered by name or ID
 
-     Update existing connector.
-
-    Updates config name and, optionally, code.
-    On success, increments config version by 1.
+     Fetch connectors, optionally filtered by name or ID
 
     Args:
-        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
+        id (Union[Unset, None, str]):
+        name (Union[Unset, None, str]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, UpdateConnectorResponse]]
+        Response[Union[ErrorResponse, List['ConnectorDescr']]]
     """
 
     kwargs = _get_kwargs(
-        json_body=json_body,
+        id=id,
+        name=name,
     )
 
     response = client.get_httpx_client().request(
@@ -91,57 +101,57 @@ def sync_detailed(
 def sync(
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: UpdateConnectorRequest,
-) -> Optional[Union[ErrorResponse, UpdateConnectorResponse]]:
-    """Update existing connector.
+    id: Union[Unset, None, str] = UNSET,
+    name: Union[Unset, None, str] = UNSET,
+) -> Optional[Union[ErrorResponse, List["ConnectorDescr"]]]:
+    """Fetch connectors, optionally filtered by name or ID
 
-     Update existing connector.
-
-    Updates config name and, optionally, code.
-    On success, increments config version by 1.
+     Fetch connectors, optionally filtered by name or ID
 
     Args:
-        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
+        id (Union[Unset, None, str]):
+        name (Union[Unset, None, str]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, UpdateConnectorResponse]
+        Union[ErrorResponse, List['ConnectorDescr']]
     """
 
     return sync_detailed(
         client=client,
-        json_body=json_body,
+        id=id,
+        name=name,
     ).parsed
 
 
 async def asyncio_detailed(
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: UpdateConnectorRequest,
-) -> Response[Union[ErrorResponse, UpdateConnectorResponse]]:
-    """Update existing connector.
+    id: Union[Unset, None, str] = UNSET,
+    name: Union[Unset, None, str] = UNSET,
+) -> Response[Union[ErrorResponse, List["ConnectorDescr"]]]:
+    """Fetch connectors, optionally filtered by name or ID
 
-     Update existing connector.
-
-    Updates config name and, optionally, code.
-    On success, increments config version by 1.
+     Fetch connectors, optionally filtered by name or ID
 
     Args:
-        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
+        id (Union[Unset, None, str]):
+        name (Union[Unset, None, str]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ErrorResponse, UpdateConnectorResponse]]
+        Response[Union[ErrorResponse, List['ConnectorDescr']]]
     """
 
     kwargs = _get_kwargs(
-        json_body=json_body,
+        id=id,
+        name=name,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -152,29 +162,29 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: Union[AuthenticatedClient, Client],
-    json_body: UpdateConnectorRequest,
-) -> Optional[Union[ErrorResponse, UpdateConnectorResponse]]:
-    """Update existing connector.
+    id: Union[Unset, None, str] = UNSET,
+    name: Union[Unset, None, str] = UNSET,
+) -> Optional[Union[ErrorResponse, List["ConnectorDescr"]]]:
+    """Fetch connectors, optionally filtered by name or ID
 
-     Update existing connector.
-
-    Updates config name and, optionally, code.
-    On success, increments config version by 1.
+     Fetch connectors, optionally filtered by name or ID
 
     Args:
-        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
+        id (Union[Unset, None, str]):
+        name (Union[Unset, None, str]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ErrorResponse, UpdateConnectorResponse]
+        Union[ErrorResponse, List['ConnectorDescr']]
     """
 
     return (
         await asyncio_detailed(
             client=client,
-            json_body=json_body,
+            id=id,
+            name=name,
         )
     ).parsed

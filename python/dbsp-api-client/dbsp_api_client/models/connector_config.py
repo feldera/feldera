@@ -9,19 +9,17 @@ if TYPE_CHECKING:
     from ..models.transport_config import TransportConfig
 
 
-T = TypeVar("T", bound="OutputEndpointConfig")
+T = TypeVar("T", bound="ConnectorConfig")
 
 
 @define
-class OutputEndpointConfig:
-    """Describes an output connector configuration
+class ConnectorConfig:
+    """A data connector's configuration
 
     Attributes:
         format_ (FormatConfig): Data format specification used to parse raw data received from the
             endpoint or to encode data sent to the endpoint.
         transport (TransportConfig): Transport endpoint configuration.
-        stream (str): The name of the output stream of the circuit that this endpoint is
-            connected to.
         max_buffered_records (Union[Unset, int]): Backpressure threshold.
 
             Maximal amount of records buffered by the endpoint before the endpoint
@@ -35,7 +33,6 @@ class OutputEndpointConfig:
 
     format_: "FormatConfig"
     transport: "TransportConfig"
-    stream: str
     max_buffered_records: Union[Unset, int] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
@@ -44,7 +41,6 @@ class OutputEndpointConfig:
 
         transport = self.transport.to_dict()
 
-        stream = self.stream
         max_buffered_records = self.max_buffered_records
 
         field_dict: Dict[str, Any] = {}
@@ -53,7 +49,6 @@ class OutputEndpointConfig:
             {
                 "format": format_,
                 "transport": transport,
-                "stream": stream,
             }
         )
         if max_buffered_records is not UNSET:
@@ -71,19 +66,16 @@ class OutputEndpointConfig:
 
         transport = TransportConfig.from_dict(d.pop("transport"))
 
-        stream = d.pop("stream")
-
         max_buffered_records = d.pop("max_buffered_records", UNSET)
 
-        output_endpoint_config = cls(
+        connector_config = cls(
             format_=format_,
             transport=transport,
-            stream=stream,
             max_buffered_records=max_buffered_records,
         )
 
-        output_endpoint_config.additional_properties = d
-        return output_endpoint_config
+        connector_config.additional_properties = d
+        return connector_config
 
     @property
     def additional_keys(self) -> List[str]:

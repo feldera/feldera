@@ -17,10 +17,11 @@ from dbsp_api_client.models.csv_parser_config import CsvParserConfig
 from dbsp_api_client.models.new_connector_request import NewConnectorRequest
 from dbsp_api_client.models.update_connector_request import UpdateConnectorRequest
 from dbsp_api_client.models.csv_encoder_config import CsvEncoderConfig
-from dbsp_api_client.api.connector import new_connector
-from dbsp_api_client.api.connector import update_connector
-from dbsp_api_client.api.connector import delete_connector
-from dbsp_api_client.api.connector import connector_status
+from dbsp_api_client.models.connector_config import ConnectorConfig
+from dbsp_api_client.api.connectors import new_connector
+from dbsp_api_client.api.connectors import update_connector
+from dbsp_api_client.api.connectors import delete_connector
+from dbsp_api_client.api.connectors import list_connectors
 from dbsp_api_client.models.connector_descr import ConnectorDescr
 
 
@@ -29,12 +30,12 @@ class DBSPConnector:
 
     def __init__(self, api_client, name: str, transport: "TransportConfig", format: "FormatConfig", description: str = ''):
         self.api_client = api_client
-        # If the connector already exist we make sure to get its id so it will
+        # If the connector already exists we make sure to get its id so it will
         # just update on save
-        response = connector_status.sync_detailed(
+        response = list_connectors.sync_detailed(
             client=self.api_client, name=name)
-        if isinstance(response.parsed, ConnectorDescr):
-            self.connector_id = response.parsed.connector_id
+        if isinstance(response.parsed, list):
+            self.connector_id = response.parsed[0].connector_id
         else:
             self.connector_id = None
 
@@ -64,19 +65,19 @@ class DBSPConnector:
             body = NewConnectorRequest(
                 name=self.name,
                 description=self.description,
-                config=yaml.dump(self.config),
+                config=ConnectorConfig.from_dict(self.config),
             )
             response = new_connector.sync_detailed(
                 client=self.api_client, json_body=body).unwrap("Failed to create the connector")
             self.connector_id = response.connector_id
         else:
             body = UpdateConnectorRequest(
-                connector_id=self.connector_id,
                 name=self.name,
                 description=self.description,
-                config=yaml.dump(self.config),
+                config=ConnectorConfig.from_dict(self.config),
             )
             response = update_connector.sync_detailed(
+                connector_id=self.connector_id,
                 client=self.api_client, json_body=body).unwrap("Failed to update the connector")
 
     def delete(self):

@@ -43,7 +43,9 @@ use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 #[cfg(unix)]
 use daemonize::Daemonize;
-use dbsp_adapters::{ControllerError, ErrorResponse, PipelineConfig, RuntimeConfig};
+use dbsp_adapters::{
+    ConnectorConfig, ControllerError, ErrorResponse, PipelineConfig, RuntimeConfig,
+};
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::{env, net::TcpListener, sync::Arc, time::Duration};
@@ -142,9 +144,9 @@ request is rejected."
         pipeline_deployed,
         pipeline_delete,
         list_connectors,
+        get_connector,
         new_connector,
         update_connector,
-        connector_status,
         delete_connector,
         http_input,
         http_output,
@@ -172,6 +174,9 @@ request is rejected."
         dbsp_adapters::TransportConfig,
         dbsp_adapters::FormatConfig,
         dbsp_adapters::RuntimeConfig,
+        dbsp_adapters::ConnectorConfig,
+        dbsp_adapters::TransportConfig,
+        dbsp_adapters::FormatConfig,
         dbsp_adapters::transport::FileInputConfig,
         dbsp_adapters::transport::FileOutputConfig,
         dbsp_adapters::transport::KafkaInputConfig,
@@ -204,9 +209,9 @@ request is rejected."
         UpdateConnectorResponse,
     ),),
     tags(
-        (name = "Program", description = "Manage programs"),
-        (name = "Pipeline", description = "Manage pipelines"),
-        (name = "Connector", description = "Manage data connectors"),
+        (name = "Programs", description = "Manage programs"),
+        (name = "Pipelines", description = "Manage pipelines"),
+        (name = "Connectors", description = "Manage data connectors"),
     ),
 )]
 pub struct ApiDoc;
@@ -367,9 +372,9 @@ fn api_scope() -> Scope {
         .service(pipeline_deployed)
         .service(pipeline_delete)
         .service(list_connectors)
+        .service(get_connector)
         .service(new_connector)
         .service(update_connector)
-        .service(connector_status)
         .service(delete_connector)
         .service(http_input)
         .service(http_output)
@@ -382,7 +387,8 @@ fn example_pipeline_config() -> PipelineConfig {
         connector_id: ConnectorId(uuid!("01890c99-376f-743e-ac30-87b6c0ce74ef")),
         name: "Input".into(),
         description: "My Input Connector".into(),
-        config: r#"
+        config: ConnectorConfig::from_yaml_str(
+            r#"
 transport:
     name: kafka
     config:
@@ -390,8 +396,8 @@ transport:
         group.instance.id: "group0"
         topics: [test_input1]
 format:
-    name: csv"#
-            .into(),
+    name: csv"#,
+        ),
     };
     let input = crate::db::AttachedConnector {
         name: "Input-To-Table".into(),
@@ -403,7 +409,8 @@ format:
         connector_id: ConnectorId(uuid!("01890c99-3734-7052-9e97-55c0679a5adb")),
         name: "Output ".into(),
         description: "My Output Connector".into(),
-        config: r#"
+        config: ConnectorConfig::from_yaml_str(
+            r#"
 transport:
     name: kafka
     config:
@@ -411,8 +418,8 @@ transport:
         group.instance.id: "group0"
         topics: [test_input2]
 format:
-    name: csv"#
-            .into(),
+    name: csv"#,
+        ),
     };
     let output = crate::db::AttachedConnector {
         name: "Output-To-View".into(),
@@ -550,10 +557,6 @@ fn example_invalid_uuid_param() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&ManagerError::InvalidUuidParam{value: "not_a_uuid".to_string(), error: "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1".to_string()})
 }
 
-fn example_connector_not_specified() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ManagerError::ConnectorNotSpecified)
-}
-
 fn example_invalid_pipeline_action() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&ManagerError::InvalidPipelineAction {
         action: "my_action".to_string(),
@@ -614,7 +617,7 @@ struct ProgramCodeResponse {
     responses(
         (status = OK, description = "Programs retrieved successfully.", body = [ProgramDescr]),
         (status = NOT_FOUND
-            , description = "Specified program name or ID does not exist in the database."
+            , description = "Specified program name or ID does not exist."
             , body = ErrorResponse
             , examples(
                 ("Unknown program name" = (value = json!(example_unknown_name()))),
@@ -623,7 +626,7 @@ struct ProgramCodeResponse {
         )
     ),
     params(ProgramIdOrNameQuery, WithCodeQuery),
-    tag = "Program"
+    tag = "Programs"
 )]
 #[get("/programs")]
 async fn get_programs(
@@ -672,7 +675,7 @@ async fn get_programs(
     responses(
         (status = OK, description = "Program retrieved successfully.", body = ProgramDescr),
         (status = NOT_FOUND
-            , description = "Specified program id does not exist in the database."
+            , description = "Specified program id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_program())),
     ),
@@ -680,7 +683,7 @@ async fn get_programs(
         ("program_id" = Uuid, Path, description = "Unique program identifier"),
         WithCodeQuery
     ),
-    tag = "Program"
+    tag = "Programs"
 )]
 #[get("/programs/{program_id}")]
 async fn get_program(
@@ -738,7 +741,7 @@ struct NewProgramResponse {
             , body = ErrorResponse
             , example = json!(example_duplicate_name())),
     ),
-    tag = "Program"
+    tag = "Programs"
 )]
 #[post("/programs")]
 async fn new_program(
@@ -810,7 +813,7 @@ struct UpdateProgramResponse {
     responses(
         (status = OK, description = "Program updated successfully.", body = UpdateProgramResponse),
         (status = NOT_FOUND
-            , description = "Specified program id does not exist in the database."
+            , description = "Specified program id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_program())),
         (status = CONFLICT
@@ -821,7 +824,7 @@ struct UpdateProgramResponse {
     params(
         ("program_id" = Uuid, Path, description = "Unique program identifier")
     ),
-    tag = "Program"
+    tag = "Programs"
 )]
 #[patch("/programs/{program_id}")]
 async fn update_program(
@@ -866,7 +869,7 @@ struct CompileProgramRequest {
     responses(
         (status = ACCEPTED, description = "Compilation request submitted."),
         (status = NOT_FOUND
-            , description = "Specified program id does not exist in the database."
+            , description = "Specified program id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_program())),
         (status = CONFLICT
@@ -877,7 +880,7 @@ struct CompileProgramRequest {
     params(
         ("program_id" = Uuid, Path, description = "Unique program identifier")
     ),
-    tag = "Program"
+    tag = "Programs"
 )]
 #[post("/programs/{program_id}/compile")]
 async fn compile_program(
@@ -916,14 +919,14 @@ async fn compile_program(
             )
         ),
         (status = NOT_FOUND
-            , description = "Specified program id does not exist in the database."
+            , description = "Specified program id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_program())),
     ),
     params(
         ("program_id" = Uuid, Path, description = "Unique program identifier")
     ),
-    tag = "Program"
+    tag = "Programs"
 )]
 #[delete("/programs/{program_id}")]
 async fn delete_program(
@@ -990,7 +993,7 @@ struct NewPipelineResponse {
             )
         ),
     ),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[post("/pipelines")]
 async fn new_pipeline(
@@ -1066,7 +1069,7 @@ struct UpdatePipelineResponse {
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
     ),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[patch("/pipelines/{pipeline_id}")]
 async fn update_pipeline(
@@ -1102,7 +1105,7 @@ async fn update_pipeline(
         (status = OK, description = "Pipeline list retrieved successfully.", body = [Pipeline])
     ),
     params(PipelineIdOrNameQuery),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[get("/pipelines")]
 async fn list_pipelines(
@@ -1139,14 +1142,14 @@ async fn list_pipelines(
     responses(
         (status = OK, description = "Last deployed version of the pipeline retrieved successfully (returns null if pipeline was never deployed yet).", body = Option<PipelineRevision>),
         (status = NOT_FOUND
-            , description = "Specified `pipeline_id` does not exist in the database."
+            , description = "Specified `pipeline_id` does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
     ),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[get("/pipelines/{pipeline_id}/deployed")]
 async fn pipeline_deployed(
@@ -1189,14 +1192,14 @@ async fn pipeline_deployed(
             , body = ErrorResponse
             , example = json!(example_invalid_uuid_param())),
         (status = NOT_FOUND
-            , description = "Specified pipeline id does not exist in the database."
+            , description = "Specified pipeline id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
     ),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[get("/pipelines/{pipeline_id}/stats")]
 async fn pipeline_stats(
@@ -1220,14 +1223,14 @@ async fn pipeline_stats(
             ("application/json" = Pipeline),
         )),
         (status = NOT_FOUND
-            , description = "Specified pipeline ID does not exist in the database."
+            , description = "Specified pipeline ID does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
     ),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[get("/pipelines/{pipeline_id}")]
 async fn get_pipeline(
@@ -1268,7 +1271,7 @@ async fn get_pipeline(
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
     ),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[get("/pipelines/{pipeline_id}/config")]
 async fn get_pipeline_config(
@@ -1313,14 +1316,14 @@ async fn get_pipeline_config(
             )
         ),
         (status = NOT_FOUND
-            , description = "Specified pipeline id does not exist in the database."
+            , description = "Specified pipeline id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
     ),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[get("/pipelines/{pipeline_id}/validate")]
 async fn pipeline_validate(
@@ -1375,7 +1378,7 @@ async fn pipeline_validate(
             )
         ),
         (status = NOT_FOUND
-            , description = "Specified pipeline id does not exist in the database."
+            , description = "Specified pipeline id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
         (status = INTERNAL_SERVER_ERROR
@@ -1387,7 +1390,7 @@ async fn pipeline_validate(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
         ("action" = String, Path, description = "Pipeline action [start, pause, shutdown]")
     ),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[post("/pipelines/{pipeline_id}/{action}")]
 async fn pipeline_action(
@@ -1421,7 +1424,7 @@ async fn pipeline_action(
         (status = OK
             , description = "Pipeline successfully deleted."),
         (status = NOT_FOUND
-            , description = "Specified pipeline id does not exist in the database."
+            , description = "Specified pipeline id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
         (status = BAD_REQUEST
@@ -1438,7 +1441,7 @@ async fn pipeline_action(
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
     ),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[delete("/pipelines/{pipeline_id}")]
 async fn pipeline_delete(
@@ -1456,34 +1459,64 @@ async fn pipeline_delete(
     Ok(HttpResponse::Ok().finish())
 }
 
-/// Enumerate the connector database.
+/// Fetch connectors, optionally filtered by name or ID
 #[utoipa::path(
     responses(
         (status = OK, description = "List of connectors retrieved successfully", body = [ConnectorDescr]),
+        (status = NOT_FOUND
+            , description = "Specified connector name or ID does not exist"
+            , body = ErrorResponse
+            , examples(
+                ("Unknown connector name" = (value = json!(example_unknown_name()))),
+                ("Unknown connector ID" = (value = json!(example_unknown_connector())))
+            ),
+        )
     ),
-    tag = "Connector"
+    params(ConnectorIdOrNameQuery),
+    tag = "Connectors"
 )]
 #[get("/connectors")]
 async fn list_connectors(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    req: web::Query<ConnectorIdOrNameQuery>,
 ) -> Result<HttpResponse, DBError> {
-    let connectors = state.db.lock().await.list_connectors(*tenant_id).await?;
+    let descr = if let Some(id) = req.id {
+        vec![
+            state
+                .db
+                .lock()
+                .await
+                .get_connector_by_id(*tenant_id, ConnectorId(id))
+                .await?,
+        ]
+    } else if let Some(name) = req.name.clone() {
+        vec![
+            state
+                .db
+                .lock()
+                .await
+                .get_connector_by_name(*tenant_id, name)
+                .await?,
+        ]
+    } else {
+        state.db.lock().await.list_connectors(*tenant_id).await?
+    };
 
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(connectors))
+        .json(&descr))
 }
 
 /// Request to create a new connector.
 #[derive(Deserialize, ToSchema)]
 pub(self) struct NewConnectorRequest {
-    /// connector name.
+    /// Connector name.
     name: String,
-    /// connector description.
+    /// Connector description.
     description: String,
-    /// connector config.
-    config: String,
+    /// Connector configuration.
+    config: ConnectorConfig,
 }
 
 /// Response to a connector creation request.
@@ -1493,13 +1526,13 @@ struct NewConnectorResponse {
     connector_id: ConnectorId,
 }
 
-/// Create a new connector configuration.
+/// Create a new connector.
 #[utoipa::path(
     request_body = NewConnectorRequest,
     responses(
-        (status = OK, description = "connector successfully created.", body = NewConnectorResponse),
+        (status = OK, description = "Connector successfully created.", body = NewConnectorResponse),
     ),
-    tag = "Connector"
+    tag = "Connectors"
 )]
 #[post("/connectors")]
 async fn new_connector(
@@ -1528,51 +1561,51 @@ async fn new_connector(
 /// Request to update an existing data-connector.
 #[derive(Deserialize, ToSchema)]
 struct UpdateConnectorRequest {
-    /// connector id.
-    connector_id: ConnectorId,
     /// New connector name.
     name: String,
     /// New connector description.
     description: String,
     /// New config YAML. If absent, existing YAML will be kept unmodified.
-    config: Option<String>,
+    config: Option<ConnectorConfig>,
 }
 
 /// Response to a config update request.
 #[derive(Serialize, ToSchema)]
 struct UpdateConnectorResponse {}
 
-/// Update existing connector.
-///
-/// Updates config name and, optionally, code.
-/// On success, increments config version by 1.
+/// Change a connector's name, description or configuration.
 #[utoipa::path(
     request_body = UpdateConnectorRequest,
     responses(
         (status = OK, description = "connector successfully updated.", body = UpdateConnectorResponse),
         (status = NOT_FOUND
-            , description = "Specified connector id does not exist in the database."
+            , description = "Specified connector id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_connector())),
     ),
-    tag = "Connector"
+    params(
+        ("connector_id" = Uuid, Path, description = "Unique connector identifier")
+    ),
+    tag = "Connectors"
 )]
-#[patch("/connectors")]
+#[patch("/connectors/{connector_id}")]
 async fn update_connector(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    request: web::Json<UpdateConnectorRequest>,
-) -> Result<HttpResponse, DBError> {
+    req: HttpRequest,
+    body: web::Json<UpdateConnectorRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let connector_id = ConnectorId(parse_uuid_param(&req, "connector_id")?);
     state
         .db
         .lock()
         .await
         .update_connector(
             *tenant_id,
-            request.connector_id,
-            &request.name,
-            &request.description,
-            &request.config,
+            connector_id,
+            &body.name,
+            &body.description,
+            &body.config,
         )
         .await?;
 
@@ -1581,7 +1614,7 @@ async fn update_connector(
         .json(&UpdateConnectorResponse {}))
 }
 
-/// Delete existing connector.
+/// Delete an existing connector.
 #[utoipa::path(
     responses(
         (status = OK, description = "connector successfully deleted."),
@@ -1590,14 +1623,14 @@ async fn update_connector(
             , body = ErrorResponse
             , example = json!(example_invalid_uuid_param())),
         (status = NOT_FOUND
-            , description = "Specified connector id does not exist in the database."
+            , description = "Specified connector id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_connector())),
     ),
     params(
         ("connector_id" = Uuid, Path, description = "Unique connector identifier")
     ),
-    tag = "Connector"
+    tag = "Connectors"
 )]
 #[delete("/connectors/{connector_id}")]
 async fn delete_connector(
@@ -1615,6 +1648,38 @@ async fn delete_connector(
         .await?;
 
     Ok(HttpResponse::Ok().finish())
+}
+
+/// Fetch a connector by ID.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Connector retrieved successfully.", body = ConnectorDescr),
+        (status = BAD_REQUEST
+            , description = "Specified connector id is not a valid uuid."
+            , body = ErrorResponse
+            , example = json!(example_invalid_uuid_param())),
+    ),
+    params(
+        ("connector_id" = Uuid, Path, description = "Unique connector identifier"),
+    ),
+    tag = "Connectors"
+)]
+#[get("/connectors/{connector_id}")]
+async fn get_connector(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let connector_id = ConnectorId(parse_uuid_param(&req, "connector_id")?);
+    let descr = state
+        .db
+        .lock()
+        .await
+        .get_connector_by_id(*tenant_id, connector_id)
+        .await?;
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&descr))
 }
 
 // Duplicate the same structure twice, since
@@ -1653,62 +1718,6 @@ pub struct PipelineIdOrNameQuery {
     name: Option<String>,
 }
 
-/// Returns connector descriptor.
-#[utoipa::path(
-    responses(
-        (status = OK, description = "connector status retrieved successfully.", body = ConnectorDescr),
-        (status = BAD_REQUEST
-            , description = "Connector not specified. Use ?id or ?name query strings in the URL."
-            , body = ErrorResponse
-            , example = json!(example_connector_not_specified())),
-        (status = NOT_FOUND
-            , description = "Specified connector name does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(example_unknown_name())),
-        (status = NOT_FOUND
-            , description = "Specified connector id does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(example_unknown_connector())),
-        (status = NOT_FOUND
-            , description = "Specified connector name does not exist in the database."
-            , body = ErrorResponse
-            , example = json!(example_unknown_name())),
-    ),
-    params(
-        ("id" = Option<Uuid>, Query, description = "Unique connector identifier"),
-        ("name" = Option<String>, Query, description = "Unique connector name"),
-    ),
-    tag = "Connector"
-)]
-#[get("/connector")]
-async fn connector_status(
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-    req: web::Query<ConnectorIdOrNameQuery>,
-) -> Result<HttpResponse, ManagerError> {
-    let descr: crate::db::ConnectorDescr = if let Some(id) = req.id {
-        state
-            .db
-            .lock()
-            .await
-            .get_connector_by_id(*tenant_id, ConnectorId(id))
-            .await?
-    } else if let Some(name) = req.name.clone() {
-        state
-            .db
-            .lock()
-            .await
-            .get_connector_by_name(*tenant_id, name)
-            .await?
-    } else {
-        Err(ManagerError::ConnectorNotSpecified)?
-    };
-
-    Ok(HttpResponse::Ok()
-        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(&descr))
-}
-
 /// Push data to a SQL table.
 ///
 /// The client sends data encoded using the format specified in the `?format=`
@@ -1729,7 +1738,7 @@ async fn connector_status(
             , body = ErrorResponse
             , example = json!(example_invalid_uuid_param())),
         (status = NOT_FOUND
-            , description = "Specified pipeline id does not exist in the database."
+            , description = "Specified pipeline id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
         (status = NOT_FOUND
@@ -1757,7 +1766,7 @@ async fn connector_status(
         ("table_name" = String, Path, description = "SQL table name."),
         ("format" = String, Query, description = "Input data format, e.g., 'csv' or 'json'."),
     ),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[post("/pipelines/{pipeline_id}/ingress/{table_name}")]
 async fn http_input(
@@ -1808,7 +1817,7 @@ async fn http_input(
             , body = ErrorResponse
             , example = json!(example_invalid_uuid_param())),
         (status = NOT_FOUND
-            , description = "Specified pipeline id does not exist in the database."
+            , description = "Specified pipeline id does not exist."
             , body = ErrorResponse
             , example = json!(example_unknown_pipeline())),
         (status = NOT_FOUND
@@ -1840,7 +1849,7 @@ async fn http_input(
         description = "When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.",
         content_type = "application/json",
     ),
-    tag = "Pipeline"
+    tag = "Pipelines"
 )]
 #[get("/pipelines/{pipeline_id}/egress/{table_name}")]
 async fn http_output(

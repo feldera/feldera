@@ -1,9 +1,9 @@
 import dbsp_api_client
 
 from dbsp_api_client.models.new_program_request import NewProgramRequest
-from dbsp_api_client.api.program import get_programs
-from dbsp_api_client.api.program import new_program
-from dbsp_api_client.api.program import delete_program
+from dbsp_api_client.api.programs import get_programs
+from dbsp_api_client.api.programs import new_program
+from dbsp_api_client.api.programs import delete_program
 from dbsp.program import DBSPProgram
 from http import HTTPStatus
 

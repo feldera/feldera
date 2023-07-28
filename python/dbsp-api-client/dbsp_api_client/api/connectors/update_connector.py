@@ -5,43 +5,37 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.connector_descr import ConnectorDescr
 from ...models.error_response import ErrorResponse
-from ...types import UNSET, Response, Unset
+from ...models.update_connector_request import UpdateConnectorRequest
+from ...models.update_connector_response import UpdateConnectorResponse
+from ...types import Response
 
 
 def _get_kwargs(
+    connector_id: str,
     *,
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
+    json_body: UpdateConnectorRequest,
 ) -> Dict[str, Any]:
     pass
 
-    params: Dict[str, Any] = {}
-    params["id"] = id
-
-    params["name"] = name
-
-    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
+    json_json_body = json_body.to_dict()
 
     return {
-        "method": "get",
-        "url": "/connector",
-        "params": params,
+        "method": "patch",
+        "url": "/connectors/{connector_id}".format(
+            connector_id=connector_id,
+        ),
+        "json": json_json_body,
     }
 
 
 def _parse_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
+) -> Optional[Union[ErrorResponse, UpdateConnectorResponse]]:
     if response.status_code == HTTPStatus.OK:
-        response_200 = ConnectorDescr.from_dict(response.json())
+        response_200 = UpdateConnectorResponse.from_dict(response.json())
 
         return response_200
-    if response.status_code == HTTPStatus.BAD_REQUEST:
-        response_400 = ErrorResponse.from_dict(response.json())
-
-        return response_400
     if response.status_code == HTTPStatus.NOT_FOUND:
         response_404 = ErrorResponse.from_dict(response.json())
 
@@ -54,7 +48,7 @@ def _parse_response(
 
 def _build_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Response[Union[ConnectorDescr, ErrorResponse]]:
+) -> Response[Union[ErrorResponse, UpdateConnectorResponse]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -64,30 +58,30 @@ def _build_response(
 
 
 def sync_detailed(
+    connector_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-) -> Response[Union[ConnectorDescr, ErrorResponse]]:
-    """Returns connector descriptor.
+    json_body: UpdateConnectorRequest,
+) -> Response[Union[ErrorResponse, UpdateConnectorResponse]]:
+    """Change a connector's name, description or configuration.
 
-     Returns connector descriptor.
+     Change a connector's name, description or configuration.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
+        connector_id (str):
+        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ConnectorDescr, ErrorResponse]]
+        Response[Union[ErrorResponse, UpdateConnectorResponse]]
     """
 
     kwargs = _get_kwargs(
-        id=id,
-        name=name,
+        connector_id=connector_id,
+        json_body=json_body,
     )
 
     response = client.get_httpx_client().request(
@@ -98,59 +92,59 @@ def sync_detailed(
 
 
 def sync(
+    connector_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
-    """Returns connector descriptor.
+    json_body: UpdateConnectorRequest,
+) -> Optional[Union[ErrorResponse, UpdateConnectorResponse]]:
+    """Change a connector's name, description or configuration.
 
-     Returns connector descriptor.
+     Change a connector's name, description or configuration.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
+        connector_id (str):
+        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ConnectorDescr, ErrorResponse]
+        Union[ErrorResponse, UpdateConnectorResponse]
     """
 
     return sync_detailed(
+        connector_id=connector_id,
         client=client,
-        id=id,
-        name=name,
+        json_body=json_body,
     ).parsed
 
 
 async def asyncio_detailed(
+    connector_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-) -> Response[Union[ConnectorDescr, ErrorResponse]]:
-    """Returns connector descriptor.
+    json_body: UpdateConnectorRequest,
+) -> Response[Union[ErrorResponse, UpdateConnectorResponse]]:
+    """Change a connector's name, description or configuration.
 
-     Returns connector descriptor.
+     Change a connector's name, description or configuration.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
+        connector_id (str):
+        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[ConnectorDescr, ErrorResponse]]
+        Response[Union[ErrorResponse, UpdateConnectorResponse]]
     """
 
     kwargs = _get_kwargs(
-        id=id,
-        name=name,
+        connector_id=connector_id,
+        json_body=json_body,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -159,31 +153,31 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    connector_id: str,
     *,
     client: Union[AuthenticatedClient, Client],
-    id: Union[Unset, None, str] = UNSET,
-    name: Union[Unset, None, str] = UNSET,
-) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
-    """Returns connector descriptor.
+    json_body: UpdateConnectorRequest,
+) -> Optional[Union[ErrorResponse, UpdateConnectorResponse]]:
+    """Change a connector's name, description or configuration.
 
-     Returns connector descriptor.
+     Change a connector's name, description or configuration.
 
     Args:
-        id (Union[Unset, None, str]):
-        name (Union[Unset, None, str]):
+        connector_id (str):
+        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[ConnectorDescr, ErrorResponse]
+        Union[ErrorResponse, UpdateConnectorResponse]
     """
 
     return (
         await asyncio_detailed(
+            connector_id=connector_id,
             client=client,
-            id=id,
-            name=name,
+            json_body=json_body,
         )
     ).parsed

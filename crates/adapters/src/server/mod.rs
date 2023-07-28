@@ -1,4 +1,5 @@
 use crate::{
+    controller::ConnectorConfig,
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
@@ -542,13 +543,15 @@ async fn input_endpoint(
 
     // Create endpoint config.
     let config = InputEndpointConfig {
-        transport: HttpInputTransport::config(),
         stream: Cow::from(table_name),
-        format: FormatConfig {
-            name: Cow::from(args.format.clone()),
-            config: YamlValue::Null,
+        connector_config: ConnectorConfig {
+            transport: HttpInputTransport::config(),
+            format: FormatConfig {
+                name: Cow::from(args.format.clone()),
+                config: YamlValue::Null,
+            },
+            max_buffered_records: HttpInputTransport::default_max_buffered_records(),
         },
-        max_buffered_records: HttpInputTransport::default_max_buffered_records(),
     };
 
     // Connect endpoint.
@@ -709,12 +712,14 @@ async fn output_endpoint(
     let config = OutputEndpointConfig {
         stream: Cow::from(table_name),
         query: args.query,
-        transport: HttpOutputTransport::config(),
-        format: FormatConfig {
-            name: Cow::from(args.format.clone()),
-            config: YamlValue::Null,
+        connector_config: ConnectorConfig {
+            transport: HttpOutputTransport::config(),
+            format: FormatConfig {
+                name: Cow::from(args.format.clone()),
+                config: YamlValue::Null,
+            },
+            max_buffered_records: HttpOutputTransport::default_max_buffered_records(),
         },
-        max_buffered_records: HttpOutputTransport::default_max_buffered_records(),
     };
 
     // Declare `response` in this scope, before we lock `state.controller`.  This
