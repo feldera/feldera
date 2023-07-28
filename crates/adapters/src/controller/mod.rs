@@ -61,8 +61,8 @@ mod error;
 mod stats;
 
 pub use config::{
-    FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
-    TransportConfig,
+    ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
+    RuntimeConfig, TransportConfig,
 };
 pub use error::{ConfigError, ControllerError};
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
@@ -798,22 +798,26 @@ impl ControllerInner {
         endpoint_config: &InputEndpointConfig,
     ) -> Result<EndpointId, ControllerError> {
         // Create transport endpoint.
-        let transport = <dyn InputTransport>::get_transport(&endpoint_config.transport.name)
-            .ok_or_else(|| {
+        let transport =
+            <dyn InputTransport>::get_transport(&endpoint_config.connector_config.transport.name)
+                .ok_or_else(|| {
                 ControllerError::unknown_input_transport(
                     endpoint_name,
-                    &endpoint_config.transport.name,
+                    &endpoint_config.connector_config.transport.name,
                 )
             })?;
 
         let endpoint = transport
-            .new_endpoint(endpoint_name, &endpoint_config.transport.config)
+            .new_endpoint(
+                endpoint_name,
+                &endpoint_config.connector_config.transport.config,
+            )
             .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
 
         self.add_input_endpoint(
             endpoint_name,
             endpoint_config.clone(),
-            &mut <dyn ErasedDeserializer>::erase(&endpoint_config.format.config),
+            &mut <dyn ErasedDeserializer>::erase(&endpoint_config.connector_config.format.config),
             endpoint,
         )
     }
@@ -857,10 +861,13 @@ impl ControllerInner {
             })?;
 
         // Create parser.
-        let format =
-            <dyn InputFormat>::get_format(&endpoint_config.format.name).ok_or_else(|| {
-                ControllerError::unknown_input_format(endpoint_name, &endpoint_config.format.name)
-            })?;
+        let format = <dyn InputFormat>::get_format(&endpoint_config.connector_config.format.name)
+            .ok_or_else(|| {
+            ControllerError::unknown_input_format(
+                endpoint_name,
+                &endpoint_config.connector_config.format.name,
+            )
+        })?;
 
         let parser = format
             .new_parser(input_stream, format_config)
@@ -941,13 +948,14 @@ impl ControllerInner {
         endpoint_config: &OutputEndpointConfig,
     ) -> Result<EndpointId, ControllerError> {
         // Create transport endpoint.
-        let transport = <dyn OutputTransport>::get_transport(&endpoint_config.transport.name)
-            .ok_or_else(|| {
-                ControllerError::unknown_output_transport(
-                    endpoint_name,
-                    &endpoint_config.transport.name,
-                )
-            })?;
+        let transport =
+            <dyn OutputTransport>::get_transport(&endpoint_config.connector_config.transport.name)
+                .ok_or_else(|| {
+                    ControllerError::unknown_output_transport(
+                        endpoint_name,
+                        &endpoint_config.connector_config.transport.name,
+                    )
+                })?;
 
         let endpoint = transport
             .new_endpoint(endpoint_name, endpoint_config)
@@ -955,7 +963,7 @@ impl ControllerInner {
         self.add_output_endpoint(
             endpoint_name,
             endpoint_config,
-            &mut <dyn ErasedDeserializer>::erase(&endpoint_config.format.config),
+            &mut <dyn ErasedDeserializer>::erase(&endpoint_config.connector_config.format.config),
             endpoint,
         )
     }
@@ -1021,9 +1029,12 @@ impl ControllerInner {
         ));
 
         // Create encoder.
-        let format =
-            <dyn OutputFormat>::get_format(&endpoint_config.format.name).ok_or_else(|| {
-                ControllerError::unknown_output_format(endpoint_name, &endpoint_config.format.name)
+        let format = <dyn OutputFormat>::get_format(&endpoint_config.connector_config.format.name)
+            .ok_or_else(|| {
+                ControllerError::unknown_output_format(
+                    endpoint_name,
+                    &endpoint_config.connector_config.format.name,
+                )
             })?;
         let encoder = format
             .new_encoder(format_config, probe)

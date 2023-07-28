@@ -1,6 +1,10 @@
-from typing import Any, Dict, List, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
+
+if TYPE_CHECKING:
+    from ..models.connector_config import ConnectorConfig
+
 
 T = TypeVar("T", bound="NewConnectorRequest")
 
@@ -10,18 +14,19 @@ class NewConnectorRequest:
     """Request to create a new connector.
 
     Attributes:
-        config (str): connector config.
-        description (str): connector description.
-        name (str): connector name.
+        config (ConnectorConfig): A data connector's configuration
+        description (str): Connector description.
+        name (str): Connector name.
     """
 
-    config: str
+    config: "ConnectorConfig"
     description: str
     name: str
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        config = self.config
+        config = self.config.to_dict()
+
         description = self.description
         name = self.name
 
@@ -39,8 +44,10 @@ class NewConnectorRequest:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
+        from ..models.connector_config import ConnectorConfig
+
         d = src_dict.copy()
-        config = d.pop("config")
+        config = ConnectorConfig.from_dict(d.pop("config"))
 
         description = d.pop("description")
 

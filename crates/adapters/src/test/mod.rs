@@ -81,10 +81,12 @@ where
 {
     let input_handle = <MockDeZSet<T>>::new();
 
-    let consumer = MockInputConsumer::from_handle(&input_handle, &config.format);
+    let consumer = MockInputConsumer::from_handle(&input_handle, &config.connector_config.format);
 
-    let transport = <dyn InputTransport>::get_transport(&config.transport.name).unwrap();
-    let mut endpoint = transport.new_endpoint(&config.stream, &config.transport.config)?;
+    let transport =
+        <dyn InputTransport>::get_transport(&config.connector_config.transport.name).unwrap();
+    let mut endpoint =
+        transport.new_endpoint(&config.stream, &config.connector_config.transport.config)?;
 
     endpoint.connect(Box::new(consumer.clone()))?;
 

@@ -152,8 +152,8 @@ pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, Parser};
 pub use seroutput::{SerBatch, SerCursor, SerOutputBatchHandle};
 
 pub use controller::{
-    ConfigError, Controller, ControllerError, ControllerStatus, FormatConfig, InputEndpointConfig,
-    OutputEndpointConfig, PipelineConfig, RuntimeConfig, TransportConfig,
+    ConfigError, ConnectorConfig, Controller, ControllerError, ControllerStatus, FormatConfig,
+    InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig, TransportConfig,
 };
 pub use transport::{
     AsyncErrorCallback, FileInputTransport, InputConsumer, InputEndpoint, InputTransport,

@@ -6,7 +6,7 @@ use super::{
 use crate::auth::TenantId;
 use crate::pipeline_manager::ProgramStatus;
 use async_trait::async_trait;
-use dbsp_adapters::RuntimeConfig;
+use dbsp_adapters::{ConnectorConfig, RuntimeConfig};
 use uuid::Uuid;
 
 /// The storage trait contains the methods to interact with the pipeline manager
@@ -342,7 +342,7 @@ pub(crate) trait Storage {
         id: Uuid,
         name: &str,
         description: &str,
-        config: &str,
+        config: &ConnectorConfig,
     ) -> Result<ConnectorId, DBError>;
 
     /// Retrieve connectors list from the DB.
@@ -371,7 +371,7 @@ pub(crate) trait Storage {
         connector_id: ConnectorId,
         connector_name: &str,
         description: &str,
-        config: &Option<String>,
+        config: &Option<ConnectorConfig>,
     ) -> Result<(), DBError>;
 
     /// Delete connector from the database.

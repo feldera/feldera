@@ -14,13 +14,14 @@ T = TypeVar("T", bound="InputEndpointConfig")
 
 @define
 class InputEndpointConfig:
-    """
+    """Describes an input connector configuration
+
     Attributes:
         format_ (FormatConfig): Data format specification used to parse raw data received from the
             endpoint or to encode data sent to the endpoint.
+        transport (TransportConfig): Transport endpoint configuration.
         stream (str): The name of the input stream of the circuit that this endpoint is
             connected to.
-        transport (TransportConfig): Transport endpoint configuration.
         max_buffered_records (Union[Unset, int]): Backpressure threshold.
 
             Maximal amount of records buffered by the endpoint before the endpoint
@@ -33,17 +34,17 @@ class InputEndpointConfig:
     """
 
     format_: "FormatConfig"
-    stream: str
     transport: "TransportConfig"
+    stream: str
     max_buffered_records: Union[Unset, int] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         format_ = self.format_.to_dict()
 
-        stream = self.stream
         transport = self.transport.to_dict()
 
+        stream = self.stream
         max_buffered_records = self.max_buffered_records
 
         field_dict: Dict[str, Any] = {}
@@ -51,8 +52,8 @@ class InputEndpointConfig:
         field_dict.update(
             {
                 "format": format_,
-                "stream": stream,
                 "transport": transport,
+                "stream": stream,
             }
         )
         if max_buffered_records is not UNSET:
@@ -68,16 +69,16 @@ class InputEndpointConfig:
         d = src_dict.copy()
         format_ = FormatConfig.from_dict(d.pop("format"))
 
-        stream = d.pop("stream")
-
         transport = TransportConfig.from_dict(d.pop("transport"))
+
+        stream = d.pop("stream")
 
         max_buffered_records = d.pop("max_buffered_records", UNSET)
 
         input_endpoint_config = cls(
             format_=format_,
-            stream=stream,
             transport=transport,
+            stream=stream,
             max_buffered_records=max_buffered_records,
         )
 

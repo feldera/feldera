@@ -8,7 +8,7 @@ use crate::auth::{self, TenantId, TenantRecord};
 use crate::db::Relation;
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use dbsp_adapters::RuntimeConfig;
+use dbsp_adapters::{ConnectorConfig, RuntimeConfig};
 use openssl::sha::{self};
 use pretty_assertions::assert_eq;
 use proptest::test_runner::{Config, TestRunner};
@@ -153,6 +153,20 @@ pub(crate) async fn setup_pg() -> (ProjectDB, tokio_postgres::Config) {
         .unwrap();
 
     (conn, config)
+}
+
+fn test_connector_config() -> ConnectorConfig {
+    ConnectorConfig::from_yaml_str(
+        r#"
+transport:
+    name: kafka
+    config:
+        auto.offset.reset: "earliest"
+        group.instance.id: "group0"
+        topics: [test_input1]
+format:
+    name: csv"#,
+    )
 }
 
 #[tokio::test]
@@ -396,7 +410,13 @@ async fn program_config() {
     let tenant_id = TenantRecord::default().id;
     let connector_id = handle
         .db
-        .new_connector(tenant_id, Uuid::now_v7(), "a", "b", "")
+        .new_connector(
+            tenant_id,
+            Uuid::now_v7(),
+            "a",
+            "b",
+            &test_connector_config(),
+        )
         .await
         .unwrap();
     let ac = AttachedConnector {
@@ -518,7 +538,13 @@ async fn duplicate_attached_conn_name() {
     let tenant_id = TenantRecord::default().id;
     let connector_id = handle
         .db
-        .new_connector(tenant_id, Uuid::now_v7(), "a", "b", "c")
+        .new_connector(
+            tenant_id,
+            Uuid::now_v7(),
+            "a",
+            "b",
+            &test_connector_config(),
+        )
         .await
         .unwrap();
     let ac = AttachedConnector {
@@ -668,9 +694,14 @@ async fn versioning() {
         )
         .await
         .unwrap();
+    let config1 = test_connector_config();
+    let config2 = ConnectorConfig {
+        max_buffered_records: config1.clone().max_buffered_records + 5,
+        ..config1.clone()
+    };
     let connector_id1: ConnectorId = handle
         .db
-        .new_connector(tenant_id, Uuid::now_v7(), "a", "b", "c")
+        .new_connector(tenant_id, Uuid::now_v7(), "a", "b", &config1)
         .await
         .unwrap();
     let mut ac1 = AttachedConnector {
@@ -681,7 +712,7 @@ async fn versioning() {
     };
     let connector_id2 = handle
         .db
-        .new_connector(tenant_id, Uuid::now_v7(), "d", "e", "f")
+        .new_connector(tenant_id, Uuid::now_v7(), "d", "e", &config2)
         .await
         .unwrap();
     let mut ac2 = AttachedConnector {
@@ -796,9 +827,13 @@ async fn versioning() {
     assert_ne!(r1, r2, "we got a new revision");
 
     // If we change the connector we can commit again:
+    let config3 = ConnectorConfig {
+        max_buffered_records: config2.max_buffered_records + 5,
+        ..config2
+    };
     handle
         .db
-        .update_connector(tenant_id, connector_id1, "a", "b", &Some("x".into()))
+        .update_connector(tenant_id, connector_id1, "a", "b", &Some(config3))
         .await
         .unwrap();
     let r3 = commit_check(&handle, tenant_id, pipeline_id).await;
@@ -883,6 +918,50 @@ pub(crate) fn limited_uuid() -> impl Strategy<Value = Uuid> {
     })
 }
 
+/// Generate different connector types
+/// TODO: should we generate more configuration variants?
+pub(crate) fn limited_connector() -> impl Strategy<Value = ConnectorConfig> {
+    any::<u8>().prop_map(|byte| {
+        ConnectorConfig::from_yaml_str(
+            format!(
+                "
+                transport:
+                    name: kafka
+                    config:
+                        auto.offset.reset: \"earliest\"
+                        group.instance.id: \"group0\"
+                        topics: [test_input{byte}]
+                format:
+                    name: csv"
+            )
+            .as_str(),
+        )
+    })
+}
+
+/// Generate different connector types
+/// TODO: should we generate more configuration variants?
+pub(crate) fn limited_option_connector() -> impl Strategy<Value = Option<ConnectorConfig>> {
+    any::<Option<u8>>().prop_map(|byte| {
+        byte.map(|b| {
+            ConnectorConfig::from_yaml_str(
+                format!(
+                    "
+                transport:
+                    name: kafka
+                    config:
+                        auto.offset.reset: \"earliest\"
+                        group.instance.id: \"group0\"
+                        topics: [test_input{b}]
+                format:
+                    name: csv"
+                )
+                .as_str(),
+            )
+        })
+    })
+}
+
 /// Actions we can do on the Storage trait.
 #[derive(Debug, Clone, Arbitrary)]
 enum StorageAction {
@@ -921,7 +1000,7 @@ enum StorageAction {
         Option<ProgramId>,
         String,
         String,
-        // TODO: Should be GlobalPipelineConfig.
+        // TODO: Should be RuntimeConfig.
         Option<(u16, bool, u64, u64)>,
         Option<Vec<AttachedConnector>>,
     ),
@@ -939,12 +1018,19 @@ enum StorageAction {
         #[proptest(strategy = "limited_uuid()")] Uuid,
         String,
         String,
-        String,
+        // TODO: Should be ConnectorConfig.
+        #[proptest(strategy = "limited_connector()")] ConnectorConfig,
     ),
     ListConnectors(TenantId),
     GetConnectorById(TenantId, ConnectorId),
     GetConnectorByName(TenantId, String),
-    UpdateConnector(TenantId, ConnectorId, String, String, Option<String>),
+    UpdateConnector(
+        TenantId,
+        ConnectorId,
+        String,
+        String,
+        #[proptest(strategy = "limited_option_connector()")] Option<ConnectorConfig>,
+    ),
     DeleteConnector(TenantId, ConnectorId),
     StoreApiKeyHash(TenantId, String, Vec<ApiPermission>),
     ValidateApiKey(TenantId, String),
@@ -2062,7 +2148,7 @@ impl Storage for Mutex<DbModel> {
         id: Uuid,
         name: &str,
         description: &str,
-        config: &str,
+        config: &ConnectorConfig,
     ) -> DBResult<super::ConnectorId> {
         let mut s = self.lock().await;
         if s.connectors.keys().any(|k| k.1 == ConnectorId(id)) {
@@ -2131,7 +2217,7 @@ impl Storage for Mutex<DbModel> {
         connector_id: super::ConnectorId,
         connector_name: &str,
         description: &str,
-        config: &Option<String>,
+        config: &Option<ConnectorConfig>,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
         // `connector_id` needs to exist
