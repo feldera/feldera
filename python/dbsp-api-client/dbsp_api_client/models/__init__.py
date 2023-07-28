@@ -3,6 +3,7 @@
 from .attached_connector import AttachedConnector
 from .chunk import Chunk
 from .chunk_json_data import ChunkJsonData
+from .column_type import ColumnType
 from .compile_program_request import CompileProgramRequest
 from .connector_config import ConnectorConfig
 from .connector_descr import ConnectorDescr
@@ -68,6 +69,7 @@ __all__ = (
     "AttachedConnector",
     "Chunk",
     "ChunkJsonData",
+    "ColumnType",
     "CompileProgramRequest",
     "ConnectorConfig",
     "ConnectorDescr",

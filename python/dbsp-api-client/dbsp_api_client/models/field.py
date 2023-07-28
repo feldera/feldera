@@ -1,6 +1,10 @@
-from typing import Any, Dict, List, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
+
+if TYPE_CHECKING:
+    from ..models.column_type import ColumnType
+
 
 T = TypeVar("T", bound="Field")
 
@@ -9,29 +13,30 @@ T = TypeVar("T", bound="Field")
 class Field:
     """A SQL field.
 
-    Attributes:
-        name (str):
-        nullable (bool):
-        type (str):
+    Matches the Calcite JSON format.
+
+        Attributes:
+            columntype (ColumnType): A SQL column type description.
+
+                Matches the Calcite JSON format.
+            name (str):
     """
 
+    columntype: "ColumnType"
     name: str
-    nullable: bool
-    type: str
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        columntype = self.columntype.to_dict()
+
         name = self.name
-        nullable = self.nullable
-        type = self.type
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
+                "columntype": columntype,
                 "name": name,
-                "nullable": nullable,
-                "type": type,
             }
         )
 
@@ -39,17 +44,16 @@ class Field:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
+        from ..models.column_type import ColumnType
+
         d = src_dict.copy()
+        columntype = ColumnType.from_dict(d.pop("columntype"))
+
         name = d.pop("name")
 
-        nullable = d.pop("nullable")
-
-        type = d.pop("type")
-
         field = cls(
+            columntype=columntype,
             name=name,
-            nullable=nullable,
-            type=type,
         )
 
         field.additional_properties = d
