@@ -15,9 +15,9 @@ export function connectorConnects(ac: AttachedConnector, schema: ProgramSchema |
     return false
   }
   if (ac.is_input) {
-    return schema.inputs.some(table => table.name === ac.config)
+    return schema.inputs.some(table => table.name === ac.relation_name)
   } else {
-    return schema.outputs.some(view => view.name === ac.config)
+    return schema.outputs.some(view => view.name === ac.relation_name)
   }
 }
 
@@ -70,10 +70,10 @@ export function useAddConnector() {
       // Now that we have the node, we need to add a connector if we have one
       const sqlNode = getNode('sql')
       const ourNode = getNode(ac.name)
-      const tableOrView = ac.config
+      const tableOrView = ac.relation_name
       const sqlPrefix = ac.is_input ? 'table-' : 'view-'
       const connectorHandle = sqlPrefix + tableOrView
-      const hasAnEdge = ac.config != ''
+      const hasAnEdge = ac.relation_name != ''
 
       if (hasAnEdge && sqlNode && ourNode) {
         const existingEdge = getConnectedEdges([sqlNode, ourNode], []).find(

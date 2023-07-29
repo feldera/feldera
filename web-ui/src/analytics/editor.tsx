@@ -19,19 +19,20 @@ import {
   CompileProgramRequest,
   NewProgramRequest,
   NewProgramResponse,
-  ProgramCodeResponse,
+  ProgramId,
   ProgramStatus,
   SqlCompilerMessage,
   UpdateProgramRequest,
   UpdateProgramResponse
 } from 'src/types/manager'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
-import { ProgramService } from 'src/types/manager/services/ProgramService'
+import { ProgramsService } from 'src/types/manager/services/ProgramsService'
 import { ProgramDescr } from 'src/types/manager/models/ProgramDescr'
 import CompileIndicator from './CompileIndicator'
 import SaveIndicator, { SaveIndicatorState } from 'src/components/SaveIndicator'
 import { PLACEHOLDER_VALUES } from 'src/utils'
 import { projectQueryCacheUpdate } from 'src/types/defaultQueryFn'
+import assert from 'assert'
 
 // How many ms to wait until we save the project.
 const SAVE_DELAY = 2000
@@ -138,7 +139,7 @@ const useCreateProjectIfNew = (
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate } = useMutation<NewProgramResponse, CancelError, NewProgramRequest>(ProgramService.newProgram)
+  const { mutate } = useMutation<NewProgramResponse, CancelError, NewProgramRequest>(ProgramsService.newProgram)
   useEffect(() => {
     if (project.program_id == null) {
       if (state === 'isModified') {
@@ -203,22 +204,21 @@ const useFetchExistingProject = (
   lastCompiledVersion: number,
   setLastCompiledVersion: Dispatch<SetStateAction<number>>
 ) => {
-  const codeQuery = useQuery<number, CancelError, ProgramCodeResponse>(
-    ['programCode', { program_id: project.program_id }],
-    { enabled: project.program_id != null }
-  )
+  const codeQuery = useQuery<number, CancelError, ProgramDescr>(['programCode', { program_id: project.program_id }], {
+    enabled: project.program_id != null
+  })
   useEffect(() => {
     if (codeQuery.data && !codeQuery.isLoading && !codeQuery.isError) {
       setProject({
-        program_id: codeQuery.data.program.program_id,
-        name: codeQuery.data.program.name,
-        description: codeQuery.data.program.description,
-        status: codeQuery.data.program.status,
-        version: codeQuery.data.program.version,
-        code: codeQuery.data.code
+        program_id: codeQuery.data.program_id,
+        name: codeQuery.data.name,
+        description: codeQuery.data.description,
+        status: codeQuery.data.status,
+        version: codeQuery.data.version,
+        code: codeQuery.data.code || ''
       })
-      if (codeQuery.data.program.version > lastCompiledVersion && codeQuery.data.program.status !== 'None') {
-        setLastCompiledVersion(codeQuery.data.program.version)
+      if (codeQuery.data.version > lastCompiledVersion && codeQuery.data.status !== 'None') {
+        setLastCompiledVersion(codeQuery.data.version)
       }
       setState('isUpToDate')
     }
@@ -244,41 +244,50 @@ const useUpdateProjectIfChanged = (
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate, isLoading } = useMutation<UpdateProgramResponse, CancelError, UpdateProgramRequest>(
-    ProgramService.updateProgram
-  )
+  const { mutate, isLoading } = useMutation<
+    UpdateProgramResponse,
+    CancelError,
+    { program_id: ProgramId; update_request: UpdateProgramRequest }
+  >({
+    mutationFn: (args: { program_id: ProgramId; update_request: UpdateProgramRequest }) => {
+      return ProgramsService.updateProgram(args.program_id, args.update_request)
+    }
+  })
   useEffect(() => {
     if (project.program_id !== null && state === 'isModified' && !isLoading) {
       const updateRequest = {
-        program_id: project.program_id,
         name: project.name,
         description: project.description,
         code: project.code
       }
-      mutate(updateRequest, {
-        onSettled: () => {
-          queryClient.invalidateQueries(['program'])
-          queryClient.invalidateQueries(['programCode', { program_id: project.program_id }])
-          queryClient.invalidateQueries(['programStatus', { program_id: project.program_id }])
-        },
-        onSuccess: (data: UpdateProgramResponse) => {
-          projectQueryCacheUpdate(queryClient, updateRequest)
-          setProject((prevState: ProgramState) => ({ ...prevState, version: data.version }))
-          setState('isUpToDate')
-          setFormError({})
-        },
-        onError: (error: CancelError) => {
-          // TODO: would be good to have error codes from the API
-          if (error.message.includes('name already exists')) {
-            setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
-            // This won't try to save again, but set the save indicator to
-            // Saving... until the user changes something:
-            setState('isDebouncing')
-          } else {
-            pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+      mutate(
+        { program_id: project.program_id, update_request: updateRequest },
+        {
+          onSettled: () => {
+            queryClient.invalidateQueries(['program'])
+            queryClient.invalidateQueries(['programCode', { program_id: project.program_id }])
+            queryClient.invalidateQueries(['programStatus', { program_id: project.program_id }])
+          },
+          onSuccess: (data: UpdateProgramResponse) => {
+            assert(project.program_id)
+            projectQueryCacheUpdate(queryClient, project.program_id, updateRequest)
+            setProject((prevState: ProgramState) => ({ ...prevState, version: data.version }))
+            setState('isUpToDate')
+            setFormError({})
+          },
+          onError: (error: CancelError) => {
+            // TODO: would be good to have error codes from the API
+            if (error.message.includes('name already exists')) {
+              setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
+              // This won't try to save again, but set the save indicator to
+              // Saving... until the user changes something:
+              setState('isDebouncing')
+            } else {
+              pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+            }
           }
         }
-      })
+      )
     }
   }, [
     mutate,
@@ -307,9 +316,15 @@ const useCompileProjectIfChanged = (
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate, isLoading, isError } = useMutation<CompileProgramRequest, CancelError, any>(
-    ProgramService.compileProgram
-  )
+  const { mutate, isLoading, isError } = useMutation<
+    CompileProgramRequest,
+    CancelError,
+    { program_id: ProgramId; request: CompileProgramRequest }
+  >({
+    mutationFn: args => {
+      return ProgramsService.compileProgram(args.program_id, args.request)
+    }
+  })
   useEffect(() => {
     if (
       !isLoading &&
@@ -323,7 +338,7 @@ const useCompileProjectIfChanged = (
       //console.log('compileProject ' + project.version)
       setProject((prevState: ProgramState) => ({ ...prevState, status: 'Pending' }))
       mutate(
-        { program_id: project.program_id, version: project.version },
+        { program_id: project.program_id, request: { version: project.version } },
         {
           onSettled: () => {
             queryClient.invalidateQueries(['program'])

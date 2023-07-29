@@ -1,6 +1,5 @@
 import { Dispatch, SetStateAction } from 'react'
 import { match, P } from 'ts-pattern'
-import YAML from 'yaml'
 import assert from 'assert'
 
 import { ConnectorDescr } from './manager'
@@ -30,8 +29,7 @@ export enum Direction {
 
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
-  const config = YAML.parse(cd.config)
-  return match(config)
+  return match(cd.config)
     .with({ transport: { name: 'kafka', config: { topics: P._ } } }, () => {
       return ConnectorType.KAFKA_IN
     })
@@ -71,7 +69,9 @@ export const ConnectorDialog = (props: {
 // if connector is of type KAFKA_IN.
 export const parseKafkaInputSchema = (connector: ConnectorDescr): KafkaInputSchema => {
   assert(connectorDescrToType(connector) === ConnectorType.KAFKA_IN)
-  const config = YAML.parse(connector.config)
+  const config = connector.config
+  assert(config.transport.config)
+
   return {
     name: connector.name,
     description: connector.description,
@@ -85,7 +85,9 @@ export const parseKafkaInputSchema = (connector: ConnectorDescr): KafkaInputSche
 // if connector is of type KAFKA_OUT.
 export const parseKafkaOutputSchema = (connector: ConnectorDescr): KafkaOutputSchema => {
   assert(connectorDescrToType(connector) === ConnectorType.KAFKA_OUT)
-  const config = YAML.parse(connector.config)
+  const config = connector.config
+  assert(config.transport.config)
+
   return {
     name: connector.name,
     description: connector.description,
@@ -99,7 +101,8 @@ export const parseKafkaOutputSchema = (connector: ConnectorDescr): KafkaOutputSc
 // if connector is of type FILE.
 export const parseCsvFileSchema = (connector: ConnectorDescr): CsvFileSchema => {
   assert(connectorDescrToType(connector) === ConnectorType.FILE)
-  const config = YAML.parse(connector.config)
+  const config = connector.config
+  assert(config.transport.config)
   return {
     name: connector.name,
     description: connector.description,
@@ -110,10 +113,11 @@ export const parseCsvFileSchema = (connector: ConnectorDescr): CsvFileSchema => 
 
 // Given an existing ConnectorDescr return EditorSchema for it.
 export const parseEditorSchema = (connector: ConnectorDescr): EditorSchema => {
+  assert(connector.config)
   return {
     name: connector.name,
     description: connector.description,
-    config: connector.config
+    config: JSON.stringify(connector.config, null, 2)
   }
 }
 
@@ -190,10 +194,10 @@ export const connectorTypeToIcon = (status: ConnectorType) =>
 export const getStatusObj = (status: ConnectorType) =>
   match(status)
     .with(ConnectorType.KAFKA_IN, () => {
-      return { title: 'Kafka', color: 'secondary' as const }
+      return { title: 'Kafka In', color: 'secondary' as const }
     })
     .with(ConnectorType.KAFKA_OUT, () => {
-      return { title: 'Kafka', color: 'secondary' as const }
+      return { title: 'Kafka Out', color: 'secondary' as const }
     })
     .with(ConnectorType.FILE, () => {
       return { title: 'CSV', color: 'secondary' as const }

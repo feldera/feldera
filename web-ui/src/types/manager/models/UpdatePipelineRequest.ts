@@ -3,17 +3,14 @@
 /* eslint-disable */
 
 import type { AttachedConnector } from './AttachedConnector'
-import type { PipelineId } from './PipelineId'
 import type { ProgramId } from './ProgramId'
+import type { RuntimeConfig } from './RuntimeConfig'
 
 /**
- * Request to update an existing program configuration.
+ * Request to update an existing pipeline.
  */
 export type UpdatePipelineRequest = {
-  /**
-   * New config YAML. If absent, existing YAML will be kept unmodified.
-   */
-  config?: string | null
+  config?: RuntimeConfig | null
   /**
    * Attached connectors.
    *
@@ -24,13 +21,12 @@ export type UpdatePipelineRequest = {
    */
   connectors?: Array<AttachedConnector> | null
   /**
-   * New config description.
+   * New pipeline description.
    */
   description: string
   /**
-   * New config name.
+   * New pipeline name.
    */
   name: string
-  pipeline_id: PipelineId
   program_id?: ProgramId | null
 }

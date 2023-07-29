@@ -8,10 +8,12 @@ import {
   NewConnectorRequest,
   NewConnectorResponse,
   CancelError,
-  ConnectorService,
+  ConnectorsService,
   UpdateConnectorRequest,
   UpdateConnectorResponse,
-  ConnectorDescr
+  ConnectorDescr,
+  ConnectorId,
+  ApiError
 } from 'src/types/manager'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 
@@ -20,7 +22,7 @@ import useStatusNotification from 'src/components/errors/useStatusNotification'
 // Display success or error status message on completion.
 export const ConnectorFormNewRequest = <TData extends FieldValues>(
   onFormSubmitted: (connector: ConnectorDescr | undefined) => void,
-  toNewConnectorRequest: (data: TData) => NewConnectorRequest
+  toNewConnectorRequest: (data: TData) => [undefined, NewConnectorRequest]
 ): SubmitHandler<TData> => {
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
@@ -29,13 +31,11 @@ export const ConnectorFormNewRequest = <TData extends FieldValues>(
     NewConnectorResponse,
     CancelError,
     NewConnectorRequest
-  >(ConnectorService.newConnector)
+  >(ConnectorsService.newConnector)
 
   return (data: TData) => {
-    const source_desc = toNewConnectorRequest(data)
-    console.log('ConnectorFormNewRequest')
-    console.log(source_desc)
-    console.log(data)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_, source_desc] = toNewConnectorRequest(data)
 
     if (!newIsLoading) {
       newConnector(source_desc, {
@@ -63,40 +63,45 @@ export const ConnectorFormNewRequest = <TData extends FieldValues>(
 // Display success or error status message on completion.
 export const ConnectorFormUpdateRequest = <TData extends FieldValues>(
   onFormSubmitted: (connector: ConnectorDescr | undefined) => void,
-  toConnectorFormUpdateRequest: (data: TData) => UpdateConnectorRequest
+  toConnectorFormUpdateRequest: (data: TData) => [ConnectorId, UpdateConnectorRequest]
 ): SubmitHandler<TData> => {
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
   const { mutate: updateConnector, isLoading: updateIsLoading } = useMutation<
     UpdateConnectorResponse,
-    CancelError,
-    UpdateConnectorRequest
-  >(ConnectorService.updateConnector)
+    ApiError,
+    { connector_id: ConnectorId; request: UpdateConnectorRequest }
+  >(args => {
+    return ConnectorsService.updateConnector(args.connector_id, args.request)
+  })
 
   return (data: TData) => {
-    const source_desc = toConnectorFormUpdateRequest(data)
+    const [connector_id, request] = toConnectorFormUpdateRequest(data)
 
     if (!updateIsLoading) {
-      updateConnector(source_desc, {
-        onSettled: () => {
-          queryClient.invalidateQueries(['connector'])
-          queryClient.invalidateQueries(['connectorStatus', { connector_id: source_desc.connector_id }])
-        },
-        onSuccess: () => {
-          pushMessage({ message: 'Connector updated successfully!', key: new Date().getTime(), color: 'success' })
-          onFormSubmitted({
-            connector_id: source_desc.connector_id,
-            name: source_desc.name,
-            config: data.config,
-            description: data.description
-          })
-        },
-        onError: error => {
-          pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
-          onFormSubmitted(undefined)
+      updateConnector(
+        { connector_id, request },
+        {
+          onSettled: () => {
+            queryClient.invalidateQueries(['connector'])
+            queryClient.invalidateQueries(['connectorStatus', { connector_id }])
+          },
+          onSuccess: () => {
+            pushMessage({ message: 'Connector updated successfully!', key: new Date().getTime(), color: 'success' })
+            onFormSubmitted({
+              connector_id: connector_id,
+              name: request.name,
+              config: data.config,
+              description: data.description
+            })
+          },
+          onError: error => {
+            pushMessage({ message: error.message, key: new Date().getTime(), color: 'error' })
+            onFormSubmitted(undefined)
+          }
         }
-      })
+      )
     }
   }
 }

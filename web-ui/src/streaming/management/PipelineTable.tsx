@@ -185,7 +185,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                 },
                 {
                   field: 'config',
-                  valueGetter: params => params.row.ac.config,
+                  valueGetter: params => params.row.ac.relation_name,
                   headerName: 'Into Table',
                   flex: 0.8
                 },
@@ -194,13 +194,14 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                   headerName: 'Records',
                   flex: 0.15,
                   renderCell: params =>
-                    format('.1s')(inputMetrics?.get(params.row.ac.config.trim())?.total_records || 0)
+                    format('.1s')(inputMetrics?.get(params.row.ac.relation_name.trim())?.total_records || 0)
                 },
                 {
                   field: 'traffic',
                   headerName: 'Traffic',
                   flex: 0.15,
-                  renderCell: params => humanSize(inputMetrics?.get(params.row.ac.config.trim())?.total_bytes || 0)
+                  renderCell: params =>
+                    humanSize(inputMetrics?.get(params.row.ac.relation_name.trim())?.total_bytes || 0)
                 },
                 {
                   field: 'action',
@@ -212,7 +213,9 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                         size='small'
                         onClick={e => {
                           e.preventDefault()
-                          router.push('/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.ac.config)
+                          router.push(
+                            '/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.ac.relation_name
+                          )
                         }}
                       >
                         <Icon icon='bx:show' fontSize={20} />
@@ -243,7 +246,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                 },
                 {
                   field: 'config',
-                  valueGetter: params => params.row.ac.config,
+                  valueGetter: params => params.row.ac.relation_name,
                   headerName: 'From View',
                   flex: 0.8
                 },
@@ -252,14 +255,14 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                   headerName: 'Records',
                   flex: 0.15,
                   renderCell: params =>
-                    format('.1s')(outputMetrics?.get(params.row.ac.config.trim())?.transmitted_records || 0)
+                    format('.1s')(outputMetrics?.get(params.row.ac.relation_name.trim())?.transmitted_records || 0)
                 },
                 {
                   field: 'traffic',
                   headerName: 'Traffic',
                   flex: 0.15,
                   renderCell: params =>
-                    humanSize(outputMetrics?.get(params.row.ac.config.trim())?.transmitted_bytes || 0)
+                    humanSize(outputMetrics?.get(params.row.ac.relation_name.trim())?.transmitted_bytes || 0)
                 },
                 {
                   field: 'action',
@@ -271,7 +274,9 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                         size='small'
                         onClick={e => {
                           e.preventDefault()
-                          router.push('/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.ac.config)
+                          router.push(
+                            '/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.ac.relation_name
+                          )
                         }}
                       >
                         <Icon icon='bx:show' fontSize={20} />
@@ -471,7 +476,7 @@ export default function PipelineTable() {
       headerName: 'Changes',
       flex: 1,
       renderCell: (params: GridRenderCellParams) => {
-        return <PipelineRevisionStatusChip pipeline={params.row.descriptor} />
+        return <PipelineRevisionStatusChip pipeline={params.row} />
       }
     },
     {

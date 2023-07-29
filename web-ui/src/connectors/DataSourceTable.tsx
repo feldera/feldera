@@ -11,9 +11,9 @@ import CustomChip from 'src/@core/components/mui/chip'
 import { GridColDef, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { ConnectorService } from 'src/types/manager/services/ConnectorService'
+import { ConnectorsService } from 'src/types/manager/services/ConnectorsService'
 import { ConnectorDescr } from 'src/types/manager/models/ConnectorDescr'
-import { CancelError, UpdateConnectorRequest, UpdateConnectorResponse } from 'src/types/manager'
+import { CancelError, ConnectorId, UpdateConnectorRequest, UpdateConnectorResponse } from 'src/types/manager'
 import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { ConnectorDialog, getStatusObj, connectorDescrToType } from 'src/types/connectors'
@@ -28,16 +28,22 @@ const DataSourceTable = () => {
   const fetchQuery = useQuery<ConnectorDescr[]>(['connector'])
 
   // Update row name and description if edited in the cells:
-  const mutation = useMutation<UpdateConnectorResponse, CancelError, UpdateConnectorRequest>(
-    ConnectorService.updateConnector
-  )
+  const mutation = useMutation<
+    UpdateConnectorResponse,
+    CancelError,
+    { connector_id: ConnectorId; request: UpdateConnectorRequest }
+  >({
+    mutationFn: args => ConnectorsService.updateConnector(args.connector_id, args.request)
+  })
   const processRowUpdate = useCallback(
     (newRow: ConnectorDescr, oldRow: ConnectorDescr) => {
       mutation.mutate(
         {
           connector_id: newRow.connector_id,
-          description: newRow.description,
-          name: newRow.name
+          request: {
+            description: newRow.description,
+            name: newRow.name
+          }
         },
         {
           onSettled: () => {
@@ -57,7 +63,7 @@ const DataSourceTable = () => {
   )
 
   // Delete a connector entry
-  const deleteMutation = useMutation<void, CancelError, string>(ConnectorService.deleteConnector)
+  const deleteMutation = useMutation<void, CancelError, string>(ConnectorsService.deleteConnector)
   const deleteSource = useCallback(
     (cur_row: ConnectorDescr) => {
       setTimeout(() => {

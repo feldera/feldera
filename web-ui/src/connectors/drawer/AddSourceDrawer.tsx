@@ -148,7 +148,7 @@ const SideBarAddIo = () => {
     const ac: AttachedConnector = {
       name: randomString(),
       connector_id: connector.connector_id,
-      config: '',
+      relation_name: '',
       is_input: forNodes === 'inputNode'
     }
     addConnector(connector, ac)

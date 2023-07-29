@@ -4,15 +4,13 @@
 
 import type { AttachedConnector } from './AttachedConnector'
 import type { ProgramId } from './ProgramId'
+import type { RuntimeConfig } from './RuntimeConfig'
 
 /**
- * Request to create a new program configuration.
+ * Request to create a new pipeline.
  */
 export type NewPipelineRequest = {
-  /**
-   * YAML code for the config.
-   */
-  config: string
+  config: RuntimeConfig
   /**
    * Attached connectors.
    */

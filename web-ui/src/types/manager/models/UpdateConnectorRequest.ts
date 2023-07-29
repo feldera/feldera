@@ -2,17 +2,13 @@
 /* tslint:disable */
 /* eslint-disable */
 
-import type { ConnectorId } from './ConnectorId'
+import type { ConnectorConfig } from './ConnectorConfig'
 
 /**
  * Request to update an existing data-connector.
  */
 export type UpdateConnectorRequest = {
-  /**
-   * New config YAML. If absent, existing YAML will be kept unmodified.
-   */
-  config?: string | null
-  connector_id: ConnectorId
+  config?: ConnectorConfig | null
   /**
    * New connector description.
    */

@@ -2,7 +2,7 @@
 // the server for creating a pipeline.
 
 import { SaveIndicatorState } from 'src/components/SaveIndicator'
-import { ProgramDescr } from 'src/types/manager'
+import { ProgramDescr, RuntimeConfig } from 'src/types/manager'
 import { create } from 'zustand'
 
 interface PipelineBuilderState {
@@ -10,11 +10,11 @@ interface PipelineBuilderState {
   project: ProgramDescr | undefined
   name: string
   description: string
-  config: string
+  config: RuntimeConfig
   setName: (name: string) => void
   setDescription: (description: string) => void
   setSaveState: (saveState: SaveIndicatorState) => void
-  setConfig: (config: string) => void
+  setConfig: (config: RuntimeConfig) => void
   setProject: (config: ProgramDescr | undefined) => void
 }
 
@@ -23,10 +23,10 @@ export const useBuilderState = create<PipelineBuilderState>(set => ({
   project: undefined,
   name: '',
   description: '',
-  config: '',
+  config: {},
   setName: (name: string) => set({ name }),
   setDescription: (description: string) => set({ description }),
   setSaveState: (saveState: SaveIndicatorState) => set({ saveState }),
   setProject: (project: ProgramDescr | undefined) => set({ project }),
-  setConfig: (config: string) => set({ config })
+  setConfig: (config: RuntimeConfig) => set({ config })
 }))

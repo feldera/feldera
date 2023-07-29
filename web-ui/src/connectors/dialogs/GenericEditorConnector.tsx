@@ -15,7 +15,6 @@ import TextField from '@mui/material/TextField'
 import DialogActions from '@mui/material/DialogActions'
 import FormHelperText from '@mui/material/FormHelperText'
 import { Icon } from '@iconify/react'
-import YAML from 'yaml'
 import * as yup from 'yup'
 import { yupResolver } from '@hookform/resolvers/yup'
 import { Controller, useForm } from 'react-hook-form'
@@ -23,7 +22,7 @@ import { useTheme } from '@mui/material'
 import { Editor } from '@monaco-editor/react'
 
 import Transition from './tabs/Transition'
-import { ConnectorDescr, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
+import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
@@ -62,17 +61,21 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
     defaultValues: {
       name: '',
       description: '',
-      config: YAML.stringify({
-        transport: {
-          name: 'transport-name',
-          config: {
-            property: 'value'
+      config: JSON.stringify(
+        {
+          transport: {
+            name: 'transport-name',
+            config: {
+              property: 'value'
+            }
+          },
+          format: {
+            name: 'csv'
           }
         },
-        format: {
-          name: 'csv'
-        }
-      })
+        null,
+        2
+      )
     },
     values: curValues
   })
@@ -89,19 +92,24 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
   }
 
   // Define what should happen when the form is submitted
-  const genericRequest = (data: EditorSchema, connector_id?: string): NewConnectorRequest | UpdateConnectorRequest => {
-    return {
-      name: data.name,
-      description: data.description,
-      config: data.config,
-      ...(connector_id && { connector_id: connector_id })
-    }
+  const genericRequest = (
+    data: EditorSchema,
+    connector_id?: string
+  ): [ConnectorId | undefined, NewConnectorRequest | UpdateConnectorRequest] => {
+    return [
+      connector_id,
+      {
+        name: data.name,
+        description: data.description,
+        config: JSON.parse(data.config)
+      }
+    ]
   }
-  const newRequest = (data: EditorSchema): NewConnectorRequest => {
-    return genericRequest(data) as NewConnectorRequest
+  const newRequest = (data: EditorSchema): [undefined, NewConnectorRequest] => {
+    return genericRequest(data) as [undefined, NewConnectorRequest]
   }
-  const updateRequest = (data: EditorSchema): UpdateConnectorRequest => {
-    return genericRequest(data, props.connector?.connector_id) as UpdateConnectorRequest
+  const updateRequest = (data: EditorSchema): [ConnectorId, UpdateConnectorRequest] => {
+    return genericRequest(data, props.connector?.connector_id) as [ConnectorId, UpdateConnectorRequest]
   }
   const onSubmit =
     props.connector === undefined

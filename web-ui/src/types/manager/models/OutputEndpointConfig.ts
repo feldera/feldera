@@ -2,21 +2,15 @@
 /* tslint:disable */
 /* eslint-disable */
 
-import type { FormatConfig } from './FormatConfig'
-import type { TransportConfig } from './TransportConfig'
+import type { ConnectorConfig } from './ConnectorConfig'
 
-export type OutputEndpointConfig = {
-  format: FormatConfig
-  /**
-   * Backpressure threshold.
-   *
-   * The default is 1 million.
-   */
-  max_buffered_records?: number
+/**
+ * Describes an output connector configuration
+ */
+export type OutputEndpointConfig = ConnectorConfig & {
   /**
    * The name of the output stream of the circuit that this endpoint is
    * connected to.
    */
   stream: string
-  transport: TransportConfig
 }

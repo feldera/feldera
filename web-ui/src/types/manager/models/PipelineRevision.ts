@@ -3,6 +3,7 @@
 /* eslint-disable */
 
 import type { ConnectorDescr } from './ConnectorDescr'
+import type { PipelineConfig } from './PipelineConfig'
 import type { PipelineDescr } from './PipelineDescr'
 import type { ProgramDescr } from './ProgramDescr'
 import type { Revision } from './Revision'
@@ -12,14 +13,7 @@ import type { Revision } from './Revision'
  * contains all information necessary to run a pipeline.
  */
 export type PipelineRevision = {
-  /**
-   * The versioned SQL code.
-   */
-  code: string
-  /**
-   * The generated TOML config for the pipeline.
-   */
-  config: string
+  config: PipelineConfig
   /**
    * The versioned connectors.
    */

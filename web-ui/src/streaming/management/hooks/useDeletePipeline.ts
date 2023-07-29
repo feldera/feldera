@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react'
 import { ClientPipelineStatus, usePipelineStateStore } from '../StatusContext'
-import { PipelineService, CancelError, PipelineId } from 'src/types/manager'
+import { PipelinesService, CancelError, PipelineId } from 'src/types/manager'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 
@@ -11,7 +11,7 @@ function useDeletePipeline() {
   const { pushMessage } = useStatusNotification()
   const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
   const { mutate: deletePipeline, isLoading: deletePipelineLoading } = useMutation<string, CancelError, string>(
-    PipelineService.pipelineDelete
+    PipelinesService.pipelineDelete
   )
 
   const deletePipelineClick = useCallback(

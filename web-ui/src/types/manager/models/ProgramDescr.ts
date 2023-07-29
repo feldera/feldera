@@ -12,6 +12,10 @@ import type { Version } from './Version'
  */
 export type ProgramDescr = {
   /**
+   * SQL code
+   */
+  code?: string | null
+  /**
    * Program description.
    */
   description: string

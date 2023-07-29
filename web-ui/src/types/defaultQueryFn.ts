@@ -11,60 +11,46 @@
 import { QueryClient, QueryFunctionContext } from '@tanstack/react-query'
 import { match, P } from 'ts-pattern'
 import {
-  ConnectorService,
+  ConnectorsService,
   Pipeline,
   PipelineId,
-  PipelineService,
+  PipelinesService,
   PipelineStatus,
-  ProgramCodeResponse,
   ProgramDescr,
-  ProgramService,
+  ProgramId,
+  ProgramsService,
   UpdateProgramRequest
 } from './manager'
 
 // Updates the query cache for a `UpdateProgramRequest` response.
-export const projectQueryCacheUpdate = (queryClient: QueryClient, newData: UpdateProgramRequest) => {
-  queryClient.setQueryData(
-    ['programCode', { program_id: newData.program_id }],
-    (oldData: ProgramCodeResponse | undefined) => {
-      if (oldData) {
-        const newd = {
+export const projectQueryCacheUpdate = (
+  queryClient: QueryClient,
+  programId: ProgramId,
+  newData: UpdateProgramRequest
+) => {
+  queryClient.setQueryData(['programCode', { program_id: programId }], (oldData: ProgramDescr | undefined) => {
+    return oldData
+      ? {
           ...oldData,
-          ...{
-            project: {
-              ...oldData.program,
-              ...{
-                name: newData.name,
-                description: newData.description ? newData.description : oldData.program.description
-              }
-            },
-            code: newData.code ? newData.code : oldData.code
-          }
+          name: newData.name,
+          description: newData.description ? newData.description : oldData.description,
+          code: newData.code ? newData.code : oldData.code
         }
-        console.log('newdata is')
-        console.log(newd)
-        return newd
-      } else {
-        return oldData
-      }
-    }
-  )
+      : oldData
+  })
 
-  queryClient.setQueryData(
-    ['programStatus', { program_id: newData.program_id }],
-    (oldData: ProgramDescr | undefined) => {
-      return oldData
-        ? {
-            ...oldData,
-            ...{ name: newData.name, description: newData.description ? newData.description : oldData.description }
-          }
-        : oldData
-    }
-  )
+  queryClient.setQueryData(['programStatus', { program_id: programId }], (oldData: ProgramDescr | undefined) => {
+    return oldData
+      ? {
+          ...oldData,
+          ...{ name: newData.name, description: newData.description ? newData.description : oldData.description }
+        }
+      : oldData
+  })
 
   queryClient.setQueryData(['program'], (oldData: ProgramDescr[] | undefined) =>
     oldData?.map((project: ProgramDescr) => {
-      if (project.program_id === newData.program_id) {
+      if (project.program_id === programId) {
         const projectDescUpdates = {
           name: newData.name,
           description: newData.description ? newData.description : project.description
@@ -114,63 +100,63 @@ export const defaultQueryFn = async (context: QueryFunctionContext) => {
   return match(context.queryKey)
     .with(['programCode', { program_id: P.select() }], program_id => {
       if (typeof program_id == 'string') {
-        return ProgramService.programCode(program_id)
+        return ProgramsService.getProgram(program_id, true)
       } else {
         throw new Error('Invalid query key, program_id should be a string')
       }
     })
     .with(['programStatus', { program_id: P.select() }], program_id => {
       if (typeof program_id == 'string') {
-        return ProgramService.programStatus(program_id)
+        return ProgramsService.getProgram(program_id, false)
       } else {
         throw new Error('Invalid query key, program_id should be a string')
       }
     })
     .with(['pipelineStatus', { pipeline_id: P.select() }], pipeline_id => {
       if (typeof pipeline_id == 'string') {
-        return PipelineService.pipelineStatus(pipeline_id)
+        return PipelinesService.getPipeline(pipeline_id)
       } else {
         throw new Error('Invalid query key, pipeline_id should be a string')
       }
     })
     .with(['pipelineConfig', { pipeline_id: P.select() }], pipeline_id => {
       if (typeof pipeline_id == 'string') {
-        return PipelineService.pipelineStatus(pipeline_id, undefined, true)
+        return PipelinesService.getPipelineConfig(pipeline_id)
       } else {
         throw new Error('Invalid query key, pipeline_id should be a string')
       }
     })
     .with(['pipelineStats', { pipeline_id: P.select() }], pipeline_id => {
       if (typeof pipeline_id == 'string') {
-        return PipelineService.pipelineStats(pipeline_id)
+        return PipelinesService.pipelineStats(pipeline_id)
       } else {
         throw new Error('Invalid query key, pipeline_id should be a string')
       }
     })
     .with(['pipelineLastRevision', { pipeline_id: P.select() }], pipeline_id => {
       if (typeof pipeline_id == 'string') {
-        return PipelineService.pipelineCommitted(pipeline_id)
+        return PipelinesService.pipelineDeployed(pipeline_id)
       } else {
         throw new Error('Invalid query key, pipeline_id should be a string')
       }
     })
     .with(['pipelineValidate', { pipeline_id: P.select() }], pipeline_id => {
       if (typeof pipeline_id == 'string') {
-        return PipelineService.pipelineValidate(pipeline_id)
+        return PipelinesService.pipelineValidate(pipeline_id)
       } else {
         throw new Error('Invalid query key, pipeline_id should be a string')
       }
     })
     .with(['connectorStatus', { connector_id: P.select() }], connector_id => {
       if (typeof connector_id == 'string') {
-        return ConnectorService.connectorStatus(connector_id)
+        return ConnectorsService.getConnector(connector_id)
       } else {
         throw new Error('Invalid query key, connector_id should be a string')
       }
     })
-    .with(['program'], () => ProgramService.listPrograms())
-    .with(['connector'], () => ConnectorService.listConnectors())
-    .with(['pipeline'], () => PipelineService.listPipelines())
+    .with(['program'], () => ProgramsService.getPrograms())
+    .with(['connector'], () => ConnectorsService.listConnectors())
+    .with(['pipeline'], () => PipelinesService.listPipelines())
     .otherwise(() => {
       throw new Error('Invalid query key, maybe you need to update defaultQueryFn.ts')
     })

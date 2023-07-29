@@ -8,10 +8,6 @@ import type { ConnectorId } from './ConnectorId'
  * Format to add attached connectors during a config update.
  */
 export type AttachedConnector = {
-  /**
-   * The YAML config for this attached connector.
-   */
-  config: string
   connector_id: ConnectorId
   /**
    * Is this an input or an output?
@@ -21,4 +17,8 @@ export type AttachedConnector = {
    * A unique identifier for this attachement.
    */
   name: string
+  /**
+   * The table or view this connector is attached to.
+   */
+  relation_name: string
 }
