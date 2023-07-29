@@ -1585,7 +1585,7 @@ impl Storage for ProjectDB {
                     .await?;
             }
         }
-        let config = config.as_ref().map(|c| RuntimeConfig::to_yaml(&c));
+        let config = config.as_ref().map(RuntimeConfig::to_yaml);
         let row = txn.query_opt("UPDATE pipeline SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), program_id = $4 WHERE id = $5 AND tenant_id = $6 RETURNING version",
             &[&pipline_name, &pipeline_description, &config, &program_id.map(|id| id.0), &pipeline_id.0, &tenant_id.0])
             .await
