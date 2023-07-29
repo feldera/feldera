@@ -658,10 +658,7 @@ impl PipelineRevision {
 
         let pc = PipelineConfig {
             name: Some(format!("pipeline-{pipeline_id}")),
-            global: pipeline
-                .config
-                .clone()
-                .unwrap_or_else(|| serde_yaml::from_str("").unwrap()),
+            global: pipeline.config.clone(),
             inputs: expanded_inputs,
             outputs: expanded_outputs,
         };
@@ -678,7 +675,7 @@ pub(crate) struct PipelineDescr {
     pub version: Version,
     pub name: String,
     pub description: String,
-    pub config: Option<RuntimeConfig>,
+    pub config: RuntimeConfig,
     pub attached_connectors: Vec<AttachedConnector>,
 }
 
@@ -1501,12 +1498,12 @@ impl Storage for ProjectDB {
         program_id: Option<ProgramId>,
         pipline_name: &str,
         pipeline_description: &str,
-        config: &Option<RuntimeConfig>,
+        config: &RuntimeConfig,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> Result<(PipelineId, Version), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let config_str = RuntimeConfig::to_string(config);
+        let config_str = RuntimeConfig::to_yaml(config);
         txn.execute(
             "INSERT INTO pipeline (id, program_id, version, name, description, config, tenant_id) VALUES($1, $2, 1, $3, $4, $5, $6)",
             &[&id, &program_id.map(|id| id.0),
@@ -1588,7 +1585,7 @@ impl Storage for ProjectDB {
                     .await?;
             }
         }
-        let config = RuntimeConfig::to_string(config);
+        let config = config.as_ref().map(|c| RuntimeConfig::to_yaml(&c));
         let row = txn.query_opt("UPDATE pipeline SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), program_id = $4 WHERE id = $5 AND tenant_id = $6 RETURNING version",
             &[&pipline_name, &pipeline_description, &config, &program_id.map(|id| id.0), &pipeline_id.0, &tenant_id.0])
             .await
@@ -2159,7 +2156,7 @@ impl ProjectDB {
             version: Version(row.get(1)),
             name: row.get(2),
             description: row.get(3),
-            config: RuntimeConfig::from_string(row.get(4)),
+            config: RuntimeConfig::from_yaml(row.get(4)),
             attached_connectors: self.json_to_attached_connectors(row.get(6)).await?,
         })
     }
@@ -2195,7 +2192,7 @@ impl ProjectDB {
             version: Version(row.get(1)),
             name: row.get(2),
             description: row.get(3),
-            config: RuntimeConfig::from_string(row.get(4)),
+            config: RuntimeConfig::from_yaml(row.get(4)),
             attached_connectors: self.json_to_attached_connectors(row.get(6)).await?,
         };
 
