@@ -21,6 +21,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
@@ -38,6 +39,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFloat;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -123,7 +125,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
      * Convert a date from the MM-DD-YYYY format (which is used in the Postgres output)
      * to a DBSPLiteral.
      */
-    static DBSPExpression convertDate(@Nullable String date) {
+    static DBSPExpression parseDate(@Nullable String date) {
         if (date == null || date.isEmpty() || date.equalsIgnoreCase("null"))
             return DBSPLiteral.none(DBSPTypeDate.NULLABLE_INSTANCE);
         try {
@@ -135,10 +137,121 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         }
     }
 
-    static DBSPExpression convertTime(@Nullable String time) {
+    static DBSPExpression parseTime(@Nullable String time) {
         if (time == null || time.isEmpty() || time.equalsIgnoreCase("null"))
             return DBSPLiteral.none(DBSPTypeTime.NULLABLE_INSTANCE);
         return new DBSPTimeLiteral(CalciteObject.EMPTY, DBSPTypeTime.NULLABLE_INSTANCE, new TimeString(time));
+    }
+
+    static final Pattern YEAR = Pattern.compile("^(\\d+) years?(.*)");
+    static final Pattern MONTHS = Pattern.compile("^\\s*(\\d+) months?(.*)");
+
+    static int longIntervalToMonths(String interval) {
+        String orig = interval;
+
+        int result = 0;
+        if (interval.equals("0")) {
+            interval = "";
+        } else {
+            Matcher m = YEAR.matcher(interval);
+            if (m.matches()) {
+                int months = Integer.parseInt(m.group(1));
+                result += months * 12;
+                interval = m.group(2);
+            }
+
+            m = MONTHS.matcher(interval);
+            if (m.matches()) {
+                int days = Integer.parseInt(m.group(1));
+                result += days;
+                interval = m.group(2);
+            }
+
+            m = AGO.matcher(interval);
+            if (m.matches()) {
+                interval = m.group(1);
+                result = -result;
+            }
+        }
+        //System.out.println(orig + "->" + result + ": " + interval);
+        if (!interval.isEmpty())
+            throw new RuntimeException("Could not parse interval " + orig);
+        return result;
+    }
+
+    static final Pattern MINUS = Pattern.compile("^-(.*)");
+    static final Pattern DAYS = Pattern.compile("^(\\d+) days?(.*)");
+    static final Pattern HOURS = Pattern.compile("^\\s*(\\d+) hours?(.*)");
+    static final Pattern MINUTES = Pattern.compile("\\s*(\\d+) mins?(.*)");
+    static final Pattern SECONDS = Pattern.compile("\\s*(\\d+)([.](\\d+))? secs?(.*)");
+    static final Pattern HMS = Pattern.compile("\\s*([0-9][0-9]:[0-9][0-9]:[0-9][0-9])(\\.[0-9]*)?(.*)");
+    static final Pattern AGO = Pattern.compile("\\s*ago(.*)");
+
+    static long shortIntervalToMilliseconds(String interval) {
+        String orig = interval;
+        boolean negate = false;
+
+        long result = 0;
+        if (interval.equals("0")) {
+            interval = "";
+        } else {
+            Matcher m = MINUS.matcher(interval);
+            if (m.matches()) {
+                negate = true;
+                interval = m.group(1);
+            }
+
+            m = DAYS.matcher(interval);
+            if (m.matches()) {
+                int d = Integer.parseInt(m.group(1));
+                result += (long)d * 86_400_000;
+                interval = m.group(2);
+            }
+
+            m = HMS.matcher(interval);
+            if (m.matches()) {
+                String timeString = m.group(1);
+                if (m.group(2) != null)
+                    timeString += m.group(2);
+                TimeString time = new TimeString(timeString);
+                result += time.getMillisOfDay();
+                interval = m.group(3);
+            } else {
+                m = HOURS.matcher(interval);
+                if (m.matches()) {
+                    long h = Integer.parseInt(m.group(1));
+                    result += h * 3600_000;
+                    interval = m.group(2);
+                }
+
+                m = MINUTES.matcher(interval);
+                if (m.matches()) {
+                    long mm = Integer.parseInt(m.group(1));
+                    result += mm * 60_000;
+                    interval = m.group(2);
+                }
+
+                m = SECONDS.matcher(interval);
+                if (m.matches()) {
+                    long s = Integer.parseInt(m.group(1));
+                    result += s * 1000;
+                    interval = m.group(4);
+                }
+            }
+
+            m = AGO.matcher(interval);
+            if (m.matches()) {
+                interval = m.group(1);
+                negate = !negate;
+            }
+
+            if (negate)
+                result = -result;
+        }
+        //System.out.println(orig + "->" + result + ": " + interval);
+        if (!interval.isEmpty())
+            throw new RuntimeException("Could not parse interval " + orig);
+        return result;
     }
 
     public DBSPTupleExpression parseRow(String line, DBSPTypeTupleBase rowType) {
@@ -172,9 +285,9 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
             } else if (fieldType.is(DBSPTypeTimestamp.class)) {
                 columnValue = convertTimestamp(column, fieldType.mayBeNull);
             } else if (fieldType.is(DBSPTypeDate.class)) {
-                columnValue = convertDate(column);
+                columnValue = parseDate(column);
             } else if (fieldType.is(DBSPTypeTime.class)) {
-                columnValue = convertTime(column);
+                columnValue = parseTime(column);
             } else if (fieldType.is(DBSPTypeInteger.class)) {
                 DBSPTypeInteger intType = fieldType.to(DBSPTypeInteger.class);
                 switch (intType.getWidth()) {
@@ -194,8 +307,11 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
                         throw new UnimplementedException(intType);
                 }
             } else if (fieldType.is(DBSPTypeMillisInterval.class)) {
-                long value = Long.parseLong(column);
-                columnValue = new DBSPIntervalMillisLiteral(value * 86400000, fieldType.mayBeNull);
+                long milliseconds = shortIntervalToMilliseconds(column);
+                columnValue = new DBSPIntervalMillisLiteral(milliseconds, fieldType.mayBeNull);
+            } else if (fieldType.is(DBSPTypeMonthsInterval.class)) {
+                int months = longIntervalToMonths(column);
+                columnValue = new DBSPIntervalMonthsLiteral(months);
             } else if (fieldType.is(DBSPTypeString.class)) {
                 // No trim
                 columnValue = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, columns[i], StandardCharsets.UTF_8);

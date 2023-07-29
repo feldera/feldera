@@ -380,7 +380,7 @@ public abstract class InnerRewriteVisitor
 
     @Override
     public VisitDecision preorder(DBSPIntervalMonthsLiteral expression) {
-        this.pop(expression);
+        this.push(expression);
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
         DBSPExpression result = new DBSPIntervalMonthsLiteral(expression.getNode(), type, expression.value);
