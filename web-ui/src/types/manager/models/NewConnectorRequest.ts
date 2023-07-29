@@ -2,20 +2,19 @@
 /* tslint:disable */
 /* eslint-disable */
 
+import type { ConnectorConfig } from './ConnectorConfig'
+
 /**
  * Request to create a new connector.
  */
 export type NewConnectorRequest = {
+  config: ConnectorConfig
   /**
-   * connector config.
-   */
-  config: string
-  /**
-   * connector description.
+   * Connector description.
    */
   description: string
   /**
-   * connector name.
+   * Connector name.
    */
   name: string
 }

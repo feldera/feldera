@@ -10,7 +10,6 @@ import TabContext from '@mui/lab/TabContext'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import DialogContent from '@mui/material/DialogContent'
-import YAML from 'yaml'
 import { useForm } from 'react-hook-form'
 import { yupResolver } from '@hookform/resolvers/yup'
 import * as yup from 'yup'
@@ -19,7 +18,7 @@ import { Icon } from '@iconify/react'
 import TabKafkaNameAndDesc from 'src/connectors/dialogs/tabs/TabKafkaNameAndDesc'
 import TabFooter from 'src/connectors/dialogs/tabs/TabFooter'
 import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
-import { ConnectorDescr, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
+import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
 import { connectorTypeToConfig, parseKafkaOutputSchema, ConnectorType } from 'src/types/connectors'
@@ -85,30 +84,32 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const genericRequest = (
     data: KafkaOutputSchema,
     connector_id?: string
-  ): NewConnectorRequest | UpdateConnectorRequest => {
-    return {
-      name: data.name,
-      description: data.description,
-      config: YAML.stringify({
-        transport: {
-          name: connectorTypeToConfig(ConnectorType.KAFKA_OUT),
-          config: {
-            'bootstrap.servers': data.host,
-            'auto.offset.reset': data.auto_offset,
-            topic: data.topic
-          }
-        },
-        format: { name: 'csv' }
-      }),
-      ...(connector_id && { connector_id: connector_id })
-    }
+  ): [ConnectorId | undefined, NewConnectorRequest | UpdateConnectorRequest] => {
+    return [
+      connector_id,
+      {
+        name: data.name,
+        description: data.description,
+        config: {
+          transport: {
+            name: connectorTypeToConfig(ConnectorType.KAFKA_OUT),
+            config: {
+              'bootstrap.servers': data.host,
+              'auto.offset.reset': data.auto_offset,
+              topic: data.topic
+            }
+          },
+          format: { name: 'csv' }
+        }
+      }
+    ]
   }
 
-  const newRequest = (data: KafkaOutputSchema): NewConnectorRequest => {
-    return genericRequest(data) as NewConnectorRequest
+  const newRequest = (data: KafkaOutputSchema): [undefined, NewConnectorRequest] => {
+    return genericRequest(data) as [undefined, NewConnectorRequest]
   }
-  const updateRequest = (data: KafkaOutputSchema): UpdateConnectorRequest => {
-    return genericRequest(data, props.connector?.connector_id) as UpdateConnectorRequest
+  const updateRequest = (data: KafkaOutputSchema): [ConnectorId, UpdateConnectorRequest] => {
+    return genericRequest(data, props.connector?.connector_id) as [ConnectorId, UpdateConnectorRequest]
   }
 
   const onSubmit =

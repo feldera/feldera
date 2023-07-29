@@ -13,10 +13,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { match, P } from 'ts-pattern'
 
 import CustomChip from 'src/@core/components/mui/chip'
-import { ProgramService } from 'src/types/manager/services/ProgramService'
+import { ProgramsService } from 'src/types/manager/services/ProgramsService'
 import { ProgramDescr } from 'src/types/manager/models/ProgramDescr'
 import { ProgramStatus } from 'src/types/manager/models/ProgramStatus'
-import { CancelError, UpdateProgramRequest, UpdateProgramResponse } from 'src/types/manager'
+import { CancelError, ProgramId, UpdateProgramRequest, UpdateProgramResponse } from 'src/types/manager'
 import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 
@@ -112,13 +112,18 @@ const TableSqlPrograms = () => {
   ]
 
   // Editing a row
-  const mutation = useMutation<UpdateProgramResponse, CancelError, UpdateProgramRequest>(ProgramService.updateProgram)
+  const mutation = useMutation<
+    UpdateProgramResponse,
+    CancelError,
+    { program_id: ProgramId; request: UpdateProgramRequest }
+  >(args => {
+    return ProgramsService.updateProgram(args.program_id, args.request)
+  })
   const processRowUpdate = (newRow: ProgramDescr, oldRow: ProgramDescr) => {
     mutation.mutate(
       {
         program_id: newRow.program_id,
-        description: newRow.description,
-        name: newRow.name
+        request: { description: newRow.description, name: newRow.name }
       },
       {
         onError: (error: CancelError) => {
@@ -134,7 +139,7 @@ const TableSqlPrograms = () => {
   }
 
   // Deleting a row
-  const deleteMutation = useMutation<void, CancelError, string>(ProgramService.deleteProgram)
+  const deleteMutation = useMutation<void, CancelError, string>(ProgramsService.deleteProgram)
   const deleteProject = useCallback(
     (curRow: ProgramDescr) => {
       setTimeout(() => {

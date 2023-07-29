@@ -2,8 +2,6 @@
 /* tslint:disable */
 /* eslint-disable */
 
-import type { ProgramId } from './ProgramId'
-
 /**
  * Update program request.
  */
@@ -21,5 +19,4 @@ export type UpdateProgramRequest = {
    * New name for the program.
    */
   name: string
-  program_id: ProgramId
 }

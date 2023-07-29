@@ -27,14 +27,22 @@ import Tab from '@mui/material/Tab'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
 import TabContext from '@mui/lab/TabContext'
-import { Alert, AlertTitle, useTheme } from '@mui/material'
+import { Alert, AlertTitle, Tooltip, useTheme } from '@mui/material'
 
 import { Icon } from '@iconify/react'
 import { useQuery } from '@tanstack/react-query'
 import { DiffEditor, MonacoDiffEditor } from '@monaco-editor/react'
 import { diffLines, Change } from 'diff'
 
-import { ApiError, ErrorResponse, PipelineDescr, PipelineRevision, ProgramCodeResponse } from 'src/types/manager'
+import {
+  ApiError,
+  ErrorResponse,
+  Pipeline,
+  PipelineConfig,
+  PipelineRevision,
+  PipelineStatus,
+  ProgramDescr
+} from 'src/types/manager'
 import useStartPipeline from './hooks/useStartPipeline'
 import { ThemeColor } from 'src/@core/layouts/types'
 
@@ -65,7 +73,7 @@ const Transition = forwardRef(function Transition(
 })
 
 interface DialogProps {
-  pipeline: PipelineDescr
+  pipeline: Pipeline
   show: boolean
   setShow: Dispatch<SetStateAction<boolean>>
   origConfig: string
@@ -113,7 +121,7 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
   const startPipelineClick = useStartPipeline()
 
   const handleStart = () => {
-    startPipelineClick(pipeline.pipeline_id)
+    startPipelineClick(pipeline.descriptor.pipeline_id)
     setShow(false)
   }
   const handleChange = (event: SyntheticEvent, newValue: string) => {
@@ -125,6 +133,11 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
   function handleConfigEditorDidMount(editor: MonacoDiffEditor) {
     diffConfigEditorRef.current = editor
   }
+
+  const tooltipText =
+    pipeline.state.current_status == (PipelineStatus.RUNNING || pipeline.state.current_status == PipelineStatus.PAUSED)
+      ? 'Shutdown the pipeline first before you can deploy the new changes.'
+      : 'Start the pipeline with the new changes.'
 
   return (
     <Dialog
@@ -194,20 +207,34 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
         <Button variant='outlined' color='secondary' onClick={() => setShow(false)}>
           Cancel
         </Button>
-        <Button variant='contained' sx={{ mr: 1 }} onClick={handleStart} endIcon={<Icon icon='bx:play-circle' />}>
-          Start
-        </Button>
+        <span></span>
+        <Tooltip title={tooltipText}>
+          <span>
+            <Button
+              variant='contained'
+              sx={{ mr: 1 }}
+              onClick={handleStart}
+              endIcon={<Icon icon='bx:play-circle' />}
+              disabled={
+                pipeline.state.current_status == PipelineStatus.RUNNING ||
+                pipeline.state.current_status == PipelineStatus.PAUSED
+              }
+            >
+              Start
+            </Button>
+          </span>
+        </Tooltip>
       </DialogActions>
     </Dialog>
   )
 }
 
 export interface Props {
-  pipeline: PipelineDescr
+  pipeline: Pipeline
 }
 
 export const PipelineRevisionStatusChip = (props: Props) => {
-  const pipeline = props.pipeline
+  const pipeline = props.pipeline.descriptor
   // note: for diffCount we only keep the added and removed lines in the
   // Change[] arrays and throw out the unchanged entries, see `diffLines` below.
   const [diffCount, setDiffCount] = useState<{ config: Change[]; program: Change[] } | undefined>(undefined)
@@ -226,8 +253,8 @@ export const PipelineRevisionStatusChip = (props: Props) => {
     }
   }, [pipeline.pipeline_id, pipelineValidateQuery])
 
-  const curPipelineConfigQuery = useQuery<string>(['pipelineConfig', { pipeline_id: pipeline.pipeline_id }])
-  const curProgramQuery = useQuery<ProgramCodeResponse>(['programCode', { program_id: pipeline.program_id }], {
+  const curPipelineConfigQuery = useQuery<PipelineConfig>(['pipelineConfig', { pipeline_id: pipeline.pipeline_id }])
+  const curProgramQuery = useQuery<ProgramDescr>(['programCode', { program_id: pipeline.program_id }], {
     enabled: pipeline.program_id != null
   })
   const pipelineRevisionQuery = useQuery<PipelineRevision>([
@@ -242,16 +269,21 @@ export const PipelineRevisionStatusChip = (props: Props) => {
       !curPipelineConfigQuery.isLoading &&
       !curPipelineConfigQuery.isError
     ) {
-      const configDiffResult = diffLines(pipelineRevisionQuery.data.config, curPipelineConfigQuery.data).filter(
-        line => line.added || line.removed
-      )
+      console.log('pipelineRevisionQuery.data', pipelineRevisionQuery.data)
+      console.log('curPipelineConfigQuery.data', curPipelineConfigQuery.data)
+
+      const configDiffResult = diffLines(
+        JSON.stringify(pipelineRevisionQuery.data.config, null, 2),
+        JSON.stringify(curPipelineConfigQuery.data, null, 2)
+      ).filter(line => line.added || line.removed)
+
       // Distinguish the case where the program is not set in the pipeline
       const programDiffResult =
         !curProgramQuery.isLoading && !curProgramQuery.isError && curProgramQuery.data
-          ? diffLines(pipelineRevisionQuery.data.code, curProgramQuery.data.code).filter(
+          ? diffLines(pipelineRevisionQuery.data.program.code || '', curProgramQuery.data.code || '').filter(
               line => line.added || line.removed
             )
-          : diffLines(pipelineRevisionQuery.data.code, '')
+          : diffLines(pipelineRevisionQuery.data.program.code || '', '')
 
       setDiffCount({ config: configDiffResult, program: programDiffResult })
       if (configDiffResult.length > 0 || programDiffResult.length > 0) {
@@ -278,13 +310,13 @@ export const PipelineRevisionStatusChip = (props: Props) => {
         {label}
       </Button>
       <PipelineConfigDiffDialog
-        pipeline={pipeline}
+        pipeline={props.pipeline}
         show={show}
         setShow={setShow}
         diffCount={diffCount}
-        origConfig={pipelineRevisionQuery.data?.config || ''}
-        newConfig={curPipelineConfigQuery.data || ''}
-        origProgram={pipelineRevisionQuery.data?.code || ''}
+        origConfig={JSON.stringify(pipelineRevisionQuery.data?.config || '', null, 2)}
+        newConfig={JSON.stringify(curPipelineConfigQuery.data || '', null, 2)}
+        origProgram={pipelineRevisionQuery.data?.program.code || ''}
         newProgram={curProgramQuery.data?.code || ''}
         validationError={validationError}
       />

@@ -8,6 +8,7 @@ import type { NewPipelineRequest } from '../models/NewPipelineRequest'
 import type { NewPipelineResponse } from '../models/NewPipelineResponse'
 import type { OutputQuery } from '../models/OutputQuery'
 import type { Pipeline } from '../models/Pipeline'
+import type { PipelineConfig } from '../models/PipelineConfig'
 import type { PipelineRevision } from '../models/PipelineRevision'
 import type { UpdatePipelineRequest } from '../models/UpdatePipelineRequest'
 import type { UpdatePipelineResponse } from '../models/UpdatePipelineResponse'
@@ -16,59 +17,31 @@ import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
 
-export class PipelineService {
+export class PipelinesService {
   /**
-   * Retrieve pipeline configuration and runtime state.
-   * Retrieve pipeline configuration and runtime state.
-   *
-   * When invoked without the `?toml` flag, this endpoint
-   * returns pipeline state, including static configuration and runtime status,
-   * in the JSON format.  The `?toml` flag changes the behavior of this
-   * endpoint to return static pipeline configuratiin in the TOML format.
-   * @param id Unique pipeline identifier
-   * @param name Unique pipeline name
-   * @param toml Set to true to request the configuration of the pipeline as a toml file.
-   * @returns string Pipeline descriptor retrieved successfully.
+   * Fetch pipelines, optionally filtered by name or ID.
+   * Fetch pipelines, optionally filtered by name or ID.
+   * @param id Unique pipeline id.
+   * @param name Unique pipeline name.
+   * @returns Pipeline Pipeline list retrieved successfully.
    * @throws ApiError
    */
-  public static pipelineStatus(
-    id?: string | null,
-    name?: string | null,
-    toml?: boolean | null
-  ): CancelablePromise<string> {
+  public static listPipelines(id?: string | null, name?: string | null): CancelablePromise<Array<Pipeline>> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/pipeline',
+      url: '/pipelines',
       query: {
         id: id,
-        name: name,
-        toml: toml
-      },
-      errors: {
-        400: `Pipeline not specified. Use ?id or ?name query strings in the URL.`,
-        404: `Specified pipeline id does not exist in the database.`
+        name: name
       }
     })
   }
 
   /**
-   * List pipelines.
-   * List pipelines.
-   * @returns Pipeline Pipeline list retrieved successfully.
-   * @throws ApiError
-   */
-  public static listPipelines(): CancelablePromise<Array<Pipeline>> {
-    return __request(OpenAPI, {
-      method: 'GET',
-      url: '/pipelines'
-    })
-  }
-
-  /**
-   * Create a new program configuration.
-   * Create a new program configuration.
+   * Create a new pipeline.
+   * Create a new pipeline.
    * @param requestBody
-   * @returns NewPipelineResponse Configuration successfully created.
+   * @returns NewPipelineResponse Pipeline successfully created.
    * @throws ApiError
    */
   public static newPipeline(requestBody: NewPipelineRequest): CancelablePromise<NewPipelineResponse> {
@@ -78,37 +51,34 @@ export class PipelineService {
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `Specified program id does not exist in the database.`
+        404: `Specified program id or connector ids do not exist.`
       }
     })
   }
 
   /**
-   * Update existing pipeline configuration.
-   * Update existing pipeline configuration.
-   *
-   * Updates pipeline configuration. On success, increments pipeline version by 1.
-   * @param requestBody
-   * @returns UpdatePipelineResponse Pipeline successfully updated.
+   * Fetch a pipeline by ID.
+   * Fetch a pipeline by ID.
+   * @param pipelineId Unique pipeline identifier
+   * @returns Pipeline Pipeline descriptor retrieved successfully.
    * @throws ApiError
    */
-  public static updatePipeline(requestBody: UpdatePipelineRequest): CancelablePromise<UpdatePipelineResponse> {
+  public static getPipeline(pipelineId: string): CancelablePromise<Pipeline> {
     return __request(OpenAPI, {
-      method: 'PATCH',
-      url: '/pipelines',
-      body: requestBody,
-      mediaType: 'application/json',
+      method: 'GET',
+      url: '/pipelines/{pipeline_id}',
+      path: {
+        pipeline_id: pipelineId
+      },
       errors: {
-        404: `Specified connector id does not exist in the database.`
+        404: `Specified pipeline ID does not exist.`
       }
     })
   }
 
   /**
-   * Delete a pipeline.
-   * Delete a pipeline.
-   *
-   * Deletes the pipeline.  The pipeline must not be executing.
+   * Delete a pipeline. The pipeline must be in the shutdown state.
+   * Delete a pipeline. The pipeline must be in the shutdown state.
    * @param pipelineId Unique pipeline identifier
    * @returns any Pipeline successfully deleted.
    * @throws ApiError
@@ -121,36 +91,89 @@ export class PipelineService {
         pipeline_id: pipelineId
       },
       errors: {
-        400: `Pipeline cannot be deleted while executing. Shutdown the pipeine first.`,
-        404: `Specified pipeline id does not exist in the database.`
+        400: `Pipeline ID is invalid or pipeline is already running.`,
+        404: `Specified pipeline id does not exist.`
       }
     })
   }
 
   /**
-   * Return the last committed (and running, if pipeline is started)
-   * Return the last committed (and running, if pipeline is started)
-   * configuration of the pipeline.
+   * Change a pipeline's name, description, code, configuration, or connectors.
+   * Change a pipeline's name, description, code, configuration, or connectors.
+   * On success, increments the pipeline's version by 1.
    * @param pipelineId Unique pipeline identifier
-   * @returns any Last committed configuration of the pipeline retrieved successfully (returns null if pipeline was never deployed yet).
+   * @param requestBody
+   * @returns UpdatePipelineResponse Pipeline successfully updated.
    * @throws ApiError
    */
-  public static pipelineCommitted(pipelineId: string): CancelablePromise<PipelineRevision | null> {
+  public static updatePipeline(
+    pipelineId: string,
+    requestBody: UpdatePipelineRequest
+  ): CancelablePromise<UpdatePipelineResponse> {
+    return __request(OpenAPI, {
+      method: 'PATCH',
+      url: '/pipelines/{pipeline_id}',
+      path: {
+        pipeline_id: pipelineId
+      },
+      body: requestBody,
+      mediaType: 'application/json',
+      errors: {
+        404: `Specified pipeline or connector id does not exist.`
+      }
+    })
+  }
+
+  /**
+   * Fetch a pipeline's configuration.
+   * Fetch a pipeline's configuration.
+   *
+   * When defining a pipeline, clients have to provide an optional
+   * `RuntimeConfig` for the pipelines and references to existing
+   * connectors to attach to the pipeline. This endpoint retrieves
+   * the *expanded* definition of the pipeline's configuration,
+   * which comprises both the `RuntimeConfig` and the complete
+   * definitions of the attached connectors.
+   * @param pipelineId Unique pipeline identifier
+   * @returns PipelineConfig Expanded pipeline configuration retrieved successfully.
+   * @throws ApiError
+   */
+  public static getPipelineConfig(pipelineId: string): CancelablePromise<PipelineConfig> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/pipelines/{pipeline_id}/committed',
+      url: '/pipelines/{pipeline_id}/config',
       path: {
         pipeline_id: pipelineId
       },
       errors: {
-        404: `Specified \`pipeline_id\` does not exist in the database.`
+        404: `Specified pipeline ID does not exist.`
       }
     })
   }
 
   /**
-   * Subscribe to a stream of updates to a SQL view or table.
-   * Subscribe to a stream of updates to a SQL view or table.
+   * Return the currently deployed version of the pipeline, if any.
+   * Return the currently deployed version of the pipeline, if any.
+   * @param pipelineId Unique pipeline identifier
+   * @returns any Last deployed version of the pipeline retrieved successfully (returns null if pipeline was never deployed yet).
+   * @throws ApiError
+   */
+  public static pipelineDeployed(pipelineId: string): CancelablePromise<PipelineRevision | null> {
+    return __request(OpenAPI, {
+      method: 'GET',
+      url: '/pipelines/{pipeline_id}/deployed',
+      path: {
+        pipeline_id: pipelineId
+      },
+      errors: {
+        404: `Specified \`pipeline_id\` does not exist.`
+      }
+    })
+  }
+
+  /**
+   * Subscribe to a stream of updates from a SQL view or table.
+   * Subscribe to a stream of updates from a SQL view or table.
    *
    * The pipeline responds with a continuous stream of changes to the specified
    * table or view, encoded using the format specified in the `?format=`
@@ -254,17 +277,19 @@ export class PipelineService {
       },
       errors: {
         400: `Specified pipeline id is not a valid uuid.`,
-        404: `Specified pipeline id does not exist in the database.`
+        404: `Specified pipeline id does not exist.`
       }
     })
   }
 
   /**
-   * Validate the configuration of a  a pipeline.
-   * Validate the configuration of a  a pipeline.
+   * Validate a pipeline.
+   * Validate a pipeline.
    *
-   * Validate configuration, usable as a pre-cursor for deploy to
-   * check if pipeline configuration is valid and can be deployed.
+   * Checks whether a pipeline is configured correctly. This includes
+   * checking whether the pipeline references a valid compiled program,
+   * whether the connectors reference valid tables/views in the program,
+   * and more.
    * @param pipelineId Unique pipeline identifier
    * @returns string Validate a Pipeline config.
    * @throws ApiError
@@ -277,9 +302,8 @@ export class PipelineService {
         pipeline_id: pipelineId
       },
       errors: {
-        400: `The connectors in the config reference a view that doesn't exist.`,
-        404: `Specified pipeline id does not exist in the database.`,
-        503: `The program associated with this pipeline has not been compiled.`
+        400: `Invalid pipeline.`,
+        404: `Specified pipeline id does not exist.`
       }
     })
   }
@@ -301,13 +325,11 @@ export class PipelineService {
    *
    * The following values of the `action` argument are accepted by this endpoint:
    *
-   * - 'deploy': Deploy the pipeline: create a process () or Kubernetes pod
-   * (cloud deployment) to execute the pipeline and initialize its connectors.
    * - 'start': Start processing data.
    * - 'pause': Pause the pipeline.
    * - 'shutdown': Terminate the execution of the pipeline.
    * @param pipelineId Unique pipeline identifier
-   * @param action Pipeline action [deploy, start, pause, shutdown]
+   * @param action Pipeline action [start, pause, shutdown]
    * @returns any Request accepted.
    * @throws ApiError
    */
@@ -320,10 +342,9 @@ export class PipelineService {
         action: action
       },
       errors: {
-        400: `Action is not applicable in the current state of the pipeline.`,
-        404: `Specified pipeline id does not exist in the database.`,
-        500: `Timeout waiting for the pipeline to initialize.`,
-        503: `The program associated with this pipeline has not been compiled.`
+        400: `Pipeline desired state is not valid.`,
+        404: `Specified pipeline id does not exist.`,
+        500: `Timeout waiting for the pipeline to initialize.`
       }
     })
   }

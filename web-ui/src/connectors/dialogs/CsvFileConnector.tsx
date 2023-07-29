@@ -14,13 +14,12 @@ import Switch from '@mui/material/Switch'
 import DialogActions from '@mui/material/DialogActions'
 import FormHelperText from '@mui/material/FormHelperText'
 import { Icon } from '@iconify/react'
-import YAML from 'yaml'
 import * as yup from 'yup'
 import { yupResolver } from '@hookform/resolvers/yup'
 import { Controller, useForm } from 'react-hook-form'
 
 import Transition from './tabs/Transition'
-import { ConnectorDescr, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
+import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
 import { connectorTypeToConfig, parseCsvFileSchema, ConnectorType } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
@@ -77,30 +76,37 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
   }
 
   // Define what should happen when the form is submitted
-  const genericRequest = (data: CsvFileSchema, connector_id?: string): NewConnectorRequest | UpdateConnectorRequest => {
-    return {
-      name: data.name,
-      description: data.description,
-      config: YAML.stringify({
-        transport: {
-          name: connectorTypeToConfig(ConnectorType.FILE),
-          config: {
-            path: data.url
+  const genericRequest = (
+    data: CsvFileSchema,
+    connector_id?: string
+  ): [ConnectorId | undefined, NewConnectorRequest | UpdateConnectorRequest] => {
+    return [
+      connector_id,
+      {
+        name: data.name,
+        description: data.description,
+        config: {
+          transport: {
+            name: connectorTypeToConfig(ConnectorType.FILE),
+            config: {
+              path: data.url
+            }
+          },
+          format: {
+            name: 'csv'
           }
-        },
-        format: {
-          name: 'csv'
         }
-      }),
-      ...(connector_id && { connector_id: connector_id })
-    }
+      }
+    ]
   }
-  const newRequest = (data: CsvFileSchema): NewConnectorRequest => {
-    return genericRequest(data) as NewConnectorRequest
+
+  const newRequest = (data: CsvFileSchema): [undefined, NewConnectorRequest] => {
+    return genericRequest(data) as [undefined, NewConnectorRequest]
   }
-  const updateRequest = (data: CsvFileSchema): UpdateConnectorRequest => {
-    return genericRequest(data, props.connector?.connector_id) as UpdateConnectorRequest
+  const updateRequest = (data: CsvFileSchema): [ConnectorId, UpdateConnectorRequest] => {
+    return genericRequest(data, props.connector?.connector_id) as [ConnectorId, UpdateConnectorRequest]
   }
+
   const onSubmit =
     props.connector === undefined
       ? ConnectorFormNewRequest<CsvFileSchema>(onFormSubmitted, newRequest)

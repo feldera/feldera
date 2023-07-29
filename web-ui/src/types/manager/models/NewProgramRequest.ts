@@ -18,8 +18,4 @@ export type NewProgramRequest = {
    * Program name.
    */
   name: string
-  /**
-   * Overwrite existing program with the same name, if any.
-   */
-  overwrite_existing?: boolean
 }
