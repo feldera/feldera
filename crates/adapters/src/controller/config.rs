@@ -71,19 +71,12 @@ pub struct RuntimeConfig {
 }
 
 impl RuntimeConfig {
-    pub fn from_string(s: &str) -> Option<Self> {
-        if s.is_empty() {
-            None
-        } else {
-            serde_yaml::from_str(s).unwrap()
-        }
+    pub fn from_yaml(s: &str) -> Self {
+        serde_yaml::from_str(s).unwrap()
     }
 
-    pub fn to_string(config: &Option<Self>) -> String {
-        match config {
-            None => "".to_string(),
-            Some(c) => serde_yaml::to_string(&c).unwrap(),
-        }
+    pub fn to_yaml(config: &Self) -> String {
+        serde_yaml::to_string(config).unwrap()
     }
 }
 

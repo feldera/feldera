@@ -328,7 +328,7 @@ async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> S
         "name":  "test",
         "description": "desc",
         "program_id": Some(id.to_string()),
-        "config": null,
+        "config": {},
         "connectors": null
     });
     let mut req = config.post("/v0/pipelines", &pipeline_request).await;
@@ -546,7 +546,7 @@ async fn program_delete_with_pipeline() {
         "name":  "test",
         "description": "desc",
         "program_id": Some(program_id.to_string()),
-        "config": null,
+        "config": {},
         "connectors": null
     });
     let mut req = config.post("/v0/pipelines", &pipeline_request).await;

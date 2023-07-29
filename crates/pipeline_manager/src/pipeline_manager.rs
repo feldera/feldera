@@ -432,7 +432,7 @@ format:
         program_id: Some(ProgramId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0"))),
         name: "My Pipeline".into(),
         description: "My Description".into(),
-        config: RuntimeConfig::from_string("workers: 8\n"),
+        config: RuntimeConfig::from_yaml("workers: 8\n"),
         attached_connectors: vec![input, output],
         version: Version(1),
     };
@@ -961,7 +961,7 @@ struct NewPipelineRequest {
     program_id: Option<ProgramId>,
     /// Pipeline configuration parameters.
     /// These knobs are independent of any connector
-    config: Option<RuntimeConfig>,
+    config: RuntimeConfig,
     /// Attached connectors.
     connectors: Option<Vec<AttachedConnector>>,
 }
@@ -1219,8 +1219,7 @@ async fn pipeline_stats(
 #[utoipa::path(
     responses(
         (status = OK, description = "Pipeline descriptor retrieved successfully.",content(
-            ("text/plain" = String, example = json!(example_pipeline_config())),
-            ("application/json" = Pipeline),
+            ("application/json" = Pipeline, example = json!(example_pipeline_config())),
         )),
         (status = NOT_FOUND
             , description = "Specified pipeline ID does not exist."

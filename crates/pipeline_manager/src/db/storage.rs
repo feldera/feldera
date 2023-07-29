@@ -246,7 +246,7 @@ pub(crate) trait Storage {
         program_id: Option<ProgramId>,
         pipline_name: &str,
         pipeline_description: &str,
-        config: &Option<RuntimeConfig>,
+        config: &RuntimeConfig,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> Result<(PipelineId, Version), DBError>;
 

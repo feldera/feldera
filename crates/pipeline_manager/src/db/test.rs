@@ -425,6 +425,7 @@ async fn program_config() {
         connector_id,
         relation_name: "".to_string(),
     };
+    let rc = RuntimeConfig::from_yaml("");
     let _ = handle
         .db
         .new_pipeline(
@@ -433,7 +434,7 @@ async fn program_config() {
             None,
             "1",
             "2",
-            &None,
+            &rc,
             &Some(vec![ac.clone()]),
         )
         .await
@@ -443,7 +444,7 @@ async fn program_config() {
     let config = res.get(0).unwrap();
     assert_eq!("1", config.descriptor.name);
     assert_eq!("2", config.descriptor.description);
-    assert_eq!(None, config.descriptor.config);
+    assert_eq!(rc, config.descriptor.config);
     assert_eq!(None, config.descriptor.program_id);
     let connectors = &config.descriptor.attached_connectors;
     assert_eq!(1, connectors.len());
@@ -559,6 +560,7 @@ async fn duplicate_attached_conn_name() {
         connector_id,
         relation_name: "".to_string(),
     };
+    let rc = RuntimeConfig::from_yaml("");
     let _ = handle
         .db
         .new_pipeline(
@@ -567,7 +569,7 @@ async fn duplicate_attached_conn_name() {
             None,
             "1",
             "2",
-            &None,
+            &rc,
             &Some(vec![ac, ac2]),
         )
         .await
@@ -721,6 +723,7 @@ async fn versioning() {
         connector_id: connector_id2,
         relation_name: "v1".to_string(),
     };
+    let rc = RuntimeConfig::from_yaml("");
     let (pipeline_id, _version) = handle
         .db
         .new_pipeline(
@@ -729,7 +732,7 @@ async fn versioning() {
             Some(program_id),
             "1",
             "2",
-            &None,
+            &rc,
             &Some(vec![ac1.clone(), ac2.clone()]),
         )
         .await
@@ -991,7 +994,7 @@ enum StorageAction {
         // TODO: Somehow, deriving Arbitrary for GlobalPipelineConfig isn't visible
         // to the Arbitrary trait implementation here.
         // We'll prepare the struct ourselves from its constintuent parts
-        Option<(u16, bool, u64, u64)>,
+        (u16, bool, u64, u64),
         Option<Vec<AttachedConnector>>,
     ),
     UpdatePipeline(
@@ -1341,12 +1344,12 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::NewPipeline(tenant_id, id, program_id, name, description, config, connectors) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let config = config.map(|config| RuntimeConfig {
+                                let config = RuntimeConfig {
                                     workers: config.0,
                                     cpu_profiler: config.1,
                                     min_batch_size_records: config.2,
                                     max_buffering_delay_usecs: config.3,
-                                });
+                                };
                                 let model_response =
                                     model.new_pipeline(tenant_id, id, program_id, &name, &description, &config, &connectors.clone()).await;
                                 let impl_response =
@@ -1835,7 +1838,7 @@ impl Storage for Mutex<DbModel> {
         program_id: Option<super::ProgramId>,
         pipeline_name: &str,
         pipeline_description: &str,
-        config: &Option<RuntimeConfig>,
+        config: &RuntimeConfig,
         // TODO: not clear why connectors is an option here
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> DBResult<(super::PipelineId, super::Version)> {
@@ -1995,7 +1998,7 @@ impl Storage for Mutex<DbModel> {
         c.name = pipeline_name.to_owned();
         c.description = pipeline_description.to_owned();
         c.version = c.version.increment();
-        c.config = config.clone();
+        c.config = config.clone().unwrap_or(c.config.clone());
         Ok(c.version)
     }
 
