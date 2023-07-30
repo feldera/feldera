@@ -754,6 +754,38 @@ async fn versioning() {
         .unwrap();
     handle
         .db
+        .set_program_status_guarded(tenant_id, program_id, Version(2), ProgramStatus::Success)
+        .await
+        .unwrap();
+    let _r = handle
+        .db
+        .set_program_schema(
+            tenant_id,
+            program_id,
+            ProgramSchema {
+                inputs: vec![
+                    Relation {
+                        name: "t1".into(),
+                        fields: vec![],
+                    },
+                    Relation {
+                        name: "t2".into(),
+                        fields: vec![],
+                    },
+                ],
+                outputs: vec![Relation {
+                    name: "v1".into(),
+                    fields: vec![],
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    let r2: Revision = commit_check(&handle, tenant_id, pipeline_id).await;
+    assert_ne!(r1, r2, "we got a new revision");
+
+    handle
+        .db
         .set_program_status_guarded(tenant_id, program_id, new_version, ProgramStatus::Success)
         .await
         .unwrap();
@@ -826,8 +858,8 @@ async fn versioning() {
         .unwrap();
 
     // Now we can commit again
-    let r2 = commit_check(&handle, tenant_id, pipeline_id).await;
-    assert_ne!(r1, r2, "we got a new revision");
+    let r3 = commit_check(&handle, tenant_id, pipeline_id).await;
+    assert_ne!(r2, r3, "we got a new revision");
 
     // If we change the connector we can commit again:
     let config3 = ConnectorConfig {
@@ -839,8 +871,8 @@ async fn versioning() {
         .update_connector(tenant_id, connector_id1, "a", "b", &Some(config3))
         .await
         .unwrap();
-    let r3 = commit_check(&handle, tenant_id, pipeline_id).await;
-    assert_ne!(r2, r3, "we got a new revision");
+    let r4 = commit_check(&handle, tenant_id, pipeline_id).await;
+    assert_ne!(r3, r4, "we got a new revision");
 
     // If we change the attached connectors we can commit again:
     ac1.name = "xxx".into();
@@ -857,8 +889,8 @@ async fn versioning() {
         )
         .await
         .unwrap();
-    let r4: Revision = commit_check(&handle, tenant_id, pipeline_id).await;
-    assert_ne!(r3, r4, "we got a new revision");
+    let r5: Revision = commit_check(&handle, tenant_id, pipeline_id).await;
+    assert_ne!(r4, r5, "we got a new revision");
 
     // If we remove an ac that's also a change:
     handle
@@ -874,8 +906,8 @@ async fn versioning() {
         )
         .await
         .unwrap();
-    let r5 = commit_check(&handle, tenant_id, pipeline_id).await;
-    assert_ne!(r4, r5, "we got a new revision");
+    let r6 = commit_check(&handle, tenant_id, pipeline_id).await;
+    assert_ne!(r5, r6, "we got a new revision");
 
     // And if we change the pipeline config itself that's a change:
     handle
