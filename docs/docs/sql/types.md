@@ -11,8 +11,8 @@ The compiler supports the following SQL data types:
   using two's complement
 - `BIGINT`, or `INT64`, represented as a 64-bit signed integer, using two's
   complement
-- `DECIMAL(precision, scale)`, or `NUMERIC(precision, scale)`,
-  a high precision fixed-point type,
+- `DECIMAL(precision, scale)`, or `NUMERIC(precision, scale)`, or
+  `NUMBER(precision, scale)`, a high precision fixed-point type,
   with a precision (number of decimal digits after decimal point) and
   a scale (total number of decimall digits)
 - `FLOAT`, or `FLOAT4`, or `FLOAT32`, an IEEE 32-bit floating point number

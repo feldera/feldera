@@ -12,6 +12,7 @@
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <calcite.version>1.35.0</calcite.version>
     </properties>
 
     <build>
@@ -154,14 +155,6 @@
     </build>
 
     <dependencies>
-        <!-- TODO: Calcite uses Janino, but the current release uses a broken version,
-             so we force a newer one here.  This should be removed once Calcite
-             has a new release.-->
-        <dependency>
-            <groupId>org.codehaus.janino</groupId>
-            <artifactId>janino</artifactId>
-            <version>3.1.9</version>
-        </dependency>
         <!-- used by other dependencies -->
         <dependency>
             <groupId>com.google.guava</groupId>
@@ -189,17 +182,17 @@
         <dependency>
             <groupId>org.apache.calcite</groupId>
             <artifactId>calcite-core</artifactId>
-            <version>1.34.0</version>
+            <version>${calcite.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.calcite</groupId>
             <artifactId>calcite-babel</artifactId>
-            <version>1.34.0</version>
+            <version>${calcite.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.calcite</groupId>
             <artifactId>calcite-server</artifactId>
-            <version>1.34.0</version>
+            <version>${calcite.version}</version>
         </dependency>
         <dependency>
             <groupId>net.hydromatic</groupId>

@@ -26,10 +26,12 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -43,6 +45,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -204,7 +207,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
             m = DAYS.matcher(interval);
             if (m.matches()) {
                 int d = Integer.parseInt(m.group(1));
-                result += (long)d * 86_400_000;
+                result += (long) d * 86_400_000;
                 interval = m.group(2);
             }
 
@@ -254,74 +257,93 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         return result;
     }
 
+    DBSPExpression parseValue(DBSPType fieldType, String data) {
+        String trimmed = data.trim();
+        DBSPExpression result;
+        if (!fieldType.is(DBSPTypeString.class) &&
+                (trimmed.isEmpty() ||
+                        trimmed.equalsIgnoreCase("null"))) {
+            if (!fieldType.mayBeNull)
+                throw new RuntimeException("Null value in non-nullable column " + fieldType);
+            result = fieldType.to(DBSPTypeBaseType.class).nullValue();
+        } else if (fieldType.is(DBSPTypeDouble.class)) {
+            double value = Double.parseDouble(trimmed);
+            result = new DBSPDoubleLiteral(value, fieldType.mayBeNull);
+        } else if (fieldType.is(DBSPTypeFloat.class)) {
+            float value = Float.parseFloat(trimmed);
+            result = new DBSPFloatLiteral(value, fieldType.mayBeNull);
+        } else if (fieldType.is(DBSPTypeDecimal.class)) {
+            BigDecimal value = new BigDecimal(trimmed);
+            result = new DBSPDecimalLiteral(fieldType, value);
+        } else if (fieldType.is(DBSPTypeTimestamp.class)) {
+            result = convertTimestamp(trimmed, fieldType.mayBeNull);
+        } else if (fieldType.is(DBSPTypeDate.class)) {
+            result = parseDate(trimmed);
+        } else if (fieldType.is(DBSPTypeTime.class)) {
+            result = parseTime(trimmed);
+        } else if (fieldType.is(DBSPTypeInteger.class)) {
+            DBSPTypeInteger intType = fieldType.to(DBSPTypeInteger.class);
+            switch (intType.getWidth()) {
+                case 8:
+                    result = new DBSPI8Literal(Byte.parseByte(trimmed), fieldType.mayBeNull);
+                    break;
+                case 16:
+                    result = new DBSPI16Literal(Short.parseShort(trimmed), fieldType.mayBeNull);
+                    break;
+                case 32:
+                    result = new DBSPI32Literal(Integer.parseInt(trimmed), fieldType.mayBeNull);
+                    break;
+                case 64:
+                    result = new DBSPI64Literal(Long.parseLong(trimmed), fieldType.mayBeNull);
+                    break;
+                default:
+                    throw new UnimplementedException(intType);
+            }
+        } else if (fieldType.is(DBSPTypeMillisInterval.class)) {
+            long value = Long.parseLong(trimmed);
+            result = new DBSPIntervalMillisLiteral(value * 86400000, fieldType.mayBeNull);
+        } else if (fieldType.is(DBSPTypeMonthsInterval.class)) {
+            int months = longIntervalToMonths(trimmed);
+            result = new DBSPIntervalMonthsLiteral(months);
+        } else if (fieldType.is(DBSPTypeString.class)) {
+            // No trim
+            result = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, data, StandardCharsets.UTF_8);
+        } else if (fieldType.is(DBSPTypeBool.class)) {
+            boolean value = trimmed.equalsIgnoreCase("t") || trimmed.equalsIgnoreCase("true");
+            result = new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, value);
+        } else if (fieldType.is(DBSPTypeVec.class)) {
+            DBSPTypeVec vec = fieldType.to(DBSPTypeVec.class);
+            // TODO: this does nto handle nested arrays
+            if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
+                throw new UnimplementedException("Expected array constant to be bracketed: " + trimmed);
+            trimmed = trimmed.substring(1, trimmed.length() - 1);
+            String[] parts = trimmed.split(",");
+            DBSPExpression[] fields = Linq.map(
+                    parts, p -> this.parseValue(vec.getElementType(), p), DBSPExpression.class);
+            result = new DBSPVecLiteral(fields);
+        } else {
+            throw new UnimplementedException(fieldType);
+        }
+        return result;
+    }
+
     public DBSPTupleExpression parseRow(String line, DBSPTypeTupleBase rowType) {
-        String[] columns = line.split("[|]");
+        String[] columns;
+        if (rowType.size() > 1) {
+            columns = line.split("[|]");
+        } else {
+            // Do not split; allows handling 1-column outputs that contains |
+            columns = new String[1];
+            columns[0] = line;
+        }
         if (columns.length != rowType.size())
             throw new RuntimeException("Row has " + columns.length +
                     " columns, but expected " + rowType.size() + ": " +
                     Utilities.singleQuote(line));
         DBSPExpression[] values = new DBSPExpression[columns.length];
         for (int i = 0; i < columns.length; i++) {
-            String column = columns[i].trim();
             DBSPType fieldType = rowType.getFieldType(i);
-            if (!fieldType.is(DBSPTypeString.class) &&
-                    (column.isEmpty() ||
-                            column.equalsIgnoreCase("null"))) {
-                if (!fieldType.mayBeNull)
-                    throw new RuntimeException("Null value in non-nullable column " + fieldType);
-                values[i] = fieldType.to(DBSPTypeBaseType.class).nullValue();
-                continue;
-            }
-            DBSPExpression columnValue;
-            if (fieldType.is(DBSPTypeDouble.class)) {
-                double value = Double.parseDouble(column);
-                columnValue = new DBSPDoubleLiteral(value, fieldType.mayBeNull);
-            } else if (fieldType.is(DBSPTypeFloat.class)) {
-                float value = Float.parseFloat(column);
-                columnValue = new DBSPFloatLiteral(value, fieldType.mayBeNull);
-            } else if (fieldType.is(DBSPTypeDecimal.class)) {
-                BigDecimal value = new BigDecimal(column);
-                columnValue = new DBSPDecimalLiteral(fieldType, value);
-            } else if (fieldType.is(DBSPTypeTimestamp.class)) {
-                columnValue = convertTimestamp(column, fieldType.mayBeNull);
-            } else if (fieldType.is(DBSPTypeDate.class)) {
-                columnValue = parseDate(column);
-            } else if (fieldType.is(DBSPTypeTime.class)) {
-                columnValue = parseTime(column);
-            } else if (fieldType.is(DBSPTypeInteger.class)) {
-                DBSPTypeInteger intType = fieldType.to(DBSPTypeInteger.class);
-                switch (intType.getWidth()) {
-                    case 8:
-                        columnValue = new DBSPI8Literal(Byte.parseByte(column), fieldType.mayBeNull);
-                        break;
-                    case 16:
-                        columnValue = new DBSPI16Literal(Short.parseShort(column), fieldType.mayBeNull);
-                        break;
-                    case 32:
-                        columnValue = new DBSPI32Literal(Integer.parseInt(column), fieldType.mayBeNull);
-                        break;
-                    case 64:
-                        columnValue = new DBSPI64Literal(Long.parseLong(column), fieldType.mayBeNull);
-                        break;
-                    default:
-                        throw new UnimplementedException(intType);
-                }
-            } else if (fieldType.is(DBSPTypeMillisInterval.class)) {
-                long milliseconds = shortIntervalToMilliseconds(column);
-                columnValue = new DBSPIntervalMillisLiteral(milliseconds, fieldType.mayBeNull);
-            } else if (fieldType.is(DBSPTypeMonthsInterval.class)) {
-                int months = longIntervalToMonths(column);
-                columnValue = new DBSPIntervalMonthsLiteral(months);
-            } else if (fieldType.is(DBSPTypeString.class)) {
-                // No trim
-                columnValue = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, columns[i], StandardCharsets.UTF_8);
-            } else if (fieldType.is(DBSPTypeBool.class)) {
-                boolean value = column.equalsIgnoreCase("t") || column.equalsIgnoreCase("true");
-                columnValue = new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, value);
-            } else {
-                throw new UnimplementedException(fieldType);
-            }
-            values[i] = columnValue;
+            values[i] = this.parseValue(fieldType, columns[i]);
         }
         return new DBSPTupleExpression(values);
     }

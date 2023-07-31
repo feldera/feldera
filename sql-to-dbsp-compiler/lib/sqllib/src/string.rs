@@ -215,3 +215,15 @@ pub fn left__(source: String, size: i32) -> String {
 }
 
 some_function2!(left, String, i32, String);
+
+pub fn split2__(source: String, separators: String) -> Vec<String> {
+    source.split(&separators).map(String::from).collect()
+}
+
+some_function2!(split2, String, String, Vec<String>);
+
+pub fn split1_(source: String) -> Vec<String> {
+    split2__(source, ",".to_string())
+}
+
+some_function1!(split1, String, Vec<String>);

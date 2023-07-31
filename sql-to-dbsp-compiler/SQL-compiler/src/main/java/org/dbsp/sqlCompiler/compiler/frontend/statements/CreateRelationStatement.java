@@ -117,7 +117,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
                 '}';
     }
 
-    public JsonNode getDefinedObjectSchema() throws JsonProcessingException {
+    public JsonNode getDefinedObjectSchema() {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode result = mapper.createObjectNode();
         result.put("name", this.tableName);
@@ -127,10 +127,14 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
             column.put("name", col.getName());
             Object object = RelJson.create().withJsonBuilder(new JsonBuilder())
                     .toJson(col.getType());
-            // Is there a better way to do this?
-            String json = mapper.writeValueAsString(object);
-            JsonNode repr = mapper.readTree(json);
-            column.set("columntype", repr);
+            try {
+                // Is there a better way to do this?
+                String json = mapper.writeValueAsString(object);
+                JsonNode repr = mapper.readTree(json);
+                column.set("columntype", repr);
+            } catch (JsonProcessingException e) {
+                throw new RuntimeException(e);
+            }
         }
         return result;
     }

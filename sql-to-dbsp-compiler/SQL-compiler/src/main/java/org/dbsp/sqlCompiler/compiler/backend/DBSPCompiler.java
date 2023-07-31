@@ -231,26 +231,26 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         } catch (SqlParseException e) {
             this.messages.reportError(e);
             if (this.options.optimizerOptions.throwOnError) {
-                System.err.println(this.messages.toString());
+                System.err.println(this.messages);
                 throw new RuntimeException(e);
             }
         } catch (CalciteContextException e) {
             this.messages.reportError(e);
             if (this.options.optimizerOptions.throwOnError) {
-                System.err.println(this.messages.toString());
+                System.err.println(this.messages);
                 throw new RuntimeException(e);
             }
         } catch (BaseCompilerException e) {
             this.messages.reportError(e);
             if (this.options.optimizerOptions.throwOnError) {
-                System.err.println(this.messages.toString());
-                throw new RuntimeException(e);
+                System.err.println(this.messages);
+                throw e;
             }
         } catch (Throwable e) {
             this.messages.reportError(e);
             if (this.options.optimizerOptions.throwOnError) {
-                System.err.println(this.messages.toString());
-                throw new RuntimeException(e);
+                System.err.println(this.messages);
+                throw e;
             }
         }
     }

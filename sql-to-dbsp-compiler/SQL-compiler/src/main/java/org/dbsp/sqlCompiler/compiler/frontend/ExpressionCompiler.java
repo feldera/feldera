@@ -602,6 +602,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return this.compilePolymorphicFunction(call, node, type,
                                 ops, 2);
                     }
+                    case "split":
+                        return this.compileFunction(call, node, type, ops, 1, 2);
                     case "overlay":
                     // case "regexp_replace":
                         return this.compileFunction(call, node, type, ops, 3, 4);

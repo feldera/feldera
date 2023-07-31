@@ -55,6 +55,24 @@ public class CalciteCompilerTests {
     }
 
     @Test
+    public void SourceNameTest() throws SqlParseException {
+        // Tests that a table can be named 'source'.
+        CalciteCompiler calcite = new CalciteCompiler(options);
+        String ddl = "CREATE TABLE SOURCE (COL INT)";
+        SqlNode node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
+    public void testNumber() throws SqlParseException {
+        // Tests that 'NUMBER' can be used as a type
+        CalciteCompiler calcite = new CalciteCompiler(options);
+        String ddl = "CREATE TABLE SOURCE (COL NUMBER)";
+        SqlNode node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
     public void DropTest() throws SqlParseException {
         CalciteCompiler calcite = new CalciteCompiler(options);
         String ddl = "DROP TABLE T";

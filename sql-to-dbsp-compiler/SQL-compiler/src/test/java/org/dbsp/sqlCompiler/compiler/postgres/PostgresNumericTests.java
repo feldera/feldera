@@ -753,7 +753,7 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "    x1     \n" +
                 "-----------\n" +
                 "         0 \n" +
-                "       4.2 \n");
+                "       4.2 ");
     }
 
     @Test
@@ -843,7 +843,15 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "       NaN |       NaN |                     NaN ");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5651")
+    @Test @Ignore("Calcite bug https://issues.apache.org/jira/browse/CALCITE-5877")
+    public void testCastOutOfRange() {
+        this.q("SELECT CAST(1 AS NUMERIC(10, 20)) % 2\n;\n" +
+                "result\n" +
+                "------\n" +
+                "1");
+    }
+
+    @Test @Ignore("Calcite bug https://issues.apache.org/jira/browse/CALCITE-5877")
     public void testSpecialValues2Numeric() {
         // Removed unsupported numeric values inf, nan, etc.
         // No div function known, so I removed this one
@@ -854,7 +862,7 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "         (CAST(4.2 AS NUMERIC(" + WIDTH + ", 20))))\n" +
                 "SELECT x1, x2,\n" +
                 "  x1 / x2 AS quot,\n" +
-                "  x1 % x2 AS m\n" +
+                "  x1 % x2 AS mod\n" +
                 // "  div(x1, x2) AS div\n" +
                 "FROM v AS v1(x1), v AS v2(x2) WHERE x2 != 0;\n" +
                 "    x1     |    x2     |          quot           | mod  \n" +
@@ -998,10 +1006,11 @@ public class PostgresNumericTests extends PostgresBaseTest {
     // SELECT sqrt('-1'::numeric);
     //ERROR:  cannot take square root of a negative number
 
-    @Test @Ignore("Waiting for https://issues.apache.org/jira/browse/CALCITE-5651")
+    @Test
     public void testLog() {
         // Removed 'inf' and 'nan'
         // Calcite does not have log
+        // Changed last digit of ln from 6 to 7
         this.q("WITH v(x) AS\n" +
                 "  (VALUES(1),(CAST(4.2 AS NUMERIC(" + WIDTH + ", 22))))\n" +
                 "SELECT x,\n" +
@@ -1012,6 +1021,6 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "    x     |        log         |         ln         \n" +
                 "----------+--------------------+--------------------\n" +
                 "        1 | 0.0000000000000000 | 0.0000000000000000\n" +
-                "      4.2 | 0.6232492903979005 | 1.4350845252893226");
+                "      4.2 | 0.6232492903979005 | 1.4350845252893227");
     }
 }

@@ -2,6 +2,8 @@ package org.dbsp.sqlCompiler.compiler.errors;
 
 import org.apache.calcite.sql.parser.SqlParserPos;
 
+import javax.annotation.Nullable;
+
 /**
  * A range of characters inside the source code.
  */
@@ -17,9 +19,14 @@ public class SourcePositionRange {
         this.end = end;
     }
 
-    public SourcePositionRange(SqlParserPos pos) {
-        this.start = new SourcePosition(pos.getLineNum(), pos.getColumnNum());
-        this.end = new SourcePosition(pos.getEndLineNum(), pos.getEndColumnNum());
+    public SourcePositionRange(@Nullable SqlParserPos pos) {
+        if (pos == null) {
+            this.start = SourcePosition.INVALID;
+            this.end = SourcePosition.INVALID;
+        } else {
+            this.start = new SourcePosition(pos.getLineNum(), pos.getColumnNum());
+            this.end = new SourcePosition(pos.getEndLineNum(), pos.getEndColumnNum());
+        }
     }
 
     public boolean isValid() {

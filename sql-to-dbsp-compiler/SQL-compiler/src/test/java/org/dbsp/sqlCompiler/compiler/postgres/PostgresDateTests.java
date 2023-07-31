@@ -24,7 +24,6 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -1108,26 +1107,23 @@ public class PostgresDateTests extends PostgresBaseTest {
 
     @Test
     public void testDecade() {
-        this.q("SELECT EXTRACT(DECADE FROM DATE '1994-12-25');\n" +
+        this.qs("SELECT EXTRACT(DECADE FROM DATE '1994-12-25');\n" +
                 " extract \n" +
                 "---------\n" +
-                "     199");
-    }
-
-    @Test
-    public void testDecade1() {
-        this.q("SELECT EXTRACT(DECADE FROM DATE '0010-01-01');\n" +
+                "     199\n" +
+                "(1 row)\n" +
+                "\n" +
+                "SELECT EXTRACT(DECADE FROM DATE '0010-01-01');\n" +
                 " extract \n" +
                 "---------\n" +
-                "       1");
-    }
-
-    @Test
-    public void testDecade2() {
-        this.q("SELECT EXTRACT(DECADE FROM DATE '0009-12-31');\n" +
+                "       1\n" +
+                "(1 row)\n" +
+                "\n" +
+                "SELECT EXTRACT(DECADE FROM DATE '0009-12-31');\n" +
                 " extract \n" +
                 "---------\n" +
-                "       0");
+                "       0\n" +
+                "(1 row)");
     }
 
     @Test
@@ -1354,16 +1350,12 @@ public class PostgresDateTests extends PostgresBaseTest {
     //SELECT EXTRACT(TIMEZONE_H    FROM DATE '2020-08-11');
     //ERROR:  unit "timezone_h" not supported for type date
 
-    @Test @Ignore("There are two bugs in Calcite; " +
-            "now waiting for https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-5760")
-    public void testDateTrunc() {
-        // In the BigQuery library there is a DATE_TRUNC, but arguments are swapped
-        this.q("SELECT DATE_TRUNC(DATE '1970-03-20', MILLENNIUM);\n" +
-                "date_trunc        \n" +
-                "--------------------------\n" +
-                " Thu Jan 01 00:00:00 1001");
-    }
-
+    // In the BigQuery library there is a DATE_TRUNC, but arguments are swapped
+    // and the result is a timestamp
+    // SELECT DATE_TRUNC(DATE '1970-03-20', MILLENNIUM)
+    //  date_trunc
+    //  --------------------------
+    //   Thu Jan 01 00:00:00 1001
     // SELECT DATE_TRUNC('MILLENNIUM', DATE '1970-03-20'); -- 1001-01-01
     //          date_trunc
     //------------------------------
