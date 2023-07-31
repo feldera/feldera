@@ -1,28 +1,28 @@
 from typing import Any, Dict
-import dbsp_api_client
+import feldera_api_client
 import yaml
 
-from dbsp_api_client.models.pipeline_config import PipelineConfig
-from dbsp_api_client.models.pipeline_config_inputs import PipelineConfigInputs
-from dbsp_api_client.models.pipeline_config_outputs import PipelineConfigOutputs
-from dbsp_api_client.models.transport_config import TransportConfig
-from dbsp_api_client.models.format_config import FormatConfig
-from dbsp_api_client.models.input_endpoint_config import InputEndpointConfig
-from dbsp_api_client.models.output_endpoint_config import OutputEndpointConfig
-from dbsp_api_client.models.kafka_input_config import KafkaInputConfig
-from dbsp_api_client.models.kafka_output_config import KafkaOutputConfig
-from dbsp_api_client.models.file_input_config import FileInputConfig
-from dbsp_api_client.models.file_output_config import FileOutputConfig
-from dbsp_api_client.models.csv_parser_config import CsvParserConfig
-from dbsp_api_client.models.new_connector_request import NewConnectorRequest
-from dbsp_api_client.models.update_connector_request import UpdateConnectorRequest
-from dbsp_api_client.models.csv_encoder_config import CsvEncoderConfig
-from dbsp_api_client.models.connector_config import ConnectorConfig
-from dbsp_api_client.api.connectors import new_connector
-from dbsp_api_client.api.connectors import update_connector
-from dbsp_api_client.api.connectors import delete_connector
-from dbsp_api_client.api.connectors import list_connectors
-from dbsp_api_client.models.connector_descr import ConnectorDescr
+from feldera_api_client.models.pipeline_config import PipelineConfig
+from feldera_api_client.models.pipeline_config_inputs import PipelineConfigInputs
+from feldera_api_client.models.pipeline_config_outputs import PipelineConfigOutputs
+from feldera_api_client.models.transport_config import TransportConfig
+from feldera_api_client.models.format_config import FormatConfig
+from feldera_api_client.models.input_endpoint_config import InputEndpointConfig
+from feldera_api_client.models.output_endpoint_config import OutputEndpointConfig
+from feldera_api_client.models.kafka_input_config import KafkaInputConfig
+from feldera_api_client.models.kafka_output_config import KafkaOutputConfig
+from feldera_api_client.models.file_input_config import FileInputConfig
+from feldera_api_client.models.file_output_config import FileOutputConfig
+from feldera_api_client.models.csv_parser_config import CsvParserConfig
+from feldera_api_client.models.new_connector_request import NewConnectorRequest
+from feldera_api_client.models.update_connector_request import UpdateConnectorRequest
+from feldera_api_client.models.csv_encoder_config import CsvEncoderConfig
+from feldera_api_client.models.connector_config import ConnectorConfig
+from feldera_api_client.api.connectors import new_connector
+from feldera_api_client.api.connectors import update_connector
+from feldera_api_client.api.connectors import delete_connector
+from feldera_api_client.api.connectors import list_connectors
+from feldera_api_client.models.connector_descr import ConnectorDescr
 
 
 class DBSPConnector:

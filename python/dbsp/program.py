@@ -1,8 +1,8 @@
-import dbsp_api_client
+import feldera_api_client
 
-from dbsp_api_client.models.compile_program_request import CompileProgramRequest
-from dbsp_api_client.api.programs import get_program
-from dbsp_api_client.api.programs import compile_program
+from feldera_api_client.models.compile_program_request import CompileProgramRequest
+from feldera_api_client.api.programs import get_program
+from feldera_api_client.api.programs import compile_program
 from dbsp.error import CompilationException
 import time
 import sys

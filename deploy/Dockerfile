@@ -108,9 +108,9 @@ RUN apt update && apt install pkg-config \
       && rm dbsp_pipeline_manager \
       && pip3 install openapi-python-client websockets \
       && cd python \
-      && rm -rf dbsp-api-client \
+      && rm -rf feldera-api-client \
       && openapi-python-client generate --path ../openapi.json --fail-on-warning \
-      && pip3 install ./dbsp-api-client \
+      && pip3 install ./feldera-api-client \
       && pip3 install . \
    # TODO: only required for running the fraud detection demo. Remove when we clean that up.
    && pip3 install gdown \

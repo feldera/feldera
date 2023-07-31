@@ -19,9 +19,9 @@ dependencies = ["openapi_json"]
 script = '''
 pip3 install openapi-python-client
 cd ../../python
-rm -rf dbsp-api-client
+rm -rf feldera-api-client
 openapi-python-client generate --path ../openapi.json --fail-on-warning
-pip3 install -e ./dbsp-api-client
+pip3 install -e ./feldera-api-client
 pip3 install -e .
 pip3 install websockets
 '''

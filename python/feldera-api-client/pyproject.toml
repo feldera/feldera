@@ -1,15 +1,15 @@
 [tool.poetry]
-name = "dbsp-api-client"
+name = "feldera-api-client"
 version = "0.1.0"
-description = "A client library for accessing DBSP API"
+description = "A client library for accessing Feldera API"
 
 authors = []
 
 readme = "README.md"
 packages = [
-    {include = "dbsp_api_client"},
+    {include = "feldera_api_client"},
 ]
-include = ["CHANGELOG.md", "dbsp_api_client/py.typed"]
+include = ["CHANGELOG.md", "feldera_api_client/py.typed"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
