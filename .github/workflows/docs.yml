@@ -6,10 +6,12 @@ on:
   pull_request:
     paths:
       - docs/**
+      - crates/pipeline_manager/src/**
       - .github/workflows/docs.yml
   push:
     paths:
       - docs/**
+      - crates/pipeline_manager/src/**
       - .github/workflows/docs.yml
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
