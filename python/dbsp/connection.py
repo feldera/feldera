@@ -1,9 +1,9 @@
-import dbsp_api_client
+import feldera_api_client
 
-from dbsp_api_client.models.new_program_request import NewProgramRequest
-from dbsp_api_client.api.programs import get_programs
-from dbsp_api_client.api.programs import new_program
-from dbsp_api_client.api.programs import delete_program
+from feldera_api_client.models.new_program_request import NewProgramRequest
+from feldera_api_client.api.programs import get_programs
+from feldera_api_client.api.programs import new_program
+from feldera_api_client.api.programs import delete_program
 from dbsp.program import DBSPProgram
 from http import HTTPStatus
 
@@ -15,7 +15,7 @@ class DBSPConnection:
     """
 
     def __init__(self, url):
-        self.api_client = dbsp_api_client.Client(
+        self.api_client = feldera_api_client.Client(
                 base_url = url,
                 timeout = 20.0)
 
@@ -65,7 +65,7 @@ class DBSPConnection:
         resp = get_programs.sync_detailed(client = self.api_client, name = name)
         if resp.status_code == HTTPStatus.OK:
             program_id = resp.unwrap("Failed to unwrap program %s" % (name))[0].program_id
-            delete_program.sync_detailed(client = self.api_client, program_id = program_id)
+            resp = delete_program.sync_detailed(client = self.api_client, program_id = program_id)
 
         # Create a new one instead
         request = NewProgramRequest(name=name, code=sql_code, description='')

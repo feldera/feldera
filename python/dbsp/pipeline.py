@@ -1,32 +1,32 @@
 import uuid
-import dbsp_api_client
+import feldera_api_client
 import sys
 from typing import Dict, Any
 import time
 
-from dbsp_api_client.models.pipeline_config import PipelineConfig
-from dbsp_api_client.models.pipeline_config_inputs import PipelineConfigInputs
-from dbsp_api_client.models.pipeline_config_outputs import PipelineConfigOutputs
-from dbsp_api_client.models.new_pipeline_request import NewPipelineRequest
-from dbsp_api_client.models.transport_config import TransportConfig
-from dbsp_api_client.models.format_config import FormatConfig
-from dbsp_api_client.models.kafka_input_config import KafkaInputConfig
-from dbsp_api_client.models.kafka_output_config import KafkaOutputConfig
-from dbsp_api_client.models.file_input_config import FileInputConfig
-from dbsp_api_client.models.file_output_config import FileOutputConfig
-from dbsp_api_client.models.new_pipeline_request import NewPipelineRequest
-from dbsp_api_client.models.update_pipeline_request import UpdatePipelineRequest
-from dbsp_api_client.models.attached_connector import AttachedConnector
-from dbsp_api_client.models.pipeline_status import PipelineStatus
-from dbsp_api_client.models.pipeline_descr import PipelineDescr
-from dbsp_api_client.models.pipeline import Pipeline
-from dbsp_api_client.models.runtime_config import RuntimeConfig
-from dbsp_api_client.api.pipelines import new_pipeline
-from dbsp_api_client.api.pipelines import update_pipeline
-from dbsp_api_client.api.pipelines import pipeline_stats
-from dbsp_api_client.api.pipelines import get_pipeline
-from dbsp_api_client.api.pipelines import pipeline_delete
-from dbsp_api_client.api.pipelines import pipeline_action
+from feldera_api_client.models.pipeline_config import PipelineConfig
+from feldera_api_client.models.pipeline_config_inputs import PipelineConfigInputs
+from feldera_api_client.models.pipeline_config_outputs import PipelineConfigOutputs
+from feldera_api_client.models.new_pipeline_request import NewPipelineRequest
+from feldera_api_client.models.transport_config import TransportConfig
+from feldera_api_client.models.format_config import FormatConfig
+from feldera_api_client.models.kafka_input_config import KafkaInputConfig
+from feldera_api_client.models.kafka_output_config import KafkaOutputConfig
+from feldera_api_client.models.file_input_config import FileInputConfig
+from feldera_api_client.models.file_output_config import FileOutputConfig
+from feldera_api_client.models.new_pipeline_request import NewPipelineRequest
+from feldera_api_client.models.update_pipeline_request import UpdatePipelineRequest
+from feldera_api_client.models.attached_connector import AttachedConnector
+from feldera_api_client.models.pipeline_status import PipelineStatus
+from feldera_api_client.models.pipeline_descr import PipelineDescr
+from feldera_api_client.models.pipeline import Pipeline
+from feldera_api_client.models.runtime_config import RuntimeConfig
+from feldera_api_client.api.pipelines import new_pipeline
+from feldera_api_client.api.pipelines import update_pipeline
+from feldera_api_client.api.pipelines import pipeline_stats
+from feldera_api_client.api.pipelines import get_pipeline
+from feldera_api_client.api.pipelines import pipeline_delete
+from feldera_api_client.api.pipelines import pipeline_action
 from dbsp.program import DBSPProgram
 from dbsp.error import TimeoutException
 from dbsp.connector import DBSPConnector

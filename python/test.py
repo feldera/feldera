@@ -188,7 +188,7 @@ def main():
             if data.strip() == expected.strip():
                 break
 
-        assert data.strip() == expected.strip()
+        assert data.strip() == expected.strip(), "Data: %s, Expected: %s" % (data, expected)
 
         print("Sending neighborhood request")
         neighborhood = requests.get(

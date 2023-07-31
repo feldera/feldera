@@ -45,7 +45,7 @@ venv\Scripts\activate.bat
    follows:
 
 ```bash
-cd python/dbsp-api-client
+cd python/feldera-api-client
 pip install -e .
 cd ..
 pip install -e .
@@ -71,10 +71,10 @@ Remember to activate the virtual environment every time you work on your project
 or want to run the test scripts.
 
 
-## Regenerate dbsp-api-client code
+## Regenerate feldera-api-client code
 
 In case you make changes to the OpenAPI spec (by modifying
-crates/pipeline_manager), you'll need to regenerated the `dbsp-api-client`
+crates/pipeline_manager), you'll need to regenerated the `feldera-api-client`
 library. To do so, run the following command:
 
 ```bash

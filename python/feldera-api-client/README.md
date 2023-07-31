@@ -1,11 +1,11 @@
-# dbsp-api-client
-A client library for accessing DBSP API
+# feldera-api-client
+A client library for accessing Feldera API
 
 ## Usage
 First, create a client:
 
 ```python
-from dbsp_api_client import Client
+from feldera_api_client import Client
 
 client = Client(base_url="https://api.example.com")
 ```
@@ -13,7 +13,7 @@ client = Client(base_url="https://api.example.com")
 If the endpoints you're going to hit require authentication, use `AuthenticatedClient` instead:
 
 ```python
-from dbsp_api_client import AuthenticatedClient
+from feldera_api_client import AuthenticatedClient
 
 client = AuthenticatedClient(base_url="https://api.example.com", token="SuperSecretToken")
 ```
@@ -21,9 +21,9 @@ client = AuthenticatedClient(base_url="https://api.example.com", token="SuperSec
 Now call your endpoint and use your models:
 
 ```python
-from dbsp_api_client.models import MyDataModel
-from dbsp_api_client.api.my_tag import get_my_data_model
-from dbsp_api_client.types import Response
+from feldera_api_client.models import MyDataModel
+from feldera_api_client.api.my_tag import get_my_data_model
+from feldera_api_client.types import Response
 
 with client as client:
     my_data: MyDataModel = get_my_data_model.sync(client=client)
@@ -34,9 +34,9 @@ with client as client:
 Or do the same thing with an async version:
 
 ```python
-from dbsp_api_client.models import MyDataModel
-from dbsp_api_client.api.my_tag import get_my_data_model
-from dbsp_api_client.types import Response
+from feldera_api_client.models import MyDataModel
+from feldera_api_client.api.my_tag import get_my_data_model
+from feldera_api_client.types import Response
 
 async with client as client:
     my_data: MyDataModel = await get_my_data_model.asyncio(client=client)
@@ -72,14 +72,14 @@ Things to know:
 
 1. All path/query params, and bodies become method arguments.
 1. If your endpoint had any tags on it, the first tag will be used as a module name for the function (my_tag above)
-1. Any endpoint which did not have a tag will be in `dbsp_api_client.api.default`
+1. Any endpoint which did not have a tag will be in `feldera_api_client.api.default`
 
 ## Advanced customizations
 
 There are more settings on the generated `Client` class which let you control more runtime behavior, check out the docstring on that class for more info. You can also customize the underlying `httpx.Client` or `httpx.AsyncClient` (depending on your use-case):
 
 ```python
-from dbsp_api_client import Client
+from feldera_api_client import Client
 
 def log_request(request):
     print(f"Request event hook: {request.method} {request.url} - Waiting for response")
@@ -100,7 +100,7 @@ You can even set the httpx client directly, but beware that this will override a
 
 ```python
 import httpx
-from dbsp_api_client import Client
+from feldera_api_client import Client
 
 client = Client(
     base_url="https://api.example.com",

@@ -56,7 +56,7 @@ install-python:
     COPY demo/demo_notebooks/requirements.txt requirements.txt
     RUN pip install --user -v --no-index --find-links=wheels -r requirements.txt
     COPY python python
-    RUN cd python && pip3 install --user -v ./dbsp-api-client
+    RUN cd python && pip3 install --user -v ./feldera-api-client
     RUN cd python && pip3 install --user -v .
     SAVE ARTIFACT /root/.local/lib/python3.10
     SAVE ARTIFACT /root/.local/bin
@@ -447,13 +447,13 @@ python-bindings-checker:
 
     RUN pip3 install openapi-python-client==0.15.0 && openapi-python-client --version
     COPY +build-manager/dbsp_pipeline_manager .
-    COPY python/dbsp-api-client dbsp-api-client-base
+    COPY python/feldera-api-client feldera-api-client-base
 
     # This line will fail if the python bindings need to be regenerated
     RUN mkdir checker
     RUN cd checker && ../dbsp_pipeline_manager --dump-openapi &&  \
         openapi-python-client generate --path openapi.json --fail-on-warning && \
-        diff -bur dbsp-api-client ../dbsp-api-client-base
+        diff -bur feldera-api-client ../feldera-api-client-base
 
 
 test-python:

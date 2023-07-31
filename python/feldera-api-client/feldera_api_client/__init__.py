@@ -1,4 +1,4 @@
-""" A client library for accessing DBSP API """
+""" A client library for accessing Feldera API """
 from .client import AuthenticatedClient, Client
 
 __all__ = (

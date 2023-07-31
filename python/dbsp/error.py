@@ -1,5 +1,5 @@
-from dbsp_api_client.types import Response
-from dbsp_api_client.models.error_response import ErrorResponse
+from feldera_api_client.types import Response
+from feldera_api_client.models.error_response import ErrorResponse
 
 class DBSPServerError(Exception):
     """Exception raised when an HTTP request to the DBSP server fails.
@@ -13,7 +13,7 @@ class DBSPServerError(Exception):
             response_body = response.parsed.message
         else:
             response_body = str(response.parsed)
-        message = description + "\nHTTP response code: " + str(response.status_code) + "\nResponse body: " + response_body 
+        message = description + "\nHTTP response code: " + str(response.status_code) + "\nResponse body: " + response_body
         super().__init__(message)
 
 class CompilationException(Exception):

@@ -84,7 +84,7 @@ impl Modify for ServerAddon {
 #[openapi(
     modifiers(&ServerAddon),
     info(
-        title = "DBSP API",
+        title = "Feldera API",
         description = r"
 With Feldera, users create data pipelines out of SQL programs and data connectors. A SQL program comprises tables and views. Connectors feed data to input tables in a program or receive outputs computed by views.
 
