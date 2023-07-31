@@ -424,7 +424,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
         String jsonContents  = Utilities.readFile(json.toPath());
-        System.out.println(jsonContents);
         Assert.assertEquals("{\n" +
                 "  \"inputs\" : [ {\n" +
                 "    \"name\" : \"T\",\n" +

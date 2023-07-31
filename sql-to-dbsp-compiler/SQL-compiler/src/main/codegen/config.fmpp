@@ -168,7 +168,7 @@ data: {
 #     "DATE"
       "DATETIME_DIFF"
       "DAY"
-#      "DAYOFWEEK"
+      "DAYOFWEEK"
       "DEALLOCATE"
       "DEC"
       "DECIMAL"
