@@ -157,7 +157,6 @@ public class PostgresCaseTests extends PostgresBaseTest {
                 "       ELSE 'big'\n" +
                 "  END AS \"Category\"\n" +
                 "  FROM CASE_TBL;\n" +
-                        // This is padded with spaces in Calcite.
                 " Value | Category \n" +
                 "-------+----------\n" +
                 "     1 |one\n" +

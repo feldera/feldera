@@ -168,6 +168,7 @@ data: {
 #     "DATE"
       "DATETIME_DIFF"
       "DAY"
+#      "DAYOFWEEK"
       "DEALLOCATE"
       "DEC"
       "DECIMAL"
@@ -183,6 +184,7 @@ data: {
       "DESC"
 #     "DESCRIBE" # must be reserved
       "DESCRIPTOR"
+      "DESCRIPTION"
       "DETERMINISTIC"
       "DIAGNOSTICS"
       "DISALLOW"
@@ -219,6 +221,7 @@ data: {
       "FALSE"
 #     "FETCH"
       "FILTER"
+      "FINAL"
       "FIRST"
       "FIRST_VALUE"
       "FLOAT"
@@ -279,6 +282,7 @@ data: {
       "JSON_VALUE"
 #     "KEEP" # not a keyword in Calcite
       "KEY"
+      "LABEL"
       "LAG"
       "LANGUAGE"
       "LARGE"
@@ -332,6 +336,7 @@ data: {
       "NOT"
       "NTH_VALUE"
       "NTILE"
+      "NUMBER"
 #     "NULL"
       "NULLIF"
       "NUMERIC"
@@ -445,6 +450,7 @@ data: {
       "SPACE"
       "SPECIFIC"
       "SPECIFICTYPE"
+      "SOURCE"
       "SQL"
 #     "SQLCODE" # not a keyword in Calcite
 #     "SQLERROR" # not a keyword in Calcite
@@ -583,6 +589,9 @@ data: {
       "SqlCreateExtendedTable"
     ]
 
+    truncateStatementParserMethods: [
+    ]
+
     # List of methods for parsing extensions to "DROP" calls.
     # Each must accept arguments "(SqlParserPos pos)".
     dropStatementParserMethods: [
@@ -623,8 +632,6 @@ data: {
     implementationFiles: [
       "ddl.ftl"
       "parserImpls.ftl"
-      # TODO: the next one isn't released yet
-      # "parserPostgresqlImpls.ftl"
     ]
   }
 }

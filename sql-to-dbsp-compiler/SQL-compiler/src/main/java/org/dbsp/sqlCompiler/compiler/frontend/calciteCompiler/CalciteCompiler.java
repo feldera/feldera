@@ -241,6 +241,7 @@ public class CalciteCompiler implements IWritesLogs {
         rootSchema.add("FLOAT4", factory -> factory.createSqlType(SqlTypeName.FLOAT));
         rootSchema.add("FLOAT8", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
         rootSchema.add("STRING", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
+        rootSchema.add("NUMBER", factory -> factory.createSqlType(SqlTypeName.DECIMAL));
         rootSchema.add("TEXT", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
         rootSchema.add("BOOL", factory -> factory.createSqlType(SqlTypeName.BOOLEAN));
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
@@ -554,7 +555,7 @@ public class CalciteCompiler implements IWritesLogs {
             SqlNode node,
             @Nullable String comment,
             @Nullable ArrayNode inputs,
-            @Nullable ArrayNode outputs) throws JsonProcessingException {
+            @Nullable ArrayNode outputs) {
         CalciteObject object = new CalciteObject(node);
         if (SqlKind.DDL.contains(node.getKind())) {
             if (node.getKind().equals(SqlKind.DROP_TABLE)) {

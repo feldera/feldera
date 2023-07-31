@@ -247,7 +247,7 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "string");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5810")
+    @Test
     public void testSubstringOverflow() {
         this.q(
                 "SELECT SUBSTRING('string' FROM 2 FOR 2147483646) AS \"tring\";\n" +
