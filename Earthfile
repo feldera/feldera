@@ -331,7 +331,9 @@ build-docs:
     FROM +install-docs-deps
     COPY docs/ docs/
     COPY ( +build-manager/dbsp_pipeline_manager ) ./docs/dbsp_pipeline_manager
-    RUN cd docs && ./dbsp_pipeline_manager --dump-openapi
+    RUN cd docs && ./dbsp_pipeline_manager --dump-openapi \
+        && (jq '.servers= [{url: "http://localhost:8080/v0"}]' openapi.json > openapi_docs.json) \
+        && rm openapi.json
     RUN cd docs && yarn format:check
     RUN cd docs && yarn lint
     RUN cd docs && yarn build --no-minify

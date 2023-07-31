@@ -44,7 +44,7 @@ const config = {
 	  rehypePlugins: [katex],
         },
         api: {
-          path: "openapi.json",
+          path: "openapi_docs.json",
           routeBasePath: "/api",
         },
         blog: {
