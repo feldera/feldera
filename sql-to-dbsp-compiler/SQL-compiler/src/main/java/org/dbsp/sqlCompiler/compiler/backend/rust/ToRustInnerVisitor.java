@@ -198,6 +198,20 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPIntervalMonthsLiteral literal) {
+        if (literal.isNull)
+            return this.doNull(literal);
+        if (literal.mayBeNull())
+            this.builder.append("Some(");
+        this.builder.append("LongInterval::new(");
+        this.builder.append(Integer.toString(Objects.requireNonNull(literal.value)));
+        this.builder.append(")");
+        if (literal.mayBeNull())
+            this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPIntervalMillisLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);

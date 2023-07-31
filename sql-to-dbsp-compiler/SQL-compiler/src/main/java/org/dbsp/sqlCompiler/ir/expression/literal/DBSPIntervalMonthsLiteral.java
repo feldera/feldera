@@ -33,6 +33,9 @@ import javax.annotation.Nullable;
 import java.util.Objects;
 
 public class DBSPIntervalMonthsLiteral extends DBSPLiteral {
+    /**
+     * Expressed in months
+     */
     @Nullable public final Integer value;
 
     public DBSPIntervalMonthsLiteral(CalciteObject node, DBSPType type, @Nullable Integer value) {

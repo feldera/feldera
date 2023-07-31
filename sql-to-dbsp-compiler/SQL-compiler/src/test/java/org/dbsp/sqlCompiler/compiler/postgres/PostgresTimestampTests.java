@@ -33,9 +33,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
 import org.junit.Test;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 /**
  * Tests manually adapted from
  * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/timestamp.out
@@ -493,58 +490,6 @@ public class PostgresTimestampTests extends PostgresBaseTest {
                " Mon Jan 01 17:32:01 2001");
     }
 
-    static int intervalToSeconds(String interval) {
-        String orig = interval;
-        Pattern days = Pattern.compile("^(\\d+) days?(.*)");
-        Pattern hours = Pattern.compile("^\\s*(\\d+) hours?(.*)");
-        Pattern minutes = Pattern.compile("\\s*(\\d+) mins?(.*)");
-        Pattern seconds = Pattern.compile("\\s*(\\d+)([.](\\d+))? secs?(.*)");
-        Pattern ago = Pattern.compile("\\s*ago(.*)");
-
-        int result = 0;
-        if (interval.equals("0")) {
-            interval = "";
-        } else {
-            Matcher m = days.matcher(interval);
-            if (m.matches()) {
-                int d = Integer.parseInt(m.group(1));
-                result += d * 86400;
-                interval = m.group(2);
-            }
-
-            m = hours.matcher(interval);
-            if (m.matches()) {
-                int h = Integer.parseInt(m.group(1));
-                result += h * 3600;
-                interval = m.group(2);
-            }
-
-            m = minutes.matcher(interval);
-            if (m.matches()) {
-                int mm = Integer.parseInt(m.group(1));
-                result += mm * 60;
-                interval = m.group(2);
-            }
-
-            m = seconds.matcher(interval);
-            if (m.matches()) {
-                int s = Integer.parseInt(m.group(1));
-                result += s;
-                interval = m.group(4);
-            }
-
-            m = ago.matcher(interval);
-            if (m.matches()) {
-                interval = m.group(1);
-                result = -result;
-            }
-        }
-        //System.out.println(orig + "->" + result + ": " + interval);
-        if (!interval.isEmpty())
-            throw new RuntimeException("Could not parse interval " + orig);
-        return result;
-    }
-
     @Test
     public void diff() {
         // Calcite does not support timestamp difference
@@ -610,7 +555,7 @@ public class PostgresTimestampTests extends PostgresBaseTest {
 
         DBSPExpression[] results = Linq.map(data, d ->
                 new DBSPTupleExpression(d == null ? DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32) :
-                        new DBSPI32Literal(-intervalToSeconds(d) / 60, true)), DBSPExpression.class);
+                        new DBSPI32Literal(-(int)(shortIntervalToMilliseconds(d) / 60000), true)), DBSPExpression.class);
         String query = "SELECT TIMESTAMPDIFF(MINUTE, d1, timestamp '1997-01-02') AS diff\n" +
                 "   FROM TIMESTAMP_TBL WHERE d1 BETWEEN '1902-01-01' AND '2038-01-01'";
         this.testQuery(query, new DBSPZSetLiteral.Contents(results));
@@ -713,7 +658,7 @@ public class PostgresTimestampTests extends PostgresBaseTest {
         };
         DBSPExpression[] results = Linq.map(data, d ->
                 new DBSPTupleExpression(d == null ? DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32) :
-                        new DBSPI32Literal(-intervalToSeconds(d), true)), DBSPExpression.class);
+                        new DBSPI32Literal(-(int)(shortIntervalToMilliseconds(d)/1000), true)), DBSPExpression.class);
         this.testQuery(query, new DBSPZSetLiteral.Contents(results));
     }
 

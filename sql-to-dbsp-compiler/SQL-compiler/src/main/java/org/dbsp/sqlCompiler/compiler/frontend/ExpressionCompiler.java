@@ -148,6 +148,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             else if (type.is(DBSPTypeMillisInterval.class))
                 return new DBSPIntervalMillisLiteral(node, type, Objects.requireNonNull(
                         literal.getValueAs(BigDecimal.class)).longValue());
+            else if (type.is(DBSPTypeMonthsInterval.class))
+                return new DBSPIntervalMonthsLiteral(node, type, Objects.requireNonNull(
+                        literal.getValueAs(Integer.class)));
             else if (type.is(DBSPTypeTimestamp.class)) {
                 return new DBSPTimestampLiteral(node, type,
                         Objects.requireNonNull(literal.getValueAs(TimestampString.class)));
