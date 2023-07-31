@@ -908,7 +908,7 @@ public class PostgresDateTests extends PostgresBaseTest {
     // date out of range: "6874898-01-01"
     //(1 row)
 
-    @Test @Ignore("Currently broken. Wait for PR #370.")
+    @Test 
     public void testDiff() {
         // SELECT f1 - date '2000-01-01' AS "Days From 2K" FROM DATE_TBL;
         String query = "SELECT (f1 - date '2000-01-01') day AS \"Days From 2K\" FROM DATE_TBL";
