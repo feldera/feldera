@@ -14,6 +14,7 @@ generated during the CI build. For local development you need to run once:
 
 ```bash
 cargo run --bin dbsp_pipeline_manager -- --dump-openapi
+jq '.servers= [{url: "http://localhost:8080/v0"}]' openapi.json > openapi_docs.json
 ```
 
 ### Local Development
