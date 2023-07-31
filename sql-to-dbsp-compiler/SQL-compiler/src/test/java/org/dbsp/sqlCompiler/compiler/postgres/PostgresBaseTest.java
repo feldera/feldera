@@ -300,8 +300,8 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
                     throw new UnimplementedException(intType);
             }
         } else if (fieldType.is(DBSPTypeMillisInterval.class)) {
-            long value = Long.parseLong(trimmed);
-            result = new DBSPIntervalMillisLiteral(value * 86400000, fieldType.mayBeNull);
+            long value = shortIntervalToMilliseconds(trimmed);
+            result = new DBSPIntervalMillisLiteral(value, fieldType.mayBeNull);
         } else if (fieldType.is(DBSPTypeMonthsInterval.class)) {
             int months = longIntervalToMonths(trimmed);
             result = new DBSPIntervalMonthsLiteral(months);
@@ -313,7 +313,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
             result = new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, value);
         } else if (fieldType.is(DBSPTypeVec.class)) {
             DBSPTypeVec vec = fieldType.to(DBSPTypeVec.class);
-            // TODO: this does nto handle nested arrays
+            // TODO: this does not handle nested arrays
             if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
                 throw new UnimplementedException("Expected array constant to be bracketed: " + trimmed);
             trimmed = trimmed.substring(1, trimmed.length() - 1);
@@ -415,6 +415,22 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         }
         return inputs;
     }
+
+    void compare(String query, DBSPZSetLiteral.Contents expected, boolean optimize) {
+        DBSPCompiler compiler = this.testCompiler(optimize);
+        this.prepareData(compiler);
+        compiler.compileStatement("CREATE VIEW VV AS " + query);
+        if (!compiler.options.optimizerOptions.throwOnError)
+            compiler.throwIfErrorsOccurred();
+        compiler.optimize();
+        DBSPCircuit circuit = getCircuit(compiler);
+        InputOutputPair streams = new InputOutputPair(
+                this.getPreparedInputs(compiler),
+                new DBSPZSetLiteral.Contents[] { expected }
+        );
+        this.addRustTestCase(query, compiler, circuit, streams);
+    }
+
 
     void compare(String query, String expected, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);

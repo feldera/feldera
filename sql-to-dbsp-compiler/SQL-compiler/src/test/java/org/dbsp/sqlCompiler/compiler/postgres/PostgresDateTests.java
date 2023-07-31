@@ -24,6 +24,13 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
+import org.dbsp.util.Linq;
 import org.junit.Test;
 
 /**
@@ -903,25 +910,35 @@ public class PostgresDateTests extends PostgresBaseTest {
 
     @Test @Ignore("Currently broken. Wait for PR #370.")
     public void testDiff() {
-        this.q("SELECT (f1 - date '2000-01-01') day AS \"Days From 2K\" FROM DATE_TBL;\n" +
-                " Days From 2K \n" +
-                "--------------\n" +
-                "       -15607\n" +
-                "       -15542\n" +
-                "        -1403\n" +
-                "        -1402\n" +
-                "        -1401\n" +
-                "        -1400\n" +
-                "        -1037\n" +
-                "        -1036\n" +
-                "        -1035\n" +
-                "           91\n" +
-                "           92\n" +
-                "           93\n" +
-                "        13977\n" +
-                "        14343\n" +
-                "        14710\n" +
-                "null"); // Added manually
+        // SELECT f1 - date '2000-01-01' AS "Days From 2K" FROM DATE_TBL;
+        String query = "SELECT (f1 - date '2000-01-01') day AS \"Days From 2K\" FROM DATE_TBL";
+        Long[] results = {
+                -15607L,
+                -15542L,
+                -1403L,
+                -1402L,
+                -1401L,
+                -1400L,
+                -1037L,
+                -1036L,
+                -1035L,
+                91L,
+                92L,
+                93L,
+                13977L,
+                14343L,
+                14710L,
+                //-1475115L
+        };
+        // TODO: why is the output an integer instead of an interval?
+        DBSPZSetLiteral.Contents result =
+                new DBSPZSetLiteral.Contents(Linq.map(results,
+                        l -> new DBSPTupleExpression(new DBSPIntervalMillisLiteral(
+                                l * 86400 * 1000, true)), DBSPExpression.class));
+        result.add(new DBSPTupleExpression(DBSPLiteral.none(
+                DBSPTypeMillisInterval.NULLABLE_INSTANCE)));
+        DBSPCompiler compiler = testCompiler();
+        this.compare(query, result, true);
     }
 
     // There is no 'epoch' date in Calcite

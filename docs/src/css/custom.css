@@ -10,6 +10,8 @@ Copyright © 2021 Phylo, Dr. Electron, Jeroen van den Hout, Critical
 }
 
 :root {
+  --ifm-code-border-radius: 0;
+
   --ifm-color-primary: #14cabf;
   --ifm-color-primary-dark: #10a299;
   --ifm-color-primary-darker: #0c7973;
