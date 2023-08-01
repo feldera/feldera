@@ -166,8 +166,8 @@ macro_rules! some_function3 {
 }
 
 // Macro to create variants of a function with 4 arguments
-// If there exists a function is f____(x: T, y: S, z: V, w: W) -> U, this creates
-// fifteen functions:
+// If there exists a function is f____(x: T, y: S, z: V, w: W) -> U, this
+// creates fifteen functions:
 // - f___N(x: T, y: S, z: V, w: Option<W>) -> Option<U>
 // - f__N_(x: T, y: S, z: Option<V>, w: W) -> Option<U>
 // - etc.
@@ -640,14 +640,22 @@ pub fn agg_max_conditional__<T>(left: T, right: T, predicate: bool) -> T
 where
     T: Ord + Copy,
 {
-    if predicate { left.max(right) } else { left }
+    if predicate {
+        left.max(right)
+    } else {
+        left
+    }
 }
 
 pub fn agg_min_conditional__<T>(left: T, right: T, predicate: bool) -> T
 where
     T: Ord + Copy,
 {
-    if predicate { left.min(right) } else { left }
+    if predicate {
+        left.min(right)
+    } else {
+        left
+    }
 }
 
 pub fn agg_plus_conditional_N_N<T>(left: Option<T>, right: Option<T>, predicate: bool) -> Option<T>
@@ -688,7 +696,11 @@ pub fn agg_plus_conditional__<T>(left: T, right: T, predicate: bool) -> T
 where
     T: Add<T, Output = T> + Copy,
 {
-    if predicate { left + right } else { left }
+    if predicate {
+        left + right
+    } else {
+        left
+    }
 }
 
 #[inline(always)]

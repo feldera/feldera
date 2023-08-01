@@ -282,9 +282,9 @@ impl Runner {
         Ok(())
     }
 
-    /// Check the `request` is a valid new desired state given the current runtime state
-    /// of the pipeline.  `request` value of `None` represents the request to delete the
-    /// pipeline.
+    /// Check the `request` is a valid new desired state given the current
+    /// runtime state of the pipeline.  `request` value of `None` represents
+    /// the request to delete the pipeline.
     fn validate_desired_state_request(
         pipeline_id: PipelineId,
         pipeline_state: &PipelineRuntimeState,
@@ -419,7 +419,8 @@ impl Runner {
     }
 
     /// Forward HTTP request to pipeline.  Assumes that the pipeline is running.
-    /// Takes pipeline port as an argument instead of reading it from the database.
+    /// Takes pipeline port as an argument instead of reading it from the
+    /// database.
     async fn do_forward_to_pipeline(
         pipeline_id: PipelineId,
         method: Method,

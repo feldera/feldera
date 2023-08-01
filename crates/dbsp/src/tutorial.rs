@@ -883,9 +883,8 @@
 //! #
 //! fn build_circuit(
 //!     circuit: &mut RootCircuit,
-//! ) -> Result<(
-//!     CollectionHandle<Record, isize>,
-//!     OutputHandle<OrdIndexedZSet<(String, i32, u8), (isize, isize), isize>>,
+//! ) -> Result<( CollectionHandle<Record, isize>,
+//!   OutputHandle<OrdIndexedZSet<(String, i32, u8), (isize, isize), isize>>,
 //! )> {
 //!     let (input_stream, input_handle) = circuit.add_input_zset::<Record,
 //! isize>();     // ...
@@ -942,7 +941,7 @@
 //!     Ok(())
 //! }
 //! ```
-//!
+//! 
 //! The whole program is in `tutorial6.rs`.  If we run it, it prints both per-month
 //! vaccination numbers and 3-month moving averages:
 //!

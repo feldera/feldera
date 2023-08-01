@@ -6,7 +6,8 @@ use dbsp_pipeline_manager::config::{CompilerConfig, DatabaseConfig, ManagerConfi
 use dbsp_pipeline_manager::pipeline_manager::ApiDoc;
 use utoipa::OpenApi;
 
-// Standalone binary that runs the pipeline manager, compiler and local runner services.
+// Standalone binary that runs the pipeline manager, compiler and local runner
+// services.
 fn main() -> anyhow::Result<()> {
     // Stay in single-threaded mode (no tokio) until calling `daemonize`.
 

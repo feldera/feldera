@@ -1102,15 +1102,9 @@ impl<'a> CodegenCtx<'a> {
     //     column: usize,
     //     flags: MemFlags,
     //     builder: &mut FunctionBuilder<'_>,
-    // ) -> Value {
-    //     let layout = self.layout_of(row_expr);
-    //     self.load_from_row(
-    //         row_expr,
-    //         flags,
-    //         layout.type_of(column),
-    //         layout.offset_of(column),
-    //         builder,
-    //     )
+    // ) -> Value { let layout = self.layout_of(row_expr); self.load_from_row(
+    //   row_expr, flags, layout.type_of(column), layout.offset_of(column), builder,
+    //   )
     // }
 
     // fn load_column_null_flag(
@@ -1691,7 +1685,7 @@ impl<'a> CodegenCtx<'a> {
                     self.float_lt(lhs, rhs, builder)
                 } else if lhs_ty.is_decimal() {
                     self.decimal_binop("decimal_lt", lhs, rhs, builder)
-                } else if lhs_ty.is_signed_int() {
+                } else if lhs_ty.is_signed_int() || lhs_ty.is_date() || lhs_ty.is_timestamp() {
                     builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
                 } else {
                     builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs)
@@ -1705,7 +1699,7 @@ impl<'a> CodegenCtx<'a> {
                     self.float_gt(lhs, rhs, builder)
                 } else if lhs_ty.is_decimal() {
                     self.decimal_binop("decimal_gt", lhs, rhs, builder)
-                } else if lhs_ty.is_signed_int() {
+                } else if lhs_ty.is_signed_int() || lhs_ty.is_date() || lhs_ty.is_timestamp() {
                     builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
                 } else {
                     builder.ins().icmp(IntCC::UnsignedGreaterThan, lhs, rhs)
@@ -1719,7 +1713,7 @@ impl<'a> CodegenCtx<'a> {
                     self.float_le(lhs, rhs, builder)
                 } else if lhs_ty.is_decimal() {
                     self.decimal_binop("decimal_le", lhs, rhs, builder)
-                } else if lhs_ty.is_signed_int() {
+                } else if lhs_ty.is_signed_int() || lhs_ty.is_date() || lhs_ty.is_timestamp() {
                     builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs)
                 } else {
                     builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, lhs, rhs)
@@ -1733,7 +1727,7 @@ impl<'a> CodegenCtx<'a> {
                     self.float_ge(lhs, rhs, builder)
                 } else if lhs_ty.is_decimal() {
                     self.decimal_binop("decimal_ge", lhs, rhs, builder)
-                } else if lhs_ty.is_signed_int() {
+                } else if lhs_ty.is_signed_int() || lhs_ty.is_date() || lhs_ty.is_timestamp() {
                     builder
                         .ins()
                         .icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs)
@@ -1750,7 +1744,7 @@ impl<'a> CodegenCtx<'a> {
                     self.float_min(lhs, rhs, builder)
                 } else if lhs_ty.is_decimal() {
                     todo!()
-                } else if lhs_ty.is_signed_int() {
+                } else if lhs_ty.is_signed_int() || lhs_ty.is_date() || lhs_ty.is_timestamp() {
                     builder.ins().smin(lhs, rhs)
                 } else {
                     builder.ins().umin(lhs, rhs)
@@ -1762,7 +1756,7 @@ impl<'a> CodegenCtx<'a> {
                     self.float_max(lhs, rhs, builder)
                 } else if lhs_ty.is_decimal() {
                     todo!()
-                } else if lhs_ty.is_signed_int() {
+                } else if lhs_ty.is_signed_int() || lhs_ty.is_date() || lhs_ty.is_timestamp() {
                     builder.ins().smax(lhs, rhs)
                 } else {
                     builder.ins().umax(lhs, rhs)
@@ -2119,7 +2113,7 @@ impl<'a> CodegenCtx<'a> {
             }
 
             // Smaller int to larger int
-            (a, _) if from_ty.bytes() < to_ty.bytes() => {
+            (a, b) if a.is_int() && b.is_int() && from_ty.bytes() < to_ty.bytes() => {
                 if a.is_signed_int() || a.is_date() || a.is_timestamp() {
                     builder.ins().sextend(to_ty, src)
                 } else {
@@ -2129,9 +2123,45 @@ impl<'a> CodegenCtx<'a> {
             }
 
             // Larger int to smaller int
-            (_, _) if from_ty.bytes() > to_ty.bytes() => builder.ins().ireduce(to_ty, src),
+            (a, b) if a.is_int() && b.is_int() && from_ty.bytes() > to_ty.bytes() => {
+                builder.ins().ireduce(to_ty, src)
+            }
 
-            (a, b) => unreachable!("cast from {a} to {b}"),
+            // Decimals to floats
+            (a, b) if a.is_decimal() && b.is_float() => {
+                let (lo, hi) = builder.ins().isplit(src);
+
+                let intrinsic = if b.is_f64() {
+                    "decimal_to_f64"
+                } else {
+                    "decimal_to_f32"
+                };
+                let intrinsic = self.imports.get(intrinsic, self.module, builder.func);
+                builder.call_fn(intrinsic, &[lo, hi])
+            }
+
+            // Floats to decimals
+            (a, b) if a.is_float() && b.is_decimal() => {
+                let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    b.native_type().unwrap().size(&self.frontend_config()),
+                ));
+                let slot_ptr = builder.ins().stack_addr(self.pointer_type(), slot, 0);
+
+                let intrinsic = if b.is_f64() {
+                    "decimal_from_f64"
+                } else {
+                    "decimal_from_f32"
+                };
+                let intrinsic = self.imports.get(intrinsic, self.module, builder.func);
+                // TODO: This should return the error for NaN values
+                builder.call_fn(intrinsic, &[src, slot_ptr]);
+
+                // Load the decimal from the stack slot
+                builder.ins().stack_load(to_ty, slot, 0)
+            }
+
+            (a, b) => unreachable!("cast from {a} to {b} in {expr_id}"),
         };
 
         self.add_expr(expr_id, value, cast.to(), None);
@@ -2144,6 +2174,7 @@ impl<'a> CodegenCtx<'a> {
             self.value(select.if_false()),
         );
         // TODO: Add type debug assertions
+        // TODO: Check if `cond` is statically known and try to fold the instruction
 
         let value = builder.ins().select(cond, if_true, if_false);
         self.add_expr(

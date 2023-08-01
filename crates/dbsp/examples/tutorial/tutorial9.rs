@@ -84,7 +84,9 @@ fn main() -> Result<()> {
     loop {
         let mut batch = Vec::new();
         while batch.len() < 500 {
-            let Some(record) = input_records.next() else { break };
+            let Some(record) = input_records.next() else {
+                break;
+            };
             batch.push((record?, 1));
         }
         if batch.is_empty() {
