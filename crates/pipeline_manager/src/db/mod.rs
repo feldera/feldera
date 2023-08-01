@@ -1250,37 +1250,9 @@ impl Storage for ProjectDB {
         // used by the pipeline configuration, e.g., what the `start` function
         // uses in `runner.rs` to write the config/metadata:
         if prev_revision.is_some() {
-            // SQL is stupid
-            // https://stackoverflow.com/questions/5727882/check-if-two-selects-are-equivalent
+            // Take a diff between the pipeline definition and its corresponding revision
             let change = txn.query_one(
-                "SELECT count(*) FROM (
-                    (SELECT progh.code, ch.config, ach.name, ach.config, ach.is_input, ph.config
-                                        FROM pipeline_history ph
-                                        INNER JOIN program_history progh ON ph.program_id = progh.id
-                                        LEFT OUTER JOIN attached_connector_history ach ON ach.pipeline_id = ph.id
-                                        LEFT OUTER JOIN connector_history ch ON ach.connector_id = ch.id
-                                        WHERE ph.id = $1
-                                            AND ach.revision = $2
-                                            AND progh.revision = $2
-                                            AND ph.revision = $2
-                                            AND ch.revision = $2
-                    EXCEPT
-                    SELECT prog.code, c.config, ac.name, ac.config, ac.is_input, p.config
-                                        FROM pipeline p
-                                        INNER JOIN program prog ON p.program_id = prog.id
-                                        LEFT OUTER JOIN attached_connector ac ON ac.pipeline_id = p.id
-                                        LEFT OUTER JOIN connector c ON ac.connector_id = c.id
-                                        WHERE p.id = $1
-                    )
-                UNION ALL
-                    (SELECT prog.code, c.config, ac.name, ac.config, ac.is_input, p.config
-                                        FROM pipeline p
-                                        INNER JOIN program prog ON p.program_id = prog.id
-                                        LEFT OUTER JOIN attached_connector ac ON ac.pipeline_id = p.id
-                                        LEFT OUTER JOIN connector c ON ac.connector_id = c.id
-                                        WHERE p.id = $1
-
-                    EXCEPT
+                "WITH ph_entry AS (
                     SELECT progh.code, ch.config, ach.name, ach.config, ach.is_input, ph.config
                                         FROM pipeline_history ph
                                         INNER JOIN program_history progh ON ph.program_id = progh.id
@@ -1291,8 +1263,22 @@ impl Storage for ProjectDB {
                                             AND progh.revision = $2
                                             AND ph.revision = $2
                                             AND ch.revision = $2
-                    )
-                ) as x",
+                ),
+                p_entry AS (
+                    SELECT prog.code, c.config, ac.name, ac.config, ac.is_input, p.config
+                                        FROM pipeline p
+                                        INNER JOIN program prog ON p.program_id = prog.id
+                                        LEFT OUTER JOIN attached_connector ac ON ac.pipeline_id = p.id
+                                        LEFT OUTER JOIN connector c ON ac.connector_id = c.id
+                                        WHERE p.id = $1
+                ),
+                diff_1 AS (
+                    SELECT * FROM ph_entry EXCEPT SELECT * FROM p_entry
+                ),
+                diff_2 AS (
+                    SELECT * FROM p_entry EXCEPT SELECT * FROM ph_entry
+                )
+                SELECT COUNT(*) FROM (SELECT * FROM diff_1 UNION ALL SELECT * FROM diff_2) as x",
                 &[&pipeline_id.0, &prev_revision],
             )
             .await?;
