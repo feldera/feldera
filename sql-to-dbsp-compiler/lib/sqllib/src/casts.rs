@@ -5,7 +5,7 @@
 use std::cmp::Ordering;
 
 use crate::{geopoint::*, interval::*, timestamp::*};
-use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike, NaiveTime};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
 use rust_decimal::Decimal;
@@ -36,7 +36,7 @@ macro_rules! cast_to_b {
                 [<cast_to_bN_ $type_name >](value)
             }
         }
-    }
+    };
 }
 
 macro_rules! cast_to_b_fp {
@@ -63,7 +63,7 @@ macro_rules! cast_to_b_fp {
                 [<cast_to_bN_ $type_name >](value)
             }
         }
-    }
+    };
 }
 
 #[inline]
@@ -422,9 +422,8 @@ macro_rules! cast_to_fps {
     ($type_name: ident, $arg_type: ty) => {
         cast_to_fp!($type_name, $arg_type, d, F64, f64);
         cast_to_fp!($type_name, $arg_type, f, F32, f32);
-    }
+    };
 }
-
 
 #[inline]
 pub fn cast_to_d_b(value: bool) -> F64 {

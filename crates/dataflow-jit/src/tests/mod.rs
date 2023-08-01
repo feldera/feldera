@@ -12,6 +12,8 @@ mod issue_195;
 mod issue_241;
 mod issue_288;
 mod issue_314;
+mod issue_338;
+mod issue_400;
 
 use crate::ir::literal::{RowLiteral, StreamCollection};
 use std::collections::BTreeMap;

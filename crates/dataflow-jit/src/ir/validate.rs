@@ -1,19 +1,17 @@
 use crate::{
     codegen::TRIG_INTRINSICS,
     ir::{
-        exprs::RowOrScalar,
         exprs::{
-            BinaryOp, BinaryOpKind, Cast, Constant, Drop, Expr, ExprId, IsNull, Load, NullRow,
-            RValue, SetNull, Store, UnaryOpKind, Uninit, UninitRow,
+            BinaryOp, BinaryOpKind, Call, Cast, Constant, Drop, Expr, ExprId, IsNull, Load,
+            NullRow, RValue, RowOrScalar, Select, SetNull, Store, UnaryOpKind, Uninit, UninitRow,
         },
-        exprs::{Call, Select},
         graph::GraphExt,
         nodes::{
             Antijoin, ConstantStream, DataflowNode, DelayedFeedback, Delta0, Differentiate,
             Distinct, Export, ExportedNode, Filter, FilterMap, FlatMap, Fold, IndexByColumn,
             IndexWith, Integrate, Map, Max, Min, Minus, MonotonicJoin, Neg, Node, NodeId,
-            PartitionedRollingFold, Sink, Source, SourceMap, StreamKind, StreamLayout,
-            StreamDistinct, Subgraph, Sum, UnitMapToSet,
+            PartitionedRollingFold, Sink, Source, SourceMap, StreamDistinct, StreamKind,
+            StreamLayout, Subgraph, Sum, TopK, UnitMapToSet,
         },
         visit::NodeVisitor,
         BlockId, ColumnType, Function, Graph, InputFlags, LayoutId, RowLayoutBuilder,
@@ -25,8 +23,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     error::Error,
 };
-
-use super::nodes::TopK;
 
 // TODO: Validate block parameters
 
@@ -1371,20 +1367,50 @@ impl FunctionValidator {
             }
 
             "dbsp.str.parse" => {
-                if call.args().len() != 1 {
-                    return Err(ValidationError::IncorrectFunctionArgLen {
-                        expr_id,
-                        function: call.function().to_owned(),
-                        expected_args: 1,
-                        args: call.args().len(),
-                    });
-                }
+                assert!(
+                    !call.ret_ty().is_string(),
+                    "cannot parse strings into strings (attempted in {expr_id})",
+                );
 
-                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::String) {
-                    todo!(
-                        "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
-                        actual_arg_types[0],
-                    );
+                if matches!(call.ret_ty(), ColumnType::Date | ColumnType::Timestamp) {
+                    if call.args().len() != 2 {
+                        return Err(ValidationError::IncorrectFunctionArgLen {
+                            expr_id,
+                            function: call.function().to_owned(),
+                            expected_args: 2,
+                            args: call.args().len(),
+                        });
+                    }
+
+                    if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::String) {
+                        todo!(
+                            "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                            actual_arg_types[0],
+                        );
+                    }
+
+                    if actual_arg_types[1] != RowOrScalar::Scalar(ColumnType::String) {
+                        todo!(
+                            "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                            actual_arg_types[1],
+                        );
+                    }
+                } else {
+                    if call.args().len() != 1 {
+                        return Err(ValidationError::IncorrectFunctionArgLen {
+                            expr_id,
+                            function: call.function().to_owned(),
+                            expected_args: 1,
+                            args: call.args().len(),
+                        });
+                    }
+
+                    if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::String) {
+                        todo!(
+                            "mismatched argument type in {expr_id}, should be a string but instead got {:?}",
+                            actual_arg_types[0],
+                        );
+                    }
                 }
             }
 
