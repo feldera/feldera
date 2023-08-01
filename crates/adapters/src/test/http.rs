@@ -70,7 +70,7 @@ impl TestHttpReceiver {
                 let mut reader = builder.from_reader(if let Some(csv) = &chunk.text_data {
                     csv.as_bytes()
                 } else {
-                    panic!("not a text chunk");
+                    continue;
                 });
                 // let mut num_received = 0;
                 for (record, w) in reader
