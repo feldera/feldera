@@ -312,26 +312,27 @@ pub(crate) struct ProgramDescr {
 
 /// Pipeline status.
 ///
-/// This type represents the state of the pipeline tracked by the pipeline runner and
-/// observed by the API client via the `GET /pipeline` endpoint.
+/// This type represents the state of the pipeline tracked by the pipeline
+/// runner and observed by the API client via the `GET /pipeline` endpoint.
 ///
 /// ### The lifecycle of a pipeline
 ///
-/// The following automaton captures the lifecycle of the pipeline.  Individual states
-/// and transitions of the automaton are described below.
+/// The following automaton captures the lifecycle of the pipeline.  Individual
+/// states and transitions of the automaton are described below.
 ///
-/// * In addition to the transitions shown in the diagram, all states have an implicit
-///   "forced shutdown" transition to the `Shutdown` state.  This transition is triggered
-///   when the pipeline runner is unable to communicate with the pipeline and thereby
-///   forces a shutdown.
+/// * In addition to the transitions shown in the diagram, all states have an
+///   implicit "forced shutdown" transition to the `Shutdown` state.  This
+///   transition is triggered when the pipeline runner is unable to communicate
+///   with the pipeline and thereby forces a shutdown.
 ///
-/// * States labeled with the hourglass symbol (⌛) are **timed** states.  The automaton
-///   stays in timed state until the corresponding operation completes or until the runner
-///   performs a forced shutdown of the pipeline after a pre-defined timeout perioud.
+/// * States labeled with the hourglass symbol (⌛) are **timed** states.  The
+///   automaton stays in timed state until the corresponding operation completes
+///   or until the runner performs a forced shutdown of the pipeline after a
+///   pre-defined timeout perioud.
 ///
-/// * State transitions labeled with API endpoint names (`/deploy`, `/start`, `/pause`,
-///   `/shutdown`) are triggered by invoking corresponding endpoint, e.g.,
-///   `POST /v0/pipelines/{pipeline_id}/start`.
+/// * State transitions labeled with API endpoint names (`/deploy`, `/start`,
+///   `/pause`, `/shutdown`) are triggered by invoking corresponding endpoint,
+///   e.g., `POST /v0/pipelines/{pipeline_id}/start`.
 ///
 /// ```text
 ///                  Shutdown◄────┐
@@ -367,7 +368,6 @@ pub(crate) struct ProgramDescr {
 /// represents the actual state of the pipeline.  The pipeline runner
 /// service continuously monitors both fields and steers the pipeline
 /// towards the desired state specified by the user.
-///
 // Using rustdoc references in the following paragraph upsets `docusaurus`.
 /// Only three of the states in the pipeline automaton above can be
 /// used as desired statuses: `Paused`, `Running`, and `Shutdown`.
@@ -402,14 +402,14 @@ pub enum PipelineStatus {
     /// The user is unable to communicate with the pipeline during this
     /// time.  The pipeline remains in this state until:
     ///
-    /// 1. Its HTTP server is up and running; the pipeline transitions
-    ///    to the [`Initializing`](`Self::Initializing`) state.
+    /// 1. Its HTTP server is up and running; the pipeline transitions to the
+    ///    [`Initializing`](`Self::Initializing`) state.
     /// 2. A pre-defined timeout has passed.  The runner performs forced
     ///    shutdown of the pipeline; returns to the
     ///    [`Shutdown`](`Self::Shutdown`) state.
     /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-    ///    The manager performs forced shutdown of the pipeline, returns to
-    ///    the [`Shutdown`](`Self::Shutdown`) state.
+    ///    The manager performs forced shutdown of the pipeline, returns to the
+    ///    [`Shutdown`](`Self::Shutdown`) state.
     Provisioning,
 
     /// The pipeline is initializing its internal state and connectors.
@@ -420,11 +420,13 @@ pub enum PipelineStatus {
     ///
     /// The pipeline remains in this state until:
     ///
-    /// 1. Intialization completes successfully; the pipeline transitions
-    ///    to the [`Paused`](`Self::Paused`) state.
-    /// 2. Intialization fails; transitions to the [`Failed`](`Self::Failed`) state.
-    /// 3. A pre-defined timeout has passed.  The runner performs forced shutdown of
-    ///    the pipeline; returns to the [`Shutdown`](`Self::Shutdown`) state.
+    /// 1. Intialization completes successfully; the pipeline transitions to the
+    ///    [`Paused`](`Self::Paused`) state.
+    /// 2. Intialization fails; transitions to the [`Failed`](`Self::Failed`)
+    ///    state.
+    /// 3. A pre-defined timeout has passed.  The runner performs forced
+    ///    shutdown of the pipeline; returns to the
+    ///    [`Shutdown`](`Self::Shutdown`) state.
     /// 4. The user cancels the pipeline by invoking the `/shutdown` endpoint.
     ///    The manager performs forced shutdown of the pipeline, returns to the
     ///    [`Shutdown`](`Self::Shutdown`) state.
@@ -434,43 +436,49 @@ pub enum PipelineStatus {
     ///
     /// The pipeline remains in this state until:
     ///
-    /// 1. The user starts the pipeline by invoking the `/start` endpoint.
-    ///    The manager passes the request to the pipeline; transitions to the
+    /// 1. The user starts the pipeline by invoking the `/start` endpoint. The
+    ///    manager passes the request to the pipeline; transitions to the
     ///    [`Running`](`Self::Running`) state.
     /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-    ///    The manager passes the shutdown request to the pipeline to perform a graceful
-    ///    shutdown; transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
-    /// 3. An unexpected runtime error renders the pipeline [`Failed`](`Self::Failed`).
+    ///    The manager passes the shutdown request to the pipeline to perform a
+    ///    graceful shutdown; transitions to the
+    ///    [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected runtime error renders the pipeline
+    ///    [`Failed`](`Self::Failed`).
     Paused,
 
     /// The pipeline is processing data.
     ///
     /// The pipeline remains in this state until:
     ///
-    /// 1. The user pauses the pipeline by invoking the `/pause` endpoint.
-    ///    The manager passes the request to the pipeline; transitions to the
+    /// 1. The user pauses the pipeline by invoking the `/pause` endpoint. The
+    ///    manager passes the request to the pipeline; transitions to the
     ///    [`Paused`](`Self::Paused`) state.
     /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-    ///    The runner passes the shutdown request to the pipeline to perform a graceful
-    ///    shutdown; transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
-    /// 3. An unexpected runtime error renders the pipeline [`Failed`](`Self::Failed`).
+    ///    The runner passes the shutdown request to the pipeline to perform a
+    ///    graceful shutdown; transitions to the
+    ///    [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected runtime error renders the pipeline
+    ///    [`Failed`](`Self::Failed`).
     Running,
 
     /// Graceful shutdown in progress.
     ///
     /// In this state, the pipeline finishes any ongoing data processing,
-    /// produces final outputs, shuts down input/output connectors and terminates.
+    /// produces final outputs, shuts down input/output connectors and
+    /// terminates.
     ///
     /// The pipeline remains in this state until:
     ///
     /// 1. Shutdown completes successfully; transitions to the
     ///    [`Shutdown`](`Self::Shutdown`) state.
-    /// 2. A pre-defined timeout has passed.  The manager performs forced shutdown of
-    ///    the pipeline; returns to the [`Shutdown`](`Self::Shutdown`) state.
+    /// 2. A pre-defined timeout has passed.  The manager performs forced
+    ///    shutdown of the pipeline; returns to the
+    ///    [`Shutdown`](`Self::Shutdown`) state.
     ShuttingDown,
 
-    /// The pipeline remains in this state until the users acknowledges the error
-    /// by issuing a `/shutdown` request; transitions to the
+    /// The pipeline remains in this state until the users acknowledges the
+    /// error by issuing a `/shutdown` request; transitions to the
     /// [`Shutdown`](`Self::Shutdown`) state.
     Failed,
 }

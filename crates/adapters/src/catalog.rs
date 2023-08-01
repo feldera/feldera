@@ -88,8 +88,9 @@ pub struct OutputCollectionHandles {
     /// [`Stream::neighborhood`] operator.
     pub neighborhood_handle: Box<dyn SerOutputBatchHandle>,
 
-    /// A stream that contains the full snapshot of the neighborhood.  Only produces
-    /// an output whenever the `neighborhood_descr_handle` input is set to `Some(..)`.
+    /// A stream that contains the full snapshot of the neighborhood.  Only
+    /// produces an output whenever the `neighborhood_descr_handle` input is
+    /// set to `Some(..)`.
     pub neighborhood_snapshot_handle: Box<dyn SerOutputBatchHandle>,
 
     /// Input stream used to submit the quantiles query.

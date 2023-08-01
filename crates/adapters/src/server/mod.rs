@@ -943,7 +943,8 @@ outputs:
             sleep(Duration::from_millis(200));
         }
 
-        // Request quantiles while the table is empty.  This should return an empty quantile.
+        // Request quantiles while the table is empty.  This should return an empty
+        // quantile.
         let mut quantiles_resp1 = server
             .post("/egress/test_output1?mode=snapshot&query=quantiles")
             .send()

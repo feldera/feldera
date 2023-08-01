@@ -4492,7 +4492,7 @@ mod tests {
     }
 
     // Nested circuit.  The circuit contains a source node that counts up from
-    // 1.  For each `n` output by the source node, the nested circuit computes
+    // 1. For each `n` output by the source node, the nested circuit computes
     // factorial(n) using a `NestedSource` operator that counts from n down to
     // `1` and a multiplier that multiplies the next count by the product
     // computed so far (stored in z-1).

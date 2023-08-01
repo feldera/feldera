@@ -191,8 +191,8 @@ where
     //  1. We are obtaining pointers to references which are guaranteed to be valid.
     //  2. They cannot overlap because we obtain pointers to difference indices of
     // the slice.     Namely, `i` and `i-1`.
-    //  3. If the slice is properly aligned, the elements are properly aligned.
-    //     It is the caller's responsibility to make sure the slice is properly
+    //  3. If the slice is properly aligned, the elements are properly aligned. It
+    //     is the caller's responsibility to make sure the slice is properly
     // aligned.
     //
     // See comments below for further detail.
@@ -255,8 +255,8 @@ where
     //  1. We are obtaining pointers to references which are guaranteed to be valid.
     //  2. They cannot overlap because we obtain pointers to difference indices of
     // the slice.     Namely, `i` and `i+1`.
-    //  3. If the slice is properly aligned, the elements are properly aligned.
-    //     It is the caller's responsibility to make sure the slice is properly
+    //  3. If the slice is properly aligned, the elements are properly aligned. It
+    //     is the caller's responsibility to make sure the slice is properly
     // aligned.
     //
     // See comments below for further detail.

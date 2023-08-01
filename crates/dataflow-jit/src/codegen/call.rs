@@ -1297,11 +1297,27 @@ impl CodegenCtx<'_> {
                 self.parse_scalar_from_string("parse_decimal_from_str", expr_id, call, builder);
             }
 
-            ColumnType::Date
-            | ColumnType::Timestamp
-            | ColumnType::String
-            | ColumnType::Unit
-            | ColumnType::Ptr => todo!(),
+            ColumnType::Date => {
+                self.parse_date_or_timestamp_from_str(
+                    "parse_date_from_str",
+                    expr_id,
+                    call,
+                    builder,
+                );
+            }
+
+            ColumnType::Timestamp => {
+                self.parse_date_or_timestamp_from_str(
+                    "parse_timestamp_from_str",
+                    expr_id,
+                    call,
+                    builder,
+                );
+            }
+
+            ColumnType::String | ColumnType::Unit | ColumnType::Ptr => {
+                todo!()
+            }
         }
     }
 
@@ -1326,6 +1342,44 @@ impl CodegenCtx<'_> {
 
         let intrinsic = self.imports.get(intrinsic, self.module, builder.func);
         let errored = builder.call_fn(intrinsic, &[ptr, length, slot_ptr]);
+
+        // FIXME: We should return a two-valued struct to allow users to handle
+        // failed parsing, which is super expected
+        builder.ins().trapnz(errored, TRAP_FAILED_PARSE);
+
+        let value = builder
+            .ins()
+            .stack_load(ret_ty.native_type(&self.frontend_config()), slot, 0);
+        self.add_expr(expr_id, value, Some(call.ret_ty()), None);
+    }
+
+    fn parse_date_or_timestamp_from_str(
+        &mut self,
+        intrinsic: &str,
+        expr_id: ExprId,
+        call: &Call,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let string_arg = call.args()[0];
+        let string = self.value(string_arg);
+        let str_len = self.string_length(string, self.is_readonly(string_arg), builder);
+        let str_ptr = self.string_ptr(string, builder);
+
+        let spec_arg = call.args()[1];
+        let spec_string = self.value(spec_arg);
+        let spec_len = self.string_length(spec_string, self.is_readonly(spec_arg), builder);
+        let spec_ptr = self.string_ptr(spec_string, builder);
+
+        let ret_ty = call.ret_ty().native_type().unwrap();
+
+        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            ret_ty.size(&self.frontend_config()),
+        ));
+        let slot_ptr = builder.ins().stack_addr(self.pointer_type(), slot, 0);
+
+        let intrinsic = self.imports.get(intrinsic, self.module, builder.func);
+        let errored = builder.call_fn(intrinsic, &[str_ptr, str_len, spec_ptr, spec_len, slot_ptr]);
 
         // FIXME: We should return a two-valued struct to allow users to handle
         // failed parsing, which is super expected

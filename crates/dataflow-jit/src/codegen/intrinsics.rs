@@ -16,7 +16,7 @@ use cranelift::{
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use csv::StringRecord;
-use rust_decimal::Decimal;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use std::{
     alloc::Layout,
     cell::RefCell,
@@ -559,6 +559,8 @@ intrinsics! {
     parse_f64_from_str = fn(ptr, usize, ptr) -> bool,
     parse_bool_from_str = fn(ptr, usize, ptr) -> bool,
     parse_decimal_from_str = fn(ptr, usize, ptr) -> bool,
+    parse_date_from_str = fn(ptr, usize, ptr, usize, ptr) -> bool,
+    parse_timestamp_from_str = fn(ptr, usize, ptr, usize, ptr) -> bool,
 
     round_sql_float_with_string_f32 = fn(f32, i32) -> f32,
     round_sql_float_with_string_f64 = fn(f64, i32) -> f64,
@@ -577,6 +579,10 @@ intrinsics! {
     decimal_mul = fn(u64, u64, u64, u64, ptr),
     decimal_div = fn(u64, u64, u64, u64, ptr),
     decimal_rem = fn(u64, u64, u64, u64, ptr),
+    decimal_to_f32 = fn(u64, u64) -> f32,
+    decimal_to_f64 = fn(u64, u64) -> f64,
+    decimal_from_f32 = fn(f32, ptr),
+    decimal_from_f64 = fn(f64, ptr),
 }
 
 /// Allocates memory with the given size and alignment
@@ -1337,6 +1343,61 @@ unsafe extern "C" fn parse_bool_from_str(
     }
 }
 
+unsafe extern "C" fn parse_date_from_str(
+    ptr: *const u8,
+    len: usize,
+    // TODO: We could pre-process this and pass in a `*const
+    // chrono::format::strftime::StrftimeItems`
+    spec_ptr: *const u8,
+    spec_len: usize,
+    output: &mut MaybeUninit<i32>,
+) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    let spec = unsafe { str_from_raw_parts(spec_ptr, spec_len) };
+
+    match NaiveDate::parse_from_str(string, spec) {
+        Ok(date) => {
+            let days = date.and_time(NaiveTime::MIN).timestamp_millis() / (86400 * 1000);
+            output.write(days as i32);
+            false
+        }
+
+        Err(error) => {
+            tracing::error!(
+                "failed to parse date from string {string:?} with spec {spec:?}: {error}",
+            );
+            true
+        }
+    }
+}
+
+unsafe extern "C" fn parse_timestamp_from_str(
+    ptr: *const u8,
+    len: usize,
+    // TODO: We could pre-process this and pass in a `*const
+    // chrono::format::strftime::StrftimeItems`
+    spec_ptr: *const u8,
+    spec_len: usize,
+    output: &mut MaybeUninit<i64>,
+) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    let spec = unsafe { str_from_raw_parts(spec_ptr, spec_len) };
+
+    match NaiveDateTime::parse_from_str(string, spec) {
+        Ok(timestamp) => {
+            output.write(timestamp.timestamp_millis());
+            false
+        }
+
+        Err(error) => {
+            tracing::error!(
+                "failed to parse timestamp from string {string:?} with spec {spec:?}: {error}",
+            );
+            true
+        }
+    }
+}
+
 unsafe extern "C" fn parse_decimal_from_str(
     ptr: *const u8,
     len: usize,
@@ -1537,4 +1598,26 @@ extern "C" fn decimal_rem(
 
     let remainder = lhs % rhs;
     out.write(remainder.to_repr());
+}
+
+extern "C" fn decimal_to_f32(lo: u64, hi: u64) -> f32 {
+    let decimal = decimal_from_parts(lo, hi);
+    decimal.to_f32().unwrap_or(f32::NAN)
+}
+
+extern "C" fn decimal_to_f64(lo: u64, hi: u64) -> f64 {
+    let decimal = decimal_from_parts(lo, hi);
+    decimal.to_f64().unwrap_or(f64::NAN)
+}
+
+extern "C" fn decimal_from_f32(float: f32, out: &mut MaybeUninit<u128>) {
+    // TODO: NaN probably shouldn't map to zero
+    let decimal = Decimal::from_f32_retain(float).unwrap_or(Decimal::ZERO);
+    out.write(decimal.to_repr());
+}
+
+extern "C" fn decimal_from_f64(float: f64, out: &mut MaybeUninit<u128>) {
+    // TODO: NaN probably shouldn't map to zero
+    let decimal = Decimal::from_f64_retain(float).unwrap_or(Decimal::ZERO);
+    out.write(decimal.to_repr());
 }
