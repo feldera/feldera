@@ -49,10 +49,10 @@ public class PivotTests extends PostgresBaseTest {
                 "GROUP BY CourseName;\n" +
                 "CourseName | Price\n" +
                 "-----------------\n" +
-                "C| 5000\n" +
-                "JAVA| 6000\n" +
-                "PLACEMENT 100| 5000\n" +
-                "PYTHON| 8000");
+                " C| 5000\n" +
+                " JAVA| 6000\n" +
+                " PLACEMENT 100| 5000\n" +
+                " PYTHON| 8000");
     }
 
     @Test
@@ -66,10 +66,10 @@ public class PivotTests extends PostgresBaseTest {
                 ") AS PivotTable;\n" +
                 "CourseName | PG | IV\n" +
                 "-----------------\n" +
-                "C| 5000 | NULL\n" +
-                "JAVA| 6000 | NULL\n" +
-                "PLACEMENT 100| NULL | 5000\n" +
-                "PYTHON| 8000 | NULL");
+                " C| 5000 | NULL\n" +
+                " JAVA| 6000 | NULL\n" +
+                " PLACEMENT 100| NULL | 5000\n" +
+                " PYTHON| 8000 | NULL");
     }
 
     @Test
@@ -82,10 +82,10 @@ public class PivotTests extends PostgresBaseTest {
                 "+------+-----------+---------+---------+---------+---------+\n" +
                 "|  id  |  address  | john_a  | john_cc | mike_a  | mike_cc |\n" +
                 "+------+-----------+---------+---------+---------+---------+\n" +
-                "| 200  |Street 2| NULL    | NULL    | NULL    | NULL    |\n" +
-                "| 100  |Street 1| 30      | 1       | NULL    | NULL    |\n" +
-                "| 300  |Street 3| NULL    | NULL    | 80      | 3       |\n" +
-                "| 400  |Street 4| NULL    | NULL    | NULL    | NULL    |\n" +
+                "| 200  | Street 2| NULL    | NULL    | NULL    | NULL    |\n" +
+                "| 100  | Street 1| 30      | 1       | NULL    | NULL    |\n" +
+                "| 300  | Street 3| NULL    | NULL    | 80      | 3       |\n" +
+                "| 400  | Street 4| NULL    | NULL    | NULL    | NULL    |\n" +
                 "+------+-----------+---------+---------+---------+---------+\n");
         this.q("SELECT * FROM person\n" +
                 "    PIVOT (\n" +
@@ -95,10 +95,10 @@ public class PivotTests extends PostgresBaseTest {
                 "+------+-----------+-------+-------+-------+-------+\n" +
                 "|  id  |  address  | c1_a  | c1_cc | c2_a  | c2_cc |\n" +
                 "+------+-----------+-------+-------+-------+-------+\n" +
-                "| 200  |Street 2| NULL  | NULL  | NULL  | NULL  |\n" +
-                "| 100  |Street 1| 30    | 1     | NULL  | NULL  |\n" +
-                "| 300  |Street 3| NULL  | NULL  | NULL  | NULL  |\n" +
-                "| 400  |Street 4| NULL  | NULL  | NULL  | NULL  |\n" +
+                "| 200  | Street 2| NULL  | NULL  | NULL  | NULL  |\n" +
+                "| 100  | Street 1| 30    | 1     | NULL  | NULL  |\n" +
+                "| 300  | Street 3| NULL  | NULL  | NULL  | NULL  |\n" +
+                "| 400  | Street 4| NULL  | NULL  | NULL  | NULL  |\n" +
                 "+------+-----------+-------+-------+-------+-------+");
     }
 
@@ -107,11 +107,11 @@ public class PivotTests extends PostgresBaseTest {
         this.q("SELECT year, type, SUM(count) FROM FURNITURE GROUP BY year, type;\n" +
                 "year | type  | sum\n" +
                 "-----------------\n" +
-                "2020 |chair| 4 \n" +
-                "2021 |table| 3 \n" +
-                "2021 |chair| 4 \n" +
-                "2023 |desk| 1 \n" +
-                "2023 |table| 2 ");
+                "2020 | chair| 4 \n" +
+                "2021 | table| 3 \n" +
+                "2021 | chair| 4 \n" +
+                "2023 | desk| 1 \n" +
+                "2023 | table| 2 ");
         this.q("SELECT * FROM FURNITURE\n" +
                 "PIVOT (\n" +
                 "    SUM(count) AS ct\n" +

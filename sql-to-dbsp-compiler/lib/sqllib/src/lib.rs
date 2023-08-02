@@ -14,7 +14,7 @@ use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::ops::Add;
+use std::ops::{Add, Index};
 
 #[derive(Clone)]
 pub struct DefaultOptSemigroup<T>(PhantomData<T>);
@@ -1053,3 +1053,40 @@ pub fn sign_decimal(value: Decimal) -> Decimal {
 some_polymorphic_function1!(sign, f, F32, F32);
 some_polymorphic_function1!(sign, d, F64, F64);
 some_polymorphic_function1!(sign, decimal, Decimal, Decimal);
+
+pub fn cardinality_<T>(value: Vec<T>) -> i32 {
+    value.len() as i32
+}
+
+pub fn cardinalityN<T>(value: Option<Vec<T>>) -> Option<i32> {
+    let value = value?;
+    Some(value.len() as i32)
+}
+
+pub fn index__<T>(value: &Vec<T>, index: usize) -> T
+    where T: Clone
+{
+    (*value.index(index)).clone()
+}
+
+pub fn index__N<T>(value: &Vec<T>, index: Option<usize>) -> T
+    where T: Clone
+{
+    index__(value, index.unwrap())
+}
+
+pub fn index_N_<T>(value: &Option<Vec<T>>, index: usize) -> Option<T>
+    where T: Clone
+{
+    value.as_ref().map(|value| index__(&value, index))
+}
+
+pub fn index_N_N<T>(value: &Option<Vec<T>>, index: Option<usize>) -> Option<T>
+    where T: Clone
+{
+    value.as_ref().map(|value| index__N(&value, index))
+}
+
+pub fn array<T>() -> Vec<T> {
+    vec!()
+}

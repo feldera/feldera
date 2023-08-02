@@ -62,10 +62,10 @@ public class FoodmartBaseTests extends PostgresBaseTest {
         this.q("SELECT * FROM DEPT;\n" +
                 "DEPT NO | DNAME | LOC\n" +
                 "---------------------\n" +
-                "10 |ACCOUNTING|NEW YORK\n" +
-                "20 |RESEARCH|DALLAS\n" +
-                "30 |SALES|CHICAGO\n" +
-                "40 |OPERATIONS|BOSTON");
+                "10 | ACCOUNTING| NEW YORK\n" +
+                "20 | RESEARCH| DALLAS\n" +
+                "30 | SALES| CHICAGO\n" +
+                "40 | OPERATIONS| BOSTON");
     }
 
     @Test

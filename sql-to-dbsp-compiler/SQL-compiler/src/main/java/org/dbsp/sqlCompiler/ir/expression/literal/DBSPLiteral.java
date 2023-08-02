@@ -104,7 +104,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
         } else if (type.is(DBSPTypeTime.class)) {
             return new DBSPTimeLiteral();
         } else if (type.is(DBSPTypeVec.class)) {
-            return new DBSPVecLiteral(type.to(DBSPTypeVec.class).getElementType(), true);
+            return new DBSPVecLiteral(type, true);
         } else if (type.is(DBSPTypeTuple.class)) {
             return new DBSPTupleExpression(type.to(DBSPTypeTuple.class));
         } else if (type.is(DBSPTypeNull.class)) {

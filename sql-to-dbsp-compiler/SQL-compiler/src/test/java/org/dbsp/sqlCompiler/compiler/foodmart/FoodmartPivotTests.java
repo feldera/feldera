@@ -26,11 +26,11 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 "+-----------+----------+----------+----------+\n" +
                 "| JOB       | 10_COUNT | 50_COUNT | 20_COUNT |\n" +
                 "+-----------+----------+----------+----------+\n" +
-                "|ANALYST|        0 |        0 |        2 |\n" +
-                "|CLERK|        1 |        0 |        2 |\n" +
-                "|MANAGER|        1 |        0 |        1 |\n" +
-                "|PRESIDENT|        1 |        0 |        0 |\n" +
-                "|SALESMAN|        0 |        0 |        0 |\n" +
+                "| ANALYST|        0 |        0 |        2 |\n" +
+                "| CLERK|        1 |        0 |        2 |\n" +
+                "| MANAGER|        1 |        0 |        1 |\n" +
+                "| PRESIDENT|        1 |        0 |        0 |\n" +
+                "| SALESMAN|        0 |        0 |        0 |\n" +
                 "+-----------+----------+----------+----------+\n" +
                 "(5 rows)\n" +
                 "\n" +
@@ -41,10 +41,10 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 "+-----------+----------+----------+----------+\n" +
                 "| JOB       | 10_COUNT | 50_COUNT | 20_COUNT |\n" +
                 "+-----------+----------+----------+----------+\n" +
-                "|ANALYST|        0 |        0 |        2 |\n" +
-                "|CLERK|        1 |        0 |        2 |\n" +
-                "|PRESIDENT|        1 |        0 |        0 |\n" +
-                "|SALESMAN|        0 |        0 |        0 |\n" +
+                "| ANALYST|        0 |        0 |        2 |\n" +
+                "| CLERK|        1 |        0 |        2 |\n" +
+                "| PRESIDENT|        1 |        0 |        0 |\n" +
+                "| SALESMAN|        0 |        0 |        0 |\n" +
                 "+-----------+----------+----------+----------+\n" +
                 "(4 rows)\n" +
                 "\n" +
@@ -56,10 +56,10 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 "+-----------+-------+-------+\n" +
                 "| JOB       | SUM10 | SUM20 |\n" +
                 "+-----------+-------+-------+\n" +
-                "|ANALYST|     0 |     2 |\n" +
-                "|CLERK|     1 |     2 |\n" +
-                "|PRESIDENT|     1 |     0 |\n" +
-                "|SALESMAN|     0 |     0 |\n" +
+                "| ANALYST|     0 |     2 |\n" +
+                "| CLERK|     1 |     2 |\n" +
+                "| PRESIDENT|     1 |     0 |\n" +
+                "| SALESMAN|     0 |     0 |\n" +
                 "+-----------+-------+-------+\n" +
                 "(4 rows)\n" +
                 "\n" +
@@ -147,11 +147,11 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 "+-----------+---------+---------+\n" +
                 "| JOB       | 10_10_C | 30_20_C |\n" +
                 "+-----------+---------+---------+\n" +
-                "|ANALYST|       0 |       0 |\n" +
-                "|CLERK|       1 |       0 |\n" +
-                "|MANAGER|       1 |       0 |\n" +
-                "|PRESIDENT|       1 |       0 |\n" +
-                "|SALESMAN|       0 |       0 |\n" +
+                "| ANALYST|       0 |       0 |\n" +
+                "| CLERK|       1 |       0 |\n" +
+                "| MANAGER|       1 |       0 |\n" +
+                "| PRESIDENT|       1 |       0 |\n" +
+                "| SALESMAN|       0 |       0 |\n" +
                 "+-----------+---------+---------+\n" +
                 "(5 rows)\n" +
                 "\n" +
@@ -233,8 +233,8 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 "+--------+---------+-------+---------+-------+---------+-------+\n" +
                 "| GENDER | C10_SS  | C10_C | C20_SS  | C20_C | A20_SS  | A20_C |\n" +
                 "+--------+---------+-------+---------+-------+---------+-------+\n" +
-                "|F|         |     0 | 1100.00 |     1 |         |     0 |\n" +
-                "|M| 1300.00 |     1 |  800.00 |     1 | 6000.00 |     2 |\n" +
+                "| F|         |     0 | 1100.00 |     1 |         |     0 |\n" +
+                "| M| 1300.00 |     1 |  800.00 |     1 | 6000.00 |     2 |\n" +
                 "+--------+---------+-------+---------+-------+---------+-------+\n" +
                 "(2 rows)\n" +
                 "\n" +
@@ -247,11 +247,11 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 "+--------+--------+---------+---------+\n" +
                 "| GENDER | DEPTNO | JOB     | SAL     |\n" +
                 "+--------+--------+---------+---------+\n" +
-                "|F|     20 |CLERK| 1100.00 |\n" +
-                "|M|     10 |CLERK| 1300.00 |\n" +
-                "|M|     20 |ANALYST| 3000.00 |\n" +
-                "|M|     20 |ANALYST| 3000.00 |\n" +
-                "|M|     20 |CLERK|  800.00 |\n" +
+                "| F|     20 | CLERK| 1100.00 |\n" +
+                "| M|     10 | CLERK| 1300.00 |\n" +
+                "| M|     20 | ANALYST| 3000.00 |\n" +
+                "| M|     20 | ANALYST| 3000.00 |\n" +
+                "| M|     20 | CLERK|  800.00 |\n" +
                 "+--------+--------+---------+---------+\n" +
                 "(5 rows)");
     }

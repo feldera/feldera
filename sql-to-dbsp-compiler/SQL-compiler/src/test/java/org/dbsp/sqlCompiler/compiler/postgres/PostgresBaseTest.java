@@ -306,8 +306,18 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
             int months = longIntervalToMonths(trimmed);
             result = new DBSPIntervalMonthsLiteral(months);
         } else if (fieldType.is(DBSPTypeString.class)) {
-            // No trim
-            result = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, data, StandardCharsets.UTF_8);
+            // If there is no space in front of the string, we expect a NULL.
+            // This is how we distinguish empty strings from nulls.
+            if (!data.startsWith(" ")) {
+                if (data.equals("NULL"))
+                    result = DBSPLiteral.none(fieldType);
+                else
+                    throw new RuntimeException("Expected NULL or a space: " +
+                            Utilities.singleQuote(data));
+            } else {
+                data = data.substring(1);
+                result = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, data, StandardCharsets.UTF_8);
+            }
         } else if (fieldType.is(DBSPTypeBool.class)) {
             boolean value = trimmed.equalsIgnoreCase("t") || trimmed.equalsIgnoreCase("true");
             result = new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, value);

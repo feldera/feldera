@@ -65,6 +65,11 @@ public class DBSPTypeNull extends DBSPTypeBaseType {
     }
 
     @Override
+    public String toString() {
+        return "null";
+    }
+
+    @Override
     public int hashCode() {
         return Objects.hash(this.mayBeNull, 10);
     }

@@ -126,18 +126,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPIndexExpression expression) {
-        this.builder.append("(");
-        expression.array.accept(this);
-        this.builder.append("[");
-        expression.index.accept(this);
-        if (expression.startsAtOne)
-            this.builder.append("- 1");
-        this.builder.append("])");
-        return VisitDecision.STOP;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPFieldComparatorExpression expression) {
         expression.source.accept(this);
         boolean hasSource = expression.source.is(DBSPFieldComparatorExpression.class);
@@ -253,6 +241,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPVecLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);
+        if (literal.mayBeNull())
+            this.builder.append("Some(");
         this.builder.append("vec!(")
                 .increase();
         for (DBSPExpression exp: Objects.requireNonNull(literal.data)) {
@@ -260,6 +250,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(", ");
         }
         this.builder.decrease().append(")");
+        if (literal.mayBeNull())
+            this.builder.append(")");
         return VisitDecision.STOP;
     }
 
@@ -451,24 +443,37 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPCastExpression expression) {
         /*
          * Default implementation of cast of a source expression to the 'this' type.
-         * Only defined for base types.
          * For example, to cast source which is an Option[i16] to a bool
          * the function called will be cast_to_b_i16N.
          */
-        DBSPTypeBaseType baseDest = expression.getType().as(DBSPTypeBaseType.class);
-        if (baseDest == null)
-            throw new UnsupportedException(expression.getNode());
+        DBSPType destType = expression.getType();
         DBSPType sourceType = expression.source.getType();
-        DBSPTypeBaseType baseSource = sourceType.as(DBSPTypeBaseType.class);
-        if (baseSource == null)
-            throw new UnsupportedException(sourceType.toString(), sourceType.getNode());
-        String destName = baseDest.shortName();
-        String srcName = baseSource.shortName();
-        String functionName = "cast_to_" + destName + baseDest.nullableSuffix() +
-                "_" + srcName + sourceType.nullableSuffix();
+        if (destType.sameType(sourceType)) {
+            expression.source.accept(this);
+            return VisitDecision.STOP;
+        }
+
+        // Handle cast Vec<i> to Vec<i>?
+        if (sourceType.is(DBSPTypeVec.class)) {
+            DBSPTypeVec sourceVec = sourceType.to(DBSPTypeVec.class);
+            DBSPTypeVec destVec = destType.as(DBSPTypeVec.class);
+            if (destVec == null)
+                throw new UnsupportedException("Cast from " + sourceType + " to " + destType, expression.getNode());
+            // TODO: This should probably be handled in Simplify
+            if (destVec.getElementType().sameType(sourceVec.getElementType()) &&
+                destVec.mayBeNull && !sourceVec.mayBeNull)
+                expression.source.some().accept(this);
+            // TODO: This can happen when source is an empty vector literal with unknown type.
+            // Can anything else happen?
+            expression.source.accept(this);
+            return VisitDecision.STOP;
+        }
+
+        String functionName = "cast_to_" + destType.baseTypeWithSuffix() +
+                "_" + sourceType.baseTypeWithSuffix();
         this.builder.append(functionName).append("(");
         expression.source.accept(this);
-        DBSPTypeDecimal dec = baseDest.as(DBSPTypeDecimal.class);
+        DBSPTypeDecimal dec = destType.as(DBSPTypeDecimal.class);
         if (dec != null) {
             // pass precision and scale as arguments to cast method too
             this.builder.append(", ")
@@ -476,7 +481,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .append(", ")
                     .append(dec.scale);
         }
-        DBSPTypeString str = baseDest.as(DBSPTypeString.class);
+        DBSPTypeString str = destType.as(DBSPTypeString.class);
         if (str != null) {
             // pass precision and scale as arguments to cast method too
             this.builder.append(", ")
@@ -516,6 +521,23 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(".mul_by_ref(&");
             expression.right.accept(this);
             this.builder.append(")");
+            return VisitDecision.STOP;
+        } else if (expression.operation.equals(DBSPOpcode.RUST_INDEX)) {
+            expression.left.accept(this);
+            this.builder.append("[");
+            expression.right.accept(this);
+            this.builder.append("]");
+            return VisitDecision.STOP;
+        } else if(expression.operation.equals(DBSPOpcode.SQL_INDEX)) {
+            this.builder.append("index_")
+                    .append(expression.left.getType().nullableSuffix())
+                    .append("_")
+                    .append(expression.right.getType().nullableSuffix())
+                    .append("(&");
+            expression.left.accept(this);
+            this.builder.append(", ");
+            expression.right.accept(this);
+            this.builder.append(" - 1)");
             return VisitDecision.STOP;
         }
         RustSqlRuntimeLibrary.FunctionDescription function = RustSqlRuntimeLibrary.INSTANCE.getImplementation(

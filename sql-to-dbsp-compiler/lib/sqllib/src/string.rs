@@ -198,7 +198,6 @@ pub fn initcap_(source: String) -> String {
             result.push(c);
         }
     }
-    println!("{}", result);
     result
 }
 
@@ -227,3 +226,144 @@ pub fn split1_(source: String) -> Vec<String> {
 }
 
 some_function1!(split1, String, Vec<String>);
+
+pub fn array_to_string2_vec__(value: Vec<String>, separator: String) -> String {
+    value.join(&separator)
+}
+
+pub fn array_to_string2_vec_N(value: Vec<String>, separator: Option<String>) -> Option<String> {
+    array_to_string3_vec_NN(value, separator, None)
+}
+
+pub fn array_to_string2_vecN_(value: Vec<Option<String>>, separator: String) -> String {
+    array_to_string3_vecN_N_helper(value, separator, None)
+}
+
+pub fn array_to_string2_vecNN(value: Vec<Option<String>>, separator: Option<String>) -> Option<String> {
+    array_to_string3_vecNNN(value, separator, None)
+}
+
+pub fn array_to_string2Nvec__(value: Option<Vec<String>>, separator: String) -> Option<String> {
+    value.map(|value| value.join(&separator))
+}
+
+pub fn array_to_string2Nvec_N(value: Option<Vec<String>>, separator: Option<String>) -> Option<String> {
+    array_to_string3Nvec_NN(value, separator, None)
+}
+
+pub fn array_to_string2NvecN_(value: Option<Vec<Option<String>>>, separator: String) -> Option<String> {
+    array_to_string3NvecN_N(value, separator, None)
+}
+
+pub fn array_to_string2NvecNN(value: Option<Vec<Option<String>>>, separator: Option<String>) -> Option<String> {
+    array_to_string3NvecNNN(value, separator, None)
+}
+
+/////////////////////////////////////////////////////////////
+
+pub fn array_to_string3_vec___(value: Vec<String>, separator: String, _null_value: String) -> String {
+    array_to_string2_vec__(value, separator)
+}
+
+pub fn array_to_string3_vec__N(value: Vec<String>, separator: String, null_value: Option<String>) -> Option<String> {
+    array_to_string3_vec_NN(value, Some(separator), null_value)
+}
+
+pub fn array_to_string3_vec_N_(value: Vec<String>, separator: Option<String>, null_value: String) -> Option<String> {
+    array_to_string3_vec_NN(value, separator, Some(null_value))
+}
+
+pub fn array_to_string3_vec_NN(value: Vec<String>, separator: Option<String>, null_value: Option<String>) -> Option<String> {
+    array_to_string3Nvec_NN(Some(value), separator, null_value)
+}
+
+pub fn array_to_string3_vecN__(value: Vec<Option<String>>, separator: String, null_value: String) -> String {
+    array_to_string3_vecN_N_helper(value, separator, Some(null_value))
+}
+
+// This could be better: https://issues.apache.org/jira/browse/CALCITE-5884
+pub fn array_to_string3_vecN_N(value: Vec<Option<String>>, separator: String, null_value: Option<String>) -> Option<String> {
+    Some(array_to_string3_vecN_N_helper(value, separator, null_value))
+}
+
+pub fn array_to_string3_vecN_N_helper(value: Vec<Option<String>>, separator: String, null_value: Option<String>) -> String {
+    let null_size = null_value.as_ref().map_or(0, |n| n.len());
+    let capacity = value.iter().map(|s| s.as_ref().map_or(null_size, |s| s.len())).sum();
+    let mut result = String::with_capacity(capacity);
+    let mut first = true;
+    for word in value {
+        let append = match (word.as_ref(), null_value.as_ref()) {
+            (None, None) => { continue; }
+            (None, Some(null_value)) => { null_value }
+            (Some(r), _) => { r }
+        };
+        if !first { result.push_str(&separator) }
+        first = false;
+        result.push_str(append.as_str());
+    }
+    result
+}
+
+pub fn array_to_string3_vecNN_(value: Vec<Option<String>>, separator: Option<String>, null_value: String) -> Option<String> {
+    array_to_string3NvecNNN(Some(value), separator, Some(null_value))
+}
+
+pub fn array_to_string3_vecNNN(value: Vec<Option<String>>, separator: Option<String>, null_value: Option<String>) -> Option<String> {
+    let separator = separator?;
+    let null_size = null_value.as_ref().map_or(0, |n| n.len());
+    let capacity = value.iter().map(|s| s.as_ref().map_or(null_size, |s| s.len())).sum();
+    let mut result = String::with_capacity(capacity);
+    let mut first = true;
+    for word in value {
+        if word.is_none() && null_value.is_none() { continue; }
+        let append = match (word.as_ref(), null_value.as_ref()) {
+            (None, None) => { continue; }
+            (None, Some(null_value)) => { null_value }
+            (Some(r), _) => { r }
+        };
+        if !first { result.push_str(&separator) }
+        first = false;
+        result.push_str(append.as_str());
+    }
+    Some(result)
+}
+
+pub fn array_to_string3Nvec___(value: Option<Vec<String>>, separator: String, null_value: String) -> Option<String> {
+    let value = value?;
+    array_to_string3_vec_NN(value, Some(separator), Some(null_value))
+}
+
+pub fn array_to_string3Nvec__N(value: Option<Vec<String>>, separator: String, null_value: Option<String>) -> Option<String> {
+    let value = value?;
+    array_to_string3_vec_NN(value, Some(separator), null_value)
+}
+
+pub fn array_to_string3Nvec_N_(value: Option<Vec<String>>, separator: Option<String>, null_value: String) -> Option<String> {
+    let value = value?;
+    array_to_string3_vec_NN(value, separator, Some(null_value))
+}
+
+pub fn array_to_string3Nvec_NN(value: Option<Vec<String>>, separator: Option<String>, null_value: Option<String>) -> Option<String> {
+    let value = value?;
+    array_to_string3_vec_NN(value, separator, null_value)
+}
+
+pub fn array_to_string3NvecN__(value: Option<Vec<Option<String>>>, separator: String, null_value: String) -> Option<String> {
+    let value = value?;
+    array_to_string3_vecNNN(value, Some(separator), Some(null_value))
+}
+
+pub fn array_to_string3NvecN_N(value: Option<Vec<Option<String>>>, separator: String, null_value: Option<String>) -> Option<String> {
+    let value = value?;
+    array_to_string3_vecNNN(value, Some(separator), null_value)
+}
+
+pub fn array_to_string3NvecNN_(value: Option<Vec<Option<String>>>, separator: Option<String>, null_value: String) -> Option<String> {
+    let value = value?;
+    array_to_string3_vecNNN(value, separator, Some(null_value))
+}
+
+pub fn array_to_string3NvecNNN(value: Option<Vec<Option<String>>>, separator: Option<String>, null_value: Option<String>) -> Option<String> {
+    let value = value?;
+    array_to_string3_vecNNN(value, separator, null_value)
+}

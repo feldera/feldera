@@ -113,12 +113,14 @@ public class TypeCompiler implements ICompilerComponent {
                 case ARRAY: {
                     RelDataType ct = Objects.requireNonNull(dt.getComponentType());
                     DBSPType elementType = this.convertType(ct);
-                    return new DBSPTypeVec(elementType);
+                    return new DBSPTypeVec(elementType, dt.isNullable());
                 }
-                case BINARY:
-                case VARBINARY:
                 case UNKNOWN:
                 case ANY:
+                    // Not sure whether this is right
+                    return DBSPTypeAny.INSTANCE;
+                case BINARY:
+                case VARBINARY:
                 case MULTISET:
                 case MAP:
                 case DISTINCT:

@@ -7,7 +7,12 @@ Array elements may be nullable types, e.g., `INT ARRAY NULL`.
 Multidimensional arrays are possible, e.g. `VARCHAR ARRAY ARRAY`
 is a two-dimensional array.
 
-## The UNNEST SQL Operator
+## Array literals
+
+Array literals have the syntax `ARRAY[`expr [`,`expr]*`]`.  An example
+creating a nested array is: `ARRAY[ARRAY[1, 2], ARRAY[3, 4]]`.
+
+## The `UNNEST` SQL Operator
 
 The `UNNEST` operator takes an `ARRAY` and returns a table with a
 row for each element in the `ARRAY`: `UNNEST(ARRAY) [WITH
@@ -31,9 +36,10 @@ as `CREATE TABLE data AS (CITIES VARCHAR ARRAY, COUNTRY VARCHAR)`.
 ## Predefined functions on array values
 
 
-| Function                        | Description                                                                                     |
-|---------------------------------|-------------------------------------------------------------------------------------------------|
-| `ARRAY` `[` value [, value]* `]`| Creates an array from a list of expressions that evaluate to values of the same type.           |
-| `array[index]`                  | where `index` is an expression that evaluates to an integer, and `array` is an expression that evaluates to an array. Returns the element at the specified position. If the index is out of bounds, the result is `NULL`.                                                                                                 |
-| `CARDINALITY(array)`            | Returns the size of the array expression (number of elements).                                   |
-| `ELEMENT(array)`                | Returns the single element of an array. If the array has zero elements, returns `NULL`. If the array has more than one element, it causes a runtime exception. (In the future we should probably replace the runtime exception with a `NULL` result for this case.)                                                                                                |
+| Function                        | Description                                                                                     |Example|
+|---------------------------------|-------------------------------------------------------------------------------------------------|-------|
+| _array_`[`_index_`]`                | where _index_ is an expression that evaluates to an integer, and _array_ is an expression that evaluates to an array. Returns the element at the specified position. If the index is out of bounds, the result is `NULL`. | `ARRAY[2,3][2]` => 3 |
+| `CARDINALITY(` _array_ `)`            | Returns the size of the _array_ expression (number of elements). | `CARDINALITY(ARRAY[2,3])` => 2 |
+| `ELEMENT(` _array_ `)`                | Returns the single element of an _array_ of any type. If the array has zero elements, returns `NULL`. If the array has more than one element, it causes a runtime exception. (In the future we should probably replace the runtime exception with a `NULL` result for this case.) | `ELEMENT(ARRAY[2])` => 2 |
+| `ARRAY_TO_STRING(` _array_ `, ` _separator_ [`, ` _null_string_ ]`)` | Concatenates the values of the string array _array_, separated by the _separator_ string. If _null_string_ is given and is not `NULL`, then `NULL` array entries are represented by that string; otherwise, they are omitted. | `ARRAY_TO_STRING(ARRAY[1, 2, 3, NULL, 5], ',', '*')` => `1,2,3,*,5` |
+| `ARRAY_JOIN` | Another name for `ARRAY_TO_STRING` | |

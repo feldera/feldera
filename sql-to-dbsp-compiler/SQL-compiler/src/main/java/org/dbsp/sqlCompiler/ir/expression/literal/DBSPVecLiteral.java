@@ -46,21 +46,21 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     public final DBSPTypeVec vecType;
 
     public DBSPVecLiteral(DBSPType elementType) {
-        super(CalciteObject.EMPTY, new DBSPTypeVec(elementType), false);
+        super(CalciteObject.EMPTY, new DBSPTypeVec(elementType, false), false);
         this.data = new ArrayList<>();
         this.vecType = this.getType().to(DBSPTypeVec.class);
     }
 
-    public DBSPVecLiteral(DBSPType elementType, boolean isNull) {
-        super(CalciteObject.EMPTY, new DBSPTypeVec(elementType), isNull);
+    public DBSPVecLiteral(DBSPType vectorType, boolean isNull) {
+        super(CalciteObject.EMPTY, vectorType, isNull);
         this.data = null;
         this.vecType = this.getType().to(DBSPTypeVec.class);
     }
 
     public DBSPVecLiteral(CalciteObject node, DBSPType type, @Nullable List<DBSPExpression> data) {
-        super(node, type, false);
+        super(node, type, data == null);
         this.vecType = this.getType().to(DBSPTypeVec.class);
-        this.data = data;
+        this.data = new ArrayList<>();
         if (data != null) {
             for (DBSPExpression e : data) {
                 if (!e.getType().sameType(data.get(0).getType()))
@@ -72,7 +72,7 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     }
 
     public DBSPVecLiteral(DBSPExpression... data) {
-        super(CalciteObject.EMPTY, new DBSPTypeVec(data[0].getType()), false);
+        super(CalciteObject.EMPTY, new DBSPTypeVec(data[0].getType(), false), false);
         this.vecType = this.getType().to(DBSPTypeVec.class);
         this.data = new ArrayList<>();
         for (DBSPExpression e: data) {
@@ -110,8 +110,10 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);
-        for (DBSPExpression expr: Objects.requireNonNull(this.data))
-            expr.accept(visitor);
+        if (this.data != null) {
+            for (DBSPExpression expr : this.data)
+                expr.accept(visitor);
+        }
         visitor.pop(this);
         visitor.postorder(this);
     }
