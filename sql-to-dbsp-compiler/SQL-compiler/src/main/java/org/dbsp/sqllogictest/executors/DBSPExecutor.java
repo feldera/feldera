@@ -197,7 +197,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     DBSPFunction createStreamInputFunction(
             DBSPFunction inputGeneratingFunction) {
         DBSPTypeRawTuple inputType = Objects.requireNonNull(inputGeneratingFunction.returnType).to(DBSPTypeRawTuple.class);
-        DBSPType returnType = new DBSPTypeVec(inputType);
+        DBSPType returnType = new DBSPTypeVec(inputType, false);
         DBSPVariablePath vec = returnType.var("vec");
         DBSPLetStatement input = new DBSPLetStatement("data", inputGeneratingFunction.call());
         List<DBSPStatement> statements = new ArrayList<>();

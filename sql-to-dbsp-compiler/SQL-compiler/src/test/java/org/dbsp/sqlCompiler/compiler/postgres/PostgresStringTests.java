@@ -46,7 +46,7 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "\tAS \"Three lines to one\";\n" +
                 "         Three lines to one          \n" +
                 "-------------------------------------\n" +
-                "first line - next line - third line");
+                " first line - next line - third line");
     }
 
     @Test
@@ -67,7 +67,7 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT U&'d\\0061t\\0061' AS U&\"d\\0061t\\0061\";\n" +
                 " data \n" +
                 "------\n" +
-                "data");
+                " data");
     }
 
     @Test
@@ -76,7 +76,7 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "SELECT U&'d!0061t!0061' UESCAPE '!' AS U&\"d*0061t\\0061\" UESCAPE '*';\n" +
                 " data \n" +
                 "------\n" +
-                "data");
+                " data");
     }
 
     @Test
@@ -84,7 +84,7 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT U&'a\\\\b' AS \"a\\b\";\n" +
                 " a\\b \n" +
                 "-----\n" +
-                "a\\b");
+                " a\\b");
     }
 
     @Test
@@ -92,7 +92,7 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT U&' \\' UESCAPE '!' AS \"tricky\";\n" +
                 "tricky \n" +
                 "--------\n" +
-                " \\");
+                "  \\");
     }
 
     @Test
@@ -110,10 +110,10 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT CAST(f1 AS text) AS \"text(char)\" FROM CHAR_TBL;\n" +
                 " text(char) \n" +
                 "------------\n" +
-                "a\n" +
-                "ab\n" +
-                "abcd\n" +
-                "abcd");
+                " a\n" +
+                " ab\n" +
+                " abcd\n" +
+                " abcd");
     }
 
     @Test
@@ -121,21 +121,21 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT CAST(f1 AS text) AS \"text(varchar)\" FROM VARCHAR_TBL;\n" +
                 " text(varchar) \n" +
                 "------------\n" +
-                "a\n" +
-                "ab\n" +
-                "abcd\n" +
-                "abcd");
+                " a\n" +
+                " ab\n" +
+                " abcd\n" +
+                " abcd");
     }
 
     @Test
     public void testVarchar() {
         this.q("SELECT f1 AS \"text(varchar)\" FROM UVARCHAR_TBL;\n" +
                 " text(varchar) \n" +
-                        "------------\n" +
-                        "a\n" +
-                        "ab\n" +
-                        "abcd\n" +
-                        "abcd");
+                "------------\n" +
+                " a\n" +
+                " ab\n" +
+                " abcd\n" +
+                " abcd");
     }
 
     // 'name' not supported
@@ -146,8 +146,8 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT CAST(f1 AS char(10)) AS \"char(text)\" FROM TEXT_TBL;\n" +
                 "char(text) \n" +
                 "------------\n" +
-                "doh!      \n" +
-                "hi de ho n");
+                " doh!      \n" +
+                " hi de ho n");
     }
 
     @Test
@@ -155,8 +155,8 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT CAST(f1 AS char(20)) AS \"char(text)\" FROM TEXT_TBL;\n" +
                 "      char(text)      \n" +
                 "----------------------\n" +
-                "doh!                \n" +
-                "hi de ho neighbor   ");
+                " doh!                \n" +
+                " hi de ho neighbor   ");
     }
 
     @Test
@@ -164,10 +164,10 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT CAST(f1 AS char(10)) AS \"char(varchar)\" FROM VARCHAR_TBL;\n" +
                 " char(varchar) \n" +
                 "---------------\n" +
-                "a         \n" +
-                "ab        \n" +
-                "abcd      \n" +
-                "abcd      ");
+                " a         \n" +
+                " ab        \n" +
+                " abcd      \n" +
+                " abcd      ");
     }
 
     @Test
@@ -175,8 +175,8 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT CAST(f1 AS varchar) AS \"varchar(text)\" FROM TEXT_TBL;\n" +
                 "   varchar(text)   \n" +
                 "-------------------\n" +
-                "doh!\n" +
-                "hi de ho neighbor");
+                " doh!\n" +
+                " hi de ho neighbor");
     }
 
     @Test
@@ -184,10 +184,10 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT CAST(f1 AS varchar) AS \"varchar(char)\" FROM CHAR_TBL;\n" +
                 " varchar(char) \n" +
                 "---------------\n" +
-                "a\n" +
-                "ab\n" +
-                "abcd\n" +
-                "abcd");
+                " a\n" +
+                " ab\n" +
+                " abcd\n" +
+                " abcd");
     }
 
     @Test
@@ -244,7 +244,7 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT SUBSTRING('string' FROM -10 FOR 2147483646) AS \"string\";\n" +
                 " string \n" +
                 "--------\n" +
-                "string");
+                " string");
     }
 
     @Test
@@ -253,7 +253,7 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "SELECT SUBSTRING('string' FROM 2 FOR 2147483646) AS \"tring\";\n" +
                         " tring \n" +
                         "-------\n" +
-                        "tring");
+                        " tring");
     }
 
     @Test
@@ -261,11 +261,11 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT SUBSTRING('string' FROM -10 FOR -2147483646) AS \"error\";\n" +
                 "error\n" +
                 "------\n" +
-                "");
+                " ");
         this.q("SELECT SUBSTRING('string' FROM 0 FOR -2) AS \"error\";\n" +
                 "error\n" +
                 "------\n" +
-                "");
+                " ");
     }
 
     @Test
@@ -292,19 +292,19 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT OVERLAY('abcdef' PLACING '45' FROM 4) AS \"abc45f\";\n" +
                 " abc45f \n" +
                 "--------\n" +
-                "abc45f");
+                " abc45f");
         this.q("SELECT OVERLAY('yabadoo' PLACING 'daba' FROM 5) AS \"yabadaba\";\n" +
                 " yabadaba \n" +
                 "----------\n" +
-                "yabadaba");
+                " yabadaba");
         this.q("SELECT OVERLAY('yabadoo' PLACING 'daba' FROM 5 FOR 0) AS \"yabadabadoo\";\n" +
                 " yabadabadoo \n" +
                 "-------------\n" +
-                "yabadabadoo");
+                " yabadabadoo");
         this.q("SELECT OVERLAY('babosa' PLACING 'ubb' FROM 2 FOR 4) AS \"bubba\";\n" +
                 " bubba \n" +
                 "-------\n" +
-                "bubba");
+                " bubba");
     }
 
     @Test @Ignore("Not yet implemented")
@@ -312,23 +312,23 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT regexp_replace('1112223333', E'(\\\\d{3})(\\\\d{3})(\\\\d{4})', E'(\\\\1) \\\\2-\\\\3');\n" +
                 " regexp_replace \n" +
                 "----------------\n" +
-                "(111) 222-3333");
+                " (111) 222-3333");
         this.q("SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\&Y', 'g');\n" +
                 "  regexp_replace   \n" +
                 "-------------------\n" +
-                "fXooYbaXrrYbaXzzY");
+                " fXooYbaXrrYbaXzzY");
         this.q("SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\\\\\Y', 'g');\n" +
                 " regexp_replace \n" +
                 "----------------\n" +
-                "fX\\YbaX\\YbaX\\Y");
+                " fX\\YbaX\\YbaX\\Y");
         this.q("SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\Y\\\\1Z\\\\');\n" +
                 " regexp_replace  \n" +
                 "-----------------\n" +
-                "fX\\YoZ\\barrbazz");
+                " fX\\YoZ\\barrbazz");
         this.q("SELECT regexp_replace('AAA   BBB   CCC   ', E'\\\\s+', ' ', 'g');\n" +
                 " regexp_replace \n" +
                 "----------------\n" +
-                "AAA BBB CCC ");
+                " AAA BBB CCC ");
         this.q("SELECT regexp_replace('AAA', '^|$', 'Z', 'g');\n" +
                 " regexp_replace \n" +
                 "----------------\n" +
@@ -337,10 +337,6 @@ public class PostgresStringTests extends PostgresBaseTest {
                 " regexp_replace \n" +
                 "----------------\n" +
                 " Z Z");
-        this.q(
-                "-- invalid regexp option\n" +
-                "SELECT regexp_replace('AAA aaa', 'A+', 'Z', 'z');\n" +
-                "ERROR:  invalid regular expression option: \"z\"");
         this.q("SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 1);\n" +
                 "    regexp_replace     \n" +
                 "-----------------------\n" +
@@ -703,23 +699,23 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT 'unknown' || ' and unknown' AS \"Concat unknown types\";\n" +
                 " Concat unknown types \n" +
                 "----------------------\n" +
-                "unknown and unknown");
+                " unknown and unknown");
         this.q("SELECT 'text'::text || ' and unknown' AS \"Concat text to unknown type\";\n" +
                 " Concat text to unknown type \n" +
                 "-----------------------------\n" +
-                "text and unknown");
+                " text and unknown");
         this.q("SELECT 'characters' ::char(20) || ' and text' AS \"Concat char to unknown type\";\n" +
                 " Concat char to unknown type \n" +
                 "-----------------------------\n" +
-                "characters           and text");
+                " characters           and text");
         this.q("SELECT 'text'::text || ' and characters'::char(20) AS \"Concat text to char\";\n" +
                 " Concat text to char \n" +
                 "---------------------\n" +
-                "text and characters     ");
+                " text and characters     ");
         this.q("SELECT 'text'::text || ' and varchar'::varchar AS \"Concat text to varchar\";\n" +
                 " Concat text to varchar \n" +
                 "------------------------\n" +
-                "text and varchar");
+                " text and varchar");
     }
 
     @Test
@@ -769,15 +765,15 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT REPLACE('abcdef', 'de', '45') AS \"abc45f\";\n" +
                 " abc45f \n" +
                 "--------\n" +
-                "abc45f");
+                " abc45f");
         this.q("SELECT replace('yabadabadoo', 'ba', '123') AS \"ya123da123doo\";\n" +
                 " ya123da123doo \n" +
                 "---------------\n" +
-                "ya123da123doo");
+                " ya123da123doo");
         this.q("SELECT replace('yabadoo', 'bad', '') AS \"yaoo\";\n" +
                 " yaoo \n" +
                 "------\n" +
-                "yaoo");
+                " yaoo");
     }
 
     // TODO: split_part
@@ -789,7 +785,7 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("select 'a\\bcd' as f1, 'a\\b''cd' as f2, 'a\\b''''cd' as f3, 'abcd\\'   as f4, 'ab\\''cd' as f5, '\\\\' as f6;\n" +
                 "  f1  |  f2   |   f3   | f4   |   f5  | f6 \n" +
                 "------+-------+--------+------+-------+----\n" +
-                "a\\bcd|a\\b'cd|a\\b''cd|abcd\\|ab\\'cd|\\\\");
+                " a\\bcd| a\\b'cd| a\\b''cd| abcd\\| ab\\'cd| \\\\");
     }
 
     // TODO: lpat, translate,
@@ -811,11 +807,11 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT chr(65);\n" +
                 " chr \n" +
                 "-----\n" +
-                "A");
+                " A");
         this.q("SELECT chr(0);\n" +
                 " chr \n" +
                 "-----\n" +
-                "\0");
+                " \0");
     }
 
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5813")
@@ -823,11 +819,11 @@ public class PostgresStringTests extends PostgresBaseTest {
         this.q("SELECT repeat('Pg', 4);\n" +
                 "  repeat  \n" +
                 "----------\n" +
-                "PgPgPgPg");
+                " PgPgPgPg");
         this.q("SELECT repeat('Pg', -4);\n" +
                 " repeat \n" +
                 "--------\n" +
-                "");
+                " ");
     }
 
     // TODO: bytea computations

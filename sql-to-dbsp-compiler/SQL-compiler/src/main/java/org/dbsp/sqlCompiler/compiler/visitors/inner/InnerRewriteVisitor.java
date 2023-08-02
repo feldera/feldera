@@ -257,7 +257,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType elementType = this.transform(type.getElementType());
         this.pop(type);
-        DBSPType result = new DBSPTypeVec(elementType);
+        DBSPType result = new DBSPTypeVec(elementType, type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -655,17 +655,6 @@ public abstract class InnerRewriteVisitor
         DBSPExpression body = this.transform(expression.body);
         this.pop(expression);
         DBSPExpression result = body.closure(parameters);
-        this.map(expression, result);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPIndexExpression expression) {
-        this.push(expression);
-        DBSPExpression array = this.transform(expression.array);
-        DBSPExpression index = this.transform(expression.index);
-        this.pop(expression);
-        DBSPExpression result = new DBSPIndexExpression(expression.getNode(), array, index, expression.startsAtOne);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

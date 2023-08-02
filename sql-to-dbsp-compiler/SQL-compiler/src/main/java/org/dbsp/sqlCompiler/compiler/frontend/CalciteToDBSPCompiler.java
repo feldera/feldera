@@ -1002,7 +1002,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 opInput.isMultiset, opInput);
         this.circuit.addOperator(index);
         // apply an aggregation function that just creates a vector.
-        DBSPTypeVec vecType = new DBSPTypeVec(inputRowType);
+        DBSPTypeVec vecType = new DBSPTypeVec(inputRowType, false);
         DBSPExpression zero = DBSPTypeAny.INSTANCE.path(
                 new DBSPPath(vecType.name, "new")).call();
         DBSPVariablePath accum = vecType.var("a");
@@ -1025,7 +1025,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPExpression folder = constructor.call(zero, push);
         DBSPAggregateOperator agg = new DBSPAggregateOperator(node,
-                new DBSPTypeRawTuple(), new DBSPTypeVec(inputRowType), DBSPTypeWeight.INSTANCE,
+                new DBSPTypeRawTuple(), new DBSPTypeVec(inputRowType, false), DBSPTypeWeight.INSTANCE,
                 folder, null, index, false);
         this.circuit.addOperator(agg);
 

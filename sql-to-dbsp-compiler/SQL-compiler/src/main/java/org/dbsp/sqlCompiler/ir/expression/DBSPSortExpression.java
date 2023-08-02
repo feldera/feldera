@@ -47,11 +47,11 @@ public class DBSPSortExpression extends DBSPExpression {
     public DBSPSortExpression(CalciteObject node, DBSPType elementType, DBSPComparatorExpression comparator) {
         super(node, new DBSPTypeFunction(
                 // Return type
-                new DBSPTypeVec(elementType),
+                new DBSPTypeVec(elementType, false),
                 // Argument type
                 new DBSPTypeRawTuple(
                         new DBSPTypeRawTuple().ref(),
-                        new DBSPTypeVec(elementType).ref())));
+                        new DBSPTypeVec(elementType, false).ref())));
         this.comparator = comparator;
         this.elementType = elementType;
     }

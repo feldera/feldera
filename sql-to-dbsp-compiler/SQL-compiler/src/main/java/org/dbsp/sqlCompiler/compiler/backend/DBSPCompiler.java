@@ -211,6 +211,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
         try {
             if (many) {
+                if (statements.isEmpty())
+                    return;
                 SqlNodeList nodes = this.frontend.parseStatements(statements);
                 for (SqlNode node : nodes) {
                     FrontEndStatement fe = this.frontend.compile(

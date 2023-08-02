@@ -341,6 +341,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         return new DBSPApplyExpression(node, functionName.toString(), resultType, operands);
     }
 
+    public String typeString(DBSPType type) {
+        DBSPTypeVec vec = type.as(DBSPTypeVec.class);
+        if (vec != null)
+            return (type.mayBeNull ? "N" : "_") + "vec" + typeString(vec.getElementType());
+        return type.mayBeNull ? "N" : "_";
+    }
+
     /**
      * Compile a function call into a Rust function.
      *
@@ -360,8 +367,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         if (expectedArgCount.length > 1)
             // If the function can have a variable number of arguments, postfix with the argument count
             builder.append(operands.length);
-        for (DBSPExpression e: ops)
-            builder.append(e.getType().mayBeNull ? "N" : "_");
+        for (DBSPExpression e: ops) {
+            DBSPType type = e.getType();
+            builder.append(this.typeString(type));
+        }
         return new DBSPApplyExpression(node, builder.toString(), resultType, operands);
     }
 
@@ -612,8 +621,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "chr":
                     case "lower":
                     case "upper":
-                    case "initcap":
+                    case "initcap": {
                         return this.compileFunction(call, node, type, ops, 1);
+                    }
+                    case "cardinality": {
+                        this.validateArgCount(node, ops.size(), 1);
+                        String name = "cardinality";
+                        if (ops.get(0).getType().mayBeNull)
+                            name += "N";
+                        return new DBSPApplyExpression(node, name, type, ops.get(0));
+                    }
                     case "repeat":
                     case "left":
                         return this.compileFunction(call, node, type, ops, 2);
@@ -621,13 +638,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return this.compileFunction(call, node, type, ops, 3);
                     case "division":
                         return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
-                    case "cardinality": {
-                        if (call.operands.size() != 1)
-                            throw new UnimplementedException(node);
-                        // Direct method call on vector
-                        DBSPExpression len = new DBSPApplyMethodExpression(node, "len", DBSPTypeUSize.INSTANCE, ops.get(0));
-                        return len.cast(type);
-                    }
                     case "element": {
                         type = type.setMayBeNull(true);  // Why isn't this always nullable?
                         DBSPExpression arg = ops.get(0);
@@ -646,6 +656,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     }
                     case "concat":
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
+                    case "array":
+                        return this.compileFunction(call, node, type, ops, 0);
                 }
                 throw new UnimplementedException(node);
             }
@@ -667,6 +679,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             case POSITION: {
                 return this.compileFunction(call, node, type, ops, 2);
             }
+            case ARRAY_TO_STRING: {
+                // Calcite does not enforce the type of the arguments, why?
+                DBSPExpression op1 = ops.get(1);
+                ops.set(1, this.castTo(op1, DBSPTypeString.UNLIMITED_INSTANCE));
+                if (ops.size() > 2) {
+                    DBSPExpression op2 = ops.get(2);
+                    ops.set(2, this.castTo(op2, DBSPTypeString.UNLIMITED_INSTANCE));
+                }
+                return this.compileFunction(call, node, type, ops, 2, 3);
+            }
             case LIKE:
             case SIMILAR: {
                 return this.compileFunction(call, node, type, ops, 2, 3);
@@ -685,12 +707,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 DBSPTypeVec vec = type.to(DBSPTypeVec.class);
                 DBSPType elemType = vec.getElementType();
                 List<DBSPExpression> args = Linq.map(ops, o -> o.cast(elemType));
-                return new DBSPApplyExpression(node, "vec!", type, args.toArray(new DBSPExpression[0]));
+                return new DBSPVecLiteral(node, type, args);
             }
             case ITEM: {
                 if (call.operands.size() != 2)
                     throw new UnimplementedException(node);
-                return new DBSPIndexExpression(node, ops.get(0), ops.get(1).cast(DBSPTypeUSize.INSTANCE), true);
+                return new DBSPBinaryExpression(node, type, DBSPOpcode.SQL_INDEX,
+                        ops.get(0), ops.get(1).cast(DBSPTypeUSize.INSTANCE));
             }
             case TRIM: {
                 return this.compileKeywordFunction(call, node, null, type, ops, 0, 3);
@@ -699,6 +722,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             default:
                 throw new UnimplementedException(node);
         }
+    }
+
+    private DBSPExpression castTo(DBSPExpression expression, DBSPType type) {
+        DBSPType originalType = expression.type;
+        return expression.cast(type.setMayBeNull(originalType.mayBeNull));
     }
 
     DBSPExpression compile(RexNode expression) {

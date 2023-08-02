@@ -10,19 +10,19 @@ public class FunctionsTest extends PostgresBaseTest {
         this.q("SELECT LEFT('string', 1);\n" +
                 "result\n" +
                 "---------\n" +
-                "s");
+                " s");
         this.q("SELECT LEFT('string', 0);\n" +
                 "result\n" +
                 "---------\n" +
-                "");
+                " ");
         this.q("SELECT LEFT('string', 100);\n" +
                 "result\n" +
                 "---------\n" +
-                "string");
+                " string");
         this.q("SELECT LEFT('string', -2);\n" +
                 "result\n" +
                 "---------\n" +
-                "");
+                " ");
     }
 
     @Test @Ignore("Bug in Calcite https://issues.apache.org/jira/browse/CALCITE-5859")
@@ -38,11 +38,11 @@ public class FunctionsTest extends PostgresBaseTest {
         this.q("SELECT CONCAT('string', 1);\n" +
                 "result\n" +
                 "---------\n" +
-                "string1");
+                " string1");
         this.q("SELECT CONCAT('string', 1, true);\n" +
                 "result\n" +
                 "---------\n" +
-                "string1TRUE");
+                " string1TRUE");
     }
 
     @Test

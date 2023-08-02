@@ -24,7 +24,7 @@ public class PostgresCollateTests extends PostgresBaseTest {
         this.q("SELECT a, lower(x), lower(y), upper(x), upper(y), initcap(x), initcap(y) FROM collate_test10;\n" +
                 " a | lower | lower | upper | upper | initcap | initcap \n" +
                 "---+-------+-------+-------+-------+---------+---------\n" +
-                " 1 |hij|hij|HIJ|HIJ|Hij|Hij\n" +
-                " 2 |hij|hij|HIJ|HIJ|Hij|Hij");
+                " 1 | hij| hij| HIJ| HIJ| Hij| Hij\n" +
+                " 2 | hij| hij| HIJ| HIJ| Hij| Hij");
     }
 }

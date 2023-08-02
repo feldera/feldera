@@ -113,3 +113,5 @@ charSet:
 timeZone:
       WITHOUT TIME ZONE
 ```
+
+A `compoundIdentifier` is a sequence of identifiers separated by dots.

@@ -42,6 +42,8 @@ public enum DBSPOpcode {
     CONCAT("||", false),
     IS_DISTINCT("is_distinct", false),
     IS_NOT_DISTINCT("is_not_distinct", false),
+    SQL_INDEX("[]", false),
+    RUST_INDEX("[]", false),
 
     // Aggregate operations
     AGG_MAX("agg_max", true),

@@ -32,8 +32,8 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.VEC;
  */
 @SuppressWarnings("GrazieInspection")
 public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
-    public DBSPTypeVec(DBSPType vectorElementType) {
-        super(vectorElementType.getNode(), VEC, "Vec", false, vectorElementType);
+    public DBSPTypeVec(DBSPType vectorElementType, boolean mayBeNull) {
+        super(vectorElementType.getNode(), VEC, "Vec", mayBeNull, vectorElementType);
     }
 
     public DBSPType getElementType() {

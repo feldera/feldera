@@ -91,6 +91,8 @@ public class DBSPTypeUser extends DBSPType {
                     .join(", ", this.typeArgs)
                     .append(">");
         }
+        if (this.mayBeNull)
+            builder.append("?");
         return builder;
     }
 }

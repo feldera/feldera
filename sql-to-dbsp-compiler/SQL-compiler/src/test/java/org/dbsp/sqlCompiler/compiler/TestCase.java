@@ -14,9 +14,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPIndexExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStructExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -151,8 +152,8 @@ class TestCase {
             DBSPLetStatement id = new DBSPLetStatement(table + "_id", nodeId);
             list.add(id);
 
-            DBSPIndexExpression indexExpr = new DBSPIndexExpression(CalciteObject.EMPTY,
-                    graphNodes.getVarReference(), id.getVarReference().borrow(), false);
+            DBSPExpression indexExpr = new DBSPBinaryExpression(CalciteObject.EMPTY, DBSPTypeAny.INSTANCE,
+                    DBSPOpcode.RUST_INDEX, graphNodes.getVarReference(), id.getVarReference().borrow());
             DBSPExpression layout = new DBSPApplyMethodExpression(
                     "layout", DBSPTypeAny.INSTANCE,
                     new DBSPApplyMethodExpression("unwrap_source", DBSPTypeAny.INSTANCE,

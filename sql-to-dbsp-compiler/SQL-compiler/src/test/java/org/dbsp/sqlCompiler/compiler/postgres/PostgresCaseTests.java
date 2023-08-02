@@ -35,7 +35,7 @@ public class PostgresCaseTests extends PostgresBaseTest {
                 "  END AS \"Simple WHEN\";\n" +
                 " One | Simple WHEN \n" +
                 "-----+-------------\n" +
-                "3|           3\n" +
+                " 3|           3\n" +
                 "(1 row)\n" +
                 "\n" +
                 "SELECT '<NULL>' AS \"One\",\n" +
@@ -44,7 +44,7 @@ public class PostgresCaseTests extends PostgresBaseTest {
                 "  END AS \"Simple default\";\n" +
                 "  One   | Simple default \n" +
                 "--------+----------------\n" +
-                "<NULL>|               \n" +
+                " <NULL>|               \n" +
                 "(1 row)\n" +
                 "\n" +
                 "SELECT '3' AS \"One\",\n" +
@@ -54,7 +54,7 @@ public class PostgresCaseTests extends PostgresBaseTest {
                 "  END AS \"Simple ELSE\";\n" +
                 " One | Simple ELSE \n" +
                 "-----+-------------\n" +
-                "3|           3\n" +
+                " 3|           3\n" +
                 "(1 row)\n" +
                 "\n" +
                 "SELECT '4' AS \"One\",\n" +
@@ -64,7 +64,7 @@ public class PostgresCaseTests extends PostgresBaseTest {
                 "  END AS \"ELSE default\";\n" +
                 " One | ELSE default \n" +
                 "-----+--------------\n" +
-                "4|            4\n" +
+                " 4|            4\n" +
                 "(1 row)\n" +
                 "\n" +
                 "SELECT '6' AS \"One\",\n" +
@@ -75,7 +75,7 @@ public class PostgresCaseTests extends PostgresBaseTest {
                 "  END AS \"Two WHEN with default\";\n" +
                 " One | Two WHEN with default \n" +
                 "-----+-----------------------\n" +
-                "6|                     6\n" +
+                " 6|                     6\n" +
                 "(1 row)\n" +
                 "\n" +
                 "SELECT '7' AS \"None\",\n" +
@@ -83,7 +83,7 @@ public class PostgresCaseTests extends PostgresBaseTest {
                 "   END AS \"NULL on no matches\";\n" +
                 " None | NULL on no matches \n" +
                 "------+--------------------\n" +
-                "7|                   \n" +
+                " 7|                   \n" +
                 "(1 row)\n" +
                 "\n" +
                 "-- Constant-expression folding shouldn't evaluate unreachable subexpressions\n" +
@@ -159,10 +159,10 @@ public class PostgresCaseTests extends PostgresBaseTest {
                 "  FROM CASE_TBL;\n" +
                 " Value | Category \n" +
                 "-------+----------\n" +
-                "     1 |one\n" +
-                "     2 |two\n" +
-                "     3 |big\n" +
-                "     4 |big\n" +
+                "     1 | one\n" +
+                "     2 | two\n" +
+                "     3 | big\n" +
+                "     4 | big\n" +
                 "(4 rows)\n" +
                 "\n" +
                 "SELECT\n" +
@@ -175,10 +175,10 @@ public class PostgresCaseTests extends PostgresBaseTest {
                 "  FROM CASE_TBL;\n" +
                 " Category \n" +
                 "----------\n" +
-                "one\n" +
-                "two\n" +
-                "big\n" +
-                "big\n" +
+                " one\n" +
+                " two\n" +
+                " big\n" +
+                " big\n" +
                 "(4 rows)\n" +
                 "\n" +
                 "--\n" +
