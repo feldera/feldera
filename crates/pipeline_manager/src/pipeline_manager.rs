@@ -297,12 +297,6 @@ pub fn run(
         )
         .await?;
         let db = Arc::new(Mutex::new(db));
-
-        // Since we don't trust any file system state after restart,
-        // reset all programs to `ProgramStatus::None`, which will force
-        // us to recompile programs before running them.
-        db.lock().await.reset_program_status().await?;
-
         let state = WebData::new(ServerState::new(manager_config, compiler_config, db).await?);
 
         if use_auth {
