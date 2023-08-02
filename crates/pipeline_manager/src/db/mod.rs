@@ -1052,6 +1052,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
+        expected_version: Version,
         status: ProgramStatus,
     ) -> Result<(), DBError> {
         let (status, error) = status.to_columns();
@@ -1060,12 +1061,19 @@ impl Storage for ProjectDB {
             .await?
             .execute(
                 "UPDATE program SET
-                 status = $1,
-                 error = $2,
-                 schema = NULL,
-                 status_since = now()
-                 WHERE id = $3 AND tenant_id = $4",
-                &[&status, &error, &program_id.0, &tenant_id.0],
+                 status = (CASE WHEN version = $4 THEN $1 ELSE status END),
+                 error = (CASE WHEN version = $4 THEN $2 ELSE error END),
+                 status_since = (CASE WHEN version = $4 THEN now()
+                                 ELSE status_since END),
+                 schema = (CASE WHEN version = $4 THEN NULL ELSE schema END)
+                 WHERE id = $3 AND tenant_id = $5",
+                &[
+                    &status,
+                    &error,
+                    &program_id.0,
+                    &expected_version.0,
+                    &tenant_id.0,
+                ],
             )
             .await?;
 
@@ -1158,6 +1166,46 @@ impl Storage for ProjectDB {
         } else {
             Err(DBError::UnknownProgram { program_id })
         }
+    }
+
+    async fn all_programs(&self) -> Result<Vec<(TenantId, ProgramDescr)>, DBError> {
+        let rows = self
+            .pool
+            .get()
+            .await?
+            .query(
+                r#"SELECT id, name, description, version, status, error, schema, tenant_id
+                FROM program"#,
+                &[],
+            )
+            .await?;
+
+        let mut result = Vec::with_capacity(rows.len());
+        for row in rows {
+            let status: Option<String> = row.get(4);
+            let error: Option<String> = row.get(5);
+            let status = ProgramStatus::from_columns(status.as_deref(), error)?;
+            let schema: Option<ProgramSchema> = row
+                .get::<_, Option<String>>(6)
+                .map(|s| serde_json::from_str(&s))
+                .transpose()
+                .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
+            let tenant_id = TenantId(row.get(7));
+
+            result.push((
+                tenant_id,
+                ProgramDescr {
+                    program_id: ProgramId(row.get(0)),
+                    name: row.get(1),
+                    description: row.get(2),
+                    version: Version(row.get(3)),
+                    schema,
+                    status,
+                    code: None,
+                },
+            ));
+        }
+        Ok(result)
     }
 
     async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version)>, DBError> {

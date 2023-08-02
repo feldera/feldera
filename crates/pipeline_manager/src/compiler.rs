@@ -1,15 +1,17 @@
 use crate::auth::TenantId;
 use crate::config::CompilerConfig;
 use crate::db::storage::Storage;
-use crate::db::{ProgramId, ProjectDB, Version};
+use crate::db::{DBError, ProgramId, ProjectDB, Version};
 use crate::error::ManagerError;
 use log::warn;
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::{
     process::{ExitStatus, Stdio},
     sync::Arc,
 };
+use tokio::fs::DirEntry;
 use tokio::io::AsyncWriteExt;
 use tokio::{
     fs,
@@ -367,6 +369,29 @@ impl Compiler {
         })
     }
 
+    async fn binary_path_to_parts(path: &DirEntry) -> Option<(ProgramId, Version)> {
+        let file_name = path.file_name();
+        let file_name = file_name.to_str().unwrap();
+        if file_name.starts_with("project") {
+            let parts: Vec<&str> = file_name.split('_').collect();
+            if parts.len() != 3
+                || parts.first() != Some(&"project")
+                || parts.get(2).map(|p| p.len()) <= Some(1)
+            {
+                error!("Invalid binary file found: {}", file_name);
+                return None;
+            }
+            if let (Ok(program_uuid), Ok(program_version)) =
+                // parse file name with the following format:
+                // project_{uuid}_v{version}
+                (Uuid::parse_str(parts[1]), parts[2][1..].parse::<i64>())
+            {
+                return Some((ProgramId(program_uuid), Version(program_version)));
+            }
+        }
+        None
+    }
+
     /// A task that wakes up periodically and removes stale binaries.
     ///
     /// Helps to keep the binaries directory clean and not run out of space if
@@ -386,45 +411,36 @@ impl Compiler {
                     let entry = paths.next_entry().await;
                     match entry {
                         Ok(Some(path)) => {
-                            let file_name = path.file_name();
-                            let file_name = file_name.to_str().unwrap_or("invalid utf8");
-
-                            if file_name.starts_with("project") {
-                                let parts: Vec<&str> = file_name.split('_').collect();
-                                if parts.len() != 3
-                                    || parts.first() != Some(&"project")
-                                    || parts.get(2).map(|p| p.len()) <= Some(1)
-                                {
-                                    warn!("GC task found invalid file: {}", file_name);
-                                    continue;
-                                }
-                                if let (Ok(program_uuid), Ok(program_version)) =
-                                    // parse file name with the following format:
-                                    // project_{uuid}_v{version}
-                                    (Uuid::parse_str(parts[1]), parts[2][1..].parse::<i64>())
-                                {
+                            let maybe_parts = Self::binary_path_to_parts(&path).await;
+                            match maybe_parts {
+                                Some((program_uuid, program_version)) => {
                                     if let Ok(is_used) = db
                                         .lock()
                                         .await
-                                        .is_program_version_in_use(program_uuid, program_version)
+                                        .is_program_version_in_use(
+                                            program_uuid.0,
+                                            program_version.0,
+                                        )
                                         .await
                                     {
                                         if !is_used {
-                                            error!("about to remove file: {}", file_name);
+                                            warn!("About to remove binary file '{:?}' that is no longer in use by any program", path.file_name());
                                             let r = fs::remove_file(path.path()).await;
                                             if let Err(e) = r {
                                                 error!(
-                                                    "GC task failed to remove file '{}': {}",
-                                                    file_name, e
+                                                    "GC task failed to remove file '{:?}': {}",
+                                                    path.file_name(),
+                                                    e
                                                 );
                                             }
                                         }
                                     }
-                                } else {
+                                }
+                                None => {
                                     warn!(
-                                        "GC task found invalid file in {:?}: {}",
+                                        "GC task found invalid file in {:?}: {:?}",
                                         config.binaries_dir(),
-                                        file_name
+                                        path.file_name()
                                     );
                                 }
                             }
@@ -456,13 +472,114 @@ impl Compiler {
         })
     }
 
+    /// Invoked at startup so the compiler service can align its
+    /// local state (versioned executables) with the Programs API state.
+    /// It recovers from partially progressed compilation jobs.
+    async fn reconcile_local_state(
+        config: &CompilerConfig,
+        db: &Arc<Mutex<ProjectDB>>,
+    ) -> Result<(), DBError> {
+        info!("Reconciling local state with API state");
+        let mut map: HashSet<(Uuid, i64)> = HashSet::new();
+        let read_dir = fs::read_dir(config.binaries_dir()).await;
+        match read_dir {
+            Ok(mut paths) => loop {
+                let entry = paths.next_entry().await;
+                match entry {
+                    Ok(Some(path)) => {
+                        let maybe_parts = Self::binary_path_to_parts(&path).await;
+                        match maybe_parts {
+                            Some((program_uuid, program_version)) => {
+                                map.insert((program_uuid.0, program_version.0));
+                            }
+                            None => {
+                                warn!(
+                                    "Local state reconciler found invalid file in {:?}: {:?}",
+                                    config.binaries_dir(),
+                                    path.file_name()
+                                );
+                            }
+                        }
+                    }
+                    // We are done with the directory
+                    Ok(None) => break,
+                    Err(e) => {
+                        warn!("Local state reconciler was unable to read an entry: {}", e);
+                        // Not clear from docs if an error during iteration
+                        // is recoverable and we could just `continue;` here
+                        break;
+                    }
+                }
+            },
+            Err(e) => {
+                warn!(
+                    "Local state reconciler could not read binaries directory: {}",
+                    e
+                )
+            }
+        }
+
+        let programs = db.lock().await.all_programs().await?;
+        for (tenant_id, program) in programs {
+            // We have some artifact but the program status has not been updated to Success.
+            // This could indicate a failure between when we began writing the versioned executable
+            // to before we could update the program status. This means, the best solution
+            // is to start over with the compilation
+            if program.status == ProgramStatus::CompilingRust
+                && map.contains(&(program.program_id.0, program.version.0))
+            {
+                let path = config.versioned_executable(program.program_id, program.version);
+                info!("File {:?} exists, but the program status is CompilingRust. Removing the file to start compilaiton again.", path.file_name());
+                let r = fs::remove_file(path.clone()).await;
+                if let Err(e) = r {
+                    error!(
+                        "Reconcile task failed to remove file '{:?}': {}",
+                        path.file_name(),
+                        e
+                    );
+                }
+                db.lock()
+                    .await
+                    .set_program_status_guarded(
+                        tenant_id,
+                        program.program_id,
+                        program.version,
+                        ProgramStatus::Pending,
+                    )
+                    .await?;
+            }
+            // If the program was supposed to be further in the compilation chain, but
+            // we don't have the binary artifact available locally, we need to queue the program
+            // for compilation again. TODO: this behavior will change when the compiler uploads
+            // artifacts remotely and not on its local filesystem.
+            else if (program.status.is_compiling() || program.status == ProgramStatus::Success)
+                && !map.contains(&(program.program_id.0, program.version.0))
+            {
+                info!(
+                    "Program {} does not have a local artifact despite being in the {:?} state. Resetting compilation status.",
+                    program.program_id, program.status
+                );
+                db.lock()
+                    .await
+                    .set_program_for_compilation(
+                        tenant_id,
+                        program.program_id,
+                        program.version,
+                        ProgramStatus::Pending,
+                    )
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
     async fn do_compiler_task(
         /* command_receiver: Receiver<CompilerCommand>, */
         config: CompilerConfig,
         db: Arc<Mutex<ProjectDB>>,
     ) -> Result<(), ManagerError> {
         let mut job: Option<CompilationJob> = None;
-
+        Self::reconcile_local_state(&config, &db).await?;
         loop {
             select! {
                 // Wake up every `COMPILER_POLL_INTERVAL` to check
@@ -785,5 +902,162 @@ impl CompilationJob {
     /// Kill (Rust or SQL) compiler process.
     async fn cancel(&mut self) {
         let _ = self.compiler_process.kill().await;
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{fs::File, sync::Arc};
+
+    use tempfile::TempDir;
+    use tokio::{fs, sync::Mutex};
+    use uuid::Uuid;
+
+    use crate::{
+        auth::TenantRecord,
+        compiler::ProgramStatus,
+        config::CompilerConfig,
+        db::{storage::Storage, ProgramId, ProjectDB, Version},
+    };
+
+    async fn create_program(db: &Arc<Mutex<ProjectDB>>, pname: &str) -> (ProgramId, Version) {
+        let tenant_id = TenantRecord::default().id;
+        db.lock()
+            .await
+            .new_program(tenant_id, Uuid::now_v7(), pname, "program desc", "ignored")
+            .await
+            .unwrap()
+    }
+
+    async fn check_program_status_pending(db: &Arc<Mutex<ProjectDB>>, pname: &str) {
+        let tenant_id = TenantRecord::default().id;
+        let programdesc = db
+            .lock()
+            .await
+            .get_program_by_name(tenant_id, pname, false)
+            .await
+            .unwrap();
+        assert_eq!(ProgramStatus::Pending, programdesc.status);
+    }
+
+    #[tokio::test]
+    async fn test_compiler_reconcile_no_local_binary() {
+        let tid = TenantRecord::default().id;
+        let tmp_dir = TempDir::new().unwrap();
+        let workdir = tmp_dir.path().to_str().unwrap();
+        let conf = CompilerConfig {
+            sql_compiler_home: "".to_owned(),
+            dbsp_override_path: Some("../../".to_owned()),
+            debug: false,
+            precompile: false,
+            compiler_working_directory: workdir.to_owned(),
+        };
+
+        let (db, _temp) = crate::db::test::setup_pg().await;
+        let db = Arc::new(Mutex::new(db));
+
+        // Empty binaries folder, no programs in API
+        super::Compiler::reconcile_local_state(&conf, &db)
+            .await
+            .unwrap();
+
+        // Create uncompiled program
+        let (pid, vid) = create_program(&db, "p1").await;
+        super::Compiler::reconcile_local_state(&conf, &db)
+            .await
+            .unwrap();
+
+        // Now set the program to be queued for compilation
+        db.lock()
+            .await
+            .set_program_for_compilation(tid, pid, vid, super::ProgramStatus::Pending)
+            .await
+            .unwrap();
+        super::Compiler::reconcile_local_state(&conf, &db)
+            .await
+            .unwrap();
+        check_program_status_pending(&db, "p1").await;
+
+        // Now try all "compiling" states set the program to be compiled
+        for state in vec![
+            super::ProgramStatus::CompilingSql,
+            super::ProgramStatus::CompilingRust,
+            super::ProgramStatus::Success,
+        ] {
+            db.lock()
+                .await
+                .set_program_status_guarded(tid, pid, vid, state)
+                .await
+                .unwrap();
+            super::Compiler::reconcile_local_state(&conf, &db)
+                .await
+                .unwrap();
+            check_program_status_pending(&db, "p1").await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_compiler_with_local_binaries() {
+        let tid = TenantRecord::default().id;
+        let tmp_dir = TempDir::new().unwrap();
+        let workdir = tmp_dir.path().to_str().unwrap();
+        let conf = CompilerConfig {
+            sql_compiler_home: "".to_owned(),
+            dbsp_override_path: Some("../../".to_owned()),
+            debug: false,
+            precompile: false,
+            compiler_working_directory: workdir.to_owned(),
+        };
+
+        let (db, _temp) = crate::db::test::setup_pg().await;
+        let db = Arc::new(Mutex::new(db));
+
+        let (pid1, v1) = create_program(&db, "p1").await;
+        let (pid2, v2) = create_program(&db, "p2").await;
+        for state in vec![
+            super::ProgramStatus::Pending,
+            super::ProgramStatus::CompilingSql,
+        ] {
+            db.lock()
+                .await
+                .set_program_status_guarded(tid, pid1, v1, state.clone())
+                .await
+                .unwrap();
+            db.lock()
+                .await
+                .set_program_status_guarded(tid, pid2, v2, state)
+                .await
+                .unwrap();
+            super::Compiler::reconcile_local_state(&conf, &db)
+                .await
+                .unwrap();
+            check_program_status_pending(&db, "p1").await;
+            check_program_status_pending(&db, "p2").await;
+        }
+
+        // Simulate compiled artifacts
+        fs::create_dir(conf.binaries_dir()).await.unwrap();
+        let path1 = conf.versioned_executable(pid1, v1);
+        let path2 = conf.versioned_executable(pid2, v2);
+        File::create(path1.clone()).unwrap();
+        File::create(path2.clone()).unwrap();
+
+        db.lock()
+            .await
+            .set_program_status_guarded(tid, pid1, v1, ProgramStatus::CompilingRust)
+            .await
+            .unwrap();
+        db.lock()
+            .await
+            .set_program_status_guarded(tid, pid2, v2, ProgramStatus::CompilingRust)
+            .await
+            .unwrap();
+        super::Compiler::reconcile_local_state(&conf, &db)
+            .await
+            .unwrap();
+        check_program_status_pending(&db, "p1").await;
+        check_program_status_pending(&db, "p2").await;
+        assert!(!path1.exists());
+        assert!(!path2.exists());
     }
 }
