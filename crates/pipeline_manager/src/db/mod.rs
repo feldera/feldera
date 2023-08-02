@@ -832,18 +832,6 @@ fn convert_bigint_to_time(created_secs: i64) -> Result<DateTime<Utc>, DBError> {
 // possible and if not, use transactions
 #[async_trait]
 impl Storage for ProjectDB {
-    async fn reset_program_status(&self) -> Result<(), DBError> {
-        self.pool
-            .get()
-            .await?
-            .execute(
-                "UPDATE program SET status = NULL, error = NULL, schema = NULL",
-                &[],
-            )
-            .await?;
-        Ok(())
-    }
-
     async fn list_programs(
         &self,
         tenant_id: TenantId,

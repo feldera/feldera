@@ -243,52 +243,6 @@ async fn duplicate_program() {
 }
 
 #[tokio::test]
-async fn program_reset() {
-    let handle = test_setup().await;
-    let tenant_id = TenantRecord::default().id;
-    handle
-        .db
-        .new_program(
-            tenant_id,
-            Uuid::now_v7(),
-            "test1",
-            "program desc",
-            "ignored",
-        )
-        .await
-        .unwrap();
-    handle
-        .db
-        .new_program(
-            tenant_id,
-            Uuid::now_v7(),
-            "test2",
-            "program desc",
-            "ignored",
-        )
-        .await
-        .unwrap();
-    handle.db.reset_program_status().await.unwrap();
-    let results = handle.db.list_programs(tenant_id, false).await.unwrap();
-    for p in results {
-        assert_eq!(ProgramStatus::None, p.status);
-        assert_eq!(None, p.schema); //can't check for error fields directly
-    }
-    let results = handle
-        .db
-        .pool
-        .get()
-        .await
-        .unwrap()
-        .query(
-            "SELECT * FROM program WHERE status != '' OR error != '' OR schema != ''",
-            &[],
-        )
-        .await;
-    assert_eq!(0, results.unwrap().len());
-}
-
-#[tokio::test]
 async fn program_code() {
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;
@@ -1000,7 +954,6 @@ pub(crate) fn limited_option_connector() -> impl Strategy<Value = Option<Connect
 /// Actions we can do on the Storage trait.
 #[derive(Debug, Clone, Arbitrary)]
 enum StorageAction {
-    ResetProgramStatus(TenantId),
     ListPrograms(TenantId, bool),
     NewProgram(
         TenantId,
@@ -1246,12 +1199,6 @@ fn db_impl_behaves_like_model() {
 
                     for (i, action) in actions.into_iter().enumerate() {
                         match action {
-                            StorageAction::ResetProgramStatus(tenant_id) => {
-                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.reset_program_status().await;
-                                let impl_response = handle.db.reset_program_status().await;
-                                check_responses(i, model_response, impl_response);
-                            }
                             StorageAction::ListPrograms(tenant_id, with_code) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.list_programs(tenant_id, with_code).await;
@@ -1518,15 +1465,6 @@ struct DbModel {
 
 #[async_trait]
 impl Storage for Mutex<DbModel> {
-    async fn reset_program_status(&self) -> Result<(), DBError> {
-        self.lock().await.programs.values_mut().for_each(|(p, _e)| {
-            p.status = ProgramStatus::None;
-            p.schema = None;
-        });
-
-        Ok(())
-    }
-
     async fn list_programs(
         &self,
         tenant_id: TenantId,

@@ -15,8 +15,6 @@ use uuid::Uuid;
 /// We use a trait so we can mock the storage layer in tests.
 #[async_trait]
 pub(crate) trait Storage {
-    async fn reset_program_status(&self) -> Result<(), DBError>;
-
     async fn list_programs(
         &self,
         tenant_id: TenantId,
