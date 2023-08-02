@@ -91,8 +91,13 @@ pub(crate) trait Storage {
             return Ok(());
         }
 
-        self.set_program_for_compilation(tenant_id, program_id, ProgramStatus::Pending)
-            .await?;
+        self.set_program_for_compilation(
+            tenant_id,
+            program_id,
+            expected_version,
+            ProgramStatus::Pending,
+        )
+        .await?;
 
         Ok(())
     }
@@ -145,6 +150,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
+        version: Version,
         status: ProgramStatus,
     ) -> Result<(), DBError>;
 
@@ -186,6 +192,10 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         program_id: ProgramId,
     ) -> Result<(), DBError>;
+
+    /// Retrieves all programs in the DB. Intended to be used by
+    /// reconciliation loops.
+    async fn all_programs(&self) -> Result<Vec<(TenantId, ProgramDescr)>, DBError>;
 
     /// Retrieves the first pending program from the queue.
     ///

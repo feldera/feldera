@@ -410,7 +410,7 @@ async fn program_config() {
 async fn project_pending() {
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;
-    let (uid1, _v) = handle
+    let (uid1, v1) = handle
         .db
         .new_program(
             tenant_id,
@@ -421,7 +421,7 @@ async fn project_pending() {
         )
         .await
         .unwrap();
-    let (uid2, _v) = handle
+    let (uid2, v2) = handle
         .db
         .new_program(
             tenant_id,
@@ -435,12 +435,12 @@ async fn project_pending() {
 
     handle
         .db
-        .set_program_for_compilation(tenant_id, uid2, ProgramStatus::Pending)
+        .set_program_for_compilation(tenant_id, uid2, v2, ProgramStatus::Pending)
         .await
         .unwrap();
     handle
         .db
-        .set_program_for_compilation(tenant_id, uid1, ProgramStatus::Pending)
+        .set_program_for_compilation(tenant_id, uid1, v1, ProgramStatus::Pending)
         .await
         .unwrap();
     let (_, id, _version) = handle.db.next_job().await.unwrap().unwrap();
@@ -475,7 +475,12 @@ async fn update_status() {
     assert_eq!(ProgramStatus::None, desc.status);
     handle
         .db
-        .set_program_for_compilation(tenant_id, program_id, ProgramStatus::CompilingRust)
+        .set_program_for_compilation(
+            tenant_id,
+            program_id,
+            desc.version,
+            ProgramStatus::CompilingRust,
+        )
         .await
         .unwrap();
     let desc = handle
@@ -965,10 +970,11 @@ enum StorageAction {
     UpdateProgram(TenantId, ProgramId, String, String, Option<String>),
     GetProgramIfExists(TenantId, ProgramId, bool),
     LookupProgram(TenantId, String, bool),
-    SetProgramStatus(TenantId, ProgramId, ProgramStatus),
+    SetProgramForCompilation(TenantId, ProgramId, Version, ProgramStatus),
     SetProgramStatusGuarded(TenantId, ProgramId, Version, ProgramStatus),
     SetProgramSchema(TenantId, ProgramId, ProgramSchema),
     DeleteProgram(TenantId, ProgramId),
+    AllPrograms,
     NextJob,
     NewPipeline(
         TenantId,
@@ -1245,12 +1251,12 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.lookup_program(tenant_id, &name, with_code).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetProgramStatus(tenant_id, program_id, status) => {
+                            StorageAction::SetProgramForCompilation(tenant_id, program_id, version, status) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.set_program_for_compilation(tenant_id, program_id, status.clone()).await;
+                                    model.set_program_for_compilation(tenant_id, program_id, version, status.clone()).await;
                                 let impl_response =
-                                    handle.db.set_program_for_compilation(tenant_id, program_id, status.clone()).await;
+                                    handle.db.set_program_for_compilation(tenant_id, program_id, version, status.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::SetProgramStatusGuarded(tenant_id, program_id, version, status) => {
@@ -1277,6 +1283,13 @@ fn db_impl_behaves_like_model() {
                                 let model_response = model.delete_program(tenant_id, program_id).await;
                                 let impl_response = handle.db.delete_program(tenant_id, program_id).await;
                                 check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::AllPrograms => {
+                                let mut model_response = model.all_programs().await.unwrap();
+                                let mut impl_response = handle.db.all_programs().await.unwrap();
+                                model_response.sort_by(|a, b| a.1.program_id.cmp(&b.1.program_id));
+                                impl_response.sort_by(|a, b| a.1.program_id.cmp(&b.1.program_id));
+                                check_responses(i, Ok(model_response), Ok(impl_response));
                             }
                             StorageAction::NextJob => {
                                 let model_response = model.next_job().await;
@@ -1604,14 +1617,16 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         program_id: super::ProgramId,
+        expected_version: super::Version,
         status: ProgramStatus,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
         let _r = s.programs.get_mut(&(tenant_id, program_id)).map(|(p, t)| {
-            p.status = status;
-            *t = SystemTime::now();
-            // TODO: It's a bit odd that this function also resets the schema
-            p.schema = None;
+            if p.version == expected_version {
+                p.status = status;
+                *t = SystemTime::now();
+                p.schema = None;
+            }
         });
 
         Ok(())
@@ -1673,6 +1688,22 @@ impl Storage for Mutex<DbModel> {
 
             Ok(())
         }
+    }
+
+    async fn all_programs(&self) -> DBResult<Vec<(TenantId, ProgramDescr)>> {
+        let s = self.lock().await;
+        Ok(s.programs
+            .iter()
+            .map(|k| {
+                (
+                    k.0 .0,
+                    ProgramDescr {
+                        code: None,
+                        ..k.1 .0.clone()
+                    },
+                )
+            })
+            .collect())
     }
 
     async fn next_job(
