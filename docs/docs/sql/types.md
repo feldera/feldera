@@ -17,9 +17,13 @@ The compiler supports the following SQL data types:
   a scale (total number of decimall digits)
 - `FLOAT`, or `FLOAT4`, or `FLOAT32`, an IEEE 32-bit floating point number
 - `DOUBLE`, or `FLOAT8`, or `FLOAT32`, an IEEE 64-bit floating point number
-- `VARCHAR(n)`, or `CHAR(n)`, or `CHARACTER(n)`, or `CHARACTER
-  VARYING(n)`, a string value with maximum fixed width
-- `VARCHAR`, or `STRING`, or `TEXT`: a string of unlimited length
+- `VARCHAR(n)`, or `CHARACTER VARYING(n)`, a string value with maximum fixed width
+  Trailing spaces are removed when converting a value to one of these types.
+- `CHAR(n)`, or `CHARACTER(n)`, a string value with a fixed width.  Values
+  are truncated if longer, or padded with spaces if shorter, to be brought to
+  the specified size.
+- `VARCHAR`, or `STRING`, or `TEXT`: a string of unlimited length.  Trailing
+   spaces are removed when converting a `CHAR(n)` value to this type.
 - `NULL`, a type comprising only the `NULL` value
 - `INTERVAL`, a SQL interval.  Two types of intervals are supported:
   long intervals (comprising years and months), and short intervals,
