@@ -71,10 +71,10 @@ pub(crate) trait Storage {
     }
 
     /// Queue program for compilation by setting its status to
-    /// [`ProgramStatus::Pending`].
+    /// [`ProgramStatus::Pending`] and schema to null.
     ///
     /// Change program status to [`ProgramStatus::Pending`].
-    async fn set_program_pending(
+    async fn prepare_program_for_compilation(
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
@@ -91,31 +91,7 @@ pub(crate) trait Storage {
             return Ok(());
         }
 
-        self.set_program_status(tenant_id, program_id, ProgramStatus::Pending)
-            .await?;
-
-        Ok(())
-    }
-
-    /// Cancel compilation request.
-    ///
-    /// Cancels compilation request if the program is pending in the queue
-    /// or already being compiled.
-    async fn cancel_program(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        expected_version: Version,
-    ) -> Result<(), DBError> {
-        let descr = self
-            .get_program_guarded(tenant_id, program_id, expected_version)
-            .await?;
-
-        if descr.status != ProgramStatus::Pending || !descr.status.is_compiling() {
-            return Ok(());
-        }
-
-        self.set_program_status(tenant_id, program_id, ProgramStatus::None)
+        self.set_program_for_compilation(tenant_id, program_id, ProgramStatus::Pending)
             .await?;
 
         Ok(())
@@ -165,7 +141,7 @@ pub(crate) trait Storage {
     /// # Note
     /// - Doesn't check that the program exists.
     /// - Resets schema to null.
-    async fn set_program_status(
+    async fn set_program_for_compilation(
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
