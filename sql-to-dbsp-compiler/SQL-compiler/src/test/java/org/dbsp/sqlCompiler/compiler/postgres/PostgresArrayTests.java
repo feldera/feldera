@@ -106,7 +106,7 @@ public class PostgresArrayTests extends PostgresBaseTest {
                 "select array_to_string(array['1','2','3','4',NULL,'6'], NULL);\n" +
                 " array_to_string \n" +
                 "-----------------\n" +
-                " <NULL>\n" +
+                "NULL\n" +
                 "(1 row)\n" +
                 "\n" +
                 "select array_to_string(split('1|2|3', '|'), '|');\n" +
