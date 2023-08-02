@@ -435,12 +435,12 @@ async fn project_pending() {
 
     handle
         .db
-        .set_program_status(tenant_id, uid2, ProgramStatus::Pending)
+        .set_program_for_compilation(tenant_id, uid2, ProgramStatus::Pending)
         .await
         .unwrap();
     handle
         .db
-        .set_program_status(tenant_id, uid1, ProgramStatus::Pending)
+        .set_program_for_compilation(tenant_id, uid1, ProgramStatus::Pending)
         .await
         .unwrap();
     let (_, id, _version) = handle.db.next_job().await.unwrap().unwrap();
@@ -475,7 +475,7 @@ async fn update_status() {
     assert_eq!(ProgramStatus::None, desc.status);
     handle
         .db
-        .set_program_status(tenant_id, program_id, ProgramStatus::CompilingRust)
+        .set_program_for_compilation(tenant_id, program_id, ProgramStatus::CompilingRust)
         .await
         .unwrap();
     let desc = handle
@@ -1248,9 +1248,9 @@ fn db_impl_behaves_like_model() {
                             StorageAction::SetProgramStatus(tenant_id, program_id, status) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.set_program_status(tenant_id, program_id, status.clone()).await;
+                                    model.set_program_for_compilation(tenant_id, program_id, status.clone()).await;
                                 let impl_response =
-                                    handle.db.set_program_status(tenant_id, program_id, status.clone()).await;
+                                    handle.db.set_program_for_compilation(tenant_id, program_id, status.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::SetProgramStatusGuarded(tenant_id, program_id, version, status) => {
@@ -1600,7 +1600,7 @@ impl Storage for Mutex<DbModel> {
             }))
     }
 
-    async fn set_program_status(
+    async fn set_program_for_compilation(
         &self,
         tenant_id: TenantId,
         program_id: super::ProgramId,

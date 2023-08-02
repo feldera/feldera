@@ -1048,7 +1048,7 @@ impl Storage for ProjectDB {
         }
     }
 
-    async fn set_program_status(
+    async fn set_program_for_compilation(
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,

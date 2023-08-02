@@ -889,7 +889,7 @@ async fn compile_program(
         .db
         .lock()
         .await
-        .set_program_pending(*tenant_id, program_id, body.version)
+        .prepare_program_for_compilation(*tenant_id, program_id, body.version)
         .await?;
 
     Ok(HttpResponse::Accepted().finish())
