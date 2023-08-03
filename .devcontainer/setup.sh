@@ -9,7 +9,7 @@ apt-get install -y \
   openssl \
   cmake \
   pkg-config \
-  libssl-dev \
+  libssl-dev
 
 ## Install rustup and common components
 curl https://sh.rustup.rs -sSf | sh -s -- -y
