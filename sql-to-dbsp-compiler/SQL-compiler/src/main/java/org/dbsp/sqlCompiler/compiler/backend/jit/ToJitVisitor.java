@@ -305,9 +305,17 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public VisitDecision preorder(DBSPDistinctOperator operator) {
+    public VisitDecision preorder(DBSPIncrementalDistinctOperator operator) {
         OperatorConversion conversion = new OperatorConversion(operator, this);
         JITOperator result = new JITDistinctOperator(operator.id, conversion.type, conversion.inputs);
+        this.program.add(result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDistinctOperator operator) {
+        OperatorConversion conversion = new OperatorConversion(operator, this);
+        JITOperator result = new JITStreamDistinctOperator(operator.id, conversion.type, conversion.inputs);
         this.program.add(result);
         return VisitDecision.STOP;
     }
@@ -351,7 +359,21 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
+    public VisitDecision preorder(DBSPIncrementalJoinOperator operator) {
+        JITRowType keyType = this.getTypeCatalog().convertTupleType(operator.elementResultType, this);
+        JITRowType valueType = this.getTypeCatalog().convertTupleType(new DBSPTypeTuple(new DBSPTypeTuple()), this);
+        OperatorConversion conversion = new OperatorConversion(operator, this);
+        JITOperator result = new JITJoinOperator(operator.id, keyType, valueType, conversion.type,
+                conversion.inputs, conversion.getFunction());
+        this.program.add(result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPJoinOperator operator) {
+        this.errorReporter.reportError(operator.getSourcePosition(), true,
+                "No JIT implementation",
+                "JIT joins not supported, using incremental join");
         JITRowType keyType = this.getTypeCatalog().convertTupleType(operator.elementResultType, this);
         JITRowType valueType = this.getTypeCatalog().convertTupleType(new DBSPTypeTuple(new DBSPTypeTuple()), this);
         OperatorConversion conversion = new OperatorConversion(operator, this);
@@ -411,7 +433,46 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
+    public VisitDecision preorder(DBSPIncrementalAggregateOperator operator) {
+        if (operator.function != null)
+            throw new InternalCompilerError("Didn't expect the Aggregate to have a function", operator);
+
+        List<JITOperatorReference> inputs = Linq.map(
+                operator.inputs, i -> new JITOperatorReference(i.id));
+        JITRowType outputType = this.getTypeCatalog().convertTupleType(operator.outputElementType, this);
+
+        DBSPAggregate aggregate = operator.getAggregate();
+        DBSPExpression initial = aggregate.getZero();
+        List<DBSPExpression> fields = new ArrayList<>();
+        flatten(initial, fields);
+        DBSPTupleExpression zeroValue = new DBSPTupleExpression(initial.getNode(), fields);
+        JITTupleLiteral init = new JITTupleLiteral(zeroValue, this);
+
+        DBSPClosureExpression closure = aggregate.getIncrement();
+        JITFunction stepFn = this.convertStepFunction(closure);
+
+        closure = aggregate.getPostprocessing();
+        if (closure.parameters.length != 1)
+            throw new InternalCompilerError("Expected function to have exactly 1 parameter, not " +
+                    closure.parameters.length, operator);
+        JITFunction finishFn = this.convertFunction(closure, false);
+
+        JITRowType accLayout = this.getTypeCatalog().convertTupleType(zeroValue.type, this);
+        JITRowType stepLayout = this.getTypeCatalog().convertTupleType(
+                aggregate.getIncrement().parameters[1].getType(), this);
+        JITOperator result = new JITAggregateOperator(
+                operator.id, accLayout, stepLayout, outputType,
+                inputs, init, stepFn, finishFn);
+        this.program.add(result);
+
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPAggregateOperator operator) {
+        this.errorReporter.reportError(operator.getSourcePosition(), true,
+                "No JIT implementation",
+                "JIT aggregates not supported, using incremental aggregate");
         if (operator.function != null)
             throw new InternalCompilerError("Didn't expect the Aggregate to have a function", operator);
 

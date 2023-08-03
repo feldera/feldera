@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -75,9 +76,9 @@ public class BaseSQLTests {
             if (!test.compiler.options.same(firstCompiler.options))
                 throw new RuntimeException("Tests are not compiled with the same options: "
                         + test.compiler.options + " and " + firstCompiler.options);
+            ProgramAndTester pt;
             if (test.compiler.options.ioOptions.jit) {
-                DBSPFunction tester = test.createJITTesterCode(testNumber);
-                writer.add(tester);
+                pt = new ProgramAndTester(null, test.createJITTesterCode(testNumber));
                 if (extraArgs.length == 0) {
                     extraArgs = new String[2];
                     extraArgs[0] = "--features";
@@ -86,11 +87,10 @@ public class BaseSQLTests {
                 jitTestsExecuted++;
             } else {
                 // Standard test
-                writer.add(test.circuit);
-                DBSPFunction tester = test.createTesterCode(testNumber);
-                writer.add(tester);
+                pt = new ProgramAndTester(test.circuit, test.createTesterCode(testNumber));
                 testsExecuted++;
             }
+            writer.add(pt);
             testNumber++;
         }
         writer.writeAndClose();
@@ -101,6 +101,8 @@ public class BaseSQLTests {
     }
 
     protected void addRustTestCase(String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {
+        compiler.messages.show(System.err);
+        compiler.messages.clear();
         TestCase test = new TestCase(name, compiler, circuit, streams);
         testsToRun.add(test);
     }
