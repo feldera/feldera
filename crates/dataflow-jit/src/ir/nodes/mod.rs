@@ -59,6 +59,7 @@ pub enum Node {
     Delta0(Delta0),
     DelayedFeedback(DelayedFeedback),
     Distinct(Distinct),
+    StreamDistinct(StreamDistinct),
     JoinCore(JoinCore),
     Subgraph(Subgraph),
     Export(Export),
@@ -126,6 +127,7 @@ where
             Node::Delta0(delta0) => delta0.pretty(alloc, cache),
             Node::DelayedFeedback(delayed_feedback) => delayed_feedback.pretty(alloc, cache),
             Node::Distinct(distinct) => distinct.pretty(alloc, cache),
+            Node::StreamDistinct(distinct) => distinct.pretty(alloc, cache),
             Node::JoinCore(join_core) => join_core.pretty(alloc, cache),
             Node::MonotonicJoin(monotonic_join) => monotonic_join.pretty(alloc, cache),
             Node::ConstantStream(constant) => constant.pretty(alloc, cache),
@@ -259,6 +261,83 @@ where
     fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
         alloc
             .text("distinct")
+            .append(alloc.space())
+            .append(self.layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]
+pub struct StreamDistinct {
+    input: NodeId,
+    layout: StreamLayout,
+}
+
+impl StreamDistinct {
+    pub const fn new(input: NodeId, layout: StreamLayout) -> Self {
+        Self { input, layout }
+    }
+
+    pub const fn input(&self) -> NodeId {
+        self.input
+    }
+
+    pub const fn layout(&self) -> StreamLayout {
+        self.layout
+    }
+}
+
+impl DataflowNode for StreamDistinct {
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId) + ?Sized,
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId) + ?Sized,
+    {
+        map(&mut self.input);
+    }
+
+    fn output_stream(
+        &self,
+        _inputs: &[StreamLayout],
+        _layout_cache: &RowLayoutCache,
+    ) -> Option<StreamLayout> {
+        Some(self.layout)
+    }
+
+    fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0], self.layout);
+    }
+
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
+
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId) + ?Sized,
+    {
+        self.layout.map_layouts(map);
+    }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.layout.remap_layouts(mappings);
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &StreamDistinct
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("stream_distinct")
             .append(alloc.space())
             .append(self.layout.pretty(alloc, cache))
             .append(alloc.space())

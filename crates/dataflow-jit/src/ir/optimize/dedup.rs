@@ -2,7 +2,7 @@
 
 use crate::ir::{
     graph::Subgraph,
-    nodes::{ConstantStream, Distinct, Subgraph as SubgraphNode},
+    nodes::{ConstantStream, Distinct, StreamDistinct, Subgraph as SubgraphNode},
     visit::MutNodeVisitor,
     GraphExt, NodeId,
 };
@@ -46,6 +46,7 @@ impl Subgraph {
 struct NodeCollector {
     constant: BTreeMap<ConstantStream, NodeId>,
     distinct: BTreeMap<Distinct, NodeId>,
+    stream_distinct: BTreeMap<StreamDistinct, NodeId>,
     replacements: BTreeMap<NodeId, NodeId>,
 }
 
@@ -67,6 +68,21 @@ impl MutNodeVisitor for NodeCollector {
             Entry::Occupied(occupied) => {
                 tracing::trace!(
                     "deduplicating distinct nodes {node_id} and {}",
+                    occupied.get(),
+                );
+                self.replacements.insert(node_id, *occupied.get());
+            }
+        }
+    }
+
+    fn visit_stream_distinct(&mut self, node_id: NodeId, distinct: &mut StreamDistinct) {
+        match self.stream_distinct.entry(distinct.clone()) {
+            Entry::Vacant(vacant) => {
+                vacant.insert(node_id);
+            }
+            Entry::Occupied(occupied) => {
+                tracing::trace!(
+                    "deduplicating stream_distinct nodes {node_id} and {}",
                     occupied.get(),
                 );
                 self.replacements.insert(node_id, *occupied.get());

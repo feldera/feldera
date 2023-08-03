@@ -9,7 +9,7 @@ use crate::ir::{
     nodes::{
         ConstantStream, DataflowNode, Differentiate, Distinct, ExportedNode, Filter, IndexWith,
         Integrate, JoinCore, Map, Node, Sink, Source, SourceMap, StreamKind, StreamLayout,
-        Subgraph as SubgraphNode,
+        StreamDistinct, Subgraph as SubgraphNode,
     },
     optimize,
     pretty::{DocAllocator, DocBuilder, Pretty},
@@ -150,6 +150,10 @@ pub trait GraphExt {
 
     fn distinct(&mut self, input: NodeId, layout: StreamLayout) -> NodeId {
         self.add_node(Distinct::new(input, layout))
+    }
+
+    fn stream_distinct(&mut self, input: NodeId, layout: StreamLayout) -> NodeId {
+        self.add_node(StreamDistinct::new(input, layout))
     }
 
     fn index_with(

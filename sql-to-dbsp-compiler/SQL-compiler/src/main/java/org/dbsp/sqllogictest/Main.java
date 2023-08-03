@@ -66,7 +66,7 @@ public class Main {
         );
 
         String[] args = {
-                "-v", "-x",
+                "-v", "-x", "-j",
                 "-e", "hybrid",      // executor
                 "-inc",              // incremental (streaming) testing
         };

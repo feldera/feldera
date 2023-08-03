@@ -34,14 +34,22 @@ import net.hydromatic.sqllogictest.executors.SqlSltTestExecutor;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.backend.*;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ToRustJitLiteral;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.JITSourceOperator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPasses;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
+import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
@@ -49,6 +57,7 @@ import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.sqllogictest.*;
 import org.dbsp.util.Linq;
+import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -64,20 +73,6 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
  * Sql test executor that uses DBSP for query execution.
  */
 public class DBSPExecutor extends SqlSltTestExecutor {
-    /**
-     * A pair of a Rust circuit representation and a tester function that can
-     * exercise it.
-     */
-    static class ProgramAndTester {
-        public final DBSPCircuit program;
-        public final DBSPFunction tester;
-
-        ProgramAndTester(DBSPCircuit program, DBSPFunction tester) {
-            this.program = program;
-            this.tester = tester;
-        }
-    }
-
     static final String rustDirectory = "../temp/src/";
     static final String testFileName = "lib";
     private final boolean execute;
@@ -271,11 +266,13 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                             compiler, streamInputFunction, this.viewPreparation, testQuery, queryNo);
                     codeGenerated.add(pc);
                 } catch (Throwable ex) {
-                    System.err.println("Error while compiling " + testQuery.getQuery() + ": " + ex.getMessage());
+                    System.err.println("Error while compiling " + testQuery.getQuery() + ": " +
+                            ex.getClass().getSimpleName() + " " + ex.getMessage());
                     result.addFailure(
                             new TestStatistics.FailedTestDescription(testQuery,
                                     "Exception during test", "", ex));
-                    return false;
+                    throw ex;
+                    // return false;
                 }
                 queryNo++;
             }
@@ -285,7 +282,13 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     Linq.list(inputFunction, streamInputFunction), codeGenerated);
             this.startTest();
             if (this.execute) {
-                Utilities.compileAndTestRust(rustDirectory, true);
+                String[] extraArgs = new String[0];
+                if (this.compilerOptions.ioOptions.jit) {
+                    extraArgs = new String[2];
+                    extraArgs[0] = "--features";
+                    extraArgs[1] = "jit";
+                }
+                Utilities.compileAndTestRust(rustDirectory, true, extraArgs);
             }
             this.queriesToRun.clear();
             System.out.println(elapsedTime(queryNo));
@@ -299,6 +302,65 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             throw new RuntimeException(e);
         }
         return true;
+    }
+
+    /**
+     * Convert a description of the data in the SLT format to a ZSet.
+     */
+    @Nullable DBSPZSetLiteral convert(@Nullable List<String> data, DBSPTypeZSet outputType) {
+        if (data == null)
+            return null;
+        DBSPZSetLiteral result;
+        IDBSPContainer container;
+        DBSPType elementType = outputType.elementType;
+        if (elementType.is(DBSPTypeVec.class)) {
+            elementType = elementType.to(DBSPTypeVec.class).getElementType();
+            DBSPVecLiteral vec = new DBSPVecLiteral(elementType);
+            container = vec;
+            result = new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, vec);
+        } else {
+            result = new DBSPZSetLiteral(outputType.getElementType(), DBSPTypeWeight.INSTANCE);
+            container = result;
+        }
+        DBSPTypeTuple outputElementType = elementType.to(DBSPTypeTuple.class);
+
+        List<DBSPExpression> fields = new ArrayList<>();
+        int col = 0;
+        DBSPExpression field;
+        for (String s : data) {
+            DBSPType colType = outputElementType.tupFields[col];
+            if (s.equalsIgnoreCase("null"))
+                field = DBSPLiteral.none(colType);
+            else if (colType.is(DBSPTypeInteger.class))
+                field = new DBSPI32Literal(Integer.parseInt(s));
+            else if (colType.is(DBSPTypeDouble.class))
+                field = new DBSPDoubleLiteral(Double.parseDouble(s));
+            else if (colType.is(DBSPTypeFloat.class))
+                field = new DBSPFloatLiteral(Float.parseFloat(s));
+            else if (colType.is(DBSPTypeString.class))
+                field = new DBSPStringLiteral(s);
+            else if (colType.is(DBSPTypeDecimal.class))
+                field = new DBSPDecimalLiteral(colType, new BigDecimal(s));
+            else if (colType.is(DBSPTypeBool.class))
+                // Booleans are encoded as ints
+                field = new DBSPBoolLiteral(Integer.parseInt(s) != 0);
+            else
+                throw new RuntimeException("Unexpected type " + colType);
+            if (!colType.sameType(field.getType()))
+                field = field.cast(colType);
+            fields.add(field);
+            col++;
+            if (col == outputElementType.size()) {
+                container.add(new DBSPTupleExpression(CalciteObject.EMPTY, fields));
+                fields = new ArrayList<>();
+                col = 0;
+            }
+        }
+        if (col != 0) {
+            throw new RuntimeException("Could not assign all query output values to rows. " +
+                    "I have " + col + " leftover values in the last row");
+        }
+        return result;
     }
 
     ProgramAndTester generateTestCase(
@@ -322,72 +384,119 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         compiler.throwIfErrorsOccurred();
         compiler.optimize();
         DBSPCircuit dbsp = compiler.getFinalCircuit("gen" + suffix);
-        DBSPZSetLiteral expectedOutput = null;
-        if (testQuery.outputDescription.getQueryResults() != null) {
-            IDBSPContainer container;
-            if (dbsp.getOutputCount() != 1)
-                throw new RuntimeException(
-                        "Didn't expect a query to have " + dbsp.getOutputCount() + " outputs");
-            DBSPTypeZSet outputType = dbsp.getOutputType(0).to(DBSPTypeZSet.class);
-            DBSPType elementType = outputType.elementType;
-            if (elementType.is(DBSPTypeVec.class)) {
-                elementType = elementType.to(DBSPTypeVec.class).getElementType();
-                DBSPVecLiteral vec = new DBSPVecLiteral(elementType);
-                container = vec;
-                expectedOutput = new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, vec);
-            } else {
-                expectedOutput = new DBSPZSetLiteral(outputType.getElementType(), DBSPTypeWeight.INSTANCE);
-                container = expectedOutput;
-            }
-            DBSPTypeTuple outputElementType = elementType.to(DBSPTypeTuple.class);
-
-            List<DBSPExpression> fields = new ArrayList<>();
-            int col = 0;
-            DBSPExpression field;
-            for (String s: testQuery.outputDescription.getQueryResults()) {
-                DBSPType colType = outputElementType.tupFields[col];
-                if (s.equalsIgnoreCase("null"))
-                    field = DBSPLiteral.none(colType);
-                else if (colType.is(DBSPTypeInteger.class))
-                    field = new DBSPI32Literal(Integer.parseInt(s));
-                else if (colType.is(DBSPTypeDouble.class))
-                    field = new DBSPDoubleLiteral(Double.parseDouble(s));
-                else if (colType.is(DBSPTypeFloat.class))
-                    field = new DBSPFloatLiteral(Float.parseFloat(s));
-                else if (colType.is(DBSPTypeString.class))
-                    field = new DBSPStringLiteral(s);
-                else if (colType.is(DBSPTypeDecimal.class))
-                    field = new DBSPDecimalLiteral(colType, new BigDecimal(s));
-                else if (colType.is(DBSPTypeBool.class))
-                    // Booleans are encoded as ints
-                    field = new DBSPBoolLiteral(Integer.parseInt(s) != 0);
-                else
-                    throw new RuntimeException("Unexpected type " + colType);
-                if (!colType.sameType(field.getType()))
-                    field = field.cast(colType);
-                fields.add(field);
-                col++;
-                if (col == outputElementType.size()) {
-                    container.add(new DBSPTupleExpression(CalciteObject.EMPTY, fields));
-                    fields = new ArrayList<>();
-                    col = 0;
-                }
-            }
-            if (col != 0) {
-                throw new RuntimeException("Could not assign all query output values to rows. " +
-                        "I have " + col + " leftover values in the last row");
-            }
-        } else {
+        if (dbsp.getOutputCount() != 1)
+            throw new RuntimeException(
+                    "Didn't expect a query to have " + dbsp.getOutputCount() + " outputs");
+        DBSPTypeZSet outputType = dbsp.getOutputType(0).to(DBSPTypeZSet.class);
+        DBSPZSetLiteral expectedOutput = this.convert(
+                testQuery.outputDescription.getQueryResults(), outputType);
+        if (expectedOutput == null) {
             if (testQuery.outputDescription.hash == null)
                 throw new RuntimeException("No hash or outputs specified");
         }
 
-        DBSPFunction func = createTesterCode(
-                "tester" + suffix, dbsp,
-                inputGeneratingFunction,
-                compiler.getTableContents(),
-                expectedOutput, testQuery.outputDescription);
-        return new ProgramAndTester(dbsp, func);
+        ProgramAndTester result;
+        if (this.compilerOptions.ioOptions.jit) {
+            result = createJitTesterCode(compiler,
+              "tester" + suffix, dbsp, compiler.getTableContents(),
+              expectedOutput, testQuery.outputDescription);
+        } else {
+            result = createTesterCode(
+                    "tester" + suffix, dbsp,
+                    inputGeneratingFunction,
+                    compiler.getTableContents(),
+                    expectedOutput, testQuery.outputDescription);
+        }
+        return result;
+    }
+
+    static ProgramAndTester createJitTesterCode(
+            DBSPCompiler compiler,
+            String name, DBSPCircuit dbsp,
+            TableContents tableContents, DBSPZSetLiteral expectedOutput,
+            SqlTestQueryOutputDescription outputDescription) {
+        // TODO: avoid duplicating this code with TestCase.
+        List<DBSPStatement> list = new ArrayList<>();
+        JITProgram program = ToJitVisitor.circuitToJIT(compiler, dbsp);
+        DBSPComment comment = new DBSPComment(program.toAssembly());
+        list.add(comment);
+
+        String json = program.asJson().toPrettyString();
+        DBSPStrLiteral value = new DBSPStrLiteral(json, false, true);
+        DBSPConstItem item = new DBSPConstItem("CIRCUIT", DBSPTypeStr.INSTANCE.ref(), value);
+        list.add(item);
+        DBSPExpression read = new DBSPApplyMethodExpression("rematerialize", DBSPTypeAny.INSTANCE,
+                new DBSPApplyExpression("serde_json::from_str::<SqlGraph>",
+                        DBSPTypeAny.INSTANCE, item.getVariable()).unwrap());
+        DBSPLetStatement graph = new DBSPLetStatement("graph", read);
+        list.add(graph);
+
+        DBSPLetStatement graphNodes = new DBSPLetStatement("graph_nodes",
+                new DBSPApplyMethodExpression("nodes", DBSPTypeAny.INSTANCE,
+                        graph.getVarReference()));
+        list.add(graphNodes);
+
+        DBSPLetStatement demands = new DBSPLetStatement("demands",
+                new DBSPStructExpression(
+                        DBSPTypeAny.INSTANCE.path(
+                                new DBSPPath("Demands", "new")),
+                        DBSPTypeAny.INSTANCE), true);
+        list.add(demands);
+
+        List<JITSourceOperator> tables = program.getSources();
+        for (JITSourceOperator source : tables) {
+            String table = source.table;
+            long index = source.id;
+            DBSPExpression nodeId = new DBSPStructExpression(
+                    DBSPTypeAny.INSTANCE.path(
+                            new DBSPPath("NodeId", "new")),
+                    DBSPTypeAny.INSTANCE,
+                    new DBSPU32Literal((int) index));
+            DBSPLetStatement id = new DBSPLetStatement(table + "_id", nodeId);
+            list.add(id);
+
+            DBSPExpression indexExpr = new DBSPBinaryExpression(CalciteObject.EMPTY, DBSPTypeAny.INSTANCE,
+                    DBSPOpcode.RUST_INDEX, graphNodes.getVarReference(), id.getVarReference().borrow());
+            DBSPExpression layout = new DBSPApplyMethodExpression(
+                    "layout", DBSPTypeAny.INSTANCE,
+                    new DBSPApplyMethodExpression("unwrap_source", DBSPTypeAny.INSTANCE,
+                            indexExpr.applyClone()));
+            DBSPLetStatement stat = new DBSPLetStatement(table + "_layout", layout);
+            list.add(stat);
+        }
+
+        DBSPExpression debug = new DBSPStructExpression(
+                DBSPTypeAny.INSTANCE.path(new DBSPPath("CodegenConfig", "debug")),
+                DBSPTypeAny.INSTANCE);
+        DBSPExpression allocateCircuit = new DBSPStructExpression(
+                DBSPTypeAny.INSTANCE.path(new DBSPPath("DbspCircuit", "new")),
+                DBSPTypeAny.INSTANCE,
+                graph.getVarReference(),
+                DBSPBoolLiteral.TRUE,
+                new DBSPUSizeLiteral(1),
+                debug,
+                demands.getVarReference());
+        DBSPLetStatement circuit = new DBSPLetStatement("circuit", allocateCircuit, true);
+        list.add(circuit);
+
+        InnerPasses converter = new InnerPasses();
+        converter.add(new Simplify(compiler));
+        converter.add(new ToRustJitLiteral(compiler));
+        // TODO: feed inputs, check outputs.
+
+        DBSPExpressionStatement step = new DBSPExpressionStatement(
+                new DBSPApplyMethodExpression("step", DBSPTypeAny.INSTANCE,
+                        circuit.getVarReference()).unwrap());
+        list.add(step);
+        DBSPStatement kill = new DBSPExpressionStatement(
+                new DBSPApplyMethodExpression(
+                        "kill", DBSPTypeAny.INSTANCE, circuit.getVarReference()).unwrap());
+        list.add(kill);
+
+        DBSPExpression body = new DBSPBlockExpression(list, null);
+        DBSPFunction function = new DBSPFunction(name, new ArrayList<>(),
+                DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
+        return new ProgramAndTester(null, function);
     }
 
     void cleanupFilesystem() {
@@ -478,7 +587,6 @@ public class DBSPExecutor extends SqlSltTestExecutor {
 
     /**
      * Generates a Rust function which tests a DBSP circuit.
-     *
      * @param name        Name of the generated function.
      * @param circuit     DBSP circuit that will be tested.
      * @param output      Expected data from the circuit.
@@ -486,7 +594,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
      * @return The code for a function that runs the circuit with the specified
      * input and tests the produced output.
      */
-    static DBSPFunction createTesterCode(
+    static ProgramAndTester createTesterCode(
             String name,
             DBSPCircuit circuit,
             DBSPFunction inputGeneratingFunction,
@@ -596,7 +704,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                                     new DBSPStringLiteral(description.hash))));
         }
         DBSPExpression body = new DBSPBlockExpression(list, null);
-        return new DBSPFunction(name, new ArrayList<>(), DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
+        DBSPFunction function = new DBSPFunction(name, new ArrayList<>(), DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
+        return new ProgramAndTester(circuit, function);
     }
 
     public boolean statement(SltSqlStatement statement) throws SQLException {
@@ -634,12 +743,12 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         PrintStream stream = new PrintStream(testFilePath, "UTF-8");
         RustFileWriter rust = new RustFileWriter(compiler, stream);
 
-        for (DBSPFunction function: inputFunctions)
-            rust.add(function);
-        for (ProgramAndTester pt: functions) {
-            rust.add(pt.program);
-            rust.add(pt.tester);
+        if (!compiler.options.ioOptions.jit) {
+            for (DBSPFunction function : inputFunctions)
+                rust.add(function);
         }
+        for (ProgramAndTester pt: functions)
+            rust.add(pt);
         rust.writeAndClose();
     }
 

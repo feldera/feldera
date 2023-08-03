@@ -101,6 +101,10 @@ public class CompilerMessages {
         this.messages = new ArrayList<>();
     }
 
+    public void clear() {
+        this.messages.clear();
+    }
+
     public void setExitCode(int exitCode) {
         this.exitCode = exitCode;
     }

@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.ProgramAndTester;
 
 import java.io.FileNotFoundException;
 import java.io.PrintStream;
@@ -317,6 +318,12 @@ public class RustFileWriter implements ICompilerComponent {
             generateStructures(used, stream);
         }
         return stream.toString();
+    }
+
+    public void add(ProgramAndTester pt) {
+        if (pt.program != null)
+            this.add(pt.program);
+        this.add(pt.tester);
     }
 
     public void add(DBSPCircuit circuit) {

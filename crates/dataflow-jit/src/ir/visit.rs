@@ -3,7 +3,7 @@ use crate::ir::{
         Antijoin, ConstantStream, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
         ExportedNode, Filter, FilterMap, FlatMap, Fold, IndexByColumn, IndexWith, Integrate,
         JoinCore, Map, Max, Min, Minus, MonotonicJoin, Neg, Node, PartitionedRollingFold, Sink,
-        Source, SourceMap, Subgraph, Sum, TopK, UnitMapToSet,
+        Source, SourceMap, StreamDistinct, Subgraph, Sum, TopK, UnitMapToSet,
     },
     GraphExt, NodeId,
 };
@@ -29,6 +29,7 @@ pub trait NodeVisitor {
     fn visit_delta0(&mut self, _node_id: NodeId, _delta0: &Delta0) {}
     fn visit_delayed_feedback(&mut self, _node_id: NodeId, _delayed_feedback: &DelayedFeedback) {}
     fn visit_distinct(&mut self, _node_id: NodeId, _distinct: &Distinct) {}
+    fn visit_stream_distinct(&mut self, _node_id: NodeId, _distinct: &StreamDistinct) {}
     fn visit_join_core(&mut self, _node_id: NodeId, _join_core: &JoinCore) {}
     fn visit_export(&mut self, _node_id: NodeId, _export: &Export) {}
     fn visit_exported_node(&mut self, _node_id: NodeId, _exported_node: &ExportedNode) {}
@@ -81,6 +82,7 @@ pub trait MutNodeVisitor {
     ) {
     }
     fn visit_distinct(&mut self, _node_id: NodeId, _distinct: &mut Distinct) {}
+    fn visit_stream_distinct(&mut self, _node_id: NodeId, _distinct: &mut StreamDistinct) {}
     fn visit_join_core(&mut self, _node_id: NodeId, _join_core: &mut JoinCore) {}
     fn visit_export(&mut self, _node_id: NodeId, _export: &mut Export) {}
     fn visit_exported_node(&mut self, _node_id: NodeId, _exported_node: &mut ExportedNode) {}
@@ -137,6 +139,7 @@ impl Node {
                 visitor.visit_delayed_feedback(node_id, delayed_feedback);
             }
             Self::Distinct(distinct) => visitor.visit_distinct(node_id, distinct),
+            Self::StreamDistinct(distinct) => visitor.visit_stream_distinct(node_id, distinct),
             Self::JoinCore(join_core) => visitor.visit_join_core(node_id, join_core),
             Self::Subgraph(subgraph) => visitor.visit_subgraph(node_id, subgraph),
             Self::Export(export) => visitor.visit_export(node_id, export),
@@ -189,6 +192,7 @@ impl Node {
                 visitor.visit_delayed_feedback(node_id, delayed_feedback);
             }
             Self::Distinct(distinct) => visitor.visit_distinct(node_id, distinct),
+            Self::StreamDistinct(distinct) => visitor.visit_stream_distinct(node_id, distinct),
             Self::JoinCore(join_core) => visitor.visit_join_core(node_id, join_core),
             Self::Subgraph(subgraph) => visitor.visit_subgraph(node_id, subgraph),
             Self::Export(export) => visitor.visit_export(node_id, export),
