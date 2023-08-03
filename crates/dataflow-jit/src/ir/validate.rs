@@ -12,8 +12,8 @@ use crate::{
             Antijoin, ConstantStream, DataflowNode, DelayedFeedback, Delta0, Differentiate,
             Distinct, Export, ExportedNode, Filter, FilterMap, FlatMap, Fold, IndexByColumn,
             IndexWith, Integrate, Map, Max, Min, Minus, MonotonicJoin, Neg, Node, NodeId,
-            PartitionedRollingFold, Sink, Source, SourceMap, StreamKind, StreamLayout, Subgraph,
-            Sum, UnitMapToSet,
+            PartitionedRollingFold, Sink, Source, SourceMap, StreamKind, StreamLayout,
+            StreamDistinct, Subgraph, Sum, UnitMapToSet,
         },
         visit::NodeVisitor,
         BlockId, ColumnType, Function, Graph, InputFlags, LayoutId, RowLayoutBuilder,
@@ -382,6 +382,10 @@ impl NodeVisitor for MetaCollector<'_> {
     }
 
     fn visit_distinct(&mut self, node_id: NodeId, distinct: &Distinct) {
+        self.add_unary(node_id, distinct.input(), distinct.layout());
+    }
+
+    fn visit_stream_distinct(&mut self, node_id: NodeId, distinct: &StreamDistinct) {
         self.add_unary(node_id, distinct.input(), distinct.layout());
     }
 

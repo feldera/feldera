@@ -27,6 +27,7 @@ pub enum DataflowNode {
     Source(Source),
     SourceMap(SourceMap),
     IndexWith(IndexWith),
+    StreamDistinct(StreamDistinct),
     Delta0(Delta0),
     DelayedFeedback(DelayedFeedback),
     Min(Min),
@@ -223,6 +224,11 @@ pub struct Max {
 
 #[derive(Debug, Clone)]
 pub struct Distinct {
+    pub input: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct StreamDistinct {
     pub input: NodeId,
 }
 

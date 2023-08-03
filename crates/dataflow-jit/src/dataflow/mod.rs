@@ -6,7 +6,8 @@ use crate::{
     codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayoutCache, VTable},
     dataflow::nodes::{
         Antijoin, DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
-        FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, IndexByColumn, Integrate,
+        FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold,
+        StreamDistinct, IndexByColumn, Integrate,
         JoinCore, MapFn, Max, Min, Minus, Noop, PartitionedRollingFold, Topk, UnitMapToSet,
     },
     ir::{
@@ -609,6 +610,9 @@ impl CompiledDataflow {
 
                 DataflowNode::Distinct(distinct) => self.distinct(node_id, distinct, &mut streams),
 
+                DataflowNode::StreamDistinct(distinct) =>
+                    self.stream_distinct(node_id, distinct, &mut streams),
+
                 DataflowNode::JoinCore(join) => {
                     let lhs = streams[&join.lhs].clone();
                     let rhs = streams[&join.rhs].clone();
@@ -975,6 +979,10 @@ impl CompiledDataflow {
                             self.distinct(node_id, distinct, &mut substreams);
                         }
 
+                        DataflowNode::StreamDistinct(distinct) => {
+                            self.stream_distinct(node_id, distinct, &mut substreams);
+                        }
+
                         DataflowNode::JoinCore(join) => {
                             let lhs = substreams[&join.lhs].clone();
                             let rhs = substreams[&join.rhs].clone();
@@ -1137,6 +1145,22 @@ impl CompiledDataflow {
         let distinct = match &streams[&distinct.input] {
             RowStream::Set(input) => RowStream::Set(input.distinct()),
             RowStream::Map(input) => RowStream::Map(input.distinct()),
+        };
+        streams.insert(node_id, distinct);
+    }
+
+    fn stream_distinct<C>(
+        &mut self,
+        node_id: NodeId,
+        distinct: StreamDistinct,
+        streams: &mut BTreeMap<NodeId, RowStream<C>>,
+    ) where
+        C: Circuit,
+        C::Time: DBTimestamp,
+    {
+        let distinct = match &streams[&distinct.input] {
+            RowStream::Set(input) => RowStream::Set(input.stream_distinct()),
+            RowStream::Map(input) => RowStream::Map(input.stream_distinct()),
         };
         streams.insert(node_id, distinct);
     }
@@ -1788,6 +1812,7 @@ fn collect_functions(
             Node::Min(_)
             | Node::Max(_)
             | Node::Distinct(_)
+            | Node::StreamDistinct(_)
             | Node::Delta0(_)
             | Node::DelayedFeedback(_)
             | Node::Neg(_)
@@ -2160,6 +2185,15 @@ fn compile_nodes(
                 nodes.insert(
                     *node_id,
                     DataflowNode::Distinct(Distinct {
+                        input: distinct.input(),
+                    }),
+                );
+            }
+
+            Node::StreamDistinct(distinct) => {
+                nodes.insert(
+                    *node_id,
+                    DataflowNode::StreamDistinct(StreamDistinct {
                         input: distinct.input(),
                     }),
                 );
