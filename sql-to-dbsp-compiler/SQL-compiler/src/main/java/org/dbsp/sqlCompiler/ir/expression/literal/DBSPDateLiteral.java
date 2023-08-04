@@ -46,7 +46,7 @@ public class DBSPDateLiteral extends DBSPLiteral {
     }
 
     public DBSPDateLiteral(String value, boolean mayBeNull) {
-        this(CalciteObject.EMPTY, DBSPTypeDate.INSTANCE.setMayBeNull(mayBeNull), new DateString(value).getDaysSinceEpoch());
+        this(CalciteObject.EMPTY, new DBSPTypeDate(CalciteObject.EMPTY, false).setMayBeNull(mayBeNull), new DateString(value).getDaysSinceEpoch());
     }
 
     public DBSPDateLiteral(String value) {
@@ -57,7 +57,7 @@ public class DBSPDateLiteral extends DBSPLiteral {
      * A NULL date.
      */
     public DBSPDateLiteral() {
-        this(CalciteObject.EMPTY, DBSPTypeDate.NULLABLE_INSTANCE, (Integer)null);
+        this(CalciteObject.EMPTY, new DBSPTypeDate(CalciteObject.EMPTY, true), (Integer)null);
     }
 
     @Override

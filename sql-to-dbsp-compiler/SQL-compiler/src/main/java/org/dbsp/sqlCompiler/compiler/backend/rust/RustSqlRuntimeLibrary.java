@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
@@ -146,14 +147,14 @@ public class RustSqlRuntimeLibrary {
             map = this.stringFunctions;
         }
         if (opcode.isComparison())
-            returnType = DBSPTypeBool.INSTANCE.setMayBeNull(anyNull);
+            returnType = new DBSPTypeBool(CalciteObject.EMPTY, false).setMayBeNull(anyNull);
         if (opcode.equals(DBSPOpcode.DIV))
             // Always, for division by 0
             returnType = returnType.setMayBeNull(true);
         if (opcode.equals(DBSPOpcode.IS_TRUE) || opcode.equals(DBSPOpcode.IS_NOT_TRUE) ||
                 opcode.equals(DBSPOpcode.IS_FALSE) || opcode.equals(DBSPOpcode.IS_NOT_FALSE) ||
                 opcode.equals(DBSPOpcode.IS_DISTINCT))
-            returnType = DBSPTypeBool.INSTANCE;
+            returnType = new DBSPTypeBool(CalciteObject.EMPTY, false);
         String suffixl = ltype.nullableSuffix();
         String suffixr = rtype == null ? "" : rtype.nullableSuffix();
         String tsuffixl;

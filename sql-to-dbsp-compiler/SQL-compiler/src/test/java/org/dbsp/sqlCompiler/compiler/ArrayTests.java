@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -37,6 +38,8 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.Objects;
+
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
 
 public class ArrayTests extends BaseSQLTests {
     public DBSPCompiler compileQuery(String statements, String query) {
@@ -106,7 +109,7 @@ public class ArrayTests extends BaseSQLTests {
             else
                 Objects.requireNonNull(result).add(tuple);
         }
-        result.add(new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32)));
+        result.add(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true))));
         this.testQuery("", query, new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
     }
@@ -142,7 +145,7 @@ public class ArrayTests extends BaseSQLTests {
                 Objects.requireNonNull(result).add(tuple);
         }
         result.add(new DBSPTupleExpression(
-                DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32),
+                DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)),
                 new DBSPI32Literal(6)));
 
         this.testQuery("", query, new InputOutputPair(
@@ -157,7 +160,7 @@ public class ArrayTests extends BaseSQLTests {
             DBSPTupleExpression tuple = new DBSPTupleExpression(
                     new DBSPI32Literal(i),
                     i < 4 ? new DBSPI32Literal(4 - 1, true) :
-                            DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32));
+                            DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)));
             if (i == 1)
                 result = new DBSPZSetLiteral.Contents(tuple);
             else
@@ -231,7 +234,7 @@ public class ArrayTests extends BaseSQLTests {
                         new DBSPI32Literal(14))
         );
         DBSPZSetLiteral.Contents result = DBSPZSetLiteral.Contents.emptyWithElementType(
-            new DBSPTypeTuple(DBSPTypeInteger.SIGNED_32, DBSPTypeInteger.SIGNED_32, DBSPTypeInteger.SIGNED_32)
+            new DBSPTypeTuple(new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false), new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false), new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false))
         );
         for (int i = 1; i < 4; i++)
             for (int j = 4; j < 7; j++) {

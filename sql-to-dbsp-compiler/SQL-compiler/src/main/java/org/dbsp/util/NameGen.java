@@ -54,6 +54,8 @@ public class NameGen {
     }
 
     public int getNext() {
+        if (!nextId.containsKey(this.prefix))
+            nextId.put(this.prefix, 0);
         return nextId.get(this.prefix);
     }
 

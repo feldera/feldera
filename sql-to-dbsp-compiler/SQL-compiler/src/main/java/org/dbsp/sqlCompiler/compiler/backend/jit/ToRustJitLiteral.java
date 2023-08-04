@@ -45,22 +45,22 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
         DBSPExpression result;
         if (literal.isNull) {
             result = new DBSPConstructorExpression(
-                    DBSPTypeAny.INSTANCE.path(new DBSPPath("NullableConstant", "null")),
-                    DBSPTypeAny.INSTANCE);
+                    new DBSPTypeAny().path(new DBSPPath("NullableConstant", "null")),
+                    new DBSPTypeAny());
         } else {
             result = new DBSPConstructorExpression(
-                    DBSPTypeAny.INSTANCE.path(
+                    new DBSPTypeAny().path(
                             new DBSPPath("Constant", type)),
-                    DBSPTypeAny.INSTANCE,
+                    new DBSPTypeAny(),
                     rustValue);
             if (literal.mayBeNull()) {
                 result = new DBSPConstructorExpression(
-                        DBSPTypeAny.INSTANCE.path(new DBSPPath("Nullable")),
-                        DBSPTypeAny.INSTANCE, result.some());
+                        new DBSPTypeAny().path(new DBSPPath("Nullable")),
+                        new DBSPTypeAny(), result.some());
             } else {
                 result = new DBSPConstructorExpression(
-                        DBSPTypeAny.INSTANCE.path(new DBSPPath("NonNull")),
-                        DBSPTypeAny.INSTANCE, result);
+                        new DBSPTypeAny().path(new DBSPPath("NonNull")),
+                        new DBSPTypeAny(), result);
             }
         }
         this.map(literal, result);
@@ -75,8 +75,8 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
         TimestampString str = node.getTimestampString();
         DBSPStrLiteral rustLiteral = str == null ? new DBSPStrLiteral("") : new DBSPStrLiteral(str.toString());
         DBSPExpression expression = new DBSPConstructorExpression(
-                DBSPTypeAny.INSTANCE.path(new DBSPPath("NaiveDateTime", "parse_from_str")),
-                DBSPTypeAny.INSTANCE, rustLiteral, new DBSPStrLiteral("%Y-%m-%d %H:%M:%S%.f"));
+                new DBSPTypeAny().path(new DBSPPath("NaiveDateTime", "parse_from_str")),
+                new DBSPTypeAny(), rustLiteral, new DBSPStrLiteral("%Y-%m-%d %H:%M:%S%.f"));
         this.constant("Timestamp", node, expression.unwrap());
         return VisitDecision.STOP;
     }
@@ -86,8 +86,8 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
         DateString str = node.getDateString();
         DBSPStrLiteral rustLiteral = str == null ? new DBSPStrLiteral("") : new DBSPStrLiteral(str.toString());
         DBSPExpression expression = new DBSPConstructorExpression(
-                DBSPTypeAny.INSTANCE.path(new DBSPPath("NaiveDate", "parse_from_str")),
-                DBSPTypeAny.INSTANCE, rustLiteral, new DBSPStrLiteral("%F"));
+                new DBSPTypeAny().path(new DBSPPath("NaiveDate", "parse_from_str")),
+                new DBSPTypeAny(), rustLiteral, new DBSPStrLiteral("%F"));
         this.constant("Date", node, expression.unwrap());
         return VisitDecision.STOP;
     }
@@ -164,8 +164,8 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
     DBSPExpression convertRow(Map.Entry<DBSPExpression, Long> row) {
         DBSPExpression key = this.transform(row.getKey());
         DBSPExpression r = new DBSPConstructorExpression(
-                DBSPTypeAny.INSTANCE.path(new DBSPPath("RowLiteral", "new")),
-                DBSPTypeAny.INSTANCE, key);
+                new DBSPTypeAny().path(new DBSPPath("RowLiteral", "new")),
+                new DBSPTypeAny(), key);
         DBSPExpression value = new DBSPI32Literal(Math.toIntExact(row.getValue()));
         return new DBSPRawTupleExpression(r, value);
     }
@@ -188,8 +188,8 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
             vec = new DBSPVecLiteral(rows);
         }
         DBSPExpression result = new DBSPConstructorExpression(
-                DBSPTypeAny.INSTANCE.path(new DBSPPath("Set")),
-                DBSPTypeAny.INSTANCE, vec);
+                new DBSPTypeAny().path(new DBSPPath("Set")),
+                new DBSPTypeAny(), vec);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

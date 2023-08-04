@@ -41,7 +41,7 @@ public class DBSPBlockExpression extends DBSPExpression {
     public final DBSPExpression lastExpression;
 
     public DBSPBlockExpression(List<DBSPStatement> contents, @Nullable DBSPExpression last) {
-        super(CalciteObject.EMPTY, last != null ? last.getType() : DBSPTypeVoid.INSTANCE);
+        super(CalciteObject.EMPTY, last != null ? last.getType() : new DBSPTypeVoid());
         this.contents = contents;
         this.lastExpression = last;
     }

@@ -33,9 +33,7 @@ import java.util.Objects;
  * An unknown type, represented in code as _.
  */
 public class DBSPTypeAny extends DBSPType {
-    public static final DBSPType INSTANCE = new DBSPTypeAny();
-
-    protected DBSPTypeAny() {
+    public DBSPTypeAny() {
         super(CalciteObject.EMPTY, DBSPTypeCode.ANY, false);
     }
 

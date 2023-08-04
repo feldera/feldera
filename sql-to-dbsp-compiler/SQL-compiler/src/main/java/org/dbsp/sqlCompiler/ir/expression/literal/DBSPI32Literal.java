@@ -33,6 +33,8 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
+
 public class DBSPI32Literal extends DBSPIntLiteral {
     @Nullable
     public final Integer value;
@@ -51,7 +53,7 @@ public class DBSPI32Literal extends DBSPIntLiteral {
     }
 
     public DBSPI32Literal(@Nullable Integer value, boolean nullable) {
-        this(CalciteObject.EMPTY, DBSPTypeInteger.SIGNED_32.setMayBeNull(nullable), value);
+        this(CalciteObject.EMPTY, new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false).setMayBeNull(nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

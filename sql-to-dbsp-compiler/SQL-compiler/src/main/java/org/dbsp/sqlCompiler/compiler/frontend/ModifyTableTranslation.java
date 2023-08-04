@@ -124,7 +124,7 @@ class ModifyTableTranslation implements ICompilerComponent {
         assert this.resultType != null;
         if (this.columnPermutation == null)
             return source;
-        DBSPZSetLiteral result = new DBSPZSetLiteral(this.resultType, DBSPTypeWeight.INSTANCE);
+        DBSPZSetLiteral result = new DBSPZSetLiteral(this.resultType, new DBSPTypeWeight());
         for (Map.Entry<DBSPExpression, Long> e : source.data.data.entrySet()) {
             DBSPExpression perm = this.permuteColumns(e.getKey());
             result.add(perm, e.getValue());

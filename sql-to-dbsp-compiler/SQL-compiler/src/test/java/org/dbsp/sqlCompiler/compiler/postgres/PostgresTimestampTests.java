@@ -26,12 +26,15 @@ package org.dbsp.sqlCompiler.compiler.postgres;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.InputOutputPair;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
 import org.junit.Test;
+
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
 
 /**
  * Tests manually adapted from
@@ -554,7 +557,7 @@ public class PostgresTimestampTests extends PostgresBaseTest {
         };
 
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(d == null ? DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32) :
+                new DBSPTupleExpression(d == null ? DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)) :
                         new DBSPI32Literal(-(int)(shortIntervalToMilliseconds(d) / 60000), true)), DBSPExpression.class);
         String query = "SELECT TIMESTAMPDIFF(MINUTE, d1, timestamp '1997-01-02') AS diff\n" +
                 "   FROM TIMESTAMP_TBL WHERE d1 BETWEEN '1902-01-01' AND '2038-01-01'";
@@ -657,7 +660,7 @@ public class PostgresTimestampTests extends PostgresBaseTest {
             "1460 days 17 hours 32 mins 1 sec"
         };
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(d == null ? DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32) :
+                new DBSPTupleExpression(d == null ? DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)) :
                         new DBSPI32Literal(-(int)(shortIntervalToMilliseconds(d)/1000), true)), DBSPExpression.class);
         this.testQuery(query, new DBSPZSetLiteral.Contents(results));
     }

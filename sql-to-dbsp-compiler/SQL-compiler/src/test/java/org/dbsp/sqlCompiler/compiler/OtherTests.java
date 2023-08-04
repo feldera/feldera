@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.calcite.adapter.jdbc.JdbcSchema;
@@ -78,17 +77,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 public class OtherTests extends BaseSQLTests implements IWritesLogs {
-    static CompilerOptions getOptions() {
-        CompilerOptions options = new CompilerOptions();
-        options.optimizerOptions.throwOnError = true;
-        return options;
-    }
-
     private DBSPCompiler compileDef() {
-        DBSPCompiler compiler = new DBSPCompiler(getOptions());
+        DBSPCompiler compiler = testCompiler();
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 INT NOT NULL" +
                 ", COL2 DOUBLE NOT NULL" +
@@ -117,6 +111,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     // This is also testing the deterministic node numbering
     // The numbering of the nodes will change when the optimizations are changed.
     public void toStringTest() {
+        this.toRustTest();
+
+        System.out.println("RESET");
         NameGen.reset();
         DBSPNode.reset();
         String query = "CREATE VIEW V AS SELECT T.COL3 FROM T";
@@ -125,14 +122,14 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPCircuit circuit = getCircuit(compiler);
         String str = circuit.toString();
         String expected = "Circuit circuit0 {\n" +
-                "    // DBSPSourceOperator 15\n" +
+                "    // DBSPSourceOperator 36\n" +
                 "    // CREATE TABLE T (\n" +
                 "    // COL1 INT NOT NULL, COL2 DOUBLE NOT NULL, COL3 BOOLEAN NOT NULL, COL4 VARCHAR NOT NULL, COL5 INT, COL6 DOUBLE)\n" +
                 "    let T = T();\n" +
-                "    // DBSPMapOperator 63\n" +
+                "    // DBSPMapOperator 97\n" +
                 "    let stream1: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2))));\n" +
                 "    // CREATE VIEW V AS SELECT T.COL3 FROM T\n" +
-                "    // DBSPSinkOperator 67\n" +
+                "    // DBSPSinkOperator 103\n" +
                 "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream1;\n" +
                 "}\n";
         Assert.assertEquals(expected, str);
@@ -173,8 +170,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         CompilerMain.execute("-TCalciteCompiler=2", "-TPasses=2",
                 "-o", BaseSQLTests.testFilePath, file.getPath());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true);
-        boolean success = file.delete();
-        Assert.assertTrue(success);
         Logger.INSTANCE.setDebugStream(save);
         String messages = builder.toString();
         Assert.assertTrue(messages.contains("After optimizer"));
@@ -218,7 +213,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    FROM\n" +
                 "        transactions JOIN demographics\n" +
                 "        ON transactions.cc_num = demographics.cc_num";
-        DBSPCompiler compiler = new DBSPCompiler(getOptions());
+        DBSPCompiler compiler = testCompiler();
         compiler.compileStatement(statement0);
         compiler.compileStatement(statement1);
         compiler.compileStatement(statement2);
@@ -232,7 +227,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void toCsvTest() {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetLiteral s = new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, EndToEndTests.e0, EndToEndTests.e1);
+        DBSPZSetLiteral s = new DBSPZSetLiteral(new DBSPTypeWeight(), EndToEndTests.e0, EndToEndTests.e1);
         StringBuilder builder = new StringBuilder();
         ToCsvVisitor visitor = new ToCsvVisitor(compiler, builder, () -> "");
         visitor.traverse(s);
@@ -247,28 +242,27 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void rustCsvTest() throws IOException, InterruptedException {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetLiteral data = new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, EndToEndTests.e0, EndToEndTests.e1);
-        String fileName = BaseSQLTests.rustDirectory + "/" + "test.csv";
-        File file = ToCsvVisitor.toCsv(compiler, fileName, data);
+        DBSPZSetLiteral data = new DBSPZSetLiteral(new DBSPTypeWeight(), EndToEndTests.e0, EndToEndTests.e1);
+        File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.rustDirectory));
+        file.deleteOnExit();
+        ToCsvVisitor.toCsv(compiler, file, data);
         List<DBSPStatement> list = new ArrayList<>();
         // let src = csv_source::<Tuple3<bool, Option<String>, Option<u32>>, isize>("src/test.csv");
         DBSPLetStatement src = new DBSPLetStatement("src",
                 new DBSPApplyExpression("read_csv", data.getType(),
-                        new DBSPStrLiteral(fileName)));
+                        new DBSPStrLiteral(file.getAbsolutePath())));
         list.add(src);
         list.add(new DBSPExpressionStatement(new DBSPApplyExpression(
-                "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
+                "assert_eq!", new DBSPTypeVoid(), src.getVarReference(),
                 data)));
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
-                DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
+                new DBSPTypeVoid(), body, Linq.list("#[test]"));
 
         RustFileWriter writer = new RustFileWriter(compiler, BaseSQLTests.testFilePath);
         writer.add(tester);
         writer.writeAndClose();
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
-        boolean success = file.delete();
-        Assert.assertTrue(success);
     }
 
     @SuppressWarnings("SqlDialectInspection")
@@ -286,7 +280,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPCompiler compiler = testCompiler();
 
         DBSPZSetLiteral data = new DBSPZSetLiteral(
-                DBSPTypeWeight.INSTANCE, EndToEndTests.e0NoDouble, EndToEndTests.e1NoDouble);
+                new DBSPTypeWeight(), EndToEndTests.e0NoDouble, EndToEndTests.e1NoDouble);
         List<DBSPStatement> list = new ArrayList<>();
 
         String connectionString = "sqlite://" + filepath;
@@ -311,58 +305,56 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPLetStatement src = new DBSPLetStatement("src", readDb);
         list.add(src);
         list.add(new DBSPExpressionStatement(new DBSPApplyExpression(
-                "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
+                "assert_eq!", new DBSPTypeVoid(), src.getVarReference(),
                 data)));
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
-                DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
+                new DBSPTypeVoid(), body, Linq.list("#[test]"));
 
         RustFileWriter writer = new RustFileWriter(compiler, BaseSQLTests.testFilePath);
         writer.add(tester);
         writer.writeAndClose();
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
-        boolean success = new File(filepath).delete();
-        Assert.assertTrue(success);
     }
 
     @Test
     public void rustCsvTest2() throws IOException, InterruptedException {
         DBSPCompiler compiler = testCompiler();
         DBSPZSetLiteral data = new DBSPZSetLiteral(
-                DBSPTypeWeight.INSTANCE,
+                new DBSPTypeWeight(),
                 new DBSPTupleExpression(new DBSPI32Literal(1, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(2, true)),
-                new DBSPTupleExpression(DBSPI32Literal.none(DBSPTypeInteger.NULLABLE_SIGNED_32))
+                new DBSPTupleExpression(DBSPI32Literal.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))
         );
-        String fileName = BaseSQLTests.rustDirectory + "/" + "test.csv";
-        File file = ToCsvVisitor.toCsv(compiler, fileName, data);
+        File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.rustDirectory));
+        file.deleteOnExit();
+        ToCsvVisitor.toCsv(compiler, file, data);
         List<DBSPStatement> list = new ArrayList<>();
         DBSPLetStatement src = new DBSPLetStatement("src",
                 new DBSPApplyExpression("read_csv", data.getType(),
-                        new DBSPStrLiteral(fileName)));
+                        new DBSPStrLiteral(file.getAbsolutePath())));
         list.add(src);
         list.add(new DBSPExpressionStatement(new DBSPApplyExpression(
-                "assert_eq!", DBSPTypeVoid.INSTANCE, src.getVarReference(),
+                "assert_eq!", new DBSPTypeVoid(), src.getVarReference(),
                 data)));
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
-                DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
+                new DBSPTypeVoid(), body, Linq.list("#[test]"));
 
         PrintStream outputStream = new PrintStream(BaseSQLTests.testFilePath, "UTF-8");
         RustFileWriter writer = new RustFileWriter(compiler, outputStream);
         writer.add(tester);
         writer.writeAndClose();
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
-        boolean success = file.delete();
-        Assert.assertTrue(success);
     }
 
-    File createInputScript(String... contents) throws FileNotFoundException, UnsupportedEncodingException {
-        String inputScript = rustDirectory + "/script.sql";
-        PrintWriter script = new PrintWriter(inputScript, "UTF-8");
+    File createInputScript(String... contents) throws IOException {
+        File result = File.createTempFile("script", ".sql", new File(rustDirectory));
+        result.deleteOnExit();
+        PrintWriter script = new PrintWriter(result, "UTF-8");
         script.println(String.join(";\n", contents));
         script.close();
-        return new File(inputScript);
+        return result;
     }
 
     @Test
@@ -397,8 +389,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         File file = this.createInputScript(statements);
         CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
-        boolean success = file.delete();
-        Assert.assertTrue(success);
     }
     
     @Test
@@ -470,8 +460,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    } ]\n" +
                 "  } ]\n" +
                 "}", jsonContents);
-        boolean success = file.delete();
-        Assert.assertTrue(success);
     }
 
     @Test @Ignore("Only run if we want to preserve casing for names")
@@ -504,8 +492,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertTrue(jsonContents.contains("COL1"));
         Assert.assertTrue(jsonContents.contains("yourtable"));
         Assert.assertTrue(jsonContents.contains("column1"));
-        boolean success = file.delete();
-        Assert.assertTrue(success);
     }
 
     @Test
@@ -519,15 +505,12 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         };
         File file = this.createInputScript(statements);
         File json = File.createTempFile("out", ".json", new File("."));
+        json.deleteOnExit();
         CompilerMessages message = CompilerMain.execute("-j", "-o", json.getPath(), file.getPath());
         Assert.assertEquals(message.exitCode, 0);
         ObjectMapper mapper = new ObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
-        boolean success = file.delete();
-        Assert.assertTrue(success);
-        success = json.delete();
-        Assert.assertTrue(success);
     }
 
     @Test
@@ -546,12 +529,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertEquals(message.exitCode, 0);
         Assert.assertTrue(file.exists());
         ImageIO.read(new File(png.getPath()));
-        boolean success = file.delete();
-        Assert.assertTrue(success);
     }
 
     @Test
-    public void compilerError() throws FileNotFoundException, UnsupportedEncodingException {
+    public void compilerError() throws IOException {
         String statement = "CREATE TABLE T (\n" +
                 "  COL1 INT NOT NULL" +
                 ", COL2 GARBAGE";
@@ -564,7 +545,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void warningTest() throws FileNotFoundException, UnsupportedEncodingException {
+    public void warningTest() throws IOException {
         String statements = "CREATE TABLE T (COL1 INT);\n" +
                 "CREATE TABLE S (COL1 INT);\n" +
                 "CREATE VIEW V AS SELECT * FROM S";
@@ -579,7 +560,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void errorTest() throws FileNotFoundException, UnsupportedEncodingException {
+    public void errorTest() throws IOException {
         String[] statements = new String[]{
                 "This is not SQL"
         };
@@ -613,9 +594,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertFalse(msg.warning);
         Assert.assertEquals(msg.message, "cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n" +
                 "LINESTRING (0 0, 0 0):GEOMETRY");
-
-        boolean success = file.delete();
-        Assert.assertTrue(success);
     }
 
     @Test
@@ -651,7 +629,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void jsonErrorTest() throws FileNotFoundException, UnsupportedEncodingException, JsonProcessingException {
+    public void jsonErrorTest() throws IOException {
         String[] statements = new String[] {
                 "CREATE VIEW V AS SELECT * FROM T"
         };

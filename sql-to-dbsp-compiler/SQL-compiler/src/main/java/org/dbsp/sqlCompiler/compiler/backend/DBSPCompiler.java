@@ -59,6 +59,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
+
 /**
  * This class compiles SQL statements into DBSP circuits.
  * The protocol is:
@@ -143,11 +146,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
         if (options.ioOptions.jit) {
             // The JIT has hardwired I32 for the weight type.
-            this.weightTypeImplementation = DBSPTypeInteger.SIGNED_32;
+            this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false);
         } else {
-            this.weightTypeImplementation = DBSPTypeInteger.SIGNED_64;
+            this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false);
         }
-        this.weightVar = DBSPTypeWeight.INSTANCE.var("w");
+        this.weightVar = new DBSPTypeWeight().var("w");
     }
 
     /**

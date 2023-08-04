@@ -78,7 +78,7 @@ public class Simplify extends InnerRewriteVisitor {
         this.pop(expression);
         DBSPExpression result = expression;
         if (!source.getType().mayBeNull)
-            result = DBSPBoolLiteral.FALSE;
+            result = new DBSPBoolLiteral(false);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

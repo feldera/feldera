@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -37,23 +38,20 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.NULL;
  * This type has a single value, NULL.
  */
 public class DBSPTypeNull extends DBSPTypeBaseType {
-    public static final DBSPType INSTANCE = new DBSPTypeNull(CalciteObject.EMPTY, true);
-
-    @SuppressWarnings("SameParameterValue")
-    protected DBSPTypeNull(CalciteObject node, boolean mayBeNull) {
-        super(node, NULL, mayBeNull);
+    public DBSPTypeNull(CalciteObject node) {
+        super(node, NULL, true);
     }
 
     @Override
     public DBSPLiteral defaultValue() {
-        return DBSPNullLiteral.INSTANCE;
+        return new DBSPNullLiteral();
     }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
-        return new DBSPTypeNull(this.getNode(), mayBeNull);
+        throw new UnsupportedException("Null type must be nullable", this.getNode());
     }
 
     @Override

@@ -38,10 +38,7 @@ import java.util.Objects;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TIME;
 
 public class DBSPTypeTime extends DBSPTypeBaseType implements IsNumericType, IsDateType {
-    public static final DBSPTypeTime INSTANCE = new DBSPTypeTime(CalciteObject.EMPTY, false);
-    public static final DBSPTypeTime NULLABLE_INSTANCE = new DBSPTypeTime(CalciteObject.EMPTY, true);
-
-    protected DBSPTypeTime(CalciteObject node, boolean mayBeNull) {
+    public DBSPTypeTime(CalciteObject node, boolean mayBeNull) {
         super(node, TIME, mayBeNull);
     }
 

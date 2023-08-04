@@ -30,6 +30,7 @@ import net.hydromatic.sqllogictest.TestStatistics;
 import net.hydromatic.sqllogictest.executors.JdbcExecutor;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -50,6 +51,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
 
 /**
  * This is a hybrid test executor which keeps all the state in a
@@ -94,15 +97,15 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                     nullable = false;
                 switch (columnType) {
                     case INTEGER:
-                        colTypes[i1] = DBSPTypeInteger.SIGNED_32.setMayBeNull(nullable);
+                        colTypes[i1] = new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false).setMayBeNull(nullable);
                         break;
                     case REAL:
                     case DOUBLE:
-                        colTypes[i1] = DBSPTypeDouble.INSTANCE.setMayBeNull(nullable);
+                        colTypes[i1] = new DBSPTypeDouble(CalciteObject.EMPTY,false).setMayBeNull(nullable);
                         break;
                     case VARCHAR:
                     case LONGVARCHAR:
-                        colTypes[i1] = DBSPTypeString.UNLIMITED_INSTANCE.setMayBeNull(nullable);
+                        colTypes[i1] = new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false).setMayBeNull(nullable);
                         break;
                     default:
                         throw new RuntimeException("Unexpected column type " + columnType);
@@ -116,19 +119,19 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                     if (type.is(DBSPTypeInteger.class)) {
                         int value = rs.getInt(i + 1);
                         if (rs.wasNull())
-                            exp = DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32);
+                            exp = DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true));
                         else
                             exp = new DBSPI32Literal(value, type.mayBeNull);
                     } else if (type.is(DBSPTypeDouble.class)) {
                         double value = rs.getDouble(i + 1);
                         if (rs.wasNull())
-                            exp = DBSPLiteral.none(DBSPTypeDouble.NULLABLE_INSTANCE);
+                            exp = DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true));
                         else
                             exp = new DBSPDoubleLiteral(value, type.mayBeNull);
                     } else {
                         String s = rs.getString(i + 1);
                         if (s == null)
-                            exp = DBSPLiteral.none(DBSPTypeString.UNLIMITED_INSTANCE.setMayBeNull(true));
+                            exp = DBSPLiteral.none(new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false).setMayBeNull(true));
                         else
                             exp = new DBSPStringLiteral(s, StandardCharsets.UTF_8, type.mayBeNull);
                     }
@@ -139,8 +142,8 @@ public class DbspJdbcExecutor extends DBSPExecutor {
             }
             rs.close();
             if (rows.size() == 0)
-                return new DBSPZSetLiteral(new DBSPTypeTuple(colTypes), DBSPTypeWeight.INSTANCE);
-            return new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, rows.toArray(new DBSPExpression[0]));
+                return new DBSPZSetLiteral(new DBSPTypeTuple(colTypes), new DBSPTypeWeight());
+            return new DBSPZSetLiteral(new DBSPTypeWeight(), rows.toArray(new DBSPExpression[0]));
         }
     }
 

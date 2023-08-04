@@ -38,12 +38,6 @@ public class DBSPTypeString extends DBSPTypeBaseType {
     public static final int UNLIMITED_PRECISION = -1;
 
     /**
-     * Strings with unlimited precision.
-     */
-    public static final DBSPTypeString UNLIMITED_INSTANCE =
-            new DBSPTypeString(CalciteObject.EMPTY, UNLIMITED_PRECISION, false, false);
-
-    /**
      * If true the width is fixed, i.e., this is a CHAR type.
      * Otherwise, this is a VARCHAR.
      */

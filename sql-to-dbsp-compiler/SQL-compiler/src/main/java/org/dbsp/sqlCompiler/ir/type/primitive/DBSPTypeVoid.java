@@ -9,9 +9,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.VOID;
 
 public class DBSPTypeVoid extends DBSPTypeBaseType {
-    public static final DBSPTypeVoid INSTANCE = new DBSPTypeVoid();
-
-    protected DBSPTypeVoid() {
+    public DBSPTypeVoid() {
         super(CalciteObject.EMPTY, VOID, false);
     }
 

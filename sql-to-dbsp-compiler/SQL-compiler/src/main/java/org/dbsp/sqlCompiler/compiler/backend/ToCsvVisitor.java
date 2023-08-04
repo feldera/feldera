@@ -145,14 +145,13 @@ public class ToCsvVisitor extends InnerVisitor {
     /**
      * Write a literal to a file as a csv format.
      * @param reporter    A reference to an error reporter.
-     * @param fileName    File to write to.
-     * @param literal Literal to write.
+     * @param file        File to write to.
+     * @param literal     Literal to write.
      */
-    public static File toCsv(IErrorReporter reporter, String fileName, DBSPZSetLiteral literal) throws IOException {
+    public static File toCsv(IErrorReporter reporter, File file, DBSPZSetLiteral literal) throws IOException {
         StringBuilder builder = new StringBuilder();
         ToCsvVisitor visitor = new ToCsvVisitor(reporter, builder, () -> "");
         visitor.traverse(literal);
-        File file = new File(fileName);
         FileWriter writer = new FileWriter(file);
         writer.write(builder.toString());
         writer.close();

@@ -49,7 +49,7 @@ public class DBSPStrLiteral extends DBSPLiteral {
     }
 
     public DBSPStrLiteral(String value, boolean nullable, boolean raw) {
-        this(CalciteObject.EMPTY, DBSPTypeStr.INSTANCE.setMayBeNull(nullable), value, raw);
+        this(CalciteObject.EMPTY, new DBSPTypeStr(CalciteObject.EMPTY,false).setMayBeNull(nullable), value, raw);
     }
 
     @Override

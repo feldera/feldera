@@ -33,7 +33,7 @@ public class DBSPAssignmentExpression extends DBSPExpression {
     public final DBSPExpression right;
 
     public DBSPAssignmentExpression(DBSPExpression left, DBSPExpression right) {
-        super(left.getNode(), DBSPTypeVoid.INSTANCE);
+        super(left.getNode(), new DBSPTypeVoid());
         this.left = left;
         this.right = right;
     }

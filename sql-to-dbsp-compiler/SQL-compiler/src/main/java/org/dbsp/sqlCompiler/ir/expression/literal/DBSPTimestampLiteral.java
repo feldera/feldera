@@ -46,15 +46,15 @@ public class DBSPTimestampLiteral extends DBSPLiteral {
     }
 
     public DBSPTimestampLiteral(long value) {
-        this(CalciteObject.EMPTY, DBSPTypeTimestamp.INSTANCE, value);
+        this(CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, false), value);
     }
 
     public DBSPTimestampLiteral() {
-        this(CalciteObject.EMPTY, DBSPTypeTimestamp.NULLABLE_INSTANCE, (Long)null);
+        this(CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, true), (Long)null);
     }
 
     public DBSPTimestampLiteral(String string, boolean mayBeNull) {
-        this(CalciteObject.EMPTY, DBSPTypeTimestamp.INSTANCE.setMayBeNull(mayBeNull), createTimestampString(string));
+        this(CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, false).setMayBeNull(mayBeNull), createTimestampString(string));
     }
 
     static TimestampString createTimestampString(String timestamp) {

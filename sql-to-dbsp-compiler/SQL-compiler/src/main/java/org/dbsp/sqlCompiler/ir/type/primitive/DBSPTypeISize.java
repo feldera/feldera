@@ -38,12 +38,9 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ISIZE;
 /**
  * Represents the usize Rust type.
  */
-public class DBSPTypeISize extends DBSPTypeBaseType
-        implements IsNumericType {
-    public static final DBSPTypeISize INSTANCE =new DBSPTypeISize(CalciteObject.EMPTY, false);
-
+public class DBSPTypeISize extends DBSPTypeBaseType implements IsNumericType {
     @SuppressWarnings("SameParameterValue")
-    protected DBSPTypeISize(CalciteObject node, boolean mayBeNull) {
+    public DBSPTypeISize(CalciteObject node, boolean mayBeNull) {
         super(node, ISIZE, mayBeNull);
     }
 

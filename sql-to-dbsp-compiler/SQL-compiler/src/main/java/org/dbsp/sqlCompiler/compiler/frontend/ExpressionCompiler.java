@@ -48,6 +48,9 @@ import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.NULL;
+
 public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implements IWritesLogs, ICompilerComponent {
     private final TypeCompiler typeCompiler;
     @Nullable
@@ -200,7 +203,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             if (ri != null) {
                 int width = Math.max(li.getWidth(), ri.getWidth());
                 return new DBSPTypeInteger(left.getNode(),
-                        DBSPTypeInteger.NULLABLE_SIGNED_64.getCode(width, true),
+                        new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,true).getCode(width, true),
                         width, true, false);
             }
             if (rf != null || rd != null)
@@ -265,9 +268,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 // Result is always NULL.  Perhaps we should give a warning?
                 return DBSPLiteral.none(type);
             }
-            if (!leftType.setMayBeNull(false).sameType(commonBase))
+            if (leftType.code == NULL || !leftType.setMayBeNull(false).sameType(commonBase))
                 left = left.cast(commonBase.setMayBeNull(leftType.mayBeNull));
-            if (!rightType.setMayBeNull(false).sameType(commonBase))
+            if (rightType.code == NULL || !rightType.setMayBeNull(false).sameType(commonBase))
                 right = right.cast(commonBase.setMayBeNull(rightType.mayBeNull));
         }
         // TODO: we don't need the whole function here, just the result type.
@@ -466,7 +469,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return makeBinaryExpression(node, type, DBSPOpcode.IS_DISTINCT, ops);
             case IS_NOT_DISTINCT_FROM: {
                 DBSPExpression op = makeBinaryExpression(node, type, DBSPOpcode.IS_DISTINCT, ops);
-                return makeUnaryExpression(node, DBSPTypeBool.INSTANCE, DBSPOpcode.NOT, Linq.list(op));
+                return makeUnaryExpression(node, new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.NOT, Linq.list(op));
             }
             case NOT_EQUALS:
                 return makeBinaryExpression(node, type, DBSPOpcode.NEQ, ops);
@@ -499,7 +502,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return ops.get(0).cast(type);
             case IS_NULL:
             case IS_NOT_NULL: {
-                if (!type.sameType(DBSPTypeBool.INSTANCE))
+                if (!type.sameType(new DBSPTypeBool(CalciteObject.EMPTY, false)))
                     throw new InternalCompilerError("Expected expression to produce a boolean result", node);
                 DBSPExpression arg = ops.get(0);
                 DBSPType argType = arg.getType();
@@ -539,7 +542,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         if (!alt.getType().sameType(finalType))
                             alt = alt.cast(finalType);
                         DBSPExpression comp = makeBinaryExpression(
-                                node, DBSPTypeBool.INSTANCE, DBSPOpcode.EQ,
+                                node, new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.EQ,
                                 Linq.list(value, ops.get(i)));
                         comp = wrapBoolIfNeeded(comp);
                         result = new DBSPIfExpression(node, comp, alt, result);
@@ -682,10 +685,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             case ARRAY_TO_STRING: {
                 // Calcite does not enforce the type of the arguments, why?
                 DBSPExpression op1 = ops.get(1);
-                ops.set(1, this.castTo(op1, DBSPTypeString.UNLIMITED_INSTANCE));
+                ops.set(1, this.castTo(op1, new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false)));
                 if (ops.size() > 2) {
                     DBSPExpression op2 = ops.get(2);
-                    ops.set(2, this.castTo(op2, DBSPTypeString.UNLIMITED_INSTANCE));
+                    ops.set(2, this.castTo(op2, new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false)));
                 }
                 return this.compileFunction(call, node, type, ops, 2, 3);
             }
@@ -713,7 +716,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 if (call.operands.size() != 2)
                     throw new UnimplementedException(node);
                 return new DBSPBinaryExpression(node, type, DBSPOpcode.SQL_INDEX,
-                        ops.get(0), ops.get(1).cast(DBSPTypeUSize.INSTANCE));
+                        ops.get(0), ops.get(1).cast(new DBSPTypeUSize(CalciteObject.EMPTY, false)));
             }
             case TRIM: {
                 return this.compileKeywordFunction(call, node, null, type, ops, 0, 3);

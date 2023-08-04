@@ -14,18 +14,16 @@ import javax.annotation.Nullable;
  * A literal with type NULL, the only value of this type.
  */
 public class DBSPNullLiteral extends DBSPLiteral {
-    public static final DBSPNullLiteral INSTANCE = new DBSPNullLiteral();
-
     public DBSPNullLiteral(CalciteObject node, DBSPType type, @Nullable Object value) {
-        super(node,  type, true);
+        super(node, type, true);
         if (value != null)
             throw new InternalCompilerError("Value must be null", this);
-        if (!this.getType().sameType(DBSPTypeNull.INSTANCE))
+        if (!this.getType().sameType(new DBSPTypeNull(CalciteObject.EMPTY)))
             throw new InternalCompilerError("Type must be NULL", this);
     }
 
     public DBSPNullLiteral() {
-        this(CalciteObject.EMPTY, DBSPTypeNull.INSTANCE, null);
+        this(CalciteObject.EMPTY, new DBSPTypeNull(CalciteObject.EMPTY), null);
     }
 
     @Override

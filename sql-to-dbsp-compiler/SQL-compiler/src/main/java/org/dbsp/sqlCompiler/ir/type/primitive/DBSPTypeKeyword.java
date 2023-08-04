@@ -38,9 +38,7 @@ import java.util.Objects;
  * It should never surface in code.
  */
 public class DBSPTypeKeyword extends DBSPTypeBaseType {
-    public static final DBSPTypeKeyword INSTANCE = new DBSPTypeKeyword();
-
-    protected DBSPTypeKeyword() {
+    public DBSPTypeKeyword() {
         super(CalciteObject.EMPTY, DBSPTypeCode.KEYWORD, false);
     }
 
