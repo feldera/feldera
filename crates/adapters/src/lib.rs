@@ -5,7 +5,7 @@
 //! consumers.
 //!
 //! Defines the APIs to integrate different transport technologies
-//! (files, Kafka streams, database connections, etc.) and data
+//! (files, URLs, Kafka streams, database connections, etc.) and data
 //! formats (CSV, bincode, JSON, etc.) into the DBSP input and output
 //! pipelines.
 //!

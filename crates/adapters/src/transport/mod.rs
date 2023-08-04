@@ -19,6 +19,8 @@
 //!   * `file`, for input from a file via [`FileInputTransport`] or output to a
 //!     file via [`FileOutputTransport`].
 //!
+//!   * `url`, for input from an HTTP or HTTPS url via [`UrlInputTransport`].
+//!
 //!   * `kafka`, for input from [Kafka](https://kafka.apache.org/) via
 //!     [`KafkaInputTransport`] or output to Kafka via [`KafkaOutputTransport`],
 //!     if the `with-kafka` feature is enabled.
@@ -39,10 +41,13 @@ use std::collections::BTreeMap;
 mod file;
 pub mod http;
 
+pub mod url;
+
 #[cfg(feature = "with-kafka")]
 pub(crate) mod kafka;
 
 pub use file::{FileInputConfig, FileInputTransport, FileOutputConfig, FileOutputTransport};
+pub use url::{UrlInputConfig, UrlInputTransport};
 
 #[cfg(feature = "with-kafka")]
 pub use kafka::{
@@ -57,6 +62,10 @@ static INPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn InputTransport>>> = 
         (
             "file",
             Box::new(FileInputTransport) as Box<dyn InputTransport>,
+        ),
+        (
+            "url",
+            Box::new(UrlInputTransport) as Box<dyn InputTransport>,
         ),
         #[cfg(feature = "with-kafka")]
         (
