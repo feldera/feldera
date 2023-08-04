@@ -61,26 +61,27 @@ impl TestHttpReceiver {
             data.extend_from_slice(&bytes);
 
             if data[data.len() - 1] == b'\n' {
-                let chunk: Chunk = serde_json::from_slice(&data).unwrap();
+                for chunk in serde_json::Deserializer::from_slice(&data).into_iter::<Chunk>() {
+                    let chunk = chunk.unwrap();
+                    println!("TestHttpReceiver: chunk {}", chunk.sequence_number);
 
-                println!("TestHttpReceiver: chunk {}", chunk.sequence_number);
-
-                let mut builder = CsvReaderBuilder::new();
-                builder.has_headers(false);
-                let mut reader = builder.from_reader(if let Some(csv) = &chunk.text_data {
-                    csv.as_bytes()
-                } else {
-                    continue;
-                });
-                // let mut num_received = 0;
-                for (record, w) in reader
-                    .deserialize::<(TestStruct, i32)>()
-                    .map(Result::unwrap)
-                {
-                    // num_received += 1;
-                    assert_eq!(w, 1);
-                    // println!("received record: {:?}", record);
-                    received.push(record);
+                    let mut builder = CsvReaderBuilder::new();
+                    builder.has_headers(false);
+                    let mut reader = builder.from_reader(if let Some(csv) = &chunk.text_data {
+                        csv.as_bytes()
+                    } else {
+                        continue;
+                    });
+                    // let mut num_received = 0;
+                    for (record, w) in reader
+                        .deserialize::<(TestStruct, i32)>()
+                        .map(Result::unwrap)
+                    {
+                        // num_received += 1;
+                        assert_eq!(w, 1);
+                        // println!("received record: {:?}", record);
+                        received.push(record);
+                    }
                 }
                 data.clear();
             }
