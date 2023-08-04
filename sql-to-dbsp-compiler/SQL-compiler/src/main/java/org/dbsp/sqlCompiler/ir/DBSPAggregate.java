@@ -391,13 +391,13 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                 typeArgs = new DBSPType[0];
             } else {
                 typeArgs = new DBSPType[4];
-                typeArgs[0] = DBSPTypeAny.INSTANCE;
+                typeArgs[0] = new DBSPTypeAny();
                 typeArgs[1] = this.semigroup;
-                typeArgs[2] = DBSPTypeAny.INSTANCE;
-                typeArgs[3] = DBSPTypeAny.INSTANCE;
+                typeArgs[2] = new DBSPTypeAny();
+                typeArgs[3] = new DBSPTypeAny();
             }
 
-            DBSPExpression constructor = DBSPTypeAny.INSTANCE.path(
+            DBSPExpression constructor = new DBSPTypeAny().path(
                     new DBSPPath(
                             new DBSPSimplePathSegment("Fold", typeArgs),
                             new DBSPSimplePathSegment("with_output")));

@@ -42,7 +42,7 @@ public class DBSPTimeLiteral extends DBSPLiteral {
     }
 
     public DBSPTimeLiteral() {
-        this(CalciteObject.EMPTY, DBSPTypeTime.NULLABLE_INSTANCE, null);
+        this(CalciteObject.EMPTY, new DBSPTypeTime(CalciteObject.EMPTY, true), null);
     }
 
     @Override

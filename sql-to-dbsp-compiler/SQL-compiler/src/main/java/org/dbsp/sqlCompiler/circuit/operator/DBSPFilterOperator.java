@@ -36,7 +36,7 @@ import java.util.Objects;
 public class DBSPFilterOperator extends DBSPUnaryOperator {
     public DBSPFilterOperator(CalciteObject node, DBSPExpression condition, DBSPOperator input) {
         super(node, "filter", condition, input.outputType, input.isMultiset, input);
-        this.checkResultType(condition, DBSPTypeBool.INSTANCE);
+        this.checkResultType(condition, new DBSPTypeBool(CalciteObject.EMPTY, false));
     }
 
     @Override

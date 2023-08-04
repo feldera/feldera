@@ -118,6 +118,7 @@ public class BaseSQLTests {
         options.optimizerOptions.throwOnError = true;
         options.optimizerOptions.generateInputForEveryTable = true;
         options.ioOptions.jit = jit;
+        options.ioOptions.quiet = true;
         options.optimizerOptions.incrementalize = incremental;
         options.optimizerOptions.optimizationLevel = optimize ? 2 : 1;
         return options;

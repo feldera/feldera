@@ -108,7 +108,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
         } else if (type.is(DBSPTypeTuple.class)) {
             return new DBSPTupleExpression(type.to(DBSPTypeTuple.class));
         } else if (type.is(DBSPTypeNull.class)) {
-            return DBSPNullLiteral.INSTANCE;
+            return new DBSPNullLiteral();
         } else if (type.is(DBSPTypeTimestamp.class)) {
             return new DBSPTimestampLiteral();
         }

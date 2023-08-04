@@ -67,6 +67,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
         options.ioOptions.lexicalRules = Lex.ORACLE;
+        options.ioOptions.quiet = true;
         options.optimizerOptions.throwOnError = true;
         options.optimizerOptions.optimizationLevel = optimize ? 2 : 0;
         options.optimizerOptions.generateInputForEveryTable = true;
@@ -103,7 +104,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
      */
     public static DBSPExpression convertTimestamp(@Nullable String timestamp, boolean mayBeNull) {
         if (timestamp == null)
-            return DBSPLiteral.none(DBSPTypeTimestamp.NULLABLE_INSTANCE);
+            return DBSPLiteral.none(new DBSPTypeTimestamp(CalciteObject.EMPTY, true));
         for (SimpleDateFormat input: TIMESTAMP_INPUT_FORMAT) {
             String out;
             try {
@@ -130,7 +131,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
      */
     static DBSPExpression parseDate(@Nullable String date) {
         if (date == null || date.isEmpty() || date.equalsIgnoreCase("null"))
-            return DBSPLiteral.none(DBSPTypeDate.NULLABLE_INSTANCE);
+            return DBSPLiteral.none(new DBSPTypeDate(CalciteObject.EMPTY, true));
         try {
             Date converted = DATE_INPUT_FORMAT.parse(date);
             String out = DATE_OUTPUT_FORMAT.format(converted);
@@ -142,8 +143,8 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
 
     static DBSPExpression parseTime(@Nullable String time) {
         if (time == null || time.isEmpty() || time.equalsIgnoreCase("null"))
-            return DBSPLiteral.none(DBSPTypeTime.NULLABLE_INSTANCE);
-        return new DBSPTimeLiteral(CalciteObject.EMPTY, DBSPTypeTime.NULLABLE_INSTANCE, new TimeString(time));
+            return DBSPLiteral.none(new DBSPTypeTime(CalciteObject.EMPTY, true));
+        return new DBSPTimeLiteral(CalciteObject.EMPTY, new DBSPTypeTime(CalciteObject.EMPTY, true), new TimeString(time));
     }
 
     static final Pattern YEAR = Pattern.compile("^(\\d+) years?(.*)");

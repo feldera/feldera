@@ -69,13 +69,13 @@ public class DBSPStringLiteral extends DBSPLiteral {
     }
 
     public DBSPStringLiteral(@Nullable String value, Charset charset, boolean nullable) {
-        this(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_INSTANCE.setMayBeNull(nullable), value, charset);
+        this(CalciteObject.EMPTY, new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false).setMayBeNull(nullable), value, charset);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
 
     public DBSPStringLiteral(@Nullable String value, boolean nullable) {
-        this(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_INSTANCE.setMayBeNull(nullable), value, StandardCharsets.UTF_8);
+        this(CalciteObject.EMPTY, new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false).setMayBeNull(nullable), value, StandardCharsets.UTF_8);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

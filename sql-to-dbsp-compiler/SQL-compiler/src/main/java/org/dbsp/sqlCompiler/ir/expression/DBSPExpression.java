@@ -65,7 +65,7 @@ public abstract class DBSPExpression
     }
 
     public DBSPExpression unwrap() {
-        return new DBSPApplyMethodExpression(this.getNode(), "unwrap", DBSPTypeAny.INSTANCE, this);
+        return new DBSPApplyMethodExpression(this.getNode(), "unwrap", new DBSPTypeAny(), this);
     }
 
     public DBSPExpression borrow(boolean mutable) {
@@ -89,7 +89,7 @@ public abstract class DBSPExpression
 
     public DBSPExpression is_null() {
         if (!this.getType().mayBeNull)
-            return DBSPBoolLiteral.FALSE;
+            return new DBSPBoolLiteral(false);
         return new DBSPIsNullExpression(this.getNode(), this);
     }
 

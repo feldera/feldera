@@ -73,7 +73,7 @@ public class DBSPFlatmap extends DBSPExpression {
     public DBSPFlatmap(CalciteObject node, DBSPTypeTuple inputElementType,
                        int collectionFieldIndex, List<Integer> outputFieldIndexes,
                        @Nullable DBSPType indexType) {
-        super(node, DBSPTypeAny.INSTANCE);
+        super(node, new DBSPTypeAny());
         this.inputElementType = inputElementType;
         this.collectionFieldIndex = collectionFieldIndex;
         this.outputFieldIndexes = outputFieldIndexes;

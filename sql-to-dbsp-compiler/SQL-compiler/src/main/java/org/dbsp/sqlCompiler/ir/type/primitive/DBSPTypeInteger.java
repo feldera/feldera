@@ -43,25 +43,6 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     private final int width;
     public final boolean signed;
 
-    public static final DBSPTypeInteger SIGNED_8 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, INT8,  8, true,false);
-    public static final DBSPTypeInteger SIGNED_16 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, INT16, 16, true,false);
-    public static final DBSPTypeInteger SIGNED_32 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false);
-    public static final DBSPTypeInteger SIGNED_64 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false);
-    public static final DBSPTypeInteger UNSIGNED_32 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, UINT32,32, false,false);
-    public static final DBSPTypeInteger UNSIGNED_64 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, UINT64,64, false,false);
-    public static final DBSPTypeInteger NULLABLE_SIGNED_16 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, INT16,16, true,true);
-    public static final DBSPTypeInteger NULLABLE_SIGNED_32 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true);
-    public static final DBSPTypeInteger NULLABLE_SIGNED_64 =
-            new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,true);
-
     public DBSPTypeCode getCode(int width, boolean signed) {
         if (signed) {
             switch (width) {

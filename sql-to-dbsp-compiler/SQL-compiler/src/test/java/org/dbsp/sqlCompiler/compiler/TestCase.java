@@ -81,7 +81,7 @@ class TestCase {
         if (!this.name.isEmpty())
             list.add(new DBSPComment(this.name));
         DBSPLetStatement circuit = new DBSPLetStatement("circuit",
-                new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.INSTANCE), true);
+                new DBSPApplyExpression(this.circuit.name, new DBSPTypeAny()), true);
         list.add(circuit);
         for (InputOutputPair pairs : this.data) {
             DBSPZSetLiteral[] inputs = pairs.getInputs();
@@ -91,8 +91,8 @@ class TestCase {
             list.add(out);
             for (int i = 0; i < pairs.outputs.length; i++) {
                 DBSPStatement compare = new DBSPExpressionStatement(
-                        new DBSPApplyExpression("assert!", DBSPTypeVoid.INSTANCE,
-                                new DBSPApplyExpression("must_equal", DBSPTypeBool.INSTANCE,
+                        new DBSPApplyExpression("assert!", new DBSPTypeVoid(),
+                                new DBSPApplyExpression("must_equal", new DBSPTypeBool(CalciteObject.EMPTY, false),
                                         out.getVarReference().field(i).borrow(),
                                         outputs[i].borrow()),
                                 new DBSPStrLiteral(this.name, false, true)));
@@ -101,7 +101,7 @@ class TestCase {
         }
         DBSPExpression body = new DBSPBlockExpression(list, null);
         return new DBSPFunction("test" + testNumber, new ArrayList<>(),
-                DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
+                new DBSPTypeVoid(), body, Linq.list("#[test]"));
     }
 
     /**
@@ -120,24 +120,24 @@ class TestCase {
 
         String json = program.asJson().toPrettyString();
         DBSPStrLiteral value = new DBSPStrLiteral(json, false, true);
-        DBSPConstItem item = new DBSPConstItem("CIRCUIT", DBSPTypeStr.INSTANCE.ref(), value);
+        DBSPConstItem item = new DBSPConstItem("CIRCUIT", new DBSPTypeStr(CalciteObject.EMPTY,false).ref(), value);
         list.add(item);
-        DBSPExpression read = new DBSPApplyMethodExpression("rematerialize", DBSPTypeAny.INSTANCE,
+        DBSPExpression read = new DBSPApplyMethodExpression("rematerialize", new DBSPTypeAny(),
                 new DBSPApplyExpression("serde_json::from_str::<SqlGraph>",
-                        DBSPTypeAny.INSTANCE, item.getVariable()).unwrap());
+                        new DBSPTypeAny(), item.getVariable()).unwrap());
         DBSPLetStatement graph = new DBSPLetStatement("graph", read);
         list.add(graph);
 
         DBSPLetStatement graphNodes = new DBSPLetStatement("graph_nodes",
-                new DBSPApplyMethodExpression("nodes", DBSPTypeAny.INSTANCE,
+                new DBSPApplyMethodExpression("nodes", new DBSPTypeAny(),
                         graph.getVarReference()));
         list.add(graphNodes);
 
         DBSPLetStatement demands = new DBSPLetStatement("demands",
                 new DBSPConstructorExpression(
-                        DBSPTypeAny.INSTANCE.path(
+                        new DBSPTypeAny().path(
                                 new DBSPPath("Demands", "new")),
-                        DBSPTypeAny.INSTANCE), true);
+                        new DBSPTypeAny()), true);
         list.add(demands);
 
         List<JITSourceOperator> tables = program.getSources();
@@ -145,31 +145,31 @@ class TestCase {
             String table = source.table;
             long index = source.id;
             DBSPExpression nodeId = new DBSPConstructorExpression(
-                    DBSPTypeAny.INSTANCE.path(
+                    new DBSPTypeAny().path(
                             new DBSPPath("NodeId", "new")),
-                    DBSPTypeAny.INSTANCE,
+                    new DBSPTypeAny(),
                     new DBSPU32Literal((int) index));
             DBSPLetStatement id = new DBSPLetStatement(table + "_id", nodeId);
             list.add(id);
 
-            DBSPExpression indexExpr = new DBSPBinaryExpression(CalciteObject.EMPTY, DBSPTypeAny.INSTANCE,
+            DBSPExpression indexExpr = new DBSPBinaryExpression(CalciteObject.EMPTY, new DBSPTypeAny(),
                     DBSPOpcode.RUST_INDEX, graphNodes.getVarReference(), id.getVarReference().borrow());
             DBSPExpression layout = new DBSPApplyMethodExpression(
-                    "layout", DBSPTypeAny.INSTANCE,
-                    new DBSPApplyMethodExpression("unwrap_source", DBSPTypeAny.INSTANCE,
+                    "layout", new DBSPTypeAny(),
+                    new DBSPApplyMethodExpression("unwrap_source", new DBSPTypeAny(),
                             indexExpr.applyClone()));
             DBSPLetStatement stat = new DBSPLetStatement(table + "_layout", layout);
             list.add(stat);
         }
 
         DBSPExpression debug = new DBSPConstructorExpression(
-                DBSPTypeAny.INSTANCE.path(new DBSPPath("CodegenConfig", "debug")),
-                DBSPTypeAny.INSTANCE);
+                new DBSPTypeAny().path(new DBSPPath("CodegenConfig", "debug")),
+                new DBSPTypeAny());
         DBSPExpression allocateCircuit = new DBSPConstructorExpression(
-                DBSPTypeAny.INSTANCE.path(new DBSPPath("DbspCircuit", "new")),
-                DBSPTypeAny.INSTANCE,
+                new DBSPTypeAny().path(new DBSPPath("DbspCircuit", "new")),
+                new DBSPTypeAny(),
                 graph.getVarReference(),
-                DBSPBoolLiteral.TRUE,
+                new DBSPBoolLiteral(true),
                 new DBSPUSizeLiteral(1),
                 debug,
                 demands.getVarReference());
@@ -188,14 +188,14 @@ class TestCase {
             int index = 0;
             for (JITSourceOperator source : tables) {
                 String table = source.table;
-                DBSPZSetLiteral input = new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, pair.inputs[index]);
+                DBSPZSetLiteral input = new DBSPZSetLiteral(new DBSPTypeWeight(), pair.inputs[index]);
                 DBSPExpression contents = converter.apply(input).to(DBSPExpression.class);
                 DBSPExpressionStatement append = new DBSPExpressionStatement(
                         new DBSPApplyMethodExpression(
                                 "append_input",
-                                DBSPTypeAny.INSTANCE,
+                                new DBSPTypeAny(),
                                 circuit.getVarReference(),
-                                new DBSPVariablePath(table + "_id", DBSPTypeAny.INSTANCE),
+                                new DBSPVariablePath(table + "_id", new DBSPTypeAny()),
                                 contents.borrow()));
                 list.add(append);
                 index++;
@@ -203,7 +203,7 @@ class TestCase {
         }
 
         DBSPExpressionStatement step = new DBSPExpressionStatement(
-                new DBSPApplyMethodExpression("step", DBSPTypeAny.INSTANCE,
+                new DBSPApplyMethodExpression("step", new DBSPTypeAny(),
                         circuit.getVarReference()).unwrap());
         list.add(step);
 
@@ -213,15 +213,15 @@ class TestCase {
             int index = 0;
             for (JITSinkOperator sink : program.getSinks()) {
                 String view = sink.viewName;
-                DBSPZSetLiteral output = new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, pair.outputs[index]);
+                DBSPZSetLiteral output = new DBSPZSetLiteral(new DBSPTypeWeight(), pair.outputs[index]);
                 DBSPExpression sinkId = new DBSPConstructorExpression(
-                        DBSPTypeAny.INSTANCE.path(
+                        new DBSPTypeAny().path(
                                 new DBSPPath("NodeId", "new")),
-                        DBSPTypeAny.INSTANCE,
+                        new DBSPTypeAny(),
                         new DBSPU32Literal((int) sink.id));
                 DBSPLetStatement getOutput = new DBSPLetStatement(
                         view, new DBSPApplyMethodExpression("consolidate_output",
-                        DBSPTypeAny.INSTANCE, circuit.getVarReference(), sinkId));
+                        new DBSPTypeAny(), circuit.getVarReference(), sinkId));
                 list.add(getOutput);
                 index++;
                 /*
@@ -233,8 +233,8 @@ class TestCase {
                  */
                 DBSPExpression contents = converter.apply(output).to(DBSPExpression.class);
                 DBSPStatement compare = new DBSPExpressionStatement(
-                        new DBSPApplyExpression("assert!", DBSPTypeVoid.INSTANCE,
-                                new DBSPApplyExpression("must_equal_sc", DBSPTypeBool.INSTANCE,
+                        new DBSPApplyExpression("assert!", new DBSPTypeVoid(),
+                                new DBSPApplyExpression("must_equal_sc", new DBSPTypeBool(CalciteObject.EMPTY, false),
                                         getOutput.getVarReference().borrow(), contents.borrow())));
                 list.add(compare);
             }
@@ -242,11 +242,11 @@ class TestCase {
 
         DBSPStatement kill = new DBSPExpressionStatement(
                 new DBSPApplyMethodExpression(
-                        "kill", DBSPTypeAny.INSTANCE, circuit.getVarReference()).unwrap());
+                        "kill", new DBSPTypeAny(), circuit.getVarReference()).unwrap());
         list.add(kill);
 
         DBSPExpression body = new DBSPBlockExpression(list, null);
         return new DBSPFunction("test" + testNumber, new ArrayList<>(),
-                DBSPTypeVoid.INSTANCE, body, Linq.list("#[test]"));
+                new DBSPTypeVoid(), body, Linq.list("#[test]"));
     }
 }

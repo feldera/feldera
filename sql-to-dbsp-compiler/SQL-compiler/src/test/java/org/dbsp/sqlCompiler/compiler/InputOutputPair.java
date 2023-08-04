@@ -30,7 +30,7 @@ public class InputOutputPair {
     }
 
     static DBSPZSetLiteral[] toZSets(DBSPZSetLiteral.Contents[] data) {
-        return Linq.map(data, s -> new DBSPZSetLiteral(DBSPTypeWeight.INSTANCE, s), DBSPZSetLiteral.class);
+        return Linq.map(data, s -> new DBSPZSetLiteral(new DBSPTypeWeight(), s), DBSPZSetLiteral.class);
     }
 
     public DBSPZSetLiteral[] getInputs() {

@@ -40,11 +40,6 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
     public static final int MAX_PRECISION = 38;  // Total digits. Rather arbitrary.
     public static final int MAX_SCALE = 10;       // Digits after decimal period.  Rather arbitrary.
 
-    public static final DBSPTypeDecimal DEFAULT =
-            new DBSPTypeDecimal(CalciteObject.EMPTY, MAX_PRECISION, MAX_SCALE, false);
-    public static final DBSPTypeDecimal DEFAULT_NULLABLE =
-            new DBSPTypeDecimal(CalciteObject.EMPTY, MAX_PRECISION, MAX_SCALE, true);
-
     public final int precision;
     public final int scale;
 

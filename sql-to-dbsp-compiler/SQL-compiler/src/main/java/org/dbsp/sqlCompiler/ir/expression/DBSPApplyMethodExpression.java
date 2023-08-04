@@ -44,7 +44,7 @@ public class DBSPApplyMethodExpression extends DBSPExpression {
             String function, DBSPType returnType,
             DBSPExpression self, DBSPExpression... arguments) {
         super(node, returnType);
-        this.function = DBSPTypeAny.INSTANCE.path(new DBSPPath(function));
+        this.function = new DBSPTypeAny().path(new DBSPPath(function));
         this.self = self;
         this.arguments = arguments;
     }

@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
@@ -936,7 +937,7 @@ public class PostgresDateTests extends PostgresBaseTest {
                         l -> new DBSPTupleExpression(new DBSPIntervalMillisLiteral(
                                 l * 86400 * 1000, true)), DBSPExpression.class));
         result.add(new DBSPTupleExpression(DBSPLiteral.none(
-                DBSPTypeMillisInterval.NULLABLE_INSTANCE)));
+                new DBSPTypeMillisInterval(CalciteObject.EMPTY, true))));
         DBSPCompiler compiler = testCompiler();
         this.compare(query, result, true);
     }

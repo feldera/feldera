@@ -38,7 +38,7 @@ public class DBSPIsNullExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPIsNullExpression(CalciteObject node, DBSPExpression expression) {
-        super(node, DBSPTypeBool.INSTANCE);
+        super(node, new DBSPTypeBool(CalciteObject.EMPTY, false));
         this.expression = expression;
         if (!expression.getType().mayBeNull)
             throw new InternalCompilerError("isNull applied to non-nullable expression?", expression);

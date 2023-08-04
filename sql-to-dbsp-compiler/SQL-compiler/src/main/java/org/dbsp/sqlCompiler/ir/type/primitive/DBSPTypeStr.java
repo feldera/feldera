@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.type.primitive;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -33,10 +34,9 @@ import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STR;
 
+@NonCoreIR
 public class DBSPTypeStr extends DBSPTypeBaseType {
-    public static final DBSPTypeStr INSTANCE =new DBSPTypeStr(CalciteObject.EMPTY,false);
-
-    protected DBSPTypeStr(CalciteObject node, boolean mayBeNull) { super(node, STR, mayBeNull); }
+    public DBSPTypeStr(CalciteObject node, boolean mayBeNull) { super(node, STR, mayBeNull); }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {

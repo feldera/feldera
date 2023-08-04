@@ -31,10 +31,11 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.math.BigDecimal;
+
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
 
 // Runs the EndToEnd tests but on an input stream with 3 elements each and
 // using an incremental non-optimized circuit.
@@ -115,7 +116,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT DIVISION(1, 0)";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        DBSPTypeInteger.NULLABLE_SIGNED_32))));
+                        new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
     }
 
     @Test @Override
@@ -123,7 +124,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT 3 in (SELECT COL5 FROM T)";
         this.testAggregate(query,
                 new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                        DBSPLiteral.none(DBSPTypeBool.NULLABLE_INSTANCE))),
+                        DBSPLiteral.none(new DBSPTypeBool(CalciteObject.EMPTY, true)))),
                 new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
                         new DBSPBoolLiteral(false, true)))
         );
@@ -134,9 +135,9 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT SOME(T.COL3) FROM T";
         this.testAggregate(query,
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPBoolLiteral.NULLABLE_TRUE)),
+                        new DBSPTupleExpression(new DBSPBoolLiteral(true, true))),
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPBoolLiteral.NONE)));
+                        new DBSPTupleExpression(new DBSPBoolLiteral())));
     }
 
     @Test @Override
@@ -144,9 +145,9 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT EVERY(T.COL3) FROM T";
         this.testAggregate(query,
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPBoolLiteral.NULLABLE_FALSE)),
+                        new DBSPTupleExpression(new DBSPBoolLiteral(false, true))),
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPBoolLiteral.NONE)));
+                        new DBSPTupleExpression(new DBSPBoolLiteral())));
     }
 
     @Test @Override
@@ -154,9 +155,9 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT LOGICAL_OR(T.COL3) FROM T";
         this.testAggregate(query,
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPBoolLiteral.NULLABLE_TRUE)),
+                        new DBSPTupleExpression(new DBSPBoolLiteral(true, true))),
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPBoolLiteral.NONE)));
+                        new DBSPTupleExpression(new DBSPBoolLiteral())));
     }
 
     @Test @Override
@@ -167,9 +168,9 @@ public class NaiveIncrementalTests extends EndToEndTests {
                 "(SELECT Sum(r2.COL5) FROM T r2 WHERE r2.COL1 = r.COL1)";
         this.testAggregate(query,
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))),
+                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))),
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
+                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
     }
 
     @Test @Override
@@ -177,7 +178,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT 1 / 0";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        DBSPTypeInteger.NULLABLE_SIGNED_32))));
+                        new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
     }
 
     @Test
@@ -185,7 +186,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT CAST('0.5' AS DECIMAL)";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(DBSPTypeDecimal.DEFAULT,
+                        new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, DBSPTypeDecimal.MAX_PRECISION, DBSPTypeDecimal.MAX_SCALE, false),
                                 new BigDecimal("0.5")))));
     }
 
@@ -194,7 +195,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT CAST('blah' AS DECIMAL)";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(DBSPTypeDecimal.DEFAULT,
+                        new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, DBSPTypeDecimal.MAX_PRECISION, DBSPTypeDecimal.MAX_SCALE, false),
                                 new BigDecimal(0)))));
     }
 
@@ -203,7 +204,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT 'Infinity' / 0";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(DBSPTypeDecimal.DEFAULT_NULLABLE,
+                        new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, DBSPTypeDecimal.MAX_PRECISION, DBSPTypeDecimal.MAX_SCALE, true),
                                 null))));
     }
 
@@ -213,7 +214,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT 2 / (1 / 0)";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        DBSPTypeInteger.NULLABLE_SIGNED_32))));
+                        new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
     }
 
     @Test @Override
@@ -246,7 +247,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         String query = "SELECT SUM(T.COL1) FROM T WHERE FALSE";
         DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32)));
+                DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true))));
         this.testConstantOutput(query, result);
     }
 
@@ -276,7 +277,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
                         new DBSPI64Literal(2), new DBSPI32Literal(20, true))),
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(new DBSPI64Literal(0),
-                                DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
+                                DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
     }
 
     @Test @Override
@@ -286,7 +287,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(new DBSPI32Literal(6, true))),
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
+                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
     }
 
     @Test @Override
@@ -296,7 +297,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(new DBSPI32Literal(10, true))),
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
+                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
     }
 
     @Test @Override
@@ -306,7 +307,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
                 new DBSPTupleExpression(
                 new DBSPI32Literal(10, true)));
         this.testAggregate(query, output, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
+                new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
     }
 
     @Test @Override
@@ -316,7 +317,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(new DBSPDoubleLiteral(13.0, true))),
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeDouble.NULLABLE_INSTANCE))));
+                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true)))));
     }
 
     @Test @Override
@@ -326,7 +327,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(new DBSPI32Literal(1, true))),
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
+                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
     }
 
     @Test @Override
@@ -336,7 +337,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(new DBSPI32Literal(20, true))),
                 new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32))));
+                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
     }
 
     @Test @Override
@@ -349,8 +350,8 @@ public class NaiveIncrementalTests extends EndToEndTests {
                                 new DBSPDoubleLiteral(13.0, true))),
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(
-                                DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32),
-                                DBSPLiteral.none(DBSPTypeDouble.NULLABLE_INSTANCE))));
+                                DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)),
+                                DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true)))));
     }
 
     @Test
@@ -373,7 +374,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
     public void testArrayIndexOutOfBounds() {
         String query = "SELECT (ARRAY [2])[3]";
         DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeInteger.NULLABLE_SIGNED_32)));
+                new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true))));
         this.testConstantOutput(query, result);
     }
 }

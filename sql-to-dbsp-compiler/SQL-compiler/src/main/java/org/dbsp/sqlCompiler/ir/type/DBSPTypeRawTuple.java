@@ -37,8 +37,6 @@ import java.util.List;
  * A Raw Rust tuple.
  */
 public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
-    public static final DBSPTypeRawTuple EMPTY_TUPLE_TYPE = new DBSPTypeRawTuple();
-
     private DBSPTypeRawTuple(CalciteObject node, DBSPTypeCode code, boolean mayBeNull, DBSPType... tupArgs) {
         super(node, code, mayBeNull, tupArgs);
     }

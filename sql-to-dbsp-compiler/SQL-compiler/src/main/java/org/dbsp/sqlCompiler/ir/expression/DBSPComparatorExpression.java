@@ -33,7 +33,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
  */
 public abstract class DBSPComparatorExpression extends DBSPExpression {
     protected DBSPComparatorExpression(CalciteObject node) {
-        super(node, DBSPTypeAny.INSTANCE);
+        super(node, new DBSPTypeAny());
     }
 
     @Override

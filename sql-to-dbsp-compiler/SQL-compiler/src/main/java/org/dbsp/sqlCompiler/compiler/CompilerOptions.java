@@ -98,6 +98,8 @@ public class CompilerOptions {
         @Parameter(names = "-js", description = "Emit a JSON file containing the schema of all views and tables involved")
         @Nullable
         public String emitJsonSchema = null;
+        @Parameter(names = "-q", description = "Quiet: do not print warnings")
+        public boolean quiet = false;
         @Parameter(description = "Input file to compile", required = true)
         @Nullable
         public String inputFile = null;
@@ -163,4 +165,6 @@ public class CompilerOptions {
                 ", optimizerOptions=" + optimizerOptions +
                 '}';
     }
+
+    public CompilerOptions() {}
 }

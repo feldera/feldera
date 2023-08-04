@@ -13,9 +13,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
  * The compiler decides how this is implemented.
  */
 public class DBSPTypeWeight extends DBSPTypeBaseType {
-    public static final DBSPTypeWeight INSTANCE = new DBSPTypeWeight();
-
-    protected DBSPTypeWeight() {
+    public DBSPTypeWeight() {
         super(CalciteObject.EMPTY, DBSPTypeCode.WEIGHT, false);
     }
 

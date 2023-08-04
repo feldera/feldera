@@ -34,7 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import java.util.Objects;
 
 public class DBSPTypeFloat extends DBSPTypeFP implements IsNumericType {
-    protected DBSPTypeFloat(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.FLOAT, mayBeNull); }
+    public DBSPTypeFloat(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.FLOAT, mayBeNull); }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
@@ -42,9 +42,6 @@ public class DBSPTypeFloat extends DBSPTypeFP implements IsNumericType {
             return this;
         return new DBSPTypeFloat(this.getNode(), mayBeNull);
     }
-
-    public static final DBSPTypeFloat INSTANCE =new DBSPTypeFloat(CalciteObject.EMPTY,false);
-    public static final DBSPTypeFloat NULLABLE_INSTANCE = new DBSPTypeFloat(CalciteObject.EMPTY,true);
 
     @Override
     public boolean sameType(DBSPType type) {

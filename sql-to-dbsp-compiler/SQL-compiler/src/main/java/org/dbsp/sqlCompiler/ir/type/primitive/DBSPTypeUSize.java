@@ -39,10 +39,8 @@ import java.util.Objects;
  */
 public class DBSPTypeUSize extends DBSPTypeBaseType
         implements IsNumericType {
-    public static final DBSPTypeUSize INSTANCE =new DBSPTypeUSize(CalciteObject.EMPTY, false);
-
     @SuppressWarnings("SameParameterValue")
-    protected DBSPTypeUSize(CalciteObject node, boolean mayBeNull) {
+    public DBSPTypeUSize(CalciteObject node, boolean mayBeNull) {
         super(node, DBSPTypeCode.USIZE, mayBeNull);
     }
 

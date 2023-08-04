@@ -42,13 +42,13 @@ public class DBSPGeoPointLiteral extends DBSPLiteral {
     public DBSPGeoPointLiteral(CalciteObject node,
                                @Nullable DBSPExpression left, @Nullable DBSPExpression right,
                                boolean mayBeNull) {
-        super(node, DBSPTypeGeoPoint.INSTANCE.setMayBeNull(mayBeNull), left == null || right == null);
+        super(node, new DBSPTypeGeoPoint(CalciteObject.EMPTY, false).setMayBeNull(mayBeNull), left == null || right == null);
         this.left = left;
         this.right = right;
     }
 
     public DBSPGeoPointLiteral() {
-        super(CalciteObject.EMPTY, DBSPTypeGeoPoint.NULLABLE_INSTANCE, true);
+        super(CalciteObject.EMPTY, new DBSPTypeGeoPoint(CalciteObject.EMPTY, true), true);
         this.left = null;
         this.right = null;
     }

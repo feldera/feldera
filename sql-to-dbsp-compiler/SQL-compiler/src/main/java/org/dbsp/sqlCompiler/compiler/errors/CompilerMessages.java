@@ -151,7 +151,9 @@ public class CompilerMessages {
     }
 
     public void show(PrintStream stream) {
-        stream.println(this);
+        if (this.errorCount() +
+                (this.compiler.options.ioOptions.quiet ? 0 : this.warningCount()) > 0)
+            stream.println(this);
     }
 
     @Override
@@ -162,6 +164,8 @@ public class CompilerMessages {
             builder.append(node.toPrettyString());
         } else {
             for (Error message: this.messages) {
+                if (this.compiler.options.ioOptions.quiet && message.warning)
+                    continue;
                 message.format(this.compiler.sources, builder);
             }
         }

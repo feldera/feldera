@@ -78,6 +78,8 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.*;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
+
 /**
  * Generate code for the JIT compiler.
  * Handles InnerNodes - i.e., expressions, closures, statements.
@@ -495,40 +497,40 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     }
     
     static final Map<String, FT> functionTranslation = new HashMap<String, FT>() {{
-        put("extract_second_Timestamp", new FT("dbsp.timestamp.second", DBSPTypeInteger.SIGNED_64));
-        put("extract_minute_Timestamp", new FT("dbsp.timestamp.minute", DBSPTypeInteger.SIGNED_64));
-        put("extract_hour_Timestamp", new FT("dbsp.timestamp.hour", DBSPTypeInteger.SIGNED_64));
-        put("extract_day_Timestamp", new FT("dbsp.timestamp.day", DBSPTypeInteger.SIGNED_64));
-        put("extract_dow_Timestamp", new FT("dbsp.timestamp.day_of_week", DBSPTypeInteger.SIGNED_64));
-        put("extract_doy_Timestamp", new FT("dbsp.timestamp.day_of_year", DBSPTypeInteger.SIGNED_64));
-        put("extract_isodow_Timestamp", new FT("dbsp.timestamp.iso_day_of_week", DBSPTypeInteger.SIGNED_64));
-        put("extract_week_Timestamp", new FT("dbsp.timestamp.week", DBSPTypeInteger.SIGNED_64));
-        put("extract_month_Timestamp", new FT("dbsp.timestamp.month", DBSPTypeInteger.SIGNED_64));
-        put("extract_year_Timestamp", new FT("dbsp.timestamp.year", DBSPTypeInteger.SIGNED_64));
-        put("extract_isoyear_Timestamp", new FT("dbsp.timestamp.iso_year", DBSPTypeInteger.SIGNED_64));
-        put("extract_quarter_Timestamp", new FT("dbsp.timestamp.quarter", DBSPTypeInteger.SIGNED_64));
-        put("extract_decade_Timestamp", new FT("dbsp.timestamp.decade", DBSPTypeInteger.SIGNED_64));
-        put("extract_century_Timestamp", new FT("dbsp.timestamp.century", DBSPTypeInteger.SIGNED_64));
-        put("extract_millennium_Timestamp", new FT("dbsp.timestamp.millennium", DBSPTypeInteger.SIGNED_64));
-        put("extract_epoch_Timestamp", new FT("dbsp.timestamp.epoch", DBSPTypeInteger.SIGNED_64));
-        put("extract_second_Date", new FT("dbsp.date.second", DBSPTypeInteger.SIGNED_64));
-        put("extract_millisecond_Date", new FT("dbsp.date.millisecond", DBSPTypeInteger.SIGNED_64));
-        put("extract_microsecond_Date", new FT("dbsp.date.microsecond", DBSPTypeInteger.SIGNED_64));
-        put("extract_minute_Date", new FT("dbsp.date.minute", DBSPTypeInteger.SIGNED_64));
-        put("extract_hour_Date", new FT("dbsp.date.hour", DBSPTypeInteger.SIGNED_64));
-        put("extract_day_Date", new FT("dbsp.date.day", DBSPTypeInteger.SIGNED_64));
-        put("extract_dow_Date", new FT("dbsp.date.day_of_week", DBSPTypeInteger.SIGNED_64));
-        put("extract_doy_Date", new FT("dbsp.date.day_of_year", DBSPTypeInteger.SIGNED_64));
-        put("extract_isodow_Date", new FT("dbsp.date.iso_day_of_week", DBSPTypeInteger.SIGNED_64));
-        put("extract_week_Date", new FT("dbsp.date.week", DBSPTypeInteger.SIGNED_64));
-        put("extract_month_Date", new FT("dbsp.date.month", DBSPTypeInteger.SIGNED_64));
-        put("extract_year_Date", new FT("dbsp.date.year", DBSPTypeInteger.SIGNED_64));
-        put("extract_isoyear_Date", new FT("dbsp.date.iso_year", DBSPTypeInteger.SIGNED_64));
-        put("extract_quarter_Date", new FT("dbsp.date.quarter", DBSPTypeInteger.SIGNED_64));
-        put("extract_decade_Date", new FT("dbsp.date.decade", DBSPTypeInteger.SIGNED_64));
-        put("extract_century_Date", new FT("dbsp.date.century", DBSPTypeInteger.SIGNED_64));
-        put("extract_millennium_Date", new FT("dbsp.date.millennium", DBSPTypeInteger.SIGNED_64));
-        put("extract_epoch_Date", new FT("dbsp.date.epoch", DBSPTypeInteger.SIGNED_64));
+        put("extract_second_Timestamp", new FT("dbsp.timestamp.second", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_minute_Timestamp", new FT("dbsp.timestamp.minute", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_hour_Timestamp", new FT("dbsp.timestamp.hour", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_day_Timestamp", new FT("dbsp.timestamp.day", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_dow_Timestamp", new FT("dbsp.timestamp.day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_doy_Timestamp", new FT("dbsp.timestamp.day_of_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_isodow_Timestamp", new FT("dbsp.timestamp.iso_day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_week_Timestamp", new FT("dbsp.timestamp.week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_month_Timestamp", new FT("dbsp.timestamp.month", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_year_Timestamp", new FT("dbsp.timestamp.year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_isoyear_Timestamp", new FT("dbsp.timestamp.iso_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_quarter_Timestamp", new FT("dbsp.timestamp.quarter", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_decade_Timestamp", new FT("dbsp.timestamp.decade", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_century_Timestamp", new FT("dbsp.timestamp.century", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_millennium_Timestamp", new FT("dbsp.timestamp.millennium", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_epoch_Timestamp", new FT("dbsp.timestamp.epoch", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_second_Date", new FT("dbsp.date.second", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_millisecond_Date", new FT("dbsp.date.millisecond", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_microsecond_Date", new FT("dbsp.date.microsecond", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_minute_Date", new FT("dbsp.date.minute", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_hour_Date", new FT("dbsp.date.hour", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_day_Date", new FT("dbsp.date.day", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_dow_Date", new FT("dbsp.date.day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_doy_Date", new FT("dbsp.date.day_of_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_isodow_Date", new FT("dbsp.date.iso_day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_week_Date", new FT("dbsp.date.week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_month_Date", new FT("dbsp.date.month", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_year_Date", new FT("dbsp.date.year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_isoyear_Date", new FT("dbsp.date.iso_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_quarter_Date", new FT("dbsp.date.quarter", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_decade_Date", new FT("dbsp.date.decade", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_century_Date", new FT("dbsp.date.century", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_millennium_Date", new FT("dbsp.date.millennium", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_epoch_Date", new FT("dbsp.date.epoch", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
     }};
 
     @Override

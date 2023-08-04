@@ -116,11 +116,12 @@ public class PostgresArrayTests extends PostgresBaseTest {
                 "(1 row)\n");
     }
 
-    @Test @Ignore("Bug in Calcite https://issues.apache.org/jira/browse/CALCITE-5884")
+    @Test @Ignore("Semantics is different in Calcite")
     public void testArrayToStringNoFormat() {
+        // This result is different from Postgres, which does not return NULL
         this.q("select array_to_string(array['1','2','3','4',NULL,'6'], ',', NULL);\n" +
                 " array_to_string \n" +
                 "-----------------\n" +
-                " 1,2,3,4,6");
+                "NULL");
     }
 }

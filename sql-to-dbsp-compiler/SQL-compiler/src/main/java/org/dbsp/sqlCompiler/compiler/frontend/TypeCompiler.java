@@ -114,9 +114,9 @@ public class TypeCompiler implements ICompilerComponent {
                 }
                 case FLOAT:
                 case REAL:
-                    return DBSPTypeFloat.INSTANCE.setMayBeNull(nullable);
+                    return new DBSPTypeFloat(CalciteObject.EMPTY,false).setMayBeNull(nullable);
                 case DOUBLE:
-                    return DBSPTypeDouble.INSTANCE.setMayBeNull(nullable);
+                    return new DBSPTypeDouble(CalciteObject.EMPTY,false).setMayBeNull(nullable);
                 case CHAR:
                 case VARCHAR: {
                     int precision = dt.getPrecision();
@@ -126,9 +126,9 @@ public class TypeCompiler implements ICompilerComponent {
                     return new DBSPTypeString(node, precision, tn.equals(SqlTypeName.CHAR), nullable);
                 }
                 case NULL:
-                    return DBSPTypeNull.INSTANCE;
+                    return new DBSPTypeNull(CalciteObject.EMPTY);
                 case SYMBOL:
-                    return DBSPTypeKeyword.INSTANCE;
+                    return new DBSPTypeKeyword();
                 case ARRAY: {
                     RelDataType ct = Objects.requireNonNull(dt.getComponentType());
                     DBSPType elementType = this.convertType(ct, true);
@@ -137,7 +137,7 @@ public class TypeCompiler implements ICompilerComponent {
                 case UNKNOWN:
                 case ANY:
                     // Not sure whether this is right
-                    return DBSPTypeAny.INSTANCE;
+                    return new DBSPTypeAny();
                 case BINARY:
                 case VARBINARY:
                 case MULTISET:
@@ -169,13 +169,13 @@ public class TypeCompiler implements ICompilerComponent {
                 case INTERVAL_SECOND:
                     return new DBSPTypeMillisInterval(node, nullable);
                 case GEOMETRY:
-                    return DBSPTypeGeoPoint.INSTANCE.setMayBeNull(nullable);
+                    return new DBSPTypeGeoPoint(CalciteObject.EMPTY, false).setMayBeNull(nullable);
                 case TIMESTAMP:
-                    return DBSPTypeTimestamp.INSTANCE.setMayBeNull(nullable);
+                    return new DBSPTypeTimestamp(CalciteObject.EMPTY, false).setMayBeNull(nullable);
                 case DATE:
-                    return DBSPTypeDate.INSTANCE.setMayBeNull(nullable);
+                    return new DBSPTypeDate(CalciteObject.EMPTY, false).setMayBeNull(nullable);
                 case TIME:
-                    return DBSPTypeTime.INSTANCE.setMayBeNull(nullable);
+                    return new DBSPTypeTime(CalciteObject.EMPTY, false).setMayBeNull(nullable);
             }
         }
         throw new UnimplementedException(node);

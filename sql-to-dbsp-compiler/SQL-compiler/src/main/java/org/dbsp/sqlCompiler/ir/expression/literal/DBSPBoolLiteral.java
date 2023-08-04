@@ -37,12 +37,6 @@ public class DBSPBoolLiteral extends DBSPLiteral {
     @Nullable
     public final Boolean value;
 
-    public static final DBSPBoolLiteral NONE = new DBSPBoolLiteral();
-    public static final DBSPBoolLiteral TRUE = new DBSPBoolLiteral(true);
-    public static final DBSPBoolLiteral FALSE = new DBSPBoolLiteral(false);
-    public static final DBSPBoolLiteral NULLABLE_TRUE = new DBSPBoolLiteral(true, true);
-    public static final DBSPBoolLiteral NULLABLE_FALSE = new DBSPBoolLiteral(false, true);
-
     public DBSPBoolLiteral(CalciteObject node, DBSPType type, @Nullable Boolean value) {
         super(node, type, value == null);
         this.value = value;
@@ -57,7 +51,7 @@ public class DBSPBoolLiteral extends DBSPLiteral {
     }
 
     public DBSPBoolLiteral(@Nullable Boolean b, boolean nullable) {
-        this(CalciteObject.EMPTY, DBSPTypeBool.INSTANCE.setMayBeNull(nullable), b);
+        this(CalciteObject.EMPTY, new DBSPTypeBool(CalciteObject.EMPTY, false).setMayBeNull(nullable), b);
         if (b == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
@@ -87,8 +81,8 @@ public class DBSPBoolLiteral extends DBSPLiteral {
     public IIndentStream toString(IIndentStream builder) {
         if (this.value == null)
             return builder.append("(")
-                .append(this.type)
-                .append(")null");
+                    .append(this.type)
+                    .append(")null");
         else
             return builder.append(this.value.toString());
     }

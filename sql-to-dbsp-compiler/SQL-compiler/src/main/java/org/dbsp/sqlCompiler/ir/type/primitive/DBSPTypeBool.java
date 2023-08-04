@@ -49,7 +49,7 @@ public class DBSPTypeBool extends DBSPTypeBaseType {
 
     @Override
     public DBSPLiteral defaultValue() {
-        return this.mayBeNull ? DBSPBoolLiteral.NULLABLE_FALSE : DBSPBoolLiteral.FALSE;
+        return this.mayBeNull ? new DBSPBoolLiteral(false, true) : new DBSPBoolLiteral(false);
     }
 
     public boolean sameType(DBSPType type) {
@@ -57,9 +57,6 @@ public class DBSPTypeBool extends DBSPTypeBaseType {
             return false;
         return type.is(DBSPTypeBool.class);
     }
-
-    public static final DBSPTypeBool INSTANCE = new DBSPTypeBool(CalciteObject.EMPTY, false);
-    public static final DBSPTypeBool NULLABLE_INSTANCE = new DBSPTypeBool(CalciteObject.EMPTY, true);
 
     @Override
     public void accept(InnerVisitor visitor) {

@@ -38,12 +38,7 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TIMESTAMP;
 
 public class DBSPTypeTimestamp extends DBSPTypeBaseType
         implements IsNumericType, IsDateType {
-    public static final DBSPTypeTimestamp INSTANCE =
-            new DBSPTypeTimestamp(CalciteObject.EMPTY, false);
-    public static final DBSPTypeTimestamp NULLABLE_INSTANCE =
-            new DBSPTypeTimestamp(CalciteObject.EMPTY, true);
-
-    protected DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
+    public DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
         super(node, TIMESTAMP, mayBeNull);
     }
 

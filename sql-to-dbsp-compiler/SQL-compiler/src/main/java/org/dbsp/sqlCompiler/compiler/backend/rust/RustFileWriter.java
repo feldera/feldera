@@ -88,6 +88,7 @@ public class RustFileWriter implements ICompilerComponent {
             "#![allow(unused_parens)]\n" +
             "#![allow(unused_variables)]\n" +
             "#![allow(unused_mut)]\n\n" +
+            "#![allow(non_camel_case_types)]\n\n" +
             "#[cfg(test)]\n" +
             "use hashing::*;\n";  // comparison functions
 
@@ -304,7 +305,7 @@ public class RustFileWriter implements ICompilerComponent {
             stream.append(rustPreamble)
                     .newline();
             stream.append("type ")
-                    .append(DBSPTypeWeight.INSTANCE.getRustString())
+                    .append(new DBSPTypeWeight().getRustString())
                     .append(" = ")
                     .append(this.getCompiler().getWeightTypeImplementation().toString())
                     .append(";")

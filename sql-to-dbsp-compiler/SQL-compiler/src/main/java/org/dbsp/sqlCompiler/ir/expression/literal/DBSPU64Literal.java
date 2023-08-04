@@ -33,6 +33,8 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.UINT64;
+
 public class DBSPU64Literal extends DBSPIntLiteral {
     @Nullable
     public final Long value;
@@ -55,7 +57,7 @@ public class DBSPU64Literal extends DBSPIntLiteral {
     }
 
     public DBSPU64Literal(CalciteObject node, @Nullable Long value, boolean nullable) {
-        this(node, DBSPTypeInteger.UNSIGNED_64.setMayBeNull(nullable), value);
+        this(node, new DBSPTypeInteger(CalciteObject.EMPTY, UINT64,64, false,false).setMayBeNull(nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

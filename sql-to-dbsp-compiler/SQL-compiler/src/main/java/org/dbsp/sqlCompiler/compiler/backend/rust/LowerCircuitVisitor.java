@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.*;
@@ -43,7 +44,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPVariablePath rowVar = new DBSPVariablePath("x", flatmap.inputElementType);
         DBSPType eType = flatmap.collectionElementType;
         if (flatmap.indexType != null)
-            eType = new DBSPTypeRawTuple(DBSPTypeUSize.INSTANCE, eType);
+            eType = new DBSPTypeRawTuple(new DBSPTypeUSize(CalciteObject.EMPTY, false), eType);
         DBSPVariablePath elem = new DBSPVariablePath("e", eType);
         List<DBSPStatement> clones = new ArrayList<>();
         List<DBSPExpression> resultColumns = new ArrayList<>();
@@ -61,7 +62,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 // The INDEX field produced WITH ORDINALITY
                 Objects.requireNonNull(flatmap.indexType);
                 resultColumns.add(new DBSPBinaryExpression(flatmap.getNode(),
-                        DBSPTypeUSize.INSTANCE, DBSPOpcode.ADD,
+                        new DBSPTypeUSize(CalciteObject.EMPTY, false), DBSPOpcode.ADD,
                         elem.field(0),
                         new DBSPUSizeLiteral(1)).cast(flatmap.indexType));
             } else {
@@ -79,13 +80,13 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         // }
         DBSPClosureExpression toTuple = new DBSPTupleExpression(resultColumns, false)
                 .closure(elem.asParameter());
-        DBSPExpression iter = new DBSPApplyMethodExpression(flatmap.getNode(), "into_iter", DBSPTypeAny.INSTANCE,
+        DBSPExpression iter = new DBSPApplyMethodExpression(flatmap.getNode(), "into_iter", new DBSPTypeAny(),
                 rowVar.field(flatmap.collectionFieldIndex).applyCloneIfNeeded());
         if (flatmap.indexType != null) {
-            iter = new DBSPApplyMethodExpression(flatmap.getNode(), "enumerate", DBSPTypeAny.INSTANCE, iter);
+            iter = new DBSPApplyMethodExpression(flatmap.getNode(), "enumerate", new DBSPTypeAny(), iter);
         }
         DBSPExpression function = new DBSPApplyMethodExpression(flatmap.getNode(),
-                "map", DBSPTypeAny.INSTANCE,
+                "map", new DBSPTypeAny(),
                 iter, toTuple);
         DBSPExpression block = new DBSPBlockExpression(clones, function);
         return block.closure(rowVar.asRefParameter());
@@ -139,7 +140,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             function = impl.asFold();
         }
         DBSPOperator result = new DBSPIncrementalAggregateOperator(node.getNode(), node.keyType, node.outputElementType,
-                DBSPTypeWeight.INSTANCE, function, null, this.mapped(node.input()), node.isLinear);
+                new DBSPTypeWeight(), function, null, this.mapped(node.input()), node.isLinear);
         this.map(node, result);
     }
 
@@ -154,7 +155,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPOperator result = new DBSPWindowAggregateOperator(node.getNode(),
                 function, null, node.window,
                 node.partitionKeyType, node.timestampType, node.aggregateType,
-                DBSPTypeWeight.INSTANCE, this.mapped(node.input()));
+                new DBSPTypeWeight(), this.mapped(node.input()));
         this.map(node, result);
     }
 }

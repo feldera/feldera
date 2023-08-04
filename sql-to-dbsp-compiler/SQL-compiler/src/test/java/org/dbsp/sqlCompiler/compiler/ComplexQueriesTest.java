@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
@@ -461,7 +462,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         new DBSPStringLiteral("State", true),
                         new DBSPI32Literal(94043, true),
                         //new DBSPDoubleLiteral(128.0, true),
-                        DBSPLiteral.none(DBSPTypeDouble.NULLABLE_INSTANCE),
+                        DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true)),
                         new DBSPDoubleLiteral(128.0, true),
                         new DBSPI32Literal(100000, true),
                         new DBSPStringLiteral("Job", true),

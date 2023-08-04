@@ -10,6 +10,8 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT8;
+
 public class DBSPI8Literal extends DBSPIntLiteral {
     @Nullable
     public final Byte value;
@@ -28,7 +30,7 @@ public class DBSPI8Literal extends DBSPIntLiteral {
     }
 
     public DBSPI8Literal(@Nullable Byte value, boolean nullable) {
-        this(CalciteObject.EMPTY, DBSPTypeInteger.SIGNED_8.setMayBeNull(nullable), value);
+        this(CalciteObject.EMPTY, new DBSPTypeInteger(CalciteObject.EMPTY, INT8,  8, true,false).setMayBeNull(nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
