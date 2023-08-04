@@ -81,7 +81,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPNullLiteral literal) {
-        return this.doNull(literal);
+        this.builder.append("None::<()>");
+        return VisitDecision.STOP;
     }
 
     @Override
