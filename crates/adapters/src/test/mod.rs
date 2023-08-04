@@ -17,7 +17,6 @@ mod data;
 #[cfg(feature = "with-kafka")]
 pub mod kafka;
 
-#[cfg(feature = "server")]
 pub mod http;
 
 mod mock_dezset;

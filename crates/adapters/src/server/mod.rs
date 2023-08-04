@@ -829,7 +829,6 @@ async fn output_endpoint(
 
 #[cfg(test)]
 #[cfg(feature = "with-kafka")]
-#[cfg(feature = "server")]
 mod test_with_kafka {
     use super::{bootstrap, build_app, Args, ServerState};
     use crate::{

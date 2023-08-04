@@ -3,7 +3,6 @@ use crate::{
     util::split_on_newline,
     DeCollectionHandle, OutputConsumer, SerBatch,
 };
-#[cfg(feature = "server")]
 use actix_web::HttpRequest;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use csv::{
@@ -29,7 +28,6 @@ impl InputFormat for CsvInputFormat {
         Cow::Borrowed("csv")
     }
 
-    #[cfg(feature = "server")]
     /// Create a parser using configuration extracted from an HTTP request.
     // We could just rely on serde to deserialize the config from the
     // HTTP query, but a specialized method gives us more flexibility.

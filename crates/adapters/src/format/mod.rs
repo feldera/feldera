@@ -1,12 +1,10 @@
 use crate::{DeCollectionHandle, SerBatch};
+use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerialize};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
-
-#[cfg(feature = "server")]
-use actix_web::HttpRequest;
 
 mod csv;
 mod json;
@@ -86,7 +84,6 @@ pub trait InputFormat: Send + Sync {
     /// allowing the implementation to override this method enables additional flexibility.
     /// For example, an implementation may use `Content-Type` and other request headers,
     /// set HTTP-specific defaults for config fields, etc.
-    #[cfg(feature = "server")]
     fn config_from_http_request(
         &self,
         request: &HttpRequest,
