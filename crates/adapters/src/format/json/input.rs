@@ -5,6 +5,7 @@ use crate::{
     util::split_on_newline,
     DeCollectionHandle,
 };
+use actix_web::HttpRequest;
 use anyhow::{anyhow, Result as AnyResult};
 use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerialize};
 use serde::{Deserialize, Serialize};
@@ -12,9 +13,6 @@ use serde_json::value::RawValue;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{borrow::Cow, mem::take};
 use utoipa::ToSchema;
-
-#[cfg(feature = "server")]
-use actix_web::HttpRequest;
 
 /// JSON format parser.
 pub struct JsonInputFormat;
@@ -137,7 +135,6 @@ impl InputFormat for JsonInputFormat {
         Ok(Box::new(JsonParser::new(input_stream, config)) as Box<dyn Parser>)
     }
 
-    #[cfg(feature = "server")]
     fn config_from_http_request(
         &self,
         request: &HttpRequest,

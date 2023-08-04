@@ -119,7 +119,6 @@ mod controller;
 mod deinput;
 pub mod format;
 mod seroutput;
-#[cfg(feature = "server")]
 pub mod server;
 pub mod transport;
 pub(crate) mod util;
@@ -142,7 +141,6 @@ pub enum PipelineState {
 // Re-export `DetailedError`.
 pub use dbsp::DetailedError;
 
-#[cfg(feature = "server")]
 pub use server::{EgressMode, ErrorResponse, PipelineError};
 
 pub use catalog::{Catalog, NeighborhoodQuery, OutputQuery, OutputQueryHandles};

@@ -6,14 +6,12 @@
 //! that the entire configuration tree can be deserialized from a yaml file.
 
 use crate::{ControllerError, InputFormat, OutputQuery};
+use actix_web::HttpRequest;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, collections::BTreeMap};
 use utoipa::ToSchema;
-
-#[cfg(feature = "server")]
-use actix_web::HttpRequest;
 
 /// Default value of `InputEndpointConfig::max_buffered_records`.
 /// It is declared as a function and not as a constant, so it can
@@ -174,7 +172,6 @@ pub struct FormatConfig {
 impl FormatConfig {
     /// Create an instance of `FormatConfig` from format name and
     /// HTTP request using the `InputFormat::config_from_http_request` method.
-    #[cfg(feature = "server")]
     pub fn from_http_request(
         endpoint_name: &str,
         format_name: &str,

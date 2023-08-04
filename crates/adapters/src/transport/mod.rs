@@ -37,8 +37,6 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 mod file;
-
-#[cfg(feature = "server")]
 pub mod http;
 
 #[cfg(feature = "with-kafka")]
