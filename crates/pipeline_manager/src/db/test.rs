@@ -2372,4 +2372,22 @@ impl Storage for Mutex<DbModel> {
     ) -> DBResult<TenantId> {
         todo!("For model-based tests, we generate the TenantID using proptest, as opposed to generating a claim that we then get or create an ID for");
     }
+
+    /// Record information about a compiler binary
+    async fn create_compiled_binary_ref(
+        &self,
+        _program_id: ProgramId,
+        _version: Version,
+        _url: String,
+    ) -> Result<(), DBError> {
+        todo!("Unimplemented");
+    }
+
+    async fn get_compiled_binary_ref(
+        &self,
+        _program_id: ProgramId,
+        _version: Version,
+    ) -> Result<String, DBError> {
+        todo!("Unimplemented");
+    }
 }

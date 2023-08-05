@@ -77,6 +77,10 @@ pub enum RunnerError {
         desired_status: PipelineStatus,
         requested_status: Option<PipelineStatus>,
     },
+    BinaryFetchError {
+        pipeline_id: PipelineId,
+        error: String,
+    },
 }
 
 impl DetailedError for RunnerError {
@@ -94,6 +98,7 @@ impl DetailedError for RunnerError {
             Self::IllegalPipelineStateTransition { .. } => {
                 Cow::from("IllegalPipelineStateTransition")
             }
+            Self::BinaryFetchError { .. } => Cow::from("BinaryFetchError"),
         }
     }
 }
@@ -149,6 +154,9 @@ impl Display for RunnerError {
                     "Action is not applicable in the current state of the pipeline: {error}"
                 )
             }
+            Self::BinaryFetchError { pipeline_id, error } => {
+                write!(f, "Failed to fetch binary executable for running pipeline '{pipeline_id}': '{error}'")
+            }
         }
     }
 }
@@ -166,6 +174,7 @@ impl ResponseError for RunnerError {
             Self::PipelineShutdownTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineStartupError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::IllegalPipelineStateTransition { .. } => StatusCode::BAD_REQUEST,
+            Self::BinaryFetchError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -176,7 +185,7 @@ impl ResponseError for RunnerError {
 
 /// A runner component responsible for running and interacting with
 /// pipelines at runtime.
-pub(crate) struct Runner {
+pub struct Runner {
     config: CompilerConfig,
     db: Arc<Mutex<ProjectDB>>,
     inner: RunnerInner,
@@ -188,7 +197,7 @@ enum RunnerInner {
 
 impl Runner {
     /// Create a local runner.
-    pub(crate) fn local(db: Arc<Mutex<ProjectDB>>, config: &CompilerConfig) -> Self {
+    pub fn local(db: Arc<Mutex<ProjectDB>>, config: &CompilerConfig) -> Self {
         Self {
             config: config.clone(),
             db: db.clone(),
@@ -1078,13 +1087,17 @@ impl PipelineAutomaton {
             })?;
 
         // Locate project executable.
-        let executable = self
-            .config
-            .versioned_executable(program_id, pr.program.version);
+        let executable_ref = self
+            .db
+            .lock()
+            .await
+            .get_compiled_binary_ref(program_id, pr.program.version)
+            .await?;
+        let fetched_executable = binary_ref_to_url(&executable_ref, pipeline_id).await?;
 
         // Run executable, set current directory to pipeline directory, pass metadata
         // file and config as arguments.
-        let pipeline_process = Command::new(executable)
+        let pipeline_process = Command::new(fetched_executable)
             .current_dir(self.config.pipeline_dir(pipeline_id))
             .arg("--config-file")
             .arg(&config_file_path)
@@ -1167,5 +1180,39 @@ impl LocalRunner {
                 notifier
             })
             .notify_one();
+    }
+}
+
+pub async fn binary_ref_to_url(
+    binary_ref: &str,
+    pipeline_id: PipelineId,
+) -> Result<String, RunnerError> {
+    let parsed =
+        url::Url::parse(binary_ref).expect("Can only be invoked with valid URLs created by us");
+    match parsed.scheme() {
+        // A file scheme assumes the binary is available locally where
+        // the runner is located.
+        "file" => {
+            let exists = fs::try_exists(parsed.path()).await;
+            match exists {
+                Ok(true) => Ok(parsed.path().to_string()),
+                Ok(false) => Err(RunnerError::BinaryFetchError {
+                    pipeline_id,
+                    error: format!(
+                        "fileref {} for binary required by pipeline {pipeline_id} does not exist",
+                        parsed.path()
+                    ),
+                }),
+                Err(e) => Err(RunnerError::BinaryFetchError {
+                    pipeline_id,
+                    error: format!(
+                        "Check fileref {} for binary required by pipeline {pipeline_id} returned an error: {}",
+                        parsed.path(),
+                        e
+                    ),
+                }),
+            }
+        }
+        _ => todo!("Unsupported URL scheme for binary ref"),
     }
 }

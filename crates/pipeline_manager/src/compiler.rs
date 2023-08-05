@@ -287,6 +287,7 @@ impl Compiler {
 
     async fn version_binary(
         config: &CompilerConfig,
+        db: &ProjectDB,
         program_id: ProgramId,
         version: Version,
     ) -> Result<(), ManagerError> {
@@ -295,6 +296,9 @@ impl Compiler {
             config.target_executable(program_id),
             config.versioned_executable(program_id, version)
         );
+
+        // Save the file locally and record a path to it as a "file://" scheme URL in the DB.
+        // This requires any entity accessing it to have access to the same filesystem
         let source = config.target_executable(program_id);
         let destination = config.versioned_executable(program_id, version);
         fs::copy(&source, &destination).await.map_err(|e| {
@@ -307,6 +311,15 @@ impl Compiler {
                 e,
             )
         })?;
+        let absolute_path = destination.canonicalize()
+                    .expect("Destination is not a symlink, and the path is guaranteed to exist if fs::copy succeeds");
+
+        db.create_compiled_binary_ref(
+            program_id,
+            version,
+            format!("file://{}", absolute_path.display()),
+        )
+        .await?;
         Ok(())
     }
 
@@ -650,7 +663,7 @@ impl Compiler {
                             job = Some(CompilationJob::rust(tenant_id, &config, program_id, version).await?);
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
-                            Self::version_binary(&config, program_id, version).await?;
+                            Self::version_binary(&config, &db, program_id, version).await?;
                             // Rust compiler succeeded -- declare victory.
                             db.set_program_status_guarded(tenant_id, program_id, version, ProgramStatus::Success).await?;
                             debug!("Set ProgramStatus::Success '{program_id}', version '{version}'");
