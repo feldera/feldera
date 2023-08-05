@@ -49,7 +49,7 @@
 //! Finally, we implement the `actix-web` `ResponseError` trait for [`PipelineError`],
 //! which allows [`PipelineError`] to be returned as an error type by HTTP endpoints.
 
-use crate::{ConfigError, ControllerError};
+use crate::{ConfigError, ControllerError, ParseError};
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
@@ -65,6 +65,8 @@ use std::{
     sync::Arc,
 };
 use utoipa::ToSchema;
+
+pub const MAX_REPORTED_PARSE_ERRORS: usize = 1_000;
 
 /// Information returned by REST API endpoints on error.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
@@ -175,6 +177,10 @@ pub enum PipelineError {
         #[serde(flatten)]
         error: Arc<ControllerError>,
     },
+    ParseErrors {
+        num_errors: u64,
+        errors: Vec<ParseError>,
+    },
 }
 
 impl From<ControllerError> for PipelineError {
@@ -226,6 +232,21 @@ impl Display for PipelineError {
             Self::ControllerError{ error } => {
                 error.fmt(f)
             }
+            Self::ParseErrors{ num_errors, errors } => {
+                if *num_errors > errors.len() as u64 {
+                    write!(f, "Errors parsing input data (reporting {} out of {} total errors):", errors.len(), num_errors)?;
+                    for error in errors.iter() {
+                        write!(f, "\n    {error}")?;
+                    }
+                    Ok(())
+                } else {
+                    write!(f, "Errors parsing input data ({} errors):", errors.len())?;
+                    for error in errors.iter() {
+                        write!(f, "\n    {error}")?;
+                    }
+                    Ok(())
+                }
+            }
         }
     }
 }
@@ -244,6 +265,7 @@ impl DetailedError for PipelineError {
             Self::MissingNeighborhoodSpec => Cow::from("MissingNeighborhoodSpec"),
             Self::NumQuantilesOutOfRange { .. } => Cow::from("NumQuantilesOutOfRange"),
             Self::InvalidNeighborhoodSpec { .. } => Cow::from("InvalidNeighborhoodSpec"),
+            Self::ParseErrors { .. } => Cow::from("ParseErrors"),
             Self::ControllerError { error } => error.error_code(),
         }
     }
@@ -285,11 +307,24 @@ impl ResponseError for PipelineError {
             Self::MissingNeighborhoodSpec => StatusCode::BAD_REQUEST,
             Self::NumQuantilesOutOfRange { .. } => StatusCode::RANGE_NOT_SATISFIABLE,
             Self::InvalidNeighborhoodSpec { .. } => StatusCode::BAD_REQUEST,
+            Self::ParseErrors { .. } => StatusCode::BAD_REQUEST,
             Self::ControllerError { error } => error.status_code(),
         }
     }
 
     fn error_response(&self) -> HttpResponse<BoxBody> {
         HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
+    }
+}
+
+impl PipelineError {
+    pub fn parse_errors<'a, I: IntoIterator<Item = &'a ParseError>>(
+        num_errors: usize,
+        errors: I,
+    ) -> Self {
+        Self::ParseErrors {
+            num_errors: num_errors as u64,
+            errors: errors.into_iter().cloned().collect(),
+        }
     }
 }

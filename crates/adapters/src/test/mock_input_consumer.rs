@@ -1,5 +1,7 @@
-use crate::{controller::FormatConfig, DeCollectionHandle, InputConsumer, InputFormat, Parser};
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use crate::{
+    controller::FormatConfig, DeCollectionHandle, InputConsumer, InputFormat, ParseError, Parser,
+};
+use anyhow::{anyhow, Error as AnyError};
 use erased_serde::Deserializer as ErasedDeserializer;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -17,7 +19,7 @@ pub struct MockInputConsumerState {
     pub endpoint_error: Option<AnyError>,
 
     /// The last result returned by the parser.
-    pub parser_result: Option<AnyResult<usize>>,
+    pub parser_result: Option<(usize, Vec<ParseError>)>,
 
     /// Parser to push data to.
     parser: Box<dyn Parser>,
@@ -47,6 +49,7 @@ impl MockInputConsumerState {
         let format = <dyn InputFormat>::get_format(&format_config.name).unwrap();
         let parser = format
             .new_parser(
+                "mock_input_endpoint",
                 input_handle,
                 &mut <dyn ErasedDeserializer>::erase(&format_config.config),
             )
@@ -90,41 +93,37 @@ impl MockInputConsumer {
         self.state().error_cb = error_cb;
     }
 
-    fn input(&mut self, data: &[u8], fragment: bool) -> AnyResult<()> {
+    fn input(&mut self, data: &[u8], fragment: bool) -> Vec<ParseError> {
         // println!("input");
         let mut state = self.state();
 
         state.data.extend_from_slice(data);
-        let parser_result = if fragment {
+        let (num_records, errors) = if fragment {
             state.parser.input_fragment(data)
         } else {
             state.parser.input_chunk(data)
         };
-        // println!("parser returned '{:?}'", state.parser_result);
-        if let Err(e) = &parser_result {
+
+        for error in errors.iter() {
+            // println!("parser returned '{:?}'", state.parser_result);
             if let Some(error_cb) = &mut state.error_cb {
-                error_cb(e);
+                error_cb(&anyhow!(error.clone()));
             } else {
-                panic!("mock_input_consumer: parse error '{e}'");
+                panic!("mock_input_consumer: parse error '{error}'");
             }
         }
 
-        // Wrap AnyError in Arc so we can clone it.
-        let parser_result = parser_result.map_err(|e| Arc::new(e));
-        let parser_result_clone = parser_result.clone();
-
-        state.parser_result = Some(parser_result.map_err(|e| anyhow!(e)));
-        state.parser.flush();
-        parser_result_clone.map(|_| ()).map_err(|e| anyhow!(e))
+        state.parser_result = Some((num_records, errors.clone()));
+        errors
     }
 }
 
 impl InputConsumer for MockInputConsumer {
-    fn input_fragment(&mut self, data: &[u8]) -> AnyResult<()> {
+    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
         self.input(data, true)
     }
 
-    fn input_chunk(&mut self, data: &[u8]) -> AnyResult<()> {
+    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
         self.input(data, false)
     }
 
@@ -139,24 +138,19 @@ impl InputConsumer for MockInputConsumer {
         state.endpoint_error = Some(error);
     }
 
-    fn eoi(&mut self) -> AnyResult<()> {
+    fn eoi(&mut self) -> Vec<ParseError> {
         let mut state = self.state();
         state.eoi = true;
 
-        match state.parser.eoi() {
-            Ok(_num_records) => {
-                state.parser.flush();
-                Ok(())
-            }
-            Err(error) => {
-                if let Some(error_cb) = &mut state.error_cb {
-                    error_cb(&error);
-                } else {
-                    panic!("mock_input_consumer: parse error '{error}'");
-                }
-                Err(error)
+        let (_num_records, errors) = state.parser.eoi();
+        for error in errors.iter() {
+            if let Some(error_cb) = &mut state.error_cb {
+                error_cb(&anyhow!(error.clone()));
+            } else {
+                panic!("mock_input_consumer: parse error '{error}'");
             }
         }
+        errors
     }
 
     fn fork(&self) -> Box<dyn InputConsumer> {

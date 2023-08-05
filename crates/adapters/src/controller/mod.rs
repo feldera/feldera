@@ -35,10 +35,10 @@
 
 use crate::{
     Catalog, Encoder, InputConsumer, InputEndpoint, InputFormat, InputTransport, OutputConsumer,
-    OutputEndpoint, OutputFormat, OutputQuery, OutputQueryHandles, OutputTransport, Parser,
-    PipelineState, SerBatch,
+    OutputEndpoint, OutputFormat, OutputQuery, OutputQueryHandles, OutputTransport, ParseError,
+    Parser, PipelineState, SerBatch,
 };
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use anyhow::Error as AnyError;
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
@@ -858,14 +858,11 @@ impl ControllerInner {
             )
         })?;
 
-        let parser = format
-            .new_parser(
-                input_stream,
-                &mut <dyn ErasedDeserializer>::erase(
-                    &endpoint_config.connector_config.format.config,
-                ),
-            )
-            .map_err(|e| ControllerError::parse_error(endpoint_name, e))?;
+        let parser = format.new_parser(
+            endpoint_name,
+            input_stream,
+            &mut <dyn ErasedDeserializer>::erase(&endpoint_config.connector_config.format.config),
+        )?;
 
         // Create probe.
         let endpoint_id = inputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
@@ -1171,7 +1168,7 @@ impl ControllerInner {
         ));
     }
 
-    fn parse_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: AnyError) {
+    fn parse_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: ParseError) {
         self.status.parse_error(endpoint_id);
         self.error(ControllerError::parse_error(endpoint_name, error));
     }
@@ -1238,95 +1235,62 @@ impl InputProbe {
 
 /// `InputConsumer` interface exposed to the transport endpoint.
 impl InputConsumer for InputProbe {
-    fn input_fragment(&mut self, data: &[u8]) -> AnyResult<()> {
+    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
         // println!("input consumer {} bytes", data.len());
         // Pass input buffer to the parser.
-        match self.parser.input_fragment(data) {
-            Ok(num_records) => {
-                // Success: push data to the input handle, update stats.
-                self.parser.flush();
-                self.controller.status.input_batch(
-                    self.endpoint_id,
-                    data.len(),
-                    num_records,
-                    &self.controller.status.global_config,
-                    &self.circuit_thread_unparker,
-                    &self.backpressure_thread_unparker,
-                );
-                Ok(())
-            }
-            Err(error) => {
-                // Wrap it in Arc, so we can pass it to `parse_error` and return from this
-                // function as well.
-                let error = Arc::new(error);
-                self.parser.clear();
-                self.controller.parse_error(
-                    self.endpoint_id,
-                    &self.endpoint_name,
-                    anyhow!(error.clone()),
-                );
-                Err(anyhow!(error))
-            }
+        let (num_records, errors) = self.parser.input_fragment(data);
+
+        for error in errors.iter() {
+            self.controller
+                .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
         }
+        self.controller.status.input_batch(
+            self.endpoint_id,
+            data.len(),
+            num_records,
+            &self.controller.status.global_config,
+            &self.circuit_thread_unparker,
+            &self.backpressure_thread_unparker,
+        );
+
+        errors
     }
 
-    fn input_chunk(&mut self, data: &[u8]) -> AnyResult<()> {
+    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
         // println!("input consumer {} bytes", data.len());
-        // Pass input buffer to the parser.
-        match self.parser.input_chunk(data) {
-            Ok(num_records) => {
-                // Success: push data to the input handle, update stats.
-                self.parser.flush();
-                self.controller.status.input_batch(
-                    self.endpoint_id,
-                    data.len(),
-                    num_records,
-                    &self.controller.status.global_config,
-                    &self.circuit_thread_unparker,
-                    &self.backpressure_thread_unparker,
-                );
-                Ok(())
-            }
-            Err(error) => {
-                // Wrap it in Arc, so we can pass it to `parse_error` and return from this
-                // function as well.
-                let error = Arc::new(error);
-                self.parser.clear();
-                self.controller.parse_error(
-                    self.endpoint_id,
-                    &self.endpoint_name,
-                    anyhow!(error.clone()),
-                );
-                Err(anyhow!(error))
-            }
+        let (num_records, errors) = self.parser.input_chunk(data);
+
+        for error in errors.iter() {
+            self.controller
+                .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
         }
+        self.controller.status.input_batch(
+            self.endpoint_id,
+            data.len(),
+            num_records,
+            &self.controller.status.global_config,
+            &self.circuit_thread_unparker,
+            &self.backpressure_thread_unparker,
+        );
+
+        errors
     }
 
-    fn eoi(&mut self) -> AnyResult<()> {
+    fn eoi(&mut self) -> Vec<ParseError> {
         // The endpoint reached end-of-file.  Notify and flush the parser (even though
         // no new data has been received, the parser may contain some partially
         // parsed data and may be waiting for, e.g., and end-of-line or
         // end-of-file to finish parsing it).
-        match self.parser.eoi() {
-            Ok(num_records) => {
-                self.parser.flush();
-                self.controller.status.eoi(
-                    self.endpoint_id,
-                    num_records,
-                    &self.circuit_thread_unparker,
-                );
-                Ok(())
-            }
-            Err(error) => {
-                let error = Arc::new(error);
-                self.parser.clear();
-                self.controller.error(ControllerError::parse_error(
-                    &self.endpoint_name,
-                    anyhow!(error.clone()),
-                ));
-                Err(anyhow!(error))
-            }
+        let (num_records, errors) = self.parser.eoi();
+        for error in errors.iter() {
+            self.controller
+                .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
         }
+        self.controller
+            .status
+            .eoi(self.endpoint_id, num_records, &self.circuit_thread_unparker);
+
+        errors
     }
 
     fn error(&mut self, fatal: bool, error: AnyError) {

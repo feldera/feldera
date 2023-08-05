@@ -1,10 +1,11 @@
 use crate::{
-    server::PipelineError, ControllerError, InputConsumer, InputEndpoint, PipelineState,
-    TransportConfig,
+    server::{PipelineError, MAX_REPORTED_PARSE_ERRORS},
+    ControllerError, InputConsumer, InputEndpoint, ParseError, PipelineState, TransportConfig,
 };
 use actix::Message;
 use actix_web::{web::Payload, HttpResponse};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use circular_queue::CircularQueue;
 use futures_util::StreamExt;
 use log::debug;
 use num_traits::FromPrimitive;
@@ -105,7 +106,7 @@ impl HttpInputEndpoint {
         self.inner.status_notifier.send_replace(());
     }
 
-    fn push_bytes(&self, bytes: &[u8]) -> AnyResult<()> {
+    fn push_bytes(&self, bytes: &[u8]) -> Vec<ParseError> {
         self.inner
             .consumer
             .lock()
@@ -115,7 +116,7 @@ impl HttpInputEndpoint {
             .input_fragment(bytes)
     }
 
-    fn eoi(&self) -> AnyResult<()> {
+    fn eoi(&self) -> Vec<ParseError> {
         self.inner.consumer.lock().unwrap().as_mut().unwrap().eoi()
     }
 
@@ -140,7 +141,10 @@ impl HttpInputEndpoint {
         debug!("HTTP input endpoint '{}': start of request", self.name());
 
         let mut num_bytes = 0;
+        let mut errors = CircularQueue::with_capacity(MAX_REPORTED_PARSE_ERRORS);
+        let mut num_errors = 0;
         let mut status_watch = self.inner.status_notifier.subscribe();
+
         loop {
             match self.state() {
                 PipelineState::Paused => {
@@ -155,8 +159,10 @@ impl HttpInputEndpoint {
                         Err(_elapsed) => (),
                         Ok(Some(Ok(bytes))) => {
                             num_bytes += bytes.len();
-                            if let Err(e) = self.push_bytes(&bytes) {
-                                Err(ControllerError::parse_error(self.name(), e))?
+                            let mut new_errors = self.push_bytes(&bytes);
+                            num_errors += new_errors.len();
+                            for error in new_errors.drain(..) {
+                                errors.push(error);
                             }
                         }
                         Ok(Some(Err(e))) => {
@@ -168,8 +174,10 @@ impl HttpInputEndpoint {
                             ))?
                         }
                         Ok(None) => {
-                            if let Err(e) = self.eoi() {
-                                Err(ControllerError::parse_error(self.name(), e))?
+                            let mut new_errors = self.eoi();
+                            num_errors += new_errors.len();
+                            for error in new_errors.drain(..) {
+                                errors.push(error);
                             }
                             break;
                         }
@@ -182,7 +190,11 @@ impl HttpInputEndpoint {
             "HTTP input endpoint '{}': end of request, {num_bytes} received",
             self.name()
         );
-        Ok(HttpResponse::Ok().finish())
+        if errors.is_empty() {
+            Ok(HttpResponse::Ok().finish())
+        } else {
+            Err(PipelineError::parse_errors(num_errors, errors.iter()))
+        }
     }
 }
 

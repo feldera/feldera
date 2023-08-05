@@ -147,7 +147,7 @@ pub use catalog::{Catalog, NeighborhoodQuery, OutputQuery, OutputQueryHandles};
 pub use deinput::{
     DeCollectionHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
 };
-pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, Parser};
+pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser};
 pub use seroutput::{SerBatch, SerCursor, SerOutputBatchHandle};
 
 pub use controller::{

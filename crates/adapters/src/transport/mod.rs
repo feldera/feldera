@@ -31,7 +31,7 @@
 //! let transport = <dyn InputTransport>::get_transport(transport_name).unwrap();
 //! let endpoint = transport.new_endpoint(endpoint_name, &config, consumer);
 //! ```
-use crate::OutputEndpointConfig;
+use crate::{format::ParseError, OutputEndpointConfig};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use once_cell::sync::Lazy;
 use serde_yaml::Value as YamlValue;
@@ -167,12 +167,12 @@ pub trait InputConsumer: Send {
     /// The parser is responsible for identifying record boundaries and
     /// buffering incomplete records to get prepended to the next
     /// input fragment.
-    fn input_fragment(&mut self, data: &[u8]) -> AnyResult<()>;
+    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError>;
 
     /// Push a chunk of data to the consumer.
     ///
     /// The chunk is expected to contain complete records only.
-    fn input_chunk(&mut self, data: &[u8]) -> AnyResult<()>;
+    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError>;
 
     /// Endpoint failed.
     ///
@@ -182,7 +182,7 @@ pub trait InputConsumer: Send {
     /// End-of-input-stream notification.
     ///
     /// No more data will be received from the endpoint.
-    fn eoi(&mut self) -> AnyResult<()>;
+    fn eoi(&mut self) -> Vec<ParseError>;
 
     /// Create a new consumer instance.
     ///
