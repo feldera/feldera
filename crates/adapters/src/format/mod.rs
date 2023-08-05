@@ -1,10 +1,16 @@
-use crate::{DeCollectionHandle, SerBatch};
+use crate::{ControllerError, DeCollectionHandle, SerBatch};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerialize};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    error::Error as StdError,
+    fmt::{Display, Error as FmtError, Formatter},
+    sync::Arc,
+};
 
 mod csv;
 mod json;
@@ -19,6 +25,153 @@ use self::{
     csv::{CsvInputFormat, CsvOutputFormat},
     json::JsonInputFormat,
 };
+
+/// Error parsing input data.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct ParseError {
+    /// Error description.
+    description: String,
+
+    /// Event number relative to the start of the stream.
+    ///
+    /// An input stream is a series data change events (row insertions, deletions,
+    /// and updates).  This field specifies the index (starting from 1) of the
+    /// event that caused the error, relative to the start of the stream.  In
+    /// some cases this index cannot be identified, e.g., if the error makes an entire
+    /// block of events unparseable.
+    event_number: Option<u64>,
+
+    /// Invalid fragment of input data.
+    ///
+    /// Used for binary data formats and for text-based formats when the input
+    /// is not valid UTF-8 string.
+    invalid_bytes: Option<Vec<u8>>,
+
+    /// Invalid fragment of the input text.
+    ///
+    /// Only used for text-based formats and in cases when input is valid UTF-8.
+    invalid_text: Option<String>,
+
+    /// Any additional information that may help fix the problem, e.g., example of
+    /// a valid input.
+    suggestion: Option<Cow<'static, str>>,
+}
+
+impl StdError for ParseError {}
+
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        let event = if let Some(event_number) = self.event_number {
+            format!(" (event #{})", event_number)
+        } else {
+            String::new()
+        };
+
+        let invalid_fragment = if let Some(invalid_bytes) = &self.invalid_bytes {
+            format!("\nInvalid bytes: {invalid_bytes:?}")
+        } else if let Some(invalid_text) = &self.invalid_text {
+            format!("\nInvalid fragment: {invalid_text}")
+        } else {
+            String::new()
+        };
+
+        let suggestion = if let Some(suggestion) = &self.suggestion {
+            format!("\n{suggestion}")
+        } else {
+            String::new()
+        };
+
+        write!(
+            f,
+            "Parse error{event}: {}{invalid_fragment}{suggestion}",
+            self.description
+        )
+    }
+}
+
+impl ParseError {
+    pub fn new(
+        description: String,
+        event_number: Option<u64>,
+        invalid_text: Option<&str>,
+        invalid_bytes: Option<&[u8]>,
+        suggestion: Option<Cow<'static, str>>,
+    ) -> Self {
+        Self {
+            description,
+            event_number,
+            invalid_text: invalid_text.map(str::to_string),
+            invalid_bytes: invalid_bytes.map(ToOwned::to_owned),
+            suggestion,
+        }
+    }
+
+    /// Error parsing an individual event in a text-based input format (e.g., JSON, CSV).
+    pub fn text_event_error(
+        description: String,
+        event_number: u64,
+        invalid_text: &str,
+        suggestion: Option<Cow<'static, str>>,
+    ) -> Self {
+        Self {
+            description,
+            event_number: Some(event_number),
+            invalid_text: Some(invalid_text.to_string()),
+            invalid_bytes: None,
+            suggestion,
+        }
+    }
+
+    /// Error parsing a container, e.g., a JSON array, with multiple events.
+    ///
+    /// Such errors cannot be attributed to an individual event numbers.
+    pub fn text_envelope_error(
+        description: String,
+        invalid_text: &str,
+        suggestion: Option<Cow<'static, str>>,
+    ) -> Self {
+        Self {
+            description,
+            event_number: None,
+            invalid_text: Some(invalid_text.to_string()),
+            invalid_bytes: None,
+            suggestion,
+        }
+    }
+
+    /// Error parsing an individual event in a binary input format (e.g., bincode).
+    pub fn bin_event_error(
+        description: String,
+        event_number: u64,
+        invalid_bytes: &[u8],
+        suggestion: Option<Cow<'static, str>>,
+    ) -> Self {
+        Self {
+            description,
+            event_number: Some(event_number),
+            invalid_text: None,
+            invalid_bytes: Some(invalid_bytes.to_owned()),
+            suggestion,
+        }
+    }
+
+    /// Error parsing a container with multiple events.
+    ///
+    /// Such errors cannot be attributed to an individual event numbers.
+    pub fn bin_envelope_error(
+        description: String,
+        invalid_bytes: &[u8],
+        suggestion: Option<Cow<'static, str>>,
+    ) -> Self {
+        Self {
+            description,
+            event_number: None,
+            invalid_text: None,
+            invalid_bytes: Some(invalid_bytes.to_owned()),
+            suggestion,
+        }
+    }
+}
 
 /// Different ways to encode table records in JSON.
 // TODO: we currently only support the `Map` representation.
@@ -86,8 +239,9 @@ pub trait InputFormat: Send + Sync {
     /// set HTTP-specific defaults for config fields, etc.
     fn config_from_http_request(
         &self,
+        endpoint_name: &str,
         request: &HttpRequest,
-    ) -> AnyResult<Box<dyn ErasedSerialize>>;
+    ) -> Result<Box<dyn ErasedSerialize>, ControllerError>;
 
     /// Create a new parser for the format.
     ///
@@ -98,9 +252,10 @@ pub trait InputFormat: Send + Sync {
     /// * `config` - Deserializer to extract format-specific configuration.
     fn new_parser(
         &self,
+        endpoint_name: &str,
         input_stream: &dyn DeCollectionHandle,
         config: &mut dyn ErasedDeserializer,
-    ) -> AnyResult<Box<dyn Parser>>;
+    ) -> Result<Box<dyn Parser>, ControllerError>;
 }
 
 impl dyn InputFormat {
@@ -132,7 +287,7 @@ pub trait Parser: Send {
     ///
     /// Returns the number of records in the parsed representation or an error
     /// if parsing fails.
-    fn input_fragment(&mut self, data: &[u8]) -> AnyResult<usize>;
+    fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>);
 
     /// Push a chunk of data to the parser.
     ///
@@ -145,7 +300,7 @@ pub trait Parser: Send {
     ///
     /// Returns the number of records in the parsed representation or an error
     /// if parsing fails.
-    fn input_chunk(&mut self, data: &[u8]) -> AnyResult<usize> {
+    fn input_chunk(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
         self.input_fragment(data)
     }
 
@@ -156,21 +311,7 @@ pub trait Parser: Send {
     ///
     /// Returns the number of additional records pushed to the circuit or an
     /// error if parsing fails.
-    fn eoi(&mut self) -> AnyResult<usize>;
-
-    /// Flush input handles.
-    ///
-    /// The implementation must call
-    /// [`DeCollectionHandle::flush()`](`crate::DeCollectionHandle::flush`) on
-    /// all input handles modified by this parser.
-    fn flush(&mut self);
-
-    /// Clear input handles.
-    ///
-    /// The implementation must call
-    /// [`DeCollectionHandle::clear_buffer()`](`crate::DeCollectionHandle::clear_buffer`)
-    /// on all input handles modified by this parser.
-    fn clear(&mut self);
+    fn eoi(&mut self) -> (usize, Vec<ParseError>);
 
     /// Create a new parser with the same configuration as `self`.
     ///

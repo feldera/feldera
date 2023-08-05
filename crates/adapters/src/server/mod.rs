@@ -46,7 +46,7 @@ use uuid::Uuid;
 pub mod error;
 mod prometheus;
 
-pub use self::error::{ErrorResponse, PipelineError};
+pub use self::error::{ErrorResponse, PipelineError, MAX_REPORTED_PARSE_ERRORS};
 use self::prometheus::PrometheusMetrics;
 
 /// Tracks the health of the pipeline.
@@ -1006,7 +1006,7 @@ outputs:
                 .json::<JsonValue>()
                 .await
                 .unwrap();
-            println!("stats: {stats:#}");
+            // println!("stats: {stats:#}");
             let num_errors = stats.get("inputs").unwrap().as_array().unwrap()[0]
                 .get("metrics")
                 .unwrap()

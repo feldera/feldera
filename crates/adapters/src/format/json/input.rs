@@ -1,12 +1,11 @@
 //! JSON format parser.
 
 use crate::{
-    format::{InputFormat, Parser, RecordFormat},
+    format::{InputFormat, ParseError, Parser, RecordFormat},
     util::split_on_newline,
-    DeCollectionHandle,
+    ControllerError, DeCollectionHandle,
 };
 use actix_web::HttpRequest;
-use anyhow::{anyhow, Result as AnyResult};
 use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerialize};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -128,20 +127,26 @@ impl InputFormat for JsonInputFormat {
 
     fn new_parser(
         &self,
+        endpoint_name: &str,
         input_stream: &dyn DeCollectionHandle,
         config: &mut dyn ErasedDeserializer,
-    ) -> AnyResult<Box<dyn Parser>> {
-        let config = JsonParserConfig::deserialize(config)?;
+    ) -> Result<Box<dyn Parser>, ControllerError> {
+        let config = JsonParserConfig::deserialize(config)
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?;
         Ok(Box::new(JsonParser::new(input_stream, config)) as Box<dyn Parser>)
     }
 
     fn config_from_http_request(
         &self,
+        endpoint_name: &str,
         request: &HttpRequest,
-    ) -> AnyResult<Box<dyn ErasedSerialize>> {
-        Ok(Box::new(JsonParserConfig::deserialize(
-            UrlDeserializer::new(form_urlencoded::parse(request.query_string().as_bytes())),
-        )?))
+    ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
+        Ok(Box::new(
+            JsonParserConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
+                request.query_string().as_bytes(),
+            )))
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?,
+        ))
     }
 }
 
@@ -193,6 +198,7 @@ pub struct DebeziumPayload<'a> {
 
 /// A data change event in the insert/delete format.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InsDelUpdate<'a> {
     // This field is currently ignored.  We will add support for it in the future.
     #[doc(hidden)]
@@ -223,6 +229,7 @@ struct JsonParser {
     input_stream: Box<dyn DeCollectionHandle>,
     config: JsonParserConfig,
     leftover: Vec<u8>,
+    last_event_number: u64,
 }
 
 impl JsonParser {
@@ -231,10 +238,19 @@ impl JsonParser {
             input_stream: input_stream.fork(),
             config,
             leftover: Vec::new(),
+            last_event_number: 0,
         }
     }
 
-    fn apply_debezium_update(&mut self, update: DebeziumUpdate) -> AnyResult<usize> {
+    fn flush(&mut self) {
+        self.input_stream.flush();
+    }
+
+    fn clear(&mut self) {
+        self.input_stream.clear_buffer();
+    }
+
+    fn apply_debezium_update(&mut self, update: DebeziumUpdate) -> Result<usize, ParseError> {
         // TODO: validate table name.
         // We currently allow a JSON connector to feed data to a single table.
         // The name of the table may or may not match table name in the CDC
@@ -260,25 +276,35 @@ impl JsonParser {
         if let Some(before) = &update.payload.before {
             let mut deserializer = serde_json::Deserializer::from_str(before.get());
             let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-            self.input_stream
-                .delete(&mut deserializer)
-                .map_err(|e| anyhow!("failed to deserialize JSON record '{before}': {e}"))?;
+            self.input_stream.delete(&mut deserializer).map_err(|e| {
+                ParseError::text_event_error(
+                    format!("failed to deserialize JSON record: {e}"),
+                    self.last_event_number + 1,
+                    before.get(),
+                    None,
+                )
+            })?;
             updates += 1;
         };
 
         if let Some(after) = &update.payload.after {
             let mut deserializer = serde_json::Deserializer::from_str(after.get());
             let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-            self.input_stream
-                .insert(&mut deserializer)
-                .map_err(|e| anyhow!("failed to deserialize JSON record '{after}': {e}"))?;
+            self.input_stream.insert(&mut deserializer).map_err(|e| {
+                ParseError::text_event_error(
+                    format!("failed to deserialize JSON record: {e}"),
+                    self.last_event_number + 1,
+                    after.get(),
+                    None,
+                )
+            })?;
             updates += 1;
         };
 
         Ok(updates)
     }
 
-    fn apply_insdel_update(&mut self, update: InsDelUpdate) -> AnyResult<usize> {
+    fn apply_insdel_update(&mut self, update: InsDelUpdate) -> Result<usize, ParseError> {
         // TODO: validate table name.
         // We currently allow a JSON connector to feed data to a single table.
         // The name of the table may or may not match table name in the CDC
@@ -293,150 +319,298 @@ impl JsonParser {
         if let Some(val) = update.insert {
             let mut deserializer = serde_json::Deserializer::from_str(val.get());
             let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-            self.input_stream
-                .insert(&mut deserializer)
-                .map_err(|e| anyhow!("failed to deserialize JSON record '{val}': {e}"))?;
+            self.input_stream.insert(&mut deserializer).map_err(|e| {
+                ParseError::text_event_error(
+                    format!("failed to deserialize JSON record: {e}"),
+                    self.last_event_number + 1,
+                    val.get(),
+                    None,
+                )
+            })?;
             updates += 1;
         }
 
         if let Some(val) = update.delete {
             let mut deserializer = serde_json::Deserializer::from_str(val.get());
             let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-            self.input_stream
-                .delete(&mut deserializer)
-                .map_err(|e| anyhow!("failed to deserialize JSON record '{val}': {e}"))?;
+            self.input_stream.delete(&mut deserializer).map_err(|e| {
+                ParseError::text_event_error(
+                    format!("failed to deserialize JSON record: {e}"),
+                    self.last_event_number + 1,
+                    val.get(),
+                    None,
+                )
+            })?;
             updates += 1;
         }
 
         Ok(updates)
     }
 
-    fn apply_weighted_update(&mut self, _update: WeightedUpdate) -> AnyResult<usize> {
+    fn apply_weighted_update(&mut self, _update: WeightedUpdate) -> Result<usize, ParseError> {
         todo!()
     }
 
-    fn apply_raw_update(&mut self, update: &RawValue) -> AnyResult<usize> {
+    fn apply_raw_update(&mut self, update: &RawValue) -> Result<usize, ParseError> {
         let mut deserializer = serde_json::Deserializer::from_str(update.get());
         let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-        self.input_stream
-            .insert(&mut deserializer)
-            .map_err(|e| anyhow!("failed to deserialize JSON record '{update}': {e}"))?;
+        self.input_stream.insert(&mut deserializer).map_err(|e| {
+            ParseError::text_event_error(
+                format!("failed to deserialize JSON record '{update}': {e}"),
+                self.last_event_number + 1,
+                update.get(),
+                None,
+            )
+        })?;
         Ok(1)
     }
 
-    fn input_from_slice(&mut self, bytes: &[u8]) -> AnyResult<usize> {
+    fn input_from_slice(&mut self, bytes: &[u8]) -> (usize, Vec<ParseError>) {
         let mut num_updates = 0;
+        let mut errors = Vec::new();
 
-        match self.config.update_format {
-            JsonUpdateFormat::InsertDelete => {
-                if self.config.array {
-                    for updates in
-                        serde_json::Deserializer::from_slice(bytes).into_iter::<Vec<InsDelUpdate>>()
-                    {
-                        let updates = updates.map_err(|e| {
-                            let json_str = String::from_utf8_lossy(bytes);
-                            anyhow!("error deserializing string as a JSON array of updates: {e}\nInvalid JSON: {json_str}\nExample valid JSON: '[{{\"insert\": {{...}} }}, {{\"delete\": {{...}} }}]'")
-                        })?;
-                        for update in updates.into_iter() {
-                            num_updates += self.apply_insdel_update(update)?;
-                        }
+        let mut stream = serde_json::Deserializer::from_slice(bytes).into_iter::<&RawValue>();
+
+        while let Some(update) = stream.next() {
+            let update = match update {
+                Err(e) => {
+                    let json_str = String::from_utf8_lossy(&bytes[stream.byte_offset()..]);
+                    errors.push(ParseError::text_envelope_error(
+                        format!("failed to parse string as a JSON document: {e}"),
+                        &json_str,
+                        None,
+                    ));
+                    if !self.config.array {
+                        self.flush();
                     }
-                } else {
-                    for update in
-                        serde_json::Deserializer::from_slice(bytes).into_iter::<InsDelUpdate>()
-                    {
-                        // println!("update: {update:?}");
-                        let update = update.map_err(|e| {
-                            let json_str = String::from_utf8_lossy(bytes);
-                            anyhow!("error deserializing string as a single-row update: {e}\nInvalid JSON: {json_str}\nExample valid JSON: '{{\"insert\": {{...}} }}'")
-                        })?;
-                        num_updates += self.apply_insdel_update(update)?;
+                    return (num_updates, errors);
+                }
+                Ok(update) => update,
+            };
+
+            match self.config.update_format {
+                JsonUpdateFormat::InsertDelete => {
+                    if self.config.array {
+                        match serde_json::from_str::<Vec<InsDelUpdate>>(update.get()) {
+                            Err(e) => {
+                                errors.push(ParseError::text_envelope_error(
+                                    format!("error deserializing string as a JSON array of updates: {e}"),
+                                    update.get(),
+                                    Some(Cow::from("Example valid JSON: '[{{\"insert\": {{...}} }}, {{\"delete\": {{...}} }}]'"))));
+                            }
+                            Ok(updates) => {
+                                let mut error = false;
+                                for update in updates {
+                                    match self.apply_insdel_update(update) {
+                                        Err(e) => {
+                                            error = true;
+                                            errors.push(e);
+                                        }
+                                        Ok(nupdates) => {
+                                            num_updates += nupdates;
+                                        }
+                                    }
+                                    self.last_event_number += 1;
+                                }
+                                if error {
+                                    self.clear();
+                                } else {
+                                    self.flush();
+                                }
+                            }
+                        };
+                    } else {
+                        match serde_json::from_str::<InsDelUpdate>(update.get()) {
+                            Err(e) => {
+                                // println!("update: {update:?}");
+                                errors.push(ParseError::text_event_error (
+                                    format!("error deserializing JSON string as a single-row update: {e}"),
+                                    self.last_event_number + 1,
+                                    update.get(),
+                                    Some(Cow::from("Example valid JSON: '{{\"insert\": {{...}} }}'"))));
+                            }
+                            Ok(update) => match self.apply_insdel_update(update) {
+                                Err(e) => {
+                                    errors.push(e);
+                                }
+                                Ok(nupdates) => {
+                                    num_updates += nupdates;
+                                }
+                            },
+                        }
+                        self.last_event_number += 1;
                     }
                 }
-            }
-            JsonUpdateFormat::Debezium => {
-                if self.config.array {
-                    for updates in serde_json::Deserializer::from_slice(bytes)
-                        .into_iter::<Vec<DebeziumUpdate>>()
-                    {
-                        let updates = updates.map_err(|e| {
-                            let json_str = String::from_utf8_lossy(bytes);
-                            anyhow!("error deserializing string as a JSON array of Debezium CDC records: {e}\nInvalid JSON: {json_str}\nExample valid JSON: '[{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}]'")
-                        })?;
-                        for update in updates.into_iter() {
-                            num_updates += self.apply_debezium_update(update)?;
+                JsonUpdateFormat::Debezium => {
+                    if self.config.array {
+                        match serde_json::from_str::<Vec<DebeziumUpdate>>(update.get()) {
+                            Err(e) => {
+                                errors.push(ParseError::text_envelope_error(
+                                    format!("error deserializing string as a JSON array of Debezium CDC events: {e}"),
+                                    update.get(),
+                                    Some(Cow::from("Example valid JSON: '[{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}]'"))));
+                            }
+                            Ok(updates) => {
+                                let mut error = false;
+                                for update in updates {
+                                    match self.apply_debezium_update(update) {
+                                        Err(e) => {
+                                            error = true;
+                                            errors.push(e);
+                                        }
+                                        Ok(nupdates) => {
+                                            num_updates += nupdates;
+                                        }
+                                    }
+                                    self.last_event_number += 1;
+                                }
+                                if error {
+                                    self.clear();
+                                } else {
+                                    self.flush();
+                                }
+                            }
                         }
-                    }
-                } else {
-                    for update in
-                        serde_json::Deserializer::from_slice(bytes).into_iter::<DebeziumUpdate>()
-                    {
-                        let update = update.map_err(|e| {
-                            let json_str = String::from_utf8_lossy(bytes);
-                            anyhow!("error deserializing string as a Debezium CDC record: {e}\nInvalid JSON: {json_str}\nExample valid JSON: '{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}'")
-                        })?;
-                        num_updates += self.apply_debezium_update(update)?;
+                    } else {
+                        match serde_json::from_str::<DebeziumUpdate>(update.get()) {
+                            Err(e) => {
+                                // println!("update: {update:?}");
+                                errors.push(ParseError::text_event_error (
+                                    format!("error deserializing JSON string as a Debezium CDC event: {e}"),
+                                    self.last_event_number + 1,
+                                    update.get(),
+                                    Some(Cow::from("Example valid JSON: '{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}'"))));
+                            }
+                            Ok(update) => match self.apply_debezium_update(update) {
+                                Err(e) => {
+                                    errors.push(e);
+                                }
+                                Ok(nupdates) => {
+                                    num_updates += nupdates;
+                                }
+                            },
+                        }
+                        self.last_event_number += 1;
                     }
                 }
-            }
-            JsonUpdateFormat::Weighted => {
-                if self.config.array {
-                    for updates in serde_json::Deserializer::from_slice(bytes)
-                        .into_iter::<Vec<WeightedUpdate>>()
-                    {
-                        let updates = updates.map_err(|e| {
-                            let json_str = String::from_utf8_lossy(bytes);
-                            anyhow!("error deserializing string as a JSON array of weighted records: {e}\nInvalid JSON: {json_str}\nExample valid JSON: '[{{\"weight\": 1, \"data\": {{...}} }}, {{\"weight\": -1, \"data\": {{...}} }}]'")
-                        })?;
-                        for update in updates.into_iter() {
-                            num_updates += self.apply_weighted_update(update)?;
+                JsonUpdateFormat::Weighted => {
+                    if self.config.array {
+                        match serde_json::from_str::<Vec<WeightedUpdate>>(update.get()) {
+                            Err(e) => {
+                                errors.push(ParseError::text_envelope_error(
+                                    format!("error deserializing string as a JSON array of weighted records: {e}"),
+                                    update.get(),
+                                    Some(Cow::from("Example valid JSON: '[{{\"weight\": 1, \"data\": {{...}} }}, {{\"weight\": -1, \"data\": {{...}} }}]'"))));
+                            }
+                            Ok(updates) => {
+                                let mut error = false;
+                                for update in updates {
+                                    match self.apply_weighted_update(update) {
+                                        Err(e) => {
+                                            error = true;
+                                            errors.push(e);
+                                        }
+                                        Ok(nupdates) => {
+                                            num_updates += nupdates;
+                                        }
+                                    }
+                                    self.last_event_number += 1;
+                                }
+                                if error {
+                                    self.clear();
+                                } else {
+                                    self.flush();
+                                }
+                            }
                         }
-                    }
-                } else {
-                    for update in
-                        serde_json::Deserializer::from_slice(bytes).into_iter::<WeightedUpdate>()
-                    {
-                        let update = update.map_err(|e| {
-                            let json_str = String::from_utf8_lossy(bytes);
-                            anyhow!("error deserializing string as a weighted record: {e}\nInvalid JSON: {json_str}\nExample valid JSON: '{{\"weight\": 1, \"data\": {{...}} }}'")
-                        })?;
-                        num_updates += self.apply_weighted_update(update)?;
+                    } else {
+                        match serde_json::from_str::<WeightedUpdate>(update.get()) {
+                            Err(e) => {
+                                // println!("update: {update:?}");
+                                errors.push(ParseError::text_event_error (
+                                    format!("error deserializing JSON string as a weighted record: {e}"),
+                                    self.last_event_number + 1,
+                                    update.get(),
+                                    Some(Cow::from("Example valid JSON: '{{\"weight\": 1, \"data\": {{...}} }}'"))));
+                            }
+                            Ok(update) => match self.apply_weighted_update(update) {
+                                Err(e) => {
+                                    errors.push(e);
+                                }
+                                Ok(nupdates) => {
+                                    num_updates += nupdates;
+                                }
+                            },
+                        }
+                        self.last_event_number += 1;
                     }
                 }
-            }
-            JsonUpdateFormat::Raw => {
-                if self.config.array {
-                    for updates in
-                        serde_json::Deserializer::from_slice(bytes).into_iter::<Vec<&RawValue>>()
-                    {
-                        let updates = updates.map_err(|e| {
-                            let json_str = String::from_utf8_lossy(bytes);
-                            anyhow!("error deserializing string as a JSON array: {e}\nInvalid JSON: {json_str}'")
-                        })?;
-                        for update in updates.into_iter() {
-                            num_updates += self.apply_raw_update(update)?;
+                JsonUpdateFormat::Raw => {
+                    if self.config.array {
+                        match serde_json::from_str::<Vec<&RawValue>>(update.get()) {
+                            Err(e) => {
+                                errors.push(ParseError::text_envelope_error(
+                                    format!("error deserializing string as a JSON array: {e}"),
+                                    update.get(),
+                                    None,
+                                ));
+                            }
+                            Ok(updates) => {
+                                let mut error = false;
+                                for update in updates {
+                                    match self.apply_raw_update(update) {
+                                        Err(e) => {
+                                            error = true;
+                                            errors.push(e);
+                                        }
+                                        Ok(nupdates) => {
+                                            num_updates += nupdates;
+                                        }
+                                    }
+                                    self.last_event_number += 1;
+                                }
+                                if error {
+                                    self.clear();
+                                } else {
+                                    self.flush();
+                                }
+                            }
                         }
-                    }
-                } else {
-                    for update in
-                        serde_json::Deserializer::from_slice(bytes).into_iter::<&RawValue>()
-                    {
-                        // println!("update: {update:?}");
-                        let update = update.map_err(|e| {
-                            let json_str = String::from_utf8_lossy(bytes);
-                            anyhow!("error parsing JSON string: {e}\nInvalid JSON: {json_str}")
-                        })?;
-                        num_updates += self.apply_raw_update(update)?;
+                    } else {
+                        match serde_json::from_str::<&RawValue>(update.get()) {
+                            Err(e) => {
+                                // println!("update: {update:?}");
+                                errors.push(ParseError::text_event_error(
+                                    format!("failed to parse JSON string: {e}"),
+                                    self.last_event_number + 1,
+                                    update.get(),
+                                    None,
+                                ));
+                            }
+                            Ok(update) => match self.apply_raw_update(update) {
+                                Err(e) => {
+                                    errors.push(e);
+                                }
+                                Ok(nupdates) => {
+                                    num_updates += nupdates;
+                                }
+                            },
+                        }
+                        self.last_event_number += 1;
                     }
                 }
             }
         }
-        Ok(num_updates)
+
+        if !self.config.array {
+            self.flush();
+        }
+        (num_updates, errors)
     }
 }
 
 impl Parser for JsonParser {
-    fn input_fragment(&mut self, data: &[u8]) -> AnyResult<usize> {
+    fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
         // println!("input_fragment {}", std::str::from_utf8(data).unwrap());
         let leftover = split_on_newline(data);
 
@@ -445,7 +619,7 @@ impl Parser for JsonParser {
             // the `leftover` buffer so it gets processed with the next input
             // buffer.
             self.leftover.extend_from_slice(data);
-            Ok(0)
+            (0, Vec::new())
         } else {
             self.leftover.extend_from_slice(&data[0..leftover]);
             let mut leftover_data = take(&mut self.leftover);
@@ -457,31 +631,23 @@ impl Parser for JsonParser {
         }
     }
 
-    fn input_chunk(&mut self, data: &[u8]) -> AnyResult<usize> {
+    fn input_chunk(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
         self.input_from_slice(data)
     }
 
-    fn eoi(&mut self) -> AnyResult<usize> {
+    fn eoi(&mut self) -> (usize, Vec<ParseError>) {
         /*println!(
             "eoi: leftover: {}",
             std::str::from_utf8(&self.leftover).unwrap()
         );*/
         if self.leftover.is_empty() {
-            return Ok(0);
+            return (0, Vec::new());
         }
 
         // Try to interpret the leftover chunk as a complete JSON.
         let leftover = take(&mut self.leftover);
         let res = self.input_from_slice(leftover.as_slice());
         res
-    }
-
-    fn flush(&mut self) {
-        self.input_stream.flush();
-    }
-
-    fn clear(&mut self) {
-        self.input_stream.clear_buffer();
     }
 
     fn fork(&self) -> Box<dyn Parser> {
@@ -495,7 +661,7 @@ mod test {
         format::{JsonParserConfig, JsonUpdateFormat, RecordFormat},
         test::mock_parser_pipeline,
         transport::InputConsumer,
-        FormatConfig,
+        FormatConfig, ParseError,
     };
     use serde::Deserialize;
     use std::{borrow::Cow, fmt::Debug};
@@ -531,8 +697,8 @@ mod test {
         chunks: bool,
         config: JsonParserConfig,
         /// Input data, expected result.
-        input_batches: Vec<(String, Result<(), String>)>,
-        final_result: Result<(), String>,
+        input_batches: Vec<(String, Vec<ParseError>)>,
+        final_result: Vec<ParseError>,
         /// Expected contents at the end of the test.
         expected_output: Vec<(T, bool)>,
     }
@@ -556,10 +722,10 @@ mod test {
                 } else {
                     consumer.input_fragment(json.as_bytes())
                 };
-                assert_eq!(&res.map_err(|e| e.to_string()), &expected_result);
+                assert_eq!(&res, &expected_result);
             }
             let res = consumer.eoi();
-            assert_eq!(&res.map_err(|e| e.to_string()), &test.final_result);
+            assert_eq!(&res, &test.final_result);
             assert_eq!(&test.expected_output, &outputs.state().flushed);
         }
     }
@@ -568,9 +734,9 @@ mod test {
         fn new(
             chunks: bool,
             config: JsonParserConfig,
-            input_batches: Vec<(String, Result<(), String>)>,
+            input_batches: Vec<(String, Vec<ParseError>)>,
             expected_output: Vec<(T, bool)>,
-            final_result: Result<(), String>,
+            final_result: Vec<ParseError>,
         ) -> Self {
             Self {
                 chunks,
@@ -595,9 +761,9 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![(r#"{"b": true, "i": 0}"#.to_string(), Ok(()))],
+                vec![(r#"{"b": true, "i": 0}"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true)],
-                Ok(())
+                Vec::new(),
             ),
             TestCase::new(
                 true,
@@ -606,9 +772,9 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![(r#"[true, 0, "a"]"#.to_string(), Ok(()))],
+                vec![(r#"[true, 0, "a"]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, "a"), true)],
-                Ok(())
+                Vec::new(),
             ),
             TestCase::new(
                 true,
@@ -617,9 +783,9 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
-                vec![(r#"[{"b": true, "i": 0}]"#.to_string(), Ok(()))],
+                vec![(r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -628,9 +794,9 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
-                vec![(r#"[[true, 0, "b"]]"#.to_string(), Ok(()))],
+                vec![(r#"[[true, 0, "b"]]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, "b"), true)],
-                Ok(())
+                Vec::new()
             ),
             // raw: one chunk, two records.
             TestCase::new(
@@ -640,9 +806,9 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![(r#"{"b": true, "i": 0}{"b": false, "i": 100, "s": "foo"}"#.to_string(), Ok(()))],
+                vec![(r#"{"b": true, "i": 0}{"b": false, "i": 100, "s": "foo"}"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 100, "foo"), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -651,9 +817,9 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![(r#"[true, 0, "c"][false, 100, "foo"]"#.to_string(), Ok(()))],
+                vec![(r#"[true, 0, "c"][false, 100, "foo"]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, "c"), true), (TestStruct::new(false, 100, "foo"), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -662,9 +828,9 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
-                vec![(r#"[{"b": true, "i": 0},{"b": false, "i": 100, "s": "foo"}]"#.to_string(), Ok(()))],
+                vec![(r#"[{"b": true, "i": 0},{"b": false, "i": 100, "s": "foo"}]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 100, "foo"), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -673,9 +839,9 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
-                vec![(r#"[[true, 0, "d"],[false, 100, "foo"]]"#.to_string(), Ok(()))],
+                vec![(r#"[[true, 0, "d"],[false, 100, "foo"]]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, "d"), true), (TestStruct::new(false, 100, "foo"), true)],
-                Ok(())
+                Vec::new()
             ),
             // raw: two chunks, one record each.
             TestCase::new(
@@ -685,10 +851,10 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Ok(()))
-                    , (r#"{"b": false, "i": 100, "s": "foo"}"#.to_string(), Ok(()))],
+                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
+                    , (r#"{"b": false, "i": 100, "s": "foo"}"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 100, "foo"), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -697,10 +863,10 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![ (r#"[true, 0, "e"]"#.to_string(), Ok(()))
-                    , (r#"[false, 100, "foo"]"#.to_string(), Ok(()))],
+                vec![ (r#"[true, 0, "e"]"#.to_string(), Vec::new())
+                    , (r#"[false, 100, "foo"]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, "e"), true), (TestStruct::new(false, 100, "foo"), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -709,10 +875,10 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
-                vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Ok(()))
-                    , (r#"[{"b": false, "i": 100, "s": "foo"}]"#.to_string(), Ok(()))],
+                vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
+                    , (r#"[{"b": false, "i": 100, "s": "foo"}]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 100, "foo"), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -721,10 +887,10 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
-                vec![ (r#"[[true, 0, "e"]]"#.to_string(), Ok(()))
-                    , (r#"[[false, 100, "foo"]]"#.to_string(), Ok(()))],
+                vec![ (r#"[[true, 0, "e"]]"#.to_string(), Vec::new())
+                    , (r#"[[false, 100, "foo"]]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, "e"), true), (TestStruct::new(false, 100, "foo"), true)],
-                Ok(())
+                Vec::new()
             ),
             // raw: invalid json.
             TestCase::new(
@@ -734,10 +900,10 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Ok(()))
-                    , (r#"{"b": false, "i": 100, "s":"#.to_string(), Err("error parsing JSON string: EOF while parsing a value at line 1 column 27\nInvalid JSON: {\"b\": false, \"i\": 100, \"s\":".to_string()))],
+                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
+                    , (r#"{"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 27".to_string(), "{\"b\": false, \"i\": 100, \"s\":", None)])],
                 vec![(TestStruct::new(true, 0, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -746,10 +912,10 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![ (r#"[true, 0, "f"]"#.to_string(), Ok(()))
-                    , (r#"[false, 100, "#.to_string(), Err("error parsing JSON string: EOF while parsing a value at line 1 column 13\nInvalid JSON: [false, 100, ".to_string()))],
+                vec![ (r#"[true, 0, "f"]"#.to_string(), Vec::new())
+                    , (r#"[false, 100, "#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 13".to_string(), "[false, 100, ", None)])],
                 vec![(TestStruct::new(true, 0, "f"), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -758,10 +924,10 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
-                vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Ok(()))
-                    , (r#"[{"b": false, "i": 100, "s":"#.to_string(), Err("error deserializing string as a JSON array: EOF while parsing a value at line 1 column 28\nInvalid JSON: [{\"b\": false, \"i\": 100, \"s\":'".to_string()))],
+                vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
+                    , (r#"[{"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 28".to_string(), "[{\"b\": false, \"i\": 100, \"s\":", None)])],
                 vec![(TestStruct::new(true, 0, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -770,10 +936,10 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
-                vec![ (r#"[[true, 0, "g"]]"#.to_string(), Ok(()))
-                    , (r#"[[false, 100, "s":"#.to_string(), Err("error deserializing string as a JSON array: expected `,` or `]` at line 1 column 18\nInvalid JSON: [[false, 100, \"s\":'".to_string()))],
+                vec![ (r#"[[true, 0, "g"]]"#.to_string(), Vec::new())
+                    , (r#"[[false, 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: expected `,` or `]` at line 1 column 18".to_string(), "[[false, 100, \"s\":", None)])],
                 vec![(TestStruct::new(true, 0, "g"), true)],
-                Ok(())
+                Vec::new()
             ),
             // raw: valid json, but data doesn't match type definition.
             TestCase::new(
@@ -783,10 +949,10 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Ok(()))
-                    , (r#"{"b": false, "i": 5}{"b": false}"#.to_string(), Err("failed to deserialize JSON record '{\"b\": false}': missing field `i` at line 1 column 12".to_string()))],
+                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
+                    , (r#"{"b": false, "i": 5}{"b": false}"#.to_string(), vec![ParseError::text_event_error("failed to deserialize JSON record '{\"b\": false}': missing field `i` at line 1 column 12".to_string(), 3, "{\"b\": false}", None)])],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -795,10 +961,10 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
-                vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Ok(()))
-                    , (r#"[{"b": false, "i": 5},{"b": false}]"#.to_string(), Err("failed to deserialize JSON record '{\"b\": false}': missing field `i` at line 1 column 12".to_string()))],
-                vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true)],
-                Ok(())
+                vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
+                    , (r#"[{"b": false, "i": 5},{"b": false}]"#.to_string(), vec![ParseError::text_event_error("failed to deserialize JSON record '{\"b\": false}': missing field `i` at line 1 column 12".to_string(), 3, "{\"b\": false}", None)])],
+                vec![(TestStruct::new(true, 0, ""), true)],
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -807,10 +973,10 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
-                vec![ (r#"[[true, 0, "h"]]"#.to_string(), Ok(()))
-                    , (r#"[{"b": false, "i": 5},[false]]"#.to_string(), Err("failed to deserialize JSON record '[false]': invalid length 1, expected struct TestStruct with 3 elements at line 1 column 7".to_string()))],
-                vec![(TestStruct::new(true, 0, "h"), true), (TestStruct::new(false, 5, ""), true)],
-                Ok(())
+                vec![ (r#"[[true, 0, "h"]]"#.to_string(), Vec::new())
+                    , (r#"[{"b": false, "i": 5},[false]]"#.to_string(), vec![ParseError::text_event_error("failed to deserialize JSON record '[false]': invalid length 1, expected struct TestStruct with 3 elements at line 1 column 7".to_string(), 3, "[false]", None)])],
+                vec![(TestStruct::new(true, 0, "h"), true)],
+                Vec::new()
             ),
             // raw: streaming mode; record split across two fragments.
             TestCase::new(
@@ -820,12 +986,12 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Ok(()))
+                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
                     , (r#"{"b": false, "i": 5}
-                       {"b": false, "i":"#.to_string(), Ok(()))
-                    , (r#"5}"#.to_string(), Ok(())) ],
+                       {"b": false, "i":"#.to_string(), Vec::new())
+                    , (r#"5}"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true), (TestStruct::new(false, 5, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 false,
@@ -834,12 +1000,12 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![ (r#"[true, 0, "i"]"#.to_string(), Ok(()))
+                vec![ (r#"[true, 0, "i"]"#.to_string(), Vec::new())
                     , (r#"{"b": false, "i": 5}
-                       [false, "#.to_string(), Ok(()))
-                    , (r#"5, "j"]"#.to_string(), Ok(())) ],
+                       [false, "#.to_string(), Vec::new())
+                    , (r#"5, "j"]"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, "i"), true), (TestStruct::new(false, 5, ""), true), (TestStruct::new(false, 5, "j"), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 false,
@@ -848,11 +1014,11 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
-                vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Ok(()))
-                    , (r#"[{"b": false, "i": 5}, {"b": false, "i":"#.to_string(), Ok(()))
-                    , (r#"5}]"#.to_string(), Ok(())) ],
+                vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
+                    , (r#"[{"b": false, "i": 5}, {"b": false, "i":"#.to_string(), Vec::new())
+                    , (r#"5}]"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true), (TestStruct::new(false, 5, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             // raw: streaming mode; record split across several fragments.
             TestCase::new(
@@ -862,13 +1028,13 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Ok(()))
+                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
                     , (r#"{"b": false, "i": 5}
-                       {"#.to_string(), Ok(()))
-                    , (r#""b": false, "i":"#.to_string(), Ok(()))
-                    , (r#"5}"#.to_string(), Ok(())) ],
+                       {"#.to_string(), Vec::new())
+                    , (r#""b": false, "i":"#.to_string(), Vec::new())
+                    , (r#"5}"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true), (TestStruct::new(false, 5, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 false,
@@ -877,13 +1043,13 @@ mod test {
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
-                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Ok(()))
+                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
                     , (r#"[false, 5, ""]
-                       ["#.to_string(), Ok(()))
-                    , (r#"false, "#.to_string(), Ok(()))
-                    , (r#"5, "k"]"#.to_string(), Ok(())) ],
+                       ["#.to_string(), Vec::new())
+                    , (r#"false, "#.to_string(), Vec::new())
+                    , (r#"5, "k"]"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true), (TestStruct::new(false, 5, "k"), true)],
-                Ok(())
+                Vec::new()
             ),
 
             /* InsertDelete format. */
@@ -896,9 +1062,9 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
-                vec![(r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Ok(()))],
+                vec![(r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -907,9 +1073,9 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
-                vec![(r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Ok(()))],
+                vec![(r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             // insert_delete: one chunk, two records.
             TestCase::new(
@@ -919,9 +1085,9 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
-                vec![(r#"{"insert": {"b": true, "i": 0}}{"delete": {"b": false, "i": 100, "s": "foo"}}"#.to_string(), Ok(()))],
+                vec![(r#"{"insert": {"b": true, "i": 0}}{"delete": {"b": false, "i": 100, "s": "foo"}}"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 100, "foo"), false)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -930,9 +1096,9 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
-                vec![(r#"[{"insert": {"b": true, "i": 0}}, {"delete": {"b": false, "i": 100, "s": "foo"}}]"#.to_string(), Ok(()))],
+                vec![(r#"[{"insert": {"b": true, "i": 0}}, {"delete": {"b": false, "i": 100, "s": "foo"}}]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 100, "foo"), false)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -941,9 +1107,9 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
-                vec![(r#"[{"insert": [true, 0, "a"]}, {"delete": {"b": false, "i": 100, "s": "foo"}}]"#.to_string(), Ok(()))],
+                vec![(r#"[{"insert": [true, 0, "a"]}, {"delete": {"b": false, "i": 100, "s": "foo"}}]"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, "a"), true), (TestStruct::new(false, 100, "foo"), false)],
-                Ok(())
+                Vec::new()
             ),
             // insert_delete: two chunks, one record each.
             TestCase::new(
@@ -953,10 +1119,10 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
-                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Ok(()))
-                    , (r#"{"delete": {"b": false, "i": 100, "s": "foo"}}"#.to_string(), Ok(()))],
+                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
+                    , (r#"{"delete": {"b": false, "i": 100, "s": "foo"}}"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 100, "foo"), false)],
-                Ok(())
+                Vec::new()
             ),
             // insert_delete: invalid json.
             TestCase::new(
@@ -966,10 +1132,10 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
-                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Ok(()))
-                    , (r#"{"delete": {"b": false, "i": 100, "s":"#.to_string(), Err("error deserializing string as a single-row update: EOF while parsing a value at line 1 column 38\nInvalid JSON: {\"delete\": {\"b\": false, \"i\": 100, \"s\":\nExample valid JSON: '{\"insert\": {...} }'".to_string()))],
+                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
+                    , (r#"{"delete": {"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 38".to_string(), "{\"delete\": {\"b\": false, \"i\": 100, \"s\":", None)])],
                 vec![(TestStruct::new(true, 0, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -978,10 +1144,10 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
-                vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Ok(()))
-                    , (r#"[{"delete": {"b": false, "i": 100, "s":"#.to_string(), Err("error deserializing string as a JSON array of updates: EOF while parsing a value at line 1 column 39\nInvalid JSON: [{\"delete\": {\"b\": false, \"i\": 100, \"s\":\nExample valid JSON: '[{\"insert\": {...} }, {\"delete\": {...} }]'".to_string()))],
+                vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
+                    , (r#"[{"delete": {"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 39".to_string(), "[{\"delete\": {\"b\": false, \"i\": 100, \"s\":", None)])],
                 vec![(TestStruct::new(true, 0, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             // insert_delete: valid json, but data doesn't match type definition.
             TestCase::new(
@@ -991,10 +1157,10 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
-                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Ok(()))
-                    , (r#"{"insert": {"b": false, "i": 5}}{"delete": {"b": false}}"#.to_string(), Err("failed to deserialize JSON record '{\"b\": false}': missing field `i` at line 1 column 12".to_string()))],
+                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
+                    , (r#"{"insert": {"b": false, "i": 5}}{"delete": {"b": false}}"#.to_string(), vec![ParseError::text_event_error("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), 3, "{\"b\": false}", None)])],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -1003,10 +1169,25 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
-                vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Ok(()))
-                    , (r#"[{"insert": {"b": false, "i": 5}},{"delete": {"b": false}}]"#.to_string(), Err("failed to deserialize JSON record '{\"b\": false}': missing field `i` at line 1 column 12".to_string()))],
-                vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true)],
-                Ok(())
+                vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
+                    , (r#"[{"insert": {"b": false, "i": 5}},{"delete": {"b": false}}]"#.to_string(), vec![ParseError::text_event_error("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), 3, "{\"b\": false}", None)])],
+                vec![(TestStruct::new(true, 0, ""), true)],
+                Vec::new()
+            ),
+            TestCase::new(
+                true,
+                JsonParserConfig {
+                    record_format: RecordFormat::Map,
+                    update_format: JsonUpdateFormat::InsertDelete,
+                    array: true,
+                },
+                vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
+                    , (r#"[{"insert": {"b": false, "i": 5}},{"delete": {"b": false}}]"#.to_string(), vec![ParseError::text_event_error("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), 3, "{\"b\": false}", None)])
+                    , (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
+                    , (r#"[{"delete": {"b": false}}]"#.to_string(), vec![ParseError::text_event_error("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), 5, "{\"b\": false}", None)])
+                    , (r#"[{"b": false}]"#.to_string(), vec![ParseError::text_envelope_error("error deserializing string as a JSON array of updates: unknown field `b`, expected one of `table`, `insert`, `delete` at line 1 column 5".to_string(), "[{\"b\": false}]", Some(Cow::from("Example valid JSON: '[{{\"insert\": {{...}} }}, {{\"delete\": {{...}} }}]'")))])],
+                vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(true, 0, ""), true)],
+                Vec::new()
             ),
             // insert_delete: streaming mode; record split across two fragments.
             TestCase::new(
@@ -1016,12 +1197,12 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
-                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Ok(()))
+                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
                     , (r#"{"insert": {"b": false, "i": 5}}
-                       {"delete": {"b": false, "i":"#.to_string(), Ok(()))
-                    , (r#"5}}"#.to_string(), Ok(())) ],
+                       {"delete": {"b": false, "i":"#.to_string(), Vec::new())
+                    , (r#"5}}"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true), (TestStruct::new(false, 5, ""), false)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 false,
@@ -1030,11 +1211,11 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
-                vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Ok(()))
-                    , (r#"[{"insert": {"b": false, "i": 5}}, {"delete": {"b": false, "i":"#.to_string(), Ok(()))
-                    , (r#"5}}]"#.to_string(), Ok(())) ],
+                vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
+                    , (r#"[{"insert": {"b": false, "i": 5}}, {"delete": {"b": false, "i":"#.to_string(), Vec::new())
+                    , (r#"5}}]"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true), (TestStruct::new(false, 5, ""), false)],
-                Ok(())
+                Vec::new()
             ),
             // insert_delete: streaming mode; record split across several fragments.
             TestCase::new(
@@ -1044,13 +1225,13 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
-                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Ok(()))
+                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
                     , (r#"{"insert": {"b": false, "i": 5}}
-                       {"delete""#.to_string(), Ok(()))
-                    , (r#": {"b": false, "i":"#.to_string(), Ok(()))
-                    , (r#"5}}"#.to_string(), Ok(())) ],
+                       {"delete""#.to_string(), Vec::new())
+                    , (r#": {"b": false, "i":"#.to_string(), Vec::new())
+                    , (r#"5}}"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true), (TestStruct::new(false, 5, ""), false)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 false,
@@ -1059,12 +1240,12 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
-                vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Ok(()))
-                    , (r#"[{"insert": {"b": false, "i": 5}},{"delete""#.to_string(), Ok(()))
-                    , (r#": {"b": false, "i":"#.to_string(), Ok(()))
-                    , (r#"5}}]"#.to_string(), Ok(())) ],
+                vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
+                    , (r#"[{"insert": {"b": false, "i": 5}},{"delete""#.to_string(), Vec::new())
+                    , (r#": {"b": false, "i":"#.to_string(), Vec::new())
+                    , (r#"5}}]"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true), (TestStruct::new(false, 5, ""), false)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 false,
@@ -1073,12 +1254,12 @@ mod test {
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
-                vec![ (r#"[{"insert": [true, 0, "a"]}]"#.to_string(), Ok(()))
-                    , (r#"[{"insert": [false, 5, "b"]},{"delete""#.to_string(), Ok(()))
-                    , (r#": [false, "#.to_string(), Ok(()))
-                    , (r#"5, "c"]}]"#.to_string(), Ok(())) ],
+                vec![ (r#"[{"insert": [true, 0, "a"]}]"#.to_string(), Vec::new())
+                    , (r#"[{"insert": [false, 5, "b"]},{"delete""#.to_string(), Vec::new())
+                    , (r#": [false, "#.to_string(), Vec::new())
+                    , (r#"5, "c"]}]"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, "a"), true), (TestStruct::new(false, 5, "b"), true), (TestStruct::new(false, 5, "c"), false)],
-                Ok(())
+                Vec::new()
             ),
 
             /* Debezium format */
@@ -1091,9 +1272,9 @@ mod test {
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
-                vec![(r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Ok(()))],
+                vec![(r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             // debezium: "u" record.
             TestCase::new(
@@ -1103,9 +1284,9 @@ mod test {
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
-                vec![(r#"{"payload": {"op": "u", "before": {"b": true, "i": 123}, "after": {"b": true, "i": 0}}}"#.to_string(), Ok(()))],
+                vec![(r#"{"payload": {"op": "u", "before": {"b": true, "i": 123}, "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 123, ""), false), (TestStruct::new(true, 0, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             TestCase::new(
                 true,
@@ -1114,9 +1295,9 @@ mod test {
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
-                vec![(r#"{"payload": {"op": "u", "before": [true, 123, "abc"], "after": [true, 0, "def"]}}"#.to_string(), Ok(()))],
+                vec![(r#"{"payload": {"op": "u", "before": [true, 123, "abc"], "after": [true, 0, "def"]}}"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 123, "abc"), false), (TestStruct::new(true, 0, "def"), true)],
-                Ok(())
+                Vec::new()
             ),
             // debezium: one chunk, two records.
             TestCase::new(
@@ -1126,9 +1307,9 @@ mod test {
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
-                vec![(r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}{"payload": {"op": "d", "before": {"b": false, "i": 100, "s": "foo"}}}"#.to_string(), Ok(()))],
+                vec![(r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}{"payload": {"op": "d", "before": {"b": false, "i": 100, "s": "foo"}}}"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 100, "foo"), false)],
-                Ok(())
+                Vec::new()
             ),
             // debezium: two chunks, one record each.
             TestCase::new(
@@ -1138,10 +1319,10 @@ mod test {
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
-                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Ok(()))
-                    , (r#"{"payload": {"op": "d", "before": {"b": false, "i": 100, "s": "foo"}}}"#.to_string(), Ok(()))],
+                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
+                    , (r#"{"payload": {"op": "d", "before": {"b": false, "i": 100, "s": "foo"}}}"#.to_string(), Vec::new())],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 100, "foo"), false)],
-                Ok(())
+                Vec::new()
             ),
             // debezium: invalid json.
             TestCase::new(
@@ -1151,10 +1332,10 @@ mod test {
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
-                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Ok(()))
-                    , (r#"{"payload": {"op": "d", "before": {"b": false, "i": 100, "s":"#.to_string(), Err("error deserializing string as a Debezium CDC record: EOF while parsing a value at line 1 column 61\nInvalid JSON: {\"payload\": {\"op\": \"d\", \"before\": {\"b\": false, \"i\": 100, \"s\":\nExample valid JSON: '{\"payload\": {\"op\": \"u\", \"before\": {...}, \"after\": {...} } }'".to_string()))],
+                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
+                    , (r#"{"payload": {"op": "d", "before": {"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 61".to_string(), "{\"payload\": {\"op\": \"d\", \"before\": {\"b\": false, \"i\": 100, \"s\":", None)])],
                 vec![(TestStruct::new(true, 0, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             // debezium: valid json, but data doesn't match type definition.
             TestCase::new(
@@ -1164,10 +1345,10 @@ mod test {
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
-                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Ok(()))
-                    , (r#"{"payload": {"op": "c", "after": {"b": false, "i": 5}}}{"payload": {"op": "d", "before": {"b": false}}}"#.to_string(), Err("failed to deserialize JSON record '{\"b\": false}': missing field `i` at line 1 column 12".to_string()))],
+                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
+                    , (r#"{"payload": {"op": "c", "after": {"b": false, "i": 5}}}{"payload": {"op": "d", "before": {"b": false}}}"#.to_string(), vec![ParseError::text_event_error("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), 3, "{\"b\": false}", None)])],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true)],
-                Ok(())
+                Vec::new()
             ),
             // debezium: streaming mode; record split across two fragments.
             TestCase::new(
@@ -1177,12 +1358,12 @@ mod test {
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
-                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Ok(()))
+                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
                     , (r#"{"payload": {"op": "c", "after": {"b": false, "i": 5}}}
-                       {"payload": {"op": "d", "before": {"b": false, "i":"#.to_string(), Ok(()))
-                    , (r#"5}}}"#.to_string(), Ok(())) ],
+                       {"payload": {"op": "d", "before": {"b": false, "i":"#.to_string(), Vec::new())
+                    , (r#"5}}}"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true), (TestStruct::new(false, 5, ""), false)],
-                Ok(())
+                Vec::new()
             ),
             // debezium: streaming mode; record split across several fragments.
             TestCase::new(
@@ -1192,13 +1373,13 @@ mod test {
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
-                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Ok(()))
+                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
                     , (r#"{"payload": {"op": "c", "after": {"b": false, "i": 5}}}
-                       {"payload": {"op": "d", "before""#.to_string(), Ok(()))
-                    , (r#""#.to_string(), Ok(()))
-                    , (r#": {"b": false, "i":5}}}"#.to_string(), Ok(())) ],
+                       {"payload": {"op": "d", "before""#.to_string(), Vec::new())
+                    , (r#""#.to_string(), Vec::new())
+                    , (r#": {"b": false, "i":5}}}"#.to_string(), Vec::new()) ],
                 vec![(TestStruct::new(true, 0, ""), true), (TestStruct::new(false, 5, ""), true), (TestStruct::new(false, 5, ""), false)],
-                Ok(())
+                Vec::new()
             ),
         ];
 

@@ -1,4 +1,4 @@
-use crate::DetailedError;
+use crate::{format::ParseError, DetailedError};
 use anyhow::Error as AnyError;
 use dbsp::Error as DBSPError;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
@@ -17,6 +17,12 @@ use std::{
 pub enum ConfigError {
     /// Failed to parse pipeline configuration.
     ConfigParseError { error: String },
+
+    /// Failed to parse parser configuration for an endpoint.
+    ParserConfigParseError {
+        endpoint_name: String,
+        error: String,
+    },
 
     /// Input endpoint with this name already exists.
     DuplicateInputEndpoint { endpoint_name: String },
@@ -69,6 +75,7 @@ impl DetailedError for ConfigError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::ConfigParseError { .. } => Cow::from("ConfigParseError"),
+            Self::ParserConfigParseError { .. } => Cow::from("ParserConfigParseError"),
             Self::DuplicateInputEndpoint { .. } => Cow::from("DuplicateInputEndpoint"),
             Self::DuplicateOutputEndpoint { .. } => Cow::from("DuplicateOutputEndpoint"),
             Self::UnknownInputFormat { .. } => Cow::from("UnknownInputFormat"),
@@ -85,7 +92,16 @@ impl Display for ConfigError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
             Self::ConfigParseError { error } => {
-                write!(f, "Failed to parse pipeline configuration: '{error}'")
+                write!(f, "Failed to parse pipeline configuration: {error}")
+            }
+            Self::ParserConfigParseError {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "Error parsing format configuration for endpoint '{endpoint_name}': {error}"
+                )
             }
             Self::DuplicateInputEndpoint { endpoint_name } => {
                 write!(f, "Input endpoint '{endpoint_name}' already exists")
@@ -142,6 +158,16 @@ impl ConfigError {
         E: ToString,
     {
         Self::ConfigParseError {
+            error: error.to_string(),
+        }
+    }
+
+    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
+    where
+        E: ToString,
+    {
+        Self::ParserConfigParseError {
+            endpoint_name: endpoint_name.to_owned(),
             error: error.to_string(),
         }
     }
@@ -220,15 +246,14 @@ pub enum ControllerError {
     /// Invalid controller configuration.
     Config { config_error: ConfigError },
 
-    /// Parser error.
+    /// Error parsing input data.
     ///
-    /// Error parsing the last input batch.  Parser errors are expected to be
+    /// Parser errors are expected to be
     /// recoverable, i.e., the parser should be able to successfully parse
     /// new valid inputs after an error.
-    #[serde(serialize_with = "serialize_parse_error")]
     ParseError {
         endpoint_name: String,
-        error: AnyError,
+        error: Box<ParseError>,
     },
 
     /// Encode error.
@@ -286,21 +311,6 @@ where
     ser.serialize_field("kind", &io_error.kind().to_string())?;
     ser.serialize_field("os_error", &io_error.raw_os_error())?;
     ser.serialize_field("backtrace", &backtrace.to_string())?;
-    ser.end()
-}
-
-fn serialize_parse_error<S>(
-    endpoint: &String,
-    error: &AnyError,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let mut ser = serializer.serialize_struct("ParseError", 3)?;
-    ser.serialize_field("endpoint_name", endpoint)?;
-    ser.serialize_field("error", &error.to_string())?;
-    ser.serialize_field("backtrace", &error.backtrace().to_string())?;
     ser.end()
 }
 
@@ -473,6 +483,15 @@ impl ControllerError {
         }
     }
 
+    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
+    where
+        E: ToString,
+    {
+        Self::Config {
+            config_error: ConfigError::parser_config_parse_error(endpoint_name, error),
+        }
+    }
+
     pub fn duplicate_input_endpoint(endpoint_name: &str) -> Self {
         Self::Config {
             config_error: ConfigError::duplicate_input_endpoint(endpoint_name),
@@ -537,10 +556,10 @@ impl ControllerError {
         }
     }
 
-    pub fn parse_error(endpoint_name: &str, error: AnyError) -> Self {
+    pub fn parse_error(endpoint_name: &str, error: ParseError) -> Self {
         Self::ParseError {
             endpoint_name: endpoint_name.to_owned(),
-            error,
+            error: Box::new(error),
         }
     }
 

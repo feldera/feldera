@@ -178,7 +178,7 @@ impl UrlInputEndpoint {
                                     };
                                     if !chunk.is_empty() {
                                         consumed_bytes += chunk.len() as u64;
-                                        consumer.input_fragment(chunk)?
+                                        let _ = consumer.input_fragment(chunk);
                                     }
                                     offset += data_len;
                                 },

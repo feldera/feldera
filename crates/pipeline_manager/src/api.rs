@@ -41,7 +41,8 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use dbsp_adapters::{
-    ConnectorConfig, ControllerError, ErrorResponse, PipelineConfig, RuntimeConfig,
+    ConnectorConfig, ControllerError, ErrorResponse, ParseError, PipelineConfig, PipelineError,
+    RuntimeConfig,
 };
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
@@ -475,11 +476,12 @@ fn example_unknown_input_format() -> ErrorResponse {
     ))
 }
 
-fn example_parse_error() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ControllerError::parse_error(
-        "api-ingress-my_table-d24e60a3-9058-4751-aa6b-b88f4ddfd7bd",
-        anyhow::Error::msg("missing field 'column_name'"),
-    ))
+fn example_parse_errors() -> ErrorResponse {
+    let errors = [
+        ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 27".to_string(), "{\"b\": false, \"i\": 100, \"s\":", None),
+        ParseError::text_event_error("failed to deserialize JSON record '{\"b\": false}': missing field `i` at line 3 column 12".to_string(), 3, "{\"b\": false}", None),
+    ];
+    ErrorResponse::from_error_nolog(&PipelineError::parse_errors(errors.len(), errors.iter()))
 }
 
 fn example_unknown_output_format() -> ErrorResponse {
@@ -1725,10 +1727,10 @@ pub struct PipelineIdOrNameQuery {
             , description = "Unknown data format specified in the '?format=' argument."
             , body = ErrorResponse
             , example = json!(example_unknown_input_format())),
-        (status = UNPROCESSABLE_ENTITY
+        (status = BAD_REQUEST
             , description = "Error parsing input data."
             , body = ErrorResponse
-            , example = json!(example_parse_error())),
+            , example = json!(example_parse_errors())),
         (status = INTERNAL_SERVER_ERROR
             , description = "Request failed."
             , body = ErrorResponse),

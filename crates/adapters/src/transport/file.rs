@@ -386,7 +386,7 @@ format:
             || {
                 let state = consumer.state();
                 // println!("result: {:?}", state.parser_result);
-                state.parser_result.is_some() && state.parser_result.as_ref().unwrap().is_err()
+                state.parser_result.is_some() && !state.parser_result.as_ref().unwrap().1.is_empty()
             },
             None,
         );

@@ -46,10 +46,6 @@ def _parse_response(
         response_404 = ErrorResponse.from_dict(response.json())
 
         return response_404
-    if response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY:
-        response_422 = ErrorResponse.from_dict(response.json())
-
-        return response_422
     if response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
         response_500 = ErrorResponse.from_dict(response.json())
 
