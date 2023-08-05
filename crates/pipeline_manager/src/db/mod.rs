@@ -2066,6 +2066,37 @@ impl Storage for ProjectDB {
                     .await?;
         Ok(TenantId(res.get(0)))
     }
+
+    async fn create_compiled_binary_ref(
+        &self,
+        program_id: ProgramId,
+        version: Version,
+        url: String,
+    ) -> Result<(), DBError> {
+        let conn = self.pool.get().await?;
+        let _res = conn
+            .execute(
+                "INSERT INTO compiled_binary VALUES ($1, $2, $3)",
+                &[&program_id.0, &version.0, &url],
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn get_compiled_binary_ref(
+        &self,
+        program_id: ProgramId,
+        version: Version,
+    ) -> Result<String, DBError> {
+        let conn = self.pool.get().await?;
+        let res = conn
+            .query_one(
+                "SELECT url FROM compiled_binary WHERE program_id = $1 AND version = $2",
+                &[&program_id.0, &version.0],
+            )
+            .await?;
+        Ok(res.get(0))
+    }
 }
 
 impl ProjectDB {

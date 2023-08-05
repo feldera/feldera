@@ -396,4 +396,18 @@ pub(crate) trait Storage {
         tenant_name: String,
         provider: String,
     ) -> Result<TenantId, DBError>;
+
+    /// Record information about a compiler binary
+    async fn create_compiled_binary_ref(
+        &self,
+        program_id: ProgramId,
+        version: Version,
+        url: String,
+    ) -> Result<(), DBError>;
+
+    async fn get_compiled_binary_ref(
+        &self,
+        program_id: ProgramId,
+        version: Version,
+    ) -> Result<String, DBError>;
 }
