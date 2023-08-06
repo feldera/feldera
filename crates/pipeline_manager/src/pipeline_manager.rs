@@ -23,7 +23,7 @@
 //!   compiled pipelines and for interacting with them at runtime.
 
 use crate::auth::JwkCache;
-use crate::config::{CompilerConfig, DatabaseConfig};
+use crate::config::{CompilerConfig, DatabaseConfig, LocalRunnerConfig};
 use actix_web::dev::Service;
 use actix_web::Scope;
 use actix_web::{
@@ -231,10 +231,11 @@ pub(crate) struct ServerState {
 impl ServerState {
     pub async fn new(
         config: ManagerConfig,
+        runner_config: LocalRunnerConfig,
         compiler_config: CompilerConfig,
         db: Arc<Mutex<ProjectDB>>,
     ) -> AnyResult<Self> {
-        let runner = Runner::local(db.clone(), &compiler_config);
+        let runner = Runner::local(db.clone(), &runner_config);
         let compiler = Compiler::new(&compiler_config, db.clone()).await?;
 
         Ok(Self {
@@ -251,6 +252,7 @@ pub fn run(
     database_config: DatabaseConfig,
     manager_config: ManagerConfig,
     compiler_config: CompilerConfig,
+    local_runner_config: LocalRunnerConfig,
 ) -> AnyResult<()> {
     // Check that the port is available before turning into a daemon, so we can fail
     // early if the port is taken.
@@ -297,7 +299,9 @@ pub fn run(
         )
         .await?;
         let db = Arc::new(Mutex::new(db));
-        let state = WebData::new(ServerState::new(manager_config, compiler_config, db).await?);
+        let state = WebData::new(
+            ServerState::new(manager_config, local_runner_config, compiler_config, db).await?,
+        );
 
         if use_auth {
             let server = HttpServer::new(move || {

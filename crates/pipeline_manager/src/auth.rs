@@ -583,7 +583,7 @@ mod test {
 
     use crate::{
         auth::{self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim, Provider},
-        config::{CompilerConfig, ManagerConfig},
+        config::{CompilerConfig, LocalRunnerConfig, ManagerConfig},
         db::{storage::Storage, ApiPermission},
         pipeline_manager::ServerState,
     };
@@ -669,6 +669,10 @@ mod test {
             precompile: true,
             compiler_working_directory: "".to_owned(),
         };
+
+        let runner_config = LocalRunnerConfig {
+            runner_working_directory: "".to_owned(),
+        };
         let (conn, _temp) = crate::db::test::setup_pg().await;
         if api_key.is_some() {
             let tenant_id = conn
@@ -685,7 +689,7 @@ mod test {
         }
         let db = Arc::new(Mutex::new(conn));
         let state = actix_web::web::Data::new(
-            ServerState::new(manager_config, compiler_config, db)
+            ServerState::new(manager_config, runner_config, compiler_config, db)
                 .await
                 .unwrap(),
         );

@@ -2,7 +2,7 @@ use clap::{Args, Command, FromArgMatches};
 
 use colored::Colorize;
 use pipeline_manager::compiler::Compiler;
-use pipeline_manager::config::{CompilerConfig, DatabaseConfig, ManagerConfig};
+use pipeline_manager::config::{CompilerConfig, DatabaseConfig, LocalRunnerConfig, ManagerConfig};
 use pipeline_manager::pipeline_manager::ApiDoc;
 use utoipa::OpenApi;
 
@@ -18,6 +18,7 @@ fn main() -> anyhow::Result<()> {
     let cli = DatabaseConfig::augment_args(cli);
     let cli = ManagerConfig::augment_args(cli);
     let cli = CompilerConfig::augment_args(cli);
+    let cli = LocalRunnerConfig::augment_args(cli);
     let matches = cli.get_matches();
 
     let mut manager_config = ManagerConfig::from_arg_matches(&matches)
@@ -41,9 +42,13 @@ fn main() -> anyhow::Result<()> {
     let compiler_config = CompilerConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
+    let local_runner_config = LocalRunnerConfig::from_arg_matches(&matches)
+        .map_err(|err| err.exit())
+        .unwrap();
 
     let manager_config = manager_config.canonicalize()?;
     let compiler_config = compiler_config.canonicalize()?;
+    let local_runner_config = local_runner_config.canonicalize()?;
 
     if compiler_config.precompile {
         actix_web::rt::System::new()
@@ -53,5 +58,10 @@ fn main() -> anyhow::Result<()> {
     let database_config = DatabaseConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
-    pipeline_manager::pipeline_manager::run(database_config, manager_config, compiler_config)
+    pipeline_manager::pipeline_manager::run(
+        database_config,
+        manager_config,
+        compiler_config,
+        local_runner_config,
+    )
 }

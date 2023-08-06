@@ -1,6 +1,6 @@
 use crate::{
     auth::TenantId,
-    config::CompilerConfig,
+    config::LocalRunnerConfig,
     db::{
         storage::Storage, DBError, PipelineId, PipelineRevision, PipelineRuntimeState,
         PipelineStatus, ProjectDB,
@@ -186,7 +186,6 @@ impl ResponseError for RunnerError {
 /// A runner component responsible for running and interacting with
 /// pipelines at runtime.
 pub struct Runner {
-    config: CompilerConfig,
     db: Arc<Mutex<ProjectDB>>,
     inner: RunnerInner,
 }
@@ -197,9 +196,8 @@ enum RunnerInner {
 
 impl Runner {
     /// Create a local runner.
-    pub fn local(db: Arc<Mutex<ProjectDB>>, config: &CompilerConfig) -> Self {
+    pub fn local(db: Arc<Mutex<ProjectDB>>, config: &LocalRunnerConfig) -> Self {
         Self {
-            config: config.clone(),
             db: db.clone(),
             inner: RunnerInner::Local(LocalRunner::new(db, config)),
         }
@@ -239,16 +237,6 @@ impl Runner {
             .await?;
         Self::validate_desired_state_request(pipeline_id, &pipeline_state, None)?;
 
-        match remove_dir_all(self.config.pipeline_dir(pipeline_id)).await {
-            Ok(_) => (),
-            Err(e) => {
-                log::warn!(
-                    "Failed to delete pipeline directory for pipeline {}: {}",
-                    pipeline_id,
-                    e
-                );
-            }
-        }
         db.delete_pipeline(tenant_id, pipeline_id).await?;
         self.notify_pipeline_automaton(tenant_id, pipeline_id).await;
 
@@ -586,7 +574,7 @@ struct PipelineAutomaton {
     pipeline_id: PipelineId,
     tenant_id: TenantId,
     pipeline_process: Option<PipelineHandle>,
-    config: Arc<CompilerConfig>,
+    config: Arc<LocalRunnerConfig>,
     db: Arc<Mutex<ProjectDB>>,
     notifier: Arc<Notify>,
 }
@@ -621,7 +609,7 @@ impl PipelineAutomaton {
     fn new(
         pipeline_id: PipelineId,
         tenant_id: TenantId,
-        config: &Arc<CompilerConfig>,
+        config: &Arc<LocalRunnerConfig>,
         db: Arc<Mutex<ProjectDB>>,
         notifier: Arc<Notify>,
     ) -> Self {
@@ -670,7 +658,8 @@ impl PipelineAutomaton {
             if pipeline.current_status == PipelineStatus::Shutdown
                 && pipeline.desired_status != PipelineStatus::Shutdown
             {
-                pipeline.set_current_status(PipelineStatus::Provisioning, None);
+                self.update_pipeline_status(&mut pipeline, PipelineStatus::Provisioning, None)
+                    .await;
                 let revision = db
                     .get_last_committed_pipeline_revision(self.tenant_id, self.pipeline_id)
                     .await?;
@@ -701,7 +690,12 @@ impl PipelineAutomaton {
                 | (PipelineStatus::Provisioning, PipelineStatus::Paused) => {
                     match self.read_pipeline_port_file().await {
                         Ok(Some(port)) => {
-                            pipeline.set_current_status(PipelineStatus::Initializing, None);
+                            self.update_pipeline_status(
+                                &mut pipeline,
+                                PipelineStatus::Initializing,
+                                None,
+                            )
+                            .await;
                             pipeline.set_location(port.to_string());
                             pipeline.set_created();
                             self.update_pipeline_runtime_state(&pipeline).await?;
@@ -752,7 +746,12 @@ impl PipelineAutomaton {
                         }
                         Ok((status, body)) => {
                             if status.is_success() {
-                                pipeline.set_current_status(PipelineStatus::Paused, None);
+                                self.update_pipeline_status(
+                                    &mut pipeline,
+                                    PipelineStatus::Paused,
+                                    None,
+                                )
+                                .await;
                                 self.update_pipeline_runtime_state(&pipeline).await?;
                             } else if status == StatusCode::SERVICE_UNAVAILABLE {
                                 if Self::timeout_expired(
@@ -797,7 +796,12 @@ impl PipelineAutomaton {
                         }
                         Ok((status, body)) => {
                             if status.is_success() {
-                                pipeline.set_current_status(PipelineStatus::Running, None);
+                                self.update_pipeline_status(
+                                    &mut pipeline,
+                                    PipelineStatus::Running,
+                                    None,
+                                )
+                                .await;
                                 self.update_pipeline_runtime_state(&pipeline).await?;
                             } else {
                                 self.force_kill_pipeline_on_error(&mut pipeline, status, &body)
@@ -821,7 +825,12 @@ impl PipelineAutomaton {
                         }
                         Ok((status, body)) => {
                             if status.is_success() {
-                                pipeline.set_current_status(PipelineStatus::Paused, None);
+                                self.update_pipeline_status(
+                                    &mut pipeline,
+                                    PipelineStatus::Paused,
+                                    None,
+                                )
+                                .await;
                                 self.update_pipeline_runtime_state(&pipeline).await?;
                             } else {
                                 self.force_kill_pipeline_on_error(&mut pipeline, status, &body)
@@ -847,7 +856,12 @@ impl PipelineAutomaton {
                         }
                         Ok((status, body)) => {
                             if status.is_success() {
-                                pipeline.set_current_status(PipelineStatus::ShuttingDown, None);
+                                self.update_pipeline_status(
+                                    &mut pipeline,
+                                    PipelineStatus::ShuttingDown,
+                                    None,
+                                )
+                                .await;
                                 self.update_pipeline_runtime_state(&pipeline).await?;
                                 poll_timeout = Self::SHUTDOWN_POLL_PERIOD;
                             } else {
@@ -867,7 +881,8 @@ impl PipelineAutomaton {
                         .unwrap_or(true)
                     {
                         self.pipeline_process = None;
-                        pipeline.set_current_status(PipelineStatus::Shutdown, None);
+                        self.update_pipeline_status(&mut pipeline, PipelineStatus::Shutdown, None)
+                            .await;
                         self.update_pipeline_runtime_state(&pipeline).await?;
                     } else if Self::timeout_expired(pipeline.status_since, Self::SHUTDOWN_TIMEOUT) {
                         self.force_kill_pipeline(
@@ -932,10 +947,20 @@ impl PipelineAutomaton {
                                 };
 
                                 if state == "Paused" {
-                                    pipeline.set_current_status(PipelineStatus::Paused, None);
+                                    self.update_pipeline_status(
+                                        &mut pipeline,
+                                        PipelineStatus::Paused,
+                                        None,
+                                    )
+                                    .await;
                                     self.update_pipeline_runtime_state(&pipeline).await?;
                                 } else if state == "Running" {
-                                    pipeline.set_current_status(PipelineStatus::Running, None);
+                                    self.update_pipeline_status(
+                                        &mut pipeline,
+                                        PipelineStatus::Running,
+                                        None,
+                                    )
+                                    .await;
                                     self.update_pipeline_runtime_state(&pipeline).await?;
                                 } else {
                                     self.force_kill_pipeline(&mut pipeline, Some(RunnerError::HttpForwardError {
@@ -948,9 +973,11 @@ impl PipelineAutomaton {
                     }
                 }
                 // User acknowledges pipeline failure by invoking the `/shutdown` endpoint.
-                // Move the the `Shutdown` state so that the pipeline can be started again.
+                // Move to the `Shutdown` state so that the pipeline can be started again.
                 (PipelineStatus::Failed, PipelineStatus::Shutdown) => {
-                    pipeline.set_current_status(PipelineStatus::Shutdown, pipeline.error.clone());
+                    let error = pipeline.error.clone();
+                    self.update_pipeline_status(&mut pipeline, PipelineStatus::Shutdown, error)
+                        .await;
                     self.update_pipeline_runtime_state(&pipeline).await?;
                 }
                 (PipelineStatus::Failed | PipelineStatus::Shutdown, _) => {}
@@ -959,6 +986,27 @@ impl PipelineAutomaton {
                         "Unexpected current/desired pipeline status combination {:?}/{:?}",
                         pipeline.current_status, pipeline.desired_status
                     )
+                }
+            }
+        }
+    }
+
+    async fn update_pipeline_status(
+        &self,
+        pipeline: &mut PipelineRuntimeState,
+        status: PipelineStatus,
+        error: Option<ErrorResponse>,
+    ) {
+        pipeline.set_current_status(status, error.clone());
+        if status == PipelineStatus::Shutdown {
+            match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
+                Ok(_) => (),
+                Err(e) => {
+                    log::warn!(
+                        "Failed to delete pipeline directory for pipeline {}: {}",
+                        self.pipeline_id,
+                        e
+                    );
                 }
             }
         }
@@ -998,15 +1046,19 @@ impl PipelineAutomaton {
         self.pipeline_process = None;
 
         if pipeline.desired_status == PipelineStatus::Shutdown {
-            pipeline.set_current_status(
+            self.update_pipeline_status(
+                pipeline,
                 PipelineStatus::Shutdown,
                 error.map(|e| ErrorResponse::from(&e)),
-            );
+            )
+            .await;
         } else {
-            pipeline.set_current_status(
+            self.update_pipeline_status(
+                pipeline,
                 PipelineStatus::Failed,
                 error.map(|e| ErrorResponse::from(&e)),
-            );
+            )
+            .await;
         }
         self.update_pipeline_runtime_state(pipeline).await
     }
@@ -1023,9 +1075,11 @@ impl PipelineAutomaton {
         let error = Self::error_response_from_json(self.pipeline_id, status, error);
 
         if pipeline.desired_status == PipelineStatus::Shutdown {
-            pipeline.set_current_status(PipelineStatus::Shutdown, Some(error));
+            self.update_pipeline_status(pipeline, PipelineStatus::Shutdown, Some(error))
+                .await;
         } else {
-            pipeline.set_current_status(PipelineStatus::Failed, Some(error));
+            self.update_pipeline_status(pipeline, PipelineStatus::Failed, Some(error))
+                .await;
         }
         self.update_pipeline_runtime_state(pipeline).await
     }
@@ -1147,12 +1201,12 @@ impl PipelineAutomaton {
 /// for a few seconds after the request succeeds.
 pub struct LocalRunner {
     db: Arc<Mutex<ProjectDB>>,
-    config: Arc<CompilerConfig>,
+    config: Arc<LocalRunnerConfig>,
     pipelines: Mutex<BTreeMap<PipelineId, Arc<Notify>>>,
 }
 
 impl LocalRunner {
-    pub(crate) fn new(db: Arc<Mutex<ProjectDB>>, config: &CompilerConfig) -> Self {
+    pub(crate) fn new(db: Arc<Mutex<ProjectDB>>, config: &LocalRunnerConfig) -> Self {
         Self {
             db,
             config: Arc::new(config.clone()),

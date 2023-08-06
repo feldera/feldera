@@ -409,12 +409,45 @@ impl CompilerConfig {
     pub(crate) fn compiler_stderr_path(&self, program_id: ProgramId) -> PathBuf {
         self.project_dir(program_id).join("err.log")
     }
+}
 
-    //// TODO: These might have to be runner specific
+#[derive(Parser, Deserialize, Debug, Clone)]
+#[command(author, version, about, long_about = None)]
+pub struct LocalRunnerConfig {
+    /// Directory where the local runner stores its filesystem state:
+    /// fetched binaries, configuration files etc.
+    #[serde(default = "default_working_directory")]
+    #[arg(long, default_value_t = default_working_directory())]
+    pub runner_working_directory: String,
+}
 
+impl LocalRunnerConfig {
+    /// Convert all directory paths in `self` to absolute paths.
+    ///
+    /// Converts `working_directory` fails if any of the paths doesn't exist or isn't readable.
+    pub fn canonicalize(mut self) -> AnyResult<Self> {
+        create_dir_all(&self.runner_working_directory).map_err(|e| {
+            AnyError::msg(format!(
+                "unable to create or open working directory '{}': {e}",
+                self.runner_working_directory
+            ))
+        })?;
+
+        self.runner_working_directory = canonicalize(&self.runner_working_directory)
+            .map_err(|e| {
+                AnyError::msg(format!(
+                    "error canonicalizing working directory path '{}': {e}",
+                    self.runner_working_directory
+                ))
+            })?
+            .to_string_lossy()
+            .into_owned();
+
+        Ok(self)
+    }
     /// Location to store pipeline files at runtime.
     pub(crate) fn pipeline_dir(&self, pipeline_id: PipelineId) -> PathBuf {
-        Path::new(&self.compiler_working_directory)
+        Path::new(&self.runner_working_directory)
             .join("pipelines")
             .join(format!("pipeline{pipeline_id}"))
     }

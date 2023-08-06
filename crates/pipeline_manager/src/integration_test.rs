@@ -13,7 +13,7 @@ use tokio::{sync::OnceCell, time::sleep};
 
 use crate::{
     compiler::Compiler,
-    config::{CompilerConfig, DatabaseConfig, ManagerConfig},
+    config::{CompilerConfig, DatabaseConfig, LocalRunnerConfig, ManagerConfig},
     db::{Pipeline, PipelineStatus},
 };
 
@@ -71,6 +71,11 @@ async fn initialize_local_dbsp_instance() -> TempDir {
     }
     .canonicalize()
     .unwrap();
+    let runner_config = LocalRunnerConfig {
+        runner_working_directory: workdir.to_owned(),
+    }
+    .canonicalize()
+    .unwrap();
     println!("Using ManagerConfig: {:?}", manager_config);
     println!("Issuing Compiler::precompile_dependencies(). This will be slow.");
     Compiler::precompile_dependencies(&compiler_config)
@@ -80,7 +85,13 @@ async fn initialize_local_dbsp_instance() -> TempDir {
 
     // We can't use tokio::spawn because super::run() creates its own Tokio Runtime
     let _ = std::thread::spawn(|| {
-        crate::pipeline_manager::run(database_config, manager_config, compiler_config).unwrap();
+        crate::pipeline_manager::run(
+            database_config,
+            manager_config,
+            compiler_config,
+            runner_config,
+        )
+        .unwrap();
     });
     tokio::time::sleep(Duration::from_millis(1000)).await;
     tmp_dir
@@ -103,11 +114,23 @@ impl TestConfig {
         // Cleanup pipelines..
         let mut req = config.get("/v0/pipelines").await;
         let pipelines: Value = req.json().await.unwrap();
+        // First, shutdown the pipelines
         for pipeline in pipelines.as_array().unwrap() {
             let id = pipeline["descriptor"]["pipeline_id"].as_str().unwrap();
-            let _ = config
+            let req = config
                 .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
                 .await;
+            assert_eq!(StatusCode::ACCEPTED, req.status(), "Response {:?}", req)
+        }
+        // Once we can confirm pipelines are shutdown, delete them
+        for pipeline in pipelines.as_array().unwrap() {
+            let id = pipeline["descriptor"]["pipeline_id"].as_str().unwrap();
+            self.wait_for_pipeline_status(
+                id,
+                PipelineStatus::Shutdown,
+                time::Duration::from_secs(20),
+            )
+            .await;
             let req = config.delete(format!("/v0/pipelines/{}", id)).await;
             assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
         }
