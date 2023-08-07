@@ -3,7 +3,7 @@ use cranelift::{
     codegen::ir::{FuncRef, Inst},
     prelude::{types, Block, FunctionBuilder, InstBuilder, IntCC, MemFlags, Type, Value},
 };
-use std::cmp::Ordering;
+use std::{cmp::Ordering, slice, str};
 
 pub(crate) trait FunctionBuilderExt {
     /// Seals the current basic block
@@ -186,6 +186,8 @@ pub(super) fn set_column_null(
     builder: &mut FunctionBuilder<'_>,
 ) {
     // If the value is null, set the cloned value to null
+    // FIXME: This will panic if called on a nullable string column,
+    // `.nullability_of()` doesn't handle string null niches
     let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(column);
     let bitset_ty = bitset_ty.clif_type();
 
@@ -215,4 +217,11 @@ pub(super) fn set_column_null(
     builder
         .ins()
         .store(dest_flags, bitset, dest, bitset_offset as i32);
+}
+
+#[inline(always)]
+pub(crate) unsafe fn str_from_raw_parts<'a>(ptr: *const u8, len: usize) -> &'a str {
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
+    debug_assert!(str::from_utf8(bytes).is_ok());
+    unsafe { str::from_utf8_unchecked(bytes) }
 }

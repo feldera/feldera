@@ -1,6 +1,7 @@
 mod call;
 mod index_by_column;
 mod intrinsics;
+mod json;
 mod layout;
 mod layout_cache;
 mod math;
@@ -69,6 +70,7 @@ const TRAP_ASSERT_EQ: TrapCode = TrapCode::User(3);
 const TRAP_DIV_OVERFLOW: TrapCode = TrapCode::User(5);
 const TRAP_ABORT: TrapCode = TrapCode::User(6);
 const TRAP_FAILED_PARSE: TrapCode = TrapCode::User(7);
+const TRAP_ASSERT_FALSE: TrapCode = TrapCode::User(8);
 
 // TODO: Pretty function debugging https://github.com/bjorn3/rustc_codegen_cranelift/blob/master/src/pretty_clif.rs
 
@@ -462,7 +464,7 @@ impl Codegen {
     }
 
     #[track_caller]
-    fn finalize_function(&mut self, func_id: FuncId) {
+    fn finalize_function(&mut self, func_id: FuncId) -> FuncId {
         tracing::debug!(
             "finalizing {func_id} before optimization: \n{}",
             if let Some(writer) = self.comment_writer.as_ref() {
@@ -504,6 +506,8 @@ impl Codegen {
 
         self.module.clear_context(&mut self.module_ctx);
         self.comment_writer = None;
+
+        func_id
     }
 }
 
@@ -1071,6 +1075,17 @@ impl<'a> CodegenCtx<'a> {
                     true as u8, false as u8,
                 ),
             );
+        }
+    }
+
+    fn debug_assert_false(&self, is_null: Value, builder: &mut FunctionBuilder<'_>) {
+        if self.debug_assertions() {
+            debug_assert!(builder.value_type(is_null).is_int());
+            let trap = builder.ins().trapnz(is_null, TRAP_ASSERT_FALSE);
+
+            self.comment(trap, || {
+                format!("trap if {is_null} is not false ({})", false as u8)
+            });
         }
     }
 

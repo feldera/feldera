@@ -4,6 +4,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Display, Write};
 
+// TODO: Newtyping for column indices
+
 /// The layout of a row
 #[derive(Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(from = "SerRowLayout", into = "SerRowLayout")]

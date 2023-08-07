@@ -1,3 +1,4 @@
+use crate::utils::HashMap;
 use cranelift::{
     codegen::{
         entity::SecondaryMap,
@@ -6,16 +7,12 @@ use cranelift::{
     },
     prelude::{Block, Value},
 };
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    fmt,
-};
-use xxhash_rust::xxh3::Xxh3Builder;
+use std::{collections::hash_map::Entry, fmt};
 
 #[derive(Clone, Debug)]
 pub(crate) struct CommentWriter {
     global_comments: Vec<String>,
-    entity_comments: HashMap<AnyEntity, String, Xxh3Builder>,
+    entity_comments: HashMap<AnyEntity, String>,
 }
 
 impl CommentWriter {
@@ -28,7 +25,7 @@ impl CommentWriter {
 
         Self {
             global_comments,
-            entity_comments: HashMap::with_hasher(Xxh3Builder::new()),
+            entity_comments: HashMap::default(),
         }
     }
 
