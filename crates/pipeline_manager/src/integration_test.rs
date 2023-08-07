@@ -103,7 +103,7 @@ async fn initialize_local_dbsp_instance() -> TempDir {
         });
         let db_clone = db.clone();
         let _local_runner = actix_web::rt::spawn(async move {
-            crate::runner::LocalRunner::run(db_clone, &local_runner_config.clone()).await;
+            crate::local_runner::run(db_clone, &local_runner_config.clone()).await;
         });
         // The api-server blocks forever
         crate::api::run(listener, db, manager_config).await.unwrap();

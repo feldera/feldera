@@ -6,7 +6,7 @@ use pipeline_manager::api::ApiDoc;
 use pipeline_manager::compiler::Compiler;
 use pipeline_manager::config::{CompilerConfig, DatabaseConfig, LocalRunnerConfig, ManagerConfig};
 use pipeline_manager::db::ProjectDB;
-use pipeline_manager::runner::LocalRunner;
+use pipeline_manager::local_runner;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use utoipa::OpenApi;
@@ -80,7 +80,7 @@ fn main() -> anyhow::Result<()> {
         });
         let db_clone = db.clone();
         let _local_runner = spawn(async move {
-            LocalRunner::run(db_clone, &local_runner_config.clone()).await;
+            local_runner::run(db_clone, &local_runner_config.clone()).await;
         });
         // The api-server blocks forever
         pipeline_manager::api::run(listener, db, manager_config)

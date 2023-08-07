@@ -6,7 +6,7 @@ use colored::Colorize;
 
 use pipeline_manager::config::{DatabaseConfig, LocalRunnerConfig};
 use pipeline_manager::db::ProjectDB;
-use pipeline_manager::runner::LocalRunner;
+use pipeline_manager::local_runner;
 use tokio::spawn;
 use tokio::sync::Mutex;
 
@@ -36,7 +36,7 @@ async fn main() {
     .unwrap();
     let db = Arc::new(Mutex::new(db));
     let _local_runner = spawn(async move {
-        LocalRunner::run(db, &local_runner_config.clone()).await;
+        local_runner::run(db, &local_runner_config.clone()).await;
     });
     tokio::signal::ctrl_c()
         .await

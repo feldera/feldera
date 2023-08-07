@@ -60,7 +60,7 @@ use crate::db::{
     PipelineRevision, PipelineStatus, ProgramDescr, ProgramId, ProjectDB, Version,
 };
 pub use crate::error::ManagerError;
-use crate::runner::{RunnerError, RunnerInterface};
+use crate::runner::{RunnerApi, RunnerError};
 
 use crate::auth::TenantId;
 
@@ -221,14 +221,14 @@ pub(crate) struct ServerState {
     // transaction conflicts.  The server must avoid holding this lock
     // for a long time to avoid blocking concurrent requests.
     pub db: Arc<Mutex<ProjectDB>>,
-    runner: RunnerInterface,
+    runner: RunnerApi,
     _config: ManagerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
 }
 
 impl ServerState {
     pub async fn new(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<Self> {
-        let runner = RunnerInterface::new(db.clone());
+        let runner = RunnerApi::new(db.clone());
 
         Ok(Self {
             db,
