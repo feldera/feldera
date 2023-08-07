@@ -85,7 +85,7 @@ async fn initialize_local_dbsp_instance() -> TempDir {
         .unwrap();
     println!("Completed Compiler::precompile_dependencies().");
 
-    let listener = crate::pipeline_manager::create_listener(manager_config.clone()).unwrap();
+    let listener = crate::api::create_listener(manager_config.clone()).unwrap();
     actix_web::rt::System::new().block_on(async move {
         let db = crate::db::ProjectDB::connect(
             &database_config,
@@ -106,9 +106,7 @@ async fn initialize_local_dbsp_instance() -> TempDir {
             crate::runner::LocalRunner::run(db_clone, &local_runner_config.clone()).await;
         });
         // The api-server blocks forever
-        crate::pipeline_manager::run(listener, db, manager_config)
-            .await
-            .unwrap();
+        crate::api::run(listener, db, manager_config).await.unwrap();
     });
     tokio::time::sleep(Duration::from_millis(1000)).await;
     tmp_dir

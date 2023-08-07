@@ -1,11 +1,11 @@
 use crate::{
+    api::ManagerError,
     auth::TenantId,
     config::LocalRunnerConfig,
     db::{
         storage::Storage, DBError, PipelineId, PipelineRevision, PipelineRuntimeState,
         PipelineStatus, ProjectDB,
     },
-    pipeline_manager::ManagerError,
 };
 use actix_web::{
     body::BoxBody,
