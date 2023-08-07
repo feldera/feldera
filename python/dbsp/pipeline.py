@@ -1,3 +1,4 @@
+from http import HTTPStatus
 import uuid
 import feldera_api_client
 import sys
@@ -18,7 +19,6 @@ from feldera_api_client.models.new_pipeline_request import NewPipelineRequest
 from feldera_api_client.models.update_pipeline_request import UpdatePipelineRequest
 from feldera_api_client.models.attached_connector import AttachedConnector
 from feldera_api_client.models.pipeline_status import PipelineStatus
-from feldera_api_client.models.pipeline_descr import PipelineDescr
 from feldera_api_client.models.pipeline import Pipeline
 from feldera_api_client.models.runtime_config import RuntimeConfig
 from feldera_api_client.api.pipelines import new_pipeline
@@ -27,6 +27,8 @@ from feldera_api_client.api.pipelines import pipeline_stats
 from feldera_api_client.api.pipelines import get_pipeline
 from feldera_api_client.api.pipelines import pipeline_delete
 from feldera_api_client.api.pipelines import pipeline_action
+from feldera_api_client.api.pipelines import list_pipelines
+
 from dbsp.program import DBSPProgram
 from dbsp.error import TimeoutException
 from dbsp.connector import DBSPConnector
@@ -175,6 +177,11 @@ class DBSPPipelineConfig:
 
     def save(self):
         "Save the pipeline configuration to DBSP."
+        resp = list_pipelines.sync_detailed(
+            client=self.api_client, name=self.name)
+        if resp.status_code == HTTPStatus.OK:
+            self.pipeline_id = resp.unwrap("Failed to unwrap pipeline %s" % (self.name))[0].descriptor.pipeline_id
+
         if self.pipeline_id == None:
             body = NewPipelineRequest(
                 program_id=self.project.program_id,
@@ -189,7 +196,6 @@ class DBSPPipelineConfig:
             self.pipeline_version = response.version
         else:
             body = UpdatePipelineRequest(
-                pipeline_id=self.pipeline_id,
                 program_id=self.project.program_id,
                 name=self.name,
                 description=self.description,
@@ -197,7 +203,7 @@ class DBSPPipelineConfig:
                 connectors=self.attached_connectors,
             )
             response = update_pipeline.sync_detailed(
-                client=self.api_client, json_body=body).unwrap("Failed to update pipeline config")
+                pipeline_id=self.pipeline_id, client=self.api_client, json_body=body).unwrap("Failed to update pipeline config")
             self.pipeline_version = response.version
 
     def run(self):
