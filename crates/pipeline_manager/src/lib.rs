@@ -8,5 +8,6 @@ pub mod api;
 pub mod compiler;
 pub mod config;
 pub mod db;
+pub mod local_runner;
 pub mod logging;
 pub mod runner;
