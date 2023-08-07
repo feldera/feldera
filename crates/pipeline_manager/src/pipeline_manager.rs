@@ -23,7 +23,6 @@
 //!   compiled pipelines and for interacting with them at runtime.
 
 use crate::auth::JwkCache;
-use crate::config::{CompilerConfig, DatabaseConfig, LocalRunnerConfig};
 use actix_web::dev::Service;
 use actix_web::Scope;
 use actix_web::{
@@ -33,7 +32,7 @@ use actix_web::{
         Method,
     },
     middleware::{Condition, Logger},
-    patch, post, rt,
+    patch, post,
     web::Data as WebData,
     web::{self, ReqData},
     App, HttpRequest, HttpResponse, HttpServer,
@@ -54,14 +53,14 @@ use utoipa::{openapi::Server, IntoParams, Modify, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::{uuid, Uuid};
 
-pub(crate) use crate::compiler::{Compiler, ProgramStatus};
+pub(crate) use crate::compiler::ProgramStatus;
 pub(crate) use crate::config::ManagerConfig;
 use crate::db::{
     storage::Storage, AttachedConnector, AttachedConnectorId, ConnectorId, DBError, PipelineId,
     PipelineRevision, PipelineStatus, ProgramDescr, ProgramId, ProjectDB, Version,
 };
 pub use crate::error::ManagerError;
-use crate::runner::{Runner, RunnerError};
+use crate::runner::{RunnerError, RunnerInterface};
 
 use crate::auth::TenantId;
 
@@ -222,25 +221,17 @@ pub(crate) struct ServerState {
     // transaction conflicts.  The server must avoid holding this lock
     // for a long time to avoid blocking concurrent requests.
     pub db: Arc<Mutex<ProjectDB>>,
-    _compiler: Option<Compiler>,
-    runner: Runner,
+    runner: RunnerInterface,
     _config: ManagerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
 }
 
 impl ServerState {
-    pub async fn new(
-        config: ManagerConfig,
-        runner_config: LocalRunnerConfig,
-        compiler_config: CompilerConfig,
-        db: Arc<Mutex<ProjectDB>>,
-    ) -> AnyResult<Self> {
-        let runner = Runner::local(db.clone(), &runner_config);
-        let compiler = Compiler::new(&compiler_config, db.clone()).await?;
+    pub async fn new(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<Self> {
+        let runner = RunnerInterface::new(db.clone());
 
         Ok(Self {
             db,
-            _compiler: Some(compiler),
             runner,
             _config: config,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
@@ -248,12 +239,7 @@ impl ServerState {
     }
 }
 
-pub fn run(
-    database_config: DatabaseConfig,
-    manager_config: ManagerConfig,
-    compiler_config: CompilerConfig,
-    local_runner_config: LocalRunnerConfig,
-) -> AnyResult<()> {
+pub fn create_listener(manager_config: ManagerConfig) -> AnyResult<TcpListener> {
     // Check that the port is available before turning into a daemon, so we can fail
     // early if the port is taken.
     let listener = TcpListener::bind((manager_config.bind_address.clone(), manager_config.port))
@@ -288,51 +274,51 @@ pub fn run(
             ))
         })?;
     }
+    Ok(listener)
+}
 
-    let dev_mode = manager_config.dev_mode;
-    let use_auth = manager_config.use_auth;
-    rt::System::new().block_on(async {
-        let db = ProjectDB::connect(
-            &database_config,
-            #[cfg(feature = "pg-embed")]
-            Some(&manager_config),
-        )
-        .await?;
-        let db = Arc::new(Mutex::new(db));
-        let state = WebData::new(
-            ServerState::new(manager_config, local_runner_config, compiler_config, db).await?,
-        );
+pub async fn run(
+    listener: TcpListener,
+    db: Arc<Mutex<ProjectDB>>,
+    manager_config: ManagerConfig,
+) -> AnyResult<()> {
+    let state = WebData::new(ServerState::new(manager_config.clone(), db).await?);
 
-        if use_auth {
-            let server = HttpServer::new(move || {
-                let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
-                let auth_configuration = crate::auth::aws_auth_config();
+    if manager_config.use_auth {
+        let server = HttpServer::new(move || {
+            let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
+            let auth_configuration = crate::auth::aws_auth_config();
 
-                App::new()
-                    .app_data(state.clone())
-                    .app_data(auth_configuration)
-                    .wrap(Logger::default())
-                    .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()))
-                    .service(api_scope().wrap(auth_middleware))
-                    .service(static_website_scope())
-            });
-            server.listen(listener)?.run().await?;
-        } else {
-            let server = HttpServer::new(move || {
-                App::new()
-                    .app_data(state.clone())
-                    .wrap(Logger::default())
-                    .wrap(Condition::new(dev_mode, actix_cors::Cors::permissive()))
-                    .service(api_scope().wrap_fn(|req, srv| {
-                        let req = crate::auth::tag_with_default_tenant_id(req);
-                        srv.call(req)
-                    }))
-                    .service(static_website_scope())
-            });
-            server.listen(listener)?.run().await?;
-        }
-        Ok(())
-    })
+            App::new()
+                .app_data(state.clone())
+                .app_data(auth_configuration)
+                .wrap(Logger::default())
+                .wrap(Condition::new(
+                    manager_config.dev_mode,
+                    actix_cors::Cors::permissive(),
+                ))
+                .service(api_scope().wrap(auth_middleware))
+                .service(static_website_scope())
+        });
+        server.listen(listener)?.run().await?;
+    } else {
+        let server = HttpServer::new(move || {
+            App::new()
+                .app_data(state.clone())
+                .wrap(Logger::default())
+                .wrap(Condition::new(
+                    manager_config.dev_mode,
+                    actix_cors::Cors::permissive(),
+                ))
+                .service(api_scope().wrap_fn(|req, srv| {
+                    let req = crate::auth::tag_with_default_tenant_id(req);
+                    srv.call(req)
+                }))
+                .service(static_website_scope())
+        });
+        server.listen(listener)?.run().await?;
+    }
+    Ok(())
 }
 
 // `static_files` magic.
