@@ -67,6 +67,18 @@ public class CalciteCompilerTests {
     }
 
     @Test
+    public void createTypeTest() throws SqlParseException {
+        CalciteCompiler calcite = new CalciteCompiler(options);
+        String ddl = "CREATE TYPE address_typ AS (\n" +
+                "   street          VARCHAR(30),\n" +
+                "   city            VARCHAR(30),\n" +
+                "   state           CHAR(2),\n" +
+                "   postal_code     VARCHAR(6))";
+        SqlNode node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
     public void SourceNameTest() throws SqlParseException {
         // Tests that a table can be named 'source'.
         CalciteCompiler calcite = this.getCompiler();

@@ -45,7 +45,8 @@ void ExtendedTableElement(List<SqlNode> list) :
         (
             <PRIMARY> <KEY> /* ignored, but accepted */ {}
         |
-            <FOREIGN> <KEY> <REFERENCES> SimpleIdentifier() <LPAREN> SimpleIdentifier() <RPAREN> /* ignored */ {}
+            <FOREIGN> <KEY> <REFERENCES> SimpleIdentifier() <LPAREN> SimpleIdentifier() <RPAREN>
+            /* ignored */ {}
         |
             /* empty */ {}
         )
@@ -64,11 +65,6 @@ void ExtendedTableElement(List<SqlNode> list) :
     }
 |
     (
-        <UNIQUE> { s.add(this); }
-        columnList = ParenthesizedSimpleIdentifierList() {
-            list.add(SqlDdlNodes.unique(s.end(columnList), name, columnList));
-        }
-    |
         <PRIMARY>  { s.add(this); } <KEY>
         columnList = ParenthesizedSimpleIdentifierList() {
             list.add(SqlDdlNodes.primary(s.end(columnList), name, columnList));

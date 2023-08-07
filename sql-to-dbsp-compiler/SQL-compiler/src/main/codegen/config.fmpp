@@ -9,17 +9,11 @@ data: {
     imports: [
       "org.apache.calcite.sql.babel.SqlBabelCreateTable",
       "org.apache.calcite.sql.babel.TableCollectionType",
-      # The following are not yet released
-      # "org.apache.calcite.sql.babel.postgresql.AndChain",
-      # "org.apache.calcite.sql.babel.postgresql.SqlBegin",
-      # "org.apache.calcite.sql.babel.postgresql.SqlCommit",
-      # "org.apache.calcite.sql.babel.postgresql.SqlDiscard",
-      # "org.apache.calcite.sql.babel.postgresql.SqlRollback",
-      # "org.apache.calcite.sql.babel.postgresql.SqlShow",
       "org.apache.calcite.schema.ColumnStrategy"
       "org.apache.calcite.sql.SqlCreate"
       "org.apache.calcite.sql.SqlDrop"
       "org.apache.calcite.sql.ddl.SqlDdlNodes"
+      "org.apache.calcite.sql.ddl.SqlCreateType"
     ]
 
     # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is
@@ -587,6 +581,7 @@ data: {
     createStatementParserMethods: [
       "SqlCreateView"
       "SqlCreateExtendedTable"
+      "SqlCreateType"
     ]
 
     truncateStatementParserMethods: [
