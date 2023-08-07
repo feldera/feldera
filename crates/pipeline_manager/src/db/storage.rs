@@ -197,6 +197,10 @@ pub(crate) trait Storage {
     /// reconciliation loops.
     async fn all_programs(&self) -> Result<Vec<(TenantId, ProgramDescr)>, DBError>;
 
+    /// Retrieves all pipelines in the DB. Intended to be used by
+    /// reconciliation loops.
+    async fn all_pipelines(&self) -> Result<Vec<(TenantId, PipelineId)>, DBError>;
+
     /// Retrieves the first pending program from the queue.
     ///
     /// Returns a pending program with the most recent `status_since` or `None`

@@ -33,7 +33,8 @@ use tokio::{
     fs::{create_dir_all, remove_dir_all},
     spawn,
     sync::Mutex,
-    time::Duration,
+    task::JoinHandle,
+    time::{sleep, Duration},
 };
 use tokio::{sync::Notify, time::timeout};
 use uuid::Uuid;
@@ -187,7 +188,7 @@ impl ResponseError for RunnerError {
 /// pipelines at runtime.
 pub struct Runner {
     db: Arc<Mutex<ProjectDB>>,
-    inner: RunnerInner,
+    _inner: RunnerInner,
 }
 
 enum RunnerInner {
@@ -199,7 +200,7 @@ impl Runner {
     pub fn local(db: Arc<Mutex<ProjectDB>>, config: &LocalRunnerConfig) -> Self {
         Self {
             db: db.clone(),
-            inner: RunnerInner::Local(LocalRunner::new(db, config)),
+            _inner: RunnerInner::Local(LocalRunner::new(db, config)),
         }
     }
 
@@ -213,7 +214,6 @@ impl Runner {
     ) -> Result<(), ManagerError> {
         self.set_desired_status(tenant_id, pipeline_id, PipelineStatus::Shutdown)
             .await?;
-        self.notify_pipeline_automaton(tenant_id, pipeline_id).await;
         Ok(())
     }
 
@@ -238,7 +238,6 @@ impl Runner {
         Self::validate_desired_state_request(pipeline_id, &pipeline_state, None)?;
 
         db.delete_pipeline(tenant_id, pipeline_id).await?;
-        self.notify_pipeline_automaton(tenant_id, pipeline_id).await;
 
         // No need to do anything else since the pipeline was in the `Shutdown` state.
         // The pipeline tokio task will self-destruct when it polls pipeline
@@ -258,7 +257,6 @@ impl Runner {
     ) -> Result<(), ManagerError> {
         self.set_desired_status(tenant_id, pipeline_id, PipelineStatus::Paused)
             .await?;
-        self.notify_pipeline_automaton(tenant_id, pipeline_id).await;
 
         Ok(())
     }
@@ -274,7 +272,6 @@ impl Runner {
     ) -> Result<(), ManagerError> {
         self.set_desired_status(tenant_id, pipeline_id, PipelineStatus::Running)
             .await?;
-        self.notify_pipeline_automaton(tenant_id, pipeline_id).await;
 
         Ok(())
     }
@@ -541,16 +538,6 @@ impl Runner {
             builder.append_header(header);
         }
         Ok(builder.streaming(response))
-    }
-
-    async fn notify_pipeline_automaton(&self, tenant_id: TenantId, pipeline_id: PipelineId) {
-        match &self.inner {
-            RunnerInner::Local(runner) => {
-                runner
-                    .notify_pipeline_automaton(tenant_id, pipeline_id)
-                    .await
-            }
-        }
     }
 }
 
@@ -1200,40 +1187,53 @@ impl PipelineAutomaton {
 /// pipeline.  This request is asynchronous: the pipeline may continue running
 /// for a few seconds after the request succeeds.
 pub struct LocalRunner {
-    db: Arc<Mutex<ProjectDB>>,
-    config: Arc<LocalRunnerConfig>,
-    pipelines: Mutex<BTreeMap<PipelineId, Arc<Notify>>>,
+    runner_task: JoinHandle<Result<(), ManagerError>>,
+}
+
+impl Drop for LocalRunner {
+    fn drop(&mut self) {
+        self.runner_task.abort();
+    }
 }
 
 impl LocalRunner {
     pub(crate) fn new(db: Arc<Mutex<ProjectDB>>, config: &LocalRunnerConfig) -> Self {
-        Self {
-            db,
-            config: Arc::new(config.clone()),
-            pipelines: Mutex::new(BTreeMap::new()),
-        }
+        let runner_task = spawn(Self::reconcile(db, Arc::new(config.clone())));
+        Self { runner_task }
     }
 
-    async fn notify_pipeline_automaton(&self, tenant_id: TenantId, pipeline_id: PipelineId) {
-        self.pipelines
-            .lock()
-            .await
-            .entry(pipeline_id)
-            .or_insert_with(|| {
-                let notifier = Arc::new(Notify::new());
-                spawn(
-                    PipelineAutomaton::new(
-                        pipeline_id,
-                        tenant_id,
-                        &self.config,
-                        self.db.clone(),
-                        notifier.clone(),
-                    )
-                    .run(),
-                );
-                notifier
-            })
-            .notify_one();
+    async fn reconcile(
+        db: Arc<Mutex<ProjectDB>>,
+        config: Arc<LocalRunnerConfig>,
+    ) -> Result<(), ManagerError> {
+        let pipelines: Mutex<BTreeMap<PipelineId, Arc<Notify>>> = Mutex::new(BTreeMap::new());
+        loop {
+            sleep(Duration::from_millis(10)).await;
+            for entry in db.lock().await.all_pipelines().await?.iter() {
+                let tenant_id = entry.0;
+                let pipeline_id = entry.1;
+                println!("Notifying automata for ({tenant_id}, {pipeline_id})");
+                pipelines
+                    .lock()
+                    .await
+                    .entry(pipeline_id)
+                    .or_insert_with(|| {
+                        let notifier = Arc::new(Notify::new());
+                        spawn(
+                            PipelineAutomaton::new(
+                                pipeline_id,
+                                tenant_id,
+                                &config,
+                                db.clone(),
+                                notifier.clone(),
+                            )
+                            .run(),
+                        );
+                        notifier
+                    })
+                    .notify_one();
+            }
+        }
     }
 }
 

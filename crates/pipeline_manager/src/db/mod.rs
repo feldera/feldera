@@ -1207,6 +1207,26 @@ impl Storage for ProjectDB {
         }
         Ok(result)
     }
+    async fn all_pipelines(&self) -> Result<Vec<(TenantId, PipelineId)>, DBError> {
+        let rows = self
+            .pool
+            .get()
+            .await?
+            .query(
+                r#"SELECT tenant_id, id
+                FROM pipeline"#,
+                &[],
+            )
+            .await?;
+
+        let mut result = Vec::with_capacity(rows.len());
+        for row in rows {
+            let tenant_id = TenantId(row.get(0));
+            let pipeline_id = PipelineId(row.get(1));
+            result.push((tenant_id, pipeline_id));
+        }
+        Ok(result)
+    }
 
     async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version)>, DBError> {
         // Find the oldest pending project.
