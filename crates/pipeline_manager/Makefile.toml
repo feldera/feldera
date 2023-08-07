@@ -10,7 +10,7 @@ description = "Dump OpenAPI specification of the REST API to 'openapi.json'"
 dependencies = ["build"]
 script = '''
 cd ../../
-cargo run --package pipeline-manager --features=pg-embed --bin api-server $RUST_BUILD_PROFILE -- --dump-openapi
+cargo run --package pipeline-manager --features=pg-embed --bin pipeline-manager $RUST_BUILD_PROFILE -- --dump-openapi
 '''
 
 [tasks.openapi_python]

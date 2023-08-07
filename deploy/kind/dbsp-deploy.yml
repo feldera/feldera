@@ -62,7 +62,7 @@ spec:
         ports:
         - containerPort: 8080
         command:
-          - ./api-server
+          - ./pipeline-manager
         args:
           - --bind-address=0.0.0.0
           - --manager-working-directory=/working-dir
