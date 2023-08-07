@@ -7,6 +7,9 @@ ARG USERNAME=user
 RUN useradd -m $USERNAME && usermod -aG sudo $USERNAME
 RUN echo "user:pass" | chpasswd
 
+# Set locale to fix pg-embed startup
+ENV LC_ALL=en_US.UTF-8
+
 ## Install common dependencies
 
 RUN apt-get update && \
@@ -36,20 +39,19 @@ RUN npm install --global openapi-typescript-codegen
 
 # Switch to non-root user
 USER $USERNAME
+ENV HOME /home/$USERNAME
 
 ## Install rustup and common components
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
-ENV PATH="/root/.cargo/bin:/root/.cargo/env:${PATH}"
+ENV PATH="$HOME/.cargo/bin:$PATH"
 
-SHELL ["/bin/bash", "-c"]
-RUN source "$HOME/.cargo/env" && \
+RUN \
    rustup install nightly && \
    rustup component add rustfmt && \
    rustup component add rustfmt --toolchain nightly && \
    rustup component add clippy && \
-   rustup component add clippy --toolchain nightly
-SHELL ["/bin/sh", "-c"]
+   rustup component add clippy --toolchain nightly && \
+   cargo install cargo-make
 
-# Set locale to fix pg-embed startup
-ENV LC_ALL=en_US.UTF-8
+ENV PATH="$HOME/.local/bin:$PATH"

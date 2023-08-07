@@ -1,6 +1,15 @@
 {
 	"name": "DBSP",
-	"dockerFile": "Dockerfile",
+	"dockerComposeFile": [
+		"./docker-compose.devcontainer.yml",
+		"../deploy/docker-compose.yml"
+	],
+	"service": "workspace",
+	"runServices": [
+		"redpanda"
+	],
+	"workspaceFolder": "/workspaces/dbsp",
+	"shutdownAction": "stopCompose",
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -19,5 +28,10 @@
 				}
 			}
 		}
-	}
+	},
+	"remoteUser": "user",
+	"mounts": [
+		"source=${localWorkspaceFolder},target=${containerWorkspaceFolder},type=bind"
+	],
+	"postCreateCommand": "chmod +x /workspaces/dbsp/.devcontainer/postCreate.sh && /workspaces/dbsp/.devcontainer/postCreate.sh"
 }

@@ -1,0 +1,12 @@
+services:
+  workspace:
+    build:
+      context: .
+      # Note that the path of the Dockerfile and context is relative to the *primary*
+      # docker-compose.yml file (the first in the devcontainer.json "dockerComposeFile"
+      # array).
+      dockerfile: Dockerfile
+    tty: true
+    environment:
+      - RUST_BACKTRACE=1
+      - REDPANDA_BROKERS=redpanda:9092
