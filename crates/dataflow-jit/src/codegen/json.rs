@@ -17,6 +17,9 @@ type ColumnIdx = usize;
 pub struct JsonMapping {
     pub layout: LayoutId,
     /// A map between column indices and the json pointer used to access them
+    // TODO: We probably want a way for users to specify how flexible we are
+    // with parsing, e.g. whether we allow parsing an `f64` from a float,
+    // an integer, a string or a combination of them
     pub mappings: HashMap<ColumnIdx, String>,
 }
 
@@ -126,13 +129,24 @@ impl Codegen {
                         }
                     }
 
-                    ColumnType::I64 => {
+                    ty @ (ColumnType::Bool
+                    | ColumnType::I64
+                    | ColumnType::I32
+                    | ColumnType::F64
+                    | ColumnType::F32) => {
+                        let intrinsic = match ty {
+                            ColumnType::Bool => "deserialize_json_bool",
+                            ColumnType::I64 => "deserialize_json_i64",
+                            ColumnType::I32 => "deserialize_json_i32",
+                            ColumnType::F64 => "deserialize_json_f64",
+                            ColumnType::F32 => "deserialize_json_f32",
+                            ty => unreachable!("unhandled type in json deserialization: {ty}"),
+                        };
+
                         // Call the deserialization function
-                        let deserialize_i64 =
-                            ctx.imports
-                                .get("deserialize_json_i64", ctx.module, builder.func);
+                        let deserialize = ctx.imports.get(intrinsic, ctx.module, builder.func);
                         let value_is_null = builder.call_fn(
-                            deserialize_i64,
+                            deserialize,
                             &[column_place, json_pointer, json_pointer_len, json_map],
                         );
 
@@ -157,38 +171,7 @@ impl Codegen {
                         }
                     }
 
-                    ColumnType::F64 => {
-                        // Call the deserialization function
-                        let deserialize_i64 =
-                            ctx.imports
-                                .get("deserialize_json_f64", ctx.module, builder.func);
-                        let value_is_null = builder.call_fn(
-                            deserialize_i64,
-                            &[column_place, json_pointer, json_pointer_len, json_map],
-                        );
-
-                        // If the column is nullable, set its nullness
-                        if nullable {
-                            set_column_null(
-                                value_is_null,
-                                column_idx,
-                                place,
-                                MemFlags::trusted(),
-                                &layout,
-                                &mut builder,
-                            );
-
-                        // Otherwise trap if deserialization fails or the field
-                        // is null
-                        // FIXME: This probably shouldn't be a debug assertion,
-                        // and we probably want more graceful error handling in
-                        // general
-                        } else {
-                            ctx.debug_assert_false(value_is_null, &mut builder);
-                        }
-                    }
-
-                    _ => todo!(),
+                    ty => unreachable!("unhandled type in json deserialization: {ty}"),
                 }
             }
 
@@ -258,7 +241,7 @@ mod tests {
             };
 
             for &json in json_snippets {
-                let json_value: serde_json::Value = serde_json::from_str(json).unwrap();
+                let json_value = serde_json::from_str(json).unwrap();
                 let mut uninit = UninitRow::new(unsafe { &*vtable });
 
                 unsafe {
