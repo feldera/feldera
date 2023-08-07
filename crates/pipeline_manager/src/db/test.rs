@@ -1761,6 +1761,11 @@ impl Storage for Mutex<DbModel> {
             .collect())
     }
 
+    async fn all_pipelines(&self) -> DBResult<Vec<(TenantId, PipelineId)>> {
+        let s = self.lock().await;
+        Ok(s.pipelines.iter().map(|k| (k.0 .0, k.0 .1)).collect())
+    }
+
     async fn next_job(
         &self,
     ) -> DBResult<Option<(super::TenantId, super::ProgramId, super::Version)>> {
