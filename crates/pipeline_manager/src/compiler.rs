@@ -3,6 +3,7 @@ use crate::config::CompilerConfig;
 use crate::db::storage::Storage;
 use crate::db::{DBError, ProgramId, ProjectDB, Version};
 use crate::error::ManagerError;
+use futures_util::join;
 use log::warn;
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,6 @@ use tokio::{
     process::{Child, Command},
     select, spawn,
     sync::Mutex,
-    task::JoinHandle,
     time::{sleep, Duration},
 };
 use utoipa::ToSchema;
@@ -113,17 +113,7 @@ impl ProgramStatus {
     }
 }
 
-pub struct Compiler {
-    pub compiler_task: JoinHandle<Result<(), ManagerError>>,
-    gc_task: JoinHandle<Result<(), ManagerError>>,
-}
-
-impl Drop for Compiler {
-    fn drop(&mut self) {
-        self.compiler_task.abort();
-        self.gc_task.abort();
-    }
-}
+pub struct Compiler {}
 
 /// The `main` function injected in each generated pipeline
 /// crate.
@@ -136,17 +126,16 @@ fn main() {
 }"#;
 
 impl Compiler {
-    pub async fn new(
+    pub async fn run(
         config: &CompilerConfig,
         db: Arc<Mutex<ProjectDB>>,
-    ) -> Result<Self, ManagerError> {
+    ) -> Result<(), ManagerError> {
         Self::create_working_directory(config).await?;
         let compiler_task = spawn(Self::compiler_task(config.clone(), db.clone()));
         let gc_task = spawn(Self::gc_task(config.clone(), db));
-        Ok(Self {
-            compiler_task,
-            gc_task,
-        })
+        let r = join!(compiler_task, gc_task);
+        r.0.unwrap()?;
+        Ok(())
     }
 
     async fn create_working_directory(config: &CompilerConfig) -> Result<(), ManagerError> {

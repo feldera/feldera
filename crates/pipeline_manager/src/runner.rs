@@ -33,7 +33,6 @@ use tokio::{
     fs::{create_dir_all, remove_dir_all},
     spawn,
     sync::Mutex,
-    task::JoinHandle,
     time::{sleep, Duration},
 };
 use tokio::{sync::Notify, time::timeout};
@@ -186,22 +185,14 @@ impl ResponseError for RunnerError {
 
 /// A runner component responsible for running and interacting with
 /// pipelines at runtime.
-pub struct Runner {
+pub struct RunnerInterface {
     db: Arc<Mutex<ProjectDB>>,
-    _inner: RunnerInner,
 }
 
-enum RunnerInner {
-    Local(LocalRunner),
-}
-
-impl Runner {
+impl RunnerInterface {
     /// Create a local runner.
-    pub fn local(db: Arc<Mutex<ProjectDB>>, config: &LocalRunnerConfig) -> Self {
-        Self {
-            db: db.clone(),
-            _inner: RunnerInner::Local(LocalRunner::new(db, config)),
-        }
+    pub fn new(db: Arc<Mutex<ProjectDB>>) -> Self {
+        Self { db }
     }
 
     /// Initiate pipeline shutdown.
@@ -720,7 +711,7 @@ impl PipelineAutomaton {
                 // On success, go to the `PAUSED` state.
                 (PipelineStatus::Initializing, PipelineStatus::Running)
                 | (PipelineStatus::Initializing, PipelineStatus::Paused) => {
-                    match Runner::pipeline_http_request_json_response(
+                    match RunnerInterface::pipeline_http_request_json_response(
                         self.pipeline_id,
                         Method::GET,
                         "stats",
@@ -770,7 +761,7 @@ impl PipelineAutomaton {
                 }
                 // Unpause the pipeline.
                 (PipelineStatus::Paused, PipelineStatus::Running) => {
-                    match Runner::pipeline_http_request_json_response(
+                    match RunnerInterface::pipeline_http_request_json_response(
                         self.pipeline_id,
                         Method::GET,
                         "start",
@@ -799,7 +790,7 @@ impl PipelineAutomaton {
                 }
                 // Pause the pipeline.
                 (PipelineStatus::Running, PipelineStatus::Paused) => {
-                    match Runner::pipeline_http_request_json_response(
+                    match RunnerInterface::pipeline_http_request_json_response(
                         self.pipeline_id,
                         Method::GET,
                         "pause",
@@ -830,7 +821,7 @@ impl PipelineAutomaton {
                 // state.
                 (PipelineStatus::Running, PipelineStatus::Shutdown)
                 | (PipelineStatus::Paused, PipelineStatus::Shutdown) => {
-                    match Runner::pipeline_http_request_json_response(
+                    match RunnerInterface::pipeline_http_request_json_response(
                         self.pipeline_id,
                         Method::GET,
                         "shutdown",
@@ -886,7 +877,7 @@ impl PipelineAutomaton {
                 }
                 // Steady-state operation.  Periodically poll the pipeline.
                 (PipelineStatus::Running, _) | (PipelineStatus::Paused, _) => {
-                    match Runner::pipeline_http_request_json_response(
+                    match RunnerInterface::pipeline_http_request_json_response(
                         self.pipeline_id,
                         Method::GET,
                         "stats",
@@ -1186,20 +1177,12 @@ impl PipelineAutomaton {
 /// To shutdown the pipeline, the runner sends a `/shutdown` HTTP request to the
 /// pipeline.  This request is asynchronous: the pipeline may continue running
 /// for a few seconds after the request succeeds.
-pub struct LocalRunner {
-    runner_task: JoinHandle<Result<(), ManagerError>>,
-}
-
-impl Drop for LocalRunner {
-    fn drop(&mut self) {
-        self.runner_task.abort();
-    }
-}
+pub struct LocalRunner {}
 
 impl LocalRunner {
-    pub(crate) fn new(db: Arc<Mutex<ProjectDB>>, config: &LocalRunnerConfig) -> Self {
+    pub async fn run(db: Arc<Mutex<ProjectDB>>, config: &LocalRunnerConfig) {
         let runner_task = spawn(Self::reconcile(db, Arc::new(config.clone())));
-        Self { runner_task }
+        runner_task.await.unwrap().unwrap();
     }
 
     async fn reconcile(
@@ -1212,7 +1195,6 @@ impl LocalRunner {
             for entry in db.lock().await.all_pipelines().await?.iter() {
                 let tenant_id = entry.0;
                 let pipeline_id = entry.1;
-                println!("Notifying automata for ({tenant_id}, {pipeline_id})");
                 pipelines
                     .lock()
                     .await

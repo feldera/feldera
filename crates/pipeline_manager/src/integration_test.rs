@@ -16,6 +16,8 @@ use crate::{
     config::{CompilerConfig, DatabaseConfig, LocalRunnerConfig, ManagerConfig},
     db::{Pipeline, PipelineStatus},
 };
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 const TEST_DBSP_URL_VAR: &str = "TEST_DBSP_URL";
 const TEST_DBSP_DEFAULT_PORT: u16 = 8089;
@@ -71,7 +73,7 @@ async fn initialize_local_dbsp_instance() -> TempDir {
     }
     .canonicalize()
     .unwrap();
-    let runner_config = LocalRunnerConfig {
+    let local_runner_config = LocalRunnerConfig {
         runner_working_directory: workdir.to_owned(),
     }
     .canonicalize()
@@ -83,15 +85,30 @@ async fn initialize_local_dbsp_instance() -> TempDir {
         .unwrap();
     println!("Completed Compiler::precompile_dependencies().");
 
-    // We can't use tokio::spawn because super::run() creates its own Tokio Runtime
-    let _ = std::thread::spawn(|| {
-        crate::pipeline_manager::run(
-            database_config,
-            manager_config,
-            compiler_config,
-            runner_config,
+    let listener = crate::pipeline_manager::create_listener(manager_config.clone()).unwrap();
+    actix_web::rt::System::new().block_on(async move {
+        let db = crate::db::ProjectDB::connect(
+            &database_config,
+            #[cfg(feature = "pg-embed")]
+            Some(&manager_config),
         )
+        .await
         .unwrap();
+        let db = Arc::new(Mutex::new(db));
+        let db_clone = db.clone();
+        let _compiler = actix_web::rt::spawn(async move {
+            crate::compiler::Compiler::run(&compiler_config.clone(), db_clone)
+                .await
+                .unwrap();
+        });
+        let db_clone = db.clone();
+        let _local_runner = actix_web::rt::spawn(async move {
+            crate::runner::LocalRunner::run(db_clone, &local_runner_config.clone()).await;
+        });
+        // The api-server blocks forever
+        crate::pipeline_manager::run(listener, db, manager_config)
+            .await
+            .unwrap();
     });
     tokio::time::sleep(Duration::from_millis(1000)).await;
     tmp_dir

@@ -583,7 +583,7 @@ mod test {
 
     use crate::{
         auth::{self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim, Provider},
-        config::{CompilerConfig, LocalRunnerConfig, ManagerConfig},
+        config::{CompilerConfig, ManagerConfig},
         db::{storage::Storage, ApiPermission},
         pipeline_manager::ServerState,
     };
@@ -662,17 +662,7 @@ mod test {
             dump_openapi: false,
             config_file: None,
         };
-        let compiler_config = CompilerConfig {
-            sql_compiler_home: "".to_owned(),
-            dbsp_override_path: Some("../../".to_owned()),
-            debug: false,
-            precompile: true,
-            compiler_working_directory: "".to_owned(),
-        };
 
-        let runner_config = LocalRunnerConfig {
-            runner_working_directory: "".to_owned(),
-        };
         let (conn, _temp) = crate::db::test::setup_pg().await;
         if api_key.is_some() {
             let tenant_id = conn
@@ -688,11 +678,7 @@ mod test {
             .unwrap();
         }
         let db = Arc::new(Mutex::new(conn));
-        let state = actix_web::web::Data::new(
-            ServerState::new(manager_config, runner_config, compiler_config, db)
-                .await
-                .unwrap(),
-        );
+        let state = actix_web::web::Data::new(ServerState::new(manager_config, db).await.unwrap());
         if decoding_key.is_some() {
             state
                 .jwk_cache

@@ -15,7 +15,7 @@ awc = {version = "3.1.0", features = ["openssl"] } # Needed for auth workflows
 static-files = "0.2.3"
 actix-cors = "0.6.4"
 anyhow = { version = "1.0.57", features = ["backtrace"] }
-tokio = { version = "1.25.0", features = ["rt-multi-thread", "fs", "macros", "process", "io-util", "io-std"] }
+tokio = { version = "1.25.0", features = ["rt-multi-thread", "fs", "macros", "process", "io-util", "io-std", "signal"] }
 log = "0.4.17"
 env_logger = "0.10.0"
 serde = { version = "1.0", features = ["derive"] }
