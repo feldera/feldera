@@ -562,6 +562,33 @@ async fn save_api_key() {
     }
 }
 
+/// A Function that commits twice and checks the second time errors, returns
+/// revision of first commit.
+async fn commit_check(handle: &DbHandle, tenant_id: TenantId, pipeline_id: PipelineId) -> Revision {
+    let new_revision_id = Uuid::now_v7();
+    let r = handle
+        .db
+        .create_pipeline_revision(new_revision_id, tenant_id, pipeline_id)
+        .await
+        .unwrap();
+    assert_eq!(r.0, new_revision_id);
+
+    // We get an error the 2nd time since nothing changed
+    let e = handle
+        .db
+        .create_pipeline_revision(new_revision_id, tenant_id, pipeline_id)
+        .await
+        .unwrap_err();
+    match e {
+        DBError::RevisionNotChanged => r,
+        e => {
+            // We should get a RevisionNotChanged error here since we
+            // didn't change anything inbetween
+            panic!("unexpected error trying to create revision 2nd time: {}", e)
+        }
+    }
+}
+
 #[tokio::test]
 async fn create_tenant() {
     let handle = test_setup().await;
@@ -592,31 +619,59 @@ async fn create_tenant() {
 }
 
 #[tokio::test]
-async fn versioning() {
+async fn versioning_no_change_no_connectors() {
     let _r = env_logger::try_init();
 
-    /// A Function that commits twice and checks the second time errors, returns
-    /// revision of first commit.
-    async fn commit_check(
-        handle: &DbHandle,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Revision {
-        let new_revision_id = Uuid::now_v7();
-        let r = handle
-            .db
-            .create_pipeline_revision(new_revision_id, tenant_id, pipeline_id)
-            .await
-            .unwrap();
-        // We get an error the 2nd time since nothing changed
-        let _e = handle
-            .db
-            .create_pipeline_revision(new_revision_id, tenant_id, pipeline_id)
-            .await
-            .unwrap_err();
-        assert_eq!(r.0, new_revision_id);
-        r
-    }
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+
+    let (program_id, _) = handle
+        .db
+        .new_program(tenant_id, Uuid::now_v7(), "", "", "")
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_program_status_guarded(
+            tenant_id,
+            program_id,
+            Version(1),
+            ProgramStatus::CompilingSql,
+        )
+        .await
+        .unwrap();
+    let rc = RuntimeConfig::from_yaml("");
+    let (pipeline_id, _version) = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            Some(program_id),
+            "",
+            "",
+            &rc,
+            &None,
+        )
+        .await
+        .unwrap();
+    let _r = handle
+        .db
+        .set_program_schema(
+            tenant_id,
+            program_id,
+            ProgramSchema {
+                inputs: vec![],
+                outputs: vec![],
+            },
+        )
+        .await
+        .unwrap();
+    let _r1: Revision = commit_check(&handle, tenant_id, pipeline_id).await;
+}
+
+#[tokio::test]
+async fn versioning() {
+    let _r = env_logger::try_init();
 
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;

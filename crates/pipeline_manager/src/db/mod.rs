@@ -1255,14 +1255,10 @@ impl Storage for ProjectDB {
                 "WITH ph_entry AS (
                     SELECT progh.code, ch.config, ach.name, ach.config, ach.is_input, ph.config
                                         FROM pipeline_history ph
-                                        INNER JOIN program_history progh ON ph.program_id = progh.id
-                                        LEFT OUTER JOIN attached_connector_history ach ON ach.pipeline_id = ph.id
-                                        LEFT OUTER JOIN connector_history ch ON ach.connector_id = ch.id
-                                        WHERE ph.id = $1
-                                            AND ach.revision = $2
-                                            AND progh.revision = $2
-                                            AND ph.revision = $2
-                                            AND ch.revision = $2
+                                        INNER JOIN program_history progh ON ph.program_id = progh.id AND progh.revision = $2
+                                        LEFT OUTER JOIN attached_connector_history ach ON ach.pipeline_id = ph.id AND ach.revision = $2
+                                        LEFT OUTER JOIN connector_history ch ON ach.connector_id = ch.id AND ch.revision = $2
+                                        WHERE ph.id = $1 AND ph.revision = $2
                 ),
                 p_entry AS (
                     SELECT prog.code, c.config, ac.name, ac.config, ac.is_input, p.config
