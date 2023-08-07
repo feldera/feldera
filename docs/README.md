@@ -13,7 +13,7 @@ You also need the OpenAPI JSON spec from the manager. This file is automatically
 generated during the CI build. For local development you need to run once:
 
 ```bash
-cargo run --bin api-server -- --dump-openapi
+cargo run --bin pipeline-manager -- --dump-openapi
 jq '.servers= [{url: "http://localhost:8080/v0"}]' openapi.json > openapi_docs.json
 ```
 

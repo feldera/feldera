@@ -286,11 +286,11 @@ build-manager:
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline-manager -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager --no-run
 
-    IF [ -f ./target/debug/api-server ]
-        SAVE ARTIFACT --keep-ts ./target/debug/api-server api-server
+    IF [ -f ./target/debug/pipeline-manager ]
+        SAVE ARTIFACT --keep-ts ./target/debug/pipeline-manager pipeline-manager
     END
-    IF [ -f ./target/release/api-server ]
-        SAVE ARTIFACT --keep-ts ./target/release/api-server api-server
+    IF [ -f ./target/release/pipeline-manager ]
+        SAVE ARTIFACT --keep-ts ./target/release/pipeline-manager pipeline-manager
     END
 
 build-sql:
@@ -330,8 +330,8 @@ install-docs-deps:
 build-docs:
     FROM +install-docs-deps
     COPY docs/ docs/
-    COPY ( +build-manager/api-server ) ./docs/api-server
-    RUN cd docs && ./api-server --dump-openapi \
+    COPY ( +build-manager/pipeline-manager ) ./docs/pipeline-manager
+    RUN cd docs && ./pipeline-manager --dump-openapi \
         && (jq '.servers= [{url: "http://localhost:8080/v0"}]' openapi.json > openapi_docs.json) \
         && rm openapi.json
     RUN cd docs && yarn format:check
@@ -438,7 +438,7 @@ python-bindings-checker:
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
     FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    COPY +build-manager/api-server .
+    COPY +build-manager/pipeline-manager .
     RUN mkdir -p /root/.local/lib/python3.10
     RUN mkdir -p /root/.local/bin
 
@@ -446,12 +446,12 @@ python-bindings-checker:
     COPY +install-python/bin /root/.local/bin
 
     RUN pip3 install openapi-python-client==0.15.0 && openapi-python-client --version
-    COPY +build-manager/api-server .
+    COPY +build-manager/pipeline-manager .
     COPY python/feldera-api-client feldera-api-client-base
 
     # This line will fail if the python bindings need to be regenerated
     RUN mkdir checker
-    RUN cd checker && ../api-server --dump-openapi &&  \
+    RUN cd checker && ../pipeline-manager --dump-openapi &&  \
         openapi-python-client generate --path openapi.json --fail-on-warning && \
         diff -bur feldera-api-client ../feldera-api-client-base
 
@@ -461,14 +461,14 @@ test-python:
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
     FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    COPY +build-manager/api-server .
+    COPY +build-manager/pipeline-manager .
     RUN mkdir -p /root/.local/lib/python3.10
     RUN mkdir -p /root/.local/bin
 
     COPY +install-python/python3.10 /root/.local/lib/python3.10
     COPY +install-python/bin /root/.local/bin
 
-    COPY +build-manager/api-server .
+    COPY +build-manager/pipeline-manager .
     COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
 
     COPY demo/demo_notebooks demo/demo_notebooks
@@ -484,7 +484,7 @@ test-python:
     WITH DOCKER --pull postgres
         RUN docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
             sleep 3 && \
-            ./api-server --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --unix-daemon && \
+            ./pipeline-manager --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --unix-daemon && \
             sleep 1 && \
             python3 python/test.py && \
             cd demo/demo_notebooks && jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
@@ -508,7 +508,7 @@ build-dbsp-manager-container:
 
     # First, copy over the artifacts built from previous stages
     RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
-    COPY +build-manager/api-server .
+    COPY +build-manager/pipeline-manager .
     COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
 
     # Then copy over the crates needed by the sql compiler
@@ -521,8 +521,8 @@ build-dbsp-manager-container:
     COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp /database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
     COPY sql-to-dbsp-compiler/lib /database-stream-processor/sql-to-dbsp-compiler/lib
     COPY sql-to-dbsp-compiler/temp /database-stream-processor/sql-to-dbsp-compiler/temp
-    RUN ./api-server --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
-    ENTRYPOINT ["./api-server", "--bind-address=0.0.0.0", "--manager-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
+    RUN ./pipeline-manager --bind-address=0.0.0.0 --manager-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
+    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--manager-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
     SAVE IMAGE ghcr.io/feldera/dbsp-manager
 
 # TODO: mirrors the Dockerfile. See note above.
