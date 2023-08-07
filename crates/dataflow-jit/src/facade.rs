@@ -1,5 +1,5 @@
 use crate::{
-    codegen::{CodegenConfig, NativeLayout, NativeLayoutCache},
+    codegen::{json::JsonMapping, CodegenConfig, NativeLayout, NativeLayoutCache},
     dataflow::{CompiledDataflow, JitHandle, RowInput, RowOutput},
     ir::{
         literal::{NullableConstant, RowLiteral, StreamCollection},
@@ -18,6 +18,7 @@ use dbsp::{
     DBSPHandle, Error, Runtime,
 };
 use rust_decimal::Decimal;
+use serde_json::{Deserializer, Value};
 use std::{collections::BTreeMap, mem::transmute, ops::Not, path::Path, thread, time::Instant};
 
 // TODO: A lot of this still needs fleshing out, mainly the little tweaks that
@@ -28,6 +29,7 @@ use std::{collections::BTreeMap, mem::transmute, ops::Not, path::Path, thread, t
 pub struct Demands<'a> {
     #[allow(clippy::type_complexity)]
     csv: BTreeMap<LayoutId, Vec<(usize, usize, Option<&'a str>)>>,
+    json_deser: BTreeMap<LayoutId, JsonMapping>,
 }
 
 impl<'a> Demands<'a> {
@@ -35,6 +37,7 @@ impl<'a> Demands<'a> {
     pub fn new() -> Self {
         Self {
             csv: BTreeMap::new(),
+            json_deser: BTreeMap::new(),
         }
     }
 
@@ -58,6 +61,7 @@ pub struct DbspCircuit {
     /// unreachable
     outputs: BTreeMap<NodeId, (Option<RowOutput>, StreamLayout)>,
     csv_demands: BTreeMap<LayoutId, FuncId>,
+    json_deser_demands: BTreeMap<LayoutId, FuncId>,
     layout_cache: NativeLayoutCache,
 }
 
@@ -104,8 +108,18 @@ impl DbspCircuit {
             }
         }
 
-        let mut csv_demands = BTreeMap::new();
+        let (mut json_deser_demands, mut csv_demands) = (BTreeMap::new(), BTreeMap::new());
         let (dataflow, jit, layout_cache) = CompiledDataflow::new(&graph, config, |codegen| {
+            json_deser_demands = demands
+                .json_deser
+                .into_iter()
+                .map(|(layout, mappings)| {
+                    debug_assert_eq!(layout, mappings.layout);
+                    let from_json = codegen.deserialize_json(&mappings);
+                    (layout, from_json)
+                })
+                .collect();
+
             csv_demands = demands
                 .csv
                 .into_iter()
@@ -144,6 +158,7 @@ impl DbspCircuit {
             inputs,
             outputs,
             csv_demands,
+            json_deser_demands,
             layout_cache,
         }
     }
@@ -227,6 +242,56 @@ impl DbspCircuit {
         // If the source is unused, do nothing
         } else {
             tracing::info!("appended csv file to source {target} which is unused, doing nothing");
+        }
+    }
+
+    // TODO: We probably want other ways to ingest json, e.g. `&[u8]`, `R: Read`, etc.
+    pub fn append_json_input(&mut self, target: NodeId, json: &str) {
+        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
+
+        if let Some(input) = input {
+            let start = Instant::now();
+
+            let records = match *layout {
+                StreamLayout::Set(key_layout) => {
+                    let key_vtable = unsafe { &*self.jit.vtables()[&key_layout] };
+                    let deserialize_json = unsafe {
+                        transmute::<_, unsafe extern "C" fn(*mut u8, *const serde_json::Value)>(
+                            self.jit
+                                .jit
+                                .get_finalized_function(self.json_deser_demands[&key_layout]),
+                        )
+                    };
+
+                    let mut batch = Vec::new();
+                    let stream = Deserializer::from_str(json).into_iter::<Value>();
+                    for value in stream {
+                        // FIXME: Error handling
+                        let value = value.unwrap();
+
+                        let mut row = UninitRow::new(key_vtable);
+                        unsafe {
+                            deserialize_json(row.as_mut_ptr(), &value as *const serde_json::Value);
+                        }
+                        batch.push((unsafe { row.assume_init() }, 1));
+                    }
+
+                    let records = batch.len();
+                    input.as_set_mut().unwrap().append(&mut batch);
+                    records
+                }
+
+                StreamLayout::Map(..) => todo!(),
+            };
+
+            let elapsed = start.elapsed();
+            tracing::info!("ingested {records} records for {target} in {elapsed:#?}");
+
+        // If the source is unused, do nothing
+        } else {
+            tracing::info!("appended json to source {target} which is unused, doing nothing");
         }
     }
 

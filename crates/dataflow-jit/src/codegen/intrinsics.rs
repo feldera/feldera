@@ -589,8 +589,11 @@ intrinsics! {
     decimal_from_f64 = fn(f64, ptr),
 
     // Json
+    deserialize_json_bool = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_string = fn(ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_i32 = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_i64 = fn(ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_f32 = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_f64 = fn(ptr, ptr, usize, ptr) -> bool,
 }
 
@@ -1643,6 +1646,25 @@ extern "C" fn deserialize_json_string(
     }
 }
 
+extern "C" fn deserialize_json_bool(
+    place: &mut MaybeUninit<bool>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    map: &JsonValue,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+
+    if let Some(boolean) = map.pointer(json_pointer).and_then(JsonValue::as_bool) {
+        place.write(boolean);
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
 extern "C" fn deserialize_json_i64(
     place: &mut MaybeUninit<i64>,
     json_pointer_ptr: *const u8,
@@ -1662,6 +1684,25 @@ extern "C" fn deserialize_json_i64(
     }
 }
 
+extern "C" fn deserialize_json_i32(
+    place: &mut MaybeUninit<i32>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    map: &JsonValue,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+
+    if let Some(int) = map.pointer(json_pointer).and_then(JsonValue::as_i64) {
+        place.write(int as i32);
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
 extern "C" fn deserialize_json_f64(
     place: &mut MaybeUninit<f64>,
     json_pointer_ptr: *const u8,
@@ -1673,6 +1714,25 @@ extern "C" fn deserialize_json_f64(
 
     if let Some(float) = map.pointer(json_pointer).and_then(JsonValue::as_f64) {
         place.write(float);
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
+extern "C" fn deserialize_json_f32(
+    place: &mut MaybeUninit<f32>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    map: &JsonValue,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+
+    if let Some(float) = map.pointer(json_pointer).and_then(JsonValue::as_f64) {
+        place.write(float as f32);
         false
 
     // Otherwise the value couldn't be found and is considered null

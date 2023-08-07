@@ -1,7 +1,8 @@
+pub mod json;
+
 mod call;
 mod index_by_column;
 mod intrinsics;
-mod json;
 mod layout;
 mod layout_cache;
 mod math;
