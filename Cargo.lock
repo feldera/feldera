@@ -2347,6 +2347,7 @@ dependencies = [
  "erased-serde",
  "form_urlencoded",
  "futures",
+ "futures-timer",
  "futures-util",
  "lazy_static",
  "log",
