@@ -62,8 +62,8 @@ use static_assertions::assert_impl_any;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::api::ServerState;
 use crate::db::{storage::Storage, ApiPermission, DBError, ProjectDB};
-use crate::pipeline_manager::ServerState;
 
 // Used when no auth is configured, so we tag the request with the default user
 // and passthrough
@@ -582,10 +582,10 @@ mod test {
     use tokio::sync::Mutex;
 
     use crate::{
+        api::ServerState,
         auth::{self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim, Provider},
-        config::{CompilerConfig, ManagerConfig},
+        config::ManagerConfig,
         db::{storage::Storage, ApiPermission},
-        pipeline_manager::ServerState,
     };
 
     use super::AuthError;

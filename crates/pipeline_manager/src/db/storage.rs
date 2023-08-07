@@ -3,8 +3,8 @@ use super::{
     PipelineDescr, PipelineId, PipelineRevision, PipelineRuntimeState, PipelineStatus,
     ProgramDescr, ProgramId, ProgramSchema, Revision, Version,
 };
+use crate::api::ProgramStatus;
 use crate::auth::TenantId;
-use crate::pipeline_manager::ProgramStatus;
 use async_trait::async_trait;
 use dbsp_adapters::{ConnectorConfig, RuntimeConfig};
 use uuid::Uuid;

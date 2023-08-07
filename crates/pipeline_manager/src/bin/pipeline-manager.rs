@@ -2,10 +2,10 @@ use actix_web::rt::{self, spawn};
 use clap::{Args, Command, FromArgMatches};
 
 use colored::Colorize;
+use pipeline_manager::api::ApiDoc;
 use pipeline_manager::compiler::Compiler;
 use pipeline_manager::config::{CompilerConfig, DatabaseConfig, LocalRunnerConfig, ManagerConfig};
 use pipeline_manager::db::ProjectDB;
-use pipeline_manager::pipeline_manager::ApiDoc;
 use pipeline_manager::runner::LocalRunner;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -62,7 +62,7 @@ fn main() -> anyhow::Result<()> {
     let database_config = DatabaseConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
-    let listener = pipeline_manager::pipeline_manager::create_listener(manager_config.clone())?;
+    let listener = pipeline_manager::api::create_listener(manager_config.clone())?;
     rt::System::new().block_on(async move {
         let db: ProjectDB = ProjectDB::connect(
             &database_config,
@@ -83,7 +83,7 @@ fn main() -> anyhow::Result<()> {
             LocalRunner::run(db_clone, &local_runner_config.clone()).await;
         });
         // The api-server blocks forever
-        pipeline_manager::pipeline_manager::run(listener, db, manager_config)
+        pipeline_manager::api::run(listener, db, manager_config)
             .await
             .unwrap();
     });
