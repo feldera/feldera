@@ -1,9 +1,13 @@
 use crate::{
-    codegen::{pretty_clif::CommentWriter, utils::FunctionBuilderExt, CodegenCtx, VTable},
+    codegen::{
+        pretty_clif::CommentWriter,
+        utils::{str_from_raw_parts, FunctionBuilderExt},
+        CodegenCtx, VTable,
+    },
     ir::{exprs::Call, ExprId},
     row::{Row, UninitRow},
     thin_str::ThinStrRef,
-    utils::NativeRepr,
+    utils::{HashMap, NativeRepr},
     ThinStr,
 };
 use chrono::{
@@ -17,11 +21,11 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use csv::StringRecord;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
+use serde_json::Value as JsonValue;
 use std::{
     alloc::Layout,
     cell::RefCell,
     cmp::Ordering,
-    collections::HashMap,
     fmt::{self, Debug, Write},
     hash::{Hash, Hasher},
     io::{self, Write as _},
@@ -50,7 +54,7 @@ macro_rules! intrinsics {
                 let ptr_type = module.isa().pointer_type();
                 let call_conv = module.isa().default_call_conv();
 
-                let mut intrinsics = HashMap::with_capacity(TOTAL_INTRINSICS);
+                let mut intrinsics = HashMap::with_capacity_and_hasher(TOTAL_INTRINSICS, Default::default());
 
                 $(
                     let $intrinsic = module
@@ -583,6 +587,11 @@ intrinsics! {
     decimal_to_f64 = fn(u64, u64) -> f64,
     decimal_from_f32 = fn(f32, ptr),
     decimal_from_f64 = fn(f64, ptr),
+
+    // Json
+    deserialize_json_string = fn(ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_i64 = fn(ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_f64 = fn(ptr, ptr, usize, ptr) -> bool,
 }
 
 /// Allocates memory with the given size and alignment
@@ -772,13 +781,6 @@ unsafe extern "C" fn row_vec_push(vec: &mut Vec<Row>, vtable: &'static VTable, r
 
 unsafe extern "C" fn string_with_capacity(capacity: usize) -> ThinStr {
     ThinStr::with_capacity(capacity)
-}
-
-#[inline(always)]
-unsafe fn str_from_raw_parts<'a>(ptr: *const u8, len: usize) -> &'a str {
-    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
-    debug_assert!(str::from_utf8(bytes).is_ok());
-    unsafe { str::from_utf8_unchecked(bytes) }
 }
 
 unsafe extern "C" fn string_push_str(mut target: ThinStr, ptr: *const u8, len: usize) -> ThinStr {
@@ -1620,4 +1622,61 @@ extern "C" fn decimal_from_f64(float: f64, out: &mut MaybeUninit<u128>) {
     // TODO: NaN probably shouldn't map to zero
     let decimal = Decimal::from_f64_retain(float).unwrap_or(Decimal::ZERO);
     out.write(decimal.to_repr());
+}
+
+extern "C" fn deserialize_json_string(
+    place: &mut MaybeUninit<ThinStr>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    map: &JsonValue,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+
+    if let Some(string) = map.pointer(json_pointer).and_then(JsonValue::as_str) {
+        place.write(ThinStr::from(string));
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
+extern "C" fn deserialize_json_i64(
+    place: &mut MaybeUninit<i64>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    map: &JsonValue,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+
+    if let Some(int) = map.pointer(json_pointer).and_then(JsonValue::as_i64) {
+        place.write(int);
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
+extern "C" fn deserialize_json_f64(
+    place: &mut MaybeUninit<f64>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    map: &JsonValue,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+
+    if let Some(float) = map.pointer(json_pointer).and_then(JsonValue::as_f64) {
+        place.write(float);
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
 }

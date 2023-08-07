@@ -266,9 +266,7 @@ impl Codegen {
             builder.finalize();
         }
 
-        self.finalize_function(func_id);
-
-        func_id
+        self.finalize_function(func_id)
     }
 
     #[tracing::instrument(skip(self))]
