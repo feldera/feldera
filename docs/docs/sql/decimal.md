@@ -19,7 +19,6 @@ and thus will use the maximum supported values for both.
 The maximum precision supported is 128 binary digits (38 decimal
 digits).  The maximum scale supported is 10 decimal digits.
 
-
 ## Operations available for the ``decimal`` type
 
 The legal operations are ``+`` (plus, unary and binary), ``-`` (minus,

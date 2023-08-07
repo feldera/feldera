@@ -109,7 +109,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         DBSPOperator result = operator;
         if (!originalRowType.sameType(operator.originalRowType)
                 || !outputType.sameType(operator.outputType)) {
-            result = new DBSPSourceOperator(operator.getNode(),
+            result = new DBSPSourceOperator(operator.getNode(), operator.sourceName,
                     outputType, originalRowType, operator.comment, operator.outputName);
         }
         this.map(operator, result);

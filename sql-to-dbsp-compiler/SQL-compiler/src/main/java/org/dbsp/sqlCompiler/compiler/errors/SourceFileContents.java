@@ -60,7 +60,7 @@ public class SourceFileContents {
                     .append(SourceFileContents.newline());
             for (int i = 0; i < startCol + 6; i++)
                 result.append(" ");
-            for (int i = startCol; i <= endCol; i++)
+            for (int i = startCol; i < endCol; i++)
                 result.append("^");
             result.append(SourceFileContents.newline());
         } else {

@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -58,6 +59,8 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
@@ -126,7 +129,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public DBSPCompiler(CompilerOptions options) {
         this.options = options;
         this.mapper = new ObjectMapper();
-        this.frontend = new CalciteCompiler(options);
+        this.frontend = new CalciteCompiler(options, this);
         this.midend = new CalciteToDBSPCompiler(true, options, this);
         this.messages = new CompilerMessages(this);
         this.sources = new SourceFileContents();
@@ -186,6 +189,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         if (warning)
             this.hasWarnings = true;
         this.messages.reportError(range, warning, errorType, message);
+        if (!warning && this.options.optimizerOptions.throwOnError)
+            throw new CompilationError("Error during compilation");
     }
 
     /**
@@ -213,24 +218,27 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
 
         try {
+            SqlNodeList parsed;
             if (many) {
                 if (statements.isEmpty())
                     return;
-                SqlNodeList nodes = this.frontend.parseStatements(statements);
-                for (SqlNode node : nodes) {
-                    FrontEndStatement fe = this.frontend.compile(
-                            node.toString(), node, null, this.inputs, this.outputs);
-                    this.midend.compile(fe);
-                }
+                parsed = this.frontend.parseStatements(statements);
             } else {
                 SqlNode node = this.frontend.parse(statements);
+                List<SqlNode> stmtList = new ArrayList<>();
+                stmtList.add(node);
+                parsed = new SqlNodeList(stmtList, node.getParserPosition());
+            }
+            if (this.hasErrors())
+                return;
+            for (SqlNode node : parsed) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append("Parsing result")
                         .newline()
                         .append(node.toString())
                         .newline();
                 FrontEndStatement fe = this.frontend.compile(
-                        statements, node, comment, this.inputs, this.outputs);
+                        node.toString(), node, comment, this.inputs, this.outputs);
                 this.midend.compile(fe);
             }
         } catch (SqlParseException e) {
@@ -337,7 +345,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public void throwIfErrorsOccurred() {
         if (this.hasErrors()) {
             this.showErrors(System.err);
-            throw new RuntimeException("Error during compilation");
+            throw new CompilationError("Error during compilation");
         }
     }
 }

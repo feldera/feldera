@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -38,12 +39,30 @@ public class DBSPSourceOperator extends DBSPOperator {
      * Original output row type, as a struct (not a tuple), i.e., with named columns.
      */
     public final DBSPTypeStruct originalRowType;
+    public final CalciteObject sourceName;
 
+    /**
+     * Create a DBSP operator that is a source to the dataflow graph.
+     * @param node        Calcite node for the statement creating the table
+     *                    that this node is created from.
+     * @param sourceName  Calcite node for the identifier naming the table.
+     * @param outputType  Type of table.
+     * @param comment     A comment describing the operator.
+     * @param name        The name of the table that this operator is created from.
+     */
     public DBSPSourceOperator(
-            CalciteObject node, DBSPType outputType, DBSPTypeStruct originalRowType,
-            @Nullable String comment, String name) {
+            CalciteObject node, CalciteObject sourceName,
+            DBSPType outputType, DBSPTypeStruct originalRowType, @Nullable String comment, String name) {
         super(node, "", null, outputType, false, comment, name);
         this.originalRowType = originalRowType;
+        this.sourceName = sourceName;
+    }
+
+    @Override
+    public SourcePositionRange getSourcePosition() {
+        if (!this.sourceName.isEmpty() && this.sourceName.getPositionRange().isValid())
+            return this.sourceName.getPositionRange();
+        return this.getNode().getPositionRange();
     }
 
     @Override
@@ -54,7 +73,7 @@ public class DBSPSourceOperator extends DBSPOperator {
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
-        return new DBSPSourceOperator(this.getNode(), outputType, this.originalRowType,
+        return new DBSPSourceOperator(this.getNode(), this.sourceName, outputType, this.originalRowType,
                 this.comment, this.outputName);
     }
 
@@ -62,7 +81,7 @@ public class DBSPSourceOperator extends DBSPOperator {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSourceOperator(
-                    this.getNode(), this.outputType, this.originalRowType,
+                    this.getNode(), this.sourceName, this.outputType, this.originalRowType,
                     this.comment, this.outputName);
         return this;
     }

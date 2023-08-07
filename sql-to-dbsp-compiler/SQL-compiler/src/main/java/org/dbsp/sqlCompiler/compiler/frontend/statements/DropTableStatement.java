@@ -35,5 +35,4 @@ public class DropTableStatement extends FrontEndStatement {
         super(node, statement, comment);
         this.tableName = tableName;
     }
-
 }

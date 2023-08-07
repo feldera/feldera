@@ -11,10 +11,12 @@ The compiler supports the following SQL data types:
   using two's complement
 - `BIGINT`, or `INT64`, represented as a 64-bit signed integer, using two's
   complement
-- `DECIMAL(precision, scale)`, or `NUMERIC(precision, scale)`, or
-  `NUMBER(precision, scale)`, a high precision fixed-point type,
-  with a precision (number of decimal digits after decimal point) and
-  a scale (total number of decimall digits)
+- `DECIMAL(`precision`,`scale`)`, or `DEC(`precision`,` scale`)`, or
+  `NUMERIC(`precision`,` scale`)`, or `NUMBER(`precision`,` scale`)`, a high
+  precision fixed-point type, with a precision (total number of decimal
+  digits) and a scale (number of decimal digits after period).  For example,
+  23.456 has a precision of 5 and a scale of 3.  If scale is missing it is
+  assumed to be 0.
 - `FLOAT`, or `FLOAT4`, or `FLOAT32`, an IEEE 32-bit floating point number
 - `DOUBLE`, or `FLOAT8`, or `FLOAT32`, an IEEE 64-bit floating point number
 - `VARCHAR(n)`, or `CHARACTER VARYING(n)`, a string value with maximum fixed width
@@ -94,7 +96,7 @@ varchar:
       char VARYING | VARCHAR
 
 decimal:
-      DECIMAL | DEC | NUMERIC
+      DECIMAL | DEC | NUMERIC | NUMBER
 
 integer:
       INTEGER | INT

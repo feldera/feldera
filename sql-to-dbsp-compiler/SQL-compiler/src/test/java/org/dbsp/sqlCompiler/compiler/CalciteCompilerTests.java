@@ -27,6 +27,8 @@ package org.dbsp.sqlCompiler.compiler;
 
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParseException;
+import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.junit.Assert;
 import org.junit.Test;
@@ -36,10 +38,20 @@ import org.junit.Test;
  */
 public class CalciteCompilerTests {
     static final CompilerOptions options = new CompilerOptions();
+    static final IErrorReporter errorReporter = new IErrorReporter() {
+        @Override
+        public void reportError(SourcePositionRange range, boolean warning, String errorType, String message) {
+            System.err.println(range.toString() + ": ERROR " + errorType + ": " + message);
+        }
+    };
+
+    CalciteCompiler getCompiler() {
+        return new CalciteCompiler(options, errorReporter);
+    }
 
     @Test
     public void DDLTest() throws SqlParseException {
-        CalciteCompiler calcite = new CalciteCompiler(options);
+        CalciteCompiler calcite = this.getCompiler();
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 INT" +
                 ", COL2 DOUBLE" +
@@ -57,7 +69,7 @@ public class CalciteCompilerTests {
     @Test
     public void SourceNameTest() throws SqlParseException {
         // Tests that a table can be named 'source'.
-        CalciteCompiler calcite = new CalciteCompiler(options);
+        CalciteCompiler calcite = this.getCompiler();
         String ddl = "CREATE TABLE SOURCE (COL INT)";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
@@ -66,7 +78,7 @@ public class CalciteCompilerTests {
     @Test
     public void testNumber() throws SqlParseException {
         // Tests that 'NUMBER' can be used as a type
-        CalciteCompiler calcite = new CalciteCompiler(options);
+        CalciteCompiler calcite = this.getCompiler();
         String ddl = "CREATE TABLE SOURCE (COL NUMBER)";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
@@ -74,22 +86,22 @@ public class CalciteCompilerTests {
 
     @Test
     public void DropTest() throws SqlParseException {
-        CalciteCompiler calcite = new CalciteCompiler(options);
+        CalciteCompiler calcite = this.getCompiler();
         String ddl = "DROP TABLE T";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
 
-        calcite = new CalciteCompiler(options);
+        calcite = this.getCompiler();
         ddl = "DROP TABLE IF EXISTS T";
         node = calcite.parse(ddl);
         Assert.assertNotNull(node);
 
-        calcite = new CalciteCompiler(options);
+        calcite = this.getCompiler();
         ddl = "DROP VIEW V";
         node = calcite.parse(ddl);
         Assert.assertNotNull(node);
 
-        calcite = new CalciteCompiler(options);
+        calcite = this.getCompiler();
         ddl = "DROP VIEW IF EXISTS V";
         node = calcite.parse(ddl);
         Assert.assertNotNull(node);
@@ -97,7 +109,7 @@ public class CalciteCompilerTests {
 
     @Test
     public void DDLQueryTest() throws SqlParseException {
-        CalciteCompiler calcite = new CalciteCompiler(options);
+        CalciteCompiler calcite = this.getCompiler();
         String query = "CREATE TABLE R AS\n" +
                 "SELECT cast(1 as int64) as primary_key,\n" +
                 "       cast(1 as int64) as id, cast(\"a1\" as string) as a UNION ALL\n" +
@@ -113,7 +125,7 @@ public class CalciteCompilerTests {
                 "SELECT * FROM T\n" +
                 "*/\n" +
                 "CREATE VIEW V AS SELECT 0";
-        CalciteCompiler calcite = new CalciteCompiler(options);
+        CalciteCompiler calcite = this.getCompiler();
         SqlNode node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
@@ -125,7 +137,7 @@ public class CalciteCompilerTests {
                 "create table git_commit (\n" +
                 "    git_commit_id bigint not null primary key\n" +
                 ")";
-        CalciteCompiler calcite = new CalciteCompiler(options);
+        CalciteCompiler calcite = this.getCompiler();
         SqlNode node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }
@@ -145,7 +157,7 @@ public class CalciteCompilerTests {
                 "    git_commit_id bigint not null foreign key references git_commit(git_commit_id),\n" +
                 "    pipeline_id bigint not null\n" +
                 ")";
-        CalciteCompiler calcite = new CalciteCompiler(options);
+        CalciteCompiler calcite = this.getCompiler();
         SqlNode node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
     }

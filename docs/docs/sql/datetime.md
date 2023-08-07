@@ -1,7 +1,8 @@
 # Date/time operations
 
 `TIME` literals have the form `TIME 'HH:MM:SS.FFF`, where the
-fractional part is optional.
+fractional part is optional.  A time represents a time within a day,
+limited to between 0 and 24 hours.
 
 Values of type `DATE`, `TIME`, and `TIMESTAMP` can be compared
 using `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`, `<=>`,
@@ -55,6 +56,9 @@ The following are legal time units:
 ## Operations on dates
 
 `DATE` literals have the form `DATE 'YYYY-MM-DD'`.
+
+Date literals can only represent 4-digit year positive values.
+Values BC or values greater than 10,000 years are not supported.
 
 The following operations are available on dates:
 
