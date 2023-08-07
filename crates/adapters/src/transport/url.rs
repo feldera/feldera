@@ -100,10 +100,11 @@ impl InputEndpoint for UrlInputEndpoint {
         let receiver = self.receiver.clone();
         let _worker = spawn(move || {
             System::new().block_on(async move {
-                let result = Self::worker_thread(config, &mut consumer, receiver).await;
-                if let Some(error) = result.err().or_else(|| consumer.eoi().err()) {
+                if let Err(error) = Self::worker_thread(config, &mut consumer, receiver).await {
                     consumer.error(true, error);
-                }
+                } else {
+                    let _ = consumer.eoi();
+                };
             });
         });
         Ok(())
