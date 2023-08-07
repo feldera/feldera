@@ -1,4 +1,7 @@
 use rust_decimal::Decimal;
+use xxhash_rust::xxh3::Xxh3Builder;
+
+pub(crate) type HashMap<K, V, S = Xxh3Builder> = std::collections::HashMap<K, V, S>;
 
 #[cfg(test)]
 pub(crate) fn test_logger() {

@@ -60,12 +60,12 @@ impl Codegen {
             let layout_cache = ctx.layout_cache.clone();
             let (layout, row_layout) = layout_cache.get_layouts(layout_id);
 
+            ctx.debug_assert_ptr_valid(place, layout.align(), &mut builder);
             ctx.debug_assert_ptr_valid(
                 byte_record,
                 align_of::<StringRecord>() as u32,
                 &mut builder,
             );
-            ctx.debug_assert_ptr_valid(place, layout.align(), &mut builder);
 
             for &(csv_column, row_column, format) in csv_layout {
                 let column_ty = row_layout.column_type(row_column);
@@ -264,9 +264,7 @@ impl Codegen {
             builder.finalize();
         }
 
-        self.finalize_function(func_id);
-
-        func_id
+        self.finalize_function(func_id)
     }
 }
 
