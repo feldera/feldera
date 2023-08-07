@@ -36,6 +36,7 @@ const sidebars = {
       label: "Guides",
         items: [
             "guides/overview",
+            "guides/dev-flow",
             "guides/rust",
             "guides/sql"
         ],
