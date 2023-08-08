@@ -4283,7 +4283,6 @@ dependencies = [
  "dbsp_adapters",
  "deadpool-postgres",
  "env_logger",
- "futures-channel",
  "futures-util",
  "jsonwebtoken",
  "log",
