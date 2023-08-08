@@ -587,6 +587,14 @@ intrinsics! {
     decimal_to_f64 = fn(u64, u64) -> f64,
     decimal_from_f32 = fn(f32, ptr),
     decimal_from_f64 = fn(f64, ptr),
+    decimal_from_u8 = fn(u8, ptr),
+    decimal_from_i8 = fn(i8, ptr),
+    decimal_from_u16 = fn(u16, ptr),
+    decimal_from_i16 = fn(i16, ptr),
+    decimal_from_u32 = fn(u32, ptr),
+    decimal_from_i32 = fn(i32, ptr),
+    decimal_from_u64 = fn(u64, ptr),
+    decimal_from_i64 = fn(i64, ptr),
 
     // Json
     deserialize_json_bool = fn(ptr, ptr, usize, ptr) -> bool,
@@ -1625,6 +1633,25 @@ extern "C" fn decimal_from_f64(float: f64, out: &mut MaybeUninit<u128>) {
     // TODO: NaN probably shouldn't map to zero
     let decimal = Decimal::from_f64_retain(float).unwrap_or(Decimal::ZERO);
     out.write(decimal.to_repr());
+}
+
+macro_rules! decimal_from_int {
+    ($($ty:ty),* $(,)?) => {
+        paste::paste! {
+            $(
+                extern "C" fn [< decimal_from_ $ty >](value: $ty, out: &mut MaybeUninit<u128>) {
+                    out.write(Decimal::from(value).to_repr());
+                }
+            )*
+        }
+    };
+}
+
+decimal_from_int! {
+    u8,  i8,
+    u16, i16,
+    u32, i32,
+    u64, i64,
 }
 
 extern "C" fn deserialize_json_string(
