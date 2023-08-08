@@ -1043,15 +1043,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPStructItem item) {
-        this.builder.append("#[derive(Clone, Deserialize)]")
+        this.builder.append("#[derive(Clone, Debug, Eq, PartialEq)]")
                 .newline();
-        /*
-        if (!item.type.sanitizedName.equals(item.type.name))
-            builder.append("#[serde(rename=\"")
-                    .append(item.type.name)
-                    .append("\")]")
-                    .newline();
-         */
         builder.append("struct ")
                     .append(item.type.sanitizedName)
                 .append(" {")
