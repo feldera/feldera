@@ -141,6 +141,7 @@ impl InputConsumer for MockInputConsumer {
 
     fn eoi(&mut self) -> AnyResult<()> {
         let mut state = self.state();
+        state.eoi = true;
 
         match state.parser.eoi() {
             Ok(_num_records) => {
