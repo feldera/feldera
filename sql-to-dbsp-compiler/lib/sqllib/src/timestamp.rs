@@ -11,17 +11,8 @@ use std::{
 };
 
 use crate::{
-    some_polymorphic_function1,
-    some_existing_operator,
-    some_operator,
-    operators::{
-        lt,
-        gt,
-        eq,
-        neq,
-        lte,
-        gte,
-    },
+    operators::{eq, gt, gte, lt, lte, neq},
+    some_existing_operator, some_operator, some_polymorphic_function1,
 };
 
 /// Similar to a unix timestamp: a positive time interval between Jan 1 1970 and
@@ -574,14 +565,18 @@ impl Time {
     }
 
     pub fn from_time(time: NaiveTime) -> Self {
-        Self { nanoseconds: (time.num_seconds_from_midnight() as u64) * BILLION +
-               (time.nanosecond() as u64) }
+        Self {
+            nanoseconds: (time.num_seconds_from_midnight() as u64) * BILLION
+                + (time.nanosecond() as u64),
+        }
     }
 
     pub fn to_time(self: &Self) -> NaiveTime {
         NaiveTime::from_num_seconds_from_midnight_opt(
             (self.nanoseconds / BILLION) as u32,
-            (self.nanoseconds % BILLION) as u32).unwrap()
+            (self.nanoseconds % BILLION) as u32,
+        )
+        .unwrap()
     }
 }
 
@@ -602,7 +597,7 @@ impl Serialize for Time {
         S: Serializer,
     {
         let time = self.to_time();
-        serializer.serialize_str(&time.format("%H:%M:%S.9f").to_string())
+        serializer.serialize_str(&time.format("%H:%M:%S%.f").to_string())
     }
 }
 
@@ -612,7 +607,7 @@ impl<'de> Deserialize<'de> for Time {
         D: Deserializer<'de>,
     {
         let str: &'de str = Deserialize::deserialize(deserializer)?;
-        let time = NaiveTime::parse_from_str(str, "%H:%M:%S.f")
+        let time = NaiveTime::parse_from_str(str, "%H:%M:%S%.f")
             .map_err(|e| D::Error::custom(format!("invalid time string '{str}': {e}")))?;
         Ok(Self::from_time(time))
     }
