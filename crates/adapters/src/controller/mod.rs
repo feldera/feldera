@@ -1257,7 +1257,6 @@ impl InputConsumer for InputProbe {
     }
 
     fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
-        // println!("input consumer {} bytes", data.len());
         let (num_records, errors) = self.parser.input_chunk(data);
 
         for error in errors.iter() {

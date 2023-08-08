@@ -13,12 +13,14 @@ use std::{
 };
 
 mod csv;
+mod deserializer;
 mod json;
 
 pub use self::{
     csv::{
         byte_record_deserializer, string_record_deserializer, CsvEncoderConfig, CsvParserConfig,
     },
+    deserializer::FieldParseError,
     json::{JsonParserConfig, JsonUpdateFormat},
 };
 use self::{
@@ -28,7 +30,97 @@ use self::{
 
 /// Error parsing input data.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct ParseError {
+#[serde(transparent)]
+// Box the internals of `ParseError` to avoid
+// "Error variant to large" clippy warnings".
+pub struct ParseError(Box<ParseErrorInner>);
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        self.0.fmt(f)
+    }
+}
+
+impl StdError for ParseError {}
+
+impl ParseError {
+    pub fn new(
+        description: String,
+        event_number: Option<u64>,
+        field: Option<String>,
+        invalid_text: Option<&str>,
+        invalid_bytes: Option<&[u8]>,
+        suggestion: Option<Cow<'static, str>>,
+    ) -> Self {
+        Self(Box::new(ParseErrorInner::new(
+            description,
+            event_number,
+            field,
+            invalid_text,
+            invalid_bytes,
+            suggestion,
+        )))
+    }
+
+    pub fn text_event_error<E>(
+        msg: &str,
+        error: E,
+        event_number: u64,
+        invalid_text: Option<&str>,
+        suggestion: Option<Cow<'static, str>>,
+    ) -> Self
+    where
+        E: ToString,
+    {
+        Self(Box::new(ParseErrorInner::text_event_error(
+            msg,
+            error,
+            event_number,
+            invalid_text,
+            suggestion,
+        )))
+    }
+
+    pub fn text_envelope_error(
+        description: String,
+        invalid_text: &str,
+        suggestion: Option<Cow<'static, str>>,
+    ) -> Self {
+        Self(Box::new(ParseErrorInner::text_envelope_error(
+            description,
+            invalid_text,
+            suggestion,
+        )))
+    }
+
+    pub fn bin_event_error(
+        description: String,
+        event_number: u64,
+        invalid_bytes: &[u8],
+        suggestion: Option<Cow<'static, str>>,
+    ) -> Self {
+        Self(Box::new(ParseErrorInner::bin_event_error(
+            description,
+            event_number,
+            invalid_bytes,
+            suggestion,
+        )))
+    }
+
+    pub fn bin_envelope_error(
+        description: String,
+        invalid_bytes: &[u8],
+        suggestion: Option<Cow<'static, str>>,
+    ) -> Self {
+        Self(Box::new(ParseErrorInner::bin_envelope_error(
+            description,
+            invalid_bytes,
+            suggestion,
+        )))
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct ParseErrorInner {
     /// Error description.
     description: String,
 
@@ -40,6 +132,12 @@ pub struct ParseError {
     /// some cases this index cannot be identified, e.g., if the error makes an entire
     /// block of events unparseable.
     event_number: Option<u64>,
+
+    /// Field that failed to parse.
+    ///
+    /// Only set when the parsing error can be attributed to a
+    /// specific field.
+    field: Option<String>,
 
     /// Invalid fragment of input data.
     ///
@@ -57,9 +155,7 @@ pub struct ParseError {
     suggestion: Option<Cow<'static, str>>,
 }
 
-impl StdError for ParseError {}
-
-impl Display for ParseError {
+impl Display for ParseErrorInner {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         let event = if let Some(event_number) = self.event_number {
             format!(" (event #{})", event_number)
@@ -89,10 +185,11 @@ impl Display for ParseError {
     }
 }
 
-impl ParseError {
+impl ParseErrorInner {
     pub fn new(
         description: String,
         event_number: Option<u64>,
+        field: Option<String>,
         invalid_text: Option<&str>,
         invalid_bytes: Option<&[u8]>,
         suggestion: Option<Cow<'static, str>>,
@@ -100,6 +197,7 @@ impl ParseError {
         Self {
             description,
             event_number,
+            field,
             invalid_text: invalid_text.map(str::to_string),
             invalid_bytes: invalid_bytes.map(ToOwned::to_owned),
             suggestion,
@@ -107,19 +205,46 @@ impl ParseError {
     }
 
     /// Error parsing an individual event in a text-based input format (e.g., JSON, CSV).
-    pub fn text_event_error(
-        description: String,
+    pub fn text_event_error<E>(
+        msg: &str,
+        error: E,
         event_number: u64,
-        invalid_text: &str,
+        invalid_text: Option<&str>,
         suggestion: Option<Cow<'static, str>>,
-    ) -> Self {
-        Self {
-            description,
-            event_number: Some(event_number),
-            invalid_text: Some(invalid_text.to_string()),
-            invalid_bytes: None,
+    ) -> Self
+    where
+        E: ToString,
+    {
+        let err_str = error.to_string();
+        // Try to parse the error as `FieldParseError`.  If this is not a field-specific error or
+        // the error was not returned by the `deserialize_table_record` macro, this will fail and
+        // we'll store the error as is.
+        let (descr, field) = if let Some(offset) = err_str.find("{\"field\":") {
+            if let Some(Ok(err)) = serde_json::Deserializer::from_str(&err_str[offset..])
+                .into_iter::<FieldParseError>()
+                .next()
+            {
+                (err.description, Some(err.field))
+            } else {
+                (err_str, None)
+            }
+        } else {
+            (err_str, None)
+        };
+        let column_name = if let Some(field) = &field {
+            format!(": error parsing field '{field}'")
+        } else {
+            String::new()
+        };
+
+        Self::new(
+            format!("{msg}{column_name}: {descr}",),
+            Some(event_number),
+            field,
+            invalid_text,
+            None,
             suggestion,
-        }
+        )
     }
 
     /// Error parsing a container, e.g., a JSON array, with multiple events.
@@ -130,13 +255,14 @@ impl ParseError {
         invalid_text: &str,
         suggestion: Option<Cow<'static, str>>,
     ) -> Self {
-        Self {
+        Self::new(
             description,
-            event_number: None,
-            invalid_text: Some(invalid_text.to_string()),
-            invalid_bytes: None,
+            None,
+            None,
+            Some(invalid_text),
+            None,
             suggestion,
-        }
+        )
     }
 
     /// Error parsing an individual event in a binary input format (e.g., bincode).
@@ -146,13 +272,14 @@ impl ParseError {
         invalid_bytes: &[u8],
         suggestion: Option<Cow<'static, str>>,
     ) -> Self {
-        Self {
+        Self::new(
             description,
-            event_number: Some(event_number),
-            invalid_text: None,
-            invalid_bytes: Some(invalid_bytes.to_owned()),
+            Some(event_number),
+            None,
+            None,
+            Some(invalid_bytes),
             suggestion,
-        }
+        )
     }
 
     /// Error parsing a container with multiple events.
@@ -163,13 +290,14 @@ impl ParseError {
         invalid_bytes: &[u8],
         suggestion: Option<Cow<'static, str>>,
     ) -> Self {
-        Self {
+        Self::new(
             description,
-            event_number: None,
-            invalid_text: None,
-            invalid_bytes: Some(invalid_bytes.to_owned()),
+            None,
+            None,
+            None,
+            Some(invalid_bytes),
             suggestion,
-        }
+        )
     }
 }
 

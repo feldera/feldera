@@ -693,6 +693,45 @@ async fn json_ingress() {
     let quantiles = config.quantiles(&id, "T1").await;
     assert_eq!(quantiles, "20,,foo,1\n30,,bar,1\n50,true,,1\n");
 
+    // Trigger parse errors.
+    let mut req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete&array=true",
+                id
+            ),
+            r#"[{"insert": [35, true, ""]}, {"delete": [40, "foo", "buzz"]}, {"insert": [true, true, ""]}]"#.to_string(),
+        )
+        .await;
+    assert_eq!(req.status(), StatusCode::BAD_REQUEST);
+    let body = req.body().await.unwrap();
+    let error = std::str::from_utf8(&body).unwrap();
+    assert_eq!(error, "{\"message\":\"Errors parsing input data (2 errors):\\n    Parse error (event #2): failed to deserialize JSON record: error parsing field 'C2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\\nInvalid fragment: [40, \\\"foo\\\", \\\"buzz\\\"]\\n    Parse error (event #3): failed to deserialize JSON record: error parsing field 'C1': invalid type: boolean `true`, expected i32 at line 1 column 5\\nInvalid fragment: [true, true, \\\"\\\"]\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize JSON record: error parsing field 'C2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\",\"event_number\":2,\"field\":\"C2\",\"invalid_bytes\":null,\"invalid_text\":\"[40, \\\"foo\\\", \\\"buzz\\\"]\",\"suggestion\":null},{\"description\":\"failed to deserialize JSON record: error parsing field 'C1': invalid type: boolean `true`, expected i32 at line 1 column 5\",\"event_number\":3,\"field\":\"C1\",\"invalid_bytes\":null,\"invalid_text\":\"[true, true, \\\"\\\"]\",\"suggestion\":null}],\"num_errors\":2}}");
+
+    // Even records that are parsed successfully don't get ingested when
+    // using array format.
+    let quantiles = config.quantiles(&id, "T1").await;
+    assert_eq!(quantiles, "20,,foo,1\n30,,bar,1\n50,true,,1\n");
+
+    let mut req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
+                id
+            ),
+            r#"{"insert": [25, true, ""]}{"delete": [40, "foo", "buzz"]}{"insert": [true, true, ""]}"#.to_string(),
+        )
+        .await;
+    assert_eq!(req.status(), StatusCode::BAD_REQUEST);
+    let body = req.body().await.unwrap();
+    let error = std::str::from_utf8(&body).unwrap();
+    assert_eq!(error, "{\"message\":\"Errors parsing input data (2 errors):\\n    Parse error (event #2): failed to deserialize JSON record: error parsing field 'C2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\\nInvalid fragment: [40, \\\"foo\\\", \\\"buzz\\\"]\\n    Parse error (event #3): failed to deserialize JSON record: error parsing field 'C1': invalid type: boolean `true`, expected i32 at line 1 column 5\\nInvalid fragment: [true, true, \\\"\\\"]\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize JSON record: error parsing field 'C2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\",\"event_number\":2,\"field\":\"C2\",\"invalid_bytes\":null,\"invalid_text\":\"[40, \\\"foo\\\", \\\"buzz\\\"]\",\"suggestion\":null},{\"description\":\"failed to deserialize JSON record: error parsing field 'C1': invalid type: boolean `true`, expected i32 at line 1 column 5\",\"event_number\":3,\"field\":\"C1\",\"invalid_bytes\":null,\"invalid_text\":\"[true, true, \\\"\\\"]\",\"suggestion\":null}],\"num_errors\":2}}");
+
+    // Even records that are parsed successfully don't get ingested when
+    // using array format.
+    let quantiles = config.quantiles(&id, "T1").await;
+    assert_eq!(quantiles, "20,,foo,1\n25,true,,1\n30,,bar,1\n50,true,,1\n");
+
     // Debezium CDC format
     let req = config
         .post_json(
@@ -707,7 +746,31 @@ async fn json_ingress() {
     assert!(req.status().is_success());
 
     let quantiles = config.quantiles(&id, "T1").await;
-    assert_eq!(quantiles, "20,,foo,1\n30,,bar,1\n60,true,hello,1\n");
+    assert_eq!(
+        quantiles,
+        "20,,foo,1\n25,true,,1\n30,,bar,1\n60,true,hello,1\n"
+    );
+
+    // Push some CSV data (the second record is invalid, but the other two should get ingested).
+    let mut req = config
+        .post_json(
+            format!("/v0/pipelines/{}/ingress/T1?format=csv", id),
+            r#"15,true,foo
+not_a_number,true,ΑαΒβΓγΔδ
+16,false,unicode🚲"#
+                .to_string(),
+        )
+        .await;
+    assert_eq!(req.status(), StatusCode::BAD_REQUEST);
+    let body = req.body().await.unwrap();
+    let error = std::str::from_utf8(&body).unwrap();
+    assert_eq!(error, "{\"message\":\"Errors parsing input data (1 errors):\\n    Parse error (event #2): failed to deserialize CSV record: error parsing field 'C1': field 0: invalid digit found in string\\nInvalid fragment: ByteRecord([\\\"not_a_number\\\", \\\"true\\\", \\\"ΑαΒβΓγΔδ\\\"])\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize CSV record: error parsing field 'C1': field 0: invalid digit found in string\",\"event_number\":2,\"field\":\"C1\",\"invalid_bytes\":null,\"invalid_text\":\"ByteRecord([\\\"not_a_number\\\", \\\"true\\\", \\\"ΑαΒβΓγΔδ\\\"])\",\"suggestion\":null}],\"num_errors\":1}}");
+
+    let quantiles = config.quantiles(&id, "T1").await;
+    assert_eq!(
+        quantiles,
+        "15,true,foo,1\n16,false,unicode🚲,1\n20,,foo,1\n25,true,,1\n30,,bar,1\n60,true,hello,1\n"
+    );
 
     // Shutdown the pipeline
     let resp = config

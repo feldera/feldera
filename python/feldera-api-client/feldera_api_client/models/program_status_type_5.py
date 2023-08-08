@@ -13,7 +13,7 @@ T = TypeVar("T", bound="ProgramStatusType5")
 class ProgramStatusType5:
     """
     Attributes:
-        sql_error (List['SqlCompilerMessage']):
+        sql_error (List['SqlCompilerMessage']): SQL compiler returned an error.
     """
 
     sql_error: List["SqlCompilerMessage"]
