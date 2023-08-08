@@ -2175,13 +2175,39 @@ impl<'a> CodegenCtx<'a> {
                 ));
                 let slot_ptr = builder.ins().stack_addr(self.pointer_type(), slot, 0);
 
-                let intrinsic = if b.is_f64() {
+                let intrinsic = if a.is_f64() {
                     "decimal_from_f64"
                 } else {
                     "decimal_from_f32"
                 };
                 let intrinsic = self.imports.get(intrinsic, self.module, builder.func);
                 // TODO: This should return the error for NaN values
+                builder.call_fn(intrinsic, &[src, slot_ptr]);
+
+                // Load the decimal from the stack slot
+                builder.ins().stack_load(to_ty, slot, 0)
+            }
+
+            // Ints to decimals
+            (a, b) if a.is_int() && b.is_decimal() => {
+                let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    b.native_type().unwrap().size(&self.frontend_config()),
+                ));
+                let slot_ptr = builder.ins().stack_addr(self.pointer_type(), slot, 0);
+
+                let intrinsic = match a {
+                    ColumnType::U8 => "decimal_from_u8",
+                    ColumnType::I8 => "decimal_from_i8",
+                    ColumnType::U16 => "decimal_from_u16",
+                    ColumnType::I16 => "decimal_from_i16",
+                    ColumnType::U32 => "decimal_from_u32",
+                    ColumnType::I32 => "decimal_from_i32",
+                    ColumnType::U64 => "decimal_from_u64",
+                    ColumnType::I64 => "decimal_from_i64",
+                    _ => unreachable!("unknown int to decimal cast: cast {a} to {b}"),
+                };
+                let intrinsic = self.imports.get(intrinsic, self.module, builder.func);
                 builder.call_fn(intrinsic, &[src, slot_ptr]);
 
                 // Load the decimal from the stack slot
