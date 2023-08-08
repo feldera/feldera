@@ -1,8 +1,9 @@
 # Date/time operations
 
 `TIME` literals have the form `TIME 'HH:MM:SS.FFF`, where the
-fractional part is optional.  A time represents a time within a day,
-limited to between 0 and 24 hours.
+fractional part is optional, and can have between 0 and 9 digits.  A
+time represents a time within a day, limited to between 0 and 24
+hours.
 
 Values of type `DATE`, `TIME`, and `TIMESTAMP` can be compared
 using `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`, `<=>`,
