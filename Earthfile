@@ -543,7 +543,6 @@ build-demo-container:
 
 test-docker-compose:
     FROM earthly/dind:alpine
-    WORKDIR /root
     COPY deploy/docker-compose.yml .
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.1.13 \
@@ -565,7 +564,6 @@ integration-test-container:
 # Runs the integration test container against the docker compose setup
 integration-tests:
     FROM earthly/dind:alpine
-    WORKDIR /root
     COPY deploy/docker-compose.yml .
     COPY deploy/.env .
     WITH DOCKER --pull postgres \
@@ -574,7 +572,7 @@ integration-tests:
                 --service db \
                 --service dbsp \
                 --load itest:latest=+integration-test-container
-        RUN sleep 5 && docker run --env-file .env --network root_default itest:latest
+        RUN sleep 5 && docker run --env-file .env --network default_default itest:latest
     END
 
 all-tests:
