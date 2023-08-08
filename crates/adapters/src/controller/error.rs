@@ -16,7 +16,7 @@ use std::{
 #[serde(untagged)]
 pub enum ConfigError {
     /// Failed to parse pipeline configuration.
-    ConfigParseError { error: String },
+    PipelineConfigParseError { error: String },
 
     /// Failed to parse parser configuration for an endpoint.
     ParserConfigParseError {
@@ -74,7 +74,7 @@ impl StdError for ConfigError {}
 impl DetailedError for ConfigError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
-            Self::ConfigParseError { .. } => Cow::from("ConfigParseError"),
+            Self::PipelineConfigParseError { .. } => Cow::from("PipelineConfigParseError"),
             Self::ParserConfigParseError { .. } => Cow::from("ParserConfigParseError"),
             Self::DuplicateInputEndpoint { .. } => Cow::from("DuplicateInputEndpoint"),
             Self::DuplicateOutputEndpoint { .. } => Cow::from("DuplicateOutputEndpoint"),
@@ -91,7 +91,7 @@ impl DetailedError for ConfigError {
 impl Display for ConfigError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
-            Self::ConfigParseError { error } => {
+            Self::PipelineConfigParseError { error } => {
                 write!(f, "Failed to parse pipeline configuration: {error}")
             }
             Self::ParserConfigParseError {
@@ -153,11 +153,11 @@ impl Display for ConfigError {
 }
 
 impl ConfigError {
-    pub fn config_parse_error<E>(error: &E) -> Self
+    pub fn pipeline_config_parse_error<E>(error: &E) -> Self
     where
         E: ToString,
     {
-        Self::ConfigParseError {
+        Self::PipelineConfigParseError {
             error: error.to_string(),
         }
     }
@@ -474,12 +474,12 @@ impl ControllerError {
         }
     }
 
-    pub fn config_parse_error<E>(error: &E) -> Self
+    pub fn pipeline_config_parse_error<E>(error: &E) -> Self
     where
         E: ToString,
     {
         Self::Config {
-            config_error: ConfigError::config_parse_error(error),
+            config_error: ConfigError::pipeline_config_parse_error(error),
         }
     }
 

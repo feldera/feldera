@@ -90,10 +90,10 @@ impl CsvParser {
                 Err(e) => {
                     // TODO: extract invalid CSV record from the reader, so we can report it with
                     // `ParseError::text_event_error`.
-                    errors.push(ParseError::new(
-                        format!("failed to deserialize CSV record: {e}"),
-                        Some(self.last_event_number + 1),
-                        None,
+                    errors.push(ParseError::text_event_error(
+                        "failed to deserialize CSV record",
+                        e,
+                        self.last_event_number + 1,
                         None,
                         None,
                     ));
@@ -104,9 +104,10 @@ impl CsvParser {
                     match self.input_stream.insert(&mut deserializer) {
                         Err(e) => {
                             errors.push(ParseError::text_event_error(
-                                format!("failed to deserialize CSV record: {e}"),
+                                "failed to deserialize CSV record",
+                                e,
                                 self.last_event_number + 1,
-                                &format!("{record:?}"),
+                                Some(&format!("{record:?}")),
                                 None,
                             ));
                         }

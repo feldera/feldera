@@ -193,7 +193,7 @@ impl HttpInputEndpoint {
         if errors.is_empty() {
             Ok(HttpResponse::Ok().finish())
         } else {
-            Err(PipelineError::parse_errors(num_errors, errors.iter()))
+            Err(PipelineError::parse_errors(num_errors, errors.asc_iter()))
         }
     }
 }

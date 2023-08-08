@@ -232,13 +232,13 @@ fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
     })?;
 
     let yaml_config = String::from_utf8(yaml_config).map_err(|e| {
-        ControllerError::config_parse_error(&format!(
+        ControllerError::pipeline_config_parse_error(&format!(
             "invalid UTF8 string in configuration file '{}' ({e})",
             &config_file
         ))
     })?;
 
-    serde_yaml::from_str(yaml_config.as_str()).map_err(|e| ControllerError::config_parse_error(&e))
+    serde_yaml::from_str(yaml_config.as_str()).map_err(|e| ControllerError::pipeline_config_parse_error(&e))
 }
 
 // Initialization thread function.
@@ -345,7 +345,7 @@ where
                 ControllerError::io_error(format!("reading metadata file '{}'", metadata_file), e)
             })?;
             String::from_utf8(meta).map_err(|e| {
-                ControllerError::config_parse_error(&format!(
+                ControllerError::pipeline_config_parse_error(&format!(
                     "invalid UTF8 string in the metadata file '{}' ({e})",
                     metadata_file
                 ))
