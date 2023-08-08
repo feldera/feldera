@@ -482,7 +482,9 @@ async fn deploy_pipeline() {
         .post_no_body(format!("/v0/pipelines/{}/start", id))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
-
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .await;
     // Push some data.
     let req = config
         .post_csv(

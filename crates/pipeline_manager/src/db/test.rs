@@ -155,7 +155,7 @@ pub(crate) async fn setup_pg() -> (ProjectDB, tokio_postgres::Config) {
     (conn, config)
 }
 
-fn test_connector_config() -> ConnectorConfig {
+pub fn test_connector_config() -> ConnectorConfig {
     ConnectorConfig::from_yaml_str(
         r#"
 transport:
