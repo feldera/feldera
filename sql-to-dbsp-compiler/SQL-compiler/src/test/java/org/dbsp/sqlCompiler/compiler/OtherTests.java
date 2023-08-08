@@ -123,12 +123,13 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String str = circuit.toString();
         String expected = "Circuit circuit0 {\n" +
                 "    // DBSPSourceOperator 36\n" +
-                "    // CREATE TABLE T (\n" +
-                "    // COL1 INT NOT NULL, COL2 DOUBLE NOT NULL, COL3 BOOLEAN NOT NULL, COL4 VARCHAR NOT NULL, COL5 INT, COL6 DOUBLE)\n" +
+                "    // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)\n" +
                 "    let T = T();\n" +
                 "    // DBSPMapOperator 97\n" +
                 "    let stream1: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2))));\n" +
-                "    // CREATE VIEW V AS SELECT T.COL3 FROM T\n" +
+                "    // CREATE VIEW `V` AS\n" +
+                "    // SELECT `T`.`COL3`\n" +
+                "    // FROM `T`\n" +
                 "    // DBSPSinkOperator 103\n" +
                 "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream1;\n" +
                 "}\n";

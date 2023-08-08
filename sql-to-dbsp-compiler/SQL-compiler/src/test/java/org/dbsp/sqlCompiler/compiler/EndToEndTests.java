@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -619,6 +620,15 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPTupleExpression(DBSPLiteral.none(
                         new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true))),
                 new DBSPTupleExpression(new DBSPI32Literal(10, true))));
+    }
+
+    @Test
+    public void testIllegalDecimal() {
+        Assert.assertThrows(RuntimeException.class, () -> {
+            String query = "SELECT CAST(12.34 AS DECIMAL(1, 2))";
+            this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
+                    new DBSPDecimalLiteral(DBSPTypeDecimal.getDefault(), new BigDecimal("12.34")))));
+        });
     }
 
     @Test

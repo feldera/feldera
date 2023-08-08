@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.*;
@@ -66,6 +65,8 @@ import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.Pair;
 import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
@@ -102,6 +103,10 @@ public class CalciteCompiler implements IWritesLogs {
     public final RelDataTypeFactory typeFactory;
     private final SqlToRelConverter.Config converterConfig;
     private final RewriteDivision astRewriter;
+    /**
+     * Perform additional type validation in top of the Calcite rules.
+     */
+    private final ValidateTypes validateTypes;
 
     /**
      * This class rewrites instances of the division operator in the SQL AST
@@ -203,8 +208,41 @@ public class CalciteCompiler implements IWritesLogs {
         public boolean shouldConvertRaggedUnionTypesToVarying() { return true; }
     };
 
+    /**
+     * Additional validation tests on top of Calcite.
+     * We need to do these before conversion to Rel, because Rel
+     * does not have source position information anymore.
+     */
+    public static class ValidateTypes extends SqlShuttle {
+        final SqlValidator validator;
+        final IErrorReporter reporter;
+
+        public ValidateTypes(SqlValidator validator, IErrorReporter reporter) {
+            this.validator = validator;
+            this.reporter = reporter;
+        }
+
+        @Override
+        public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlDataTypeSpec type) {
+            SqlTypeNameSpec typeNameSpec = type.getTypeNameSpec();
+            if (typeNameSpec instanceof SqlBasicTypeNameSpec) {
+                SqlBasicTypeNameSpec basic = (SqlBasicTypeNameSpec) typeNameSpec;
+                // I don't know how to get the SqlTypeName otherwise
+                RelDataType relDataType = basic.deriveType(this.validator);
+                if (relDataType.getSqlTypeName() == SqlTypeName.DECIMAL) {
+                    if (basic.getPrecision() < basic.getScale()) {
+                        SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
+                        this.reporter.reportError(position, false,
+                                "Illegal type", "DECIMAL type must have scale <= precision");
+                    }
+                }
+            }
+            return super.visit(type);
+        }
+    }
+
     // Adapted from https://www.querifylabs.com/blog/assembling-a-query-optimizer-with-apache-calcite
-    public CalciteCompiler(CompilerOptions options) {
+    public CalciteCompiler(CompilerOptions options, IErrorReporter errorReporter) {
         this.astRewriter = new RewriteDivision();
         this.options = options;
 
@@ -268,6 +306,7 @@ public class CalciteCompiler implements IWritesLogs {
                 this.typeFactory,
                 validatorConfig
         );
+        this.validateTypes = new ValidateTypes(this.validator, errorReporter);
 
         // This planner does not do anything.
         // We use a series of planner stages later to perform the real optimizations.
@@ -451,7 +490,9 @@ public class CalciteCompiler implements IWritesLogs {
      */
     public SqlNode parse(String sql) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(sql);
-        return sqlParser.parseStmt();
+        SqlNode result = sqlParser.parseStmt();
+        result.accept(this.validateTypes);
+        return result;
     }
 
     /**
@@ -459,7 +500,11 @@ public class CalciteCompiler implements IWritesLogs {
      */
     public SqlNodeList parseStatements(String statements) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(statements);
-        return sqlParser.parseStmtList();
+        SqlNodeList sqlNodes = sqlParser.parseStmtList();
+        for (SqlNode node: sqlNodes) {
+            node.accept(this.validateTypes);
+        }
+        return sqlNodes;
     }
 
     RelNode optimize(RelNode rel) {

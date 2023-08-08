@@ -34,7 +34,8 @@ import java.util.List;
  */
 public class CreateTableStatement extends CreateRelationStatement {
     public CreateTableStatement(SqlNode node, String statement,
-                                String tableName, @Nullable String comment, List<RelDataTypeField> columns) {
+                                String tableName, @Nullable String comment,
+                                List<RelDataTypeField> columns) {
         super(node, statement, tableName, comment, columns);
     }
 }

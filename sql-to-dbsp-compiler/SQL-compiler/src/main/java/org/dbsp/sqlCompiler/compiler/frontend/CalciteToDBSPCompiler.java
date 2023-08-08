@@ -33,6 +33,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.*;
 import org.apache.calcite.sql.*;
+import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -420,7 +421,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType rowType = this.convertType(scan.getRowType(), false);
         DBSPTypeStruct originalType = this.convertType(scan.getRowType(), true).to(DBSPTypeStruct.class);
         DBSPSourceOperator result = new DBSPSourceOperator(
-                node, this.makeZSet(rowType), originalType, comment, tableName);
+                node, CalciteObject.EMPTY, this.makeZSet(rowType), originalType, comment, tableName);
         this.assignOperator(scan, result);
     }
 
@@ -1136,8 +1137,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 CreateTableStatement def = this.tableContents.getTableDefinition(tableName);
                 DBSPType rowType = def.getRowTypeAsTuple(this.compiler.getTypeCompiler());
                 DBSPTypeStruct originalRowType = def.getRowTypeAsStruct(this.compiler.getTypeCompiler());
+                CalciteObject identifier = CalciteObject.EMPTY;
+                if (create.node instanceof SqlCreateTable) {
+                    SqlCreateTable sct = (SqlCreateTable)create.node;
+                    identifier = new CalciteObject(sct.name);
+                }
                 DBSPSourceOperator result = new DBSPSourceOperator(
-                        create.getCalciteObject(), this.makeZSet(rowType), originalRowType,
+                        create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
                         def.statement, tableName);
                 this.circuit.addOperator(result);
             }

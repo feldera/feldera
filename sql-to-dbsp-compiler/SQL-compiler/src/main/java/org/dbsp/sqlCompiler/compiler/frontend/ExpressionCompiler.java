@@ -346,9 +346,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
     public String typeString(DBSPType type) {
         DBSPTypeVec vec = type.as(DBSPTypeVec.class);
+        String result = "";
         if (vec != null)
-            return (type.mayBeNull ? "N" : "_") + "vec" + typeString(vec.getElementType());
-        return type.mayBeNull ? "N" : "_";
+            // This is the reverse of what you may expect
+            result = typeString(vec.getElementType()) + "vec";
+        result += type.mayBeNull ? "N" : "_";
+        return result;
     }
 
     /**

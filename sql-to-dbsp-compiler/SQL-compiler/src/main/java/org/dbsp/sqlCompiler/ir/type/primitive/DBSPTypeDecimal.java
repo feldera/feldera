@@ -45,17 +45,26 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
 
     public DBSPTypeDecimal(CalciteObject node, int precision, int scale, boolean mayBeNull) {
         super(node, DBSPTypeCode.DECIMAL, mayBeNull);
-        if (precision <= 0)
-            throw new IllegalArgumentException("Precision must be positive: " + precision);
-        if (scale < 0)
-            // Postgres allows negative scales.
-            throw new IllegalArgumentException("Scale must be positive: " + scale);
-        if (precision > MAX_PRECISION)
-            throw new UnsupportedException(precision + " larger than maximum supported precision " + MAX_PRECISION, node);
-        if (scale > MAX_SCALE)
-            throw new UnsupportedException(scale + " larger than maximum supported scale " + MAX_SCALE, node);
         this.precision = precision;
         this.scale = scale;
+        if (precision <= 0)
+            throw new IllegalArgumentException(this + ": precision must be positive: " + precision);
+        if (scale < 0)
+            // Postgres allows negative scales.
+            throw new IllegalArgumentException(this + ": scale must be positive: " + scale);
+        if (precision > MAX_PRECISION)
+            throw new UnsupportedException(this + ": precision " + precision +
+                            " larger than maximum supported precision " + MAX_PRECISION, node);
+        if (scale > MAX_SCALE)
+            throw new UnsupportedException(this + ": scale " + scale
+                    + " larger than maximum supported scale " + MAX_SCALE, node);
+        if (scale > precision)
+            throw new UnsupportedException(this + ": scale " + scale + " larger than precision "
+                    + precision, node);
+    }
+
+    public static DBSPTypeDecimal getDefault() {
+        return new DBSPTypeDecimal(CalciteObject.EMPTY, MAX_PRECISION, MAX_SCALE, false);
     }
 
     @Override
@@ -116,5 +125,10 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public String toString() {
+        return "DECIMAL(" + this.precision + ", " + this.scale + ")";
     }
 }
