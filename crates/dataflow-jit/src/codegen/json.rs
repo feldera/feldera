@@ -32,14 +32,14 @@ impl Codegen {
             self.layout_cache.row_layout(layout_id),
         );
 
-        // fn(*mut u8, *const JsonValue)
+        // fn(*mut u8, *const serde_json::Value)
         let ptr_ty = self.module.isa().pointer_type();
         let func_id = self.create_function([ptr_ty; 2], None);
 
         self.set_comment_writer(
             &format!("deserialize_json_{layout_id}"),
             &format!(
-                "fn(*mut {}, *const JsonValue)",
+                "fn(*mut {}, *const serde_json::Value)",
                 self.layout_cache.row_layout(layout_id),
             ),
         );
@@ -189,8 +189,11 @@ impl Codegen {
 mod tests {
     use crate::{
         codegen::{json::JsonMapping, Codegen, CodegenConfig},
-        ir::{ColumnType, RowLayoutBuilder, RowLayoutCache},
-        row::UninitRow,
+        ir::{
+            literal::{NullableConstant, RowLiteral},
+            ColumnType, Constant, RowLayoutBuilder, RowLayoutCache,
+        },
+        row::{row_from_literal, UninitRow},
         utils::{self, HashMap},
     };
     use std::mem::transmute;
@@ -229,6 +232,34 @@ mod tests {
             r#"{ "foo": "second foo data string", "bar": null, "baz": -10000, "bing": null, "bop": -0.0, "boop": null }"#,
             r#"{ "baz": -32, "bar": null, "foo": "woah, now we switched the field orderings", "bop": 0.3 }"#,
         ];
+        let expected = &[
+            RowLiteral::new(vec![
+                NullableConstant::NonNull(Constant::String("foo data string".into())),
+                NullableConstant::Nullable(Some(Constant::String("bar data string".into()))),
+                NullableConstant::NonNull(Constant::I64(10)),
+                NullableConstant::Nullable(Some(Constant::I64(100))),
+                NullableConstant::NonNull(Constant::F64(96.542)),
+                NullableConstant::Nullable(Some(Constant::F64(-1245.53))),
+            ]),
+            RowLiteral::new(vec![
+                NullableConstant::NonNull(Constant::String("second foo data string".into())),
+                NullableConstant::null(),
+                NullableConstant::NonNull(Constant::I64(-10000)),
+                NullableConstant::null(),
+                NullableConstant::NonNull(Constant::F64(-0.0)),
+                NullableConstant::null(),
+            ]),
+            RowLiteral::new(vec![
+                NullableConstant::NonNull(Constant::String(
+                    "woah, now we switched the field orderings".into(),
+                )),
+                NullableConstant::null(),
+                NullableConstant::NonNull(Constant::I64(-32)),
+                NullableConstant::null(),
+                NullableConstant::NonNull(Constant::F64(0.3)),
+                NullableConstant::null(),
+            ]),
+        ];
 
         let (jit, layout_cache) = codegen.finalize_definitions();
         let vtable = Box::into_raw(Box::new(vtable.marshalled(&jit)));
@@ -240,7 +271,7 @@ mod tests {
                 )
             };
 
-            for &json in json_snippets {
+            for (&json, expected) in json_snippets.iter().zip(expected) {
                 let json_value = serde_json::from_str(json).unwrap();
                 let mut uninit = UninitRow::new(unsafe { &*vtable });
 
@@ -252,9 +283,14 @@ mod tests {
                 }
 
                 let row = unsafe { uninit.assume_init() };
-                println!(
+                let expected = unsafe {
+                    row_from_literal(expected, &*vtable, &layout_cache.layout_of(layout))
+                };
+                assert_eq!(
+                    row,
+                    expected,
                     "input json: {json:?}\nrow value for {}: {row:?}",
-                    layout_cache.row_layout(layout),
+                    layout_cache.row_layout(layout)
                 );
             }
         }
