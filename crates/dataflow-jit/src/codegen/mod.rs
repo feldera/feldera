@@ -2073,6 +2073,9 @@ impl<'a> CodegenCtx<'a> {
             // Noop casts
             (a, b)
                 if a == b
+                    // bool <-> {i8, u8}
+                    || (a.is_bool() && (b.is_i8() || b.is_u8()))
+                    || ((a.is_i8() || a.is_u8()) && b.is_bool())
                     // Dates are represented as an i32
                     || ((a.is_i32() || a.is_u32()) && b.is_date())
                     // Timestamps are represented as an i64
@@ -2129,7 +2132,11 @@ impl<'a> CodegenCtx<'a> {
             }
 
             // Smaller int to larger int
-            (a, b) if a.is_int() && b.is_int() && from_ty.bytes() < to_ty.bytes() => {
+            (a, b)
+                if (a.is_int() || a.is_bool())
+                    && (b.is_int() || b.is_bool())
+                    && from_ty.bytes() < to_ty.bytes() =>
+            {
                 if a.is_signed_int() || a.is_date() || a.is_timestamp() {
                     builder.ins().sextend(to_ty, src)
                 } else {
@@ -2139,7 +2146,11 @@ impl<'a> CodegenCtx<'a> {
             }
 
             // Larger int to smaller int
-            (a, b) if a.is_int() && b.is_int() && from_ty.bytes() > to_ty.bytes() => {
+            (a, b)
+                if (a.is_int() || a.is_bool())
+                    && (b.is_int() || b.is_bool())
+                    && from_ty.bytes() > to_ty.bytes() =>
+            {
                 builder.ins().ireduce(to_ty, src)
             }
 
