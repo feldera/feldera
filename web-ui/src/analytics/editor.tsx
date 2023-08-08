@@ -497,10 +497,9 @@ const Editors = (props: { programId: string | null }) => {
   }
   useDisplayCompilerErrorsInEditor(project, editorRef)
 
-  usePageHeader(s => s.setHeader)(<PageHeader
-    title="SQL Editor"
-    subtitle="Define your analytics and data transformations."
-  />)
+  usePageHeader(s => s.setHeader)(
+    <PageHeader title='SQL Editor' subtitle='Define your analytics and data transformations.' />
+  )
 
   usePageHeader(s => s.setHeader)(<PageHeader
     title="SQL Editor"

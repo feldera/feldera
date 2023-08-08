@@ -321,10 +321,9 @@ export const PipelineWithProvider = (props: {
     queryClient
   ])
 
-  usePageHeader(s => s.setHeader)(<PageHeader
-    title="Pipeline Creator"
-    subtitle="Define an end-to-end pipeline with analytics."
-  />)
+  usePageHeader(s => s.setHeader)(
+    <PageHeader title='Pipeline Creator' subtitle='Define an end-to-end pipeline with analytics.' />
+  )
 
   return (
     <>

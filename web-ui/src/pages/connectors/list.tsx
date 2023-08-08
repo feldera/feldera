@@ -6,10 +6,7 @@ import DataSourceTable from 'src/connectors/DataSourceTable'
 import { usePageHeader } from 'src/compositions/ui/pageTitle'
 
 const SqlPrograms = () => {
-  usePageHeader(s => s.setHeader)(<PageHeader
-    title="Connectors"
-    subtitle="View and edit data sources."
-  />)
+  usePageHeader(s => s.setHeader)(<PageHeader title='Connectors' subtitle='View and edit data sources.' />)
   return (
     <Grid container spacing={6} className='match-height'>
       <Grid item xs={12}>

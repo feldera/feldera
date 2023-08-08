@@ -30,17 +30,11 @@ const AppBarContent = (props: Props) => {
       <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 4 }}>
         <Box className='actions-left' sx={{ display: 'flex', alignItems: 'top', gap: 4 }}>
           {hidden ? (
-            <IconButton
-              color='inherit'
-              onClick={toggleNavVisibility}
-              sx={{ mb: 'auto' }}
-            >
+            <IconButton color='inherit' onClick={toggleNavVisibility} sx={{ mb: 'auto' }}>
               <Menu />
             </IconButton>
           ) : null}
-          {!hiddenSm ? <Box sx={{width: '20rem'}}>
-            {header}
-          </Box>: (<></>)}
+          {!hiddenSm ? <Box sx={{ width: '20rem' }}>{header}</Box> : <></>}
           <TextField
             size='small'
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 4 } }}
@@ -59,9 +53,7 @@ const AppBarContent = (props: Props) => {
           <UserDropdown />
         </Box>
       </Box>
-        {hiddenSm ? <Box>
-          {header}
-        </Box>: <></>}
+      {hiddenSm ? <Box>{header}</Box> : <></>}
     </Box>
   )
 }
