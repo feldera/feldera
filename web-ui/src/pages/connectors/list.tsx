@@ -3,15 +3,15 @@ import Typography from '@mui/material/Typography'
 
 import PageHeader from 'src/layouts/components/page-header'
 import DataSourceTable from 'src/connectors/DataSourceTable'
+import { usePageHeader } from 'src/compositions/ui/pageTitle'
 
 const SqlPrograms = () => {
+  usePageHeader(s => s.setHeader)(<PageHeader
+    title="Connectors"
+    subtitle="View and edit data sources."
+  />)
   return (
     <Grid container spacing={6} className='match-height'>
-      <PageHeader
-        title={<Typography variant='h5'>Connectors</Typography>}
-        subtitle={<Typography variant='body2'>View and edit data sources.</Typography>}
-      />
-
       <Grid item xs={12}>
         <DataSourceTable />
       </Grid>

@@ -14,6 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import { LocalizationProvider } from '@mui/x-date-pickers'
 import { LicenseInfo } from '@mui/x-license-pro'
+import { usePageHeader } from 'src/compositions/ui/pageTitle'
 import 'dayjs/locale/en-gb'
 
 import 'react-perfect-scrollbar/dist/css/styles.css'
@@ -65,7 +66,7 @@ const App = (props: ExtendedAppProps) => {
 
   // Variables
   const getLayout = Component.getLayout ?? (page => <StandardVerticalLayout>{page}</StandardVerticalLayout>)
-
+  usePageHeader(s => s.setHeader)(<div></div>)
   return (
     <CacheProvider value={emotionCache}>
       <Head>

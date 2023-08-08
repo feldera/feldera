@@ -10,7 +10,7 @@ interface Props {
   children: ReactNode
 }
 
-const StandardVerticalLayoyt = ({ children }: Props) => {
+const StandardVerticalLayout = ({ children }: Props) => {
   const { settings, saveSettings } = useSettings()
 
   /**
@@ -44,4 +44,4 @@ const StandardVerticalLayoyt = ({ children }: Props) => {
   )
 }
 
-export default StandardVerticalLayoyt
+export default StandardVerticalLayout
