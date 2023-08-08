@@ -1,3 +1,4 @@
+use crate::db_notifier::DbNotification;
 use crate::runner::RunnerApi;
 use crate::{
     api::ManagerError,
@@ -12,7 +13,7 @@ use crate::{
 use actix_web::http::{Method, StatusCode};
 use chrono::{DateTime, Utc};
 use dbsp_adapters::ErrorResponse;
-use log::error;
+use log::{error, trace};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::{
@@ -26,7 +27,7 @@ use tokio::{
     fs::{create_dir_all, remove_dir_all},
     spawn,
     sync::Mutex,
-    time::{sleep, Duration},
+    time::Duration,
 };
 use tokio::{sync::Notify, time::timeout};
 
@@ -685,11 +686,12 @@ async fn reconcile(
     config: Arc<LocalRunnerConfig>,
 ) -> Result<(), ManagerError> {
     let pipelines: Mutex<BTreeMap<PipelineId, Arc<Notify>>> = Mutex::new(BTreeMap::new());
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(crate::db_notifier::listen(db.clone(), tx));
     loop {
-        sleep(Duration::from_millis(10)).await;
-        for entry in db.lock().await.all_pipelines().await?.iter() {
-            let tenant_id = entry.0;
-            let pipeline_id = entry.1;
+        trace!("Waiting for notification");
+        if let Some(DbNotification::Pipeline(op, tenant_id, pipeline_id)) = rx.recv().await {
+            trace!("Received DbNotification {op:?} {tenant_id} {pipeline_id}");
             pipelines
                 .lock()
                 .await

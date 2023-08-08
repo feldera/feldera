@@ -1,4 +1,5 @@
 mod auth;
+mod db_notifier;
 mod error;
 #[cfg(test)]
 #[cfg(feature = "integration-test")]

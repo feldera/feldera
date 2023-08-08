@@ -59,6 +59,7 @@ mod embedded {
 /// [`ProgramStatus::Pending`].  The `status_since` column is set to the current
 /// time, which determines the position of the program in the queue.
 pub struct ProjectDB {
+    pub config: tokio_postgres::Config,
     pool: Pool,
     // Used in dev mode for having an embedded Postgres DB live through the
     // lifetime of the program.
@@ -2224,7 +2225,7 @@ impl ProjectDB {
         let mgr_config = deadpool_postgres::ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         };
-        let mgr = Manager::from_config(config, NoTls, mgr_config);
+        let mgr = Manager::from_config(config.clone(), NoTls, mgr_config);
         let pool = Pool::builder(mgr).max_size(16).build().unwrap();
         let mut client = pool.get().await?;
         embedded::migrations::runner()
@@ -2239,9 +2240,13 @@ impl ProjectDB {
         }
 
         #[cfg(feature = "pg-embed")]
-        return Ok(Self { pool, pg_inst });
+        return Ok(Self {
+            config,
+            pool,
+            pg_inst,
+        });
         #[cfg(not(feature = "pg-embed"))]
-        return Ok(Self { pool });
+        return Ok(Self { config, pool });
     }
 
     fn deserialize_error_response(
