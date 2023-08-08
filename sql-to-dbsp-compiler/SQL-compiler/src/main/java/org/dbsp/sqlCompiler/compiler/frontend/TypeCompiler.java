@@ -114,9 +114,9 @@ public class TypeCompiler implements ICompilerComponent {
                 }
                 case FLOAT:
                 case REAL:
-                    return new DBSPTypeFloat(CalciteObject.EMPTY,false).setMayBeNull(nullable);
+                    return new DBSPTypeFloat(CalciteObject.EMPTY, nullable);
                 case DOUBLE:
-                    return new DBSPTypeDouble(CalciteObject.EMPTY,false).setMayBeNull(nullable);
+                    return new DBSPTypeDouble(CalciteObject.EMPTY, nullable);
                 case CHAR:
                 case VARCHAR: {
                     int precision = dt.getPrecision();
@@ -137,7 +137,7 @@ public class TypeCompiler implements ICompilerComponent {
                 case UNKNOWN:
                 case ANY:
                     // Not sure whether this is right
-                    return new DBSPTypeAny();
+                    return DBSPTypeAny.getDefault();
                 case BINARY:
                 case VARBINARY:
                 case MULTISET:
@@ -169,13 +169,13 @@ public class TypeCompiler implements ICompilerComponent {
                 case INTERVAL_SECOND:
                     return new DBSPTypeMillisInterval(node, nullable);
                 case GEOMETRY:
-                    return new DBSPTypeGeoPoint(CalciteObject.EMPTY, false).setMayBeNull(nullable);
+                    return new DBSPTypeGeoPoint(CalciteObject.EMPTY, nullable);
                 case TIMESTAMP:
-                    return new DBSPTypeTimestamp(CalciteObject.EMPTY, false).setMayBeNull(nullable);
+                    return new DBSPTypeTimestamp(CalciteObject.EMPTY, nullable);
                 case DATE:
-                    return new DBSPTypeDate(CalciteObject.EMPTY, false).setMayBeNull(nullable);
+                    return new DBSPTypeDate(CalciteObject.EMPTY, nullable);
                 case TIME:
-                    return new DBSPTypeTime(CalciteObject.EMPTY, false).setMayBeNull(nullable);
+                    return new DBSPTypeTime(CalciteObject.EMPTY, nullable);
             }
         }
         throw new UnimplementedException(node);

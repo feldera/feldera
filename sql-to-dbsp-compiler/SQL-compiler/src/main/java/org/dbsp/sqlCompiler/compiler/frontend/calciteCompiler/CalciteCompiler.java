@@ -563,15 +563,23 @@ public class CalciteCompiler implements IWritesLogs {
         List<RelDataTypeField> result = new ArrayList<>();
         int index = 0;
         for (SqlNode col: Objects.requireNonNull(list)) {
-            if (col.getKind().equals(SqlKind.COLUMN_DECL)) {
-                SqlColumnDeclaration cd = (SqlColumnDeclaration)col;
-                RelDataType type = this.convertType(cd.dataType);
-                String name = Catalog.identifierToString(cd.name);
-                RelDataTypeField field = new RelDataTypeFieldImpl(name, index++, type);
-                result.add(field);
-                continue;
+            SqlIdentifier name;
+            SqlDataTypeSpec typeSpec;
+            if (col instanceof SqlColumnDeclaration) {
+                SqlColumnDeclaration cd = (SqlColumnDeclaration) col;
+                name = cd.name;
+                typeSpec = cd.dataType;
+            } else if (col instanceof SqlExtendedColumnDeclaration) {
+                SqlExtendedColumnDeclaration cd = (SqlExtendedColumnDeclaration) col;
+                name = cd.name;
+                typeSpec = cd.dataType;
+            } else {
+                throw new UnimplementedException(new CalciteObject(col));
             }
-            throw new UnimplementedException(new CalciteObject(col));
+            RelDataType type = this.convertType(typeSpec);
+            RelDataTypeField field = new RelDataTypeFieldImpl(
+                    Catalog.identifierToString(name), index++, type);
+            result.add(field);
         }
         return result;
     }

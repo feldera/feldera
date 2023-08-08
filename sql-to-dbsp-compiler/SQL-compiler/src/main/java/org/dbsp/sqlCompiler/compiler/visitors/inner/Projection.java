@@ -170,7 +170,7 @@ public class Projection extends InnerVisitor {
     public Description getDescription() {
         if (!this.isProjection)
             throw new InternalCompilerError("This is not a projection",
-                    this.expression != null ? this.expression : (DBSPType) new DBSPTypeAny());
+                    this.expression != null ? this.expression : (DBSPType) DBSPTypeAny.getDefault());
         return this.description;
     }
 

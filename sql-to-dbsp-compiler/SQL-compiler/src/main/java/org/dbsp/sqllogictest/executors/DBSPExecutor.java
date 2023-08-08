@@ -199,15 +199,15 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         List<DBSPStatement> statements = new ArrayList<>();
         statements.add(input);
         DBSPLetStatement let = new DBSPLetStatement(vec.variable,
-                new DBSPTypeAny().path(new DBSPPath("Vec", "new")).call(), true);
+                new DBSPPath("Vec", "new").toExpression().call(), true);
         statements.add(let);
         if (this.compilerOptions.optimizerOptions.incrementalize) {
             for (int i = 0; i < inputType.tupFields.length; i++) {
                 DBSPExpression field = input.getVarReference().field(i);
                 DBSPExpression elems = new DBSPApplyExpression("to_elements",
-                        new DBSPTypeAny(), field.borrow());
+                        DBSPTypeAny.getDefault(), field.borrow());
 
-                DBSPVariablePath e = new DBSPTypeAny().var("e");
+                DBSPVariablePath e = DBSPTypeAny.getDefault().var("e");
                 DBSPExpression[] fields = new DBSPExpression[inputType.tupFields.length];
                 for (int j = 0; j < inputType.tupFields.length; j++) {
                     DBSPType fieldType = inputType.tupFields[j];
@@ -220,9 +220,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 DBSPExpression projected = new DBSPRawTupleExpression(fields);
                 DBSPExpression lambda = projected.closure(e.asParameter());
                 DBSPExpression iter = new DBSPApplyMethodExpression(
-                        "iter", new DBSPTypeAny(), elems);
+                        "iter", DBSPTypeAny.getDefault(), elems);
                 DBSPExpression map = new DBSPApplyMethodExpression(
-                        "map", new DBSPTypeAny(), iter, lambda);
+                        "map", DBSPTypeAny.getDefault(), iter, lambda);
                 DBSPExpression expr = new DBSPApplyMethodExpression(
                         "extend", new DBSPTypeVoid(), vec, map);
                 DBSPStatement statement = new DBSPExpressionStatement(expr);
@@ -426,22 +426,21 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPStrLiteral value = new DBSPStrLiteral(json, false, true);
         DBSPConstItem item = new DBSPConstItem("CIRCUIT", new DBSPTypeStr(CalciteObject.EMPTY,false).ref(), value);
         list.add(item);
-        DBSPExpression read = new DBSPApplyMethodExpression("rematerialize", new DBSPTypeAny(),
+        DBSPExpression read = new DBSPApplyMethodExpression("rematerialize", DBSPTypeAny.getDefault(),
                 new DBSPApplyExpression("serde_json::from_str::<SqlGraph>",
-                        new DBSPTypeAny(), item.getVariable()).unwrap());
+                        DBSPTypeAny.getDefault(), item.getVariable()).unwrap());
         DBSPLetStatement graph = new DBSPLetStatement("graph", read);
         list.add(graph);
 
         DBSPLetStatement graphNodes = new DBSPLetStatement("graph_nodes",
-                new DBSPApplyMethodExpression("nodes", new DBSPTypeAny(),
+                new DBSPApplyMethodExpression("nodes", DBSPTypeAny.getDefault(),
                         graph.getVarReference()));
         list.add(graphNodes);
 
         DBSPLetStatement demands = new DBSPLetStatement("demands",
                 new DBSPConstructorExpression(
-                        new DBSPTypeAny().path(
-                                new DBSPPath("Demands", "new")),
-                        new DBSPTypeAny()), true);
+                        new DBSPPath("Demands", "new").toExpression(),
+                        DBSPTypeAny.getDefault()), true);
         list.add(demands);
 
         List<JITSourceOperator> tables = program.getSources();
@@ -449,29 +448,28 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             String table = source.table;
             long index = source.id;
             DBSPExpression nodeId = new DBSPConstructorExpression(
-                    new DBSPTypeAny().path(
-                            new DBSPPath("NodeId", "new")),
-                    new DBSPTypeAny(),
+                    new DBSPPath("NodeId", "new").toExpression(),
+                    DBSPTypeAny.getDefault(),
                     new DBSPU32Literal((int) index));
             DBSPLetStatement id = new DBSPLetStatement(table + "_id", nodeId);
             list.add(id);
 
-            DBSPExpression indexExpr = new DBSPBinaryExpression(CalciteObject.EMPTY, new DBSPTypeAny(),
+            DBSPExpression indexExpr = new DBSPBinaryExpression(CalciteObject.EMPTY, DBSPTypeAny.getDefault(),
                     DBSPOpcode.RUST_INDEX, graphNodes.getVarReference(), id.getVarReference().borrow());
             DBSPExpression layout = new DBSPApplyMethodExpression(
-                    "layout", new DBSPTypeAny(),
-                    new DBSPApplyMethodExpression("unwrap_source", new DBSPTypeAny(),
+                    "layout", DBSPTypeAny.getDefault(),
+                    new DBSPApplyMethodExpression("unwrap_source", DBSPTypeAny.getDefault(),
                             indexExpr.applyClone()));
             DBSPLetStatement stat = new DBSPLetStatement(table + "_layout", layout);
             list.add(stat);
         }
 
         DBSPExpression debug = new DBSPConstructorExpression(
-                new DBSPTypeAny().path(new DBSPPath("CodegenConfig", "debug")),
-                new DBSPTypeAny());
+                new DBSPPath("CodegenConfig", "debug").toExpression(),
+                DBSPTypeAny.getDefault());
         DBSPExpression allocateCircuit = new DBSPConstructorExpression(
-                new DBSPTypeAny().path(new DBSPPath("DbspCircuit", "new")),
-                new DBSPTypeAny(),
+                new DBSPPath("DbspCircuit", "new").toExpression(),
+                DBSPTypeAny.getDefault(),
                 graph.getVarReference(),
                 new DBSPBoolLiteral(true),
                 new DBSPUSizeLiteral(1),
@@ -486,12 +484,12 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         // TODO: feed inputs, check outputs.
 
         DBSPExpressionStatement step = new DBSPExpressionStatement(
-                new DBSPApplyMethodExpression("step", new DBSPTypeAny(),
+                new DBSPApplyMethodExpression("step", DBSPTypeAny.getDefault(),
                         circuit.getVarReference()).unwrap());
         list.add(step);
         DBSPStatement kill = new DBSPExpressionStatement(
                 new DBSPApplyMethodExpression(
-                        "kill", new DBSPTypeAny(), circuit.getVarReference()).unwrap());
+                        "kill", DBSPTypeAny.getDefault(), circuit.getVarReference()).unwrap());
         list.add(kill);
 
         DBSPExpression body = new DBSPBlockExpression(list, null);
@@ -604,7 +602,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             SqlTestQueryOutputDescription description) {
         List<DBSPStatement> list = new ArrayList<>();
         DBSPLetStatement circ = new DBSPLetStatement("circ",
-                new DBSPApplyExpression(circuit.getNode(), circuit.name, new DBSPTypeAny()), true);
+                new DBSPApplyExpression(circuit.getNode(), circuit.name, DBSPTypeAny.getDefault()), true);
         list.add(circ);
         DBSPType circuitOutputType = circuit.getOutputType(0);
         // the following may not be the same, since SqlLogicTest sometimes lies about the output type
@@ -619,7 +617,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         for (int i = 0; i < arguments.length; i++) {
             String inputI = circuit.getInputTables().get(i);
             int index = contents.getTableIndex(inputI);
-            arguments[i] = new DBSPTypeAny().var("_in").field(index);
+            arguments[i] = DBSPTypeAny.getDefault().var("_in").field(index);
         }
         DBSPLetStatement createOutput = new DBSPLetStatement(
                 "output",
@@ -673,13 +671,13 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     elementType = oType.elementType;
                 }
                 DBSPExpression zset_to_strings = new DBSPQualifyTypeExpression(
-                        new DBSPTypeAny().var(functionProducingStrings),
+                        DBSPTypeAny.getDefault().var(functionProducingStrings),
                         elementType,
                         oType.weightType
                 );
                 list.add(new DBSPExpressionStatement(
                         new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
-                                new DBSPApplyExpression(functionProducingStrings, new DBSPTypeAny(),
+                                new DBSPApplyExpression(functionProducingStrings, DBSPTypeAny.getDefault(),
                                         output0.borrow(), columnTypes, sort),
                                  zset_to_strings.call(output.borrow(), columnTypes, sort))));
             } else {

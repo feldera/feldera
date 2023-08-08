@@ -20,14 +20,15 @@ createViewStatement
       AS query
 
 tableElement
-  :   columnName type [ columnConstraint ]
+  :   columnName type [NOT [NULL]] [ columnConstraint ]
   |   columnName
   |   tableConstraint
 
 columnConstraint
-  :   [ PRIMARY KEY ]
-  |   [ NOT ] NULL
-  |   [ FOREIGN KEY REFERENCES identifier '(' identifier ')' ]
+  :   PRIMARY KEY
+  |   FOREIGN KEY REFERENCES identifier '(' identifier ')'
+  |   LATENESS expression
+  |   /* empty */
 
 parensColumnList
   :   '(' columnName [, columnName ]* ')'

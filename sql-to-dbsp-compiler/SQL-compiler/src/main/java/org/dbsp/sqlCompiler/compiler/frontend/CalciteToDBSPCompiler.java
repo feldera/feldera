@@ -871,9 +871,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             numericBound = value.cast(boundType);
         }
         String beforeAfter = bound.isPreceding() ? "Before" : "After";
-        return new DBSPConstructorExpression(new DBSPTypeAny().path(
-                new DBSPPath("RelOffset", beforeAfter)),
-                new DBSPTypeAny(), numericBound);
+        return new DBSPConstructorExpression(
+                new DBSPPath("RelOffset", beforeAfter).toExpression(),
+                DBSPTypeAny.getDefault(), numericBound);
     }
 
     public void visitWindow(LogicalWindow window) {
@@ -913,9 +913,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression lb = this.compileWindowBound(group.lowerBound, sortType, eComp);
             DBSPExpression ub = this.compileWindowBound(group.upperBound, sortType, eComp);
             DBSPExpression windowExpr = new DBSPConstructorExpression(
-                    new DBSPTypeAny().path(
-                            new DBSPPath("RelRange", "new")),
-                    new DBSPTypeAny(), lb, ub);
+                    new DBSPPath("RelRange", "new").toExpression(),
+                    DBSPTypeAny.getDefault(), lb, ub);
 
             // Map each row to an expression of the form: |t| (partition, (order, t.clone()))
             List<Integer> partitionKeys = group.keys.toList();
@@ -1006,8 +1005,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.circuit.addOperator(index);
         // apply an aggregation function that just creates a vector.
         DBSPTypeVec vecType = new DBSPTypeVec(inputRowType, false);
-        DBSPExpression zero = new DBSPTypeAny().path(
-                new DBSPPath(vecType.name, "new")).call();
+        DBSPExpression zero = new DBSPPath(vecType.name, "new").toExpression().call();
         DBSPVariablePath accum = vecType.var("a");
         DBSPVariablePath row = inputRowType.var("v");
         // An element with weight 'w' is pushed 'w' times into the vector
@@ -1016,15 +1014,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression push = wPush.closure(
                 accum.asRefParameter(true), row.asRefParameter(),
                 this.compiler.weightVar.asParameter());
-        DBSPExpression constructor = new DBSPTypeAny().path(
+        DBSPExpression constructor =
             new DBSPPath(
                     new DBSPSimplePathSegment("Fold",
-                            new DBSPTypeAny(),
+                            DBSPTypeAny.getDefault(),
                         new DBSPTypeUser(node, USER, "UnimplementedSemigroup",
-                                false, new DBSPTypeAny()),
-                            new DBSPTypeAny(),
-                            new DBSPTypeAny()),
-                    new DBSPSimplePathSegment("new")));
+                                false, DBSPTypeAny.getDefault()),
+                            DBSPTypeAny.getDefault(),
+                            DBSPTypeAny.getDefault()),
+                    new DBSPSimplePathSegment("new")).toExpression();
 
         DBSPExpression folder = constructor.call(zero, push);
         DBSPAggregateOperator agg = new DBSPAggregateOperator(node,

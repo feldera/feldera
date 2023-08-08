@@ -14,6 +14,7 @@ data: {
       "org.apache.calcite.sql.SqlDrop"
       "org.apache.calcite.sql.ddl.SqlDdlNodes"
       "org.apache.calcite.sql.ddl.SqlCreateType"
+      "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlExtendedColumnDeclaration"
     ]
 
     # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is
@@ -21,6 +22,7 @@ data: {
     keywords: [
       "DISCARD"
       "IF"
+      "LATENESS"
       "PLANS"
       "SEED"
       "SEMI"

@@ -50,7 +50,7 @@ public class DBSPApplyExpression extends DBSPExpression {
 
     public DBSPApplyExpression(CalciteObject node, String function, DBSPType returnType, DBSPExpression... arguments) {
         super(node, returnType);
-        this.function = new DBSPPathExpression(new DBSPTypeAny(), new DBSPPath(function));
+        this.function = new DBSPPathExpression(DBSPTypeAny.getDefault(), new DBSPPath(function));
         this.arguments = arguments;
         this.checkArgs();
     }

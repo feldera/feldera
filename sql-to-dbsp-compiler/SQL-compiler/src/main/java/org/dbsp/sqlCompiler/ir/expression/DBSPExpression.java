@@ -65,7 +65,7 @@ public abstract class DBSPExpression
     }
 
     public DBSPExpression unwrap() {
-        return new DBSPApplyMethodExpression(this.getNode(), "unwrap", new DBSPTypeAny(), this);
+        return new DBSPApplyMethodExpression(this.getNode(), "unwrap", DBSPTypeAny.getDefault(), this);
     }
 
     public DBSPExpression borrow(boolean mutable) {

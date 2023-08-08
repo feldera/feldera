@@ -34,7 +34,7 @@ import java.util.List;
 
 public class DBSPNoopOperator extends DBSPUnaryOperator {
     static DBSPClosureExpression getClosure() {
-        DBSPVariablePath var = new DBSPTypeAny().var("i");
+        DBSPVariablePath var = DBSPTypeAny.getDefault().var("i");
         return var.applyClone().closure(var.asRefParameter());
     }
 

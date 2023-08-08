@@ -30,7 +30,7 @@ public class DBSPI16Literal extends DBSPIntLiteral {
     }
 
     public DBSPI16Literal(@Nullable Short value, boolean nullable) {
-        this(CalciteObject.EMPTY, new DBSPTypeInteger(CalciteObject.EMPTY, INT16, 16, true,false).setMayBeNull(nullable), value);
+        this(CalciteObject.EMPTY, new DBSPTypeInteger(CalciteObject.EMPTY, INT16, 16, true, nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

@@ -319,7 +319,7 @@ public class AggregateCompiler implements ICompilerComponent {
     void processAvg(SqlAvgAggFunction function) {
         CalciteObject node = new CalciteObject(function);
         DBSPType aggregatedValueType = this.getAggregatedValueType();
-        DBSPType i64 = new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false).setMayBeNull(true);
+        DBSPType i64 = new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,true);
         DBSPExpression zero = new DBSPRawTupleExpression(
                 DBSPLiteral.none(i64), DBSPLiteral.none(i64));
         DBSPType pairType = zero.getType();
@@ -344,7 +344,7 @@ public class AggregateCompiler implements ICompilerComponent {
                     i64, sumAccumulator, aggregatedValue, this.filterArgument());
         } else {
             DBSPExpression weightedCount = new DBSPBinaryExpression(
-                    node, new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false).setMayBeNull(plusOne.getType().mayBeNull),
+                    node, new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,plusOne.getType().mayBeNull),
                     DBSPOpcode.MUL_WEIGHT, plusOne,
                     this.compiler.weightVar);
             count = this.aggregateOperation(
