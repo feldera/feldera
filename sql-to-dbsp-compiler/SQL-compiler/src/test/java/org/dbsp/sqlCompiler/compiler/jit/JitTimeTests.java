@@ -4,7 +4,6 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.TimeTests;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -38,11 +37,5 @@ public class JitTimeTests extends TimeTests {
                 new DBSPTimestampLiteral(3600100),
                 new DBSPTimestampLiteral(600100)
         );
-    }
-
-    @Test @Ignore("IString parsing not supported https://github.com/feldera/dbsp/issues/338")
-    public void castTimestampToStringToTimestamp() {
-        String query = "SELECT CAST(CAST(T.COL1 AS STRING) AS Timestamp) FROM T";
-        this.testQuery(query, new DBSPTimestampLiteral(0));
     }
 }

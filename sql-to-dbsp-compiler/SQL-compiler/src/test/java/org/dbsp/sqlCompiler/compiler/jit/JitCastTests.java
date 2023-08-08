@@ -16,10 +16,4 @@ public class JitCastTests extends CastTests {
         CompilerOptions options = this.testOptions(false, true, true);
         return new DBSPCompiler(options);
     }
-
-    @Test @Ignore("String cast https://github.com/feldera/dbsp/issues/338")
-    public void castFromFPTest() {
-        String query = "SELECT T.COL1 + T.COL2 + T.COL3 + T.COL5 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPDoubleLiteral(100203245.0))));
-    }
 }

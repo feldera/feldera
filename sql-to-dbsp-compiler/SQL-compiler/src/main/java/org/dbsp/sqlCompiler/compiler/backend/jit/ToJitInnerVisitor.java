@@ -78,7 +78,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.*;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.*;
 
 /**
  * Generate code for the JIT compiler.
@@ -594,8 +594,22 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             return VisitDecision.STOP;
         }
         if (sourceType.is(JITStringType.class) && !destinationType.is(JITStringType.class)) {
+            DBSPExpression[] arguments;
+            if (destinationType.code == DATE || destinationType.code == TIMESTAMP) {
+                arguments = new DBSPExpression[2];
+                String format;
+                if (destinationType.code == DATE)
+                    format = "%Y-%m-%d";
+                else
+                    format = "%F %T%.f";
+                arguments[1] = new DBSPStringLiteral(format);
+                arguments[0] = expression.source;
+            } else {
+                arguments = new DBSPExpression[1];
+                arguments[0] = expression.source;
+            }
             JITInstructionPair result = this.createFunctionCall(
-                    "dbsp.str.parse", expression, expression.source);
+                    "dbsp.str.parse", expression, arguments);
             this.map(expression, result);
             return VisitDecision.STOP;
         }

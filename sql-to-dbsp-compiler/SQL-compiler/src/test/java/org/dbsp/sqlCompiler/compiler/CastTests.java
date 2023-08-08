@@ -87,4 +87,12 @@ public class CastTests extends BaseSQLTests {
         String query = "SELECT T.COL1 + T.COL2 + T.COL3 + T.COL5 FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPDoubleLiteral(100203245.0))));
     }
+
+    @Test
+    public void castFromIntToDecimalTest() {
+        String query = "SELECT CAST(T.COL1 AS DECIMAL(10, 10)) FROM T";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
+                new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, 10, 10, false),
+                        new BigDecimal("10")))));
+    }
 }
