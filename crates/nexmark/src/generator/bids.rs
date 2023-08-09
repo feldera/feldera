@@ -7,7 +7,7 @@ use super::{
     config::{FIRST_AUCTION_ID, FIRST_PERSON_ID},
     strings::next_string,
 };
-use arcstr::ArcStr;
+use dbsp::{algebra::ArcStr, arcstr_format, arcstr_literal};
 use cached::Cached;
 use rand::Rng;
 use std::mem::size_of;
@@ -21,16 +21,16 @@ const HOT_CHANNELS_RATIO: usize = 100;
 pub const CHANNELS_NUMBER: u32 = 10_000;
 
 static HOT_CHANNELS: [ArcStr; 4] = [
-    arcstr::literal!("Google"),
-    arcstr::literal!("Facebook"),
-    arcstr::literal!("Baidu"),
-    arcstr::literal!("Apple"),
+    arcstr_literal!("Google"),
+    arcstr_literal!("Facebook"),
+    arcstr_literal!("Baidu"),
+    arcstr_literal!("Apple"),
 ];
 static HOT_URLS: [ArcStr; 4] = [
-    arcstr::literal!("https://www.nexmark.com/googl/item.htm?query=1"),
-    arcstr::literal!("https://www.nexmark.com/meta/item.htm?query=1"),
-    arcstr::literal!("https://www.nexmark.com/bidu/item.htm?query=1"),
-    arcstr::literal!("https://www.nexmark.com/aapl/item.htm?query=1"),
+    arcstr_literal!("https://www.nexmark.com/googl/item.htm?query=1"),
+    arcstr_literal!("https://www.nexmark.com/meta/item.htm?query=1"),
+    arcstr_literal!("https://www.nexmark.com/bidu/item.htm?query=1"),
+    arcstr_literal!("https://www.nexmark.com/aapl/item.htm?query=1"),
 ];
 
 const BASE_URL_PATH_LENGTH: usize = 5;
@@ -116,7 +116,7 @@ impl<R: Rng> NexmarkGenerator<R> {
 }
 
 fn get_base_url<R: Rng>(rng: &mut R) -> ArcStr {
-    arcstr::format!(
+    arcstr_format!(
         "https://www.nexmark.com/{}/item.htm?query=1",
         next_string(rng, BASE_URL_PATH_LENGTH),
     )
@@ -153,8 +153,8 @@ pub mod tests {
                 auction: expected_auction_id,
                 bidder: expected_bidder_id,
                 price: 100,
-                channel: arcstr::literal!("Google"),
-                url: arcstr::literal!("https://www.nexmark.com/googl/item.htm?query=1"),
+                channel: arcstr_literal!("Google"),
+                url: arcstr_literal!("https://www.nexmark.com/googl/item.htm?query=1"),
                 date_time: 1_000_000_000_000,
                 extra: "A".repeat(expected_size).into(),
             },
@@ -190,8 +190,8 @@ pub mod tests {
         ng.bid_channel_cache.cache_set(
             1234,
             (
-                arcstr::literal!("Google"),
-                arcstr::literal!("https://google.example.com"),
+                arcstr_literal!("Google"),
+                arcstr_literal!("https://google.example.com"),
             ),
         );
 

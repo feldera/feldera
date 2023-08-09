@@ -5,7 +5,7 @@
 use self::config::Config;
 use super::model::Event;
 use anyhow::Result;
-use arcstr::ArcStr;
+use dbsp::algebra::ArcStr;
 use bids::CHANNELS_NUMBER;
 use cached::SizedCache;
 use rand::Rng;

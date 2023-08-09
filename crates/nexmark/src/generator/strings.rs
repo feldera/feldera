@@ -3,7 +3,7 @@
 //! API based on the equivalent [Nexmark Flink StringsGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/StringsGenerator.java).
 
 use super::NexmarkGenerator;
-use arcstr::ArcStr;
+use dbsp::{algebra::ArcStr, arcstr_literal};
 use rand::{distributions::Alphanumeric, distributions::DistString, Rng};
 
 const MIN_STRING_LENGTH: usize = 3;
@@ -18,13 +18,13 @@ pub(super) fn next_string<R: Rng>(rng: &mut R, max_length: usize) -> ArcStr {
 /// average the desired average size.
 fn next_extra<R: Rng>(rng: &mut R, current_size: usize, desired_average_size: usize) -> ArcStr {
     if current_size > desired_average_size {
-        return arcstr::literal!("");
+        return arcstr_literal!("");
     }
 
     let avg_extra_size = desired_average_size - current_size;
     let delta = (avg_extra_size as f32 * 0.2).round() as usize;
     if delta == 0 {
-        return arcstr::literal!("");
+        return arcstr_literal!("");
     }
 
     let desired_size =

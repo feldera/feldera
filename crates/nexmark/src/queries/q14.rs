@@ -1,7 +1,7 @@
 use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
-use arcstr::ArcStr;
+use dbsp::algebra::ArcStr;
 use rust_decimal::Decimal;
 use size_of::SizeOf;
 use std::hash::Hash;
@@ -53,7 +53,7 @@ pub struct Q14Output(
     BincodeDecimal,
     BidTimeType,
     u64,
-    #[bincode(with_serde)] ArcStr,
+     ArcStr,
     usize,
 );
 

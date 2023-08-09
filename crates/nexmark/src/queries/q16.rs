@@ -1,10 +1,11 @@
 use super::NexmarkStream;
 use crate::{model::Event, queries::OrdinalDate};
+use bincode::{Encode, Decode};
 use dbsp::{
     operator::{FilterMap, Max},
     RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
-use arcstr::ArcStr;
+use dbsp::algebra::ArcStr;
 use size_of::SizeOf;
 use std::{
     hash::Hash,
@@ -78,15 +79,12 @@ use time::{
     PartialOrd,
     Ord,
     SizeOf,
-    bincode::Encode,
-    bincode::Decode,
+    Encode,
+    Decode,
 )]
 pub struct Q16Output {
-    #[bincode(with_serde)]
     channel: ArcStr,
-    #[bincode(with_serde)]
     day: ArcStr,
-    #[bincode(with_serde)]
     minute: ArcStr,
     total_bids: usize,
     rank1_bids: usize,

@@ -14,3 +14,4 @@ dbsp = { path = "../../../crates/dbsp", features = ["with-serde"], default-featu
 size-of = { version = "0.1.5", features = ["rust_decimal"] }
 sqlx = { version = "0.6", features = [ "runtime-async-std-native-tls", "sqlite", "postgres", "any" ] }
 async-std = { version = "1.12.0", features = ["attributes"]}
+bincode = { version = "2.0.0-rc.2", features = ["serde"] }

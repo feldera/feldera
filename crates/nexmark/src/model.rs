@@ -2,7 +2,7 @@
 //!
 //! Based on the equivalent [Nexmark Flink Java model classes](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model).
 
-use arcstr::ArcStr;
+use dbsp::algebra::ArcStr;
 use bincode::{Decode, Encode};
 use size_of::SizeOf;
 
@@ -13,18 +13,12 @@ use size_of::SizeOf;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf, Encode, Decode)]
 pub struct Person {
     pub id: u64,
-    #[bincode(with_serde)]
     pub name: ArcStr,
-    #[bincode(with_serde)]
     pub email_address: ArcStr,
-    #[bincode(with_serde)]
     pub credit_card: ArcStr,
-    #[bincode(with_serde)]
     pub city: ArcStr,
-    #[bincode(with_serde)]
     pub state: ArcStr,
     pub date_time: u64,
-    #[bincode(with_serde)]
     pub extra: ArcStr,
 }
 
@@ -35,9 +29,7 @@ pub struct Person {
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf, Encode, Decode)]
 pub struct Auction {
     pub id: u64,
-    #[bincode(with_serde)]
     pub item_name: ArcStr,
-    #[bincode(with_serde)]
     pub description: ArcStr,
     pub initial_bid: usize,
     pub reserve: usize,
@@ -45,7 +37,6 @@ pub struct Auction {
     pub expires: u64,
     pub seller: u64,
     pub category: usize,
-    #[bincode(with_serde)]
     pub extra: ArcStr,
 }
 
@@ -62,16 +53,13 @@ pub struct Bid {
     /// Price of bid, in cents.
     pub price: usize,
     /// The channel that introduced this bidding.
-    #[bincode(with_serde)]
     pub channel: ArcStr,
     /// The url of this channel.
-    #[bincode(with_serde)]
     pub url: ArcStr,
     /// Instant at which this bid was made. NOTE: This may be earlier than teh
     /// system's event time.
     pub date_time: u64,
     /// Additional arbitrary payload for performance testing.
-    #[bincode(with_serde)]
     pub extra: ArcStr,
 }
 
