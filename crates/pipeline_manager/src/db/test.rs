@@ -2392,7 +2392,15 @@ impl Storage for Mutex<DbModel> {
         &self,
         _program_id: ProgramId,
         _version: Version,
-    ) -> Result<String, DBError> {
+    ) -> Result<Option<String>, DBError> {
+        todo!("Unimplemented");
+    }
+
+    async fn delete_compiled_binary_ref(
+        &self,
+        _program_id: ProgramId,
+        _version: Version,
+    ) -> Result<(), DBError> {
         todo!("Unimplemented");
     }
 }

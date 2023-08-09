@@ -1,6 +1,6 @@
 /// A local runner that watches for pipeline objects in the API
 /// and instantiates them locally as processes.
-use crate::db_notifier::DbNotification;
+use crate::db_notifier::{DbNotification, Operation};
 use crate::runner::RunnerApi;
 use crate::{
     api::ManagerError,
@@ -15,7 +15,7 @@ use crate::{
 use actix_web::http::{Method, StatusCode};
 use chrono::{DateTime, Utc};
 use dbsp_adapters::ErrorResponse;
-use log::{error, trace};
+use log::{error, info, trace};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::{
@@ -129,9 +129,20 @@ impl PipelineAutomaton {
 
             // txn = db.transaction();
             let db = self.db.lock().await;
-            let mut pipeline = db
+            let result = db
                 .get_pipeline_runtime_state(self.tenant_id, self.pipeline_id)
-                .await?;
+                .await;
+            if let Err(e) = result {
+                match e {
+                    DBError::UnknownPipeline { pipeline_id } => {
+                        // Pipeline deletions should not lead to errors in the logs.
+                        info!("Pipeline {pipeline_id} does not exist. Shutting down pipeline automaton.");
+                        return Ok(());
+                    }
+                    _ => return Err(e.into()),
+                }
+            }
+            let mut pipeline = result.unwrap();
 
             // Handle deployment request.
             if pipeline.current_status == PipelineStatus::Shutdown
@@ -626,7 +637,14 @@ impl PipelineAutomaton {
             .await
             .get_compiled_binary_ref(program_id, pr.program.version)
             .await?;
-        let fetched_executable = binary_ref_to_url(&executable_ref, pipeline_id).await?;
+        if executable_ref.is_none() {
+            return Err(RunnerError::BinaryFetchError {
+                pipeline_id,
+                error: format!("Did not receieve a compiled binary URL for {pipeline_id}"),
+            }
+            .into());
+        }
+        let fetched_executable = binary_ref_to_url(&executable_ref.unwrap(), pipeline_id).await?;
 
         // Run executable, set current directory to pipeline directory, pass metadata
         // file and config as arguments.
@@ -694,25 +712,35 @@ async fn reconcile(
         trace!("Waiting for notification");
         if let Some(DbNotification::Pipeline(op, tenant_id, pipeline_id)) = rx.recv().await {
             trace!("Received DbNotification {op:?} {tenant_id} {pipeline_id}");
-            pipelines
-                .lock()
-                .await
-                .entry(pipeline_id)
-                .or_insert_with(|| {
-                    let notifier = Arc::new(Notify::new());
-                    spawn(
-                        PipelineAutomaton::new(
-                            pipeline_id,
-                            tenant_id,
-                            &config,
-                            db.clone(),
-                            notifier.clone(),
-                        )
-                        .run(),
-                    );
-                    notifier
-                })
-                .notify_one();
+            match op {
+                Operation::Add | Operation::Update => {
+                    pipelines
+                        .lock()
+                        .await
+                        .entry(pipeline_id)
+                        .or_insert_with(|| {
+                            let notifier = Arc::new(Notify::new());
+                            spawn(
+                                PipelineAutomaton::new(
+                                    pipeline_id,
+                                    tenant_id,
+                                    &config,
+                                    db.clone(),
+                                    notifier.clone(),
+                                )
+                                .run(),
+                            );
+                            notifier
+                        })
+                        .notify_one();
+                }
+                Operation::Delete => {
+                    if let Some(n) = pipelines.lock().await.remove(&pipeline_id) {
+                        // Notify the automaton so it shuts down
+                        n.notify_one();
+                    }
+                }
+            };
         }
     }
 }

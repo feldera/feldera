@@ -1,3 +1,4 @@
+/// A binary that brings up all three of the api-server, compiler and local runner services.
 use actix_web::rt::{self, spawn};
 use clap::{Args, Command, FromArgMatches};
 
@@ -13,7 +14,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use utoipa::OpenApi;
 
-// Standalone binary that runs the pipeline manager, compiler and local runner services.
 fn main() -> anyhow::Result<()> {
     // Stay in single-threaded mode (no tokio) until calling `daemonize`.
 
