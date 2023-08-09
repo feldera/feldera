@@ -401,7 +401,8 @@ pub(crate) trait Storage {
         provider: String,
     ) -> Result<TenantId, DBError>;
 
-    /// Record information about a compiler binary
+    /// Record a URL pointing to a compile. binary Supported URL types are determined by the
+    /// compiler service (e.g. file:///)
     async fn create_compiled_binary_ref(
         &self,
         program_id: ProgramId,
@@ -409,6 +410,7 @@ pub(crate) trait Storage {
         url: String,
     ) -> Result<(), DBError>;
 
+    /// Retrieve a compiled binary's URL
     async fn get_compiled_binary_ref(
         &self,
         program_id: ProgramId,

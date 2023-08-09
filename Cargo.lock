@@ -235,7 +235,9 @@ dependencies = [
  "openssl",
  "pin-project-lite",
  "tokio-openssl",
+ "tokio-rustls",
  "tokio-util",
+ "webpki-roots 0.22.6",
 ]
 
 [[package]]
@@ -817,6 +819,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "rand",
+ "rustls",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -2354,7 +2357,9 @@ dependencies = [
  "erased-serde",
  "form_urlencoded",
  "futures",
+ "futures-timer",
  "futures-util",
+ "lazy_static",
  "log",
  "mime",
  "num-derive",
@@ -2364,6 +2369,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rdkafka",
+ "rustls",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -2374,6 +2380,7 @@ dependencies = [
  "tokio",
  "utoipa",
  "uuid",
+ "webpki-roots 0.25.2",
 ]
 
 [[package]]
@@ -6625,6 +6632,21 @@ dependencies = [
  "ring",
  "untrusted",
 ]
+
+[[package]]
+name = "webpki-roots"
+version = "0.22.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6c71e40d7d2c34a5106301fb632274ca37242cd0c9d3e64dbece371a40a2d87"
+dependencies = [
+ "webpki",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "0.25.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14247bb57be4f377dfb94c72830b8ce8fc6beac03cf4bf7b9732eadd414123fc"
 
 [[package]]
 name = "webui-tester"
