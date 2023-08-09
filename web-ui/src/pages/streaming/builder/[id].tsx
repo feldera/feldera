@@ -7,13 +7,14 @@ import { PipelineWithProvider } from '.'
 const PipelineWithId = () => {
   const [pipelineId, setPipelineId] = useState<PipelineId | undefined>(undefined)
   const router = useRouter()
-  const { id } = router.query
 
   useEffect(() => {
+    const { id } = router.query
+
     if (typeof id === 'string') {
       setPipelineId(id)
     }
-  }, [pipelineId, setPipelineId, id])
+  }, [router.query, pipelineId, setPipelineId])
 
   return (
     pipelineId !== null && (
