@@ -189,10 +189,7 @@ impl Codegen {
 mod tests {
     use crate::{
         codegen::{json::JsonMapping, Codegen, CodegenConfig},
-        ir::{
-            literal::{NullableConstant, RowLiteral},
-            ColumnType, Constant, RowLayoutBuilder, RowLayoutCache,
-        },
+        ir::{ColumnType, RowLayoutBuilder, RowLayoutCache},
         row::{row_from_literal, UninitRow},
         utils::{self, HashMap},
     };
@@ -232,33 +229,12 @@ mod tests {
             r#"{ "foo": "second foo data string", "bar": null, "baz": -10000, "bing": null, "bop": -0.0, "boop": null }"#,
             r#"{ "baz": -32, "bar": null, "foo": "woah, now we switched the field orderings", "bop": 0.3 }"#,
         ];
+
+        #[rustfmt::skip]
         let expected = &[
-            RowLiteral::new(vec![
-                NullableConstant::NonNull(Constant::String("foo data string".into())),
-                NullableConstant::Nullable(Some(Constant::String("bar data string".into()))),
-                NullableConstant::NonNull(Constant::I64(10)),
-                NullableConstant::Nullable(Some(Constant::I64(100))),
-                NullableConstant::NonNull(Constant::F64(96.542)),
-                NullableConstant::Nullable(Some(Constant::F64(-1245.53))),
-            ]),
-            RowLiteral::new(vec![
-                NullableConstant::NonNull(Constant::String("second foo data string".into())),
-                NullableConstant::null(),
-                NullableConstant::NonNull(Constant::I64(-10000)),
-                NullableConstant::null(),
-                NullableConstant::NonNull(Constant::F64(-0.0)),
-                NullableConstant::null(),
-            ]),
-            RowLiteral::new(vec![
-                NullableConstant::NonNull(Constant::String(
-                    "woah, now we switched the field orderings".into(),
-                )),
-                NullableConstant::null(),
-                NullableConstant::NonNull(Constant::I64(-32)),
-                NullableConstant::null(),
-                NullableConstant::NonNull(Constant::F64(0.3)),
-                NullableConstant::null(),
-            ]),
+            row!["foo data string", ?"bar data string", 10i64, ?100i64, 96.542f64, ?-1245.53f64],
+            row!["second foo data string", null, -10000i64, null, -0.0, null],
+            row!["woah, now we switched the field orderings", null, -32i64, null, 0.3, null],
         ];
 
         let (jit, layout_cache) = codegen.finalize_definitions();
@@ -290,7 +266,7 @@ mod tests {
                     row,
                     expected,
                     "input json: {json:?}\nrow value for {}: {row:?}",
-                    layout_cache.row_layout(layout)
+                    layout_cache.row_layout(layout),
                 );
             }
         }

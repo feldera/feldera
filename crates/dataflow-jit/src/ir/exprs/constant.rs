@@ -3,6 +3,7 @@ use crate::ir::{
     ColumnType, RowLayoutCache,
 };
 use chrono::{NaiveDate, NaiveDateTime};
+use derive_more::From;
 use rust_decimal::Decimal;
 use schemars::{
     gen::SchemaGenerator,
@@ -13,7 +14,7 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 use std::{cmp::Ordering, fmt, mem};
 
 /// A constant value
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, From, JsonSchema)]
 pub enum Constant {
     Unit,
     U8(u8),
@@ -137,6 +138,13 @@ impl Constant {
             Self::Timestamp(_) => ColumnType::Timestamp,
             Self::Decimal(_) => ColumnType::Decimal,
         }
+    }
+}
+
+impl<'a> From<&'a str> for Constant {
+    #[inline]
+    fn from(value: &'a str) -> Self {
+        Self::String(value.to_owned())
     }
 }
 
