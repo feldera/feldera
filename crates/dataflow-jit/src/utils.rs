@@ -42,3 +42,36 @@ impl NativeRepr for Decimal {
         Self::deserialize(repr.to_le_bytes())
     }
 }
+
+#[macro_export]
+macro_rules! row {
+    (@column null) => { $crate::ir::literal::NullableConstant::null() };
+    (@column ? null) => { $crate::ir::literal::NullableConstant::null() };
+
+    (@column ? $expr:expr) => {
+        $crate::ir::literal::NullableConstant::Nullable(
+            ::std::option::Option::Some(
+                $crate::ir::Constant::from($expr),
+            ),
+        )
+    };
+
+    (@column $expr:expr) => {
+        $crate::ir::literal::NullableConstant::NonNull(
+            $crate::ir::Constant::from($expr),
+        )
+    };
+
+    [$($($(@ $__capture:tt)? ?)? $expr:expr),* $(,)?] => {
+        $crate::ir::literal::RowLiteral::new(
+            ::std::vec![$(
+                ::defile::defile!(row!(
+                    // @ escaped as @@
+                    @@ column
+                    $($($__capture)??)?
+                    @ $expr // <- tell defile to handle this
+                )),
+            )*],
+        )
+    };
+}
