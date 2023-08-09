@@ -54,7 +54,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use uuid::{uuid, Uuid};
 
 pub(crate) use crate::compiler::ProgramStatus;
-pub(crate) use crate::config::ManagerConfig;
+pub(crate) use crate::config::ApiServerConfig;
 use crate::db::{
     storage::Storage, AttachedConnector, AttachedConnectorId, ConnectorId, DBError, PipelineId,
     PipelineRevision, PipelineStatus, ProgramDescr, ProgramId, ProjectDB, Version,
@@ -222,12 +222,12 @@ pub(crate) struct ServerState {
     // for a long time to avoid blocking concurrent requests.
     pub db: Arc<Mutex<ProjectDB>>,
     runner: RunnerApi,
-    _config: ManagerConfig,
+    _config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
 }
 
 impl ServerState {
-    pub async fn new(config: ManagerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<Self> {
+    pub async fn new(config: ApiServerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<Self> {
         let runner = RunnerApi::new(db.clone());
 
         Ok(Self {
@@ -239,32 +239,31 @@ impl ServerState {
     }
 }
 
-pub fn create_listener(manager_config: ManagerConfig) -> AnyResult<TcpListener> {
+pub fn create_listener(api_config: ApiServerConfig) -> AnyResult<TcpListener> {
     // Check that the port is available before turning into a daemon, so we can fail
     // early if the port is taken.
-    let listener = TcpListener::bind((manager_config.bind_address.clone(), manager_config.port))
-        .map_err(|e| {
+    let listener =
+        TcpListener::bind((api_config.bind_address.clone(), api_config.port)).map_err(|e| {
             AnyError::msg(format!(
                 "failed to bind port '{}:{}': {e}",
-                &manager_config.bind_address, manager_config.port
+                &api_config.bind_address, api_config.port
             ))
         })?;
 
     #[cfg(unix)]
-    if manager_config.unix_daemon {
-        let logfile =
-            std::fs::File::create(manager_config.logfile.as_ref().unwrap()).map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to create log file '{}': {e}",
-                    &manager_config.logfile.as_ref().unwrap()
-                ))
-            })?;
+    if api_config.unix_daemon {
+        let logfile = std::fs::File::create(api_config.logfile.as_ref().unwrap()).map_err(|e| {
+            AnyError::msg(format!(
+                "failed to create log file '{}': {e}",
+                &api_config.logfile.as_ref().unwrap()
+            ))
+        })?;
 
         let logfile_clone = logfile.try_clone().unwrap();
 
         let daemonize = Daemonize::new()
-            .pid_file(manager_config.manager_pid_file_path())
-            .working_directory(&manager_config.manager_working_directory)
+            .pid_file(api_config.manager_pid_file_path())
+            .working_directory(&api_config.api_server_working_directory)
             .stdout(logfile_clone)
             .stderr(logfile);
 
@@ -280,11 +279,11 @@ pub fn create_listener(manager_config: ManagerConfig) -> AnyResult<TcpListener> 
 pub async fn run(
     listener: TcpListener,
     db: Arc<Mutex<ProjectDB>>,
-    manager_config: ManagerConfig,
+    api_config: ApiServerConfig,
 ) -> AnyResult<()> {
-    let state = WebData::new(ServerState::new(manager_config.clone(), db).await?);
+    let state = WebData::new(ServerState::new(api_config.clone(), db).await?);
 
-    if manager_config.use_auth {
+    if api_config.use_auth {
         let server = HttpServer::new(move || {
             let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
             let auth_configuration = crate::auth::aws_auth_config();
@@ -294,7 +293,7 @@ pub async fn run(
                 .app_data(auth_configuration)
                 .wrap(Logger::default())
                 .wrap(Condition::new(
-                    manager_config.dev_mode,
+                    api_config.dev_mode,
                     actix_cors::Cors::permissive(),
                 ))
                 .service(api_scope().wrap(auth_middleware))
@@ -307,7 +306,7 @@ pub async fn run(
                 .app_data(state.clone())
                 .wrap(Logger::default())
                 .wrap(Condition::new(
-                    manager_config.dev_mode,
+                    api_config.dev_mode,
                     actix_cors::Cors::permissive(),
                 ))
                 .service(api_scope().wrap_fn(|req, srv| {

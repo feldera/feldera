@@ -65,12 +65,12 @@ impl DatabaseConfig {
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
-pub struct ManagerConfig {
-    /// Directory where the manager stores its filesystem state:
+pub struct ApiServerConfig {
+    /// Directory where the api-server stores its filesystem state:
     /// generated Rust crates, pipeline logs, etc.
     #[serde(default = "default_working_directory")]
     #[arg(short, long, default_value_t = default_working_directory())]
-    pub manager_working_directory: String,
+    pub api_server_working_directory: String,
 
     /// Port number for the HTTP service, defaults to 8080.
     #[serde(default = "default_server_port")]
@@ -135,25 +135,25 @@ pub struct ManagerConfig {
     pub dev_mode: bool,
 }
 
-impl ManagerConfig {
+impl ApiServerConfig {
     /// Convert all directory paths in the `self` to absolute paths.
     ///
     /// Converts `working_directory` `sql_compiler_home`, and
     /// `dbsp_override_path` fields to absolute paths;
     /// fails if any of the paths doesn't exist or isn't readable.
     pub fn canonicalize(mut self) -> AnyResult<Self> {
-        create_dir_all(&self.manager_working_directory).map_err(|e| {
+        create_dir_all(&self.api_server_working_directory).map_err(|e| {
             AnyError::msg(format!(
                 "unable to create or open working directory '{}': {e}",
-                self.manager_working_directory
+                self.api_server_working_directory
             ))
         })?;
 
-        self.manager_working_directory = canonicalize(&self.manager_working_directory)
+        self.api_server_working_directory = canonicalize(&self.api_server_working_directory)
             .map_err(|e| {
                 AnyError::msg(format!(
                     "error canonicalizing working directory path '{}': {e}",
-                    self.manager_working_directory
+                    self.api_server_working_directory
                 ))
             })?
             .to_string_lossy()
@@ -161,7 +161,7 @@ impl ManagerConfig {
 
         // Running as daemon and no log file specified - use default log file name.
         if self.logfile.is_none() && self.unix_daemon {
-            self.logfile = Some(format!("{}/manager.log", self.manager_working_directory));
+            self.logfile = Some(format!("{}/manager.log", self.api_server_working_directory));
         }
 
         if let Some(logfile) = &self.logfile {
@@ -194,7 +194,7 @@ impl ManagerConfig {
     /// e.g., `<working-directory>/data`
     #[cfg(feature = "pg-embed")]
     pub(crate) fn postgres_embed_data_dir(&self) -> PathBuf {
-        Path::new(&self.manager_working_directory).join("data")
+        Path::new(&self.api_server_working_directory).join("data")
     }
 
     /// Manager pid file.
@@ -202,7 +202,7 @@ impl ManagerConfig {
     /// e.g., `<working-directory>/manager.pid`
     #[cfg(unix)]
     pub(crate) fn manager_pid_file_path(&self) -> PathBuf {
-        Path::new(&self.manager_working_directory).join("manager.pid")
+        Path::new(&self.api_server_working_directory).join("manager.pid")
     }
 }
 

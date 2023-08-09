@@ -20,7 +20,7 @@ mvn -f ./sql-to-dbsp-compiler/SQL-compiler -DskipTests package
 Build and start the Pipeline Manager (that also serves the Feldera Web Console):
 
 ```bash
-RUST_LOG=info RUST_BACKTRACE=1 cargo run --bin dbsp_pipeline_manager --features pg-embed -- --manager-working-directory ~/.dbsp -d postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.dbsp
+RUST_LOG=info RUST_BACKTRACE=1 cargo run --bin pipeline-manager --features pg-embed -- --api-server-working-directory ~/.dbsp -d postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.dbsp --runner-working-directory ~/.dbsp
 ```
 
 > Here, `~/.dbsp` is the directory that will host compilation artifacts of SQL Compiler that Pipeline Manager will then use. It will be created if it doesn't exist, and you can use another name for it - just replace corresponding arguments in the above command.

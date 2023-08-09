@@ -1,5 +1,5 @@
 #[cfg(feature = "pg-embed")]
-use crate::config::ManagerConfig;
+use crate::config::ApiServerConfig;
 use crate::{
     auth::{TenantId, TenantRecord},
     compiler::ProgramStatus,
@@ -2123,15 +2123,15 @@ impl Storage for ProjectDB {
 impl ProjectDB {
     pub async fn connect(
         db_config: &DatabaseConfig,
-        #[cfg(feature = "pg-embed")] manager_config: Option<&ManagerConfig>,
+        #[cfg(feature = "pg-embed")] api_config: Option<&ApiServerConfig>,
     ) -> Result<Self, DBError> {
         let connection_str = db_config.database_connection_string();
         let initial_sql = &db_config.initial_sql;
 
         #[cfg(feature = "pg-embed")]
         if connection_str.starts_with("postgres-embed") {
-            let database_dir = manager_config
-                .expect("ManagerConfig needs to be provided when using pg-embed")
+            let database_dir = api_config
+                .expect("ApiServerConfig needs to be provided when using pg-embed")
                 .postgres_embed_data_dir();
             let pg_inst = pg_setup::install(database_dir, true, Some(8082)).await?;
             let connection_string = pg_inst.db_uri.to_string();
