@@ -14,7 +14,9 @@ import {
   DataGridProProps,
   GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
   GridColDef,
-  GridRenderCellParams
+  GridRenderCellParams,
+  GridValueSetterParams,
+  useGridApiRef
 } from '@mui/x-data-grid-pro'
 import CustomChip from 'src/@core/components/mui/chip'
 import Badge from '@mui/material/Badge'
@@ -37,9 +39,14 @@ import {
   PipelineStatus,
   PipelineRevision,
   ErrorResponse,
-  Relation
+  Relation,
+  PipelinesService,
+  UpdatePipelineResponse,
+  ApiError,
+  PipelineId,
+  UpdatePipelineRequest
 } from 'src/types/manager'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { escapeRegExp } from 'src/utils'
 import { match } from 'ts-pattern'
 import router from 'next/router'
@@ -52,6 +59,7 @@ import usePausePipeline from './hooks/usePausePipeline'
 import useShutdownPipeline from './hooks/useShutdownPipeline'
 import useDeletePipeline from './hooks/useDeletePipeline'
 import useStartPipeline from './hooks/useStartPipeline'
+import useStatusNotification from 'src/components/errors/useStatusNotification'
 
 interface ConnectorData {
   relation: Relation
@@ -472,14 +480,22 @@ export default function PipelineTable() {
       headerName: 'Name',
       editable: true,
       flex: 2,
-      valueGetter: params => params.row.descriptor.name
+      valueGetter: params => params.row.descriptor.name,
+      valueSetter: (params: GridValueSetterParams) => {
+        params.row.descriptor.name = params.value
+        return params.row
+      }
     },
     {
       field: 'description',
       headerName: 'Description',
       editable: true,
       flex: 3,
-      valueGetter: params => params.row.descriptor.description
+      valueGetter: params => params.row.descriptor.description,
+      valueSetter: (params: GridValueSetterParams) => {
+        params.row.descriptor.description = params.value
+        return params.row
+      }
     },
     {
       field: 'modification',
@@ -610,10 +626,50 @@ export default function PipelineTable() {
     }
   ]
 
+  // Makes sure we can edit name and description in the table
+  const apiRef = useGridApiRef()
+  const queryClient = useQueryClient()
+  const { pushMessage } = useStatusNotification()
+  const mutation = useMutation<
+    UpdatePipelineResponse,
+    ApiError,
+    { pipeline_id: PipelineId; request: UpdatePipelineRequest }
+  >(args => {
+    return PipelinesService.updatePipeline(args.pipeline_id, args.request)
+  })
+  const onUpdateRow = (newRow: Pipeline, oldRow: Pipeline) => {
+    console.log('onUpdateRow;;', {
+      name: newRow.descriptor.name,
+      description: newRow.descriptor.description,
+      program_id: newRow.descriptor.program_id
+    })
+    mutation.mutate(
+      {
+        pipeline_id: newRow.descriptor.pipeline_id,
+        request: {
+          name: newRow.descriptor.name,
+          description: newRow.descriptor.description,
+          program_id: newRow.descriptor.program_id
+        }
+      },
+      {
+        onError: (error: ApiError) => {
+          queryClient.invalidateQueries(['pipeline'])
+          queryClient.invalidateQueries(['pipelineStatus', { program_id: newRow.descriptor.pipeline_id }])
+          pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
+          apiRef.current.updateRows([oldRow])
+        }
+      }
+    )
+
+    return newRow
+  }
+
   return (
     <Card>
       <DataGridPro
         autoHeight
+        apiRef={apiRef}
         getRowId={(row: Pipeline) => row.descriptor.pipeline_id}
         columns={columns}
         rowThreshold={0}
@@ -626,6 +682,7 @@ export default function PipelineTable() {
         pageSizeOptions={[7, 10, 25, 50]}
         paginationModel={paginationModel}
         onPaginationModelChange={setPaginationModel}
+        processRowUpdate={onUpdateRow}
         loading={isLoading}
         componentsProps={{
           baseButton: {
