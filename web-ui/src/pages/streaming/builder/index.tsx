@@ -31,6 +31,7 @@ import { connectorConnects, useAddConnector } from 'src/streaming/builder/hooks/
 import MissingSchemaDialog from 'src/streaming/builder/NoSchemaDialog'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { invalidatePipeline } from 'src/types/defaultQueryFn'
+import { useRouter } from 'next/router'
 
 const stateToSaveLabel = (state: SaveIndicatorState): string =>
   match(state)
@@ -355,7 +356,16 @@ export const PipelineWithProvider = (props: {
 }
 
 const Pipeline = () => {
+  const router = useRouter()
   const [pipelineId, setPipelineId] = useState<PipelineId | undefined>(undefined)
+
+  useEffect(() => {
+    const { pipeline_id } = router.query
+    console.log(router.query)
+    if (router.isReady && typeof pipeline_id === 'string') {
+      setPipelineId(pipeline_id)
+    }
+  }, [router.isReady, router.query, pipelineId, setPipelineId])
 
   return (
     <ReactFlowProvider>

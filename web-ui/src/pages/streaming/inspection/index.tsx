@@ -150,8 +150,8 @@ const IntrospectInputOutput = () => {
   const [relation, setRelation] = useState<string | undefined>(undefined)
   const router = useRouter()
   const [tab, setTab] = useState<'browse' | 'insert'>('browse')
-  const [tables, setTables] = useState<string[] | undefined>([])
-  const [views, setViews] = useState<string[] | undefined>([])
+  const [tables, setTables] = useState<string[] | undefined>(undefined)
+  const [views, setViews] = useState<string[] | undefined>(undefined)
 
   const handleChange = (event: SyntheticEvent, newValue: 'browse' | 'insert') => {
     setTab(newValue)
@@ -163,7 +163,6 @@ const IntrospectInputOutput = () => {
       return
     }
     const { pipeline_id, relation, tab } = router.query
-    console.log(pipeline_id, relation, tab)
     if (typeof tab === 'string' && (tab == 'browse' || tab == 'insert')) {
       setTab(tab)
     }
@@ -229,7 +228,7 @@ const IntrospectInputOutput = () => {
       </Grid>
     </Grid>
   ) : (
-    relation && !((tables && tables.includes(relation)) || (views && views.includes(relation))) && (
+    relation && tables && views && !(tables.includes(relation) || views.includes(relation)) && (
       <Alert severity='error'>
         <AlertTitle>Relation not found</AlertTitle>
         Specified unknown table or view: {relation}

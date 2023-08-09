@@ -1,19 +1,21 @@
+import { useRouter } from 'next/router'
+import { useEffect, useState } from 'react'
 import Editors from 'src/analytics/editor'
 
 const Editor = () => {
-  // Create a new empty project
-  return (
-    <Editors
-      program={{
-        program_id: null,
-        name: '',
-        description: '',
-        status: 'None',
-        version: 0,
-        code: ''
-      }}
-    />
-  )
+  // Get the project id from the URL
+  const router = useRouter()
+  const [programId, setProgramId] = useState<string | undefined | null>(undefined)
+  useEffect(() => {
+    const { program_id } = router.query
+    if (router.isReady && typeof program_id === 'string') {
+      setProgramId(program_id)
+    } else {
+      setProgramId(null)
+    }
+  }, [router, programId, setProgramId])
+
+  return programId !== undefined && <Editors programId={programId} />
 }
 
 export default Editor
