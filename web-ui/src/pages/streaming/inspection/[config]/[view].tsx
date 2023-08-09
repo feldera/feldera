@@ -24,7 +24,7 @@ import { Icon } from '@iconify/react'
 import { Controller, useForm } from 'react-hook-form'
 import { ErrorBoundary } from 'react-error-boundary'
 import { ErrorOverlay } from 'src/components/table/ErrorOverlay'
-import { usePageHeader } from 'src/compositions/ui/pageTitle'
+import { usePageHeader } from 'src/compositions/ui/pageHeader'
 
 const TitleBreadCrumb = (props: { pipeline: Pipeline; relation: string }) => {
   const { descriptor } = props.pipeline
@@ -136,11 +136,9 @@ const IntrospectInputOutput = () => {
   }
 
   usePageHeader(s => s.setHeader)(
-    pipeline && relation ? (
-      <PageHeader title={<TitleBreadCrumb pipeline={pipeline} relation={relation} />} subtitle='Inspection' />
-    ) : (
-      <></>
-    )
+    pipeline && relation
+      ? { title: <TitleBreadCrumb pipeline={pipeline} relation={relation} />, subtitle: 'Inspection' }
+      : { title: null }
   )
 
   return (

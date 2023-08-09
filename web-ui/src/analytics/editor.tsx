@@ -32,7 +32,7 @@ import SaveIndicator, { SaveIndicatorState } from 'src/components/SaveIndicator'
 import { PLACEHOLDER_VALUES } from 'src/utils'
 import { programQueryCacheUpdate, programStatusUpdate } from 'src/types/defaultQueryFn'
 import assert from 'assert'
-import { usePageHeader } from 'src/compositions/ui/pageTitle'
+import { usePageHeader } from 'src/compositions/ui/pageHeader'
 
 // How many ms to wait until we save the project.
 const SAVE_DELAY = 2000
@@ -497,9 +497,7 @@ const Editors = (props: { programId: string | null }) => {
   }
   useDisplayCompilerErrorsInEditor(project, editorRef)
 
-  usePageHeader(s => s.setHeader)(
-    <PageHeader title='SQL Editor' subtitle='Define your analytics and data transformations.' />
-  )
+  usePageHeader(s => s.setHeader)({ title: 'SQL Editor', subtitle: 'Define your analytics and data transformations.' })
 
   usePageHeader(s => s.setHeader)(<PageHeader
     title="SQL Editor"

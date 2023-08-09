@@ -12,7 +12,8 @@ import { Settings } from 'src/@core/context/settingsContext'
 import ModeToggler from 'src/@core/layouts/components/shared-components/ModeToggler'
 import UserDropdown from 'src/@core/layouts/components/shared-components/UserDropdown'
 import NotificationDropdown from 'src/@core/layouts/components/shared-components/NotificationDropdown'
-import { usePageHeader } from 'src/compositions/ui/pageTitle'
+import { usePageHeader } from 'src/compositions/ui/pageHeader'
+import PageHeader from 'src/layouts/components/page-header'
 
 interface Props {
   hidden: boolean
@@ -24,7 +25,7 @@ interface Props {
 const AppBarContent = (props: Props) => {
   const { hidden, settings, saveSettings, toggleNavVisibility } = props
   const hiddenSm = useMediaQuery((theme: Theme) => theme.breakpoints.down('sm'))
-  const header = usePageHeader(s => s.header)
+  const header = <PageHeader {...usePageHeader(s => s.header)} />
   return (
     <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 4 }}>

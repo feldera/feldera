@@ -31,7 +31,7 @@ import { connectorConnects, useAddConnector } from 'src/streaming/builder/hooks/
 import MissingSchemaDialog from 'src/streaming/builder/NoSchemaDialog'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { invalidatePipeline } from 'src/types/defaultQueryFn'
-import { usePageHeader } from 'src/compositions/ui/pageTitle'
+import { usePageHeader } from 'src/compositions/ui/pageHeader'
 import { useRouter } from 'next/router'
 
 const stateToSaveLabel = (state: SaveIndicatorState): string =>
@@ -321,9 +321,10 @@ export const PipelineWithProvider = (props: {
     queryClient
   ])
 
-  usePageHeader(s => s.setHeader)(
-    <PageHeader title='Pipeline Creator' subtitle='Define an end-to-end pipeline with analytics.' />
-  )
+  usePageHeader(s => s.setHeader)({
+    title: 'Pipeline Creator',
+    subtitle: 'Define an end-to-end pipeline with analytics.'
+  })
 
   return (
     <>
