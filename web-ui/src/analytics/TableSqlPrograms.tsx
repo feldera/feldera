@@ -184,7 +184,7 @@ const TableSqlPrograms = () => {
         fetchRows={fetchQuery}
         onUpdateRow={processRowUpdate}
         onDeleteRow={deleteProject}
-        onEditClicked={row => router.push('/analytics/editor/' + row.program_id)}
+        onEditClicked={row => router.push(`/analytics/editor?program_id=${row.program_id}`)}
         apiRef={apiRef}
       />
     </Card>

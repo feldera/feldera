@@ -20,7 +20,6 @@ import {
   NewProgramRequest,
   NewProgramResponse,
   ProgramId,
-  ProgramStatus,
   SqlCompilerMessage,
   UpdateProgramRequest,
   UpdateProgramResponse
@@ -43,7 +42,7 @@ interface FormError {
 }
 
 // Top level form with Name and Description TextInput elements
-const MetadataForm = (props: { errors: FormError; project: ProgramState; setProject: any; setState: any }) => {
+const MetadataForm = (props: { errors: FormError; project: ProgramDescr; setProject: any; setState: any }) => {
   const debouncedSaveStateUpdate = useDebouncedCallback(() => {
     props.setState('isModified')
   }, SAVE_DELAY)
@@ -96,17 +95,6 @@ const MetadataForm = (props: { errors: FormError; project: ProgramState; setProj
   )
 }
 
-// This is a representation of the state of the program. It's basically
-// ProjectDesc, except that program_id can be null.
-interface ProgramState {
-  program_id: string | null
-  name: string
-  description: string
-  status: ProgramStatus
-  version: number
-  code: string
-}
-
 const stateToEditorLabel = (state: SaveIndicatorState): string =>
   match(state)
     .with('isNew' as const, () => {
@@ -131,8 +119,8 @@ const stateToEditorLabel = (state: SaveIndicatorState): string =>
 // have a program_id yet).
 const useCreateProjectIfNew = (
   state: SaveIndicatorState,
-  project: ProgramState,
-  setProject: Dispatch<SetStateAction<ProgramState>>,
+  project: ProgramDescr,
+  setProject: Dispatch<SetStateAction<ProgramDescr>>,
   setState: Dispatch<SetStateAction<SaveIndicatorState>>,
   setFormError: Dispatch<SetStateAction<FormError>>
 ) => {
@@ -141,13 +129,13 @@ const useCreateProjectIfNew = (
 
   const { mutate } = useMutation<NewProgramResponse, ApiError, NewProgramRequest>(ProgramsService.newProgram)
   useEffect(() => {
-    if (project.program_id == null) {
+    if (project.program_id == '') {
       if (state === 'isModified') {
         mutate(
           {
             name: project.name,
             description: project.description,
-            code: project.code
+            code: project.code || ''
           },
           {
             onSettled: () => {
@@ -155,7 +143,7 @@ const useCreateProjectIfNew = (
               queryClient.invalidateQueries(['programStatus', { program_id: project.program_id }])
             },
             onSuccess: (data: NewProgramResponse) => {
-              setProject((prevState: ProgramState) => ({
+              setProject((prevState: ProgramDescr) => ({
                 ...prevState,
                 version: data.version,
                 program_id: data.program_id
@@ -198,11 +186,12 @@ const useCreateProjectIfNew = (
 
 // Fetches the data for an existing project (if we have a program_id).
 const useFetchExistingProject = (
-  project: ProgramState,
-  setProject: Dispatch<SetStateAction<ProgramState>>,
+  project: ProgramDescr,
+  setProject: Dispatch<SetStateAction<ProgramDescr>>,
   setState: Dispatch<SetStateAction<SaveIndicatorState>>,
   lastCompiledVersion: number,
-  setLastCompiledVersion: Dispatch<SetStateAction<number>>
+  setLastCompiledVersion: Dispatch<SetStateAction<number>>,
+  setLoaded: Dispatch<SetStateAction<boolean>>
 ) => {
   const codeQuery = useQuery<number, ApiError, ProgramDescr>(['programCode', { program_id: project.program_id }], {
     enabled: project.program_id != null
@@ -221,6 +210,7 @@ const useFetchExistingProject = (
         setLastCompiledVersion(codeQuery.data.version)
       }
       setState('isUpToDate')
+      setLoaded(true)
     }
   }, [
     codeQuery.isLoading,
@@ -229,15 +219,16 @@ const useFetchExistingProject = (
     lastCompiledVersion,
     setProject,
     setState,
-    setLastCompiledVersion
+    setLastCompiledVersion,
+    setLoaded
   ])
 }
 
 // Updates the project if it has changed and we have a program_id.
 const useUpdateProjectIfChanged = (
   state: SaveIndicatorState,
-  project: ProgramState,
-  setProject: Dispatch<SetStateAction<ProgramState>>,
+  project: ProgramDescr,
+  setProject: Dispatch<SetStateAction<ProgramDescr>>,
   setState: Dispatch<SetStateAction<SaveIndicatorState>>,
   setFormError: Dispatch<SetStateAction<FormError>>
 ) => {
@@ -271,7 +262,7 @@ const useUpdateProjectIfChanged = (
           onSuccess: (data: UpdateProgramResponse) => {
             assert(project.program_id)
             projectQueryCacheUpdate(queryClient, project.program_id, updateRequest)
-            setProject((prevState: ProgramState) => ({ ...prevState, version: data.version }))
+            setProject((prevState: ProgramDescr) => ({ ...prevState, version: data.version }))
             setState('isUpToDate')
             setFormError({})
           },
@@ -309,8 +300,8 @@ const useUpdateProjectIfChanged = (
 // we're not already compiling)
 const useCompileProjectIfChanged = (
   state: SaveIndicatorState,
-  project: ProgramState,
-  setProject: Dispatch<SetStateAction<ProgramState>>,
+  project: ProgramDescr,
+  setProject: Dispatch<SetStateAction<ProgramDescr>>,
   lastCompiledVersion: number
 ) => {
   const queryClient = useQueryClient()
@@ -331,12 +322,13 @@ const useCompileProjectIfChanged = (
       !isError &&
       state == 'isUpToDate' &&
       project.program_id !== null &&
+      lastCompiledVersion !== undefined &&
       project.version > lastCompiledVersion &&
       project.status !== 'Pending' &&
       project.status !== 'CompilingSql'
     ) {
       //console.log('compileProject ' + project.version)
-      setProject((prevState: ProgramState) => ({ ...prevState, status: 'Pending' }))
+      setProject((prevState: ProgramDescr) => ({ ...prevState, status: 'Pending' }))
       mutate(
         { program_id: project.program_id, request: { version: project.version } },
         {
@@ -345,7 +337,7 @@ const useCompileProjectIfChanged = (
             queryClient.invalidateQueries(['programStatus', { program_id: project.program_id }])
           },
           onError: (error: ApiError) => {
-            setProject((prevState: ProgramState) => ({ ...prevState, status: 'None' }))
+            setProject((prevState: ProgramDescr) => ({ ...prevState, status: 'None' }))
             pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           }
         }
@@ -368,8 +360,8 @@ const useCompileProjectIfChanged = (
 
 // Polls the server during compilation and checks for the status.
 const usePollCompilationStatus = (
-  project: ProgramState,
-  setProject: Dispatch<SetStateAction<ProgramState>>,
+  project: ProgramDescr,
+  setProject: Dispatch<SetStateAction<ProgramDescr>>,
   setLastCompiledVersion: Dispatch<SetStateAction<number>>
 ) => {
   const queryClient = useQueryClient()
@@ -411,7 +403,7 @@ const usePollCompilationStatus = (
 
       if (project.status !== compilationStatus.data.status) {
         // @ts-ignore: Typescript thinks compilationStatus.data can be undefined but we check it above?
-        setProject((prevState: ProgramState) => ({ ...prevState, status: compilationStatus.data.status }))
+        setProject((prevState: ProgramDescr) => ({ ...prevState, status: compilationStatus.data.status }))
         queryClient.setQueryData(['programStatus', { program_id: project.program_id }], compilationStatus.data)
         queryClient.setQueryData(['program'], (oldData: ProgramDescr[] | undefined) => {
           return oldData?.map((item: ProgramDescr) => {
@@ -437,7 +429,7 @@ const usePollCompilationStatus = (
   ])
 }
 
-const useDisplayCompilerErrorsInEditor = (project: ProgramState, editorRef: MutableRefObject<any>) => {
+const useDisplayCompilerErrorsInEditor = (project: ProgramDescr, editorRef: MutableRefObject<any>) => {
   const monaco = useMonaco()
   useEffect(() => {
     if (monaco !== null && editorRef.current !== null) {
@@ -462,17 +454,26 @@ const useDisplayCompilerErrorsInEditor = (project: ProgramState, editorRef: Muta
   }, [monaco, project.status, editorRef])
 }
 
-const Editors = (props: { program: ProgramState }) => {
+const Editors = (props: { programId: string | null }) => {
+  const { programId } = props
   const theme = useTheme()
+  const [loaded, setLoaded] = useState<boolean>(false)
   const [lastCompiledVersion, setLastCompiledVersion] = useState<number>(0)
-  const [state, setState] = useState<SaveIndicatorState>(props.program.program_id ? 'isNew' : 'isUpToDate')
-  const [project, setProject] = useState<ProgramState>(props.program)
+  const [state, setState] = useState<SaveIndicatorState>(props.programId ? 'isNew' : 'isUpToDate')
+  const [project, setProject] = useState<ProgramDescr>({
+    program_id: programId || '',
+    name: '',
+    description: '',
+    status: 'None',
+    version: 0,
+    code: ''
+  })
   const [formError, setFormError] = useState<FormError>({})
 
   const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
 
   useCreateProjectIfNew(state, project, setProject, setState, setFormError)
-  useFetchExistingProject(project, setProject, setState, lastCompiledVersion, setLastCompiledVersion)
+  useFetchExistingProject(project, setProject, setState, lastCompiledVersion, setLastCompiledVersion, setLoaded)
   useUpdateProjectIfChanged(state, project, setProject, setState, setFormError)
   useCompileProjectIfChanged(state, project, setProject, lastCompiledVersion)
   usePollCompilationStatus(project, setProject, setLastCompiledVersion)
@@ -494,7 +495,7 @@ const Editors = (props: { program: ProgramState }) => {
   }
   useDisplayCompilerErrorsInEditor(project, editorRef)
 
-  return (
+  return (programId !== null && loaded) || programId == null ? (
     <Grid container spacing={6}>
       <PageHeader
         title={<Typography variant='h5'>SQL Editor</Typography>}
@@ -520,7 +521,7 @@ const Editors = (props: { program: ProgramState }) => {
               height='60vh'
               theme={vscodeTheme}
               defaultLanguage='sql'
-              value={project.code}
+              value={project.code || ''}
               onChange={updateCode}
               onMount={editor => handleEditorDidMount(editor)}
             />
@@ -529,6 +530,8 @@ const Editors = (props: { program: ProgramState }) => {
         </Card>
       </Grid>
     </Grid>
+  ) : (
+    <>Loading...</>
   )
 }
 

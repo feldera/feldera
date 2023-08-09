@@ -586,7 +586,7 @@ export default function PipelineTable() {
                   href='#'
                   onClick={e => {
                     e.preventDefault()
-                    router.push('/streaming/builder/' + params.row.descriptor.pipeline_id + '/')
+                    router.push(`/streaming/builder/?pipeline_id=${params.row.descriptor.pipeline_id}`)
                   }}
                 >
                   <Icon icon='bx:pencil' fontSize={20} />
