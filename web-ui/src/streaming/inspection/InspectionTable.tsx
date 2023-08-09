@@ -232,7 +232,7 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
           columns: {
             columnVisibilityModel: {
               genId: false,
-              RowCount: false
+              rowCount: false
             }
           }
         }}
@@ -255,7 +255,7 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
               valueGetter: (params: any) => params.row.genId
             },
             {
-              field: 'RowCount',
+              field: 'rowCount',
               headerName: 'Row Count',
               description: 'Counts how many times this row appears in the database.',
               flex: 0.5,

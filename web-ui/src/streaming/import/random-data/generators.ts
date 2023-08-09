@@ -196,7 +196,7 @@ export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
   )
 }
 
-// Generators for integer numbers.
+// Generators for boolean.
 const BOOLEAN_GENERATORS: IRngGenMethod[] = [
   {
     title: 'Constant',
@@ -367,6 +367,9 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
         // Because it's surprisingly difficult to generate floating point
         // numbers with a max range of -Inf..Inf, we just default to 0..1 for
         // this one.
+        //
+        // See also:
+        // https://stackoverflow.com/questions/28461796/randomint-function-that-can-uniformly-handle-the-full-range-of-min-and-max-safe
         return d3.randomUniform()()
       }
     },
@@ -663,11 +666,6 @@ const STRING_GENERATORS: IRngGenMethod[] = [
     title: 'Suffix',
     category: Categories.PERSON,
     generator: () => faker.person.suffix()
-  },
-  {
-    title: 'Sex',
-    category: Categories.PERSON,
-    generator: () => faker.person.sex()
   },
   {
     title: 'Bio',

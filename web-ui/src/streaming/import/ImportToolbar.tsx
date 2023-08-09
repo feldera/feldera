@@ -55,7 +55,6 @@ const ImportToolbar = (props: {
     defaultValue: new Map()
   })
 
-  // Handler function to clear the rows
   const handleClearData = () => {
     setRows([])
   }

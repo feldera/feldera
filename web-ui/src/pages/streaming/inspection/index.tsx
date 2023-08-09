@@ -121,7 +121,7 @@ const TableWithInsertTab = (props: {
         ) : (
           <Alert severity='info'>
             <AlertTitle>Pipeline not running</AlertTitle>
-            Start the pipeline to insert data.
+            Pipeline must be running to insert data. Try starting it.
           </Alert>
         )}
       </TabPanel>
@@ -201,10 +201,8 @@ const IntrospectInputOutput = () => {
   // If we request to be on the insert tab for a view, we force-switch to the
   // browse tab.
   useEffect(() => {
-    if (relation && views) {
-      if (views.includes(relation) && tab == 'insert') {
-        setTab('browse')
-      }
+    if (relation && views && views.includes(relation) && tab == 'insert') {
+      setTab('browse')
     }
   }, [setTab, relation, views, tab])
 
@@ -231,7 +229,7 @@ const IntrospectInputOutput = () => {
     relation && tables && views && !(tables.includes(relation) || views.includes(relation)) && (
       <Alert severity='error'>
         <AlertTitle>Relation not found</AlertTitle>
-        Specified unknown table or view: {relation}
+        Unknown table or view: {relation}
       </Alert>
     )
   )
