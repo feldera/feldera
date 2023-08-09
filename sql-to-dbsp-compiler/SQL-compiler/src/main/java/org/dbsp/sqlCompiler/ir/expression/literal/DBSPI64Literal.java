@@ -57,7 +57,7 @@ public class DBSPI64Literal extends DBSPIntLiteral {
     }
 
     public DBSPI64Literal(CalciteObject node, @Nullable Long value, boolean nullable) {
-        this(node, new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false).setMayBeNull(nullable), value);
+        this(node, new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true, nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

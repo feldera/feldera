@@ -37,6 +37,10 @@ public class DBSPTypeAny extends DBSPType {
         super(CalciteObject.EMPTY, DBSPTypeCode.ANY, false);
     }
 
+    public static DBSPTypeAny getDefault() {
+        return new DBSPTypeAny();
+    }
+
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         return this;

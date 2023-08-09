@@ -45,7 +45,7 @@ public class DBSPIntervalMillisLiteral extends DBSPLiteral {
     }
 
     public DBSPIntervalMillisLiteral(long value, boolean mayBeNull) {
-        this(CalciteObject.EMPTY, ((DBSPType) new DBSPTypeMillisInterval(CalciteObject.EMPTY, false)).setMayBeNull(mayBeNull), value);
+        this(CalciteObject.EMPTY, new DBSPTypeMillisInterval(CalciteObject.EMPTY, mayBeNull), value);
     }
 
     @Override

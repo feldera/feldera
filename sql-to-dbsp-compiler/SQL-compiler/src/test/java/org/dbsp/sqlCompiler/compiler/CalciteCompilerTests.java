@@ -26,8 +26,8 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.parser.SqlParseException;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.junit.Assert;
@@ -64,6 +64,31 @@ public class CalciteCompilerTests {
         Assert.assertNotNull(node);
         node = calcite.parse(ddl1);
         Assert.assertNotNull(node);
+    }
+
+    @Test
+    public void createTypeTest() throws SqlParseException {
+        CalciteCompiler calcite = this.getCompiler();
+        String ddl = "CREATE TYPE address_typ AS (\n" +
+                "   street          VARCHAR(30),\n" +
+                "   city            VARCHAR(30),\n" +
+                "   state           CHAR(2),\n" +
+                "   postal_code     VARCHAR(6))";
+        SqlNode node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
+    public void latenessTest() throws SqlParseException {
+        CalciteCompiler calcite = this.getCompiler();
+        String ddl = "CREATE TABLE st(\n" +
+                "   ts       TIMESTAMP LATENESS INTERVAL '5:00' HOURS TO MINUTES,\n" +
+                "   name     VARCHAR)";
+        SqlNode node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+        Assert.assertTrue(node instanceof SqlCreateTable);
+        SqlCreateTable create = (SqlCreateTable) node;
+        Assert.assertNotNull(create.columnList);
     }
 
     @Test

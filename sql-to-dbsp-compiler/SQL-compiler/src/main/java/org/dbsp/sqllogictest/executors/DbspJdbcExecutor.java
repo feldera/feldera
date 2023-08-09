@@ -97,15 +97,16 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                     nullable = false;
                 switch (columnType) {
                     case INTEGER:
-                        colTypes[i1] = new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false).setMayBeNull(nullable);
+                        colTypes[i1] = new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true, nullable);
                         break;
                     case REAL:
                     case DOUBLE:
-                        colTypes[i1] = new DBSPTypeDouble(CalciteObject.EMPTY,false).setMayBeNull(nullable);
+                        colTypes[i1] = new DBSPTypeDouble(CalciteObject.EMPTY, nullable);
                         break;
                     case VARCHAR:
                     case LONGVARCHAR:
-                        colTypes[i1] = new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false).setMayBeNull(nullable);
+                        colTypes[i1] = new DBSPTypeString(
+                                CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, nullable);
                         break;
                     default:
                         throw new RuntimeException("Unexpected column type " + columnType);
@@ -119,7 +120,8 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                     if (type.is(DBSPTypeInteger.class)) {
                         int value = rs.getInt(i + 1);
                         if (rs.wasNull())
-                            exp = DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true));
+                            exp = DBSPLiteral.none(
+                                    new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true));
                         else
                             exp = new DBSPI32Literal(value, type.mayBeNull);
                     } else if (type.is(DBSPTypeDouble.class)) {
@@ -131,7 +133,8 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                     } else {
                         String s = rs.getString(i + 1);
                         if (s == null)
-                            exp = DBSPLiteral.none(new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false).setMayBeNull(true));
+                            exp = DBSPLiteral.none(new DBSPTypeString(
+                                    CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, true));
                         else
                             exp = new DBSPStringLiteral(s, StandardCharsets.UTF_8, type.mayBeNull);
                     }

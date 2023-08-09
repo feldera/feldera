@@ -36,6 +36,10 @@ void ExtendedTableElement(List<SqlNode> list) :
     final SqlNodeList columnList;
     final Span s = Span.of();
     final ColumnStrategy strategy;
+    boolean primaryKey = false;
+    SqlIdentifier foreignKeyTable = null;
+    SqlIdentifier foreignKeyColumn = null;
+    SqlNode lateness = null;
 }
 {
     LOOKAHEAD(2) id = SimpleIdentifier()
@@ -43,17 +47,21 @@ void ExtendedTableElement(List<SqlNode> list) :
         type = DataType()
         nullable = NullableOptDefaultTrue()
         (
-            <PRIMARY> <KEY> /* ignored, but accepted */ {}
+            <PRIMARY> <KEY> { primaryKey = true; }
         |
-            <FOREIGN> <KEY> <REFERENCES> SimpleIdentifier() <LPAREN> SimpleIdentifier() <RPAREN> /* ignored */ {}
+            <FOREIGN> <KEY> <REFERENCES> foreignKeyTable = SimpleIdentifier()
+            <LPAREN> foreignKeyColumn = SimpleIdentifier() <RPAREN>
+        |
+            <LATENESS> lateness = Expression(ExprContext.ACCEPT_NON_QUERY)
         |
             /* empty */ {}
         )
         {
             strategy = nullable ? ColumnStrategy.NULLABLE : ColumnStrategy.NOT_NULLABLE;
             list.add(
-                SqlDdlNodes.column(s.add(id).end(this), id,
-                    type.withNullable(nullable), null, strategy));
+                new SqlExtendedColumnDeclaration(s.add(id).end(this), id,
+                    type.withNullable(nullable), null, strategy, foreignKeyTable, foreignKeyColumn,
+                    primaryKey, lateness));
         }
     |
         { list.add(id); }
@@ -64,11 +72,6 @@ void ExtendedTableElement(List<SqlNode> list) :
     }
 |
     (
-        <UNIQUE> { s.add(this); }
-        columnList = ParenthesizedSimpleIdentifierList() {
-            list.add(SqlDdlNodes.unique(s.end(columnList), name, columnList));
-        }
-    |
         <PRIMARY>  { s.add(this); } <KEY>
         columnList = ParenthesizedSimpleIdentifierList() {
             list.add(SqlDdlNodes.primary(s.end(columnList), name, columnList));

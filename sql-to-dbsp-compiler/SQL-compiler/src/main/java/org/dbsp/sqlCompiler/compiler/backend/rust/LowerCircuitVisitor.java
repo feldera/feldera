@@ -80,13 +80,13 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         // }
         DBSPClosureExpression toTuple = new DBSPTupleExpression(resultColumns, false)
                 .closure(elem.asParameter());
-        DBSPExpression iter = new DBSPApplyMethodExpression(flatmap.getNode(), "into_iter", new DBSPTypeAny(),
+        DBSPExpression iter = new DBSPApplyMethodExpression(flatmap.getNode(), "into_iter", DBSPTypeAny.getDefault(),
                 rowVar.field(flatmap.collectionFieldIndex).applyCloneIfNeeded());
         if (flatmap.indexType != null) {
-            iter = new DBSPApplyMethodExpression(flatmap.getNode(), "enumerate", new DBSPTypeAny(), iter);
+            iter = new DBSPApplyMethodExpression(flatmap.getNode(), "enumerate", DBSPTypeAny.getDefault(), iter);
         }
         DBSPExpression function = new DBSPApplyMethodExpression(flatmap.getNode(),
-                "map", new DBSPTypeAny(),
+                "map", DBSPTypeAny.getDefault(),
                 iter, toTuple);
         DBSPExpression block = new DBSPBlockExpression(clones, function);
         return block.closure(rowVar.asRefParameter());

@@ -41,6 +41,7 @@ import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.rules.*;
 import org.apache.calcite.rel.type.*;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.*;
 import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
@@ -64,6 +65,7 @@ import org.apache.calcite.sql2rel.StandardConvertletTable;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.Pair;
 import org.dbsp.generated.parser.DbspParserImpl;
+import org.dbsp.sqlCompiler.circuit.ForeignKeyReference;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -551,7 +553,7 @@ public class CalciteCompiler implements IWritesLogs {
         return rel;
     }
 
-    RelDataType convertType(SqlDataTypeSpec spec) {
+    public RelDataType convertType(SqlDataTypeSpec spec) {
         SqlTypeNameSpec type = spec.getTypeNameSpec();
         RelDataType result = type.deriveType(this.validator);
         if (Objects.requireNonNull(spec.getNullable()))
@@ -559,30 +561,49 @@ public class CalciteCompiler implements IWritesLogs {
         return result;
     }
 
-    List<RelDataTypeField> getColumnTypes(SqlNodeList list) {
-        List<RelDataTypeField> result = new ArrayList<>();
+    List<RelColumnMetadata> createColumnsMetadata(SqlNodeList list) {
+        List<RelColumnMetadata> result = new ArrayList<>();
         int index = 0;
         for (SqlNode col: Objects.requireNonNull(list)) {
-            if (col.getKind().equals(SqlKind.COLUMN_DECL)) {
-                SqlColumnDeclaration cd = (SqlColumnDeclaration)col;
-                RelDataType type = this.convertType(cd.dataType);
-                String name = Catalog.identifierToString(cd.name);
-                RelDataTypeField field = new RelDataTypeFieldImpl(name, index++, type);
-                result.add(field);
-                continue;
+            SqlIdentifier name;
+            SqlDataTypeSpec typeSpec;
+            boolean isPrimaryKey = false;
+            RexNode lateness = null;
+            ForeignKeyReference fks = null;
+            if (col instanceof SqlColumnDeclaration) {
+                SqlColumnDeclaration cd = (SqlColumnDeclaration) col;
+                name = cd.name;
+                typeSpec = cd.dataType;
+            } else if (col instanceof SqlExtendedColumnDeclaration) {
+                SqlExtendedColumnDeclaration cd = (SqlExtendedColumnDeclaration) col;
+                name = cd.name;
+                typeSpec = cd.dataType;
+                isPrimaryKey = cd.primaryKey;
+                if (cd.lateness != null)
+                    lateness = this.converter.convertExpression(cd.lateness);
+                if (cd.foreignKeyTable != null && cd.foreignKeyColumn != null)
+                    fks = new ForeignKeyReference(cd.foreignKeyTable.getSimple(), cd.foreignKeyColumn.getSimple());
+            } else {
+                throw new UnimplementedException(new CalciteObject(col));
             }
-            throw new UnimplementedException(new CalciteObject(col));
+            RelDataType type = this.convertType(typeSpec);
+            RelDataTypeField field = new RelDataTypeFieldImpl(
+                    Catalog.identifierToString(name), index++, type);
+            RelColumnMetadata meta = new RelColumnMetadata(field, isPrimaryKey, lateness, fks);
+            result.add(meta);
         }
         return result;
     }
 
-    public List<RelDataTypeField> getColumnTypes(RelRoot relRoot) {
-        List<RelDataTypeField> columns = new ArrayList<>();
+    public List<RelColumnMetadata> createColumnsMetadata(RelRoot relRoot) {
+        List<RelColumnMetadata> columns = new ArrayList<>();
         RelDataType rowType = relRoot.rel.getRowType();
-        for (Pair<Integer, String> field : relRoot.fields) {
-            String name = field.right;
-            RelDataTypeField f = rowType.getField(name, false, false);
-            columns.add(f);
+        for (Pair<Integer, String> fieldPairs : relRoot.fields) {
+            String name = fieldPairs.right;
+            RelDataTypeField field = rowType.getField(name, false, false);
+            RelColumnMetadata meta = new RelColumnMetadata(
+                    Objects.requireNonNull(field), false, null, null);
+            columns.add(meta);
         }
         return columns;
     }
@@ -613,9 +634,9 @@ public class CalciteCompiler implements IWritesLogs {
                 if (ct.ifNotExists)
                     throw new UnsupportedException("IF NOT EXISTS not supported", object);
                 String tableName = Catalog.identifierToString(ct.name);
-                List<RelDataTypeField> cols;
+                List<RelColumnMetadata> cols;
                 if (ct.columnList != null) {
-                    cols = this.getColumnTypes(Objects.requireNonNull(ct.columnList));
+                    cols = this.createColumnsMetadata(Objects.requireNonNull(ct.columnList));
                 } else {
                     if (ct.query == null)
                         throw new UnsupportedException("CREATE TABLE cannot contain a query",
@@ -624,7 +645,7 @@ public class CalciteCompiler implements IWritesLogs {
                             .append(ct.query.toString())
                             .newline();
                     RelRoot relRoot = this.converter.convertQuery(ct.query, true, true);
-                    cols = this.getColumnTypes(relRoot);
+                    cols = this.createColumnsMetadata(relRoot);
                 }
                 CreateTableStatement table = new CreateTableStatement(node, sqlStatement, tableName, comment, cols);
                 this.catalog.addTable(tableName, table.getEmulatedTable());
@@ -646,7 +667,7 @@ public class CalciteCompiler implements IWritesLogs {
                         .append(Objects.requireNonNull(query).toString())
                         .newline();
                 RelRoot relRoot = this.converter.convertQuery(query, true, true);
-                List<RelDataTypeField> columns = this.getColumnTypes(relRoot);
+                List<RelColumnMetadata> columns = this.createColumnsMetadata(relRoot);
                 RelNode optimized = this.optimize(relRoot.rel);
                 relRoot = relRoot.withRel(optimized);
                 String viewName = Catalog.identifierToString(cv.name);

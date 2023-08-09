@@ -33,12 +33,12 @@ import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.rel.externalize.RelJson;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
-import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.schema.ScannableTable;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.util.JsonBuilder;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
@@ -56,11 +56,11 @@ import java.util.List;
  */
 public abstract class CreateRelationStatement extends FrontEndStatement {
     public final String tableName;
-    public final List<RelDataTypeField> columns;
+    public final List<RelColumnMetadata> columns;
 
     protected CreateRelationStatement(SqlNode node, String statement,
                                       String tableName, @Nullable String comment,
-                                      List<RelDataTypeField> columns) {
+                                      List<RelColumnMetadata> columns) {
         super(node, statement, comment);
         this.tableName = tableName;
         this.columns = columns;
@@ -76,8 +76,8 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         @Override
         public RelDataType getRowType(RelDataTypeFactory typeFactory) {
             RelDataTypeFactory.Builder builder = typeFactory.builder();
-            for (RelDataTypeField ci: CreateRelationStatement.this.columns)
-                builder.add(ci);
+            for (RelColumnMetadata meta: CreateRelationStatement.this.columns)
+                builder.add(meta.field);
             return builder.build();
         }
 
@@ -102,17 +102,12 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
     }
 
     public DBSPTypeTuple getRowTypeAsTuple(TypeCompiler compiler) {
-        List<DBSPType> fields = new ArrayList<>();
-        for (RelDataTypeField col: this.columns) {
-            DBSPType fType = compiler.convertType(col.getType(), true);
-            fields.add(fType);
-        }
-        return new DBSPTypeTuple(fields);
+        return this.getRowTypeAsStruct(compiler).toTuple();
     }
 
     public DBSPTypeStruct getRowTypeAsStruct(TypeCompiler compiler) {
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
-        for (RelDataTypeField col: this.columns) {
+        for (RelColumnMetadata col: this.columns) {
             DBSPType fType = compiler.convertType(col.getType(), true);
             fields.add(new DBSPTypeStruct.Field(this.getCalciteObject(), col.getName(), col.getName(), fType));
         }
@@ -132,7 +127,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         ObjectNode result = mapper.createObjectNode();
         result.put("name", this.tableName);
         ArrayNode fields = result.putArray("fields");
-        for (RelDataTypeField col: this.columns) {
+        for (RelColumnMetadata col: this.columns) {
             ObjectNode column = fields.addObject();
             column.put("name", col.getName());
             Object object = RelJson.create().withJsonBuilder(new JsonBuilder())

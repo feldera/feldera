@@ -54,7 +54,7 @@ public class DBSPTimestampLiteral extends DBSPLiteral {
     }
 
     public DBSPTimestampLiteral(String string, boolean mayBeNull) {
-        this(CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, false).setMayBeNull(mayBeNull), createTimestampString(string));
+        this(CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, mayBeNull), createTimestampString(string));
     }
 
     static TimestampString createTimestampString(String timestamp) {
