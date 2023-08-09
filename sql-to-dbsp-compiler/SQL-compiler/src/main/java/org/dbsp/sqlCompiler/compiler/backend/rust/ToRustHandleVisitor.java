@@ -95,12 +95,45 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 .newline();
     }
 
+    private void generateRenameMacro(String tableName, DBSPTypeStruct type) {
+        this.builder.append("deserialize_table_record!(");
+        this.builder.append(type.sanitizedName)
+                .append("[")
+                .append(Utilities.doubleQuote(tableName))
+                .append(", ")
+                .append(type.fields.size())
+                .append("] {")
+                .increase();
+        boolean first = true;
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            if (!first)
+                this.builder.append(",").newline();
+            first = false;
+            this.builder.append("(")
+                    .append(field.sanitizedName)
+                    .append(", ")
+                    .append(Utilities.doubleQuote(field.name))
+                    .append(", ")
+                    .append(field.sanitizedName.equals(field.name) ? "false" : "true")
+                    .append(", ");
+            field.type.accept(this.innerVisitor);
+            this.builder.append(", ")
+                    .append(field.type.mayBeNull ? "Some(None)" : "None")
+                    .append(")");
+        }
+        this.builder.newline()
+                .decrease()
+                .append("});")
+                .newline();
+    }
+
     @Override
     public VisitDecision preorder(DBSPSourceOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
         DBSPStructItem item = new DBSPStructItem(type);
         item.accept(this.innerVisitor);
         this.generateFromTrait(type);
+        this.generateRenameMacro(operator.outputName, type);
 
         this.writeComments(operator)
                 .append("let (")
@@ -123,6 +156,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         DBSPStructItem item = new DBSPStructItem(type);
         item.accept(this.innerVisitor);
         this.generateFromTrait(type);
+        this.generateRenameMacro(operator.outputName, type);
         return VisitDecision.STOP;
     }
 

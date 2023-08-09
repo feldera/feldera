@@ -121,7 +121,7 @@ public class RustFileWriter implements ICompilerComponent {
             "    DBSPHandle,\n" +
             "    Runtime,\n" +
             "};\n" +
-            "use dbsp_adapters::Catalog;\n" +
+            "use dbsp_adapters::{deserialize_table_record, Catalog};\n" +
             "use size_of::*;\n" +
             "use ::serde::{Deserialize,Serialize};\n" +
             "use compare::{Compare, Extract};\n" +
