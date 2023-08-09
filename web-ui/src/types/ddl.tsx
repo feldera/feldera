@@ -64,8 +64,8 @@ export function getValueFormatter(columntype: ColumnType): (value: any, params?:
     })
 }
 
-// Generate a parser function for a field that converts a value something that
-// is close to the original value but also acceptable for the SQL type.
+// Generate a parser function for a field that converts a value to something
+// that is close to the original value but also acceptable for the SQL type.
 export function getValueParser(columntype: ColumnType): (value: any) => any {
   return match(columntype)
     .with({ type: 'VARCHAR', precision: P.when(value => value !== null && value >= 0) }, () => {
@@ -111,8 +111,7 @@ export function getValueParser(columntype: ColumnType): (value: any) => any {
         if (isFloat) {
           const parts = value_str.split('.')
           assert(parts.length == 1 || parts.length == 2, 'Ensured by isFloat check')
-          // It's not clear what's best here, cutting the most significant
-          // digits or least significant digits...
+          // Cutting the least significant digits to fit the precision.
           const first = parts[0].split('').reverse().slice(0, precision).reverse().join('')
           if (parts.length == 1 || scale === 0) {
             return first

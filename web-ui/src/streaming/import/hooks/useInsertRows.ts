@@ -16,7 +16,7 @@ export interface TableInsert {
 // We convert fields to a tuple so that we can use it as a line in the CSV we're
 // sending to the server.
 export function rowToCsvLine(relation: Relation, obj: Row): any[] {
-  const tuple: any[] = []
+  const tuple: any[] = new Array(relation.fields.length)
   relation.fields.map((col: Field, i: number) => {
     tuple[i] = getValueFormatter(col.columntype)(obj.record[col.name])
   })

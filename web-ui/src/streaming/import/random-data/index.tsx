@@ -99,7 +99,7 @@ export const RngFieldSettings = (props: {
     [updateSchema, field, clearErrors, setSettings, defaultValues]
   )
 
-  // Defined a callback to validate the form.
+  // Define a callback to validate the form.
   //
   // We use our own validation callback to update the example.
   //

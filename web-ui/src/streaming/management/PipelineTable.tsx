@@ -108,9 +108,6 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   ])
   useEffect(() => {
     if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
-      console.log(getConnectorData(pipelineRevisionQuery.data, 'input'))
-      console.log(getConnectorData(pipelineRevisionQuery.data, 'output'))
-
       setInputs(getConnectorData(pipelineRevisionQuery.data, 'input'))
       setOutputs(getConnectorData(pipelineRevisionQuery.data, 'output'))
     }

@@ -19,8 +19,30 @@ import { ColumnType, Field, Relation } from 'src/types/manager'
 import { FieldNames, RngFieldSettings } from './random-data'
 import { StoreSettingsFn } from './ImportToolbar'
 
+const RNG_SUPPORTED_TYPES = [
+  'BOOLEAN',
+  'TINYINT',
+  'SMALLINT',
+  'INTEGER',
+  'BIGINT',
+  'VARCHAR',
+  'CHAR',
+  'DOUBLE',
+  'FLOAT',
+  'DECIMAL',
+  'TIME',
+  'DATE',
+  'TIMESTAMP',
+  'ARRAY'
+]
+
 // The state for a RNG method stored in local storage.
 export interface StoredFieldSettings {
+  // The RNG method that we store in local storage. This is supposed to matche
+  // with one of the "title" fields in the `generators.ts`
+  //
+  // Of course the value can't be trusted since it is stored in local storage so
+  // fallback to default method needs to be implemented.
   method: string
   config: Partial<Record<FieldNames, any>>
 }
@@ -81,22 +103,7 @@ const FieldRngSettings = (props: {
         </Box>
       </Grid>
 
-      {[
-        'BOOLEAN',
-        'TINYINT',
-        'SMALLINT',
-        'INTEGER',
-        'BIGINT',
-        'VARCHAR',
-        'CHAR',
-        'DOUBLE',
-        'FLOAT',
-        'DECIMAL',
-        'TIME',
-        'DATE',
-        'TIMESTAMP',
-        'ARRAY'
-      ].includes(field.columntype.type) && (
+      {RNG_SUPPORTED_TYPES.includes(field.columntype.type) && (
         <RngFieldSettings field={field} fieldSettings={fieldSettings} setSettings={setSettings} />
       )}
     </>
