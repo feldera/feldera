@@ -24,10 +24,10 @@ DEFAULT_BIND_ADDRESS="127.0.0.1"
 BIND_ADDRESS="${2:-$DEFAULT_BIND_ADDRESS}"
 
 # Kill manager. pkill doesn't handle process names >15 characters.
-pkill dbsp_pipeline_
+pkill pipeline-manag
 
 # Wait for manager process to exit.
-while ps -p $(pgrep dbsp_pipeline_) > /dev/null; do sleep 1; done
+while ps -p $(pgrep pipeline-manag) > /dev/null; do sleep 1; done
 
 set -ex
 
