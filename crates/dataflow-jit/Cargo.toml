@@ -22,6 +22,7 @@ required-features = ["binary"]
 csv = "1.2.2"
 libm = "0.2.6"
 paste = "1.0.9"
+defile = "0.2.1"
 anyhow = "1.0.57"
 lexical = "6.1.1"
 size-of = "0.1.4"
