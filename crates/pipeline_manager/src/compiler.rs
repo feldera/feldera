@@ -427,6 +427,13 @@ impl Compiler {
                                     {
                                         if !is_used {
                                             warn!("About to remove binary file '{:?}' that is no longer in use by any program", path.file_name());
+                                            db.lock()
+                                                .await
+                                                .delete_compiled_binary_ref(
+                                                    program_uuid,
+                                                    program_version,
+                                                )
+                                                .await?;
                                             let r = fs::remove_file(path.path()).await;
                                             if let Err(e) = r {
                                                 error!(
@@ -532,6 +539,10 @@ impl Compiler {
             {
                 let path = config.versioned_executable(program.program_id, program.version);
                 info!("File {:?} exists, but the program status is CompilingRust. Removing the file to start compilaiton again.", path.file_name());
+                db.lock()
+                    .await
+                    .delete_compiled_binary_ref(program.program_id, program.version)
+                    .await?;
                 let r = fs::remove_file(path.clone()).await;
                 if let Err(e) = r {
                     error!(

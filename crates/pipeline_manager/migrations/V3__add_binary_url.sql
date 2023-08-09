@@ -5,7 +5,9 @@
 CREATE TABLE compiled_binary (
     program_id uuid NOT NULL,
     version bigint NOT NULL,
-    url varchar NOT NULL
+    url varchar NOT NULL,
+    PRIMARY KEY (program_id, version),
+    FOREIGN KEY (program_id) REFERENCES program(id) ON DELETE CASCADE
 );
 
 -- A trigger function used to issue notify commands
@@ -38,7 +40,7 @@ FOR EACH ROW EXECUTE PROCEDURE notification();
 -- INSERT and DELETE notifications always happen alongside pipeline
 -- INSERTs AND DELETEs, so we only need to set up an additional trigger
 -- for UPDATE events.
-CREATE TRIGGER pipeline_notify
+CREATE TRIGGER pipeline_runtime_state_notify
 AFTER UPDATE ON pipeline_runtime_state
 FOR EACH ROW EXECUTE PROCEDURE notification();
 

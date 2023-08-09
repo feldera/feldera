@@ -84,10 +84,15 @@ pub(crate) trait Storage {
             .get_program_guarded(tenant_id, program_id, expected_version)
             .await?;
 
-        // Do nothing if the program is already pending (we don't want to bump its
-        // `status_since` field, which would move it to the end of the queue) or
-        // if compilation is alread in progress.
-        if descr.status == ProgramStatus::Pending || descr.status.is_compiling() {
+        // Do nothing if the program:
+        // * is already pending (we don't want to bump its `status_since` field, which would move
+        //   it to the end of the queue),
+        // * if compilation is already in progress,
+        // * or if the program has already been compiled
+        if descr.status == ProgramStatus::Pending
+            || descr.status.is_compiling()
+            || descr.status == ProgramStatus::Success
+        {
             return Ok(());
         }
 
@@ -415,5 +420,12 @@ pub(crate) trait Storage {
         &self,
         program_id: ProgramId,
         version: Version,
-    ) -> Result<String, DBError>;
+    ) -> Result<Option<String>, DBError>;
+
+    /// Retrieve a compiled binary's URL
+    async fn delete_compiled_binary_ref(
+        &self,
+        program_id: ProgramId,
+        version: Version,
+    ) -> Result<(), DBError>;
 }

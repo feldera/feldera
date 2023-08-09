@@ -2108,15 +2108,30 @@ impl Storage for ProjectDB {
         &self,
         program_id: ProgramId,
         version: Version,
-    ) -> Result<String, DBError> {
+    ) -> Result<Option<String>, DBError> {
         let conn = self.pool.get().await?;
         let res = conn
-            .query_one(
+            .query_opt(
                 "SELECT url FROM compiled_binary WHERE program_id = $1 AND version = $2",
                 &[&program_id.0, &version.0],
             )
             .await?;
-        Ok(res.get(0))
+        Ok(res.map(|e| e.get(0)))
+    }
+
+    async fn delete_compiled_binary_ref(
+        &self,
+        program_id: ProgramId,
+        version: Version,
+    ) -> Result<(), DBError> {
+        let conn = self.pool.get().await?;
+        let _res = conn
+            .execute(
+                "DELETE FROM compiled_binary WHERE program_id = $1 AND version = $2",
+                &[&program_id.0, &version.0],
+            )
+            .await?;
+        Ok(())
     }
 }
 

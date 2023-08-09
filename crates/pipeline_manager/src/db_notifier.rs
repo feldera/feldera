@@ -64,7 +64,7 @@ pub(crate) async fn listen(
             trace!("Waiting for notification");
             match stream.next().await {
                 Some(Ok(msg)) => {
-                    debug!("Reconciler received an AsyncMessage: {:?}", msg);
+                    trace!("Reconciler received an AsyncMessage: {:?}", msg);
                     match msg {
                         AsyncMessage::Notification(n) => {
                             match parse_notification(n.channel(), n.payload()) {
