@@ -37,6 +37,7 @@ import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -397,15 +398,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
         @Nullable
         DBSPOperator source = this.circuit.getOperator(tableName);
         if (source != null) {
-            if (source.is(DBSPSinkOperator.class))
+            if (source.is(DBSPSinkOperator.class)) {
                 // We do this because sink operators do not have outputs.
                 // A table scan for a sink operator can appear because of
                 // a VIEW that is an input to a query.
                 Utilities.putNew(this.nodeOperator, scan, source.to(DBSPSinkOperator.class).input());
-            else
+            } else {
                 // Multiple queries can share an input.
                 // Or the input may have been created by a CREATE TABLE statement.
                 Utilities.putNew(this.nodeOperator, scan, source);
+            }
             return;
         }
 
@@ -420,8 +422,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         DBSPType rowType = this.convertType(scan.getRowType(), false);
         DBSPTypeStruct originalType = this.convertType(scan.getRowType(), true).to(DBSPTypeStruct.class);
+        List<InputColumnMetadata> metadata = new ArrayList<>();
+        for (DBSPTypeStruct.Field field: originalType.fields.values()) {
+            InputColumnMetadata meta = new InputColumnMetadata(
+                    field.name, field.type, false, null, null);
+            metadata.add(meta);
+        }
         DBSPSourceOperator result = new DBSPSourceOperator(
-                node, CalciteObject.EMPTY, this.makeZSet(rowType), originalType, comment, tableName);
+                node, CalciteObject.EMPTY, this.makeZSet(rowType), originalType, comment, metadata, tableName);
         this.assignOperator(scan, result);
     }
 
@@ -1094,6 +1102,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
             throw new UnimplementedException(new CalciteObject(node));
     }
 
+    InputColumnMetadata convertMetadata(RelColumnMetadata metadata) {
+        DBSPType type = this.convertType(metadata.getType(), false);
+        ExpressionCompiler expressionCompiler = new ExpressionCompiler(null, this.compiler);
+        DBSPExpression lateness = null;
+        if (metadata.lateness != null)
+            lateness = expressionCompiler.compile(metadata.lateness);
+        return new InputColumnMetadata(metadata.getName(), type,
+                metadata.isPrimaryKey, lateness, metadata.foreignKeyReference);
+    }
+
     @SuppressWarnings("UnusedReturnValue")
     @Nullable
     public DBSPNode compile(FrontEndStatement statement) {
@@ -1140,9 +1158,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     SqlCreateTable sct = (SqlCreateTable)create.node;
                     identifier = new CalciteObject(sct.name);
                 }
+                List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
                 DBSPSourceOperator result = new DBSPSourceOperator(
                         create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
-                        def.statement, tableName);
+                        def.statement, metadata, tableName);
                 this.circuit.addOperator(result);
             }
             return null;

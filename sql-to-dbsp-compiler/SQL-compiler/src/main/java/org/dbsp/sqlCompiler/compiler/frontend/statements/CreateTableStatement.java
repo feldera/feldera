@@ -23,8 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
-import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -35,7 +35,7 @@ import java.util.List;
 public class CreateTableStatement extends CreateRelationStatement {
     public CreateTableStatement(SqlNode node, String statement,
                                 String tableName, @Nullable String comment,
-                                List<RelDataTypeField> columns) {
+                                List<RelColumnMetadata> columns) {
         super(node, statement, tableName, comment, columns);
     }
 }

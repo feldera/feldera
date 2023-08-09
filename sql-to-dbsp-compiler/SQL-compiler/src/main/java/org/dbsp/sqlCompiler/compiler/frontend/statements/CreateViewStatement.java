@@ -25,8 +25,8 @@ package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
-import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -44,7 +44,7 @@ public class CreateViewStatement extends CreateRelationStatement {
 
     public CreateViewStatement(SqlNode node, String statement,
                                String tableName, @Nullable String comment,
-                               List<RelDataTypeField> columns, SqlNode query,
+                               List<RelColumnMetadata> columns, SqlNode query,
                                RelRoot compiled) {
         super(node, statement, tableName, comment, columns);
         this.query = query;

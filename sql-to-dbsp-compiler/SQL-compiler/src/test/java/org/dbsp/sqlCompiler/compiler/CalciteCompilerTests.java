@@ -26,6 +26,7 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
@@ -85,6 +86,9 @@ public class CalciteCompilerTests {
                 "   name     VARCHAR)";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
+        Assert.assertTrue(node instanceof SqlCreateTable);
+        SqlCreateTable create = (SqlCreateTable) node;
+        Assert.assertNotNull(create.columnList);
     }
 
     @Test

@@ -202,11 +202,6 @@ public class Utilities {
         }
     }
 
-    public static void compileAndTestJit(String directory, File jsonFile) throws IOException, InterruptedException {
-        runProcess(directory, "cargo", "run", "-p", "dataflow-jit",
-                "--bin", "dataflow-jit", "--features", "binary", "--", "validate", jsonFile.getAbsolutePath());
-    }
-
     public static <T> T last(List<T> data) {
         if (data.isEmpty())
             throw new RuntimeException("Data is empty");

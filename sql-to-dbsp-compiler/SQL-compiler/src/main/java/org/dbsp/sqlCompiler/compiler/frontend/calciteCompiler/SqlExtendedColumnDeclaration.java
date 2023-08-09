@@ -54,23 +54,23 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
     }
 
     @Override public List<SqlNode> getOperandList() {
-        return ImmutableList.of(name, dataType);
+        return ImmutableList.of(this.name, this.dataType);
     }
 
     @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
-        name.unparse(writer, 0, 0);
-        dataType.unparse(writer, 0, 0);
+        this.name.unparse(writer, 0, 0);
+        this.dataType.unparse(writer, 0, 0);
         if (Boolean.FALSE.equals(dataType.getNullable())) {
             writer.keyword("NOT NULL");
         }
         SqlNode expression = this.expression;
         if (expression != null) {
-            switch (strategy) {
+            switch (this.strategy) {
                 case VIRTUAL:
                 case STORED:
                     writer.keyword("AS");
                     exp(writer, expression);
-                    writer.keyword(strategy.name());
+                    writer.keyword(this.strategy.name());
                     break;
                 case DEFAULT:
                     writer.keyword("DEFAULT");
@@ -80,9 +80,22 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
                     throw new AssertionError("unexpected: " + strategy);
             }
         }
+        if (this.primaryKey) {
+            writer.keyword("PRIMARY");
+            writer.keyword("KEY");
+        }
+        if (this.foreignKeyTable != null && this.foreignKeyColumn != null) {
+            writer.keyword("FOREIGN");
+            writer.keyword("KEY");
+            writer.keyword("REFERENCES");
+            this.foreignKeyTable.unparse(writer, 0, 0);
+            SqlWriter.Frame frame = writer.startList("(", ")");
+            this.foreignKeyColumn.unparse(writer, 0, 0);
+            writer.endList(frame);
+        }
         if (this.lateness != null) {
             writer.keyword("LATENESS");
-            exp(writer, this.lateness);
+            this.lateness.unparse(writer, 0, 0);
         }
     }
 

@@ -490,8 +490,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
     public void taxiTest() {
         String ddl = "CREATE TABLE green_tripdata\n" +
                 "(\n" +
-                "        lpep_pickup_datetime TIMESTAMP NOT NULL,\n" +
-                "        lpep_dropoff_datetime TIMESTAMP NOT NULL,\n" +
+                "        lpep_pickup_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,\n" +
+                "        lpep_dropoff_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,\n" +
                 "        pickup_location_id BIGINT NOT NULL,\n" +
                 "        dropoff_location_id BIGINT NOT NULL,\n" +
                 "        trip_distance DOUBLE PRECISION,\n" +

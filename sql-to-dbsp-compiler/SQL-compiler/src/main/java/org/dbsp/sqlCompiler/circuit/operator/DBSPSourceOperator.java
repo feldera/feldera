@@ -40,6 +40,9 @@ public class DBSPSourceOperator extends DBSPOperator {
      */
     public final DBSPTypeStruct originalRowType;
     public final CalciteObject sourceName;
+    // Note: the metadata is not transformed after being set.
+    // In particular, types are not rewritten.
+    public final List<InputColumnMetadata> metadata;
 
     /**
      * Create a DBSP operator that is a source to the dataflow graph.
@@ -52,10 +55,12 @@ public class DBSPSourceOperator extends DBSPOperator {
      */
     public DBSPSourceOperator(
             CalciteObject node, CalciteObject sourceName,
-            DBSPType outputType, DBSPTypeStruct originalRowType, @Nullable String comment, String name) {
+            DBSPType outputType, DBSPTypeStruct originalRowType, @Nullable String comment,
+            List<InputColumnMetadata> metadata, String name) {
         super(node, "", null, outputType, false, comment, name);
         this.originalRowType = originalRowType;
         this.sourceName = sourceName;
+        this.metadata = metadata;
     }
 
     @Override
@@ -74,7 +79,7 @@ public class DBSPSourceOperator extends DBSPOperator {
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return new DBSPSourceOperator(this.getNode(), this.sourceName, outputType, this.originalRowType,
-                this.comment, this.outputName);
+                this.comment, this.metadata, this.outputName);
     }
 
     @Override
@@ -82,7 +87,7 @@ public class DBSPSourceOperator extends DBSPOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSourceOperator(
                     this.getNode(), this.sourceName, this.outputType, this.originalRowType,
-                    this.comment, this.outputName);
+                    this.comment, this.metadata, this.outputName);
         return this;
     }
 
