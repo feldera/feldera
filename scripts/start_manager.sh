@@ -43,8 +43,9 @@ fi
 cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build $RUST_BUILD_PROFILE $PG_EMBED
 cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --bin pipeline-manager $RUST_BUILD_PROFILE $PG_EMBED -- \
     --bind-address="${BIND_ADDRESS}" \
-    --manager-working-directory="${WORKING_DIR_ABS}" \
+    --api-server-working-directory="${WORKING_DIR_ABS}" \
     --compiler-working-directory="${WORKING_DIR_ABS}" \
+    --runner-working-directory="${WORKING_DIR_ABS}" \
     --sql-compiler-home="${SQL_COMPILER_DIR}" \
     --dbsp-override-path="${ROOT_DIR}" \
     --unix-daemon \

@@ -584,7 +584,7 @@ mod test {
     use crate::{
         api::ServerState,
         auth::{self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim, Provider},
-        config::ManagerConfig,
+        config::ApiServerConfig,
         db::{storage::Storage, ApiPermission},
     };
 
@@ -651,11 +651,11 @@ mod test {
         let closure = move |req, bearer_auth| auth::auth_validator(req, bearer_auth);
         let auth_middleware = HttpAuthentication::with_fn(closure);
 
-        let manager_config = ManagerConfig {
+        let manager_config = ApiServerConfig {
             port: 0,
             bind_address: "0.0.0.0".to_owned(),
             logfile: None,
-            manager_working_directory: "".to_owned(),
+            api_server_working_directory: "".to_owned(),
             unix_daemon: false,
             use_auth: true,
             dev_mode: false,

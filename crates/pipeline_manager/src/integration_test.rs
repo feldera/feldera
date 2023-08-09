@@ -13,7 +13,7 @@ use tokio::{sync::OnceCell, time::sleep};
 
 use crate::{
     compiler::Compiler,
-    config::{CompilerConfig, DatabaseConfig, LocalRunnerConfig, ManagerConfig},
+    config::{ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig},
     db::{Pipeline, PipelineStatus},
 };
 use std::sync::Arc;
@@ -51,11 +51,11 @@ async fn initialize_local_dbsp_instance() -> TempDir {
         db_connection_string: "postgresql://postgres:postgres@localhost:6666".to_owned(),
         initial_sql: None,
     };
-    let manager_config = ManagerConfig {
+    let api_config = ApiServerConfig {
         port: TEST_DBSP_DEFAULT_PORT,
         bind_address: "0.0.0.0".to_owned(),
         logfile: None,
-        manager_working_directory: workdir.to_owned(),
+        api_server_working_directory: workdir.to_owned(),
         unix_daemon: false,
         use_auth: false,
         dev_mode: false,
@@ -78,19 +78,19 @@ async fn initialize_local_dbsp_instance() -> TempDir {
     }
     .canonicalize()
     .unwrap();
-    println!("Using ManagerConfig: {:?}", manager_config);
+    println!("Using ApiServerConfig: {:?}", api_config);
     println!("Issuing Compiler::precompile_dependencies(). This will be slow.");
     Compiler::precompile_dependencies(&compiler_config)
         .await
         .unwrap();
     println!("Completed Compiler::precompile_dependencies().");
 
-    let listener = crate::api::create_listener(manager_config.clone()).unwrap();
+    let listener = crate::api::create_listener(api_config.clone()).unwrap();
     actix_web::rt::System::new().block_on(async move {
         let db = crate::db::ProjectDB::connect(
             &database_config,
             #[cfg(feature = "pg-embed")]
-            Some(&manager_config),
+            Some(&api_config),
         )
         .await
         .unwrap();
@@ -106,7 +106,7 @@ async fn initialize_local_dbsp_instance() -> TempDir {
             crate::local_runner::run(db_clone, &local_runner_config.clone()).await;
         });
         // The api-server blocks forever
-        crate::api::run(listener, db, manager_config).await.unwrap();
+        crate::api::run(listener, db, api_config).await.unwrap();
     });
     tokio::time::sleep(Duration::from_millis(1000)).await;
     tmp_dir
