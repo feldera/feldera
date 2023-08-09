@@ -1,3 +1,5 @@
+/// A local runner that watches for pipeline objects in the API
+/// and instantiates them locally as processes.
 use crate::db_notifier::DbNotification;
 use crate::runner::RunnerApi;
 use crate::{
