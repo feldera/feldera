@@ -203,7 +203,9 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                 size='small'
                 onClick={e => {
                   e.preventDefault()
-                  router.push('/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.relation.name)
+                  router.push(
+                    `/streaming/inspection?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}`
+                  )
                 }}
               >
                 <Icon icon='bx:show' fontSize={20} />
@@ -216,7 +218,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                   onClick={e => {
                     e.preventDefault()
                     router.push(
-                      '/streaming/inspection/' + descriptor.pipeline_id + '/' + params.row.relation.name + '?tab=insert'
+                      `/streaming/inspection?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}&tab=insert`
                     )
                   }}
                 >
@@ -584,7 +586,7 @@ export default function PipelineTable() {
                   href='#'
                   onClick={e => {
                     e.preventDefault()
-                    router.push('/streaming/builder/' + params.row.descriptor.pipeline_id)
+                    router.push('/streaming/builder/' + params.row.descriptor.pipeline_id + '/')
                   }}
                 >
                   <Icon icon='bx:pencil' fontSize={20} />

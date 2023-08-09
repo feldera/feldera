@@ -30,15 +30,13 @@ import TabContext from '@mui/lab/TabContext'
 import { InsertionTable } from 'src/streaming/import/InsertionTable'
 
 const TitleBreadCrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
-  const { tables, views } = props
+  const { tables, views, relation } = props
   const { descriptor } = props.pipeline
   const pipeline_id = descriptor.pipeline_id
-
   const router = useRouter()
-  const view = router.query.view
 
   const switchRelation = (e: SelectChangeEvent<string>) => {
-    router.push(`/streaming/inspection/${pipeline_id}/${e.target.value}`)
+    router.push(`/streaming/inspection/?pipeline_id=${pipeline_id}&relation=${e.target.value}`)
   }
 
   interface IFormInputs {
@@ -47,17 +45,17 @@ const TitleBreadCrumb = (props: { pipeline: Pipeline; relation: string; tables: 
 
   const { control } = useForm<IFormInputs>({
     defaultValues: {
-      relation: view as string
+      relation: relation
     }
   })
 
-  return typeof view === 'string' && (tables.length > 0 || views.length > 0) ? (
+  return typeof relation === 'string' && (tables.length > 0 || views.length > 0) ? (
     <Breadcrumbs separator={<Icon icon='bx:chevron-right' fontSize={20} />} aria-label='breadcrumb'>
-      <Link href='/streaming/management/'>{descriptor.name}</Link>
+      <Link href={`/streaming/management/?pipeline_id=${descriptor.pipeline_id}`}>{descriptor.name}</Link>
       <Controller
         name='relation'
         control={control}
-        defaultValue={view}
+        defaultValue={relation}
         render={({ field: { onChange, value } }) => {
           return (
             <FormControl>
@@ -151,7 +149,7 @@ const IntrospectInputOutput = () => {
   const [pipelineId, setPipelineId] = useState<PipelineId | undefined>(undefined)
   const [relation, setRelation] = useState<string | undefined>(undefined)
   const router = useRouter()
-  const [tab, setTab] = useState<'browse' | 'insert'>('insert')
+  const [tab, setTab] = useState<'browse' | 'insert'>('browse')
   const [tables, setTables] = useState<string[] | undefined>([])
   const [views, setViews] = useState<string[] | undefined>([])
 
@@ -164,15 +162,16 @@ const IntrospectInputOutput = () => {
     if (!router.isReady) {
       return
     }
-    const { config, view, tab } = router.query
+    const { pipeline_id, relation, tab } = router.query
+    console.log(pipeline_id, relation, tab)
     if (typeof tab === 'string' && (tab == 'browse' || tab == 'insert')) {
       setTab(tab)
     }
-    if (typeof config === 'string') {
-      setPipelineId(config)
+    if (typeof pipeline_id === 'string') {
+      setPipelineId(pipeline_id)
     }
-    if (typeof view === 'string') {
-      setRelation(view)
+    if (typeof relation === 'string') {
+      setRelation(relation)
     }
   }, [pipelineId, setPipelineId, setRelation, router])
 
