@@ -1,4 +1,3 @@
-import { Box } from '@mui/system'
 import { GridFooter, GridFooterContainer, GridSlotsComponentsProps } from '@mui/x-data-grid-pro'
 import { Children } from 'react'
 

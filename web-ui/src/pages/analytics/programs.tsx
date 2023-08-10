@@ -1,6 +1,4 @@
 import Grid from '@mui/material/Grid'
-import Typography from '@mui/material/Typography'
-import PageHeader from 'src/layouts/components/page-header'
 import TableSqlPrograms from 'src/analytics/TableSqlPrograms'
 import { usePageHeader } from 'src/compositions/ui/pageHeader'
 

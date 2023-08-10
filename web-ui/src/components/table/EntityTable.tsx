@@ -3,7 +3,7 @@
 // It is used to display a list of entities in a table. It's the generic version
 // of a table we use to display programs, pipelines, etc.
 
-import { ChangeEvent, useState, useEffect, Dispatch, MutableRefObject, ReactFragment, ReactNode } from 'react'
+import { ChangeEvent, useState, useEffect, Dispatch, MutableRefObject, ReactNode } from 'react'
 import Card from '@mui/material/Card'
 import {
   DataGridPro,
@@ -11,7 +11,6 @@ import {
   DataGridProProps,
   GridRenderCellParams,
   GridToolbarFilterButton,
-  GridFooter
 } from '@mui/x-data-grid-pro'
 import { UseQueryResult } from '@tanstack/react-query'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
@@ -24,7 +23,6 @@ import { Icon } from '@iconify/react'
 import QuickSearch from 'src/components/table/QuickSearch'
 import { ErrorBoundary } from 'react-error-boundary'
 import DataGridToolbar from './DataGridToolbar'
-import { Button } from '@mui/material'
 import { DataGridFooter } from './DataGridFooter'
 
 // This is a workaround for the following issue:
@@ -161,8 +159,8 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
           },
           toolbar: {
             children: [
-              <GridToolbarFilterButton />,
-              <QuickSearch
+              <GridToolbarFilterButton key='0' />,
+              <QuickSearch key='1'
                 value={searchText}
                 clearSearch={() => handleSearch('')}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)}

@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 import { PageHeaderProps } from 'src/layouts/components/page-header/types'
 import { create } from 'zustand'
 

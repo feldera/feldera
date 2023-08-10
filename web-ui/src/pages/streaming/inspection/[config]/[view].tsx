@@ -3,11 +3,9 @@
 // Note: This is still a work in progress and currently does not work as well as
 // it should or is not very flexible in displaying what a user wants.
 import Grid from '@mui/material/Grid'
-import Typography from '@mui/material/Typography'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
-import PageHeader from 'src/layouts/components/page-header'
 import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from 'src/types/manager'
 import { InspectionTable } from 'src/streaming/inspection/InspectionTable'
 import {
