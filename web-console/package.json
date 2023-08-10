@@ -1,5 +1,5 @@
 {
-  "name": "dbsp-web-ui",
+  "name": "dbsp-web-console",
   "description": "Interact with the database stream processor service",
   "license": "MIT",
   "version": "0.0.1",

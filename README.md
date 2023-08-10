@@ -61,7 +61,7 @@ The following diagram shows Feldera Platform's architecture.
 This repository comprises all the buildings blocks to run continuous analytics
 pipelines using Feldera Platform.
 
-* [web UI](web-ui): a web interface for writing SQL, setting up connectors, and managing pipelines.
+* [web UI](web-console): a web interface for writing SQL, setting up connectors, and managing pipelines.
 * [pipeline-manager](crates/pipeline_manager): serves the web UI and is the REST API server for building and managing data pipelines.
 * [dbsp](crates/dbsp): the core [engine](#theory) that allows us to evaluate arbitrary queries incrementally.
 * [SQL compiler](sql-to-dbsp-compiler): translates SQL programs into DBSP programs.

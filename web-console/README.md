@@ -13,7 +13,7 @@ sudo npm install --global yarn
 sudo npm install --global openapi-typescript-codegen
 
 git clone https://github.com/feldera/dbsp.git
-cd dbsp/web-ui
+cd dbsp/web-console
 ```
 
 If you don't run ubuntu: [other binary distributions for node.js](https://github.com/nodesource/distributions)

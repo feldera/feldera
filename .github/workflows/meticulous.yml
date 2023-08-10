@@ -10,21 +10,21 @@ on:
     branches:
       - main
     paths:
-    - web-ui/**
+    - web-console/**
   pull_request:
     paths:
-    - web-ui/**
+    - web-console/**
   # Important: We need the workflow to be triggered on workflow_dispatch events,
   # so that Meticulous can run the workflow on the base commit to compare
   # against if an existing workflow hasn't run
   workflow_dispatch:
     paths:
-    - web-ui/**
+    - web-console/**
 
 
 defaults:
  run:
-  working-directory: ./web-ui
+  working-directory: ./web-console
 
 # Important: The workflow needs all the permissions below.
 # These permissions are mainly need to post and update the status check and
@@ -51,7 +51,7 @@ jobs:
         with:
           node-version: "19"
           cache: yarn
-          cache-dependency-path: web-ui/yarn.lock
+          cache-dependency-path: web-console/yarn.lock
 
       - name: Cache node_modules
         uses: actions/cache@v3
