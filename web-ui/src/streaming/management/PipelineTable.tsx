@@ -44,11 +44,12 @@ import {
   UpdatePipelineResponse,
   ApiError,
   PipelineId,
-  UpdatePipelineRequest
+  UpdatePipelineRequest,
+  ProgramDescr
 } from 'src/types/manager'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { escapeRegExp } from 'src/utils'
-import { match } from 'ts-pattern'
+import { P, match } from 'ts-pattern'
 import router from 'next/router'
 import { ConnectorStatus, GlobalMetrics, InputConnectorMetrics, OutputConnectorMetrics } from 'src/types/pipeline'
 import { humanSize } from 'src/utils'
@@ -383,10 +384,7 @@ export default function PipelineTable() {
     page: 0
   })
 
-  const startPipelineClick = useStartPipeline()
-  const pausePipelineClick = usePausePipeline()
   const shutdownPipelineClick = useShutdownPipeline()
-  const deletePipelineClick = useDeletePipeline()
 
   const { isLoading, isError, data, error } = useQuery<Pipeline[]>(['pipeline'], {
     refetchInterval: 2000
@@ -526,103 +524,7 @@ export default function PipelineTable() {
       field: 'actions',
       headerName: 'Actions',
       flex: 1.0,
-      renderCell: (params: GridRenderCellParams) => {
-        const { descriptor } = params.row
-        const currentStatus = pipelineStatus.get(descriptor.pipeline_id)
-        const needsPause = currentStatus === ClientPipelineStatus.RUNNING
-        const needsStart =
-          currentStatus === ClientPipelineStatus.INACTIVE || currentStatus === ClientPipelineStatus.PAUSED
-        const needsShutdown =
-          currentStatus === ClientPipelineStatus.PAUSED || currentStatus === ClientPipelineStatus.RUNNING
-        const needsDelete = currentStatus === ClientPipelineStatus.INACTIVE
-        const needsEdit = true
-        const needsInspect = false //currentStatus === ClientPipelineStatus.RUNNING
-        const needsSpinner =
-          currentStatus === ClientPipelineStatus.PROVISIONING ||
-          currentStatus === ClientPipelineStatus.INITIALIZING ||
-          currentStatus === ClientPipelineStatus.STARTING ||
-          currentStatus === ClientPipelineStatus.PAUSING ||
-          currentStatus === ClientPipelineStatus.SHUTTING_DOWN
-
-        return (
-          <>
-            {/* the className attributes are used by webui-tester */}
-            {needsPause && (
-              <Tooltip title='Pause Pipeline'>
-                <IconButton
-                  className='pauseButton'
-                  size='small'
-                  onClick={() => pausePipelineClick(params.row.descriptor.pipeline_id)}
-                >
-                  <Icon icon='bx:pause-circle' fontSize={20} />
-                </IconButton>
-              </Tooltip>
-            )}
-            {needsStart && (
-              <Tooltip title='Start Pipeline'>
-                <IconButton
-                  className='startButton'
-                  size='small'
-                  onClick={() => startPipelineClick(params.row.descriptor.pipeline_id)}
-                >
-                  <Icon icon='bx:play-circle' fontSize={20} />
-                </IconButton>
-              </Tooltip>
-            )}
-            {needsSpinner && (
-              <Tooltip title={pipelineStatus.get(params.row.descriptor.pipeline_id)}>
-                <IconButton size='small'>
-                  <Icon icon='svg-spinners:270-ring-with-bg' fontSize={20} />
-                </IconButton>
-              </Tooltip>
-            )}
-            {needsShutdown && (
-              <Tooltip title='Shutdown Pipeline'>
-                <IconButton
-                  className='shutdownButton'
-                  size='small'
-                  onClick={() => shutdownPipelineClick(params.row.descriptor.pipeline_id)}
-                >
-                  <Icon icon='bx:stop-circle' fontSize={20} />
-                </IconButton>
-              </Tooltip>
-            )}
-            {needsInspect && (
-              <Tooltip title='Inspect'>
-                <IconButton size='small' component={Link} href='#'>
-                  <Icon icon='bx:show' fontSize={20} />
-                </IconButton>
-              </Tooltip>
-            )}
-            {needsEdit && (
-              <Tooltip title='Edit Pipeline'>
-                <IconButton
-                  className='editButton'
-                  size='small'
-                  href='#'
-                  onClick={e => {
-                    e.preventDefault()
-                    router.push(`/streaming/builder/?pipeline_id=${params.row.descriptor.pipeline_id}`)
-                  }}
-                >
-                  <Icon icon='bx:pencil' fontSize={20} />
-                </IconButton>
-              </Tooltip>
-            )}
-            {needsDelete && (
-              <Tooltip title='Delete Pipeline'>
-                <IconButton
-                  className='deleteButton'
-                  size='small'
-                  onClick={() => deletePipelineClick(params.row.descriptor.pipeline_id)}
-                >
-                  <Icon icon='bx:trash-alt' fontSize={20} />
-                </IconButton>
-              </Tooltip>
-            )}
-          </>
-        )
-      }
+      renderCell: PipelineActions
     }
   ]
 
@@ -708,5 +610,102 @@ export default function PipelineTable() {
         }}
       />
     </Card>
+  )
+}
+
+const PipelineActions = (params: { row: Pipeline }) => {
+  const pipeline = params.row.descriptor
+
+  const startPipelineClick = useStartPipeline()
+  const pausePipelineClick = usePausePipeline()
+  const shutdownPipelineClick = useShutdownPipeline()
+  const deletePipelineClick = useDeletePipeline()
+
+  const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
+  const curProgramQuery = useQuery<ProgramDescr>(['programCode', { program_id: pipeline.program_id }], {
+    enabled: pipeline.program_id != null
+  })
+  const programReady =
+    !curProgramQuery.isLoading && !curProgramQuery.isError && curProgramQuery.data.status === 'Success'
+  const currentStatus = pipelineStatus.get(pipeline.pipeline_id) ?? ClientPipelineStatus.UNKNOWN
+
+  const actions = {
+    pause: () => (
+      <Tooltip title='Pause Pipeline'>
+        <IconButton className='pauseButton' size='small' onClick={() => pausePipelineClick(pipeline.pipeline_id)}>
+          <Icon icon='bx:pause-circle' fontSize={20} />
+        </IconButton>
+      </Tooltip>
+    ),
+    start: () => (
+      <Tooltip title='Start Pipeline'>
+        <IconButton className='startButton' size='small' onClick={() => startPipelineClick(pipeline.pipeline_id)}>
+          <Icon icon='bx:play-circle' fontSize={20} />
+        </IconButton>
+      </Tooltip>
+    ),
+    spinner: () => (
+      <Tooltip title={pipelineStatus.get(pipeline.pipeline_id)}>
+        <IconButton size='small'>
+          <Icon icon='svg-spinners:270-ring-with-bg' fontSize={20} />
+        </IconButton>
+      </Tooltip>
+    ),
+    shutdown: () => (
+      <Tooltip title='Shutdown Pipeline'>
+        <IconButton className='shutdownButton' size='small' onClick={() => shutdownPipelineClick(pipeline.pipeline_id)}>
+          <Icon icon='bx:stop-circle' fontSize={20} />
+        </IconButton>
+      </Tooltip>
+    ),
+    inspect: () => (
+      <Tooltip title='Inspect'>
+        <IconButton size='small' component={Link} href='#'>
+          <Icon icon='bx:show' fontSize={20} />
+        </IconButton>
+      </Tooltip>
+    ),
+    edit: () => (
+      <Tooltip title='Edit Pipeline'>
+        <IconButton
+          className='editButton'
+          size='small'
+          href='#'
+          onClick={e => {
+            e.preventDefault()
+            router.push(`/streaming/builder/?pipeline_id=${pipeline.pipeline_id}`)
+          }}
+        >
+          <Icon icon='bx:pencil' fontSize={20} />
+        </IconButton>
+      </Tooltip>
+    ),
+    delete: () => (
+      <Tooltip title='Delete Pipeline'>
+        <IconButton className='deleteButton' size='small' onClick={() => deletePipelineClick(pipeline.pipeline_id)}>
+          <Icon icon='bx:trash-alt' fontSize={20} />
+        </IconButton>
+      </Tooltip>
+    )
+  }
+
+  const enabled = match([currentStatus, programReady])
+    .returnType<(keyof typeof actions)[]>()
+    .with([ClientPipelineStatus.INACTIVE, true], () => ['start', 'edit', 'delete'])
+    .with([ClientPipelineStatus.INACTIVE, false], () => ['edit', 'delete'])
+    .with([ClientPipelineStatus.PROVISIONING, P._], () => ['spinner', 'edit'])
+    .with([ClientPipelineStatus.INITIALIZING, P._], () => ['spinner', 'edit'])
+    .with([ClientPipelineStatus.STARTING, P._], () => ['spinner', 'edit'])
+    .with([ClientPipelineStatus.RUNNING, P._], () => ['pause', 'shutdown', 'edit'])
+    .with([ClientPipelineStatus.PAUSING, P._], () => ['spinner', 'edit'])
+    .with([ClientPipelineStatus.PAUSED, true], () => ['start', 'shutdown', 'edit'])
+    .with([ClientPipelineStatus.SHUTTING_DOWN, P._], () => ['spinner', 'edit'])
+    .otherwise(() => ['edit'])
+
+  return (
+    <>
+      {/* the className attributes are used by webui-tester */}
+      {enabled.map(e => actions[e]())}
+    </>
   )
 }

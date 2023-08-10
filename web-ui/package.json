@@ -70,7 +70,7 @@
     "react-popper": "^2.3.0",
     "react-redux": "8.0.4",
     "reactflow": "^11.6.0",
-    "ts-pattern": "^4.2.1",
+    "ts-pattern": "^5.0.4",
     "use-debounce": "^9.0.3",
     "yaml": "2.2.2",
     "yup": "1.0.0-beta.1",
