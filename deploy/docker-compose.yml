@@ -11,22 +11,23 @@ services:
       retries: 5
 
   dbsp:
-   image: ghcr.io/feldera/dbsp-manager
-   ports:
-     - "8085:8080"
-   depends_on:
-    db:
-      condition: service_healthy
-   stop_grace_period: 0s
-   environment:
-     - RUST_BACKTRACE=1
-     - REDPANDA_BROKERS=redpanda:9092
-     - RUST_LOG
-     - AUTH_CLIENT_ID
-     - AUTH_ISSUER
-   command:
-     - --db-connection-string=postgresql://postgres:postgres@db:5432
-     - --use-auth=${USE_AUTH:-false}
+    tty: true
+    image: ghcr.io/feldera/dbsp-manager
+    ports:
+      - "8085:8080"
+    depends_on:
+     db:
+       condition: service_healthy
+    stop_grace_period: 0s
+    environment:
+      - RUST_BACKTRACE=1
+      - REDPANDA_BROKERS=redpanda:9092
+      - RUST_LOG
+      - AUTH_CLIENT_ID
+      - AUTH_ISSUER
+    command:
+      - --db-connection-string=postgresql://postgres:postgres@db:5432
+      - --use-auth=${USE_AUTH:-false}
 
   redpanda:
     profiles: ["demo"]
