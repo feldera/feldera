@@ -1229,7 +1229,7 @@ unsafe extern "C" fn csv_get_date(
     let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
     record
         .get(column)
-        .and_then(|date| match NaiveDate::parse_from_str(date, format) {
+        .and_then(|date| match NaiveDate::parse_from_str(date.trim(), format) {
             Ok(date) => Some(date.and_time(NaiveTime::MIN)),
             Err(error) => {
                 tracing::error!("error parsing csv date from column {column}: {error}");
@@ -1250,7 +1250,7 @@ unsafe extern "C" fn csv_get_nullable_date(
     if let Some(date) = record
         .get(column)
         .filter(|column| !column.trim().eq_ignore_ascii_case("null"))
-        .and_then(|date| match NaiveDate::parse_from_str(date, format) {
+        .and_then(|date| match NaiveDate::parse_from_str(date.trim(), format) {
             Ok(date) => Some(date.and_time(NaiveTime::MIN)),
             Err(error) => {
                 tracing::error!("error parsing csv date from column {column}: {error}");
@@ -1275,7 +1275,7 @@ unsafe extern "C" fn csv_get_timestamp(
     record
         .get(column)
         .and_then(
-            |timestamp| match NaiveDateTime::parse_from_str(timestamp, format) {
+            |timestamp| match NaiveDateTime::parse_from_str(timestamp.trim(), format) {
                 Ok(time) => Some(time.timestamp_millis()),
                 Err(error) => {
                     tracing::error!("error parsing csv timestamp from column {column}: {error}");
@@ -1298,7 +1298,7 @@ unsafe extern "C" fn csv_get_nullable_timestamp(
         .get(column)
         .filter(|column| !column.trim().eq_ignore_ascii_case("null"))
         .and_then(
-            |timestamp| match NaiveDateTime::parse_from_str(timestamp, format) {
+            |timestamp| match NaiveDateTime::parse_from_str(timestamp.trim(), format) {
                 Ok(time) => Some(time.timestamp_millis()),
                 Err(error) => {
                     tracing::error!("error parsing csv timestamp from column {column}: {error}");
