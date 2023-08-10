@@ -1,7 +1,8 @@
+import { sqlPlaceholderNode } from '$lib/components/streaming/builder/PipelineBuilder'
 import { useCallback } from 'react'
 import { NodeProps, useReactFlow } from 'reactflow'
+
 import { useBuilderState } from './useBuilderState'
-import { sqlPlaceholderNode } from '$lib/components/streaming/builder/PipelineBuilder'
 import useDebouncedSave from './useDebouncedSave'
 
 // Logic that runs when we remove a node from the graph. Also puts back the

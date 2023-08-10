@@ -4,10 +4,10 @@
 // Also indicates if the example was modified after generation due to type
 // constraints (overflow etc.).
 
-import { Grid, Typography } from '@mui/material'
-
-import { Field } from '$lib/types/manager'
 import { getValueFormatter, typeRange } from '$lib/types/ddl'
+import { Field } from '$lib/types/manager'
+
+import { Grid, Typography } from '@mui/material'
 
 export const ExampleDisplay = (props: {
   field: Field

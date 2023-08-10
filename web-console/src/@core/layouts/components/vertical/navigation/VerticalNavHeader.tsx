@@ -1,11 +1,12 @@
-import { ReactNode } from 'react'
-import Link from 'next/link'
 import Image from 'next/image'
-import Box, { BoxProps } from '@mui/material/Box'
-import { styled } from '@mui/material/styles'
-import { Settings } from 'src/@core/context/settingsContext'
+import Link from 'next/link'
 import darkLogo from 'public/images/feldera-primary-dark.svg'
 import lightLogo from 'public/images/feldera-primary-main.svg'
+import { ReactNode } from 'react'
+import { Settings } from 'src/@core/context/settingsContext'
+
+import Box, { BoxProps } from '@mui/material/Box'
+import { styled } from '@mui/material/styles'
 
 interface Props {
   hidden: boolean

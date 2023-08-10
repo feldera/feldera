@@ -2,8 +2,9 @@
 // mechanism.
 
 import { Dispatch, SetStateAction } from 'react'
-import { GridPagination } from '@mui/x-data-grid-pro'
+
 import { Box, Grid, Slider, Typography } from '@mui/material'
+import { GridPagination } from '@mui/x-data-grid-pro'
 
 interface PercentilePaginationProps {
   showSlider: boolean

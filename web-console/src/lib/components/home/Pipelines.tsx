@@ -1,17 +1,17 @@
 // Should display a list of active pipelines with stats, just a placeholder
 // right now.
 
+import { ApexOptions } from 'apexcharts'
+import ReactApexcharts from 'src/@core/components/react-apexcharts'
+import { ThemeColor } from 'src/@core/layouts/types'
+import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
+
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
-import Typography from '@mui/material/Typography'
-import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
+import CardHeader from '@mui/material/CardHeader'
 import { useTheme } from '@mui/material/styles'
-import { ApexOptions } from 'apexcharts'
-
-import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
-import { ThemeColor } from 'src/@core/layouts/types'
-import ReactApexcharts from 'src/@core/components/react-apexcharts'
+import Typography from '@mui/material/Typography'
 
 const series = [
   [{ data: [19, 58, 45, 11] }],

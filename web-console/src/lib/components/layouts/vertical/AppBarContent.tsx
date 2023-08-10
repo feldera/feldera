@@ -1,19 +1,20 @@
 // This is the top bar that decides whether to show the hamburger menu or not it
-// also has the search bar and the user dropdown and the notification dropdown.
-import Box from '@mui/material/Box'
-import { Theme } from '@mui/material/styles'
-import TextField from '@mui/material/TextField'
-import IconButton from '@mui/material/IconButton'
-import useMediaQuery from '@mui/material/useMediaQuery'
-import InputAdornment from '@mui/material/InputAdornment'
-import Menu from 'mdi-material-ui/Menu'
+import PageHeader from '$lib/components/layouts/pageHeader'
+import { usePageHeader } from '$lib/compositions/global/pageHeader'
 import Magnify from 'mdi-material-ui/Magnify'
+import Menu from 'mdi-material-ui/Menu'
 import { Settings } from 'src/@core/context/settingsContext'
 import ModeToggler from 'src/@core/layouts/components/shared-components/ModeToggler'
-import UserDropdown from 'src/@core/layouts/components/shared-components/UserDropdown'
 import NotificationDropdown from 'src/@core/layouts/components/shared-components/NotificationDropdown'
-import { usePageHeader } from '$lib/compositions/global/pageHeader'
-import PageHeader from '$lib/components/layouts/pageHeader'
+import UserDropdown from 'src/@core/layouts/components/shared-components/UserDropdown'
+
+// also has the search bar and the user dropdown and the notification dropdown.
+import Box from '@mui/material/Box'
+import IconButton from '@mui/material/IconButton'
+import InputAdornment from '@mui/material/InputAdornment'
+import { Theme } from '@mui/material/styles'
+import TextField from '@mui/material/TextField'
+import useMediaQuery from '@mui/material/useMediaQuery'
 
 interface Props {
   hidden: boolean

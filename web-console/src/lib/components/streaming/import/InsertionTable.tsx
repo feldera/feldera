@@ -3,7 +3,10 @@
 // The rows can be edited after generation/import and eventually be uploaded to
 // the dbsp table.
 
+import { getValueFormatter, Row, sqlTypeToDataGridType } from '$lib/types/ddl'
+import { Field, Pipeline, PipelineRevision, Relation } from '$lib/types/manager'
 import { useEffect, useState } from 'react'
+
 import Card from '@mui/material/Card'
 import {
   DataGridPro,
@@ -15,8 +18,6 @@ import {
 } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 
-import { Field, Pipeline, PipelineRevision, Relation } from '$lib/types/manager'
-import { Row, getValueFormatter, sqlTypeToDataGridType } from '$lib/types/ddl'
 import ImportToolbar from './ImportToolbar'
 
 export type InspectionTableProps = {

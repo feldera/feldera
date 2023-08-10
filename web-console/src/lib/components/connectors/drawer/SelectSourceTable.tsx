@@ -1,16 +1,15 @@
 // The table that pops up when the user clicks on a connector type in the drawer
 // to select from an existing list of connectors.
 
+import EntityTable from '$lib/components/common/table/EntityTable'
+import { connectorDescrToType, ConnectorType, Direction } from '$lib/types/connectors'
+import { ConnectorDescr } from '$lib/types/manager'
 import { Dispatch, useState } from 'react'
 
-import Card from '@mui/material/Card'
-import { useQuery } from '@tanstack/react-query'
-import { GridColDef, GridRenderCellParams } from '@mui/x-data-grid-pro'
-
-import EntityTable from '$lib/components/common/table/EntityTable'
 import Button from '@mui/material/Button'
-import { ConnectorDescr } from '$lib/types/manager'
-import { Direction, ConnectorType, connectorDescrToType } from '$lib/types/connectors'
+import Card from '@mui/material/Card'
+import { GridColDef, GridRenderCellParams } from '@mui/x-data-grid-pro'
+import { useQuery } from '@tanstack/react-query'
 
 const SelectSourceTable = (props: {
   direction: Direction

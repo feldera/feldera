@@ -1,10 +1,11 @@
 // Form to edit the name and description of a config.
 
+import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
+import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
+import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
+
 import { FormControl, FormHelperText, TextField } from '@mui/material'
 import Grid from '@mui/material/Grid'
-import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
-import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
-import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 
 interface FormError {
   name?: { message?: string }

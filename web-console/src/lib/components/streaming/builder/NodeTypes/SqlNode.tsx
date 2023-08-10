@@ -1,17 +1,18 @@
 // SqlNode is a (compiled) program with tables and view as handles to connect
 // to.
 
+import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
+import { zip } from '$lib/functions/common/function'
 import { memo } from 'react'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
-import { Box, CardContent, CardHeader, Stack } from '@mui/material'
-import { Handle, Node } from '../NodeTypes'
-import IconButton from '@mui/material/IconButton'
-import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
 
-import Chip from '@mui/material/Chip'
-import Avatar from '@mui/material/Avatar'
 import { Icon } from '@iconify/react'
-import { zip } from '$lib/functions/common/function'
+import { Box, CardContent, CardHeader, Stack } from '@mui/material'
+import Avatar from '@mui/material/Avatar'
+import Chip from '@mui/material/Chip'
+import IconButton from '@mui/material/IconButton'
+
+import { Handle, Node } from '../NodeTypes'
 
 function SqlTableNode(props: { name: string }) {
   const { getNode, getEdges } = useReactFlow()

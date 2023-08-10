@@ -1,10 +1,11 @@
 // Logic to add either a input or output node to the graph.
 
-import { useCallback } from 'react'
-import { useReactFlow, getConnectedEdges } from 'reactflow'
+import { randomString } from '$lib/functions/common/string'
 import { AttachedConnector, ProgramSchema } from '$lib/types/manager'
 import { ConnectorDescr } from '$lib/types/manager/models/ConnectorDescr'
-import { randomString } from '$lib/functions/common/string'
+import { useCallback } from 'react'
+import { getConnectedEdges, useReactFlow } from 'reactflow'
+
 import { useRedoLayout } from './useAutoLayout'
 
 const HEIGHT_OFFSET = 120

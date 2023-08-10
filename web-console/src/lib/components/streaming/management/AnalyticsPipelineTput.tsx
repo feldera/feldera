@@ -2,15 +2,15 @@
 //
 // Also smooths the throughout over a few seconds.
 
-import Card from '@mui/material/Card'
-import { useTheme } from '@mui/material/styles'
-import Typography from '@mui/material/Typography'
-import CardContent from '@mui/material/CardContent'
+import { GlobalMetrics } from '$lib/types/pipeline'
 import { ApexOptions } from 'apexcharts'
 import { format } from 'd3-format'
-
 import ReactApexcharts from 'src/@core/components/react-apexcharts'
-import { GlobalMetrics } from '$lib/types/pipeline'
+
+import Card from '@mui/material/Card'
+import CardContent from '@mui/material/CardContent'
+import { useTheme } from '@mui/material/styles'
+import Typography from '@mui/material/Typography'
 
 const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
   const theme = useTheme()

@@ -1,16 +1,17 @@
-import { useState, SyntheticEvent, Fragment, ReactNode } from 'react'
-import Box from '@mui/material/Box'
-import Chip from '@mui/material/Chip'
-import Button from '@mui/material/Button'
-import IconButton from '@mui/material/IconButton'
-import { styled, Theme } from '@mui/material/styles'
-import useMediaQuery from '@mui/material/useMediaQuery'
-import MuiMenu, { MenuProps } from '@mui/material/Menu'
-import MuiAvatar, { AvatarProps } from '@mui/material/Avatar'
-import MuiMenuItem, { MenuItemProps } from '@mui/material/MenuItem'
-import Typography, { TypographyProps } from '@mui/material/Typography'
 import BellOutline from 'mdi-material-ui/BellOutline'
+import { Fragment, ReactNode, SyntheticEvent, useState } from 'react'
 import PerfectScrollbarComponent from 'react-perfect-scrollbar'
+
+import MuiAvatar, { AvatarProps } from '@mui/material/Avatar'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
+import IconButton from '@mui/material/IconButton'
+import MuiMenu, { MenuProps } from '@mui/material/Menu'
+import MuiMenuItem, { MenuItemProps } from '@mui/material/MenuItem'
+import { styled, Theme } from '@mui/material/styles'
+import Typography, { TypographyProps } from '@mui/material/Typography'
+import useMediaQuery from '@mui/material/useMediaQuery'
 
 const Menu = styled(MuiMenu)<MenuProps>(({ theme }) => ({
   '& .MuiMenu-paper': {

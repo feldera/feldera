@@ -4,11 +4,11 @@
 // come as part of a HTTP stream and our openapi client generator does not
 // support streaming yet.
 
-import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
-import { parse } from 'csv-parse'
-import { Chunk, Relation } from '$lib/types/manager'
-import { parseValueSafe } from '$lib/types/ddl'
 import { readLineFromStream } from '$lib/functions/common/stream'
+import { parseValueSafe } from '$lib/types/ddl'
+import { Chunk, Relation } from '$lib/types/manager'
+import { parse } from 'csv-parse'
+import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
 
 function useQuantiles() {
   const utf8Decoder = useMemo(() => new TextDecoder('utf-8'), [])

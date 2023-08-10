@@ -1,35 +1,36 @@
 // A create/update dialog for a Kafka output connector.
 
-import { useState, useEffect } from 'react'
-import Box from '@mui/material/Box'
-import Tab from '@mui/material/Tab'
-import TabList from '@mui/lab/TabList'
-import TabPanel from '@mui/lab/TabPanel'
-import Dialog from '@mui/material/Dialog'
-import TabContext from '@mui/lab/TabContext'
-import IconButton from '@mui/material/IconButton'
-import Typography from '@mui/material/Typography'
-import DialogContent from '@mui/material/DialogContent'
-import { useForm } from 'react-hook-form'
-import { yupResolver } from '@hookform/resolvers/yup'
-import * as yup from 'yup'
-import { Icon } from '@iconify/react'
-
-import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/tabs/TabKafkaNameAndDesc'
 import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
+import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/tabs/TabKafkaNameAndDesc'
 import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
-import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from '$lib/types/manager'
-import Transition from './tabs/Transition'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import {
-  connectorTypeToConfig,
-  parseKafkaOutputSchema,
   ConnectorType,
-  connectorTypeToIcon
+  connectorTypeToConfig,
+  connectorTypeToIcon,
+  parseKafkaOutputSchema
 } from '$lib/types/connectors'
-import TabkafkaOutputDetails from './tabs/TabKafkaOutputDetails'
-import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
+import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from '$lib/types/manager'
+import { useEffect, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import * as yup from 'yup'
+
+import { yupResolver } from '@hookform/resolvers/yup'
+import { Icon } from '@iconify/react'
+import TabContext from '@mui/lab/TabContext'
+import TabList from '@mui/lab/TabList'
+import TabPanel from '@mui/lab/TabPanel'
+import Box from '@mui/material/Box'
+import Dialog from '@mui/material/Dialog'
+import DialogContent from '@mui/material/DialogContent'
+import IconButton from '@mui/material/IconButton'
+import Tab from '@mui/material/Tab'
+import Typography from '@mui/material/Typography'
+
+import { AddConnectorCard } from './AddConnectorCard'
+import TabkafkaOutputDetails from './tabs/TabKafkaOutputDetails'
+import Transition from './tabs/Transition'
 
 const schema = yup
   .object({
@@ -41,7 +42,13 @@ const schema = yup
   })
   .required()
 
-export type KafkaOutputSchema = yup.InferType<typeof schema>
+export type KafkaOutputSchema = { // yup.InferType<typeof schema>
+  topic: string | undefined;
+  name: string;
+  description: string;
+  host: string;
+  auto_offset: string;
+}
 
 export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const [activeTab, setActiveTab] = useState<string>('detailsTab')

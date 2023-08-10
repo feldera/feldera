@@ -1,6 +1,7 @@
-import Grid from '@mui/material/Grid'
 import { PageHeaderProps } from '$lib/types/layouts/pageHeader'
+
 import { Typography } from '@mui/material'
+import Grid from '@mui/material/Grid'
 
 const PageHeader = (props: PageHeaderProps) => {
   const { title, subtitle } = props

@@ -1,17 +1,17 @@
-import { useState, SyntheticEvent, Fragment } from 'react'
+import AccountOutline from 'mdi-material-ui/AccountOutline'
+import CogOutline from 'mdi-material-ui/CogOutline'
+import LogoutVariant from 'mdi-material-ui/LogoutVariant'
 import { useRouter } from 'next/router'
-import Box from '@mui/material/Box'
-import Menu from '@mui/material/Menu'
-import Badge from '@mui/material/Badge'
+import { Fragment, SyntheticEvent, useState } from 'react'
+
 import Avatar from '@mui/material/Avatar'
+import Badge from '@mui/material/Badge'
+import Box from '@mui/material/Box'
 import Divider from '@mui/material/Divider'
+import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import { styled } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
-
-import CogOutline from 'mdi-material-ui/CogOutline'
-import LogoutVariant from 'mdi-material-ui/LogoutVariant'
-import AccountOutline from 'mdi-material-ui/AccountOutline'
 
 const BadgeContentSpan = styled('span')(({ theme }) => ({
   width: 8,

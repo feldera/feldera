@@ -1,15 +1,16 @@
 import { ReactNode, useRef, useState } from 'react'
-import List from '@mui/material/List'
-import Box, { BoxProps } from '@mui/material/Box'
-import { styled, useTheme } from '@mui/material/styles'
 import PerfectScrollbar from 'react-perfect-scrollbar'
-
 import { Settings } from 'src/@core/context/settingsContext'
 import { VerticalNavItemsType } from 'src/@core/layouts/types'
-import Drawer from './Drawer'
-import VerticalNavItems from './VerticalNavItems'
-import VerticalNavHeader from './VerticalNavHeader'
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
+
+import Box, { BoxProps } from '@mui/material/Box'
+import List from '@mui/material/List'
+import { styled, useTheme } from '@mui/material/styles'
+
+import Drawer from './Drawer'
+import VerticalNavHeader from './VerticalNavHeader'
+import VerticalNavItems from './VerticalNavItems'
 
 interface Props {
   hidden: boolean

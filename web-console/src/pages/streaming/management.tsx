@@ -1,8 +1,9 @@
-import Grid from '@mui/material/Grid'
-import { ErrorBoundary } from 'react-error-boundary'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
-import { usePageHeader } from '$lib/compositions/global/pageHeader'
 import PipelineTable from '$lib/components/streaming/management/PipelineTable'
+import { usePageHeader } from '$lib/compositions/global/pageHeader'
+import { ErrorBoundary } from 'react-error-boundary'
+
+import Grid from '@mui/material/Grid'
 
 const PipelineManagement = () => {
   usePageHeader(s => s.setHeader)({ title: 'Pipeline Management', subtitle: 'Start, stop and inspect pipelines.' })

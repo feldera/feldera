@@ -1,11 +1,12 @@
 // Contains the name and description form elements for kafka input and output
 // connectors.
 
-import TextField from '@mui/material/TextField'
-import { Control, Controller, FieldErrors } from 'react-hook-form'
-import { FormControl, FormHelperText, Grid } from '@mui/material'
-import { KafkaInputConfig, KafkaOutputConfig } from '$lib/types/manager'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
+import { KafkaInputConfig, KafkaOutputConfig } from '$lib/types/manager'
+import { Control, Controller, FieldErrors } from 'react-hook-form'
+
+import { FormControl, FormHelperText, Grid } from '@mui/material'
+import TextField from '@mui/material/TextField'
 
 const TabKafkaNameAndDesc = (props: {
   control: Control<KafkaInputConfig | KafkaOutputConfig>

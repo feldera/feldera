@@ -1,39 +1,7 @@
 // Displays a button that displays if the pipeline has changes since the last
 // revision. If clicked, a dialog is opened that shows the changes.
 
-import {
-  Ref,
-  useState,
-  forwardRef,
-  ReactElement,
-  useEffect,
-  SyntheticEvent,
-  Dispatch,
-  SetStateAction,
-  useRef
-} from 'react'
-
-import Badge from '@mui/material/Badge'
-import Box from '@mui/material/Box'
-import Grid from '@mui/material/Grid'
-import Dialog from '@mui/material/Dialog'
-import Button from '@mui/material/Button'
-import IconButton from '@mui/material/IconButton'
-import Typography from '@mui/material/Typography'
-import Fade, { FadeProps } from '@mui/material/Fade'
-import DialogContent from '@mui/material/DialogContent'
-import DialogActions from '@mui/material/DialogActions'
-import Tab from '@mui/material/Tab'
-import TabList from '@mui/lab/TabList'
-import TabPanel from '@mui/lab/TabPanel'
-import TabContext from '@mui/lab/TabContext'
-import { Alert, AlertTitle, Tooltip, useTheme } from '@mui/material'
-
-import { Icon } from '@iconify/react'
-import { useQuery } from '@tanstack/react-query'
-import { DiffEditor, MonacoDiffEditor } from '@monaco-editor/react'
-import { diffLines, Change } from 'diff'
-
+import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
 import {
   ApiError,
   ErrorResponse,
@@ -43,8 +11,38 @@ import {
   PipelineStatus,
   ProgramDescr
 } from '$lib/types/manager'
-import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
+import { Change, diffLines } from 'diff'
+import {
+  Dispatch,
+  forwardRef,
+  ReactElement,
+  Ref,
+  SetStateAction,
+  SyntheticEvent,
+  useEffect,
+  useRef,
+  useState
+} from 'react'
 import { ThemeColor } from 'src/@core/layouts/types'
+
+import { Icon } from '@iconify/react'
+import { DiffEditor, MonacoDiffEditor } from '@monaco-editor/react'
+import TabContext from '@mui/lab/TabContext'
+import TabList from '@mui/lab/TabList'
+import TabPanel from '@mui/lab/TabPanel'
+import { Alert, AlertTitle, Tooltip, useTheme } from '@mui/material'
+import Badge from '@mui/material/Badge'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import Fade, { FadeProps } from '@mui/material/Fade'
+import Grid from '@mui/material/Grid'
+import IconButton from '@mui/material/IconButton'
+import Tab from '@mui/material/Tab'
+import Typography from '@mui/material/Typography'
+import { useQuery } from '@tanstack/react-query'
 
 interface ErrorProps {
   error: ErrorResponse | undefined

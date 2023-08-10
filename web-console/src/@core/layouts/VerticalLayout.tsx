@@ -1,14 +1,16 @@
+import themeConfig from '$lib/functions/configs/themeConfig'
+import ArrowUp from 'mdi-material-ui/ArrowUp'
 import { useState } from 'react'
+import ScrollToTop from 'src/@core/components/scroll-to-top'
+import { LayoutProps } from 'src/@core/layouts/types'
+
+import Box, { BoxProps } from '@mui/material/Box'
 import Fab from '@mui/material/Fab'
 import { styled } from '@mui/material/styles'
-import Box, { BoxProps } from '@mui/material/Box'
-import ArrowUp from 'mdi-material-ui/ArrowUp'
-import themeConfig from '$lib/functions/configs/themeConfig'
-import { LayoutProps } from 'src/@core/layouts/types'
+
+import Footer from './components/shared-components/footer'
 import AppBar from './components/vertical/appBar'
 import Navigation from './components/vertical/navigation'
-import Footer from './components/shared-components/footer'
-import ScrollToTop from 'src/@core/components/scroll-to-top'
 
 const VerticalLayoutWrapper = styled('div')({
   height: '100%',

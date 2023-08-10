@@ -1,23 +1,23 @@
 // A dialog that displays a random generation settings form for every field in
 // the table.
 
-import { Ref, useState, forwardRef, ReactElement } from 'react'
-
-import Box from '@mui/material/Box'
-import Grid from '@mui/material/Grid'
-import Dialog from '@mui/material/Dialog'
-import Button from '@mui/material/Button'
-import IconButton from '@mui/material/IconButton'
-import Typography from '@mui/material/Typography'
-import Fade, { FadeProps } from '@mui/material/Fade'
-import DialogContent from '@mui/material/DialogContent'
-import DialogActions from '@mui/material/DialogActions'
-import { Icon } from '@iconify/react'
+import { ColumnType, Field, Relation } from '$lib/types/manager'
+import { forwardRef, ReactElement, Ref, useState } from 'react'
 import { match, P } from 'ts-pattern'
 
-import { ColumnType, Field, Relation } from '$lib/types/manager'
-import { FieldNames, RngFieldSettings } from './randomData'
+import { Icon } from '@iconify/react'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import Fade, { FadeProps } from '@mui/material/Fade'
+import Grid from '@mui/material/Grid'
+import IconButton from '@mui/material/IconButton'
+import Typography from '@mui/material/Typography'
+
 import { StoreSettingsFn } from './ImportToolbar'
+import { FieldNames, RngFieldSettings } from './randomData'
 
 const RNG_SUPPORTED_TYPES = [
   'BOOLEAN',

@@ -1,5 +1,6 @@
-import { GridFooter, GridFooterContainer, GridSlotsComponentsProps } from '@mui/x-data-grid-pro'
 import { Children } from 'react'
+
+import { GridFooter, GridFooterContainer, GridSlotsComponentsProps } from '@mui/x-data-grid-pro'
 
 export function DataGridFooter({ children }: NonNullable<GridSlotsComponentsProps['footer']>) {
   return (

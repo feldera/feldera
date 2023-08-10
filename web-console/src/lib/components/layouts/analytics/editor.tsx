@@ -1,17 +1,11 @@
 // Editor for SQL programs. This is the main component for the editor page.
 // It is responsible for loading the program, compiling it, and saving it.
 
-import { useState, useEffect, useRef, Dispatch, SetStateAction, MutableRefObject } from 'react'
-import Grid from '@mui/material/Grid'
-import TextField from '@mui/material/TextField'
-import Divider from '@mui/material/Divider'
-import { Card, CardHeader, CardContent, FormHelperText, useTheme } from '@mui/material'
-import FormControl from '@mui/material/FormControl'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import Editor, { useMonaco } from '@monaco-editor/react'
-import { match, P } from 'ts-pattern'
-import { useDebouncedCallback } from 'use-debounce'
-
+import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
+import { usePageHeader } from '$lib/compositions/global/pageHeader'
+import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
+import { programQueryCacheUpdate, programStatusUpdate } from '$lib/types/defaultQueryFn'
 import {
   ApiError,
   CompileProgramRequest,
@@ -22,15 +16,22 @@ import {
   UpdateProgramRequest,
   UpdateProgramResponse
 } from '$lib/types/manager'
-import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { ProgramsService } from '$lib/types/manager/services/ProgramsService'
 import { ProgramDescr } from '$lib/types/manager/models/ProgramDescr'
-import CompileIndicator from './CompileIndicator'
-import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
-import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
-import { programQueryCacheUpdate, programStatusUpdate } from '$lib/types/defaultQueryFn'
+import { ProgramsService } from '$lib/types/manager/services/ProgramsService'
 import assert from 'assert'
-import { usePageHeader } from '$lib/compositions/global/pageHeader'
+import { Dispatch, MutableRefObject, SetStateAction, useEffect, useRef, useState } from 'react'
+import { match, P } from 'ts-pattern'
+import { useDebouncedCallback } from 'use-debounce'
+
+import Editor, { useMonaco } from '@monaco-editor/react'
+import { Card, CardContent, CardHeader, FormHelperText, useTheme } from '@mui/material'
+import Divider from '@mui/material/Divider'
+import FormControl from '@mui/material/FormControl'
+import Grid from '@mui/material/Grid'
+import TextField from '@mui/material/TextField'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+
+import CompileIndicator from './CompileIndicator'
 
 // How many ms to wait until we save the project.
 const SAVE_DELAY = 2000

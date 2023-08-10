@@ -1,22 +1,23 @@
-import { ChangeEvent, useCallback, Dispatch, SetStateAction, MutableRefObject } from 'react'
-import { Button } from '@mui/material'
+import useGenerateRows from '$lib/compositions/streaming/import/useGenerateRows'
+import useInsertRows from '$lib/compositions/streaming/import/useInsertRows'
+import { Row } from '$lib/types/ddl'
+import { LS_PREFIX } from '$lib/types/localStorage'
+import { PipelineRevision, Relation } from '$lib/types/manager'
+import dayjs from 'dayjs'
+import Papa from 'papaparse'
+import { ChangeEvent, Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
+
 import { Icon } from '@iconify/react'
+import { useLocalStorage } from '@mantine/hooks'
+import { Button } from '@mui/material'
 import {
   GridApi,
   GridToolbarColumnsButton,
   GridToolbarContainer,
   GridToolbarDensitySelector
 } from '@mui/x-data-grid-pro'
-import Papa from 'papaparse'
 
-import { PipelineRevision, Relation } from '$lib/types/manager'
-import { Row } from '$lib/types/ddl'
 import RngSettingsDialog, { StoredFieldSettings } from './RngSettingsDialog'
-import { LS_PREFIX } from '$lib/types/localStorage'
-import { useLocalStorage } from '@mantine/hooks'
-import useGenerateRows from '$lib/compositions/streaming/import/useGenerateRows'
-import useInsertRows from '$lib/compositions/streaming/import/useInsertRows'
-import dayjs from 'dayjs'
 
 export type StoreSettingsFn = (
   val:

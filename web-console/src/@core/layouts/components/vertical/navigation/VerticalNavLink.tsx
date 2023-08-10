@@ -1,18 +1,19 @@
-import { ElementType } from 'react'
+import themeConfig from '$lib/functions/configs/themeConfig'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
+import { ElementType } from 'react'
+import { Settings } from 'src/@core/context/settingsContext'
+import { NavLink } from 'src/@core/layouts/types'
+import { handleURLQueries } from 'src/@core/layouts/utils'
+
+import { Icon } from '@iconify/react'
+import Box, { BoxProps } from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import ListItem from '@mui/material/ListItem'
+import ListItemButton, { ListItemButtonProps } from '@mui/material/ListItemButton'
+import ListItemIcon from '@mui/material/ListItemIcon'
 import { styled } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
-import Box, { BoxProps } from '@mui/material/Box'
-import ListItemIcon from '@mui/material/ListItemIcon'
-import ListItemButton, { ListItemButtonProps } from '@mui/material/ListItemButton'
-import themeConfig from '$lib/functions/configs/themeConfig'
-import { NavLink } from 'src/@core/layouts/types'
-import { Settings } from 'src/@core/context/settingsContext'
-import { Icon } from '@iconify/react'
-import { handleURLQueries } from 'src/@core/layouts/utils'
 
 interface Props {
   item: NavLink

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 // A way to throw errors in async code so they can be caught with ErrorBoundary
 // in react. Pretty silly, but it works.

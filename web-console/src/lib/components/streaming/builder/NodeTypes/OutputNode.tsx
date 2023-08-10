@@ -1,16 +1,17 @@
 // OutputNodes are displayed on the right and connected with views of the
 // program.
 
-import CardHeader from '@mui/material/CardHeader'
-import Avatar from '@mui/material/Avatar'
-import { Position, NodeProps, Connection, useReactFlow } from 'reactflow'
-import { Box } from '@mui/material'
-import IconButton from '@mui/material/IconButton'
+import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
+import { connectorDescrToType, connectorTypeToIcon } from '$lib/types/connectors'
+import { Connection, NodeProps, Position, useReactFlow } from 'reactflow'
 
 import { Icon } from '@iconify/react'
+import { Box } from '@mui/material'
+import Avatar from '@mui/material/Avatar'
+import CardHeader from '@mui/material/CardHeader'
+import IconButton from '@mui/material/IconButton'
+
 import { Handle, Node } from '../NodeTypes'
-import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
-import { connectorTypeToIcon, connectorDescrToType } from '$lib/types/connectors'
 
 const OutputNode = ({ id, data }: NodeProps) => {
   const { getNode } = useReactFlow()

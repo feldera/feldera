@@ -1,7 +1,8 @@
 import { ReactNode } from 'react'
-import Zoom from '@mui/material/Zoom'
+
 import { styled } from '@mui/material/styles'
 import useScrollTrigger from '@mui/material/useScrollTrigger'
+import Zoom from '@mui/material/Zoom'
 
 interface ScrollToTopProps {
   className?: string

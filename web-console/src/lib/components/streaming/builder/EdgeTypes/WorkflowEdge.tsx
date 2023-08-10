@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { EdgeProps, getBezierPath } from 'reactflow'
+
 import styled from '@emotion/styled'
 
 const Path = styled.path`

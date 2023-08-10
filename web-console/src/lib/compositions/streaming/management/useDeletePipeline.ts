@@ -1,10 +1,12 @@
 // Logic to delete a pipeline.
 
-import { useCallback } from 'react'
-import { ClientPipelineStatus, usePipelineStateStore } from './StatusContext'
-import { PipelinesService, ApiError, PipelineId } from '$lib/types/manager'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import { ApiError, PipelineId, PipelinesService } from '$lib/types/manager'
+import { useCallback } from 'react'
+
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+
+import { ClientPipelineStatus, usePipelineStateStore } from './StatusContext'
 
 function useDeletePipeline() {
   const queryClient = useQueryClient()

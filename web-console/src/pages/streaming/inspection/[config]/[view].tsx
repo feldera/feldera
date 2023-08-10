@@ -1,13 +1,16 @@
 // See the status of a input table or output view.
 //
 // Note: This is still a work in progress and currently does not work as well as
-// it should or is not very flexible in displaying what a user wants.
-import Grid from '@mui/material/Grid'
-import { useQuery } from '@tanstack/react-query'
+import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
+import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
+import { usePageHeader } from '$lib/compositions/global/pageHeader'
+import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from '$lib/types/manager'
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
-import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from '$lib/types/manager'
-import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
+import { ErrorBoundary } from 'react-error-boundary'
+import { Controller, useForm } from 'react-hook-form'
+
+import { Icon } from '@iconify/react'
 import {
   Breadcrumbs,
   FormControl,
@@ -18,11 +21,9 @@ import {
   Select,
   SelectChangeEvent
 } from '@mui/material'
-import { Icon } from '@iconify/react'
-import { Controller, useForm } from 'react-hook-form'
-import { ErrorBoundary } from 'react-error-boundary'
-import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
-import { usePageHeader } from '$lib/compositions/global/pageHeader'
+// it should or is not very flexible in displaying what a user wants.
+import Grid from '@mui/material/Grid'
+import { useQuery } from '@tanstack/react-query'
 
 const TitleBreadCrumb = (props: { pipeline: Pipeline; relation: string }) => {
   const { descriptor } = props.pipeline

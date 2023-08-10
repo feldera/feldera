@@ -2,13 +2,56 @@
 //
 // The rows of the table can be expanded for even more details.
 
-import { useCallback, useEffect, useState } from 'react'
-import React from 'react'
+import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
+import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
+import QuickSearch from '$lib/components/common/table/QuickSearch'
+import AnalyticsPipelineTput from '$lib/components/streaming/management/AnalyticsPipelineTput'
+import { PipelineRevisionStatusChip } from '$lib/components/streaming/management/RevisionStatus'
+import { ClientPipelineStatus, usePipelineStateStore } from '$lib/compositions/streaming/management/StatusContext'
+import useDeletePipeline from '$lib/compositions/streaming/management/useDeletePipeline'
+import usePausePipeline from '$lib/compositions/streaming/management/usePausePipeline'
+import useShutdownPipeline from '$lib/compositions/streaming/management/useShutdownPipeline'
+import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
+import { escapeRegExp, humanSize } from '$lib/functions/common/string'
+import {
+  ApiError,
+  AttachedConnector,
+  ConnectorDescr,
+  ErrorResponse,
+  Pipeline,
+  PipelineId,
+  PipelineRevision,
+  PipelinesService,
+  PipelineStatus,
+  ProgramDescr,
+  Relation,
+  UpdatePipelineRequest,
+  UpdatePipelineResponse
+} from '$lib/types/manager'
+import { ConnectorStatus, GlobalMetrics, InputConnectorMetrics, OutputConnectorMetrics } from '$lib/types/pipeline'
+import { format } from 'd3-format'
 import Link from 'next/link'
+import router from 'next/router'
+import React, { useCallback, useEffect, useState } from 'react'
+import CustomChip from 'src/@core/components/mui/chip'
+import { match, P } from 'ts-pattern'
+
+import { Icon } from '@iconify/react'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import { Button } from '@mui/material'
+import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
-import Paper from '@mui/material/Paper'
 import Grid from '@mui/material/Grid'
+import IconButton from '@mui/material/IconButton'
+import List from '@mui/material/List'
+import ListItem from '@mui/material/ListItem'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import ListItemText from '@mui/material/ListItemText'
+import ListSubheader from '@mui/material/ListSubheader'
+import Paper from '@mui/material/Paper'
+import Tooltip from '@mui/material/Tooltip'
 import {
   DataGridPro,
   DataGridProProps,
@@ -18,52 +61,7 @@ import {
   GridValueSetterParams,
   useGridApiRef
 } from '@mui/x-data-grid-pro'
-import CustomChip from 'src/@core/components/mui/chip'
-import Badge from '@mui/material/Badge'
-import IconButton from '@mui/material/IconButton'
-import { Icon } from '@iconify/react'
-import List from '@mui/material/List'
-import ListItem from '@mui/material/ListItem'
-import ListItemText from '@mui/material/ListItemText'
-import ListItemIcon from '@mui/material/ListItemIcon'
-import ListSubheader from '@mui/material/ListSubheader'
-import Tooltip from '@mui/material/Tooltip'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-
-import AnalyticsPipelineTput from '$lib/components/streaming/management/AnalyticsPipelineTput'
-import QuickSearch from '$lib/components/common/table/QuickSearch'
-import {
-  AttachedConnector,
-  Pipeline,
-  ConnectorDescr,
-  PipelineStatus,
-  PipelineRevision,
-  ErrorResponse,
-  Relation,
-  PipelinesService,
-  UpdatePipelineResponse,
-  ApiError,
-  PipelineId,
-  UpdatePipelineRequest,
-  ProgramDescr
-} from '$lib/types/manager'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { escapeRegExp } from '$lib/functions/common/string'
-import { P, match } from 'ts-pattern'
-import router from 'next/router'
-import { ConnectorStatus, GlobalMetrics, InputConnectorMetrics, OutputConnectorMetrics } from '$lib/types/pipeline'
-import { humanSize } from '$lib/functions/common/string'
-import { format } from 'd3-format'
-import { PipelineRevisionStatusChip } from '$lib/components/streaming/management/RevisionStatus'
-import { ClientPipelineStatus, usePipelineStateStore } from '$lib/compositions/streaming/management/StatusContext'
-import usePausePipeline from '$lib/compositions/streaming/management/usePausePipeline'
-import useShutdownPipeline from '$lib/compositions/streaming/management/useShutdownPipeline'
-import useDeletePipeline from '$lib/compositions/streaming/management/useDeletePipeline'
-import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
-import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
-import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
-import { Button } from '@mui/material'
-import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 
 interface ConnectorData {
   relation: Relation

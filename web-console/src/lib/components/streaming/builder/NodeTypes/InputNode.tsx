@@ -1,15 +1,16 @@
 // InputNodes are on the left and connect to tables of the program.
 
-import CardHeader from '@mui/material/CardHeader'
-import Avatar from '@mui/material/Avatar'
-import { Box } from '@mui/material'
-import IconButton from '@mui/material/IconButton'
-import { Position, NodeProps, Connection, useReactFlow, getConnectedEdges } from 'reactflow'
-import { Icon } from '@iconify/react'
-
 import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
+import { connectorDescrToType, connectorTypeToIcon } from '$lib/types/connectors'
+import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
+
+import { Icon } from '@iconify/react'
+import { Box } from '@mui/material'
+import Avatar from '@mui/material/Avatar'
+import CardHeader from '@mui/material/CardHeader'
+import IconButton from '@mui/material/IconButton'
+
 import { Handle, Node } from '../NodeTypes'
-import { connectorTypeToIcon, connectorDescrToType } from '$lib/types/connectors'
 
 const InputNode = ({ id, data }: NodeProps) => {
   const { getNode, getEdges, deleteElements } = useReactFlow()

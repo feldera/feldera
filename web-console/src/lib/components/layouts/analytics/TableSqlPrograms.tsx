@@ -3,28 +3,28 @@
 // Can edit name and description directly in the table.
 // Also display status of the program.
 
+import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import EntityTable from '$lib/components/common/table/EntityTable'
+import {
+  ApiError,
+  ProgramDescr,
+  ProgramId,
+  ProgramsService,
+  ProgramStatus,
+  UpdateProgramRequest,
+  UpdateProgramResponse
+} from '$lib/types/manager'
 import { useRouter } from 'next/router'
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
+import CustomChip from 'src/@core/components/mui/chip'
+import { match, P } from 'ts-pattern'
+
+import { Button } from '@mui/material'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
 import { GridColDef, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { match, P } from 'ts-pattern'
-
-import CustomChip from 'src/@core/components/mui/chip'
-import {
-  ApiError,
-  ProgramId,
-  UpdateProgramRequest,
-  UpdateProgramResponse,
-  ProgramStatus,
-  ProgramDescr,
-  ProgramsService
-} from '$lib/types/manager'
-import EntityTable from '$lib/components/common/table/EntityTable'
-import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { Button } from '@mui/material'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 const getStatusObj = (status: ProgramStatus) =>
   match(status)

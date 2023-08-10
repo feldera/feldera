@@ -2,9 +2,10 @@
 //
 // The message can be clicked away or it will disappear after a few seconds.
 
-import { useEffect, SyntheticEvent } from 'react'
-import Snackbar from '@mui/material/Snackbar'
+import { SyntheticEvent, useEffect } from 'react'
+
 import Alert, { AlertColor } from '@mui/material/Alert'
+import Snackbar from '@mui/material/Snackbar'
 
 import useStatusNotification from './useStatusNotification'
 

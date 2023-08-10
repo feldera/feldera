@@ -1,6 +1,11 @@
 // The pipeline builder lets you configure a pipeline by adding connectors to
 // tables and views of a program.
 
+import 'reactflow/dist/style.css'
+
+import AddSourceDrawer from '$lib/components/connectors/drawer/AddSourceDrawer'
+import useAutoLayout, { useRedoLayout } from '$lib/compositions/streaming/builder/useAutoLayout'
+import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
 import React, { useCallback, useRef } from 'react'
 import ReactFlow, {
   Background,
@@ -13,13 +18,9 @@ import ReactFlow, {
   updateEdge,
   useReactFlow
 } from 'reactflow'
-import useAutoLayout, { useRedoLayout } from '$lib/compositions/streaming/builder/useAutoLayout'
-import nodeTypes from './NodeTypes'
-import edgeTypes from './EdgeTypes'
-import AddSourceDrawer from '$lib/components/connectors/drawer/AddSourceDrawer'
-import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
 
-import 'reactflow/dist/style.css'
+import edgeTypes from './EdgeTypes'
+import nodeTypes from './NodeTypes'
 
 const proOptions: ProOptions = { account: 'paid-pro', hideAttribution: true }
 

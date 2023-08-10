@@ -1,9 +1,9 @@
 // Computes the layout of the nodes in the graph.
 
+import { removePrefix } from '$lib/functions/common/string'
 import assert from 'assert'
 import { useCallback, useEffect } from 'react'
-import { Node, ReactFlowState, useStore, useReactFlow, Edge, Instance, getConnectedEdges } from 'reactflow'
-import { removePrefix } from '$lib/functions/common/string'
+import { Edge, getConnectedEdges, Instance, Node, ReactFlowState, useReactFlow, useStore } from 'reactflow'
 
 // How much spacing we put after every input/output node
 const VERTICAL_SPACING = 20

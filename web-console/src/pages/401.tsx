@@ -1,11 +1,12 @@
-import { ReactNode } from 'react'
+import FooterIllustrations from '$lib/components/layouts/misc/FooterIllustrations'
 import Link from 'next/link'
+import { ReactNode } from 'react'
+import BlankLayout from 'src/@core/layouts/BlankLayout'
+
+import Box, { BoxProps } from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import { styled } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
-import Box, { BoxProps } from '@mui/material/Box'
-import BlankLayout from 'src/@core/layouts/BlankLayout'
-import FooterIllustrations from '$lib/components/layouts/misc/FooterIllustrations'
 
 const BoxWrapper = styled(Box)<BoxProps>(({ theme }) => ({
   [theme.breakpoints.down('md')]: {

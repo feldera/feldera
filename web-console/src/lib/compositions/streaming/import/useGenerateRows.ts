@@ -1,11 +1,12 @@
 // Generates rows and inserts them into a table.
 
-import { GridApi } from '@mui/x-data-grid-pro'
-import { Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
-import { Field, Relation } from '$lib/types/manager'
-import { StoredFieldSettings } from '$lib/components/streaming/import/RngSettingsDialog'
-import { Row, getValueParser } from '$lib/types/ddl'
 import { getDefaultRngMethod, getRngMethodByName } from '$lib/components/streaming/import/randomData/generators'
+import { StoredFieldSettings } from '$lib/components/streaming/import/RngSettingsDialog'
+import { getValueParser, Row } from '$lib/types/ddl'
+import { Field, Relation } from '$lib/types/manager'
+import { Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
+
+import { GridApi } from '@mui/x-data-grid-pro'
 
 function useGenerateRows(
   apiRef: MutableRefObject<GridApi>,

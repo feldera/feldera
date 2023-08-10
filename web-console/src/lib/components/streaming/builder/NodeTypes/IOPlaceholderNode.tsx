@@ -1,12 +1,14 @@
 // The placeholder for inputs, opens the drawer to add input connectors on a
 // click.
 
+import useIOPlaceholderClick from '$lib/compositions/streaming/builder/useIOPlaceholderClick'
 import React, { memo } from 'react'
 import { NodeProps } from 'reactflow'
-import useIOPlaceholderClick from '$lib/compositions/streaming/builder/useIOPlaceholderClick'
+
 import { Icon } from '@iconify/react'
 import { CardContent, Typography } from '@mui/material'
-import { PlaceholderNode } from '.'
+
+import { PlaceholderNode } from './'
 
 const IOPlaceholderNode = ({ id, data }: NodeProps) => {
   // see the hook implementation for details of the click handler

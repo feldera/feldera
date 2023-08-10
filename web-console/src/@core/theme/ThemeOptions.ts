@@ -1,10 +1,12 @@
-import { deepmerge } from '@mui/utils'
-import { ThemeOptions } from '@mui/material'
 import { Settings } from 'src/@core/context/settingsContext'
-import palette from './palette'
-import spacing from './spacing'
-import shadows from './shadows'
+
+import { ThemeOptions } from '@mui/material'
+import { deepmerge } from '@mui/utils'
+
 import breakpoints from './breakpoints'
+import palette from './palette'
+import shadows from './shadows'
+import spacing from './spacing'
 
 const themeOptions = (settings: Settings): ThemeOptions => {
   const { mode, themeColor } = settings

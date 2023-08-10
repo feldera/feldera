@@ -1,11 +1,19 @@
 // Browse tables and views & insert data into tables.
 
-import Grid from '@mui/material/Grid'
-import { useQuery } from '@tanstack/react-query'
+import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
+import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
+import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
+import { usePageHeader } from '$lib/compositions/global/pageHeader'
+import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from '$lib/types/manager'
 import { useRouter } from 'next/router'
 import { SyntheticEvent, useEffect, useState } from 'react'
-import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from '$lib/types/manager'
-import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
+import { ErrorBoundary } from 'react-error-boundary'
+import { Controller, useForm } from 'react-hook-form'
+
+import { Icon } from '@iconify/react'
+import TabContext from '@mui/lab/TabContext'
+import TabList from '@mui/lab/TabList'
+import TabPanel from '@mui/lab/TabPanel'
 import {
   Alert,
   AlertTitle,
@@ -18,16 +26,9 @@ import {
   Select,
   SelectChangeEvent
 } from '@mui/material'
-import { Icon } from '@iconify/react'
-import { Controller, useForm } from 'react-hook-form'
-import { ErrorBoundary } from 'react-error-boundary'
-import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
+import Grid from '@mui/material/Grid'
 import Tab from '@mui/material/Tab'
-import TabList from '@mui/lab/TabList'
-import TabPanel from '@mui/lab/TabPanel'
-import TabContext from '@mui/lab/TabContext'
-import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
-import { usePageHeader } from '$lib/compositions/global/pageHeader'
+import { useQuery } from '@tanstack/react-query'
 
 const TitleBreadCrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
   const { tables, views, relation } = props

@@ -1,14 +1,14 @@
-import TextField from '@mui/material/TextField'
-import Select from '@mui/material/Select'
-import MenuItem from '@mui/material/MenuItem'
-import InputLabel from '@mui/material/InputLabel'
+import { KafkaInputSchema } from '$lib/components/connectors/dialogs'
+import { Control, Controller, FieldErrors } from 'react-hook-form'
+
+import Autocomplete from '@mui/material/Autocomplete'
 import FormControl from '@mui/material/FormControl'
 import FormHelperText from '@mui/material/FormHelperText'
 import Grid from '@mui/material/Grid'
-import { Control, Controller, FieldErrors } from 'react-hook-form'
-import Autocomplete from '@mui/material/Autocomplete'
-
-import { KafkaInputSchema } from '$lib/components/connectors/dialogs'
+import InputLabel from '@mui/material/InputLabel'
+import MenuItem from '@mui/material/MenuItem'
+import Select from '@mui/material/Select'
+import TextField from '@mui/material/TextField'
 
 const TabKafkaInputDetails = (props: {
   control: Control<KafkaInputSchema>

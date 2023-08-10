@@ -8,8 +8,10 @@
 //    no queryFn is provided (ideally we never provide a queryFn to reduce
 //    duplication and bugs but always rely on defaultQueryFn to route to the correct API call)
 
-import { QueryClient, QueryFunctionContext } from '@tanstack/react-query'
 import { match, P } from 'ts-pattern'
+
+import { QueryClient, QueryFunctionContext } from '@tanstack/react-query'
+
 import {
   ConnectorsService,
   Pipeline,

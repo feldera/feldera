@@ -3,8 +3,9 @@
 // e.g., the small popups in the bottom left corner that go away after some
 // time. Mostly used for errors.
 
-import { AlertColor } from '@mui/material/Alert'
 import { create } from 'zustand'
+
+import { AlertColor } from '@mui/material/Alert'
 
 export interface StatusSnackBarMessage {
   key: number

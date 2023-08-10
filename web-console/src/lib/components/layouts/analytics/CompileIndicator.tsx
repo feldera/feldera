@@ -3,13 +3,14 @@
 // Changes color depending on compilation status and displays a tooltip with
 // more information.
 
-import { CircularProgress, Tooltip } from '@mui/material'
 import { ProgramStatus } from '$lib/types/manager'
-import DoneIcon from '@mui/icons-material/Done'
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
+import CustomChip from 'src/@core/components/mui/chip'
 import { ThemeColor } from 'src/@core/layouts/types'
 import { match, P } from 'ts-pattern'
-import CustomChip from 'src/@core/components/mui/chip'
+
+import DoneIcon from '@mui/icons-material/Done'
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
+import { CircularProgress, Tooltip } from '@mui/material'
 
 export interface CompileIndicatorProps {
   id?: string

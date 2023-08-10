@@ -1,18 +1,19 @@
 // Displays a form with random settings to configure what values are generated
 // for a given field in a table.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Autocomplete, FormHelperText, Grid, TextField } from '@mui/material'
-import { Controller, useWatch } from 'react-hook-form'
-import dayjs, { Dayjs } from 'dayjs'
-
 import { useCustomForm } from '$lib/compositions/streaming/import/useCustomForm'
-import { Field } from '$lib/types/manager'
 import { getValueParser } from '$lib/types/ddl'
-import { IRngGenMethod, columnTypeToRngOptions, getRngMethodByName } from './generators'
-import { ExampleDisplay } from './ExampleDisplay'
-import { StoredFieldSettings } from '../RngSettingsDialog'
+import { Field } from '$lib/types/manager'
+import dayjs, { Dayjs } from 'dayjs'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Controller, useWatch } from 'react-hook-form'
+
+import { Autocomplete, FormHelperText, Grid, TextField } from '@mui/material'
+
 import { StoreSettingsFn } from '../ImportToolbar'
+import { StoredFieldSettings } from '../RngSettingsDialog'
+import { ExampleDisplay } from './ExampleDisplay'
+import { columnTypeToRngOptions, getRngMethodByName, IRngGenMethod } from './generators'
 
 // The names of potential form field parameters.
 export enum FieldNames {

@@ -1,13 +1,15 @@
+import themeConfig from '$lib/functions/configs/themeConfig'
 import { ReactNode } from 'react'
+import { Settings } from 'src/@core/context/settingsContext'
+
 import CssBaseline from '@mui/material/CssBaseline'
 import GlobalStyles from '@mui/material/GlobalStyles'
-import { ThemeProvider, createTheme, responsiveFontSizes } from '@mui/material/styles'
-import { Settings } from 'src/@core/context/settingsContext'
-import themeConfig from '$lib/functions/configs/themeConfig'
-import overrides from './overrides'
-import typography from './typography'
-import themeOptions from './ThemeOptions'
+import { createTheme, responsiveFontSizes, ThemeProvider } from '@mui/material/styles'
+
 import GlobalStyling from './globalStyles'
+import overrides from './overrides'
+import themeOptions from './ThemeOptions'
+import typography from './typography'
 
 interface Props {
   settings: Settings

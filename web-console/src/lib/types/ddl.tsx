@@ -5,12 +5,14 @@
 // etc. This issue will go away once we support JSON for the data format. But
 // until then we do the type conversion here.
 
-import { P, match } from 'ts-pattern'
-import { ColumnType, Field, Relation } from './manager'
-import { GridCellParams } from '@mui/x-data-grid-pro'
 import { clamp } from '$lib/functions/common/math'
 import assert from 'assert'
 import dayjs, { Dayjs } from 'dayjs'
+import { match, P } from 'ts-pattern'
+
+import { GridCellParams } from '@mui/x-data-grid-pro'
+
+import { ColumnType, Field, Relation } from './manager'
 
 // Representing we get back from the ingress rest API.
 export interface Row {

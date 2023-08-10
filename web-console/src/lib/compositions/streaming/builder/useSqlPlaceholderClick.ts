@@ -1,11 +1,13 @@
 // What happens when we select a program in the sqlPlaceholder node.
 
-import { NodeProps, useReactFlow } from 'reactflow'
-import { useBuilderState } from './useBuilderState'
-import useDebouncedSave from './useDebouncedSave'
-import { useQueryClient } from '@tanstack/react-query'
 import { Pipeline, ProgramDescr } from '$lib/types/manager'
 import { useCallback } from 'react'
+import { NodeProps, useReactFlow } from 'reactflow'
+
+import { useQueryClient } from '@tanstack/react-query'
+
+import { useBuilderState } from './useBuilderState'
+import useDebouncedSave from './useDebouncedSave'
 
 // Replaces the program placeholder node with a sqlProgram node
 export function useReplacePlaceholder() {

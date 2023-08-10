@@ -1,35 +1,35 @@
 // The drawer component that opens when the user wants to add a connector in the
 // pipeline builder.
 
-import Drawer from '@mui/material/Drawer'
-import { styled } from '@mui/material/styles'
-import IconButton from '@mui/material/IconButton'
-import Typography from '@mui/material/Typography'
-import Box, { BoxProps } from '@mui/material/Box'
-import NavigateNextIcon from '@mui/icons-material/NavigateNext'
-
-import { Icon } from '@iconify/react'
-import useDrawerState from '$lib/compositions/streaming/builder/useDrawerState'
 import { useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
-import { Breadcrumbs, Button, Card, CardContent, CardHeader, Chip, Grid, Link } from '@mui/material'
-import { useState, Dispatch, useEffect } from 'react'
-import { AttachedConnector, ConnectorDescr } from '$lib/types/manager'
-import { useQuery } from '@tanstack/react-query'
+import useDrawerState from '$lib/compositions/streaming/builder/useDrawerState'
+import { randomString } from '$lib/functions/common/string'
 import {
-  Direction,
+  connectorDescrToType,
   ConnectorType,
   connectorTypeToDirection,
+  connectorTypeToIcon,
   connectorTypeToTitle,
-  connectorDescrToType,
-  connectorTypeToIcon
+  Direction
 } from '$lib/types/connectors'
-import { randomString } from '$lib/functions/common/string'
-import SelectSourceTable from './SelectSourceTable'
+import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
+import { AttachedConnector, ConnectorDescr } from '$lib/types/manager'
+import { Dispatch, useEffect, useState } from 'react'
 
-import { UrlConnectorDialog } from '../dialogs/UrlConnector'
+import { Icon } from '@iconify/react'
+import NavigateNextIcon from '@mui/icons-material/NavigateNext'
+import { Breadcrumbs, Button, Card, CardContent, CardHeader, Chip, Grid, Link } from '@mui/material'
+import Box, { BoxProps } from '@mui/material/Box'
+import Drawer from '@mui/material/Drawer'
+import IconButton from '@mui/material/IconButton'
+import { styled } from '@mui/material/styles'
+import Typography from '@mui/material/Typography'
+import { useQuery } from '@tanstack/react-query'
+
 import { KafkaInputConnectorDialog } from '../dialogs/KafkaInputConnector'
 import { KafkaOutputConnectorDialog } from '../dialogs/KafkaOutputConnector'
-import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
+import { UrlConnectorDialog } from '../dialogs/UrlConnector'
+import SelectSourceTable from './SelectSourceTable'
 
 const Header = styled(Box)<BoxProps>(({ theme }) => ({
   display: 'flex',

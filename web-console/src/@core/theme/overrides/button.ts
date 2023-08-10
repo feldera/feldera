@@ -1,5 +1,6 @@
-import { Theme } from '@mui/material/styles'
 import themeConfig from '$lib/functions/configs/themeConfig'
+
+import { Theme } from '@mui/material/styles'
 
 const Button = (theme: Theme) => {
   return {

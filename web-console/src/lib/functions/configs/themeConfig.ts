@@ -2,8 +2,9 @@
 //
 // You can use the `useTheme()` hook to access this data.
 
-import { PaletteMode } from '@mui/material'
 import { ContentWidth } from 'src/@core/layouts/types'
+
+import { PaletteMode } from '@mui/material'
 
 type ThemeConfig = {
   mode: PaletteMode

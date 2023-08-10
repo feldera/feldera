@@ -1,10 +1,11 @@
-import Grid from '@mui/material/Grid'
 import {
   AddGenericConnectorCard,
-  AddUrlConnectorCard,
+  AddKafkaInputConnectorCard,
   AddKafkaOutputConnectorCard,
-  AddKafkaInputConnectorCard
+  AddUrlConnectorCard
 } from '$lib/components/connectors/dialogs'
+
+import Grid from '@mui/material/Grid'
 
 const ConnectorCreateGrid = () => {
   // id is referenced by webui-tester

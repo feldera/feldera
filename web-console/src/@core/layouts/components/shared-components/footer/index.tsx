@@ -1,8 +1,9 @@
 import { ReactNode } from 'react'
+import { Settings } from 'src/@core/context/settingsContext'
+
 import Box from '@mui/material/Box'
 import { useTheme } from '@mui/material/styles'
 
-import { Settings } from 'src/@core/context/settingsContext'
 import FooterContent from './FooterContent'
 
 interface Props {

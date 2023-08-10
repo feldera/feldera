@@ -1,10 +1,18 @@
 // Contains a lists of random generators for every SQL type, each random
 // generator may have custom generation and validation methods.
 
+import { getRandomDate } from '$lib/functions/common/date'
+import { dateTimeRange, findBaseType, typeRange } from '$lib/types/ddl'
+import { ColumnType, Field } from '$lib/types/manager'
+import assert from 'assert'
+import * as d3 from 'd3-random'
+import dayjs, { Dayjs } from 'dayjs'
+import { match } from 'ts-pattern'
+import * as yup from 'yup'
+
+import { faker } from '@faker-js/faker'
 import { SwitchProps, TextField, TextFieldProps } from '@mui/material'
 import {
-  TimePicker,
-  TimePickerProps,
   DatePicker,
   DatePickerProps,
   DateRangePicker,
@@ -12,20 +20,13 @@ import {
   DateTimePicker,
   DateTimePickerProps,
   MultiInputDateTimeRangeField,
-  MultiInputDateTimeRangeFieldProps
+  MultiInputDateTimeRangeFieldProps,
+  TimePicker,
+  TimePickerProps
 } from '@mui/x-date-pickers-pro'
-import { match } from 'ts-pattern'
-import { faker } from '@faker-js/faker'
-import dayjs, { Dayjs } from 'dayjs'
-import * as yup from 'yup'
-import * as d3 from 'd3-random'
 
-import { ColumnType, Field } from '$lib/types/manager'
-import { dateTimeRange, findBaseType, typeRange } from '$lib/types/ddl'
+import { FieldNames } from './'
 import { BooleanSwitch } from './BooleanSwitch'
-import { getRandomDate } from '$lib/functions/common/date'
-import assert from 'assert'
-import { FieldNames } from '.'
 
 type NestedArray<T> = T | NestedArray<T>[]
 type AddFieldName<T> = { name: FieldNames } & Partial<T>

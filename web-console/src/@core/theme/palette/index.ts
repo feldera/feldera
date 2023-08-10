@@ -1,5 +1,6 @@
-import { PaletteMode } from '@mui/material'
 import { ThemeColor } from 'src/@core/layouts/types'
+
+import { PaletteMode } from '@mui/material'
 
 const DefaultPalette = (mode: PaletteMode, themeColor: ThemeColor) => {
   const whiteColor = '#FFF'

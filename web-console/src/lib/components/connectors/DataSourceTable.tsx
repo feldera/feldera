@@ -3,26 +3,26 @@
 // Table allows to edit the name and description in the table directly and can
 // delete/edit individual connectors.
 
-import { useState, useCallback } from 'react'
-import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
-import Typography from '@mui/material/Typography'
-import CustomChip from 'src/@core/components/mui/chip'
-import { GridColDef, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-
+import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import EntityTable from '$lib/components/common/table/EntityTable'
+import { connectorDescrToType, ConnectorDialog, getStatusObj } from '$lib/types/connectors'
 import {
   ApiError,
-  ConnectorsService,
   ConnectorDescr,
   ConnectorId,
+  ConnectorsService,
   UpdateConnectorRequest,
   UpdateConnectorResponse
 } from '$lib/types/manager'
-import EntityTable from '$lib/components/common/table/EntityTable'
-import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { ConnectorDialog, getStatusObj, connectorDescrToType } from '$lib/types/connectors'
+import { useCallback, useState } from 'react'
+import CustomChip from 'src/@core/components/mui/chip'
+
 import { Button } from '@mui/material'
+import Box from '@mui/material/Box'
+import Card from '@mui/material/Card'
+import Typography from '@mui/material/Typography'
+import { GridColDef, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 const DataSourceTable = () => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])

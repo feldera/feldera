@@ -5,6 +5,7 @@
 // props.theme.palette.primary.main}` will type check correctly)
 
 import '@emotion/react'
+
 import { Palette } from '@mui/material'
 
 declare module '@emotion/react' {

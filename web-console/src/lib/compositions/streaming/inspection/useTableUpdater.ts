@@ -3,11 +3,11 @@
 //
 // In dbsp-speak this maintains an integral for a part of a relation.
 
-import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
-import { parse } from 'csv-parse'
-import { NeighborhoodQuery, Relation } from '$lib/types/manager'
-import { Row, csvLineToRow } from '$lib/types/ddl'
 import { readLineFromStream } from '$lib/functions/common/stream'
+import { csvLineToRow, Row } from '$lib/types/ddl'
+import { NeighborhoodQuery, Relation } from '$lib/types/manager'
+import { parse } from 'csv-parse'
+import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
 
 function useTableUpdater() {
   const utf8Decoder = useMemo(() => new TextDecoder('utf-8'), [])

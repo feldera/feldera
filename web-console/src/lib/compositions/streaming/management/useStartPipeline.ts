@@ -1,12 +1,13 @@
 // Logic to start a given pipeline.
 
-import { useCallback } from 'react'
-import { ClientPipelineStatus, usePipelineStateStore } from '$lib/compositions/streaming/management/StatusContext'
-import { PipelinesService, ApiError, PipelineId } from '$lib/types/manager'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { invalidatePipeline } from '$lib/types/defaultQueryFn'
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import { ClientPipelineStatus, usePipelineStateStore } from '$lib/compositions/streaming/management/StatusContext'
+import { invalidatePipeline } from '$lib/types/defaultQueryFn'
+import { ApiError, PipelineId, PipelinesService } from '$lib/types/manager'
 import { PipelineAction } from '$lib/types/pipeline'
+import { useCallback } from 'react'
+
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 function useStartPipeline() {
   const queryClient = useQueryClient()

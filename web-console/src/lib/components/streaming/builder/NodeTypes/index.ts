@@ -1,15 +1,16 @@
 // Different types of nodes we use in the graph and their styling.
 
 import { Handle as RawHandle, NodeTypes } from 'reactflow'
-import styled from '@emotion/styled'
 
-import IOPlaceholderNode from './IOPlaceholderNode'
-import SqlPlaceholderNode from './SqlPlaceholderNode'
-import InputNode from './InputNode'
-import OutputNode from './OutputNode'
-import Card from '@mui/material/Card'
-import SqlNode from './SqlNode'
+import styled from '@emotion/styled'
 import Box from '@mui/material/Box'
+import Card from '@mui/material/Card'
+
+import InputNode from './InputNode'
+import IOPlaceholderNode from './IOPlaceholderNode'
+import OutputNode from './OutputNode'
+import SqlNode from './SqlNode'
+import SqlPlaceholderNode from './SqlPlaceholderNode'
 
 export const Handle = styled(RawHandle)`
   background-color: ${({ theme }) => theme.palette.primary.main};

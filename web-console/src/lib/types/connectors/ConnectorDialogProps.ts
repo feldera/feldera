@@ -1,7 +1,7 @@
 // The properties passed to a create/update connector dialog.
 
-import { Dispatch, SetStateAction } from 'react'
 import { ConnectorDescr } from '$lib/types/manager'
+import { Dispatch, SetStateAction } from 'react'
 
 interface ConnectorDialogProps {
   connector?: ConnectorDescr

@@ -2,9 +2,10 @@
 // indicates if the modified version has been saved or is currently being saved.
 
 import ColoredChip from 'src/@core/components/mui/chip'
-import { Tooltip } from '@mui/material'
-import SyncIcon from '@mui/icons-material/Sync'
+
 import CloudDoneIcon from '@mui/icons-material/CloudDone'
+import SyncIcon from '@mui/icons-material/Sync'
+import { Tooltip } from '@mui/material'
 
 export type SaveIndicatorState = 'isNew' | 'isDebouncing' | 'isModified' | 'isSaving' | 'isUpToDate'
 

@@ -1,11 +1,12 @@
 // Sends a set of rows to a pipeline table.
 
-import { useCallback } from 'react'
-import { PipelinesService, PipelineId, Relation, ApiError, Field } from '$lib/types/manager'
-import { useMutation } from '@tanstack/react-query'
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { Row, getValueFormatter } from '$lib/types/ddl'
+import { getValueFormatter, Row } from '$lib/types/ddl'
+import { ApiError, Field, PipelineId, PipelinesService, Relation } from '$lib/types/manager'
 import Papa from 'papaparse'
+import { useCallback } from 'react'
+
+import { useMutation } from '@tanstack/react-query'
 
 export interface TableInsert {
   pipeline_id: PipelineId

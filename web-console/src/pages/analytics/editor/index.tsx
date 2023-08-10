@@ -1,6 +1,6 @@
+import Editors from '$lib/components/layouts/analytics/editor'
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
-import Editors from '$lib/components/layouts/analytics/editor'
 
 const Editor = () => {
   // Get the project id from the URL

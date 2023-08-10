@@ -1,14 +1,15 @@
 // The placeholder node to select a program.
 
+import useSqlPlaceholderClick from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
+import { ProgramDescr } from '$lib/types/manager'
 import React, { memo, useEffect, useState } from 'react'
 import { NodeProps } from 'reactflow'
+
 import { Icon } from '@iconify/react'
 import { Autocomplete, CardContent, TextField, Typography } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
 
 import { PlaceholderNode } from '../NodeTypes'
-import useSqlPlaceholderClick from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
-import { ProgramDescr } from '$lib/types/manager'
 
 const SqlPlaceHolderNode = (props: NodeProps) => {
   const [programs, setPrograms] = useState<ProgramDescr[]>([])

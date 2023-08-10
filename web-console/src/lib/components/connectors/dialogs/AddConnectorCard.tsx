@@ -3,12 +3,13 @@
 // Also attached the dialog for the connector that opens when someone clicks
 // on Add.
 
-import { SetStateAction, useState, Dispatch } from 'react'
+import { Dispatch, SetStateAction, useState } from 'react'
+
+import { Icon } from '@iconify/react'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
-import { Icon } from '@iconify/react'
 
 export interface AddConnectorCardProps {
   id?: string

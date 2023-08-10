@@ -1,17 +1,18 @@
 // Browse the contents of a table or a view.
 
+import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
+import useTableUpdater from '$lib/compositions/streaming/inspection/useTableUpdater'
+import { useAsyncError } from '$lib/functions/common/react'
+import { Row, rowToAnchor } from '$lib/types/ddl'
+import { NeighborhoodQuery, OpenAPI, Pipeline, PipelineRevision, Relation } from '$lib/types/manager'
 import { useCallback, useEffect, useState } from 'react'
+
 import Card from '@mui/material/Card'
 import { DataGridPro, GridPaginationModel, GridToolbar } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 
-import { Pipeline, OpenAPI, PipelineRevision, NeighborhoodQuery, Relation } from '$lib/types/manager'
-import useTableUpdater from '$lib/compositions/streaming/inspection/useTableUpdater'
-import { useAsyncError } from '$lib/functions/common/react'
 import { PercentilePagination } from './PercentilePagination'
-import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
-import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { Row, rowToAnchor } from '$lib/types/ddl'
 
 const FETCH_QUANTILES = 100
 

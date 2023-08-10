@@ -3,27 +3,28 @@
 // It is used to display a list of entities in a table. It's the generic version
 // of a table we use to display programs, pipelines, etc.
 
-import { ChangeEvent, useState, useEffect, Dispatch, MutableRefObject, ReactNode } from 'react'
+import QuickSearch from '$lib/components/common/table/QuickSearch'
+import { escapeRegExp } from '$lib/functions/common/string'
+import { ChangeEvent, Dispatch, MutableRefObject, ReactNode, useEffect, useState } from 'react'
+import { ErrorBoundary } from 'react-error-boundary'
+
+import { Icon } from '@iconify/react'
 import Card from '@mui/material/Card'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import {
   DataGridPro,
-  GridValidRowModel,
   DataGridProProps,
   GridRenderCellParams,
-  GridToolbarFilterButton
+  GridToolbarFilterButton,
+  GridValidRowModel
 } from '@mui/x-data-grid-pro'
-import { UseQueryResult } from '@tanstack/react-query'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
-import { ErrorOverlay } from './ErrorOverlay'
-import { escapeRegExp } from '$lib/functions/common/string'
-import Tooltip from '@mui/material/Tooltip'
-import IconButton from '@mui/material/IconButton'
-import { Icon } from '@iconify/react'
+import { UseQueryResult } from '@tanstack/react-query'
 
-import QuickSearch from '$lib/components/common/table/QuickSearch'
-import { ErrorBoundary } from 'react-error-boundary'
-import DataGridToolbar from './DataGridToolbar'
 import { DataGridFooter } from './DataGridFooter'
+import DataGridToolbar from './DataGridToolbar'
+import { ErrorOverlay } from './ErrorOverlay'
 
 // This is a workaround for the following issue:
 // https://github.com/mui/mui-x/issues/5239

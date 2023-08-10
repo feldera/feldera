@@ -1,9 +1,9 @@
 import { ReactNode } from 'react'
-
-import { styled, useTheme } from '@mui/material/styles'
-import MuiAppBar, { AppBarProps } from '@mui/material/AppBar'
-import MuiToolbar, { ToolbarProps } from '@mui/material/Toolbar'
 import { Settings } from 'src/@core/context/settingsContext'
+
+import MuiAppBar, { AppBarProps } from '@mui/material/AppBar'
+import { styled, useTheme } from '@mui/material/styles'
+import MuiToolbar, { ToolbarProps } from '@mui/material/Toolbar'
 
 interface Props {
   hidden: boolean

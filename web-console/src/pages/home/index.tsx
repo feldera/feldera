@@ -1,18 +1,17 @@
-import Link from 'next/link'
-
-import Card from '@mui/material/Card'
-import Grid from '@mui/material/Grid'
-import Box from '@mui/material/Box'
-import Typography from '@mui/material/Typography'
-import CardHeader from '@mui/material/CardHeader'
-import CardContent from '@mui/material/CardContent'
-import Button from '@mui/material/Button'
-import { Icon } from '@iconify/react'
-import Avatar from '@mui/material/Avatar'
-import CardActions from '@mui/material/CardActions'
-
 import Health from '$lib/components/home/Health'
 import Pipelines from '$lib/components/home/Pipelines'
+import Link from 'next/link'
+
+import { Icon } from '@iconify/react'
+import Avatar from '@mui/material/Avatar'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Card from '@mui/material/Card'
+import CardActions from '@mui/material/CardActions'
+import CardContent from '@mui/material/CardContent'
+import CardHeader from '@mui/material/CardHeader'
+import Grid from '@mui/material/Grid'
+import Typography from '@mui/material/Typography'
 
 const CardSupport = () => {
   return (

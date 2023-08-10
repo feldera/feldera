@@ -1,10 +1,10 @@
-import { Fragment } from 'react'
 import Image from 'next/image'
-import useMediaQuery from '@mui/material/useMediaQuery'
-import { styled, useTheme } from '@mui/material/styles'
-
-import MiscMaskLight from 'public/images/pages/misc-mask-light.png'
 import MiscMaskDark from 'public/images/pages/misc-mask-dark.png'
+import MiscMaskLight from 'public/images/pages/misc-mask-light.png'
+import { Fragment } from 'react'
+
+import { styled, useTheme } from '@mui/material/styles'
+import useMediaQuery from '@mui/material/useMediaQuery'
 
 // Styled Components
 const MaskImg = styled(Image)(() => ({

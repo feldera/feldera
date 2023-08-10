@@ -1,11 +1,13 @@
-import TextField from '@mui/material/TextField'
-import Select from '@mui/material/Select'
-import MenuItem from '@mui/material/MenuItem'
-import InputLabel from '@mui/material/InputLabel'
+import { Control, Controller, FieldErrors } from 'react-hook-form'
+
 import FormControl from '@mui/material/FormControl'
 import FormHelperText from '@mui/material/FormHelperText'
 import Grid from '@mui/material/Grid'
-import { Control, Controller, FieldErrors } from 'react-hook-form'
+import InputLabel from '@mui/material/InputLabel'
+import MenuItem from '@mui/material/MenuItem'
+import Select from '@mui/material/Select'
+import TextField from '@mui/material/TextField'
+
 import { KafkaOutputSchema } from '../KafkaOutputConnector'
 
 const TabkafkaOutputDetails = (props: {

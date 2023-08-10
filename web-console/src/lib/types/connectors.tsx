@@ -1,18 +1,18 @@
-import { Dispatch, SetStateAction } from 'react'
-import { match, P } from 'ts-pattern'
-import assert from 'assert'
-
-import { ConnectorDescr } from './manager'
 import {
   ConfigEditorDialog,
-  UrlConnectorDialog,
-  UrlSchema,
   EditorSchema,
   KafkaInputConnectorDialog,
   KafkaInputSchema,
+  KafkaOutputConnectorDialog,
   KafkaOutputSchema,
-  KafkaOutputConnectorDialog
+  UrlConnectorDialog,
+  UrlSchema
 } from '$lib/components/connectors/dialogs'
+import assert from 'assert'
+import { Dispatch, SetStateAction } from 'react'
+import { match, P } from 'ts-pattern'
+
+import { ConnectorDescr } from './manager'
 
 export enum ConnectorType {
   KAFKA_IN = 'KafkaIn',

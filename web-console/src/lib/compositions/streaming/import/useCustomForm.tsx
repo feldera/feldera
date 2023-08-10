@@ -7,6 +7,7 @@
 import { useCallback, useState } from 'react'
 import { FieldValues, useForm, UseFormProps, UseFormReturn } from 'react-hook-form'
 import * as yup from 'yup'
+
 import { yupResolver } from '@hookform/resolvers/yup'
 
 type WidenSchema<T> = T extends (...args: any[]) => any
@@ -60,10 +61,10 @@ export const useCustomForm = <TFieldValues extends FieldValues = FieldValues, TC
   const updateSchema = useCallback((newSchema: useCustomFormSchema<TFieldValues>) => {
     setSchema(oldSchema => {
       if (oldSchema) {
-        return yup.object().shape({
+        return yup.object<Partial<WidenSchema<TFieldValues>>>().shape({
           ...oldSchema.fields,
           ...newSchema.fields
-        }) as useCustomFormSchema<TFieldValues>
+        })
       }
       return newSchema
     })
@@ -71,7 +72,8 @@ export const useCustomForm = <TFieldValues extends FieldValues = FieldValues, TC
 
   const form = useForm({
     ...props,
-    resolver: schema ? yupResolver<useCustomFormSchema<TFieldValues>>(schema) : undefined
+    // TODO: if `any` is unnacceptable - fix this
+    resolver: schema ? yupResolver<TFieldValues>(schema as any) : undefined
   })
 
   return {

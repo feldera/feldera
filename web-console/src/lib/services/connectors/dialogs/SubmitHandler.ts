@@ -2,19 +2,20 @@
 //
 // Sends either update or create requests to the backend.
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { FieldValues, SubmitHandler } from 'react-hook-form'
+import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import {
+  ApiError,
+  ConnectorDescr,
+  ConnectorId,
+  ConnectorsService,
   NewConnectorRequest,
   NewConnectorResponse,
-  ApiError,
-  ConnectorsService,
   UpdateConnectorRequest,
-  UpdateConnectorResponse,
-  ConnectorDescr,
-  ConnectorId
+  UpdateConnectorResponse
 } from '$lib/types/manager'
-import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import { FieldValues, SubmitHandler } from 'react-hook-form'
+
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 // Sends the request to create a new connector.
 //

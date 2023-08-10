@@ -1,8 +1,8 @@
 import { ReactNode } from 'react'
+import { Settings } from 'src/@core/context/settingsContext'
+
 import { styled, useTheme } from '@mui/material/styles'
 import MuiSwipeableDrawer, { SwipeableDrawerProps } from '@mui/material/SwipeableDrawer'
-
-import { Settings } from 'src/@core/context/settingsContext'
 
 interface Props {
   hidden: boolean
