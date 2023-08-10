@@ -436,7 +436,9 @@ impl PipelineAutomaton {
                                     })?
                                 };
 
-                                if state == "Paused" {
+                                if state == "Paused"
+                                    && pipeline.current_status != PipelineStatus::Paused
+                                {
                                     self.update_pipeline_status(
                                         &mut pipeline,
                                         PipelineStatus::Paused,
@@ -444,7 +446,9 @@ impl PipelineAutomaton {
                                     )
                                     .await;
                                     self.update_pipeline_runtime_state(&pipeline).await?;
-                                } else if state == "Running" {
+                                } else if state == "Running"
+                                    && pipeline.current_status != PipelineStatus::Running
+                                {
                                     self.update_pipeline_status(
                                         &mut pipeline,
                                         PipelineStatus::Running,
@@ -452,7 +456,7 @@ impl PipelineAutomaton {
                                     )
                                     .await;
                                     self.update_pipeline_runtime_state(&pipeline).await?;
-                                } else {
+                                } else if state != "Paused" && state != "Running" {
                                     self.force_kill_pipeline(&mut pipeline, Some(RunnerError::HttpForwardError {
                                         pipeline_id: self.pipeline_id,
                                         error: format!("Pipeline reported unexpected status '{state}', expected 'Paused' or 'Running'")
