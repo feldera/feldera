@@ -1453,7 +1453,7 @@ public class PostgresDateTests extends PostgresBaseTest {
     @Test
     // Calcite does not seem to support infinity dates
     public void testInfinity() {
-        this.qn("SELECT DATE 'infinity'\n",
+        this.shouldFail("SELECT DATE 'infinity'\n",
                 "Illegal DATE literal 'infinity'");
     }
 

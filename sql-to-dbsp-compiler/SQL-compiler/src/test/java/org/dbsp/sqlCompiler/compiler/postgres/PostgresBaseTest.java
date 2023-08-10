@@ -481,7 +481,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
      * @param query             Query to run.
      * @param messageFragment   This fragment should appear in the error message.
      */
-    public void qn(String query, String messageFragment) {
+    public void shouldFail(String query, String messageFragment) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.optimizerOptions.throwOnError = false;
         this.prepareData(compiler);

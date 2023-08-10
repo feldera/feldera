@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -52,7 +51,7 @@ public class PostgresStringTests extends PostgresBaseTest {
     @Test
     public void illegalContinuationTest() {
         // Cannot continue a string without a newline
-        this.qn("SELECT 'first line' " +
+        this.shouldFail("SELECT 'first line' " +
                 "' - next line'\n" +
                 "\tAS \"Illegal comment within continuation\"\n",
                 "String literal continued on same line");
@@ -95,7 +94,7 @@ public class PostgresStringTests extends PostgresBaseTest {
 
     @Test
     public void invalidUnicodeTest() {
-        this.qn("SELECT U&'wrong: \\061'\n",
+        this.shouldFail("SELECT U&'wrong: \\061'\n",
                 "Unicode escape sequence starting at character 7 is not exactly four hex digits");
     }
 

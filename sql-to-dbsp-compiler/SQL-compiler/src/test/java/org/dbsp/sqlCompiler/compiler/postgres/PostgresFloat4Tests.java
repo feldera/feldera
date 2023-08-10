@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -44,9 +43,9 @@ public class PostgresFloat4Tests extends PostgresBaseTest {
 
     @Test
     public void testOverflowException() {
-        this.qn("SELECT 10e400 :: FLOAT4",
+        this.shouldFail("SELECT 10e400 :: FLOAT4",
                 "out of range");
-        this.qn("SELECT-10e400 :: FLOAT4",
+        this.shouldFail("SELECT-10e400 :: FLOAT4",
                 "out of range");
     }
 
@@ -57,9 +56,9 @@ public class PostgresFloat4Tests extends PostgresBaseTest {
                 "result\n" +
                 "------\n" +
                 "0");
-        this.qn("SELECT 5.0.0",
+        this.shouldFail("SELECT 5.0.0",
                 "Error parsing SQL");
-        this.qn("SELECT 5.  0",
+        this.shouldFail("SELECT 5.  0",
                 "Error parsing SQL");
     }
 
