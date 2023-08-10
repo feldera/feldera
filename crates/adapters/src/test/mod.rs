@@ -21,10 +21,14 @@ pub mod http;
 
 mod mock_dezset;
 mod mock_input_consumer;
+mod mock_output_consumer;
 
-pub use data::{generate_test_batch, generate_test_batches, TestStruct};
+pub use data::{
+    generate_test_batch, generate_test_batches, generate_test_batches_with_weights, TestStruct,
+};
 pub use mock_dezset::MockDeZSet;
 pub use mock_input_consumer::MockInputConsumer;
+pub use mock_output_consumer::MockOutputConsumer;
 
 pub struct TestLogger;
 pub static TEST_LOGGER: TestLogger = TestLogger;

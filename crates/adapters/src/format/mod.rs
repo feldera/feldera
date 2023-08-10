@@ -25,7 +25,7 @@ pub use self::{
 };
 use self::{
     csv::{CsvInputFormat, CsvOutputFormat},
-    json::JsonInputFormat,
+    json::{JsonInputFormat, JsonOutputFormat},
 };
 
 /// Error parsing input data.
@@ -343,8 +343,12 @@ static INPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn InputFormat>>> = Lazy:
 });
 
 /// Static map of supported output formats.
-static OUTPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn OutputFormat>>> =
-    Lazy::new(|| BTreeMap::from([("csv", Box::new(CsvOutputFormat) as Box<dyn OutputFormat>)]));
+static OUTPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn OutputFormat>>> = Lazy::new(|| {
+    BTreeMap::from([
+        ("csv", Box::new(CsvOutputFormat) as Box<dyn OutputFormat>),
+        ("json", Box::new(JsonOutputFormat) as Box<dyn OutputFormat>),
+    ])
+});
 
 /// Trait that represents a specific data format.
 ///
@@ -451,6 +455,16 @@ pub trait Parser: Send {
 pub trait OutputFormat: Send + Sync {
     /// Unique name of the data format.
     fn name(&self) -> Cow<'static, str>;
+
+    /// Extract encoder configuration from an HTTP request.
+    ///
+    /// Returns the extracted configuration cast to the `ErasedSerialize` trait object
+    /// (to keep this trait object-safe).
+    fn config_from_http_request(
+        &self,
+        endpoint_name: &str,
+        request: &HttpRequest,
+    ) -> Result<Box<dyn ErasedSerialize>, ControllerError>;
 
     /// Create a new encoder for the format.
     ///

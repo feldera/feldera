@@ -10,6 +10,7 @@ use csv::{
 };
 use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerialize};
 use serde::{Deserialize, Serialize};
+use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{borrow::Cow, io::Read, mem::take, sync::Arc};
 use utoipa::ToSchema;
 
@@ -187,7 +188,7 @@ const fn default_buffer_size_records() -> usize {
     10_000
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize, Serialize, ToSchema)]
 pub struct CsvEncoderConfig {
     #[serde(default = "default_buffer_size_records")]
     buffer_size_records: usize,
@@ -196,6 +197,19 @@ pub struct CsvEncoderConfig {
 impl OutputFormat for CsvOutputFormat {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("csv")
+    }
+
+    fn config_from_http_request(
+        &self,
+        endpoint_name: &str,
+        request: &HttpRequest,
+    ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
+        Ok(Box::new(
+            CsvEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
+                request.query_string().as_bytes(),
+            )))
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?,
+        ))
     }
 
     fn new_encoder(

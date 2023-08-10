@@ -4,7 +4,7 @@ use dbsp::{
 };
 use erased_serde::Serialize as ErasedSerialize;
 use serde::Serialize;
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 /// A type-erased batch whose contents can be serialized.
 ///
@@ -85,31 +85,33 @@ pub trait SerCursor {
 }
 
 /// [`SerBatch`] implementation that wraps a `BatchReader`.
-pub struct SerBatchImpl<B>
+pub struct SerBatchImpl<B, KD, VD>
 where
     B: BatchReader,
 {
     /// `Arc` is necessary for this type to satisfy `Send`.
     batch: Arc<B>,
+    phantom: PhantomData<fn() -> (KD, VD)>,
 }
 
-impl<B> SerBatchImpl<B>
+impl<B, KD, VD> SerBatchImpl<B, KD, VD>
 where
     B: BatchReader,
 {
     pub fn new(batch: B) -> Self {
         Self {
             batch: Arc::new(batch),
+            phantom: PhantomData,
         }
     }
 }
 
-impl<B> SerBatch for SerBatchImpl<B>
+impl<B, KD, VD> SerBatch for SerBatchImpl<B, KD, VD>
 where
     B: BatchReader<Time = ()> + Clone + Send + Sync,
-    B::Key: Serialize,
-    B::Val: Serialize,
     B::R: Into<i64>,
+    KD: From<B::Key> + Serialize,
+    VD: From<B::Val> + Serialize,
 {
     fn key_count(&self) -> usize {
         self.batch.key_count()
@@ -120,7 +122,7 @@ where
     }
 
     fn cursor<'a>(&'a self) -> Box<dyn SerCursor + 'a> {
-        Box::new(SerBatchCursor::new(&*self.batch))
+        Box::new(<SerBatchCursor<'a, B, KD, VD>>::new(&*self.batch))
     }
 
     /*fn fork(&self) -> Box<dyn SerBatch> {
@@ -131,30 +133,60 @@ where
 }
 
 /// [`SerCursor`] implementation that wraps a [`Cursor`].
-pub struct SerBatchCursor<'a, B>
+pub struct SerBatchCursor<'a, B, KD, VD>
 where
     B: BatchReader,
 {
     cursor: B::Cursor<'a>,
+    phantom: PhantomData<fn() -> (KD, VD)>,
+    key: Option<KD>,
+    val: Option<VD>,
 }
 
-impl<'a, B> SerBatchCursor<'a, B>
+impl<'a, B, KD, VD> SerBatchCursor<'a, B, KD, VD>
 where
-    B: BatchReader,
+    B: BatchReader<Time = ()> + Clone,
+    B::R: Into<i64>,
+    KD: From<B::Key> + Serialize,
+    VD: From<B::Val> + Serialize,
 {
     pub fn new(batch: &'a B) -> Self {
         let cursor = batch.cursor();
 
-        Self { cursor }
+        let mut result = Self {
+            cursor,
+            key: None,
+            val: None,
+            phantom: PhantomData,
+        };
+        result.update_key();
+        result.update_val();
+        result
+    }
+
+    fn update_key(&mut self) {
+        if self.key_valid() {
+            self.key = Some(KD::from(self.cursor.key().clone()));
+        } else {
+            self.key = None;
+        }
+    }
+
+    fn update_val(&mut self) {
+        if self.val_valid() {
+            self.val = Some(VD::from(self.cursor.val().clone()));
+        } else {
+            self.val = None;
+        }
     }
 }
 
-impl<'a, B> SerCursor for SerBatchCursor<'a, B>
+impl<'a, B, KD, VD> SerCursor for SerBatchCursor<'a, B, KD, VD>
 where
     B: BatchReader<Time = ()> + Clone,
-    B::Key: Serialize,
-    B::Val: Serialize,
     B::R: Into<i64>,
+    KD: From<B::Key> + Serialize,
+    VD: From<B::Val> + Serialize,
 {
     fn key_valid(&self) -> bool {
         self.cursor.key_valid()
@@ -165,11 +197,11 @@ where
     }
 
     fn key(&self) -> &dyn ErasedSerialize {
-        self.cursor.key()
+        self.key.as_ref().unwrap()
     }
 
     fn val(&self) -> &dyn ErasedSerialize {
-        self.cursor.val()
+        self.val.as_ref().unwrap()
     }
 
     fn weight(&mut self) -> i64 {
@@ -178,21 +210,27 @@ where
 
     fn step_key(&mut self) {
         self.cursor.step_key();
+        self.update_key();
+        self.update_val();
     }
 
     /// Advances the cursor to the next value.
     fn step_val(&mut self) {
         self.cursor.step_val();
+        self.update_val();
     }
 
     /// Rewinds the cursor to the first key.
     fn rewind_keys(&mut self) {
         self.cursor.rewind_keys();
+        self.update_key();
+        self.update_val();
     }
 
     /// Rewinds the cursor to the first value for current key.
     fn rewind_vals(&mut self) {
         self.cursor.rewind_vals();
+        self.update_val();
     }
 }
 
@@ -218,28 +256,53 @@ pub trait SerOutputBatchHandle: Send + Sync {
     fn fork(&self) -> Box<dyn SerOutputBatchHandle>;
 }
 
-impl<B> SerOutputBatchHandle for OutputHandle<B>
+pub struct SerOutputBatchHandleImpl<B, KD, VD> {
+    handle: OutputHandle<B>,
+    phantom: PhantomData<fn() -> (KD, VD)>,
+}
+
+impl<B: Clone, KD, VD> Clone for SerOutputBatchHandleImpl<B, KD, VD> {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle.clone(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<B, KD, VD> SerOutputBatchHandleImpl<B, KD, VD> {
+    pub fn new(handle: OutputHandle<B>) -> Self {
+        Self {
+            handle,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<B, KD, VD> SerOutputBatchHandle for SerOutputBatchHandleImpl<B, KD, VD>
 where
-    B: Batch<Time = ()> + Send + Sync,
-    B::Key: Serialize,
-    B::Val: Serialize,
+    B: Batch<Time = ()> + Send + Sync + Clone,
     B::R: Into<i64>,
+    KD: From<B::Key> + Serialize + 'static,
+    VD: From<B::Val> + Serialize + 'static,
 {
     fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatch>> {
-        self.take_from_worker(worker)
-            .map(|batch| Box::new(SerBatchImpl::new(batch)) as Box<dyn SerBatch>)
+        self.handle
+            .take_from_worker(worker)
+            .map(|batch| Box::new(<SerBatchImpl<B, KD, VD>>::new(batch)) as Box<dyn SerBatch>)
     }
 
     fn take_from_all(&self) -> Vec<Arc<dyn SerBatch>> {
-        self.take_from_all()
+        self.handle
+            .take_from_all()
             .into_iter()
-            .map(|batch| Arc::new(SerBatchImpl::new(batch)) as Arc<dyn SerBatch>)
+            .map(|batch| Arc::new(<SerBatchImpl<B, KD, VD>>::new(batch)) as Arc<dyn SerBatch>)
             .collect()
     }
 
     fn consolidate(&self) -> Box<dyn SerBatch> {
-        let batch = self.consolidate();
-        Box::new(SerBatchImpl::new(batch))
+        let batch = self.handle.consolidate();
+        Box::new(<SerBatchImpl<B, KD, VD>>::new(batch))
     }
 
     fn fork(&self) -> Box<dyn SerOutputBatchHandle> {

@@ -148,7 +148,7 @@ pub use deinput::{
     DeCollectionHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
 };
 pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser};
-pub use seroutput::{SerBatch, SerCursor, SerOutputBatchHandle};
+pub use seroutput::{SerBatch, SerCursor, SerOutputBatchHandle, SerOutputBatchHandleImpl};
 
 pub use controller::{
     ConfigError, ConnectorConfig, Controller, ControllerError, ControllerStatus, FormatConfig,
