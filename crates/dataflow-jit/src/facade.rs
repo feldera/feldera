@@ -3,20 +3,22 @@ use crate::{
     dataflow::{CompiledDataflow, JitHandle, RowInput, RowOutput},
     ir::{
         literal::{NullableConstant, RowLiteral, StreamCollection},
-        nodes::StreamLayout,
+        nodes::{Node, StreamLayout},
         pretty::{Arena, Pretty, DEFAULT_WIDTH},
         ColumnType, Constant, Graph, GraphExt, LayoutId, NodeId, RowLayout, Validator,
     },
     row::{row_from_literal, Row, UninitRow},
     thin_str::ThinStrRef,
+    utils::HashMap,
 };
 use chrono::{TimeZone, Utc};
 use cranelift_module::FuncId;
 use csv::StringRecord;
 use dbsp::{
     trace::{BatchReader, Cursor},
-    DBSPHandle, Error, Runtime,
+    CollectionHandle, DBSPHandle, Error, Runtime,
 };
+use dbsp_adapters::{Catalog, Controller, DeCollectionHandle, PipelineConfig};
 use rust_decimal::Decimal;
 use serde_json::{Deserializer, Value};
 use std::{collections::BTreeMap, mem::transmute, ops::Not, path::Path, thread, time::Instant};
@@ -72,6 +74,7 @@ impl DbspCircuit {
         workers: usize,
         config: CodegenConfig,
         demands: Demands,
+        pipeline_config: &PipelineConfig,
     ) -> Self {
         if tracing::enabled!(tracing::Level::TRACE) {
             let arena = Arena::<()>::new();
@@ -139,8 +142,20 @@ impl DbspCircuit {
             .into_iter()
             .map(|(id, (input, layout))| (id, (Some(input), layout)))
             .collect();
+        let mut named_inputs = HashMap::default();
         for (source, layout) in sources {
             inputs.entry(source).or_insert((None, layout));
+
+            let source_name = match &graph.nodes()[&source] {
+                Node::Source(source) => source.name(),
+                Node::SourceMap(source) => todo!(),
+                _ => unreachable!(),
+            };
+
+            if let Some(source_name) = source_name {
+                let displaced = named_inputs.insert(source, source_name.to_owned());
+                debug_assert!(displaced.is_none());
+            }
         }
 
         // Account for unreachable sinks
@@ -151,6 +166,110 @@ impl DbspCircuit {
         for (sink, layout) in sinks {
             outputs.entry(sink).or_insert((None, layout));
         }
+
+        let mut catalog = Catalog::new();
+        for (source_id, deserialize_fn) in json_deser_demands {
+            if let Some(handle) = inputs[&source_id].0 {
+                let deserialize_fn = unsafe {
+                    transmute::<*const u8, unsafe extern "C" fn(*mut u8, &serde_json::Value)>(
+                        jit.get_finalized_function(deserialize_fn),
+                    )
+                };
+
+                let name = named_inputs.remove(source_id).unwrap();
+                catalog.register_input_collection_handle(name, handle);
+
+            // TODO: Decide how to handle unused external inputs
+            } else {
+                tracing::warn!(
+                    "source node {source_id} (name: {:?}) is unreachable and was not registered",
+                    named_inputs.get(&source_id),
+                );
+            }
+        }
+
+        for (source_id, name) in named_inputs {
+            match &graph.nodes()[&source_id] {
+                Node::Source(source) => {
+                    let deserialize_fn = jit
+                        .jit
+                        .get_finalized_function(json_deser_demands[&source.layout()]);
+                    let deserialize_fn = unsafe {
+                        transmute::<*const u8, unsafe extern "C" fn(*mut u8, &serde_json::Value)>(
+                            deserialize_fn,
+                        )
+                    };
+
+                    if let Some(handle) = inputs[&source_id].0 {
+                        #[derive(Clone)]
+                        struct SetDeCollection {
+                            handle: CollectionHandle<Row, i32>,
+                            buffer: Vec<(Row, i32)>,
+                            deserialize_key: unsafe extern "C" fn(*mut u8, &serde_json::Value),
+                        }
+
+                        impl DeCollectionHandle for SetDeCollection {
+                            fn insert(
+                                &mut self,
+                                deserializer: &mut dyn ErasedDeserializer,
+                            ) -> Result<(), EError> {
+                                todo!()
+                            }
+
+                            fn delete(
+                                &mut self,
+                                deserializer: &mut dyn ErasedDeserializer,
+                            ) -> Result<(), EError> {
+                                todo!()
+                            }
+
+                            fn reserve(&mut self, additional: usize) {
+                                self.buffer.reserve(additional);
+                            }
+
+                            fn flush(&mut self) {
+                                self.handle.append(&mut self.buffer);
+                            }
+
+                            fn clear_buffer(&mut self) {
+                                self.buffer.clear();
+                            }
+
+                            fn fork(&self) -> Box<dyn DeCollectionHandle> {
+                                Box::new(Self {
+                                    handle: self.handle.clone(),
+                                    buffer: Vec::new(),
+                                    deserialize_key: self.deserialize_key,
+                                })
+                            }
+                        }
+
+                        let handle = handle.unwrap_set();
+                        catalog.register_input_collection_handle(name, handle);
+
+                    // TODO: Decide how to handle unused external inputs
+                    } else {
+                        tracing::warn!(
+                            "source node {source_id} (name: {name:?}) is unreachable and was not registered",
+                        );
+                    }
+                }
+
+                Node::SourceMap(_source) => {}
+
+                _ => unreachable!(),
+            }
+        }
+
+        let controller = Controller::with_config(
+            runtime,
+            catalog,
+            &pipeline_config,
+            Box::new(|error| {
+                tracing::error!("controller error occurred: {error}");
+            }),
+        )
+        .unwrap();
 
         Self {
             jit,
@@ -610,8 +729,8 @@ mod tests {
                 .build(),
         );
 
-        let demographics_src = graph.source(demographics_layout);
-        let transactions_src = graph.source(transactions_layout);
+        let demographics_src = graph.source(demographics_layout, None);
+        let transactions_src = graph.source(transactions_layout, None);
 
         let indexed_demographics = graph.add_node(IndexByColumn::new(
             demographics_src,

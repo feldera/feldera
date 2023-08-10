@@ -141,16 +141,22 @@ impl DataflowNode for ExportedNode {
 pub struct Source {
     /// The type of the source's produced stream
     layout: LayoutId,
+    #[serde(alias = "table")]
+    name: Option<Box<str>>,
 }
 
 impl Source {
-    pub const fn new(layout: LayoutId) -> Self {
-        Self { layout }
+    pub const fn new(layout: LayoutId, name: Option<Box<str>>) -> Self {
+        Self { layout, name }
     }
 
     /// The type of the source's produced stream
     pub const fn layout(&self) -> LayoutId {
         self.layout
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     pub const fn output_layout(&self) -> StreamLayout {

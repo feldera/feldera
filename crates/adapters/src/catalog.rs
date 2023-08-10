@@ -209,12 +209,13 @@ impl Catalog {
     }
 
     /// Add a named input stream handle to the catalog.
-    fn register_input_collection_handle<H>(&mut self, name: &str, handle: H)
+    pub fn register_input_collection_handle<N, H>(&mut self, name: N, handle: H)
     where
+        N: Into<String>,
         H: DeCollectionHandle + 'static,
     {
         self.input_collection_handles
-            .insert(name.to_owned(), Box::new(handle));
+            .insert(name.into(), Box::new(handle));
     }
 
     /// Add an output stream of Z-sets to the catalog.

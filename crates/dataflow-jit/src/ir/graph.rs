@@ -8,8 +8,8 @@ use crate::ir::{
     layout_cache::RowLayoutCache,
     nodes::{
         ConstantStream, DataflowNode, Differentiate, Distinct, ExportedNode, Filter, IndexWith,
-        Integrate, JoinCore, Map, Node, Sink, Source, SourceMap, StreamKind, StreamLayout,
-        StreamDistinct, Subgraph as SubgraphNode,
+        Integrate, JoinCore, Map, Node, Sink, Source, SourceMap, StreamDistinct, StreamKind,
+        StreamLayout, Subgraph as SubgraphNode,
     },
     optimize,
     pretty::{DocAllocator, DocBuilder, Pretty},
@@ -122,8 +122,8 @@ pub trait GraphExt {
         FunctionBuilder::new(self.layout_cache().clone())
     }
 
-    fn source(&mut self, key_layout: LayoutId) -> NodeId {
-        self.add_node(Source::new(key_layout))
+    fn source(&mut self, key_layout: LayoutId, name: Option<Box<str>>) -> NodeId {
+        self.add_node(Source::new(key_layout, name))
     }
 
     fn source_map(&mut self, key_layout: LayoutId, value_layout: LayoutId) -> NodeId {
@@ -527,7 +527,7 @@ mod tests {
                 .with_column(ColumnType::F64, true)
                 .build(),
         );
-        let source = graph.add_node(Source::new(source_row));
+        let source = graph.add_node(Source::new(source_row, None));
 
         // ```
         // let stream7850: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = T.map(
@@ -764,7 +764,7 @@ mod tests {
         //     Tuple1::new(None::<i32>) => 1,
         // )));
         // ```
-        let stream7130 = graph.add_node(Source::new(nullable_i32));
+        let stream7130 = graph.add_node(Source::new(nullable_i32, None));
 
         // ```
         // let stream7883: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = stream7130.differentiate();
@@ -856,7 +856,7 @@ mod tests {
                 .with_column(ColumnType::U32, false)
                 .build(),
         );
-        let source = graph.add_node(Source::new(xy_layout));
+        let source = graph.add_node(Source::new(xy_layout, None));
 
         let x_layout = graph.layout_cache().add(
             RowLayoutBuilder::new()
