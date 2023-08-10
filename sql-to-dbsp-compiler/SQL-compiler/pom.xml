@@ -45,6 +45,14 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.0.0-M7</version>
+                <configuration>
+                    <properties>
+                        <property>
+                            <name>listener</name>
+                            <value>org.dbsp.sqlCompiler.compiler.TestListener</value>
+                        </property>
+                    </properties>
+                </configuration>
             </plugin>
 
             <!-- Apache calcite parser extension.

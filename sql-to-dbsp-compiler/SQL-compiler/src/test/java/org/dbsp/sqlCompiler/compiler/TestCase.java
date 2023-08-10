@@ -50,6 +50,10 @@ class TestCase {
      */
     public final String name;
     /**
+     * Name of the Java test that is being run.
+     */
+    public final String javaTestName;
+    /**
      * Compiler used to compile the test case.
      * Used for code generation.
      */
@@ -63,8 +67,10 @@ class TestCase {
      */
     public final InputOutputPair[] data;
 
-    TestCase(String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... data) {
+    TestCase(String name, String javaTestName, DBSPCompiler compiler,
+             DBSPCircuit circuit, InputOutputPair... data) {
         this.name = name;
+        this.javaTestName = javaTestName;
         this.circuit = circuit;
         this.data = data;
         this.compiler = compiler;
@@ -90,12 +96,15 @@ class TestCase {
                     circuit.getVarReference().call(inputs));
             list.add(out);
             for (int i = 0; i < pairs.outputs.length; i++) {
+                String message = System.lineSeparator() +
+                        "mvn test -Dtest=" + this.javaTestName +
+                        System.lineSeparator() + this.name;
                 DBSPStatement compare = new DBSPExpressionStatement(
                         new DBSPApplyExpression("assert!", new DBSPTypeVoid(),
                                 new DBSPApplyExpression("must_equal", new DBSPTypeBool(CalciteObject.EMPTY, false),
                                         out.getVarReference().field(i).borrow(),
                                         outputs[i].borrow()),
-                                new DBSPStrLiteral(this.name, false, true)));
+                                new DBSPStrLiteral(message, false, true)));
                 list.add(compare);
             }
         }

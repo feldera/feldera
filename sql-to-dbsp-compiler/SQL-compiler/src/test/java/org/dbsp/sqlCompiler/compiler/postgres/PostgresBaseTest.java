@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
+import org.junit.Assert;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
@@ -442,7 +443,6 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         this.addRustTestCase(query, compiler, circuit, streams);
     }
 
-
     void compare(String query, String expected, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareData(compiler);
@@ -474,6 +474,22 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         String expected = queryAndOutput.substring(semicolon + 1);
         this.compare(query, expected, true);
         this.compare(query, expected, false);
+    }
+
+    /**
+     * Run a query that is expected to fail in compilation.
+     * @param query             Query to run.
+     * @param messageFragment   This fragment should appear in the error message.
+     */
+    public void qn(String query, String messageFragment) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.optimizerOptions.throwOnError = false;
+        this.prepareData(compiler);
+        compiler.compileStatement("CREATE VIEW VV AS " + query);
+        compiler.optimize();
+        Assert.assertTrue(compiler.messages.exitCode != 0);
+        String message = compiler.messages.toString();
+        Assert.assertTrue(message.contains(messageFragment));
     }
 
     /**

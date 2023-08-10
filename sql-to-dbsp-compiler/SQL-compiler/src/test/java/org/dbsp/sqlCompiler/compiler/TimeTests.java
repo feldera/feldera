@@ -143,10 +143,10 @@ public class TimeTests extends BaseSQLTests {
         this.testQuery(query, new DBSPTimestampLiteral(1588249513450L));
     }
 
-    @Test(expected = RuntimeException.class)
+    @Test
     public void timestampParseIllegal() {
         String query = "SELECT DATE '1997-02-29'";
-        this.testQuery(query, new DBSPDateLiteral("1997-02-29"));
+        this.testNegativeQuery(query, "Illegal DATE literal");
     }
 
     @Test

@@ -26,11 +26,15 @@ package org.dbsp.sqlCompiler.compiler;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
-import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
 import org.junit.AfterClass;
+import org.junit.Assert;
 import org.junit.BeforeClass;
+import org.junit.Rule;
+import org.junit.rules.TestName;
+import org.junit.rules.TestWatcher;
+import org.junit.runner.Description;
 
 import java.io.IOException;
 import java.io.PrintStream;
@@ -43,11 +47,27 @@ import java.util.List;
  * Base class for SQL-based tests.
  */
 public class BaseSQLTests {
+    @Rule
+    public TestName currentTestName = new TestName();
+
+    String currentTestInformation = "";
+
+    @Rule
+    public TestWatcher testWatcher = new TestWatcher() {
+        @Override
+        protected void starting(final Description description) {
+            String methodName = description.getMethodName();
+            String className = description.getClassName();
+            className = className.substring(className.lastIndexOf('.') + 1);
+            BaseSQLTests.this.currentTestInformation  = className + "#" + methodName;
+        }
+    };
+
     public static final String rustDirectory = "../temp/src";
     public static final String testFilePath = rustDirectory + "/lib.rs";
 
-    static int testsExecuted = 0;
-    static int jitTestsExecuted = 0;
+    public static int testsExecuted = 0;
+    public static int jitTestsExecuted = 0;
 
     /**
      * Collect here all the tests to run and execute them using a single Rust compilation.
@@ -57,6 +77,20 @@ public class BaseSQLTests {
     @BeforeClass
     public static void prepareTests() {
         testsToRun.clear();
+    }
+
+    DBSPCompiler noThrowCompiler() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.optimizerOptions.throwOnError = false;
+        return compiler;
+    }
+
+    public void testNegativeQuery(String query, String messageFragment) {
+        DBSPCompiler compiler = this.noThrowCompiler();
+        compiler.compileStatement("CREATE VIEW VV AS " + query);
+        Assert.assertTrue(compiler.messages.exitCode != 0);
+        String message = compiler.messages.toString();
+        Assert.assertTrue(message.contains(messageFragment));
     }
 
     /**
@@ -95,15 +129,13 @@ public class BaseSQLTests {
         }
         writer.writeAndClose();
         Utilities.compileAndTestRust(rustDirectory, true, extraArgs);
-        System.out.println("Executed " + testsExecuted + " Rust tests and "
-                + jitTestsExecuted + " JIT tests");
         testsToRun.clear();
     }
 
     protected void addRustTestCase(String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {
         compiler.messages.show(System.err);
         compiler.messages.clear();
-        TestCase test = new TestCase(name, compiler, circuit, streams);
+        TestCase test = new TestCase(name, this.currentTestInformation, compiler, circuit, streams);
         testsToRun.add(test);
     }
 
