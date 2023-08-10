@@ -21,7 +21,7 @@ import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
 import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
-import { connectorTypeToConfig, parseKafkaOutputSchema, ConnectorType } from 'src/types/connectors'
+import { connectorTypeToConfig, parseKafkaOutputSchema, ConnectorType, connectorTypeToIcon } from 'src/types/connectors'
 import TabkafkaOutputDetails from './tabs/TabKafkaOutputDetails'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
@@ -231,5 +231,11 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
 }
 
 export const AddKafkaOutputConnectorCard = () => {
-  return <AddConnectorCard icon='logos:kafka' title='Add a Kafka Output.' dialog={KafkaOutputConnectorDialog} />
+  return (
+    <AddConnectorCard
+      icon={connectorTypeToIcon(ConnectorType.KAFKA_OUT)}
+      title='Add a Kafka Output.'
+      dialog={KafkaOutputConnectorDialog}
+    />
+  )
 }

@@ -8,9 +8,8 @@
 export type TransportConfig = {
   /**
    * Transport-specific endpoint configuration passed to
-   * [`OutputTransport::new_endpoint`](`crate::OutputTransport::new_endpoint`)
-   * and
-   * [`InputTransport::new_endpoint`](`crate::InputTransport::new_endpoint`).
+   * `crate::OutputTransport::new_endpoint`
+   * and `crate::InputTransport::new_endpoint`.
    */
   config?: Record<string, any>
   /**

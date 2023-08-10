@@ -27,7 +27,7 @@ import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHan
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 import { PLACEHOLDER_VALUES } from 'src/utils'
-import { parseEditorSchema } from 'src/types/connectors'
+import { ConnectorType, connectorTypeToIcon, parseEditorSchema } from 'src/types/connectors'
 
 const schema = yup
   .object({
@@ -230,7 +230,7 @@ export const AddGenericConnectorCard = () => {
   return (
     <AddConnectorCard
       id='generic-connector'
-      icon='file-icons:test-generic'
+      icon={connectorTypeToIcon(ConnectorType.UNKNOWN)}
       title='A generic connector'
       dialog={ConfigEditorDialog}
     />
