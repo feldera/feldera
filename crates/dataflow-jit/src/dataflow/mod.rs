@@ -1,14 +1,15 @@
 mod nodes;
 mod operators;
+mod relations;
 mod tests;
 
 use crate::{
     codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayoutCache, VTable},
     dataflow::nodes::{
         Antijoin, DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
-        FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold,
-        StreamDistinct, IndexByColumn, Integrate,
-        JoinCore, MapFn, Max, Min, Minus, Noop, PartitionedRollingFold, Topk, UnitMapToSet,
+        FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, IndexByColumn, Integrate,
+        JoinCore, MapFn, Max, Min, Minus, Noop, PartitionedRollingFold, StreamDistinct, Topk,
+        UnitMapToSet,
     },
     ir::{
         graph,
@@ -26,11 +27,9 @@ use cranelift_module::FuncId;
 use dbsp::{
     algebra::UnimplementedSemigroup,
     operator::{FilterMap as _, Generator},
-    trace::{Batch, BatchReader, Batcher, Cursor, Spine},
-    Circuit, CollectionHandle, DBTimestamp, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit,
-    Stream,
+    trace::{Batch, BatchReader, Batcher, Cursor},
+    Circuit, DBTimestamp, OrdIndexedZSet, OrdZSet, RootCircuit,
 };
-use derive_more::{IsVariant, Unwrap};
 use nodes::{
     DataflowNode, Filter, IndexWith, Map, MonotonicJoin, Neg, Sink, Source, SourceMap, Sum,
 };
@@ -42,115 +41,12 @@ use std::{
     ptr::{self, NonNull},
 };
 
+pub use relations::{
+    Inputs, Outputs, RowInput, RowMap, RowOutput, RowSet, RowStream, RowTrace, RowZSet,
+};
+
 // TODO: Keep layout ids in dataflow nodes so we can do assertions that types
 // are correct
-
-type RowSet = OrdZSet<Row, i32>;
-type RowMap = OrdIndexedZSet<Row, Row, i32>;
-
-type Inputs = BTreeMap<NodeId, (RowInput, StreamLayout)>;
-type Outputs = BTreeMap<NodeId, (RowOutput, StreamLayout)>;
-
-#[derive(Clone, IsVariant, Unwrap)]
-pub enum RowInput {
-    Set(CollectionHandle<Row, i32>),
-    Map(CollectionHandle<Row, (Row, i32)>),
-}
-
-impl RowInput {
-    pub fn as_set_mut(&mut self) -> Option<&mut CollectionHandle<Row, i32>> {
-        if let Self::Set(handle) = self {
-            Some(handle)
-        } else {
-            None
-        }
-    }
-
-    pub fn as_map_mut(&mut self) -> Option<&mut CollectionHandle<Row, (Row, i32)>> {
-        if let Self::Map(handle) = self {
-            Some(handle)
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Clone)]
-pub enum RowOutput {
-    Set(OutputHandle<RowSet>),
-    Map(OutputHandle<RowMap>),
-}
-
-impl RowOutput {
-    pub const fn as_set(&self) -> Option<&OutputHandle<RowSet>> {
-        if let Self::Set(handle) = self {
-            Some(handle)
-        } else {
-            None
-        }
-    }
-
-    pub fn as_set_mut(&mut self) -> Option<&mut OutputHandle<RowSet>> {
-        if let Self::Set(handle) = self {
-            Some(handle)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_map(&self) -> Option<&OutputHandle<RowMap>> {
-        if let Self::Map(handle) = self {
-            Some(handle)
-        } else {
-            None
-        }
-    }
-
-    pub fn as_map_mut(&mut self) -> Option<&mut OutputHandle<RowMap>> {
-        if let Self::Map(handle) = self {
-            Some(handle)
-        } else {
-            None
-        }
-    }
-}
-
-// TODO: Change the weight to a `Row`? Toggle between `i32` and `i64`?
-#[derive(Clone, IsVariant, Unwrap)]
-pub enum RowStream<C> {
-    Set(Stream<C, RowSet>),
-    Map(Stream<C, RowMap>),
-}
-
-impl<C> RowStream<C> {
-    pub const fn as_set(&self) -> Option<&Stream<C, RowSet>> {
-        if let Self::Set(set) = self {
-            Some(set)
-        } else {
-            None
-        }
-    }
-
-    pub const fn as_map(&self) -> Option<&Stream<C, RowMap>> {
-        if let Self::Map(map) = self {
-            Some(map)
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Clone, IsVariant, Unwrap)]
-pub enum RowTrace<C> {
-    Set(Stream<C, Spine<RowSet>>),
-    Map(Stream<C, Spine<RowMap>>),
-}
-
-#[derive(Debug, Clone)]
-pub enum RowZSet {
-    Set(RowSet),
-    Map(RowMap),
-}
 
 pub struct JitHandle {
     pub(crate) jit: JITModule,
@@ -610,8 +506,9 @@ impl CompiledDataflow {
 
                 DataflowNode::Distinct(distinct) => self.distinct(node_id, distinct, &mut streams),
 
-                DataflowNode::StreamDistinct(distinct) =>
-                    self.stream_distinct(node_id, distinct, &mut streams),
+                DataflowNode::StreamDistinct(distinct) => {
+                    self.stream_distinct(node_id, distinct, &mut streams)
+                }
 
                 DataflowNode::JoinCore(join) => {
                     let lhs = streams[&join.lhs].clone();

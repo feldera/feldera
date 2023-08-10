@@ -26,6 +26,7 @@ cranelift-jit = "0.96.2"
 target-lexicon = "0.12.5"
 cranelift-module = "0.96.2"
 unicode-normalization = "0.1.22"
+dbsp_adapters = { path = "../adapters" }
 dbsp = { path = "../dbsp", features = ["serde"] }
 bitvec = { version = "1.0.1", features = ["serde"] }
 bitflags = { version = "2.0.1", features = ["serde"] }
