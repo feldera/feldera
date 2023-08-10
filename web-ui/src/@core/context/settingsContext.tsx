@@ -1,9 +1,9 @@
 import { createContext, ReactNode } from 'react'
 import { PaletteMode } from '@mui/material'
-import themeConfig from 'src/configs/themeConfig'
+import themeConfig from '$lib/functions/configs/themeConfig'
 import { ThemeColor, ContentWidth } from 'src/@core/layouts/types'
 import { useLocalStorage } from '@mantine/hooks'
-import { LS_PREFIX } from 'src/types/localStorage'
+import { LS_PREFIX } from '$lib/types/localStorage'
 
 export type Settings = {
   mode: PaletteMode

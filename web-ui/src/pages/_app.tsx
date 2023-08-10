@@ -5,8 +5,8 @@ import type { AppProps } from 'next/app'
 import NProgress from 'nprogress'
 import { CacheProvider } from '@emotion/react'
 import type { EmotionCache } from '@emotion/cache'
-import themeConfig from 'src/configs/themeConfig'
-import StandardVerticalLayout from 'src/layouts/StandardVerticalLayout'
+import themeConfig from '$lib/functions/configs/themeConfig'
+import StandardVerticalLayout from '$lib/components/layouts/StandardVerticalLayout'
 import ThemeComponent from 'src/@core/theme/ThemeComponent'
 import { SettingsConsumer, SettingsProvider } from 'src/@core/context/settingsContext'
 import { createEmotionCache } from 'src/@core/utils/create-emotion-cache'
@@ -14,17 +14,20 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import { LocalizationProvider } from '@mui/x-date-pickers'
 import { LicenseInfo } from '@mui/x-license-pro'
-import { usePageHeader } from 'src/compositions/ui/pageHeader'
+import { usePageHeader } from '$lib/compositions/global/pageHeader'
 import 'dayjs/locale/en-gb'
 
 import 'react-perfect-scrollbar/dist/css/styles.css'
-import '../../styles/globals.css'
-import StatusSnackBar from 'src/components/errors/StatusSnackBar'
-import { defaultQueryFn } from 'src/types/defaultQueryFn'
-import { OpenAPI } from 'src/types/manager'
+import 'src/styles/globals.css'
+import StatusSnackBar from '$lib/components/common/errors/StatusSnackBar'
+import { defaultQueryFn } from '$lib/types/defaultQueryFn'
+import { OpenAPI } from '$lib/types/manager'
+import type { ReactElement, ReactNode } from 'react'
 
 type ExtendedAppProps = AppProps & {
-  Component: NextPage
+  Component: NextPage & {
+    getLayout?: (page: ReactElement) => ReactNode;
+  }
   emotionCache: EmotionCache
 }
 
@@ -65,8 +68,8 @@ const App = (props: ExtendedAppProps) => {
   const { Component, emotionCache = clientSideEmotionCache, pageProps } = props
 
   // Variables
-  const getLayout = Component.getLayout ?? (page => <StandardVerticalLayout>{page}</StandardVerticalLayout>)
-  usePageHeader(s => s.setHeader)(<></>)
+  const getLayout = Component.getLayout ?? ((page: ReactElement) => <StandardVerticalLayout>{page}</StandardVerticalLayout>)
+  usePageHeader(s => s.setHeader)({title: null})
   return (
     <CacheProvider value={emotionCache}>
       <Head>

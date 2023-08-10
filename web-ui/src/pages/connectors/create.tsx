@@ -4,7 +4,7 @@ import {
   AddUrlConnectorCard,
   AddKafkaOutputConnectorCard,
   AddKafkaInputConnectorCard
-} from 'src/connectors/dialogs'
+} from '$lib/components/connectors/dialogs'
 
 const ConnectorCreateGrid = () => {
   // id is referenced by webui-tester

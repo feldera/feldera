@@ -11,8 +11,8 @@ import { Icon } from '@iconify/react'
 import Avatar from '@mui/material/Avatar'
 import CardActions from '@mui/material/CardActions'
 
-import Health from 'src/home/Health'
-import Pipelines from 'src/home/Pipelines'
+import Health from '$lib/components/home/Health'
+import Pipelines from '$lib/components/home/Pipelines'
 
 const CardSupport = () => {
   return (

@@ -6,8 +6,8 @@ import Grid from '@mui/material/Grid'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
-import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from 'src/types/manager'
-import { InspectionTable } from 'src/streaming/inspection/InspectionTable'
+import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from '$lib/types/manager'
+import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
 import {
   Breadcrumbs,
   FormControl,
@@ -21,8 +21,8 @@ import {
 import { Icon } from '@iconify/react'
 import { Controller, useForm } from 'react-hook-form'
 import { ErrorBoundary } from 'react-error-boundary'
-import { ErrorOverlay } from 'src/components/table/ErrorOverlay'
-import { usePageHeader } from 'src/compositions/ui/pageHeader'
+import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
+import { usePageHeader } from '$lib/compositions/global/pageHeader'
 
 const TitleBreadCrumb = (props: { pipeline: Pipeline; relation: string }) => {
   const { descriptor } = props.pipeline

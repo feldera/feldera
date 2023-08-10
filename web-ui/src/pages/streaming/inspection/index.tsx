@@ -4,8 +4,8 @@ import Grid from '@mui/material/Grid'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/router'
 import { SyntheticEvent, useEffect, useState } from 'react'
-import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from 'src/types/manager'
-import { InspectionTable } from 'src/streaming/inspection/InspectionTable'
+import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from '$lib/types/manager'
+import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
 import {
   Alert,
   AlertTitle,
@@ -21,13 +21,13 @@ import {
 import { Icon } from '@iconify/react'
 import { Controller, useForm } from 'react-hook-form'
 import { ErrorBoundary } from 'react-error-boundary'
-import { ErrorOverlay } from 'src/components/table/ErrorOverlay'
+import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import Tab from '@mui/material/Tab'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
 import TabContext from '@mui/lab/TabContext'
-import { InsertionTable } from 'src/streaming/import/InsertionTable'
-import { usePageHeader } from 'src/compositions/ui/pageHeader'
+import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
+import { usePageHeader } from '$lib/compositions/global/pageHeader'
 
 const TitleBreadCrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
   const { tables, views, relation } = props

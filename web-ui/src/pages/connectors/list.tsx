@@ -1,6 +1,6 @@
 import Grid from '@mui/material/Grid'
-import DataSourceTable from 'src/connectors/DataSourceTable'
-import { usePageHeader } from 'src/compositions/ui/pageHeader'
+import DataSourceTable from '$lib/components/connectors/DataSourceTable'
+import { usePageHeader } from '$lib/compositions/global/pageHeader'
 
 const SqlPrograms = () => {
   usePageHeader(s => s.setHeader)({ title: 'Connectors', subtitle: 'View and edit data sources.' })

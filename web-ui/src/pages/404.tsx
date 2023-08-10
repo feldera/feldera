@@ -5,7 +5,7 @@ import { styled } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 import Box, { BoxProps } from '@mui/material/Box'
 import BlankLayout from 'src/@core/layouts/BlankLayout'
-import FooterIllustrations from 'src/layouts/misc/FooterIllustrations'
+import FooterIllustrations from '$lib/components/layouts/misc/FooterIllustrations'
 
 const BoxWrapper = styled(Box)<BoxProps>(({ theme }) => ({
   [theme.breakpoints.down('md')]: {

@@ -2,11 +2,11 @@ import assert from 'assert'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import Grid from '@mui/material/Grid'
 import { Card, CardContent } from '@mui/material'
-import PipelineGraph from 'src/streaming/builder/PipelineBuilder'
-import SaveIndicator, { SaveIndicatorState } from 'src/components/SaveIndicator'
+import PipelineGraph from '$lib/components/streaming/builder/PipelineBuilder'
+import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
 import { match } from 'ts-pattern'
-import Metadata from 'src/streaming/builder/Metadata'
-import { useBuilderState } from 'src/streaming/builder/useBuilderState'
+import Metadata from '$lib/components/streaming/builder/Metadata'
+import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
 import {
   AttachedConnector,
   ApiError,
@@ -19,17 +19,17 @@ import {
   ProgramDescr,
   UpdatePipelineRequest,
   UpdatePipelineResponse
-} from 'src/types/manager'
+} from '$lib/types/manager'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
 import { useDebouncedCallback } from 'use-debounce'
-import { removePrefix } from 'src/utils'
-import { useReplacePlaceholder } from 'src/streaming/builder/hooks/useSqlPlaceholderClick'
-import { connectorConnects, useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
-import MissingSchemaDialog from 'src/streaming/builder/NoSchemaDialog'
-import useStatusNotification from 'src/components/errors/useStatusNotification'
-import { invalidatePipeline } from 'src/types/defaultQueryFn'
-import { usePageHeader } from 'src/compositions/ui/pageHeader'
+import { removePrefix } from '$lib/functions/common/string'
+import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
+import { connectorConnects, useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
+import MissingSchemaDialog from '$lib/components/streaming/builder/NoSchemaDialog'
+import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import { invalidatePipeline } from '$lib/types/defaultQueryFn'
+import { usePageHeader } from '$lib/compositions/global/pageHeader'
 import { useRouter } from 'next/router'
 
 const stateToSaveLabel = (state: SaveIndicatorState): string =>

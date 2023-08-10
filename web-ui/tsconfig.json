@@ -2,8 +2,7 @@
   "compilerOptions": {
     "strictPropertyInitialization": false,
     "experimentalDecorators": true,
-    "baseUrl": ".",
-    "rootDir": "src",
+    "rootDir": ".",
     "target": "es6",
     "lib": [
       "dom",
@@ -29,7 +28,19 @@
       "apexcharts/*": [
         "./node_modules/apexcharts-clevision/*"
       ],
-    }
+      "src": [
+        "./src"
+      ],
+      "src/*": [
+        "./src/*"
+      ],
+      "$lib": [
+        "./src/lib"
+      ],
+      "$lib/*": [
+        "./src/lib/*"
+      ]
+    },
   },
   "include": [
     "src",
