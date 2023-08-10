@@ -71,3 +71,29 @@ pub fn generate_test_batches(
             .collect::<Vec<_>>()
     })
 }
+
+pub fn generate_test_batches_with_weights(
+    max_batches: usize,
+    max_records: usize,
+) -> impl Strategy<Value = Vec<Vec<(TestStruct, i64)>>> {
+    collection::vec(
+        collection::vec(any::<(TestStruct, i64)>(), 0..=max_records),
+        0..=max_batches,
+    )
+    .prop_map(|batches| {
+        let mut index = 0;
+        batches
+            .into_iter()
+            .map(|batch| {
+                batch
+                    .into_iter()
+                    .map(|mut val| {
+                        val.0.id = index;
+                        index += 1;
+                        val
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    })
+}

@@ -93,6 +93,36 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 .decrease()
                 .append("}")
                 .newline();
+
+        this.builder.append("impl From<");
+        tuple.accept(this.innerVisitor);
+        this.builder.append("> for ")
+                .append(type.sanitizedName);
+        this.builder.append(" {")
+                .increase()
+                .append("fn from(tuple: ");
+        tuple.accept(this.innerVisitor);
+        this.builder.append(") -> Self");
+        this.builder.append(" {")
+                .increase()
+                .append("Self {")
+                .increase();
+        int index = 0;
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            this.builder
+                .append(field.sanitizedName)
+                .append(": tuple.")
+                .append(index++)
+                .append(",")
+                .newline();
+        }
+        this.builder.decrease().append("}").newline();
+        this.builder.decrease()
+                .append("}")
+                .newline()
+                .decrease()
+                .append("}")
+                .newline();
     }
 
     private void generateRenameMacro(String tableName, DBSPTypeStruct type) {

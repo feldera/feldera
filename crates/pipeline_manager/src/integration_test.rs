@@ -222,15 +222,47 @@ impl TestConfig {
             .unwrap()
     }
 
-    async fn quantiles(&self, id: &str, table: &str) -> String {
+    async fn quantiles_csv(&self, id: &str, table: &str) -> String {
         let mut resp = self
             .post_no_body(format!(
-                "/v0/pipelines/{id}/egress/{table}?query=quantiles&mode=snapshot"
+                "/v0/pipelines/{id}/egress/{table}?query=quantiles&mode=snapshot&format=csv"
             ))
             .await;
         assert!(resp.status().is_success());
         let resp: Value = resp.json().await.unwrap();
         resp.get("text_data").unwrap().as_str().unwrap().to_string()
+    }
+
+    async fn quantiles_json(&self, id: &str, table: &str) -> String {
+        let mut resp = self
+            .post_no_body(format!(
+                "/v0/pipelines/{id}/egress/{table}?query=quantiles&mode=snapshot&format=json"
+            ))
+            .await;
+        assert!(resp.status().is_success());
+        let resp: Value = resp.json().await.unwrap();
+        resp.get("json_data").unwrap().to_string()
+    }
+
+    async fn neighborhood_json(
+        &self,
+        id: &str,
+        table: &str,
+        anchor: Option<Value>,
+        before: u64,
+        after: u64,
+    ) -> String {
+        let mut resp = self
+            .post(
+                format!(
+                "/v0/pipelines/{id}/egress/{table}?query=neighborhood&mode=snapshot&format=json"
+            ),
+                &json!({"before": before, "after": after, "anchor": anchor}),
+            )
+            .await;
+        assert!(resp.status().is_success());
+        let resp: Value = resp.json().await.unwrap();
+        resp.get("json_data").unwrap().to_string()
     }
 
     async fn delete<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
@@ -501,7 +533,7 @@ async fn deploy_pipeline() {
         .await;
 
     // Querying quantiles should work in paused state.
-    let quantiles = config.quantiles(&id, "T1").await;
+    let quantiles = config.quantiles_csv(&id, "T1").await;
     assert_eq!(&quantiles, "1,1\n2,1\n3,1\n");
 
     // Start the pipeline
@@ -646,8 +678,19 @@ async fn json_ingress() {
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles(&id, "T1").await;
-    assert_eq!(quantiles, "10,true,,1\n20,,foo,1\n");
+    let quantiles = config.quantiles_json(&id, "T1").await;
+    assert_eq!(quantiles, "[{\"data\":{\"C1\":10,\"C2\":true,\"C3\":null},\"table\":null,\"weight\":1},{\"data\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"},\"table\":null,\"weight\":1}]");
+
+    let hood = config
+        .neighborhood_json(
+            &id,
+            "T1",
+            Some(json!({"C1":10,"C2":true,"C3":null})),
+            10,
+            10,
+        )
+        .await;
+    assert_eq!(hood, "[{\"data\":{\"index\":0,\"key\":{\"C1\":10,\"C2\":true,\"C3\":null}},\"table\":null,\"weight\":1},{\"data\":{\"index\":1,\"key\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},\"table\":null,\"weight\":1}]");
 
     // Push more data using insert/delete format.
     let req = config
@@ -663,8 +706,8 @@ async fn json_ingress() {
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles(&id, "T1").await;
-    assert_eq!(quantiles, "20,,foo,1\n30,,bar,1\n");
+    let quantiles = config.quantiles_json(&id, "T1").await;
+    assert_eq!(quantiles, "[{\"data\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"},\"table\":null,\"weight\":1}]");
 
     // Format data as json array.
     let req = config
@@ -690,8 +733,8 @@ async fn json_ingress() {
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles(&id, "T1").await;
-    assert_eq!(quantiles, "20,,foo,1\n30,,bar,1\n50,true,,1\n");
+    let quantiles = config.quantiles_json(&id, "T1").await;
+    assert_eq!(quantiles, "[{\"data\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":50,\"C2\":true,\"C3\":\"\"},\"table\":null,\"weight\":1}]");
 
     // Trigger parse errors.
     let mut req = config
@@ -710,8 +753,8 @@ async fn json_ingress() {
 
     // Even records that are parsed successfully don't get ingested when
     // using array format.
-    let quantiles = config.quantiles(&id, "T1").await;
-    assert_eq!(quantiles, "20,,foo,1\n30,,bar,1\n50,true,,1\n");
+    let quantiles = config.quantiles_json(&id, "T1").await;
+    assert_eq!(quantiles, "[{\"data\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":50,\"C2\":true,\"C3\":\"\"},\"table\":null,\"weight\":1}]");
 
     let mut req = config
         .post_json(
@@ -729,7 +772,7 @@ async fn json_ingress() {
 
     // Even records that are parsed successfully don't get ingested when
     // using array format.
-    let quantiles = config.quantiles(&id, "T1").await;
+    let quantiles = config.quantiles_csv(&id, "T1").await;
     assert_eq!(quantiles, "20,,foo,1\n25,true,,1\n30,,bar,1\n50,true,,1\n");
 
     // Debezium CDC format
@@ -745,7 +788,7 @@ async fn json_ingress() {
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles(&id, "T1").await;
+    let quantiles = config.quantiles_csv(&id, "T1").await;
     assert_eq!(
         quantiles,
         "20,,foo,1\n25,true,,1\n30,,bar,1\n60,true,hello,1\n"
@@ -766,10 +809,10 @@ not_a_number,true,ΑαΒβΓγΔδ
     let error = std::str::from_utf8(&body).unwrap();
     assert_eq!(error, "{\"message\":\"Errors parsing input data (1 errors):\\n    Parse error (event #2): failed to deserialize CSV record: error parsing field 'C1': field 0: invalid digit found in string\\nInvalid fragment: ByteRecord([\\\"not_a_number\\\", \\\"true\\\", \\\"ΑαΒβΓγΔδ\\\"])\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize CSV record: error parsing field 'C1': field 0: invalid digit found in string\",\"event_number\":2,\"field\":\"C1\",\"invalid_bytes\":null,\"invalid_text\":\"ByteRecord([\\\"not_a_number\\\", \\\"true\\\", \\\"ΑαΒβΓγΔδ\\\"])\",\"suggestion\":null}],\"num_errors\":1}}");
 
-    let quantiles = config.quantiles(&id, "T1").await;
+    let quantiles = config.quantiles_json(&id, "T1").await;
     assert_eq!(
         quantiles,
-        "15,true,foo,1\n16,false,unicode🚲,1\n20,,foo,1\n25,true,,1\n30,,bar,1\n60,true,hello,1\n"
+        "[{\"data\":{\"C1\":15,\"C2\":true,\"C3\":\"foo\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":16,\"C2\":false,\"C3\":\"unicode🚲\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":25,\"C2\":true,\"C3\":\"\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":60,\"C2\":true,\"C3\":\"hello\"},\"table\":null,\"weight\":1}]"
     );
 
     // Shutdown the pipeline

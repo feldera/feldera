@@ -244,19 +244,15 @@ impl Controller {
     /// * `endpoint_config` - (partial) endpoint config.  Only `format.name` and
     ///   `stream` fields need to be initialized.
     ///
-    /// * `format_config` - a deserializer used to extract format-specific
-    ///   configuration.
-    ///
     /// * `endpoint` - transport endpoint object.
     pub fn add_output_endpoint(
         &self,
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
-        format_config: &mut dyn ErasedDeserializer,
         endpoint: Box<dyn OutputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
         self.inner
-            .add_output_endpoint(endpoint_name, endpoint_config, format_config, endpoint)
+            .add_output_endpoint(endpoint_name, endpoint_config, endpoint)
     }
 
     /// Increment the nubmber of active API connections.
@@ -951,12 +947,7 @@ impl ControllerInner {
         let endpoint = transport
             .new_endpoint(endpoint_name, endpoint_config)
             .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
-        self.add_output_endpoint(
-            endpoint_name,
-            endpoint_config,
-            &mut <dyn ErasedDeserializer>::erase(&endpoint_config.connector_config.format.config),
-            endpoint,
-        )
+        self.add_output_endpoint(endpoint_name, endpoint_config, endpoint)
     }
 
     fn disconnect_output(self: &Arc<Self>, endpoint_id: &EndpointId) {
@@ -973,7 +964,6 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
-        format_config: &mut dyn ErasedDeserializer,
         endpoint: Box<dyn OutputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
         let mut outputs = self.outputs.write().unwrap();
@@ -1028,7 +1018,12 @@ impl ControllerInner {
                 )
             })?;
         let encoder = format
-            .new_encoder(format_config, probe)
+            .new_encoder(
+                &mut <dyn ErasedDeserializer>::erase(
+                    &endpoint_config.connector_config.format.config,
+                ),
+                probe,
+            )
             .map_err(|e| ControllerError::encode_error(endpoint_name, e))?;
 
         let parker = Parker::new();

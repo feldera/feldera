@@ -24,6 +24,12 @@ pub enum ConfigError {
         error: String,
     },
 
+    /// Failed to parse encoder configuration for an endpoint.
+    EncoderConfigParseError {
+        endpoint_name: String,
+        error: String,
+    },
+
     /// Input endpoint with this name already exists.
     DuplicateInputEndpoint { endpoint_name: String },
 
@@ -76,6 +82,7 @@ impl DetailedError for ConfigError {
         match self {
             Self::PipelineConfigParseError { .. } => Cow::from("PipelineConfigParseError"),
             Self::ParserConfigParseError { .. } => Cow::from("ParserConfigParseError"),
+            Self::EncoderConfigParseError { .. } => Cow::from("EncoderConfigParseError"),
             Self::DuplicateInputEndpoint { .. } => Cow::from("DuplicateInputEndpoint"),
             Self::DuplicateOutputEndpoint { .. } => Cow::from("DuplicateOutputEndpoint"),
             Self::UnknownInputFormat { .. } => Cow::from("UnknownInputFormat"),
@@ -95,6 +102,15 @@ impl Display for ConfigError {
                 write!(f, "Failed to parse pipeline configuration: {error}")
             }
             Self::ParserConfigParseError {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "Error parsing format configuration for endpoint '{endpoint_name}': {error}"
+                )
+            }
+            Self::EncoderConfigParseError {
                 endpoint_name,
                 error,
             } => {
@@ -167,6 +183,16 @@ impl ConfigError {
         E: ToString,
     {
         Self::ParserConfigParseError {
+            endpoint_name: endpoint_name.to_owned(),
+            error: error.to_string(),
+        }
+    }
+
+    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
+    where
+        E: ToString,
+    {
+        Self::EncoderConfigParseError {
             endpoint_name: endpoint_name.to_owned(),
             error: error.to_string(),
         }
@@ -489,6 +515,15 @@ impl ControllerError {
     {
         Self::Config {
             config_error: ConfigError::parser_config_parse_error(endpoint_name, error),
+        }
+    }
+
+    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
+    where
+        E: ToString,
+    {
+        Self::Config {
+            config_error: ConfigError::encoder_config_parse_error(endpoint_name, error),
         }
     }
 

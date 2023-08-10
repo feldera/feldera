@@ -20,12 +20,9 @@ use colored::Colorize;
 use dbsp::{operator::sample::MAX_QUANTILES, DBSPHandle};
 use env_logger::Env;
 use erased_serde::Deserializer as ErasedDeserializer;
-use form_urlencoded;
 use log::{debug, error, info, warn};
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
-use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 use std::io::Write;
 use std::{
     borrow::Cow,
@@ -546,7 +543,11 @@ async fn input_endpoint(
         stream: Cow::from(table_name),
         connector_config: ConnectorConfig {
             transport: HttpInputTransport::config(),
-            format: FormatConfig::from_http_request(&endpoint_name, &args.format, &req)?,
+            format: FormatConfig::parser_config_from_http_request(
+                &endpoint_name,
+                &args.format,
+                &req,
+            )?,
             max_buffered_records: HttpInputTransport::default_max_buffered_records(),
         },
     };
@@ -715,10 +716,11 @@ async fn output_endpoint(
         query: args.query,
         connector_config: ConnectorConfig {
             transport: HttpOutputTransport::config(),
-            format: FormatConfig {
-                name: Cow::from(args.format.clone()),
-                config: YamlValue::Null,
-            },
+            format: FormatConfig::encoder_config_from_http_request(
+                &endpoint_name,
+                &args.format,
+                &req,
+            )?,
             max_buffered_records: HttpOutputTransport::default_max_buffered_records(),
         },
     };
@@ -739,9 +741,6 @@ async fn output_endpoint(
             let endpoint_id = match controller.add_output_endpoint(
                 &endpoint_name,
                 &config,
-                &mut <dyn ErasedDeserializer>::erase(UrlDeserializer::new(form_urlencoded::parse(
-                    req.query_string().as_bytes(),
-                ))),
                 Box::new(endpoint.clone()) as Box<dyn OutputEndpoint>,
             ) {
                 Ok(endpoint_id) => endpoint_id,

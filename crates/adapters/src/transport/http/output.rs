@@ -4,7 +4,9 @@ use anyhow::{anyhow, Result as AnyResult};
 use async_stream::stream;
 use crossbeam::sync::ShardedLock;
 use log::debug;
+use log::error;
 use serde::{ser::SerializeStruct, Serializer};
+use serde_json::value::RawValue;
 use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
@@ -110,18 +112,30 @@ impl HttpOutputEndpointInner {
                 Format::Binary => unimplemented!(),
                 Format::Text => {
                     let data_str = std::str::from_utf8(buffer).map_err(|e| {
-                        anyhow!("received an invalid UTF8 string from encoder: '{e}'")
+                        anyhow!("received an invalid UTF8 string from encoder: {e}")
                     })?;
                     struct_serializer
                         .serialize_field("text_data", data_str)
-                        .map_err(|e| anyhow!("error serializing 'text_data' field: '{e}'"))?;
+                        .map_err(|e| anyhow!("error serializing 'text_data' field: {e}"))?;
                 }
-                Format::Json => unimplemented!(),
+                Format::Json => {
+                    let data_str = std::str::from_utf8(buffer).map_err(|e| {
+                        anyhow!("received an invalid UTF8 string from encoder: {e}")
+                    })?;
+                    let json_value =
+                        serde_json::from_str::<Box<RawValue>>(data_str).map_err(|e| {
+                            error!("Invalid JSON: {data_str}");
+                            anyhow!("received an invalid JSON string from encoder: {e}")
+                        })?;
+                    struct_serializer
+                        .serialize_field("json_data", &json_value)
+                        .map_err(|e| anyhow!("error serializing 'json_data' field: {e}"))?;
+                }
             }
         }
         struct_serializer
             .end()
-            .map_err(|e| anyhow!("error serializing 'text_data' field: '{e}'"))?;
+            .map_err(|e| anyhow!("error serializing chunk: '{e}'"))?;
 
         let mut json_buf = serializer.into_inner();
         json_buf.push(b'\r');
@@ -168,6 +182,7 @@ impl HttpOutputEndpoint {
     pub(crate) fn new(name: &str, format: &str, snapshot: bool, stream: bool) -> Self {
         let format = match format {
             "csv" => Format::Text,
+            "json" => Format::Json,
             _ => Format::Binary,
         };
         Self {

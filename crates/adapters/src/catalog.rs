@@ -1,5 +1,6 @@
 use crate::{
     DeCollectionHandle, DeScalarHandle, DeScalarHandleImpl, DeZSetHandle, SerOutputBatchHandle,
+    SerOutputBatchHandleImpl,
 };
 use dbsp::{
     algebra::ZRingValue,
@@ -21,6 +22,25 @@ pub struct NeighborhoodQuery {
     pub anchor: Option<utoipa::openapi::Object>,
     pub before: u32,
     pub after: u32,
+}
+
+// Helper type only used to serialize neighborhoods as a map vs tuple.
+#[derive(Serialize)]
+struct NeighborhoodEntry<KD> {
+    index: isize,
+    key: KD,
+}
+
+impl<K, KD> From<(isize, (K, ()))> for NeighborhoodEntry<KD>
+where
+    KD: From<K>,
+{
+    fn from((index, (key, ())): (isize, (K, ()))) -> Self {
+        Self {
+            index,
+            key: KD::from(key),
+        }
+    }
 }
 
 /// A set of stream handles associated with each output collection.
@@ -159,7 +179,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         handle: CollectionHandle<Z::Key, Z::R>,
     ) where
-        D: for<'de> Deserialize<'de> + Clone + Send + 'static,
+        D: for<'de> Deserialize<'de> + Serialize + From<Z::Key> + Clone + Send + 'static,
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Serialize + Sync + From<D>,
@@ -182,7 +202,7 @@ impl Catalog {
     /// Add an output stream of Z-sets to the catalog.
     pub fn register_output_zset<Z, D>(&mut self, name: &str, stream: Stream<RootCircuit, Z>)
     where
-        D: for<'de> Deserialize<'de> + Clone + Send + 'static,
+        D: for<'de> Deserialize<'de> + Serialize + From<Z::Key> + Clone + Send + 'static,
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Serialize + Sync + From<D>,
@@ -244,16 +264,24 @@ impl Catalog {
             .output_guarded(&num_quantiles_stream.apply(|num_quantiles| *num_quantiles > 0));
 
         let handles = OutputCollectionHandles {
-            delta_handle: Box::new(delta_handle) as Box<dyn SerOutputBatchHandle>,
+            delta_handle: Box::new(<SerOutputBatchHandleImpl<_, D, ()>>::new(delta_handle))
+                as Box<dyn SerOutputBatchHandle>,
 
             neighborhood_descr_handle: Box::new(DeScalarHandleImpl::new(neighborhood_descr_handle))
                 as Box<dyn DeScalarHandle>,
-            neighborhood_handle: Box::new(neighborhood_handle) as Box<dyn SerOutputBatchHandle>,
-            neighborhood_snapshot_handle: Box::new(neighborhood_snapshot_handle)
+            neighborhood_handle: Box::new(
+                <SerOutputBatchHandleImpl<_, NeighborhoodEntry<D>, ()>>::new(neighborhood_handle),
+            ) as Box<dyn SerOutputBatchHandle>,
+            neighborhood_snapshot_handle: Box::new(<SerOutputBatchHandleImpl<
+                _,
+                NeighborhoodEntry<D>,
+                (),
+            >>::new(neighborhood_snapshot_handle))
                 as Box<dyn SerOutputBatchHandle>,
 
             num_quantiles_handle,
-            quantiles_handle: Box::new(quantiles_handle) as Box<dyn SerOutputBatchHandle>,
+            quantiles_handle: Box::new(<SerOutputBatchHandleImpl<_, D, ()>>::new(quantiles_handle))
+                as Box<dyn SerOutputBatchHandle>,
         };
 
         self.output_batch_handles.insert(name.to_owned(), handles);

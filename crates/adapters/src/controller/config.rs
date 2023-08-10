@@ -5,7 +5,7 @@
 //! endpoint configs.  We represent these configs as opaque yaml values, so
 //! that the entire configuration tree can be deserialized from a yaml file.
 
-use crate::{ControllerError, InputFormat, OutputQuery};
+use crate::{ControllerError, InputFormat, OutputFormat, OutputQuery};
 use actix_web::HttpRequest;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
@@ -171,7 +171,7 @@ pub struct FormatConfig {
 impl FormatConfig {
     /// Create an instance of `FormatConfig` from format name and
     /// HTTP request using the `InputFormat::config_from_http_request` method.
-    pub fn from_http_request(
+    pub fn parser_config_from_http_request(
         endpoint_name: &str,
         format_name: &str,
         request: &HttpRequest,
@@ -189,6 +189,25 @@ impl FormatConfig {
             name: Cow::from(format_name.to_string()),
             config: serde_yaml::to_value(config)
                 .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?,
+        })
+    }
+
+    /// Create an instance of `FormatConfig` from format name and
+    /// HTTP request using the `InputFormat::config_from_http_request` method.
+    pub fn encoder_config_from_http_request(
+        endpoint_name: &str,
+        format_name: &str,
+        request: &HttpRequest,
+    ) -> Result<Self, ControllerError> {
+        let format = <dyn OutputFormat>::get_format(format_name)
+            .ok_or_else(|| ControllerError::unknown_output_format(endpoint_name, format_name))?;
+
+        let config = format.config_from_http_request(endpoint_name, request)?;
+
+        Ok(Self {
+            name: Cow::from(format_name.to_string()),
+            config: serde_yaml::to_value(config)
+                .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?,
         })
     }
 }
