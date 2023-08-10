@@ -19,11 +19,36 @@ import {
   ProgramDescr,
   ProgramId,
   ProgramsService,
+  ProgramStatus,
   UpdateProgramRequest
 } from './manager'
 
+// Updates just the program status in the query cache.
+export const programStatusUpdate = (queryClient: QueryClient, programId: ProgramId, newStatus: ProgramStatus) => {
+  queryClient.setQueryData(['programStatus', { program_id: programId }], (oldData: ProgramDescr | undefined) => {
+    return oldData
+      ? {
+          ...oldData,
+          status: newStatus
+        }
+      : oldData
+  })
+  queryClient.setQueryData(['program'], (oldData: ProgramDescr[] | undefined) => {
+    return oldData?.map((item: ProgramDescr) => {
+      if (item.program_id === programId) {
+        return {
+          ...item,
+          status: newStatus
+        }
+      } else {
+        return item
+      }
+    })
+  })
+}
+
 // Updates the query cache for a `UpdateProgramRequest` response.
-export const projectQueryCacheUpdate = (
+export const programQueryCacheUpdate = (
   queryClient: QueryClient,
   programId: ProgramId,
   newData: UpdateProgramRequest

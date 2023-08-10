@@ -30,7 +30,7 @@ import { ProgramDescr } from 'src/types/manager/models/ProgramDescr'
 import CompileIndicator from './CompileIndicator'
 import SaveIndicator, { SaveIndicatorState } from 'src/components/SaveIndicator'
 import { PLACEHOLDER_VALUES } from 'src/utils'
-import { projectQueryCacheUpdate } from 'src/types/defaultQueryFn'
+import { programQueryCacheUpdate, programStatusUpdate } from 'src/types/defaultQueryFn'
 import assert from 'assert'
 
 // How many ms to wait until we save the project.
@@ -186,18 +186,19 @@ const useCreateProjectIfNew = (
 
 // Fetches the data for an existing project (if we have a program_id).
 const useFetchExistingProject = (
-  project: ProgramDescr,
+  programId: string | null,
   setProject: Dispatch<SetStateAction<ProgramDescr>>,
   setState: Dispatch<SetStateAction<SaveIndicatorState>>,
   lastCompiledVersion: number,
   setLastCompiledVersion: Dispatch<SetStateAction<number>>,
+  loaded: boolean,
   setLoaded: Dispatch<SetStateAction<boolean>>
 ) => {
-  const codeQuery = useQuery<number, ApiError, ProgramDescr>(['programCode', { program_id: project.program_id }], {
-    enabled: project.program_id != null
+  const codeQuery = useQuery<number, ApiError, ProgramDescr>(['programCode', { program_id: programId }], {
+    enabled: programId != null && !loaded
   })
   useEffect(() => {
-    if (codeQuery.data && !codeQuery.isLoading && !codeQuery.isError) {
+    if (!loaded && codeQuery.data && !codeQuery.isLoading && !codeQuery.isError) {
       setProject({
         program_id: codeQuery.data.program_id,
         name: codeQuery.data.name,
@@ -220,7 +221,8 @@ const useFetchExistingProject = (
     setProject,
     setState,
     setLastCompiledVersion,
-    setLoaded
+    setLoaded,
+    loaded
   ])
 }
 
@@ -245,7 +247,7 @@ const useUpdateProjectIfChanged = (
     }
   })
   useEffect(() => {
-    if (project.program_id !== null && state === 'isModified' && !isLoading) {
+    if (project.program_id !== '' && state === 'isModified' && !isLoading) {
       const updateRequest = {
         name: project.name,
         description: project.description,
@@ -261,7 +263,7 @@ const useUpdateProjectIfChanged = (
           },
           onSuccess: (data: UpdateProgramResponse) => {
             assert(project.program_id)
-            projectQueryCacheUpdate(queryClient, project.program_id, updateRequest)
+            programQueryCacheUpdate(queryClient, project.program_id, updateRequest)
             setProject((prevState: ProgramDescr) => ({ ...prevState, version: data.version }))
             setState('isUpToDate')
             setFormError({})
@@ -321,7 +323,7 @@ const useCompileProjectIfChanged = (
       !isLoading &&
       !isError &&
       state == 'isUpToDate' &&
-      project.program_id !== null &&
+      project.program_id !== '' &&
       lastCompiledVersion !== undefined &&
       project.version > lastCompiledVersion &&
       project.status !== 'Pending' &&
@@ -369,7 +371,7 @@ const usePollCompilationStatus = (
     queryKey: ['programStatus', { program_id: project.program_id }],
     refetchInterval: data =>
       data === undefined || data.status === 'Pending' || data.status === 'CompilingSql' ? 1000 : false,
-    enabled: project.program_id !== null && (project.status === 'Pending' || project.status === 'CompilingSql')
+    enabled: project.program_id !== '' && (project.status === 'Pending' || project.status === 'CompilingSql')
   })
 
   useEffect(() => {
@@ -402,21 +404,12 @@ const usePollCompilationStatus = (
         .exhaustive()
 
       if (project.status !== compilationStatus.data.status) {
-        // @ts-ignore: Typescript thinks compilationStatus.data can be undefined but we check it above?
         setProject((prevState: ProgramDescr) => ({ ...prevState, status: compilationStatus.data.status }))
-        queryClient.setQueryData(['programStatus', { program_id: project.program_id }], compilationStatus.data)
-        queryClient.setQueryData(['program'], (oldData: ProgramDescr[] | undefined) => {
-          return oldData?.map((item: ProgramDescr) => {
-            if (item.program_id === project.program_id) {
-              return compilationStatus.data
-            } else {
-              return item
-            }
-          })
-        })
+        programStatusUpdate(queryClient, project.program_id, compilationStatus.data.status)
       }
     }
   }, [
+    compilationStatus,
     compilationStatus.data,
     compilationStatus.isLoading,
     compilationStatus.isError,
@@ -473,7 +466,15 @@ const Editors = (props: { programId: string | null }) => {
   const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
 
   useCreateProjectIfNew(state, project, setProject, setState, setFormError)
-  useFetchExistingProject(project, setProject, setState, lastCompiledVersion, setLastCompiledVersion, setLoaded)
+  useFetchExistingProject(
+    programId,
+    setProject,
+    setState,
+    lastCompiledVersion,
+    setLastCompiledVersion,
+    loaded,
+    setLoaded
+  )
   useUpdateProjectIfChanged(state, project, setProject, setState, setFormError)
   useCompileProjectIfChanged(state, project, setProject, lastCompiledVersion)
   usePollCompilationStatus(project, setProject, setLastCompiledVersion)
