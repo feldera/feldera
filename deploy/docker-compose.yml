@@ -71,8 +71,9 @@ services:
     environment:
       - RUST_BACKTRACE=1
       - REDPANDA_BROKERS=redpanda:9092
+      - SECOPS_DEMO_ARGS
     command:
       - bash
       - -c
       # Run the SecOps demo
-      - "cd demo/project_demo00-SecOps && python3 run.py --dbsp_url http://dbsp:8080 --actions prepare create compile ${SECOPS_DEMO_ARGS}"
+      - "cd demo/project_demo00-SecOps && python3 run.py --dbsp_url http://dbsp:8080 --actions prepare create compile $${SECOPS_DEMO_ARGS}"
