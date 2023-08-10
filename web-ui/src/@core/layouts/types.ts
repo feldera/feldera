@@ -6,7 +6,7 @@ export type ContentWidth = 'full' | 'boxed'
 export type ThemeColor = 'primary' | 'secondary' | 'error' | 'warning' | 'info' | 'success'
 
 export type NavLink = {
-  path?: string
+  path?: string | string[]
   title: string
   action?: string
   subject?: string

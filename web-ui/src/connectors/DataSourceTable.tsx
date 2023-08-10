@@ -22,6 +22,7 @@ import {
 import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 import { ConnectorDialog, getStatusObj, connectorDescrToType } from 'src/types/connectors'
+import { Button } from '@mui/material'
 
 const DataSourceTable = () => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])
@@ -171,6 +172,11 @@ const DataSourceTable = () => {
           hasSearch
           hasFilter
           addActions
+          footerChildren={
+            <Button variant='contained' size='small' href='/connectors/create'>
+              Add connector
+            </Button>
+          }
         />
       </Card>
 

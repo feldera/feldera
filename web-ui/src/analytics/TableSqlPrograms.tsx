@@ -24,6 +24,7 @@ import {
 } from 'src/types/manager'
 import EntityTable from 'src/components/table/EntityTable'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
+import { Button } from '@mui/material'
 
 const getStatusObj = (status: ProgramStatus) =>
   match(status)
@@ -186,6 +187,11 @@ const TableSqlPrograms = () => {
         onDeleteRow={deleteProject}
         onEditClicked={row => router.push(`/analytics/editor?program_id=${row.program_id}`)}
         apiRef={apiRef}
+        footerChildren={
+          <Button variant='contained' size='small' href='/analytics/editor'>
+            Add SQL program
+          </Button>
+        }
       />
     </Card>
   )

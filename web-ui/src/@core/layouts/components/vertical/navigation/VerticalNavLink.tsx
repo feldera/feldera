@@ -51,13 +51,10 @@ const MenuItemTextMetaWrapper = styled(Box)<BoxProps>({
 const VerticalNavLink = ({ item, navVisible, toggleNavVisibility }: Props) => {
   const router = useRouter()
   const IconTag: string = item.icon || ''
-  const isNavLinkActive = () => {
-    if (router.pathname === item.path || handleURLQueries(router, item.path)) {
-      return true
-    } else {
-      return false
-    }
-  }
+  const isNavLinkActive = () =>
+    (Array.isArray(item.path) ? item.path : [item.path]).find(
+      path => router.pathname === path || handleURLQueries(router, path)
+    )
 
   return (
     <ListItem
@@ -66,7 +63,7 @@ const VerticalNavLink = ({ item, navVisible, toggleNavVisibility }: Props) => {
       disabled={item.disabled || false}
       sx={{ mt: 1.5, px: '0 !important' }}
     >
-      <Link passHref href={item.path === undefined ? '/' : `${item.path}`} legacyBehavior>
+      <Link passHref href={item.path === undefined ? '/' : `${item.path[0] ?? item.path}`} legacyBehavior>
         <MenuNavLink
           className={isNavLinkActive() ? 'active' : ''}
           {...(item.openInNewTab ? { target: '_blank' } : null)}

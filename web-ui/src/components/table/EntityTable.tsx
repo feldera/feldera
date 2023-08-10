@@ -3,9 +3,16 @@
 // It is used to display a list of entities in a table. It's the generic version
 // of a table we use to display programs, pipelines, etc.
 
-import { ChangeEvent, useState, useEffect, Dispatch, MutableRefObject } from 'react'
+import { ChangeEvent, useState, useEffect, Dispatch, MutableRefObject, ReactFragment, ReactNode } from 'react'
 import Card from '@mui/material/Card'
-import { DataGridPro, GridValidRowModel, DataGridProProps, GridRenderCellParams } from '@mui/x-data-grid-pro'
+import {
+  DataGridPro,
+  GridValidRowModel,
+  DataGridProProps,
+  GridRenderCellParams,
+  GridToolbarFilterButton,
+  GridFooter
+} from '@mui/x-data-grid-pro'
 import { UseQueryResult } from '@tanstack/react-query'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
 import { ErrorOverlay } from './ErrorOverlay'
@@ -14,8 +21,11 @@ import Tooltip from '@mui/material/Tooltip'
 import IconButton from '@mui/material/IconButton'
 import { Icon } from '@iconify/react'
 
-import QuickSearchToolbar from 'src/components/table/QuickSearchToolbar'
+import QuickSearch from 'src/components/table/QuickSearch'
 import { ErrorBoundary } from 'react-error-boundary'
+import DataGridToolbar from './DataGridToolbar'
+import { Button } from '@mui/material'
+import { DataGridFooter } from './DataGridFooter'
 
 // This is a workaround for the following issue:
 // https://github.com/mui/mui-x/issues/5239
@@ -43,6 +53,7 @@ export type EntityTableProps<TData extends GridValidRowModel> = {
   addActions?: boolean
   tableProps: DataGridProProps<TData>
   apiRef?: MutableRefObject<GridApiPro>
+  footerChildren?: ReactNode
 }
 
 const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TData>) => {
@@ -134,8 +145,9 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
         {...tableProps}
         autoHeight
         apiRef={props.apiRef}
-        components={{
-          Toolbar: QuickSearchToolbar
+        slots={{
+          toolbar: DataGridToolbar,
+          footer: DataGridFooter
         }}
         rows={filteredData.length ? filteredData : tableProps.rows}
         pageSizeOptions={ROWS_PER_PAGE_OPTIONS}
@@ -143,16 +155,22 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
         onPaginationModelChange={setPaginationModel}
         processRowUpdate={onUpdateRow}
         loading={isLoading}
-        componentsProps={{
+        slotProps={{
           baseButton: {
             variant: 'outlined'
           },
           toolbar: {
-            hasSearch: props.hasSearch,
-            hasFilter: props.hasFilter,
-            value: searchText,
-            clearSearch: () => handleSearch(''),
-            onChange: (event: ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)
+            children: [
+              <GridToolbarFilterButton />,
+              <QuickSearch
+                value={searchText}
+                clearSearch={() => handleSearch('')}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)}
+              />
+            ]
+          },
+          footer: {
+            children: props.footerChildren
           }
         }}
       />

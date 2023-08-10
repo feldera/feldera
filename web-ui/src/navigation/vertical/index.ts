@@ -9,29 +9,34 @@ const navigation = (): VerticalNavItemsType => {
       icon: 'bx:home-circle'
     },
     {
+      title: 'Docs',
+      path: 'https://docs.feldera.io/docs/sql/intro',
+      icon: 'bx:file'
+    },
+    {
       sectionTitle: 'Analytics'
     },
+    // {
+    //   title: 'SQL Editor',
+    //   path: '/analytics/editor',
+    //   icon: 'bx:dock-top'
+    // },
     {
-      title: 'SQL Editor',
-      path: '/analytics/editor',
-      icon: 'bx:dock-top'
-    },
-    {
-      title: 'Existing Programs',
-      path: '/analytics/programs',
-      icon: 'bx:list-ul'
+      title: 'SQL Programs',
+      path: ['/analytics/programs', '/analytics/editor'],
+      icon: 'bx:align-left' // 'bx:list-ul'
     },
     {
       sectionTitle: 'Streaming'
     },
+    // {
+    //   title: 'Pipeline Builder',
+    //   path: '/streaming/builder',
+    //   icon: 'gridicons:create'
+    // },
     {
-      title: 'Pipeline Builder',
-      path: '/streaming/builder',
-      icon: 'gridicons:create'
-    },
-    {
-      title: 'Pipeline Management',
-      path: '/streaming/management',
+      title: 'Pipelines', // 'Pipeline Management',
+      path: ['/streaming/management', '/streaming/builder'],
       icon: 'bx:git-repo-forked'
     },
     //{
@@ -42,15 +47,15 @@ const navigation = (): VerticalNavItemsType => {
     {
       sectionTitle: 'Input & Output'
     },
+    // {
+    //   title: 'Connector Creator',
+    //   path: '/connectors/create',
+    //   icon: 'bx:coin-stack'
+    // },
     {
-      title: 'Connector Creator',
-      path: '/connectors/create',
-      icon: 'bx:coin-stack'
-    },
-    {
-      title: 'Existing Connectors',
-      path: '/connectors/list',
-      icon: 'bx:download'
+      title: 'Connectors', // 'Existing Connectors',
+      path: ['/connectors/list', '/connectors/create'],
+      icon: 'bx:unite' // 'bx:download'
     }
     //{
     //title: 'Data Browser',

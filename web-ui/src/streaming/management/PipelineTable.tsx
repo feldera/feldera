@@ -31,7 +31,7 @@ import Tooltip from '@mui/material/Tooltip'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 
 import AnalyticsPipelineTput from 'src/streaming/management/AnalyticsPipelineTput'
-import QuickSearchToolbar from 'src/components/table/QuickSearchToolbar'
+import QuickSearch from 'src/components/table/QuickSearch'
 import {
   AttachedConnector,
   Pipeline,
@@ -59,6 +59,9 @@ import usePausePipeline from './hooks/usePausePipeline'
 import useShutdownPipeline from './hooks/useShutdownPipeline'
 import useDeletePipeline from './hooks/useDeletePipeline'
 import useStartPipeline from './hooks/useStartPipeline'
+import DataGridToolbar from 'src/components/table/DataGridToolbar'
+import { DataGridFooter } from 'src/components/table/DataGridFooter'
+import { Button } from '@mui/material'
 import useStatusNotification from 'src/components/errors/useStatusNotification'
 
 interface ConnectorData {
@@ -672,8 +675,9 @@ export default function PipelineTable() {
         rowThreshold={0}
         getDetailPanelHeight={() => 'auto'}
         getDetailPanelContent={getDetailPanelContent}
-        components={{
-          Toolbar: QuickSearchToolbar
+        slots={{
+          toolbar: DataGridToolbar,
+          footer: DataGridFooter
         }}
         rows={filteredData.length ? filteredData : rows}
         pageSizeOptions={[7, 10, 25, 50]}
@@ -681,15 +685,25 @@ export default function PipelineTable() {
         onPaginationModelChange={setPaginationModel}
         processRowUpdate={onUpdateRow}
         loading={isLoading}
-        componentsProps={{
+        slotProps={{
           baseButton: {
             variant: 'outlined'
           },
           toolbar: {
-            hasSearch: true,
-            value: searchText,
-            clearSearch: () => handleSearch(''),
-            onChange: (event: React.ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)
+            children: (
+              <QuickSearch
+                value={searchText}
+                clearSearch={() => handleSearch('')}
+                onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)}
+              />
+            )
+          },
+          footer: {
+            children: (
+              <Button variant='contained' size='small' href='/streaming/builder'>
+                Add pipeline
+              </Button>
+            )
           }
         }}
       />
