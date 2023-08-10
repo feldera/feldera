@@ -1,5 +1,4 @@
 /// A binary that brings up all three of the api-server, compiler and local runner services.
-use actix_web::rt::{self, spawn};
 use clap::{Args, Command, FromArgMatches};
 
 use colored::Colorize;
@@ -14,7 +13,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use utoipa::OpenApi;
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     // Stay in single-threaded mode (no tokio) until calling `daemonize`.
 
     // Create env logger.
@@ -33,12 +33,12 @@ fn main() -> anyhow::Result<()> {
         .unwrap();
     if api_config.dump_openapi {
         let openapi_json = ApiDoc::openapi().to_json()?;
-        std::fs::write("openapi.json", openapi_json.as_bytes())?;
+        tokio::fs::write("openapi.json", openapi_json.as_bytes()).await?;
         return Ok(());
     }
 
     if let Some(config_file) = &api_config.config_file {
-        let config_yaml = std::fs::read(config_file).map_err(|e| {
+        let config_yaml = tokio::fs::read(config_file).await.map_err(|e| {
             anyhow::Error::msg(format!("error reading config file '{config_file}': {e}"))
         })?;
         let config_yaml = String::from_utf8_lossy(&config_yaml);
@@ -57,37 +57,31 @@ fn main() -> anyhow::Result<()> {
     let compiler_config = compiler_config.canonicalize()?;
     let local_runner_config = local_runner_config.canonicalize()?;
     if compiler_config.precompile {
-        actix_web::rt::System::new()
-            .block_on(Compiler::precompile_dependencies(&compiler_config))?;
+        Compiler::precompile_dependencies(&compiler_config).await?;
         return Ok(());
     }
     let database_config = DatabaseConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
-    let listener = pipeline_manager::api::create_listener(api_config.clone())?;
-    rt::System::new().block_on(async move {
-        let db: ProjectDB = ProjectDB::connect(
-            &database_config,
-            #[cfg(feature = "pg-embed")]
-            Some(&api_config),
-        )
-        .await
-        .unwrap();
-        let db = Arc::new(Mutex::new(db));
-        let db_clone = db.clone();
-        let _compiler = spawn(async move {
-            Compiler::run(&compiler_config.clone(), db_clone)
-                .await
-                .unwrap();
-        });
-        let db_clone = db.clone();
-        let _local_runner = spawn(async move {
-            local_runner::run(db_clone, &local_runner_config.clone()).await;
-        });
-        // The api-server blocks forever
-        pipeline_manager::api::run(listener, db, api_config)
+    let db: ProjectDB = ProjectDB::connect(
+        &database_config,
+        #[cfg(feature = "pg-embed")]
+        Some(&api_config),
+    )
+    .await
+    .unwrap();
+    let db = Arc::new(Mutex::new(db));
+    let db_clone = db.clone();
+    let _compiler = tokio::spawn(async move {
+        Compiler::run(&compiler_config.clone(), db_clone)
             .await
             .unwrap();
     });
+    let db_clone = db.clone();
+    let _local_runner = tokio::spawn(async move {
+        local_runner::run(db_clone, &local_runner_config.clone()).await;
+    });
+    // The api-server blocks forever
+    pipeline_manager::api::run(db, api_config).await.unwrap();
     Ok(())
 }

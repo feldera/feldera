@@ -2247,7 +2247,7 @@ impl ProjectDB {
             .run_async(&mut **client)
             .await?;
         if let Some(initial_sql_file) = &initial_sql {
-            if let Ok(initial_sql) = std::fs::read_to_string(initial_sql_file) {
+            if let Ok(initial_sql) = tokio::fs::read_to_string(initial_sql_file).await {
                 client.execute(&initial_sql, &[]).await?;
             } else {
                 log::warn!("initial SQL file '{}' does not exist", initial_sql_file);

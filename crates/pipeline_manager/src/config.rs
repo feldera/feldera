@@ -3,7 +3,7 @@ use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
 use serde::Deserialize;
 use std::{
-    fs::{canonicalize, create_dir_all, File},
+    fs::{canonicalize, create_dir_all},
     path::{Path, PathBuf},
 };
 
@@ -82,25 +82,6 @@ pub struct ApiServerConfig {
     #[arg(short, long, default_value_t = default_server_address())]
     pub bind_address: String,
 
-    /// File to write manager logs to.
-    ///
-    /// This setting is only used when the `unix_daemon` option is set to
-    /// `true`; otherwise the manager prints log entries to `stderr`.
-    ///
-    /// The default is `working_directory/manager.log`.
-    #[arg(short, long)]
-    pub logfile: Option<String>,
-
-    /// Run as a UNIX daemon (detach from terminal).
-    ///
-    /// The default is `false`.
-    ///
-    /// # Compatibility
-    /// This only has effect on UNIX OSs.
-    #[serde(default)]
-    #[arg(long)]
-    pub unix_daemon: bool,
-
     /// Enable bearer-token based authorization.
     ///
     /// Usage depends on three environment variables to be set
@@ -159,33 +140,6 @@ impl ApiServerConfig {
             .to_string_lossy()
             .into_owned();
 
-        // Running as daemon and no log file specified - use default log file name.
-        if self.logfile.is_none() && self.unix_daemon {
-            self.logfile = Some(format!("{}/manager.log", self.api_server_working_directory));
-        }
-
-        if let Some(logfile) = &self.logfile {
-            let file = File::create(logfile).map_err(|e| {
-                AnyError::msg(format!(
-                    "unable to create or truncate log file '{}': {e}",
-                    logfile
-                ))
-            })?;
-            drop(file);
-
-            self.logfile = Some(
-                canonicalize(logfile)
-                    .map_err(|e| {
-                        AnyError::msg(format!(
-                            "error canonicalizing log file path '{}': {e}",
-                            logfile
-                        ))
-                    })?
-                    .to_string_lossy()
-                    .into_owned(),
-            );
-        };
-
         Ok(self)
     }
 
@@ -195,14 +149,6 @@ impl ApiServerConfig {
     #[cfg(feature = "pg-embed")]
     pub(crate) fn postgres_embed_data_dir(&self) -> PathBuf {
         Path::new(&self.api_server_working_directory).join("data")
-    }
-
-    /// Manager pid file.
-    ///
-    /// e.g., `<working-directory>/manager.pid`
-    #[cfg(unix)]
-    pub(crate) fn manager_pid_file_path(&self) -> PathBuf {
-        Path::new(&self.api_server_working_directory).join("manager.pid")
     }
 }
 

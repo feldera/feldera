@@ -654,9 +654,7 @@ mod test {
         let manager_config = ApiServerConfig {
             port: 0,
             bind_address: "0.0.0.0".to_owned(),
-            logfile: None,
             api_server_working_directory: "".to_owned(),
-            unix_daemon: false,
             use_auth: true,
             dev_mode: false,
             dump_openapi: false,

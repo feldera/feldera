@@ -40,8 +40,6 @@ use actix_web::{
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
-#[cfg(unix)]
-use daemonize::Daemonize;
 use dbsp_adapters::{
     ConnectorConfig, ControllerError, ErrorResponse, PipelineConfig, RuntimeConfig,
 };
@@ -239,7 +237,7 @@ impl ServerState {
     }
 }
 
-pub fn create_listener(api_config: ApiServerConfig) -> AnyResult<TcpListener> {
+fn create_listener(api_config: &ApiServerConfig) -> AnyResult<TcpListener> {
     // Check that the port is available before turning into a daemon, so we can fail
     // early if the port is taken.
     let listener =
@@ -249,38 +247,11 @@ pub fn create_listener(api_config: ApiServerConfig) -> AnyResult<TcpListener> {
                 &api_config.bind_address, api_config.port
             ))
         })?;
-
-    #[cfg(unix)]
-    if api_config.unix_daemon {
-        let logfile = std::fs::File::create(api_config.logfile.as_ref().unwrap()).map_err(|e| {
-            AnyError::msg(format!(
-                "failed to create log file '{}': {e}",
-                &api_config.logfile.as_ref().unwrap()
-            ))
-        })?;
-
-        let logfile_clone = logfile.try_clone().unwrap();
-
-        let daemonize = Daemonize::new()
-            .pid_file(api_config.manager_pid_file_path())
-            .working_directory(&api_config.api_server_working_directory)
-            .stdout(logfile_clone)
-            .stderr(logfile);
-
-        daemonize.start().map_err(|e| {
-            AnyError::msg(format!(
-                "failed to detach server process from terminal: '{e}'",
-            ))
-        })?;
-    }
     Ok(listener)
 }
 
-pub async fn run(
-    listener: TcpListener,
-    db: Arc<Mutex<ProjectDB>>,
-    api_config: ApiServerConfig,
-) -> AnyResult<()> {
+pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyResult<()> {
+    let listener = create_listener(&api_config)?;
     let state = WebData::new(ServerState::new(api_config.clone(), db).await?);
 
     if api_config.use_auth {
