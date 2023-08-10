@@ -72,7 +72,7 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
     @Override
     public VisitDecision preorder(DBSPTimestampLiteral node) {
         TimestampString str = node.getTimestampString();
-        DBSPStrLiteral rustLiteral = str == null ? new DBSPStrLiteral("") : new DBSPStrLiteral(str.toString());
+        DBSPStrLiteral rustLiteral = new DBSPStrLiteral(str == null ? "" : str.toString().trim());
         DBSPExpression expression = new DBSPConstructorExpression(
                 new DBSPPath("NaiveDateTime", "parse_from_str").toExpression(),
                 DBSPTypeAny.getDefault(), rustLiteral, new DBSPStrLiteral("%Y-%m-%d %H:%M:%S%.f"));
@@ -83,7 +83,7 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
     @Override
     public VisitDecision preorder(DBSPDateLiteral node) {
         DateString str = node.getDateString();
-        DBSPStrLiteral rustLiteral = str == null ? new DBSPStrLiteral("") : new DBSPStrLiteral(str.toString());
+        DBSPStrLiteral rustLiteral = new DBSPStrLiteral(str == null ? "" : str.toString().trim());
         DBSPExpression expression = new DBSPConstructorExpression(
                 new DBSPPath("NaiveDate", "parse_from_str").toExpression(),
                 DBSPTypeAny.getDefault(), rustLiteral, new DBSPStrLiteral("%F"));
