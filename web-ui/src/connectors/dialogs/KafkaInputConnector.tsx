@@ -22,7 +22,7 @@ import TabLabel from 'src/connectors/dialogs/tabs/TabLabel'
 import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import Transition from './tabs/Transition'
 import { ConnectorFormUpdateRequest, ConnectorFormNewRequest } from './SubmitHandler'
-import { connectorTypeToConfig, parseKafkaInputSchema, ConnectorType } from 'src/types/connectors'
+import { connectorTypeToConfig, parseKafkaInputSchema, ConnectorType, connectorTypeToIcon } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 
@@ -226,5 +226,11 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
 }
 
 export const AddKafkaInputConnectorCard = () => {
-  return <AddConnectorCard icon='logos:kafka' title='Add a Kafka Input.' dialog={KafkaInputConnectorDialog} />
+  return (
+    <AddConnectorCard
+      icon={connectorTypeToIcon(ConnectorType.KAFKA_IN)}
+      title='Add a Kafka Input.'
+      dialog={KafkaInputConnectorDialog}
+    />
+  )
 }

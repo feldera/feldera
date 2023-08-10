@@ -1,4 +1,4 @@
-// A create/update dialog window for the CSV file connector.
+// A create/update dialog window for the URL connector.
 
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'
@@ -9,8 +9,6 @@ import DialogContent from '@mui/material/DialogContent'
 import Grid from '@mui/material/Grid'
 import FormControl from '@mui/material/FormControl'
 import TextField from '@mui/material/TextField'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import Switch from '@mui/material/Switch'
 import DialogActions from '@mui/material/DialogActions'
 import FormHelperText from '@mui/material/FormHelperText'
 import { Icon } from '@iconify/react'
@@ -21,30 +19,31 @@ import { Controller, useForm } from 'react-hook-form'
 import Transition from './tabs/Transition'
 import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from 'src/types/manager'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from './SubmitHandler'
-import { connectorTypeToConfig, parseCsvFileSchema, ConnectorType } from 'src/types/connectors'
+import { connectorTypeToConfig, parseUrlSchema, ConnectorType } from 'src/types/connectors'
 import { AddConnectorCard } from './AddConnectorCard'
 import ConnectorDialogProps from './ConnectorDialogProps'
 import { PLACEHOLDER_VALUES } from 'src/utils'
 import { useEffect, useState } from 'react'
+import { InputLabel, MenuItem, Select } from '@mui/material'
 
 const schema = yup
   .object({
     name: yup.string().required(),
     description: yup.string().default(''),
     url: yup.string().required(),
-    has_headers: yup.boolean().default(true)
+    format: yup.string().oneOf(['csv', 'json']).default('csv')
   })
   .required()
 
-export type CsvFileSchema = yup.InferType<typeof schema>
+export type UrlSchema = yup.InferType<typeof schema>
 
-export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
-  const [curValues, setCurValues] = useState<CsvFileSchema | undefined>(undefined)
+export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
+  const [curValues, setCurValues] = useState<UrlSchema | undefined>(undefined)
 
   // Initialize the form either with default or values from the passed in connector
   useEffect(() => {
     if (props.connector) {
-      setCurValues(parseCsvFileSchema(props.connector))
+      setCurValues(parseUrlSchema(props.connector))
     }
   }, [props.connector])
 
@@ -53,13 +52,13 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
     reset,
     handleSubmit,
     formState: { errors }
-  } = useForm<CsvFileSchema>({
+  } = useForm<UrlSchema>({
     resolver: yupResolver(schema),
     defaultValues: {
       name: '',
       description: '',
       url: '',
-      has_headers: true
+      format: 'csv'
     },
     values: curValues
   })
@@ -77,7 +76,7 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
 
   // Define what should happen when the form is submitted
   const genericRequest = (
-    data: CsvFileSchema,
+    data: UrlSchema,
     connector_id?: string
   ): [ConnectorId | undefined, NewConnectorRequest | UpdateConnectorRequest] => {
     return [
@@ -87,30 +86,30 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
         description: data.description,
         config: {
           transport: {
-            name: connectorTypeToConfig(ConnectorType.FILE),
+            name: connectorTypeToConfig(ConnectorType.URL),
             config: {
               path: data.url
             }
           },
           format: {
-            name: 'csv'
+            name: data.format
           }
         }
       }
     ]
   }
 
-  const newRequest = (data: CsvFileSchema): [undefined, NewConnectorRequest] => {
+  const newRequest = (data: UrlSchema): [undefined, NewConnectorRequest] => {
     return genericRequest(data) as [undefined, NewConnectorRequest]
   }
-  const updateRequest = (data: CsvFileSchema): [ConnectorId, UpdateConnectorRequest] => {
+  const updateRequest = (data: UrlSchema): [ConnectorId, UpdateConnectorRequest] => {
     return genericRequest(data, props.connector?.connector_id) as [ConnectorId, UpdateConnectorRequest]
   }
 
   const onSubmit =
     props.connector === undefined
-      ? ConnectorFormNewRequest<CsvFileSchema>(onFormSubmitted, newRequest)
-      : ConnectorFormUpdateRequest<CsvFileSchema>(onFormSubmitted, updateRequest)
+      ? ConnectorFormNewRequest<UrlSchema>(onFormSubmitted, newRequest)
+      : ConnectorFormUpdateRequest<UrlSchema>(onFormSubmitted, updateRequest)
 
   return (
     <Dialog
@@ -121,7 +120,7 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
       onClose={() => props.setShow(false)}
       TransitionComponent={Transition}
     >
-      <form id='create-csv-file' onSubmit={handleSubmit(onSubmit)}>
+      <form id='create-url-resource' onSubmit={handleSubmit(onSubmit)}>
         <DialogContent sx={{ pb: 8, px: { xs: 8, sm: 15 }, pt: { xs: 8, sm: 12.5 }, position: 'relative' }}>
           <IconButton
             size='small'
@@ -132,9 +131,9 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>
-              {props.connector === undefined ? 'New CSV File' : 'Update ' + props.connector.name}
+              {props.connector === undefined ? 'New URL' : 'Update ' + props.connector.name}
             </Typography>
-            {props.connector === undefined && <Typography variant='body2'>Provide the URL to a CSV file</Typography>}
+            {props.connector === undefined && <Typography variant='body2'>Provide the URL to a data source</Typography>}
           </Box>
           <Grid container spacing={6}>
             <Grid item sm={4} xs={12}>
@@ -190,8 +189,8 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
                   render={({ field }) => (
                     <TextField
                       fullWidth
-                      label='File Path'
-                      placeholder='data.csv'
+                      label='URL'
+                      placeholder='https://gist.githubusercontent.com/...'
                       error={Boolean(errors.description)}
                       aria-describedby='validation-description'
                       {...field}
@@ -206,19 +205,19 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
               </FormControl>
             </Grid>
             <Grid item xs={12}>
-              <FormControl fullWidth>
+              <FormControl>
+                <InputLabel id='format-label'>Format</InputLabel>
                 <Controller
-                  name='has_headers'
+                  name='format'
                   control={control}
                   render={({ field }) => (
-                    <FormControlLabel
-                      control={<Switch checked={field.value} />}
-                      label='CSV file has headers'
-                      aria-describedby='header-description'
-                      {...field}
-                    />
+                    <Select label='Format' id='format' {...field}>
+                      <MenuItem value='csv'>CSV</MenuItem>
+                      <MenuItem value='json'>JSON</MenuItem>
+                    </Select>
                   )}
                 />
+                <FormHelperText>The data format of the resource.</FormHelperText>
               </FormControl>
             </Grid>
           </Grid>
@@ -229,7 +228,7 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
             sx={{ mr: 1 }}
             color='success'
             endIcon={<Icon icon='bx:check' />}
-            form='create-csv-file'
+            form='create-url-resource'
             type='submit'
           >
             {props.connector !== undefined ? 'Update' : 'Create'}
@@ -243,12 +242,6 @@ export const CsvFileConnectorDialog = (props: ConnectorDialogProps) => {
   )
 }
 
-export const AddCsvFileConnectorCard = () => {
-  return (
-    <AddConnectorCard
-      icon='ph:file-csv'
-      title='Provide data in the form of CSV files'
-      dialog={CsvFileConnectorDialog}
-    />
-  )
+export const AddUrlConnectorCard = () => {
+  return <AddConnectorCard icon='tabler:http-get' title='Load data from an HTTP URL' dialog={UrlConnectorDialog} />
 }

@@ -19,13 +19,14 @@ import {
   ConnectorType,
   connectorTypeToDirection,
   connectorTypeToTitle,
-  connectorDescrToType
+  connectorDescrToType,
+  connectorTypeToIcon
 } from 'src/types/connectors'
 import { randomString } from 'src/utils'
 import { useAddConnector } from 'src/streaming/builder/hooks/useAddIoNode'
 import SelectSourceTable from './SelectSourceTable'
 
-import { CsvFileConnectorDialog } from '../dialogs/CsvFileConnector'
+import { UrlConnectorDialog } from '../dialogs/UrlConnector'
 import { KafkaInputConnectorDialog } from '../dialogs/KafkaInputConnector'
 import { KafkaOutputConnectorDialog } from '../dialogs/KafkaOutputConnector'
 import ConnectorDialogProps from '../dialogs/ConnectorDialogProps'
@@ -109,7 +110,7 @@ const SideBarAddIo = () => {
   const [sourceCounts, setSourceCounts] = useState<{ [key in ConnectorType]: number }>({
     [ConnectorType.KAFKA_IN]: 0,
     [ConnectorType.KAFKA_OUT]: 0,
-    [ConnectorType.FILE]: 0,
+    [ConnectorType.URL]: 0,
     [ConnectorType.UNKNOWN]: 0
   })
   const { data, isLoading, isError } = useQuery<ConnectorDescr[]>({ queryKey: ['connector'] })
@@ -125,7 +126,7 @@ const SideBarAddIo = () => {
           {
             [ConnectorType.KAFKA_IN]: 0,
             [ConnectorType.KAFKA_OUT]: 0,
-            [ConnectorType.FILE]: 0,
+            [ConnectorType.URL]: 0,
             [ConnectorType.UNKNOWN]: 0
           }
         )
@@ -187,7 +188,7 @@ const SideBarAddIo = () => {
               openSelectTable={() => openSelectTable(ConnectorType.KAFKA_IN)}
               howMany={sourceCounts[ConnectorType.KAFKA_IN]}
               onSuccess={onAddClick}
-              icon='logos:kafka'
+              icon={connectorTypeToIcon(ConnectorType.KAFKA_IN)}
             />
           )}
           {shouldDisplayConnector(direction, ConnectorType.KAFKA_OUT) && (
@@ -197,17 +198,17 @@ const SideBarAddIo = () => {
               openSelectTable={() => openSelectTable(ConnectorType.KAFKA_OUT)}
               howMany={sourceCounts[ConnectorType.KAFKA_OUT]}
               onSuccess={onAddClick}
-              icon='logos:kafka'
+              icon={connectorTypeToIcon(ConnectorType.KAFKA_OUT)}
             />
           )}
-          {shouldDisplayConnector(direction, ConnectorType.FILE) && (
+          {shouldDisplayConnector(direction, ConnectorType.URL) && (
             <IoSelectBox
-              dialog={CsvFileConnectorDialog}
+              dialog={UrlConnectorDialog}
               closeDrawer={close}
-              openSelectTable={() => openSelectTable(ConnectorType.FILE)}
-              howMany={sourceCounts[ConnectorType.FILE]}
+              openSelectTable={() => openSelectTable(ConnectorType.URL)}
+              howMany={sourceCounts[ConnectorType.URL]}
               onSuccess={onAddClick}
-              icon='ph:file-csv'
+              icon={connectorTypeToIcon(ConnectorType.URL)}
             />
           )}
         </Grid>

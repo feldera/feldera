@@ -1,7 +1,7 @@
 import Grid from '@mui/material/Grid'
 import {
   AddGenericConnectorCard,
-  AddCsvFileConnectorCard,
+  AddUrlConnectorCard,
   AddKafkaOutputConnectorCard,
   AddKafkaInputConnectorCard
 } from 'src/connectors/dialogs'
@@ -11,7 +11,7 @@ const ConnectorCreateGrid = () => {
   return (
     <Grid id='connector-creator-content' container spacing={6} className='match-height'>
       <Grid item md={4} sm={6} xs={12}>
-        <AddCsvFileConnectorCard />
+        <AddUrlConnectorCard />
       </Grid>
       <Grid item md={4} sm={6} xs={12}>
         <AddKafkaInputConnectorCard />

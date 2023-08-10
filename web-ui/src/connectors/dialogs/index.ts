@@ -2,5 +2,5 @@
 
 export * from './KafkaInputConnector'
 export * from './KafkaOutputConnector'
-export * from './CsvFileConnector'
+export * from './UrlConnector'
 export * from './GenericEditorConnector'

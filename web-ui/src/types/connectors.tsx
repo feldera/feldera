@@ -5,8 +5,8 @@ import assert from 'assert'
 import { ConnectorDescr } from './manager'
 import {
   ConfigEditorDialog,
-  CsvFileConnectorDialog,
-  CsvFileSchema,
+  UrlConnectorDialog,
+  UrlSchema,
   EditorSchema,
   KafkaInputConnectorDialog,
   KafkaInputSchema,
@@ -17,7 +17,7 @@ import {
 export enum ConnectorType {
   KAFKA_IN = 'KafkaIn',
   KAFKA_OUT = 'KafkaOut',
-  FILE = 'File',
+  URL = 'HTTP GET',
   UNKNOWN = 'Unknown'
 }
 
@@ -36,8 +36,8 @@ export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
     .with({ transport: { name: 'kafka', config: { topic: P._ } } }, () => {
       return ConnectorType.KAFKA_OUT
     })
-    .with({ transport: { name: 'file' } }, () => {
-      return ConnectorType.FILE
+    .with({ transport: { name: 'url' } }, () => {
+      return ConnectorType.URL
     })
     .otherwise(() => {
       return ConnectorType.UNKNOWN
@@ -57,8 +57,8 @@ export const ConnectorDialog = (props: {
     .with(ConnectorType.KAFKA_OUT, () => {
       return <KafkaOutputConnectorDialog {...props} />
     })
-    .with(ConnectorType.FILE, () => {
-      return <CsvFileConnectorDialog {...props} />
+    .with(ConnectorType.URL, () => {
+      return <UrlConnectorDialog {...props} />
     })
     .with(ConnectorType.UNKNOWN, () => {
       return <ConfigEditorDialog {...props} />
@@ -99,15 +99,16 @@ export const parseKafkaOutputSchema = (connector: ConnectorDescr): KafkaOutputSc
 
 // Given an existing ConnectorDescr return the CsvFileSchema
 // if connector is of type FILE.
-export const parseCsvFileSchema = (connector: ConnectorDescr): CsvFileSchema => {
-  assert(connectorDescrToType(connector) === ConnectorType.FILE)
+export const parseUrlSchema = (connector: ConnectorDescr): UrlSchema => {
+  assert(connectorDescrToType(connector) === ConnectorType.URL)
   const config = connector.config
   assert(config.transport.config)
+  assert(config.format.name == 'json' || config.format.name == 'csv')
   return {
     name: connector.name,
     description: connector.description,
     url: config.transport.config.path,
-    has_headers: true // TODO: this isn't represented by the connector
+    format: config.format.name
   }
 }
 
@@ -131,8 +132,8 @@ export const connectorTypeToDirection = (status: ConnectorType) =>
     .with(ConnectorType.KAFKA_OUT, () => {
       return Direction.OUTPUT
     })
-    .with(ConnectorType.FILE, () => {
-      return Direction.INPUT_OUTPUT
+    .with(ConnectorType.URL, () => {
+      return Direction.INPUT
     })
     .with(ConnectorType.UNKNOWN, () => {
       return Direction.INPUT_OUTPUT
@@ -148,8 +149,8 @@ export const connectorTypeToConfig = (status: ConnectorType) =>
     .with(ConnectorType.KAFKA_OUT, () => {
       return 'kafka'
     })
-    .with(ConnectorType.FILE, () => {
-      return 'file'
+    .with(ConnectorType.URL, () => {
+      return 'url'
     })
     .with(ConnectorType.UNKNOWN, () => {
       return ''
@@ -165,8 +166,8 @@ export const connectorTypeToTitle = (status: ConnectorType) =>
     .with(ConnectorType.KAFKA_OUT, () => {
       return 'Kafka Output'
     })
-    .with(ConnectorType.FILE, () => {
-      return 'CSV'
+    .with(ConnectorType.URL, () => {
+      return 'HTTP URL'
     })
     .with(ConnectorType.UNKNOWN, () => {
       return 'Connector'
@@ -182,8 +183,8 @@ export const connectorTypeToIcon = (status: ConnectorType) =>
     .with(ConnectorType.KAFKA_OUT, () => {
       return 'logos:kafka'
     })
-    .with(ConnectorType.FILE, () => {
-      return 'ph:file-csv'
+    .with(ConnectorType.URL, () => {
+      return 'tabler:http-get'
     })
     .with(ConnectorType.UNKNOWN, () => {
       return 'file-icons:test-generic'
@@ -199,8 +200,8 @@ export const getStatusObj = (status: ConnectorType) =>
     .with(ConnectorType.KAFKA_OUT, () => {
       return { title: 'Kafka Out', color: 'secondary' as const }
     })
-    .with(ConnectorType.FILE, () => {
-      return { title: 'CSV', color: 'secondary' as const }
+    .with(ConnectorType.URL, () => {
+      return { title: 'HTTP GET', color: 'secondary' as const }
     })
     .with(ConnectorType.UNKNOWN, () => {
       return { title: 'Editor', color: 'secondary' as const }
