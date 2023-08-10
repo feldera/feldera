@@ -416,9 +416,8 @@ impl Compiler {
                             let maybe_parts = Self::binary_path_to_parts(&path).await;
                             match maybe_parts {
                                 Some((program_uuid, program_version)) => {
+                                    let db = db.lock().await;
                                     if let Ok(is_used) = db
-                                        .lock()
-                                        .await
                                         .is_program_version_in_use(
                                             program_uuid.0,
                                             program_version.0,
@@ -427,13 +426,12 @@ impl Compiler {
                                     {
                                         if !is_used {
                                             warn!("About to remove binary file '{:?}' that is no longer in use by any program", path.file_name());
-                                            db.lock()
-                                                .await
-                                                .delete_compiled_binary_ref(
-                                                    program_uuid,
-                                                    program_version,
-                                                )
-                                                .await?;
+                                            db.delete_compiled_binary_ref(
+                                                program_uuid,
+                                                program_version,
+                                            )
+                                            .await?;
+                                            drop(db);
                                             let r = fs::remove_file(path.path()).await;
                                             if let Err(e) = r {
                                                 error!(
@@ -528,7 +526,8 @@ impl Compiler {
             }
         }
 
-        let programs = db.lock().await.all_programs().await?;
+        let db = db.lock().await;
+        let programs = db.all_programs().await?;
         for (tenant_id, program) in programs {
             // We have some artifact but the program status has not been updated to Success.
             // This could indicate a failure between when we began writing the versioned executable
@@ -539,9 +538,7 @@ impl Compiler {
             {
                 let path = config.versioned_executable(program.program_id, program.version);
                 info!("File {:?} exists, but the program status is CompilingRust. Removing the file to start compilaiton again.", path.file_name());
-                db.lock()
-                    .await
-                    .delete_compiled_binary_ref(program.program_id, program.version)
+                db.delete_compiled_binary_ref(program.program_id, program.version)
                     .await?;
                 let r = fs::remove_file(path.clone()).await;
                 if let Err(e) = r {
@@ -551,15 +548,13 @@ impl Compiler {
                         e
                     );
                 }
-                db.lock()
-                    .await
-                    .set_program_status_guarded(
-                        tenant_id,
-                        program.program_id,
-                        program.version,
-                        ProgramStatus::Pending,
-                    )
-                    .await?;
+                db.set_program_status_guarded(
+                    tenant_id,
+                    program.program_id,
+                    program.version,
+                    ProgramStatus::Pending,
+                )
+                .await?;
             }
             // If the program was supposed to be further in the compilation chain, but
             // we don't have the binary artifact available locally, we need to queue the program
@@ -572,15 +567,13 @@ impl Compiler {
                     "Program {} does not have a local artifact despite being in the {:?} state. Resetting compilation status.",
                     program.program_id, program.status
                 );
-                db.lock()
-                    .await
-                    .set_program_for_compilation(
-                        tenant_id,
-                        program.program_id,
-                        program.version,
-                        ProgramStatus::Pending,
-                    )
-                    .await?;
+                db.set_program_for_compilation(
+                    tenant_id,
+                    program.program_id,
+                    program.version,
+                    ProgramStatus::Pending,
+                )
+                .await?;
             }
         }
         Ok(())
