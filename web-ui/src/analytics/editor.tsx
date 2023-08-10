@@ -497,11 +497,6 @@ const Editors = (props: { programId: string | null }) => {
 
   usePageHeader(s => s.setHeader)({ title: 'SQL Editor', subtitle: 'Define your analytics and data transformations.' })
 
-  usePageHeader(s => s.setHeader)(<PageHeader
-    title="SQL Editor"
-    subtitle="Define your analytics and data transformations."
-  />)
-
   return (programId !== null && loaded) || programId == null ? (
     <Grid container spacing={6}>
       <Grid item xs={12}>

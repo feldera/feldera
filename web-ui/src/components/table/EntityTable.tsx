@@ -10,7 +10,7 @@ import {
   GridValidRowModel,
   DataGridProProps,
   GridRenderCellParams,
-  GridToolbarFilterButton,
+  GridToolbarFilterButton
 } from '@mui/x-data-grid-pro'
 import { UseQueryResult } from '@tanstack/react-query'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
@@ -160,7 +160,8 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
           toolbar: {
             children: [
               <GridToolbarFilterButton key='0' />,
-              <QuickSearch key='1'
+              <QuickSearch
+                key='1'
                 value={searchText}
                 clearSearch={() => handleSearch('')}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)}

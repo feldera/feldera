@@ -4,7 +4,6 @@ import Grid from '@mui/material/Grid'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/router'
 import { SyntheticEvent, useEffect, useState } from 'react'
-import PageHeader from 'src/layouts/components/page-header'
 import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from 'src/types/manager'
 import { InspectionTable } from 'src/streaming/inspection/InspectionTable'
 import {
@@ -28,6 +27,7 @@ import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
 import TabContext from '@mui/lab/TabContext'
 import { InsertionTable } from 'src/streaming/import/InsertionTable'
+import { usePageHeader } from 'src/compositions/ui/pageHeader'
 
 const TitleBreadCrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
   const { tables, views, relation } = props
@@ -206,18 +206,24 @@ const IntrospectInputOutput = () => {
     }
   }, [setTab, relation, views, tab])
 
+  const relationValid =
+    pipeline && relation && tables && views && (tables.includes(relation) || views.includes(relation))
+
+  usePageHeader(s => s.setHeader)(
+    relationValid
+      ? {
+          title: <TitleBreadCrumb pipeline={pipeline} relation={relation} tables={tables} views={views} />
+        }
+      : { title: null }
+  )
+
   return pipelineId !== undefined &&
     !configQuery.isLoading &&
     !configQuery.isError &&
     !pipelineRevisionQuery.isLoading &&
     !pipelineRevisionQuery.isError &&
-    pipeline &&
-    relation &&
-    tables &&
-    views &&
-    (tables.includes(relation) || views.includes(relation)) ? (
+    relationValid ? (
     <Grid container spacing={6} className='match-height'>
-      <PageHeader title={<TitleBreadCrumb pipeline={pipeline} relation={relation} tables={tables} views={views} />} />
       <Grid item xs={12}>
         {tables.includes(relation) && (
           <TableWithInsertTab pipeline={pipeline} handleChange={handleChange} tab={tab} relation={relation} />
