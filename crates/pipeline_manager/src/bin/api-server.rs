@@ -34,10 +34,7 @@ async fn main() -> anyhow::Result<()> {
     .unwrap();
     let db = Arc::new(Mutex::new(db));
 
-    let listener = pipeline_manager::api::create_listener(api_config.clone())?;
     // The api-server blocks forever
-    pipeline_manager::api::run(listener, db, api_config)
-        .await
-        .unwrap();
+    pipeline_manager::api::run(db, api_config).await.unwrap();
     Ok(())
 }

@@ -44,9 +44,6 @@ refinery = {version = "0.8.10", features = ["tokio-postgres"]}
 reqwest = {version = "0.11.18", features = ["json"]}
 url = {version = "2.4.0"}
 
-[target.'cfg(unix)'.dependencies]
-daemonize = { version = "0.5.0" }
-
 [features]
 integration-test = []
 

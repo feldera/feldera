@@ -23,12 +23,6 @@ WORKING_DIR_ABS=$(cd "$(dirname "${WORKING_DIR}")" && pwd -P)/$(basename "${WORK
 DEFAULT_BIND_ADDRESS="127.0.0.1"
 BIND_ADDRESS="${2:-$DEFAULT_BIND_ADDRESS}"
 
-# Kill manager. pkill doesn't handle process names >15 characters.
-pkill pipeline-manag
-
-# Wait for manager process to exit.
-while ps -p $(pgrep pipeline-manag) > /dev/null; do sleep 1; done
-
 set -ex
 
 # If $WITH_POSTGRES is defined, manager should use a real Postgres server
@@ -48,5 +42,4 @@ cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --bin pipeline-manager $RUST_BUILD
     --runner-working-directory="${WORKING_DIR_ABS}" \
     --sql-compiler-home="${SQL_COMPILER_DIR}" \
     --dbsp-override-path="${ROOT_DIR}" \
-    --unix-daemon \
     ${DB_CONNECTION_STRING}
