@@ -91,7 +91,7 @@ To learn more about Feldera Platform, we recommend going through the
 
 * [Getting started](https://docs.feldera.io/docs/intro)
 * [UI tour](https://docs.feldera.io/docs/tour/)
-* [Demos](https://docs.feldera.io/docs/category/demos)
+* [Demos](https://docs.feldera.io/docs/demos)
 * [SQL reference](https://docs.feldera.io/docs/sql/intro)
 * [API reference](https://docs.feldera.io/docs/api/rest/)
 
