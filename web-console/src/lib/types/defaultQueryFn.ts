@@ -75,18 +75,20 @@ export const programQueryCacheUpdate = (
       : oldData
   })
 
-  queryClient.setQueryData(['program'], (oldData: ProgramDescr[] | undefined) =>
-    oldData?.map((project: ProgramDescr) => {
-      if (project.program_id === programId) {
-        const projectDescUpdates = {
-          name: newData.name,
-          description: newData.description ? newData.description : project.description
+  queryClient.setQueryData(
+    ['program'],
+    (oldData: ProgramDescr[] | undefined) =>
+      oldData?.map((project: ProgramDescr) => {
+        if (project.program_id === programId) {
+          const projectDescUpdates = {
+            name: newData.name,
+            description: newData.description ? newData.description : project.description
+          }
+          return { ...project, ...projectDescUpdates }
+        } else {
+          return project
         }
-        return { ...project, ...projectDescUpdates }
-      } else {
-        return project
-      }
-    })
+      })
   )
 }
 
@@ -96,14 +98,16 @@ export const pipelineStatusQueryCacheUpdate = (
   pipeline_id: PipelineId,
   newStatus: PipelineStatus
 ) => {
-  queryClient.setQueryData(['pipeline'], (oldData: Pipeline[] | undefined) =>
-    oldData?.map((p: Pipeline) => {
-      if (p.descriptor.pipeline_id === pipeline_id) {
-        return { ...p, state: { ...p.state, desired_status: newStatus } }
-      } else {
-        return p
-      }
-    })
+  queryClient.setQueryData(
+    ['pipeline'],
+    (oldData: Pipeline[] | undefined) =>
+      oldData?.map((p: Pipeline) => {
+        if (p.descriptor.pipeline_id === pipeline_id) {
+          return { ...p, state: { ...p.state, desired_status: newStatus } }
+        } else {
+          return p
+        }
+      })
   )
   queryClient.setQueryData(['pipelineStatus', { pipeline_id: pipeline_id }], (oldData: Pipeline | undefined) => {
     return oldData

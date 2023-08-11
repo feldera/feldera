@@ -42,12 +42,13 @@ const schema = yup
   })
   .required()
 
-export type KafkaOutputSchema = { // yup.InferType<typeof schema>
-  topic: string | undefined;
-  name: string;
-  description: string;
-  host: string;
-  auto_offset: string;
+export type KafkaOutputSchema = {
+  // yup.InferType<typeof schema>
+  topic: string | undefined
+  name: string
+  description: string
+  host: string
+  auto_offset: string
 }
 
 export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
