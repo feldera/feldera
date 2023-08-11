@@ -93,6 +93,17 @@ For dates it always returns 0, since dates have no time component.
 
 `CEIL(datetime TO <unit>)`, where `<unit>` is a time unit.
 
+## Operations on times
+
+A time represents the time of day, a value between 0 and 24 hours
+(excluding the latter).  Times are stored with a precision of
+nanoseconds.
+
+A time literal has the form "HH:MM:SS.FFF", where the fractional part
+is optional and has up to 9 digits.  An example is: '23:59:59.132'.
+The hours must be between 0 and 23, the minutes between 0 and 59, and
+the seconds between 0 and 59.
+
 ## Operations on timestamps
 
 A timestamp contains both a date and a time.  `TIMESTAMP` literals

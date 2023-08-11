@@ -27,6 +27,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.*;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.util.DateString;
+import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
@@ -166,6 +167,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         new DBSPDoubleLiteral(c.getOrdinate(0)),
                         new DBSPDoubleLiteral(c.getOrdinate(1)),
                         type.mayBeNull);
+            } else if (type.is(DBSPTypeTime.class)) {
+                return new DBSPTimeLiteral(node, type, Objects.requireNonNull(
+                        literal.getValueAs(TimeString.class)));
             }
         } catch (BaseCompilerException ex) {
             throw ex;

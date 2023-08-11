@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
+import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -180,7 +181,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.builder.append("Time::new(");
-        this.builder.append(Objects.requireNonNull(literal.value).toString());
+        TimeString ts = Objects.requireNonNull(literal.value);
+        // Why doesn't Calcite TimeString provide these methods?
+        this.builder.append(Utilities.timeStringToNanoseconds(ts));
         this.builder.append(")");
         if (literal.mayBeNull())
             this.builder.append(")");

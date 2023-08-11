@@ -151,7 +151,8 @@ pub fn cast_to_DateN_date(value: Date) -> Option<Date> {
 
 #[inline]
 pub fn cast_to_Time_s(value: String) -> Time {
-    let time = NaiveTime::parse_from_str(&value, "%H:%M:%S.f").ok();
+    let time = NaiveTime::parse_from_str(&value, "%H:%M:%S%.f").ok();
+    println!("{:?}", time);
     match time {
         None => Time::default(),
         Some(value) => Time::from_time(value),
@@ -167,7 +168,7 @@ pub fn cast_to_TimeN_nullN(_value: Option<()>) -> Option<Time> {
 
 #[inline]
 pub fn cast_to_TimeN_s(value: String) -> Option<Time> {
-    let time = NaiveTime::parse_from_str(&value, "%H:%M:%S.f");
+    let time = NaiveTime::parse_from_str(&value, "%H:%M:%S%.f");
     time.ok().map(Time::from_time)
 }
 

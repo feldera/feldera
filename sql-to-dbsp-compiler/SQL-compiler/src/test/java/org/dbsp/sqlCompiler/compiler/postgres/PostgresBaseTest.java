@@ -130,22 +130,22 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
      * Convert a date from the MM-DD-YYYY format (which is used in the Postgres output)
      * to a DBSPLiteral.
      */
-    static DBSPExpression parseDate(@Nullable String date) {
+    static DBSPExpression parseDate(@Nullable String date, boolean mayBeNull) {
         if (date == null || date.isEmpty() || date.equalsIgnoreCase("null"))
-            return DBSPLiteral.none(new DBSPTypeDate(CalciteObject.EMPTY, true));
+            return DBSPLiteral.none(new DBSPTypeDate(CalciteObject.EMPTY, mayBeNull));
         try {
             Date converted = DATE_INPUT_FORMAT.parse(date);
             String out = DATE_OUTPUT_FORMAT.format(converted);
-            return new DBSPDateLiteral(out, true);
+            return new DBSPDateLiteral(out, mayBeNull);
         } catch (ParseException ex) {
             throw new RuntimeException("Could not parse " + date);
         }
     }
 
-    static DBSPExpression parseTime(@Nullable String time) {
+    static DBSPExpression parseTime(@Nullable String time, boolean mayBeNull) {
         if (time == null || time.isEmpty() || time.equalsIgnoreCase("null"))
-            return DBSPLiteral.none(new DBSPTypeTime(CalciteObject.EMPTY, true));
-        return new DBSPTimeLiteral(CalciteObject.EMPTY, new DBSPTypeTime(CalciteObject.EMPTY, true), new TimeString(time));
+            return DBSPLiteral.none(new DBSPTypeTime(CalciteObject.EMPTY, mayBeNull));
+        return new DBSPTimeLiteral(CalciteObject.EMPTY, new DBSPTypeTime(CalciteObject.EMPTY, mayBeNull), new TimeString(time));
     }
 
     static final Pattern YEAR = Pattern.compile("^(\\d+) years?(.*)");
@@ -280,9 +280,9 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         } else if (fieldType.is(DBSPTypeTimestamp.class)) {
             result = convertTimestamp(trimmed, fieldType.mayBeNull);
         } else if (fieldType.is(DBSPTypeDate.class)) {
-            result = parseDate(trimmed);
+            result = parseDate(trimmed, fieldType.mayBeNull);
         } else if (fieldType.is(DBSPTypeTime.class)) {
-            result = parseTime(trimmed);
+            result = parseTime(trimmed, fieldType.mayBeNull);
         } else if (fieldType.is(DBSPTypeInteger.class)) {
             DBSPTypeInteger intType = fieldType.to(DBSPTypeInteger.class);
             switch (intType.getWidth()) {
