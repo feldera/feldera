@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -44,20 +43,10 @@ public class PostgresFloat4Tests extends PostgresBaseTest {
 
     @Test
     public void testOverflowException() {
-        Exception ex = Assert.assertThrows(RuntimeException.class, () -> {
-            this.q("SELECT 10e400 :: FLOAT4;\n" +
-                    "result\n" +
-                    "------\n" +
-                    "Infinity");
-        });
-        Assert.assertTrue(ex.getMessage().contains("out of range"));
-        ex = Assert.assertThrows(RuntimeException.class, () -> {
-            this.q("SELECT-10e400 :: FLOAT4;\n" +
-                    "result\n" +
-                    "------\n" +
-                    "Infinity");
-        });
-        Assert.assertTrue(ex.getMessage().contains("out of range"));
+        this.shouldFail("SELECT 10e400 :: FLOAT4",
+                "out of range");
+        this.shouldFail("SELECT-10e400 :: FLOAT4",
+                "out of range");
     }
 
     @Test
@@ -67,21 +56,10 @@ public class PostgresFloat4Tests extends PostgresBaseTest {
                 "result\n" +
                 "------\n" +
                 "0");
-
-        Exception ex = Assert.assertThrows(RuntimeException.class, () -> {
-            this.q("SELECT 5.0.0;\n" +
-                    "result\n" +
-                    "------\n" +
-                    "0");
-        });
-        Assert.assertTrue(ex.getMessage().contains("ParseException"));
-        ex = Assert.assertThrows(RuntimeException.class, () -> {
-            this.q("SELECT 5.  0;\n" +
-                    "result\n" +
-                    "------\n" +
-                    "0");
-        });
-        Assert.assertTrue(ex.getMessage().contains("ParseException"));
+        this.shouldFail("SELECT 5.0.0",
+                "Error parsing SQL");
+        this.shouldFail("SELECT 5.  0",
+                "Error parsing SQL");
     }
 
     @Test

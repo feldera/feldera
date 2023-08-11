@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -51,13 +50,11 @@ public class PostgresStringTests extends PostgresBaseTest {
 
     @Test
     public void illegalContinuationTest() {
-        Exception exception = Assert.assertThrows(RuntimeException.class, () -> {
-            // Cannot continue a string without a newline
-            this.q("SELECT 'first line' " +
-                    "' - next line'\n" +
-                    "\tAS \"Illegal comment within continuation\";\n");
-        });
-        Assert.assertTrue(exception.getMessage().contains("String literal continued on same line"));
+        // Cannot continue a string without a newline
+        this.shouldFail("SELECT 'first line' " +
+                "' - next line'\n" +
+                "\tAS \"Illegal comment within continuation\"\n",
+                "String literal continued on same line");
     }
 
     @Test
@@ -97,10 +94,8 @@ public class PostgresStringTests extends PostgresBaseTest {
 
     @Test
     public void invalidUnicodeTest() {
-        Exception exception = Assert.assertThrows(
-                RuntimeException.class, () -> this.q("SELECT U&'wrong: \\061';\n"));
-        Assert.assertTrue(exception.getMessage().contains(
-                "Unicode escape sequence starting at character 7 is not exactly four hex digits"));
+        this.shouldFail("SELECT U&'wrong: \\061'\n",
+                "Unicode escape sequence starting at character 7 is not exactly four hex digits");
     }
 
     // Lots of other escaping tests skipped, many using the E escaping notation from Postgres

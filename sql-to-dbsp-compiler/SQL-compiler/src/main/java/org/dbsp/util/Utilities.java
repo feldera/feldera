@@ -167,11 +167,12 @@ public class Utilities {
                 .redirectError(out);
         Process process = processBuilder.start();
         int exitCode = process.waitFor();
-        List<String> strings = Files.readAllLines(out.toPath());
-        for (String s: strings)
-            System.out.println(s);
-        if (exitCode != 0)
+        if (exitCode != 0) {
+            List<String> strings = Files.readAllLines(out.toPath());
+            for (String s: strings)
+                System.out.println(s);
             throw new RuntimeException("Process failed with exit code " + exitCode);
+        }
     }
 
     static void compile(String directory, boolean quiet, String... extraArgs) throws IOException, InterruptedException {
