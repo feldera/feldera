@@ -235,7 +235,8 @@ fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
         ))
     })?;
 
-    serde_yaml::from_str(yaml_config.as_str()).map_err(|e| ControllerError::pipeline_config_parse_error(&e))
+    serde_yaml::from_str(yaml_config.as_str())
+        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
 }
 
 // Initialization thread function.

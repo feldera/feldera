@@ -71,6 +71,147 @@ pub struct JsonParserConfig {
     array: bool,
 }
 
+trait UpdateFormat {
+    fn error() -> &'static str;
+    fn array_error() -> &'static str;
+    fn example() -> Option<&'static str>;
+    fn array_example() -> Option<&'static str>;
+    fn apply(self, parser: &mut JsonParser) -> Result<usize, ParseError>;
+}
+
+impl<'de> UpdateFormat for InsDelUpdate<'de> {
+    fn error() -> &'static str {
+        "error deserializing JSON string as a single-row update"
+    }
+
+    fn array_error() -> &'static str {
+        "error deserializing string as a JSON array of updates"
+    }
+
+    fn example() -> Option<&'static str> {
+        Some("Example valid JSON: '{{\"insert\": {{...}} }}'")
+    }
+
+    fn array_example() -> Option<&'static str> {
+        Some("Example valid JSON: '[{{\"insert\": {{...}} }}, {{\"delete\": {{...}} }}]'")
+    }
+
+    fn apply(self, parser: &mut JsonParser) -> Result<usize, ParseError> {
+        let mut updates = 0;
+
+        if let Some(val) = self.insert {
+            parser.insert(val)?;
+            updates += 1;
+        }
+
+        if let Some(val) = self.delete {
+            parser.delete(val)?;
+            updates += 1;
+        }
+
+        Ok(updates)
+    }
+}
+
+impl<'de> UpdateFormat for DebeziumUpdate<'de> {
+    fn error() -> &'static str {
+        "error deserializing JSON string as a Debezium CDC event"
+    }
+
+    fn array_error() -> &'static str {
+        "error deserializing string as a JSON array of Debezium CDC events"
+    }
+
+    fn example() -> Option<&'static str> {
+        Some("Example valid JSON: '{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}'")
+    }
+
+    fn array_example() -> Option<&'static str> {
+        Some("Example valid JSON: '[{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}]'")
+    }
+
+    fn apply(self, parser: &mut JsonParser) -> Result<usize, ParseError> {
+        // TODO: validate table name.
+        // We currently allow a JSON connector to feed data to a single table.
+        // The name of the table may or may not match table name in the CDC
+        // stream.  In the future we will allow demultiplexing a JSON stream
+        // to multiple tables.  Connector config will specify available tables
+        // and mapping between CDC and DBSP table names.
+        /*if let Some(table) = &self.paylolad.table {
+            check that table name matches??
+        };*/
+
+        // TODO: validate CDC op code (c|d|u).  This opcode seems redundant.
+        // We must always delete the `before` record and insert the `after`
+        // record (if present).
+        /*
+        match update.payload.op {
+            CdcOp::Create =>,
+            CdcOp::Delete =>,
+            CdcOp::Update =>
+        }*/
+
+        let mut updates = 0;
+
+        if let Some(before) = &self.payload.before {
+            parser.delete(before)?;
+            updates += 1;
+        };
+
+        if let Some(after) = &self.payload.after {
+            parser.insert(after)?;
+            updates += 1;
+        };
+
+        Ok(updates)
+    }
+}
+
+impl<'a> UpdateFormat for WeightedUpdate<&'a RawValue> {
+    fn error() -> &'static str {
+        "error deserializing JSON string as a weighted record"
+    }
+
+    fn array_error() -> &'static str {
+        "error deserializing string as a JSON array of weighted records"
+    }
+
+    fn example() -> Option<&'static str> {
+        Some("Example valid JSON: '{{\"weight\": 1, \"data\": {{...}} }}'")
+    }
+
+    fn array_example() -> Option<&'static str> {
+        Some("Example valid JSON: '[{{\"weight\": 1, \"data\": {{...}} }}, {{\"weight\": -1, \"data\": {{...}} }}]'")
+    }
+
+    fn apply(self, _parser: &mut JsonParser) -> Result<usize, ParseError> {
+        todo!()
+    }
+}
+
+impl<'a> UpdateFormat for &'a RawValue {
+    fn error() -> &'static str {
+        "failed to parse JSON string"
+    }
+
+    fn array_error() -> &'static str {
+        "error deserializing string as a JSON array"
+    }
+
+    fn example() -> Option<&'static str> {
+        None
+    }
+
+    fn array_example() -> Option<&'static str> {
+        None
+    }
+
+    fn apply(self, parser: &mut JsonParser) -> Result<usize, ParseError> {
+        parser.insert(self)?;
+        Ok(1)
+    }
+}
+
 impl InputFormat for JsonInputFormat {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("json")
@@ -155,77 +296,66 @@ impl JsonParser {
         })
     }
 
-    fn apply_debezium_update(&mut self, update: DebeziumUpdate) -> Result<usize, ParseError> {
-        // TODO: validate table name.
-        // We currently allow a JSON connector to feed data to a single table.
-        // The name of the table may or may not match table name in the CDC
-        // stream.  In the future we will allow demultiplexing a JSON stream
-        // to multiple tables.  Connector config will specify available tables
-        // and mapping between CDC and DBSP table names.
-        /*if let Some(table) = &self.paylolad.table {
-            check that table name matches??
-        };*/
+    fn apply_update<'de, F>(&mut self, update: &'de RawValue, errors: &mut Vec<ParseError>) -> usize
+    where
+        F: UpdateFormat + Deserialize<'de>,
+    {
+        let mut num_updates = 0;
 
-        // TODO: validate CDC op code (c|d|u).  This opcode seems redundant.
-        // We must always delete the `before` record and insert the `after`
-        // record (if present).
-        /*
-        match update.payload.op {
-            CdcOp::Create =>,
-            CdcOp::Delete =>,
-            CdcOp::Update =>
-        }*/
-
-        let mut updates = 0;
-
-        if let Some(before) = &update.payload.before {
-            self.delete(before)?;
-            updates += 1;
-        };
-
-        if let Some(after) = &update.payload.after {
-            self.insert(after)?;
-            updates += 1;
-        };
-
-        Ok(updates)
-    }
-
-    fn apply_insdel_update(&mut self, update: InsDelUpdate) -> Result<usize, ParseError> {
-        // TODO: validate table name.
-        // We currently allow a JSON connector to feed data to a single table.
-        // The name of the table may or may not match table name in the CDC
-        // stream.  In the future we will allow demultiplexing a JSON stream
-        // to multiple tables.  Connector config will specify available tables.
-        /*if let Some(table) = &self.paylolad.table {
-            check that table name matches??
-        };*/
-
-        let mut updates = 0;
-
-        if let Some(val) = update.insert {
-            self.insert(val)?;
-            updates += 1;
+        if self.config.array {
+            match serde_json::from_str::<Vec<F>>(update.get()) {
+                Err(e) => {
+                    errors.push(ParseError::text_envelope_error(
+                        format!("{}: {e}", F::array_error()),
+                        update.get(),
+                        F::array_example().map(Cow::from),
+                    ));
+                }
+                Ok(updates) => {
+                    let mut error = false;
+                    for update in updates {
+                        match update.apply(self) {
+                            Err(e) => {
+                                error = true;
+                                errors.push(e);
+                            }
+                            Ok(nupdates) => {
+                                num_updates += nupdates;
+                            }
+                        }
+                        self.last_event_number += 1;
+                    }
+                    if error {
+                        self.clear();
+                    } else {
+                        self.flush();
+                    }
+                }
+            };
+        } else {
+            match serde_json::from_str::<F>(update.get()) {
+                Err(e) => {
+                    errors.push(ParseError::text_event_error(
+                        F::error(),
+                        e,
+                        self.last_event_number + 1,
+                        Some(update.get()),
+                        F::example().map(Cow::from),
+                    ));
+                }
+                Ok(update) => match update.apply(self) {
+                    Err(e) => {
+                        errors.push(e);
+                    }
+                    Ok(nupdates) => {
+                        num_updates += nupdates;
+                    }
+                },
+            }
+            self.last_event_number += 1;
         }
 
-        if let Some(val) = update.delete {
-            self.delete(val)?;
-            updates += 1;
-        }
-
-        Ok(updates)
-    }
-
-    fn apply_weighted_update(
-        &mut self,
-        _update: WeightedUpdate<&RawValue>,
-    ) -> Result<usize, ParseError> {
-        todo!()
-    }
-
-    fn apply_raw_update(&mut self, update: &RawValue) -> Result<usize, ParseError> {
-        self.insert(update)?;
-        Ok(1)
+        num_updates
     }
 
     fn input_from_slice(&mut self, bytes: &[u8]) -> (usize, Vec<ParseError>) {
@@ -251,224 +381,17 @@ impl JsonParser {
                 Ok(update) => update,
             };
 
-            match self.config.update_format {
+            num_updates += match self.config.update_format {
                 JsonUpdateFormat::InsertDelete => {
-                    if self.config.array {
-                        match serde_json::from_str::<Vec<InsDelUpdate>>(update.get()) {
-                            Err(e) => {
-                                errors.push(ParseError::text_envelope_error(
-                                    format!("error deserializing string as a JSON array of updates: {e}"),
-                                    update.get(),
-                                    Some(Cow::from("Example valid JSON: '[{{\"insert\": {{...}} }}, {{\"delete\": {{...}} }}]'"))));
-                            }
-                            Ok(updates) => {
-                                let mut error = false;
-                                for update in updates {
-                                    match self.apply_insdel_update(update) {
-                                        Err(e) => {
-                                            error = true;
-                                            errors.push(e);
-                                        }
-                                        Ok(nupdates) => {
-                                            num_updates += nupdates;
-                                        }
-                                    }
-                                    self.last_event_number += 1;
-                                }
-                                if error {
-                                    self.clear();
-                                } else {
-                                    self.flush();
-                                }
-                            }
-                        };
-                    } else {
-                        match serde_json::from_str::<InsDelUpdate>(update.get()) {
-                            Err(e) => {
-                                // println!("update: {update:?}");
-                                errors.push(ParseError::text_event_error(
-                                    "error deserializing JSON string as a single-row update",
-                                    e,
-                                    self.last_event_number + 1,
-                                    Some(update.get()),
-                                    Some(Cow::from(
-                                        "Example valid JSON: '{{\"insert\": {{...}} }}'",
-                                    )),
-                                ));
-                            }
-                            Ok(update) => match self.apply_insdel_update(update) {
-                                Err(e) => {
-                                    errors.push(e);
-                                }
-                                Ok(nupdates) => {
-                                    num_updates += nupdates;
-                                }
-                            },
-                        }
-                        self.last_event_number += 1;
-                    }
+                    self.apply_update::<InsDelUpdate>(update, &mut errors)
                 }
                 JsonUpdateFormat::Debezium => {
-                    if self.config.array {
-                        match serde_json::from_str::<Vec<DebeziumUpdate>>(update.get()) {
-                            Err(e) => {
-                                errors.push(ParseError::text_envelope_error(
-                                    format!("error deserializing string as a JSON array of Debezium CDC events: {e}"),
-                                    update.get(),
-                                    Some(Cow::from("Example valid JSON: '[{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}]'"))));
-                            }
-                            Ok(updates) => {
-                                let mut error = false;
-                                for update in updates {
-                                    match self.apply_debezium_update(update) {
-                                        Err(e) => {
-                                            error = true;
-                                            errors.push(e);
-                                        }
-                                        Ok(nupdates) => {
-                                            num_updates += nupdates;
-                                        }
-                                    }
-                                    self.last_event_number += 1;
-                                }
-                                if error {
-                                    self.clear();
-                                } else {
-                                    self.flush();
-                                }
-                            }
-                        }
-                    } else {
-                        match serde_json::from_str::<DebeziumUpdate>(update.get()) {
-                            Err(e) => {
-                                // println!("update: {update:?}");
-                                errors.push(ParseError::text_event_error (
-                                    "error deserializing JSON string as a Debezium CDC event",
-                                    e,
-                                    self.last_event_number + 1,
-                                    Some(update.get()),
-                                    Some(Cow::from("Example valid JSON: '{{\"payload\": {{\"op\": \"u\", \"before\": {{...}}, \"after\": {{...}} }} }}'"))));
-                            }
-                            Ok(update) => match self.apply_debezium_update(update) {
-                                Err(e) => {
-                                    errors.push(e);
-                                }
-                                Ok(nupdates) => {
-                                    num_updates += nupdates;
-                                }
-                            },
-                        }
-                        self.last_event_number += 1;
-                    }
+                    self.apply_update::<DebeziumUpdate>(update, &mut errors)
                 }
                 JsonUpdateFormat::Weighted => {
-                    if self.config.array {
-                        match serde_json::from_str::<Vec<WeightedUpdate<&RawValue>>>(update.get()) {
-                            Err(e) => {
-                                errors.push(ParseError::text_envelope_error(
-                                    format!("error deserializing string as a JSON array of weighted records: {e}"),
-                                    update.get(),
-                                    Some(Cow::from("Example valid JSON: '[{{\"weight\": 1, \"data\": {{...}} }}, {{\"weight\": -1, \"data\": {{...}} }}]'"))));
-                            }
-                            Ok(updates) => {
-                                let mut error = false;
-                                for update in updates {
-                                    match self.apply_weighted_update(update) {
-                                        Err(e) => {
-                                            error = true;
-                                            errors.push(e);
-                                        }
-                                        Ok(nupdates) => {
-                                            num_updates += nupdates;
-                                        }
-                                    }
-                                    self.last_event_number += 1;
-                                }
-                                if error {
-                                    self.clear();
-                                } else {
-                                    self.flush();
-                                }
-                            }
-                        }
-                    } else {
-                        match serde_json::from_str::<WeightedUpdate<&RawValue>>(update.get()) {
-                            Err(e) => {
-                                // println!("update: {update:?}");
-                                errors.push(ParseError::text_event_error (
-                                    "error deserializing JSON string as a weighted record",
-                                    e,
-                                    self.last_event_number + 1,
-                                    Some(update.get()),
-                                    Some(Cow::from("Example valid JSON: '{{\"weight\": 1, \"data\": {{...}} }}'"))));
-                            }
-                            Ok(update) => match self.apply_weighted_update(update) {
-                                Err(e) => {
-                                    errors.push(e);
-                                }
-                                Ok(nupdates) => {
-                                    num_updates += nupdates;
-                                }
-                            },
-                        }
-                        self.last_event_number += 1;
-                    }
+                    self.apply_update::<WeightedUpdate<_>>(update, &mut errors)
                 }
-                JsonUpdateFormat::Raw => {
-                    if self.config.array {
-                        match serde_json::from_str::<Vec<&RawValue>>(update.get()) {
-                            Err(e) => {
-                                errors.push(ParseError::text_envelope_error(
-                                    format!("error deserializing string as a JSON array: {e}"),
-                                    update.get(),
-                                    None,
-                                ));
-                            }
-                            Ok(updates) => {
-                                let mut error = false;
-                                for update in updates {
-                                    match self.apply_raw_update(update) {
-                                        Err(e) => {
-                                            error = true;
-                                            errors.push(e);
-                                        }
-                                        Ok(nupdates) => {
-                                            num_updates += nupdates;
-                                        }
-                                    }
-                                    self.last_event_number += 1;
-                                }
-                                if error {
-                                    self.clear();
-                                } else {
-                                    self.flush();
-                                }
-                            }
-                        }
-                    } else {
-                        match serde_json::from_str::<&RawValue>(update.get()) {
-                            Err(e) => {
-                                // println!("update: {update:?}");
-                                errors.push(ParseError::text_event_error(
-                                    "failed to parse JSON string",
-                                    e,
-                                    self.last_event_number + 1,
-                                    Some(update.get()),
-                                    None,
-                                ));
-                            }
-                            Ok(update) => match self.apply_raw_update(update) {
-                                Err(e) => {
-                                    errors.push(e);
-                                }
-                                Ok(nupdates) => {
-                                    num_updates += nupdates;
-                                }
-                            },
-                        }
-                        self.last_event_number += 1;
-                    }
-                }
+                JsonUpdateFormat::Raw => self.apply_update::<&RawValue>(update, &mut errors),
             }
         }
 
