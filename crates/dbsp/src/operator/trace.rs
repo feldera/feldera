@@ -14,7 +14,6 @@ use std::{borrow::Cow, cell::RefCell, marker::PhantomData, ops::DerefMut, rc::Rc
 
 circuit_cache_key!(TraceId<B, D, K, V>(GlobalNodeId => (Stream<B, D>, TraceBounds<K, V>)));
 circuit_cache_key!(DelayedTraceId<B, D>(GlobalNodeId => Stream<B, D>));
-circuit_cache_key!(IntegrateTraceId<B, D, K, V>(GlobalNodeId => (Stream<B, D>, TraceBounds<K, V>)));
 
 /// Lower bound on keys or values in a trace.
 ///
@@ -237,7 +236,7 @@ where
     #[track_caller]
     pub fn integrate_trace(&self) -> Stream<C, Spine<B>>
     where
-        B: Batch,
+        B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
         self.integrate_trace_with_bound(TraceBound::new(), TraceBound::new())
@@ -250,11 +249,11 @@ where
         lower_val_bound: TraceBound<B::Val>,
     ) -> Stream<C, Spine<B>>
     where
-        B: Batch,
+        B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
         let mut trace_bounds = self.circuit().cache_get_or_insert_with(
-            IntegrateTraceId::new(self.origin_node_id().clone()),
+            TraceId::new(self.origin_node_id().clone()),
             || {
                 let circuit = self.circuit();
                 let bounds = TraceBounds::new();
@@ -351,7 +350,7 @@ where
             self.delayed_trace.clone(),
         );
         circuit.cache_insert(
-            IntegrateTraceId::new(stream.origin_node_id().clone()),
+            TraceId::new(stream.origin_node_id().clone()),
             (trace.clone(), self.bounds.clone()),
         );
         circuit.cache_insert(
@@ -378,7 +377,7 @@ where
 /// stream.
 ///
 /// Use the [`add_integrate_trace_feedback`] method to create a
-/// [`TraceFeedbackConnector`] struct.  The struct contains the `delayed_traece`
+/// [`TraceFeedbackConnector`] struct.  The struct contains the `delayed_trace`
 /// stream, which can be used as input to instantiate `F` and the `output`
 /// stream.  Close the loop by calling
 /// `TraceFeedbackConnector::connect(output)`.
@@ -388,7 +387,7 @@ pub trait TraceFeedback: Circuit {
         bounds: TraceBounds<T::Key, T::Val>,
     ) -> TraceFeedbackConnector<Self, T>
     where
-        T: Trace + Clone,
+        T: Trace<Time = ()> + Clone,
     {
         let (ExportStream { local, export }, feedback) =
             self.add_feedback_with_export(Z1Trace::new(true, self.root_scope(), bounds.clone()));
