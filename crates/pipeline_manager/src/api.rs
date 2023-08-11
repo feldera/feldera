@@ -43,7 +43,7 @@ use anyhow::{Error as AnyError, Result as AnyResult};
 use dbsp_adapters::{
     ConnectorConfig, ControllerError, ErrorResponse, PipelineConfig, RuntimeConfig,
 };
-use log::debug;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::{env, net::TcpListener, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
@@ -253,8 +253,7 @@ fn create_listener(api_config: &ApiServerConfig) -> AnyResult<TcpListener> {
 pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyResult<()> {
     let listener = create_listener(&api_config)?;
     let state = WebData::new(ServerState::new(api_config.clone(), db).await?);
-
-    if api_config.use_auth {
+    let server = if api_config.use_auth {
         let server = HttpServer::new(move || {
             let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
             let auth_configuration = crate::auth::aws_auth_config();
@@ -270,7 +269,7 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
                 .service(api_scope().wrap(auth_middleware))
                 .service(static_website_scope())
         });
-        server.listen(listener)?.run().await?;
+        server.listen(listener)?.run()
     } else {
         let server = HttpServer::new(move || {
             App::new()
@@ -286,8 +285,25 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
                 }))
                 .service(static_website_scope())
         });
-        server.listen(listener)?.run().await?;
-    }
+        server.listen(listener)?.run()
+    };
+
+    info!(
+        r"
+                    Welcome to
+
+███████ ███████ ██      ██████  ███████ ██████   █████  
+██      ██      ██      ██   ██ ██      ██   ██ ██   ██ 
+█████   █████   ██      ██   ██ █████   ██████  ███████ 
+██      ██      ██      ██   ██ ██      ██   ██ ██   ██ 
+██      ███████ ███████ ██████  ███████ ██   ██ ██   ██ 
+                
+API server URL: http://{}:{}
+Documentation: https://docs.feldera.io
+        ",
+        api_config.bind_address, api_config.port,
+    );
+    server.await?;
     Ok(())
 }
 
