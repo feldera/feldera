@@ -148,7 +148,7 @@ One of the means of testing the compiler is using sqllogictests:
 
 The sqllogictests includes more than 5 million tests.  It takes weeks
 to run all of them.  Most of the time is spent compiling Rust.
-We hopet to speed that up at some point.
+We hope to speed that up at some point.
 
 To start running these tests:
 

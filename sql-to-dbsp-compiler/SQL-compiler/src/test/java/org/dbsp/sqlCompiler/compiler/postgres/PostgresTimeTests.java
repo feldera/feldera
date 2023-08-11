@@ -1,13 +1,13 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.junit.Ignore;
 import org.junit.Test;
 
 // https://github.com/postgres/postgres/blob/03734a7fed7d924679770adb78a7db8a37d14188/src/test/regress/expected/time.out
 public class PostgresTimeTests extends PostgresBaseTest {
     @Override
     public void prepareData(DBSPCompiler compiler) {
-        if (false)
         // Calcite format is much stricter.  Converted to the right format
         compiler.compileStatements("CREATE TABLE TIME_TBL (f1 time(2));\n" +
                 "INSERT INTO TIME_TBL VALUES ('00:00:00');\n" +
@@ -93,17 +93,62 @@ public class PostgresTimeTests extends PostgresBaseTest {
                 "   time   \n" +
                 "----------\n" +
                 " 23:59:59.9999999\n" +
+                "(1 row)");
+    }
+
+    @Test
+    public void testFailConstants() {
+        // The following tests pass in Postgres.
+        // Changed to TIME literals from strings cast to ::time
+        this.shouldFail("SELECT TIME '23:59:60'", "Illegal TIME literal");
+        this.shouldFail("SELECT TIME '24:00:00'::time", "Illegal TIME literal");
+        this.shouldFail("SELECT TIME '24:00:00.01'", "Illegal TIME literal");
+        this.shouldFail("SELECT TIME '23:59:60.01'", "Illegal TIME literal");
+        this.shouldFail("SELECT TIME '24:01:00'", "Illegal TIME literal");
+        this.shouldFail("SELECT TIME '25:00:00'", "Illegal TIME literal");
+    }
+
+    @Test
+    public void testFailPlus() {
+        // Changed TIME literal to conform
+        this.shouldFail("SELECT f1 + time '00:01:00' AS \"Illegal\" FROM TIME_TBL",
+                "Cannot apply '+' to arguments");
+    }
+
+    @Test @Ignore("Bug in Calcite https://issues.apache.org/jira/browse/CALCITE-5919")
+    public void testMicrosecond() {
+        this.q("SELECT EXTRACT(MICROSECOND FROM TIME '13:30:25.575401');\n" +
+                " extract  \n" +
+                "----------\n" +
+                " 25575401");
+    }
+
+    @Test
+    public void testUnits() {
+        // Removed dates
+        // Extract second and millisecond return integers in Calcite instead of DECIMAL
+        this.qs("SELECT EXTRACT(MILLISECOND FROM TIME '13:30:25.575401');\n" +
+                "  extract  \n" +
+                "-----------\n" +
+                " 25575\n" + // -- 25575.401
                 "(1 row)\n" +
                 "\n" +
-                "SELECT '23:59:60'::time;  -- rounds up\n" +
-                "   time   \n" +
-                "----------\n" +
-                " 23:59:60\n" +
+                "SELECT EXTRACT(SECOND      FROM TIME '13:30:25.575401');\n" +
+                "  extract  \n" +
+                "-----------\n" +
+                " 25\n" + // -- 25.575401
+                "(1 row)\n" +
+                "\n" +
+                "SELECT EXTRACT(MINUTE      FROM TIME '13:30:25.575401');\n" +
+                " extract \n" +
+                "---------\n" +
+                "      30\n" +
+                "(1 row)\n" +
+                "\n" +
+                "SELECT EXTRACT(HOUR        FROM TIME '13:30:25.575401');\n" +
+                " extract \n" +
+                "---------\n" +
+                "      13\n" +
                 "(1 row)");
-        //      not allowed in Calcite, but legal in Postgres.
-        //        "SELECT '24:00:00'::time;  -- allowed\n" +
-        //        "   time   \n" +
-        //        "----------\n" +
-        //        " 24:00:00");
     }
 }
