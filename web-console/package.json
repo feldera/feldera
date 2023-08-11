@@ -24,7 +24,7 @@
     "lint": "eslint --max-warnings 0 --fix \"src/**/*.{js,jsx,ts,tsx}\"",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
-    "generate-openapi": "cargo run --bin pipeline-manager -- --dump-openapi && openapi --input ./openapi.json --output ./src/types/manager && rm ./openapi.json"
+    "generate-openapi": "cargo run --bin dbsp_pipeline_manager -- --dump-openapi && openapi --input ./openapi.json --output ./src/types/manager && rm ./openapi.json"
   },
   "dependencies": {
     "@emotion/cache": "^11.11.0",
@@ -61,8 +61,6 @@
     "next": "13.4.8-canary.9",
     "nprogress": "^0.2.0",
     "papaparse": "^5.4.1",
-    "patch-package": "^8.0.0",
-    "postinstall-postinstall": "^2.1.0",
     "react": "^18.2.0",
     "react-apexcharts": "^1.4.1",
     "react-dom": "^18.2.0",
