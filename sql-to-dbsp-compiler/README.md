@@ -41,19 +41,6 @@ $ cargo update
 
 (`temp` is the directory where the tests write the generated Rust code.)
 
-## Running
-
-To run the tests:
-
-```
-$ cd SQL-compiler
-$ ./run-tests.sh
-```
-
-Beware that the full sql logic tests can run for a few weeks, there
-are more than 5 million of them!  Most of the time is spent compiling Rust,
-hopefully we'll be able to speed that up at some point.
-
 ## Incremental view maintenance
 
 The DBSP runtime is optimized for performing incremental view
@@ -123,13 +110,52 @@ Compilation proceeds in several stages:
 
 ### Unit tests
 
-Unit tests are written using JUnit and test pointwise parts of the compiler.
-They can be executed usign `mvn test`.
+Unit tests are written using JUnit and test pointwise parts of the
+compiler.  They can be executed using `mvn test`.  They also run as a
+side effect of `mvn package` (omitting `-DskipTests`).
+
+The unit tests are implemented as individual Java files under
+`sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/`.
+Each unit test uses the SQL to DBSP compiler to generate Rust code under
+`sql-to-dbsp-compiler/temp` and compiles and runs that code.
+
+If one of the unit tests fails, you may re-populate the Rust code for
+it into `temp` by telling `mvn` to run only that particular test.  If
+an error message indicates that
+`org.dbsp.sqlCompiler.compiler.postgres.PostgresTimestampTests`
+failed, for example, you may rerun just that test, first with `mvn
+test` and then again with `cargo test`, via:
+
+```
+$ mvn test -Dtest=PostgresTimestampTests
+$ cd ../temp
+$ cargo test
+```
+
+For JIT tests (ones whose names start with `Jit`, add `--features
+jit`, e.g.:
+
+```
+$ mvn test -Dtest=itPostgresDateTest
+$ cd ../temp
+$ cargo test --features jit
+```
 
 ### SQL logic tests
 
 One of the means of testing the compiler is using sqllogictests:
 <https://www.sqlite.org/sqllogictest/doc/trunk/about.wiki>.
+
+The sqllogictests includes more than 5 million tests.  It takes weeks
+to run all of them.  Most of the time is spent compiling Rust.
+We hopet to speed that up at some point.
+
+To start running these tests:
+
+```
+$ cd SQL-compiler
+$ ./run-tests.sh
+```
 
 We have implemented a [general-purpose testing
 framework](https://github.com/hydromatic/sql-logic-test) in Java for
