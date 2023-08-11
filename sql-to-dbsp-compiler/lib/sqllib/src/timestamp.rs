@@ -571,7 +571,7 @@ impl Time {
         }
     }
 
-    pub fn to_time(self: &Self) -> NaiveTime {
+    pub fn to_time(&self) -> NaiveTime {
         NaiveTime::from_num_seconds_from_midnight_opt(
             (self.nanoseconds / BILLION) as u32,
             (self.nanoseconds % BILLION) as u32,

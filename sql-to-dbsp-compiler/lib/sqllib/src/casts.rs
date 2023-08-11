@@ -168,7 +168,7 @@ pub fn cast_to_TimeN_nullN(_value: Option<()>) -> Option<Time> {
 #[inline]
 pub fn cast_to_TimeN_s(value: String) -> Option<Time> {
     let time = NaiveTime::parse_from_str(&value, "%H:%M:%S.f");
-    time.ok().map(|time| Time::from_time(time))
+    time.ok().map(Time::from_time)
 }
 
 #[inline]

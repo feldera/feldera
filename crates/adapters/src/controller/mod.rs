@@ -720,7 +720,7 @@ impl OutputEndpoints {
     }
 
     fn alloc_endpoint_id(&self) -> EndpointId {
-        self.by_id.keys().rev().next().map(|k| k + 1).unwrap_or(0)
+        self.by_id.keys().next_back().map(|k| k + 1).unwrap_or(0)
     }
 
     fn insert(
@@ -868,7 +868,7 @@ impl ControllerInner {
             .map_err(|e| ControllerError::parse_error(endpoint_name, e))?;
 
         // Create probe.
-        let endpoint_id = inputs.keys().rev().next().map(|k| k + 1).unwrap_or(0);
+        let endpoint_id = inputs.keys().next_back().map(|k| k + 1).unwrap_or(0);
         let probe = Box::new(InputProbe::new(
             endpoint_id,
             endpoint_name,

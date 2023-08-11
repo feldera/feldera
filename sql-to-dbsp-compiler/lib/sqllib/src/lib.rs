@@ -1078,13 +1078,13 @@ pub fn index__N<T>(value: &Vec<T>, index: Option<usize>) -> T
 pub fn index_N_<T>(value: &Option<Vec<T>>, index: usize) -> Option<T>
     where T: Clone
 {
-    value.as_ref().map(|value| index__(&value, index))
+    value.as_ref().map(|value| index__(value, index))
 }
 
 pub fn index_N_N<T>(value: &Option<Vec<T>>, index: Option<usize>) -> Option<T>
     where T: Clone
 {
-    value.as_ref().map(|value| index__N(&value, index))
+    value.as_ref().map(|value| index__N(value, index))
 }
 
 pub fn array<T>() -> Vec<T> {
