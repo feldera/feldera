@@ -9,11 +9,6 @@ const navigation = (): VerticalNavItemsType => {
       icon: 'bx:home-circle'
     },
     {
-      title: 'Docs',
-      path: 'https://docs.feldera.io/docs/sql/intro',
-      icon: 'bx:file'
-    },
-    {
       sectionTitle: 'Analytics'
     },
     // {
@@ -56,12 +51,20 @@ const navigation = (): VerticalNavItemsType => {
       title: 'Connectors', // 'Existing Connectors',
       path: ['/connectors/list', '/connectors/create'],
       icon: 'bx:unite' // 'bx:download'
-    }
+    },
     //{
     //title: 'Data Browser',
     //path: '/connectors/browser',
     //icon: 'bx:table'
     //}
+    {
+      sectionTitle: 'Ecosystem'
+    },
+    {
+      title: 'Documentation',
+      path: 'https://docs.feldera.io/docs/sql/intro',
+      icon: 'bx:file'
+    }
   ]
 }
 
