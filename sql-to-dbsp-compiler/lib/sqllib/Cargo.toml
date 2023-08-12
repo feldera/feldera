@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 dbsp = { path = "../../../crates/dbsp" }
 rust_decimal = { version = "1.29", features = ["maths"] }
-geo = { version = "0.23" }
+geo = { version = "0.26.0" }
 geo-types = { version = "0.7" }
 size-of = { version = "0.1.5", features = ["rust_decimal"] }
 serde = { version = "1.0", features = ["derive"] }

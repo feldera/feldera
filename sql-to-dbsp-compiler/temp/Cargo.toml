@@ -18,7 +18,7 @@ sqlvalue = { path = "../lib/sqlvalue" }
 serde = { version = "1.0", features = ["derive"] }
 compare = { version = "0.1.0" }
 size-of = { version = "0.1.1" }
-geo = { version = "0.25.1" }
+geo = { version = "0.26.0" }
 geo-types = { version = "0.7" }
 rust_decimal = { version = "1.29" }
 serde_json = { version = "1.0.89" }
