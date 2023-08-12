@@ -1,11 +1,11 @@
 use crate::{
-    DeCollectionHandle, DeScalarHandle, DeScalarHandleImpl, DeZSetHandle, SerOutputBatchHandle,
+    DeCollectionHandle, DeSetHandle, DeScalarHandle, DeScalarHandleImpl, DeZSetHandle, SerOutputBatchHandle,
     SerOutputBatchHandleImpl,
 };
 use dbsp::{
     algebra::ZRingValue,
     operator::{DelayedFeedback, NeighborhoodDescr},
-    CollectionHandle, InputHandle, RootCircuit, Stream, ZSet,
+    CollectionHandle, InputHandle, RootCircuit, Stream, UpsertHandle, ZSet,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -185,6 +185,23 @@ impl Catalog {
         Z::Key: Serialize + Sync + From<D>,
     {
         self.register_input_collection_handle(name, <DeZSetHandle<Z::Key, D, Z::R>>::new(handle));
+
+        // Inputs are also outputs.
+        self.register_output_zset(name, stream);
+    }
+
+    pub fn register_input_set<Z, D>(
+        &mut self,
+        name: &str,
+        stream: Stream<RootCircuit, Z>,
+        handle: UpsertHandle<Z::Key, bool>,
+    ) where
+        D: for<'de> Deserialize<'de> + Serialize + From<Z::Key> + Clone + Send + 'static,
+        Z: ZSet + Send + Sync,
+        Z::R: ZRingValue + Into<i64> + Sync,
+        Z::Key: Serialize + Sync + From<D>,
+    {
+        self.register_input_collection_handle(name, <DeSetHandle<Z::Key, D>>::new(handle));
 
         // Inputs are also outputs.
         self.register_output_zset(name, stream);

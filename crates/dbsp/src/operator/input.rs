@@ -72,7 +72,7 @@ impl RootCircuit {
     /// reads all buffered values and assembles them into an `OrdZSet`.
     ///
     /// See [`CollectionHandle`] for more details.
-    pub fn add_input_zset<K, R>(&self) -> (Stream<Self, OrdZSet<K, R>>, CollectionHandle<K, R>)
+    pub fn add_input_zset<K, R>(&self) -> (ZSetStream<K, R>, CollectionHandle<K, R>)
     where
         K: DBData,
         R: DBWeight,

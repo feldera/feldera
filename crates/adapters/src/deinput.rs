@@ -279,33 +279,36 @@ where
 /// The [`delete`](`Self::delete`) method of this handle deserializes value
 /// `v` type `V` and buffers a `(v, false)` update for the underlying
 /// `UpsertHandle`.
-pub struct DeSetHandle<K> {
+pub struct DeSetHandle<K, D> {
     updates: Vec<(K, bool)>,
     handle: UpsertHandle<K, bool>,
+    phantom: PhantomData<D>,
 }
 
-impl<K> DeSetHandle<K> {
+impl<K, D> DeSetHandle<K, D> {
     pub fn new(handle: UpsertHandle<K, bool>) -> Self {
         Self {
             updates: Vec::new(),
             handle,
+            phantom: PhantomData,
         }
     }
 }
 
-impl<K> DeCollectionHandle for DeSetHandle<K>
+impl<K, D> DeCollectionHandle for DeSetHandle<K, D>
 where
-    K: DBData + for<'de> Deserialize<'de>,
+    K: DBData + From<D>,
+    D: for<'de> Deserialize<'de> + Send + 'static,
 {
     fn insert(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let key = deserialize::<K>(deserializer)?;
+        let key = <K as From<D>>::from(deserialize::<D>(deserializer)?);
 
         self.updates.push((key, true));
         Ok(())
     }
 
     fn delete(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let key = deserialize::<K>(deserializer)?;
+        let key = <K as From<D>>::from(deserialize::<D>(deserializer)?);
 
         self.updates.push((key, false));
         Ok(())

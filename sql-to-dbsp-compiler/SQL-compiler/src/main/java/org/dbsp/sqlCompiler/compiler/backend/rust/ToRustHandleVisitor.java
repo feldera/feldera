@@ -170,7 +170,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 .append(operator.outputName)
                 .append(", handle")
                 .append(this.inputHandleIndex++)
-                .append(") = circuit.add_input_zset::<");
+                .append(") = circuit.add_input_set::<");
 
         DBSPTypeZSet zsetType = operator.getType().to(DBSPTypeZSet.class);
         zsetType.elementType.accept(this.innerVisitor);
@@ -214,7 +214,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         // Register input streams in the catalog.
         int index = 0;
         for (DBSPSourceOperator i : circuit.inputOperators) {
-            this.builder.append("catalog.register_input_zset::<_, ");
+            this.builder.append("catalog.register_input_set::<_, ");
             i.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
                     .append(Utilities.doubleQuote(i.getName()))
