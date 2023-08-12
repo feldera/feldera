@@ -337,69 +337,6 @@ impl MulByRef<isize> for Decimal {
     }
 }
 
-impl MulByRef<isize> for Option<Decimal> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &isize) -> Self::Output {
-        self.as_ref().map(|x| (*x * Decimal::from(*w)))
-    }
-}
-
-impl MulByRef<isize> for Option<i32> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &isize) -> Self::Output {
-        self.as_ref().map(|x| (*x as isize * w) as i32)
-    }
-}
-
-impl MulByRef<isize> for Option<i64> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &isize) -> Self::Output {
-        self.as_ref().map(|x| (*x as isize * w) as i64)
-    }
-}
-
-impl MulByRef<isize> for Option<f32> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &isize) -> Self::Output {
-        self.as_ref().map(|x| *x * (*w as f32))
-    }
-}
-
-impl MulByRef<isize> for Option<f64> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &isize) -> Self::Output {
-        self.as_ref().map(|x| *x * (*w as f64))
-    }
-}
-
-impl MulByRef<isize> for Option<F32> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &isize) -> Self::Output {
-        self.as_ref().map(|x| *x * (*w as f32))
-    }
-}
-
-impl MulByRef<isize> for Option<F64> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &isize) -> Self::Output {
-        self.as_ref().map(|x| *x * (*w as f64))
-    }
-}
-
 /////////// same for i64
 
 impl MulByRef<i64> for i32 {
@@ -465,66 +402,28 @@ impl MulByRef<i64> for Decimal {
     }
 }
 
-impl MulByRef<i64> for Option<Decimal> {
+/////////// generic implementation for Option<t>
+
+trait OptionWeightType {}
+impl OptionWeightType for isize {}
+impl OptionWeightType for i32 {}
+impl OptionWeightType for i64 {}
+impl OptionWeightType for f32 {}
+impl OptionWeightType for f64 {}
+impl OptionWeightType for F32 {}
+impl OptionWeightType for F64 {}
+impl OptionWeightType for Decimal {}
+
+impl<T, S> MulByRef<S> for Option<T>
+where
+    T: MulByRef<S, Output = T>,
+    S: OptionWeightType,
+{
     type Output = Self;
 
     #[inline]
-    fn mul_by_ref(&self, w: &i64) -> Self::Output {
-        self.as_ref().map(|x| (*x * Decimal::from(*w)))
-    }
-}
-
-impl MulByRef<i64> for Option<i32> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &i64) -> Self::Output {
-        self.as_ref().map(|x| (*x as i64 * w) as i32)
-    }
-}
-
-impl MulByRef<i64> for Option<i64> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &i64) -> Self::Output {
-        self.as_ref().map(|x| *x * w)
-    }
-}
-
-impl MulByRef<i64> for Option<f32> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &i64) -> Self::Output {
-        self.as_ref().map(|x| *x * (*w as f32))
-    }
-}
-
-impl MulByRef<i64> for Option<f64> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &i64) -> Self::Output {
-        self.as_ref().map(|x| *x * (*w as f64))
-    }
-}
-
-impl MulByRef<i64> for Option<F32> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &i64) -> Self::Output {
-        self.as_ref().map(|x| *x * (*w as f32))
-    }
-}
-
-impl MulByRef<i64> for Option<F64> {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, w: &i64) -> Self::Output {
-        self.as_ref().map(|x| *x * (*w as f64))
+    fn mul_by_ref(&self, rhs: &S) -> Self::Output {
+        self.as_ref().map(|lhs| lhs.mul_by_ref(rhs))
     }
 }
 
