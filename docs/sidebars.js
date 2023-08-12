@@ -14,62 +14,52 @@
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
   docsSidebar: [
-    "what-is-feldera",
-    "intro",
-    "tour/tour",
+    'what-is-feldera',
+    'intro',
+    'tour/tour',
     {
-      type: "category",
-      label: "Demos",
+      type: 'category',
+      label: 'Demos',
       link: {
-        type: "doc",
-        id: 'demos/index',
+        type: 'doc',
+        id: 'demos/index'
       },
+      items: ['demos/simple-select', 'demos/time-series-enrich', 'demos/fraud-detection', 'demos/secops']
+    },
+    {
+      type: 'category',
+      label: 'Guides',
+      items: ['guides/overview', 'guides/sql-debug', 'guides/dev-flow', 'guides/rust', 'guides/sql']
+    },
+    {
+      type: 'category',
+      label: 'SQL Reference',
+      link: { type: 'doc', id: 'sql/intro' },
       items: [
-        "demos/simple-select",
-        "demos/time-series-enrich",
-        "demos/fraud-detection",
-        "demos/secops",
-      ],
+        'sql/grammar',
+        'sql/identifiers',
+        'sql/operators',
+        'sql/aggregates',
+        'sql/casts',
+        'sql/types',
+        'sql/boolean',
+        'sql/comparisons',
+        'sql/integer',
+        'sql/float',
+        'sql/decimal',
+        'sql/string',
+        'sql/array',
+        'sql/datetime'
+      ]
     },
     {
-      type: "category",
-      label: "Guides",
-        items: [
-            "guides/overview",
-            "guides/dev-flow",
-            "guides/rust",
-            "guides/sql"
-        ],
+      type: 'category',
+      label: 'API Reference',
+      items: ['api/rest', 'api/feldera', 'api/python']
     },
-    {
-      type: "category",
-      label: "SQL Reference",
-      link: { type: "doc", id: "sql/intro" },
-      items: [
-          "sql/grammar",
-          "sql/identifiers",
-          "sql/operators",
-          "sql/aggregates",
-          "sql/casts",
-          "sql/types",
-          "sql/boolean",
-          "sql/comparisons",
-          "sql/integer",
-          "sql/float",
-          "sql/decimal",
-          "sql/string",
-          "sql/array",
-          "sql/datetime"
-      ],
-    },
-    {
-      type: "category",
-      label: "API Reference",
-      items: ["api/rest", "api/feldera", "api/python"],
-    },
-    "papers",
-    "contribute-to-feldera",
-  ],
-};
+    'papers',
+    'contribute-to-feldera'
+  ]
+}
 
-module.exports = sidebars;
+module.exports = sidebars
