@@ -29,7 +29,11 @@ const sidebars = {
     {
       type: 'category',
       label: 'Guides',
-      items: ['guides/overview', 'guides/sql-debug', 'guides/dev-flow', 'guides/rust', 'guides/sql']
+      link: {
+        type: 'doc',
+        id: 'guides/index'
+      },
+      items: ['guides/writing-sql', 'guides/debugging-sql']
     },
     {
       type: 'category',
@@ -58,7 +62,11 @@ const sidebars = {
       items: ['api/rest', 'api/feldera', 'api/python']
     },
     'papers',
-    'contribute-to-feldera'
+    {
+      type: 'category',
+      label: 'For Contributors',
+      items: ['contributors/compiler', 'contributors/dev-flow', 'contributors/rust']
+    }
   ]
 }
 

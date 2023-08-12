@@ -1,3 +1,0 @@
-# Contribute to DBSP
-
-Lorem.
