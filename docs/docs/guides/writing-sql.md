@@ -6,14 +6,13 @@ becomes an input, and each view definition becomes an output. Here is an example
 program:
 
 ```sql
--- define Person table
 CREATE TABLE Person
 (
     name    VARCHAR,
     age     INT,
     present BOOLEAN
 );
-CREATE VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18;
+CREATE VIEW Adult AS SELECT Person.name, Person.age FROM Person WHERE Person.age > 18;
 ```
 
 Statements need to be separated by semicolons.

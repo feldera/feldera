@@ -1,11 +1,16 @@
 # Testing your first SQL program
 
 In this section, we demonstrate how to debug a new SQL program with the
-WebConsole by using the following code as an example.
+WebConsole. We are reusing the code from the previous tutorial as an example:
 
 ```sql
-CREATE TABLE users (name varchar, age tinyint);
-CREATE VIEW output_users AS SELECT * FROM users WHERE age > 18;
+CREATE TABLE Person
+(
+    name    VARCHAR,
+    age     INT,
+    present BOOLEAN
+);
+CREATE VIEW Adult AS SELECT Person.name, Person.age FROM Person WHERE Person.age > 18;
 ```
 
 Enter the code in the SQL editor. Once the program compiled successfully, (as
@@ -20,7 +25,7 @@ the row, press the downward arrow <icon icon="material-symbols:expand-more" />
 to expand.
 
 To test the program, you can send data to it directly through the UI.
-Press the <icon icon="bx:upload" /> button on the right end of the `users` table. A new page
+Press the <icon icon="bx:upload" /> button on the right end of the `Person` table. A new page
 opens with a table that is empty:
 
 ![Table Insert](table-insert.png)
@@ -39,7 +44,7 @@ tables in the program, you can repeat this process until you filled all tables
 with content.
 
 Finally, inspect the views of your program to verify if the data that shows up
-is correct. In our example, we would only want to see the rows from `users`
+is correct. In our example, we would only want to see the rows from `Person`
 where the `age` is over 18.
 
-![Showing the relation](output-users.png)
+![Showing the Adults relation](adults.png)
