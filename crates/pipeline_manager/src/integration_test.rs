@@ -6,6 +6,7 @@ use std::{
 use actix_http::{encoding::Decoder, Payload, StatusCode};
 use awc::{http, ClientRequest, ClientResponse};
 use aws_sdk_cognitoidentityprovider::config::Region;
+use colored::Colorize;
 use serde_json::{json, Value};
 use serial_test::serial;
 use tempfile::TempDir;
@@ -26,7 +27,8 @@ const TEST_DBSP_DEFAULT_PORT: u16 = 8089;
 // whose lifecycle is managed by this test file
 static LOCAL_DBSP_INSTANCE: OnceCell<TempDir> = OnceCell::const_new();
 
-async fn initialize_local_dbsp_instance() -> TempDir {
+async fn initialize_local_pipeline_manager_instance() -> TempDir {
+    crate::logging::init_logging("[manager]".cyan());
     println!("Performing one time initialization for integration tests.");
     println!("Initializing a postgres container");
     let _output = Command::new("docker")
@@ -83,27 +85,39 @@ async fn initialize_local_dbsp_instance() -> TempDir {
         .unwrap();
     println!("Completed Compiler::precompile_dependencies().");
 
-    actix_web::rt::System::new().block_on(async move {
-        let db = crate::db::ProjectDB::connect(
-            &database_config,
-            #[cfg(feature = "pg-embed")]
-            Some(&api_config),
-        )
-        .await
-        .unwrap();
-        let db = Arc::new(Mutex::new(db));
-        let db_clone = db.clone();
-        let _compiler = actix_web::rt::spawn(async move {
-            crate::compiler::Compiler::run(&compiler_config.clone(), db_clone)
+    // We cannot reuse the tokio runtime instance created by the test (e.g., the one implicitly
+    // created via [actix_web::test]) to create the compiler, local runner and api futures below.
+    // The reason is that when that first test completes, these futures will get cancelled.
+    //
+    // To avoid that problem, and for general integration test hygiene, we force another tokio
+    // runtime to be created here to run the server processes. We obviously can't create one
+    // runtime within another, so the easiest way to work around that is to do so within an
+    // std::thread::spawn().
+    std::thread::spawn(|| {
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(async move {
+                let db = crate::db::ProjectDB::connect(
+                    &database_config,
+                    #[cfg(feature = "pg-embed")]
+                    Some(&api_config),
+                )
                 .await
                 .unwrap();
-        });
-        let db_clone = db.clone();
-        let _local_runner = actix_web::rt::spawn(async move {
-            crate::local_runner::run(db_clone, &local_runner_config.clone()).await;
-        });
-        // The api-server blocks forever
-        crate::api::run(db, api_config).await.unwrap();
+                let db = Arc::new(Mutex::new(db));
+                let db_clone = db.clone();
+                let _compiler = tokio::spawn(async move {
+                    crate::compiler::Compiler::run(&compiler_config.clone(), db_clone)
+                        .await
+                        .unwrap();
+                });
+                let db_clone = db.clone();
+                let _local_runner = tokio::spawn(async move {
+                    crate::local_runner::run(db_clone, &local_runner_config.clone()).await;
+                });
+                // The api-server blocks forever
+                let _api_server = crate::api::run(db, api_config).await.unwrap();
+            })
     });
     tokio::time::sleep(Duration::from_millis(1000)).await;
     tmp_dir
@@ -352,7 +366,7 @@ async fn setup() -> TestConfig {
                 "TEST_DBSP_URL is unset (reason: {}). Running integration test against: localhost:{}", e, TEST_DBSP_DEFAULT_PORT
             );
             LOCAL_DBSP_INSTANCE
-                .get_or_init(initialize_local_dbsp_instance)
+                .get_or_init(initialize_local_pipeline_manager_instance)
                 .await;
             format!("http://localhost:{}", TEST_DBSP_DEFAULT_PORT).to_owned()
         }
