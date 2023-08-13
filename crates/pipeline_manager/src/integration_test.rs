@@ -684,7 +684,7 @@ async fn json_ingress() {
     // Push some data using default json config.
     let req = config
         .post_json(
-            format!("/v0/pipelines/{}/ingress/T1?format=json", id),
+            format!("/v0/pipelines/{}/ingress/T1?format=json&update_format=raw", id),
             r#"{"C1": 10, "C2": true}
             {"C1": 20, "C3": "foo"}"#
                 .to_string(),
