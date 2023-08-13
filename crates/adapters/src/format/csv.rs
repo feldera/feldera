@@ -11,6 +11,7 @@ use csv::{
 use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerialize};
 use serde::{Deserialize, Serialize};
 use serde_urlencoded::Deserializer as UrlDeserializer;
+use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, io::Read, mem::take, sync::Arc};
 use utoipa::ToSchema;
 
@@ -44,7 +45,7 @@ impl InputFormat for CsvInputFormat {
         &self,
         _endpoint_name: &str,
         input_stream: &dyn DeCollectionHandle,
-        _config: &mut dyn ErasedDeserializer,
+        _config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         Ok(Box::new(CsvParser::new(input_stream)) as Box<dyn Parser>)
     }
@@ -208,13 +209,13 @@ impl OutputFormat for CsvOutputFormat {
             CsvEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
                 request.query_string().as_bytes(),
             )))
-            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?,
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, request.query_string()))?,
         ))
     }
 
     fn new_encoder(
         &self,
-        config: &mut dyn ErasedDeserializer,
+        config: &YamlValue,
         consumer: Box<dyn OutputConsumer>,
     ) -> AnyResult<Box<dyn Encoder>> {
         let config = CsvEncoderConfig::deserialize(config)?;

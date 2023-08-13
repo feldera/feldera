@@ -2,7 +2,6 @@ use crate::{
     controller::FormatConfig, DeCollectionHandle, InputConsumer, InputFormat, ParseError, Parser,
 };
 use anyhow::{anyhow, Error as AnyError};
-use erased_serde::Deserializer as ErasedDeserializer;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub type ErrorCallback = Box<dyn FnMut(&AnyError) + Send>;
@@ -51,7 +50,7 @@ impl MockInputConsumerState {
             .new_parser(
                 "mock_input_endpoint",
                 input_handle,
-                &mut <dyn ErasedDeserializer>::erase(&format_config.config),
+                &format_config.config,
             )
             .unwrap();
         Self::new(parser)

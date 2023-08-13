@@ -44,7 +44,6 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use dbsp::DBSPHandle;
-use erased_serde::Deserializer as ErasedDeserializer;
 use log::{debug, error, info};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
@@ -857,7 +856,7 @@ impl ControllerInner {
         let parser = format.new_parser(
             endpoint_name,
             input_stream,
-            &mut <dyn ErasedDeserializer>::erase(&endpoint_config.connector_config.format.config),
+            &endpoint_config.connector_config.format.config,
         )?;
 
         // Create probe.
@@ -1019,9 +1018,7 @@ impl ControllerInner {
             })?;
         let encoder = format
             .new_encoder(
-                &mut <dyn ErasedDeserializer>::erase(
-                    &endpoint_config.connector_config.format.config,
-                ),
+                &endpoint_config.connector_config.format.config,
                 probe,
             )
             .map_err(|e| ControllerError::encode_error(endpoint_name, e))?;

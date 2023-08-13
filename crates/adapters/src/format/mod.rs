@@ -1,9 +1,10 @@
 use crate::{ControllerError, DeCollectionHandle, SerBatch};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
-use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerialize};
+use erased_serde::{Serialize as ErasedSerialize};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
@@ -381,12 +382,12 @@ pub trait InputFormat: Send + Sync {
     ///
     /// * `input_stream` - Input stream of the circuit to push parsed data to.
     ///
-    /// * `config` - Deserializer to extract format-specific configuration.
+    /// * `config` - Format-specific configuration.
     fn new_parser(
         &self,
         endpoint_name: &str,
         input_stream: &dyn DeCollectionHandle,
-        config: &mut dyn ErasedDeserializer,
+        config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError>;
 }
 
@@ -470,13 +471,12 @@ pub trait OutputFormat: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `config` - Deserializer object to extract format-specific
-    ///   configuration.
+    /// * `config` - Format-specific configuration.
     ///
     /// * `consumer` - Consumer to send encoded data batches to.
     fn new_encoder(
         &self,
-        config: &mut dyn ErasedDeserializer,
+        config: &YamlValue,
         consumer: Box<dyn OutputConsumer>,
     ) -> AnyResult<Box<dyn Encoder>>;
 }

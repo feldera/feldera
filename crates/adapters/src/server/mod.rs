@@ -235,6 +235,9 @@ fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
         ))
     })?;
 
+    // Still running without logger here.
+    eprintln!("Pipeline configuration:\n{yaml_config}");
+
     serde_yaml::from_str(yaml_config.as_str())
         .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
 }

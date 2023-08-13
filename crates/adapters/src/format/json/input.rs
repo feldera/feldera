@@ -11,6 +11,7 @@ use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerial
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use serde_urlencoded::Deserializer as UrlDeserializer;
+use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, mem::take};
 use utoipa::ToSchema;
 
@@ -221,10 +222,10 @@ impl InputFormat for JsonInputFormat {
         &self,
         endpoint_name: &str,
         input_stream: &dyn DeCollectionHandle,
-        config: &mut dyn ErasedDeserializer,
+        config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let config = JsonParserConfig::deserialize(config)
-            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?;
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, &serde_yaml::to_string(&config).unwrap_or_default()))?;
         Ok(Box::new(JsonParser::new(input_stream, config)) as Box<dyn Parser>)
     }
 
@@ -237,7 +238,7 @@ impl InputFormat for JsonInputFormat {
             JsonParserConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
                 request.query_string().as_bytes(),
             )))
-            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?,
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, &request.query_string()))?,
         ))
     }
 }
