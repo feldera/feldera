@@ -2,9 +2,10 @@ use super::WeightedUpdate;
 use crate::{ControllerError, Encoder, OutputConsumer, OutputFormat, SerBatch};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
-use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerialize};
+use erased_serde::{Serialize as ErasedSerialize};
 use serde::{Deserialize, Serialize};
 use serde_urlencoded::Deserializer as UrlDeserializer;
+use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, mem::take, sync::Arc};
 use utoipa::ToSchema;
 
@@ -36,7 +37,7 @@ impl OutputFormat for JsonOutputFormat {
         let mut config = JsonEncoderConfig::deserialize(UrlDeserializer::new(
             form_urlencoded::parse(request.query_string().as_bytes()),
         ))
-        .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?;
+        .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, &request.query_string()))?;
         // We currently always break output into chunks, which requires encoding
         // JSON data as a valid JSON document (can't use ND-JSON), so we set `array`
         // to `true` for the result to be valid.
@@ -49,7 +50,7 @@ impl OutputFormat for JsonOutputFormat {
 
     fn new_encoder(
         &self,
-        config: &mut dyn ErasedDeserializer,
+        config: &YamlValue,
         consumer: Box<dyn OutputConsumer>,
     ) -> AnyResult<Box<dyn Encoder>> {
         let config = JsonEncoderConfig::deserialize(config)?;

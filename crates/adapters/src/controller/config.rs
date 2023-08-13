@@ -188,7 +188,7 @@ impl FormatConfig {
         Ok(Self {
             name: Cow::from(format_name.to_string()),
             config: serde_yaml::to_value(config)
-                .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?,
+                .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, ""))?,
         })
     }
 
@@ -207,7 +207,7 @@ impl FormatConfig {
         Ok(Self {
             name: Cow::from(format_name.to_string()),
             config: serde_yaml::to_value(config)
-                .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?,
+                .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, ""))?,
         })
     }
 }

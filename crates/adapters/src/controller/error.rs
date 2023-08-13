@@ -22,12 +22,14 @@ pub enum ConfigError {
     ParserConfigParseError {
         endpoint_name: String,
         error: String,
+        config: String,
     },
 
     /// Failed to parse encoder configuration for an endpoint.
     EncoderConfigParseError {
         endpoint_name: String,
         error: String,
+        config: String,
     },
 
     /// Input endpoint with this name already exists.
@@ -104,19 +106,21 @@ impl Display for ConfigError {
             Self::ParserConfigParseError {
                 endpoint_name,
                 error,
+                config
             } => {
                 write!(
                     f,
-                    "Error parsing format configuration for endpoint '{endpoint_name}': {error}"
+                    "Error parsing format configuration for input endpoint '{endpoint_name}': {error}\nInvalid configuration: {config}"
                 )
             }
             Self::EncoderConfigParseError {
                 endpoint_name,
                 error,
+                config,
             } => {
                 write!(
                     f,
-                    "Error parsing format configuration for endpoint '{endpoint_name}': {error}"
+                    "Error parsing format configuration for output endpoint '{endpoint_name}': {error}\nInvalid configuration: {config}"
                 )
             }
             Self::DuplicateInputEndpoint { endpoint_name } => {
@@ -178,23 +182,25 @@ impl ConfigError {
         }
     }
 
-    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
+    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
     where
         E: ToString,
     {
         Self::ParserConfigParseError {
             endpoint_name: endpoint_name.to_owned(),
             error: error.to_string(),
+            config: config.to_string(),
         }
     }
 
-    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
+    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
     where
         E: ToString,
     {
         Self::EncoderConfigParseError {
             endpoint_name: endpoint_name.to_owned(),
             error: error.to_string(),
+            config: config.to_string(),
         }
     }
 
@@ -509,21 +515,21 @@ impl ControllerError {
         }
     }
 
-    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
+    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
     where
         E: ToString,
     {
         Self::Config {
-            config_error: ConfigError::parser_config_parse_error(endpoint_name, error),
+            config_error: ConfigError::parser_config_parse_error(endpoint_name, error, config),
         }
     }
 
-    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
+    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
     where
         E: ToString,
     {
         Self::Config {
-            config_error: ConfigError::encoder_config_parse_error(endpoint_name, error),
+            config_error: ConfigError::encoder_config_parse_error(endpoint_name, error, config),
         }
     }
 
