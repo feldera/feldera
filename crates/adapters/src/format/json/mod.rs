@@ -53,7 +53,7 @@ pub enum JsonUpdateFormat {
 
 impl Default for JsonUpdateFormat {
     fn default() -> Self {
-        Self::Raw
+        Self::InsertDelete
     }
 }
 
