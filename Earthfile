@@ -547,7 +547,7 @@ test-docker-compose:
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
                 --load ghcr.io/feldera/demo-container=+build-demo-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 500000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
+        RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
 # Fetches the test binary from test-manager, and produces a container image out of it

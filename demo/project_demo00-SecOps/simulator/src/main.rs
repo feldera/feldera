@@ -1,16 +1,20 @@
-use csv::WriterBuilder as CsvWriterBuilder;
 use futures::executor::block_on;
 use mockd::datetime::date_range;
 use rand::{random, thread_rng, Rng};
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
-    client::DefaultClientContext,
+    // client::DefaultClientContext,
     config::{FromClientConfig, RDKafkaLogLevel},
     producer::{BaseRecord, DefaultProducerContext, Producer, ThreadedProducer},
     util::Timeout,
     ClientConfig,
 };
 use serde::Serialize;
+use serde_json::json;
+use std::{
+    sync::Arc,
+};
+use circular_queue::CircularQueue;
 
 static TOPIC_REPOSITORY: &str = "secops_repository";
 static TOPIC_GIT_COMMIT: &str = "secops_git_commit";
@@ -22,21 +26,20 @@ static TOPIC_CLUSTER: &str = "secops_cluster";
 static TOPIC_K8SOBJECT: &str = "secops_k8sobject";
 
 static NUM_REPOSITORIES: u64 = 1000u64;
-static NUM_COMMITS_PER_REPO: u64 = 1000u64;
+static NUM_COMMITS_PER_REPO: u64 = 100u64;
 static NUM_VULNERABILITIES: u64 = 100u64;
-static NUM_PIPELINES: u64 = 2_000_000;
-static NUM_SOURCES_PER_PIPELINE: u64 = 10;
+static NUM_SOURCES_PER_PIPELINE: u64 = 4;
 static NUM_CLUSTERS: u64 = 10;
 
 pub struct KafkaResources {
-    admin_client: AdminClient<DefaultClientContext>,
-    topics: Vec<String>,
+    // admin_client: AdminClient<DefaultClientContext>,
+    // topics: Vec<String>,
 }
 
 /// An object that creates Kafka topics on startup and deletes them
 /// on drop.  Helps make sure that test runs don't leave garbage behind.
 impl KafkaResources {
-    pub fn create_topics(topics: &[(&str, i32)]) -> Self {
+    pub fn create_topics(topics: &[(&str, i32, &str)]) -> Self {
         let mut admin_config = ClientConfig::new();
         admin_config
             .set(
@@ -48,13 +51,14 @@ impl KafkaResources {
 
         let new_topics = topics
             .iter()
-            .map(|(topic_name, partitions)| {
+            .map(|(topic_name, partitions, retention_bytes)| {
                 NewTopic::new(topic_name, *partitions, TopicReplication::Fixed(1))
+                    .set("retention.bytes", retention_bytes)
             })
             .collect::<Vec<_>>();
         let topic_names = topics
             .iter()
-            .map(|(topic_name, _partitions)| &**topic_name)
+            .map(|(topic_name, _partitions, _retention_bytes)| &**topic_name)
             .collect::<Vec<_>>();
 
         // Delete topics if they exist from previous runs.
@@ -63,17 +67,18 @@ impl KafkaResources {
         block_on(admin_client.create_topics(&new_topics, &AdminOptions::new())).unwrap();
 
         Self {
-            admin_client,
+            /*admin_client,
             topics: topics
                 .iter()
                 .map(|(topic_name, _)| topic_name.to_string())
-                .collect::<Vec<_>>(),
+                .collect::<Vec<_>>(),*/
         }
     }
 }
 
+#[derive(Clone)]
 pub struct KafkaProducer {
-    producer: ThreadedProducer<DefaultProducerContext>,
+    producer: Arc<ThreadedProducer<DefaultProducerContext>>,
 }
 
 impl Default for KafkaProducer {
@@ -94,31 +99,91 @@ impl KafkaProducer {
             .set_log_level(RDKafkaLogLevel::Debug);
         let producer = ThreadedProducer::from_config(&producer_config).unwrap();
 
-        Self { producer }
+        Self { producer: Arc::new(producer) }
     }
 
-    pub fn send_to_topic<T>(&self, topic: &str, data: &[Vec<T>])
+    pub fn insert_into_topic<T, I>(&self, topic: &str, data: I, message_size: usize)
     where
         T: Serialize + Clone,
+        I: IntoIterator<Item = T>,
     {
-        for batch in data {
-            let mut writer = CsvWriterBuilder::new()
-                .has_headers(false)
-                .from_writer(Vec::with_capacity(batch.len() * 32));
+        self.send_to_topic(topic, data.into_iter().map(|x| (x, true)), message_size)
+    }
 
-            for val in batch.iter().cloned() {
-                writer.serialize(val).unwrap();
+    pub fn send_to_topic<T, I>(&self, topic: &str, data: I, message_size: usize)
+    where
+        T: Serialize + Clone,
+        I: IntoIterator<Item = (T, bool)>,
+    {
+        let mut bytes = Vec::new();
+        let mut updates = 0;
+        for (val, insert) in data.into_iter() {
+            let json = if insert {
+                json!({"insert": val.clone()})
+            } else {
+                json!({"delete": val.clone()})
+            };
+            serde_json::to_writer(&mut bytes, &json).unwrap();
+            updates += 1;
+            if updates >= message_size {
+                let record = <BaseRecord<(), [u8], ()>>::to(topic).payload(&bytes);
+                self.producer.send(record).unwrap();
+                bytes.clear();
+                updates = 0;
+            } else {
+                bytes.push(b'\n');
             }
-            writer.flush().unwrap();
-            let bytes = writer.into_inner().unwrap();
+        }
 
+        if updates > 0 {
             let record = <BaseRecord<(), [u8], ()>>::to(topic).payload(&bytes);
             self.producer.send(record).unwrap();
         }
         self.producer.flush(Timeout::Never).unwrap();
         // println!("Data written to '{topic}'");
     }
+
+    pub fn send_string(&self, string: &str, topic: &str) {
+        let record = <BaseRecord<(), str, ()>>::to(topic).payload(string);
+        self.producer.send(record).unwrap();
+        self.producer.flush(Timeout::Never).unwrap();
+    }
 }
+
+pub struct CircularProducer<T> {
+    topic: String,
+    chunk_size: usize,
+    producer: KafkaProducer,
+    buffer: CircularQueue<T>,
+}
+
+impl<T> CircularProducer<T>
+where
+    T: Clone + Serialize,
+{
+    pub fn new(topic: &str, chunk_size: usize, capacity: usize, producer: KafkaProducer) -> Self {
+        Self {
+            topic: topic.to_string(),
+            chunk_size,
+            producer,
+            buffer: CircularQueue::with_capacity(capacity),
+        }
+    }
+
+    pub fn push(&mut self, data: &[T]) {
+        let mut updates = Vec::with_capacity(data.len() * 2);
+
+        for val in data.iter() {
+            if let Some(popped) = self.buffer.push(val.clone()) {
+                updates.push((popped, false));
+            }
+            updates.push((val.clone(), true));
+        }
+
+        self.producer.send_to_topic(&self.topic, updates, self.chunk_size);
+    }
+}
+
 
 fn random_date() -> String {
     date_range(
@@ -494,28 +559,31 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() > 2 {
-        println!("Usage: secops_simulator <num_pipelines>");
+        println!("Usage: secops_simulator [<num_pipelines>]");
         std::process::exit(1);
     }
+
     let num_pipelines = if args.len() == 2 {
-        args.get(1)
-            .unwrap()
-            .parse()
-            .expect("Num pipelines should be an integer")
+        let num_pipelines: isize = args.get(1).unwrap().parse().expect("Num pipelines should be an integer");
+        if num_pipelines > 0 {
+            Some(num_pipelines as u64)
+        } else {
+            None
+        }
     } else {
-        NUM_PIPELINES
+        None
     };
 
-    println!("Creating topics. Num piplines: {}", num_pipelines);
+    println!("Creating topics.");
     let _kafka_resources = KafkaResources::create_topics(&[
-        (TOPIC_REPOSITORY, 1),
-        (TOPIC_GIT_COMMIT, 1),
-        (TOPIC_VULNERABILITY, 1),
-        (TOPIC_CLUSTER, 1),
-        (TOPIC_PIPELINE, 1),
-        (TOPIC_PIPELINE_SOURCES, 1),
-        (TOPIC_ARTIFACT, 1),
-        (TOPIC_K8SOBJECT, 1),
+        (TOPIC_REPOSITORY, 1, "-1"),
+        (TOPIC_GIT_COMMIT, 1, "-1"),
+        (TOPIC_VULNERABILITY, 1, "-1"),
+        (TOPIC_CLUSTER, 1, "-1"),
+        (TOPIC_PIPELINE, 1, "1073741824"),
+        (TOPIC_PIPELINE_SOURCES, 1, "1073741824"),
+        (TOPIC_ARTIFACT, 1, "1073741824"),
+        (TOPIC_K8SOBJECT, 1, "1073741824"),
     ]);
 
     let producer = KafkaProducer::new();
@@ -523,38 +591,50 @@ fn main() {
     println!("Generating repositories");
     let repositories = generate_repositories(NUM_REPOSITORIES);
     // println!("repos: {repositories:#?}");
-    producer.send_to_topic(TOPIC_REPOSITORY, &[repositories]);
+    producer.insert_into_topic(TOPIC_REPOSITORY, repositories, 100);
 
     println!("Generating commits");
     for repo_id in 0..NUM_REPOSITORIES {
         let commits = generate_commits(repo_id, NUM_COMMITS_PER_REPO);
         // println!("commits: {commits:#?}");
-        producer.send_to_topic(TOPIC_GIT_COMMIT, &[commits]);
+        producer.insert_into_topic(TOPIC_GIT_COMMIT, commits, 100);
     }
 
     println!("Generating vulnerabilities");
     let vulnerabilities = generate_vulnerabilities(NUM_VULNERABILITIES);
     // println!("vulnerabilities: {vulnerabilities:#?}");
-    producer.send_to_topic(TOPIC_VULNERABILITY, &[vulnerabilities]);
+    producer.insert_into_topic(TOPIC_VULNERABILITY, vulnerabilities, 100);
 
     println!("Generating k8s clusters");
     let clusters = generate_clusters(NUM_CLUSTERS);
     // println!("clusters: {clusters:#?}");
-    producer.send_to_topic(TOPIC_CLUSTER, &[clusters]);
+    producer.insert_into_topic(TOPIC_CLUSTER, clusters, 100);
 
     println!("Generating pipelines");
     let mut generated_pipelines = 0;
-    while generated_pipelines < num_pipelines {
+
+    let mut pipeline_producer = CircularProducer::new(TOPIC_PIPELINE, 100, 100_000, producer.clone());
+    let mut pipeline_sources_producer = CircularProducer::new(TOPIC_PIPELINE_SOURCES, 100, 100_000 * NUM_SOURCES_PER_PIPELINE as usize, producer.clone());
+    let mut artifacts_producer = CircularProducer::new(TOPIC_ARTIFACT, 100, 100_000 * (NUM_SOURCES_PER_PIPELINE + 1) as usize, producer.clone());
+    let mut k8sobjects_producer = CircularProducer::new(TOPIC_K8SOBJECT, 100, 2 * 100_000, producer.clone());
+
+    loop {
         let (pipelines, pipeline_sources, artifacts, k8sobjects) =
             generate_pipelines(generated_pipelines, generated_pipelines + 300);
 
         // println!("pipelines: {pipelines:#?}");
         // println!("pipeline_sources: {pipeline_sources:#?}");
-        producer.send_to_topic(TOPIC_PIPELINE, &[pipelines]);
-        producer.send_to_topic(TOPIC_PIPELINE_SOURCES, &[pipeline_sources]);
-        producer.send_to_topic(TOPIC_ARTIFACT, &[artifacts]);
-        producer.send_to_topic(TOPIC_K8SOBJECT, &[k8sobjects]);
+        pipeline_producer.push(&pipelines);
+        pipeline_sources_producer.push(&pipeline_sources);
+        artifacts_producer.push(&artifacts);
+        k8sobjects_producer.push(&k8sobjects);
 
         generated_pipelines += 300;
+
+        if let Some(num_pipelines) = num_pipelines {
+            if generated_pipelines >= num_pipelines {
+                break;
+            }
+        }
     }
 }
