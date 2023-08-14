@@ -1,7 +1,7 @@
 use crate::{
     codegen::{
         json::{DeserializeJsonFn, JsonMapping},
-        CodegenConfig, NativeLayout, NativeLayoutCache,
+        CodegenConfig, NativeLayout, NativeLayoutCache, VTable,
     },
     dataflow::{CompiledDataflow, JitHandle, RowInput, RowOutput},
     ir::{
@@ -18,7 +18,7 @@ use cranelift_module::FuncId;
 use csv::StringRecord;
 use dbsp::{
     trace::{BatchReader, Cursor},
-    DBSPHandle, Error, Runtime,
+    CollectionHandle, DBSPHandle, Error, Runtime,
 };
 use rust_decimal::Decimal;
 use serde_json::{Deserializer, Value};
@@ -51,6 +51,32 @@ impl<'a> Demands<'a> {
     ) {
         let displaced = self.csv.insert(layout, column_mappings);
         assert_eq!(displaced, None);
+    }
+}
+
+#[derive(Clone)]
+pub struct JsonSetHandle {
+    handle: CollectionHandle<Row, i32>,
+    deserialize_fn: DeserializeJsonFn,
+    vtable: &'static VTable,
+}
+
+impl JsonSetHandle {
+    pub fn push(&self, key: &[u8], weight: i32) -> Result<(), serde_json::Error> {
+        let value: Value = serde_json::from_slice(key)?;
+        let key = unsafe {
+            let mut uninit = UninitRow::new(self.vtable);
+            (self.deserialize_fn)(uninit.as_mut_ptr(), &value);
+            uninit.assume_init()
+        };
+
+        self.handle.push(key, weight);
+
+        Ok(())
+    }
+
+    pub fn clear_input(&self) {
+        self.handle.clear_input();
     }
 }
 
@@ -190,6 +216,46 @@ impl DbspCircuit {
         unsafe { self.jit.free_memory() };
 
         result
+    }
+
+    /// Creates a new [`JsonSetHandle`] for ingesting json
+    ///
+    /// Returns [`None`] if the target source node is unreachable
+    ///
+    /// # Safety
+    ///
+    /// The produced `JsonSetHandle` must be dropped before the [`DbspCircuit`]
+    /// that created it, using the handle after the parent circuit has shut down
+    /// is undefined behavior
+    // TODO: We should probably wrap the innards of `DbspCircuit` in a struct
+    // and arc and handles should hold a reference to that (maybe even a weak ref).
+    // Alternatively we could use lifetimes, but I'm not 100% sure how that would
+    // interact with consumers
+    pub unsafe fn json_input_set(&mut self, target: NodeId) -> Option<JsonSetHandle> {
+        let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
+        let layout = layout.as_set().unwrap_or_else(|| {
+            panic!(
+                "called `DbspCircuit::json_input_set()` on node {target} which is a map, not a set",
+            )
+        });
+
+        let handle = input.as_ref()?.as_set().unwrap().clone();
+        let vtable = unsafe { &*self.jit.vtables()[&layout] };
+        let deserialize_fn = unsafe {
+            transmute::<_, DeserializeJsonFn>(
+                self.jit
+                    .jit
+                    .get_finalized_function(self.json_deser_demands[&layout]),
+            )
+        };
+
+        Some(JsonSetHandle {
+            handle,
+            deserialize_fn,
+            vtable,
+        })
     }
 
     pub fn append_input(&mut self, target: NodeId, data: &StreamCollection) {

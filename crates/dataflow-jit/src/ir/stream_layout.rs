@@ -108,6 +108,16 @@ impl StreamLayout {
             Self::Set(key) => panic_expect_set(key, message),
         }
     }
+
+    #[must_use]
+    #[inline]
+    pub const fn as_set(&self) -> Option<LayoutId> {
+        if let Self::Set(layout) = *self {
+            Some(layout)
+        } else {
+            None
+        }
+    }
 }
 
 impl<'a, D, A> Pretty<'a, D, A> for StreamLayout
