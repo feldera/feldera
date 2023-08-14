@@ -14,6 +14,9 @@ use cranelift_module::{FuncId, Module};
 // TODO: Newtyping for column indices within the layout interfaces
 type ColumnIdx = usize;
 
+/// The function signature used for json deserialization functions
+pub type DeserializeJsonFn = unsafe extern "C" fn(*mut u8, &serde_json::Value);
+
 pub struct JsonMapping {
     pub layout: LayoutId,
     /// A map between column indices and the json pointer used to access them
@@ -188,7 +191,10 @@ impl Codegen {
 #[cfg(test)]
 mod tests {
     use crate::{
-        codegen::{json::JsonMapping, Codegen, CodegenConfig},
+        codegen::{
+            json::{DeserializeJsonFn, JsonMapping},
+            Codegen, CodegenConfig,
+        },
         ir::{ColumnType, RowLayoutBuilder, RowLayoutCache},
         row::{row_from_literal, UninitRow},
         utils::{self, HashMap},
@@ -242,21 +248,14 @@ mod tests {
 
         {
             let deserialize_json = unsafe {
-                transmute::<_, unsafe extern "C" fn(*mut u8, *const u8)>(
-                    jit.get_finalized_function(deserialize_json),
-                )
+                transmute::<_, DeserializeJsonFn>(jit.get_finalized_function(deserialize_json))
             };
 
             for (&json, expected) in json_snippets.iter().zip(expected) {
                 let json_value = serde_json::from_str(json).unwrap();
                 let mut uninit = UninitRow::new(unsafe { &*vtable });
 
-                unsafe {
-                    deserialize_json(
-                        uninit.as_mut_ptr(),
-                        &json_value as *const serde_json::Value as *const u8,
-                    );
-                }
+                unsafe { deserialize_json(uninit.as_mut_ptr(), &json_value) }
 
                 let row = unsafe { uninit.assume_init() };
                 let expected = unsafe {

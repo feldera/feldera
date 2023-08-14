@@ -35,7 +35,7 @@ fn compiled_dataflow() {
             .build(),
     );
 
-    let source = graph.source(xy_layout, None);
+    let source = graph.source(xy_layout);
 
     let mul = graph.map(
         source,
@@ -193,9 +193,9 @@ fn bfs() {
             .build(),
     );
 
-    let roots = graph.source(u64x2, None);
+    let roots = graph.source(u64x2);
     let edges = graph.source_map(u64x1, u64x1);
-    let vertices = graph.source(u64x1, None);
+    let vertices = graph.source(u64x1);
 
     let (_recursive, distances) = graph.subgraph(|subgraph| {
         let nodes = subgraph.delayed_feedback(u64x2);
