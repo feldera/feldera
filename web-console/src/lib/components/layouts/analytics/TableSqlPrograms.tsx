@@ -175,7 +175,7 @@ const TableSqlPrograms = () => {
   }
 
   const btnAdd = (
-    <Button variant='contained' size='small' href='/analytics/editor' key='0'>
+    <Button variant='contained' size='small' href='/analytics/editor' id='btn-add-sql-program' key='0'>
       Add SQL program
     </Button>
   )

@@ -21,17 +21,17 @@ commands.  Feldera Platform implements a rich SQL feature set that permits
 sophisticated SQL written for popular SQL databases to run with only
 minimal changes.
 
-The "SQL Editor" tab allows a user to add and name new SQL programs by
+The "Add SQL Programs" button allows a user to add and name new SQL programs by
 typing or pasting.
 
-Click on "Existing Programs" to show a list of the SQL programs that
+Click on "SQL Programs" to show a list of the SQL programs that
 are already defined. This list displays each program's name and
 description, which one may double-click to edit. Each program also
 has a status that indicates whether it is fully compiled, and two
 icons for actions: a pencil <icon icon="bx:pencil" /> to view or edit the
 program's SQL, and a trash can <icon icon="bx:trash-alt" /> to delete it:
 
-![Existing Programs](existing-programs.png)
+!["SQL Programs"](existing-programs.png)
 
 Click on the pencil icon for one of the rows. This brings up the SQL
 Editor for the selected program, which allows one to edit the
@@ -63,20 +63,20 @@ and manage input and output connectors. The following section on
 pipelines will then show how to connect input and output to programs
 to form streaming pipelines.
 
-Click on "Connector Creator" to see the types of connectors that Feldera Platform
+Click on "Add Connector" to see the types of connectors that Feldera Platform
 supports.  Input and output connectors are listed separately.  Apache
 [Kafka], the most widely used kind of connector, is listed twice
 because Feldera Platform supports it for both input and outputa:
 
 ![Connector Creator](connector-creator.png)
 
-Click on "Existing Connectors" to see a list of the input and output
+Click on ""SQL Connectors"" to see a list of the input and output
 connectors that have already been created. The list shows each
 connector's name and description, which one may double-click to edit,
 along with its type. Pencil and trash can icons allow one to edit and
 delete connectors:
 
-![Existing Connectors](existing-connectors.png)
+!["SQL Connectors"](existing-connectors.png)
 
 Click on one of the pencil icons to see what kinds of settings are
 available for each connector. The available settings vary with the
@@ -93,11 +93,10 @@ streaming pipelines.
 ![Streaming](streaming.png)
 
 A user assembles a **pipeline** by attaching a program's tables to
-input connectors and its views to output connectors.  The "Streaming"
-tabs allow a Feldera Platform user to set up pipelines and to start, stop, manage,
-and monitor them.
+input connectors and its views to output connectors.  The "Pipelines"
+page allow a Feldera Platform user to set up, manage and monitor pipelines.
 
-The "Pipeline Builder" tab allows a user to create new pipelines.
+The "Add Pipeline" button allows a user to create new pipelines.
 
 Click on "Pipeline Management" to list the existing pipelines. Each row has a
 name and description (which one can edit), and an indication of whether the

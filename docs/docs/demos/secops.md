@@ -131,7 +131,7 @@ erDiagram
 
 The demo includes a program and a pipeline.  To see the SQL for these
 tables and views, start the Feldera Platform demo, visit <http://localhost:8085/>,
-click on Existing Programs in the sidebar, and then click on the
+click on SQL Programs in the sidebar, and then click on the
 pencil icon next to SecOps demo.  It shows a SQL program with a
 `CREATE TABLE` command for each table and a `CREATE VIEW` command for
 each view.
