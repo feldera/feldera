@@ -5,7 +5,7 @@
 // support streaming yet.
 
 import { readLineFromStream } from '$lib/functions/common/stream'
-import { parseValueSafe } from '$lib/types/ddl'
+import { parseValueSafe } from '$lib/functions/ddl'
 import { Chunk, Relation } from '$lib/types/manager'
 import { parse } from 'csv-parse'
 import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'

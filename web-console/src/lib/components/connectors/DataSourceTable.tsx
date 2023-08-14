@@ -5,7 +5,8 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import EntityTable from '$lib/components/common/table/EntityTable'
-import { connectorDescrToType, ConnectorDialog, getStatusObj } from '$lib/types/connectors'
+import { ConnectorDialog } from '$lib/components/connectors/ConnectorDialog'
+import { connectorDescrToType, getStatusObj } from '$lib/functions/connectors'
 import {
   ApiError,
   ConnectorDescr,

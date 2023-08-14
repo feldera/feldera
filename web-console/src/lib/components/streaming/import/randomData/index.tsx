@@ -2,7 +2,7 @@
 // for a given field in a table.
 
 import { useCustomForm } from '$lib/compositions/streaming/import/useCustomForm'
-import { getValueParser } from '$lib/types/ddl'
+import { getValueParser } from '$lib/functions/ddl'
 import { Field } from '$lib/types/manager'
 import dayjs, { Dayjs } from 'dayjs'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'

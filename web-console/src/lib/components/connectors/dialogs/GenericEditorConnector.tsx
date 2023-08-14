@@ -4,7 +4,8 @@
 
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
-import { ConnectorType, connectorTypeToIcon, parseEditorSchema } from '$lib/types/connectors'
+import { connectorTypeToIcon, parseEditorSchema } from '$lib/functions/connectors'
+import { ConnectorType } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from '$lib/types/manager'
 import { useEffect, useState } from 'react'

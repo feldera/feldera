@@ -8,7 +8,7 @@ import { connectorConnects, useAddConnector } from '$lib/compositions/streaming/
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
 import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
 import { removePrefix } from '$lib/functions/common/string'
-import { invalidatePipeline } from '$lib/types/defaultQueryFn'
+import { invalidatePipeline } from '$lib/services/defaultQueryFn'
 import {
   ApiError,
   AttachedConnector,

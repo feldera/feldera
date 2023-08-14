@@ -4,12 +4,8 @@ import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
 import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/tabs/TabKafkaNameAndDesc'
 import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
-import {
-  ConnectorType,
-  connectorTypeToConfig,
-  connectorTypeToIcon,
-  parseKafkaOutputSchema
-} from '$lib/types/connectors'
+import { connectorTypeToConfig, connectorTypeToIcon, parseKafkaOutputSchema } from '$lib/functions/connectors'
+import { ConnectorType } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from '$lib/types/manager'
 import { useEffect, useState } from 'react'

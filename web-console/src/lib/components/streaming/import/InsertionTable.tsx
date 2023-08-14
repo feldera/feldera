@@ -3,7 +3,7 @@
 // The rows can be edited after generation/import and eventually be uploaded to
 // the dbsp table.
 
-import { getValueFormatter, Row, sqlTypeToDataGridType } from '$lib/types/ddl'
+import { getValueFormatter, Row, sqlTypeToDataGridType } from '$lib/functions/ddl'
 import { Field, Pipeline, PipelineRevision, Relation } from '$lib/types/manager'
 import { useEffect, useState } from 'react'
 

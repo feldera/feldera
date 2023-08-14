@@ -23,7 +23,7 @@ import {
   ProgramsService,
   ProgramStatus,
   UpdateProgramRequest
-} from './manager'
+} from '../types/manager'
 
 // Updates just the program status in the query cache.
 export const programStatusUpdate = (queryClient: QueryClient, programId: ProgramId, newStatus: ProgramStatus) => {

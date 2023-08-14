@@ -5,7 +5,7 @@ import useStatusNotification from '$lib/components/common/errors/useStatusNotifi
 import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
 import { usePageHeader } from '$lib/compositions/global/pageHeader'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
-import { programQueryCacheUpdate, programStatusUpdate } from '$lib/types/defaultQueryFn'
+import { programQueryCacheUpdate, programStatusUpdate } from '$lib/services/defaultQueryFn'
 import {
   ApiError,
   CompileProgramRequest,

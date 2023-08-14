@@ -72,7 +72,6 @@ build-webui:
     FROM +build-webui-deps
     COPY --dir web-console/public web-console/public
     COPY --dir web-console/src web-console/src
-    COPY --dir web-console/src/styles web-console/src/styles
     COPY web-console/.editorconfig web-console/
     COPY web-console/.eslintrc.json web-console/
     COPY web-console/.prettierrc.js web-console/

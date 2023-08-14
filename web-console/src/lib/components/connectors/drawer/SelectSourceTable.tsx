@@ -2,7 +2,8 @@
 // to select from an existing list of connectors.
 
 import EntityTable from '$lib/components/common/table/EntityTable'
-import { connectorDescrToType, ConnectorType, Direction } from '$lib/types/connectors'
+import { connectorDescrToType } from '$lib/functions/connectors'
+import type { ConnectorType, Direction } from '$lib/types/connectors'
 import { ConnectorDescr } from '$lib/types/manager'
 import { Dispatch, useState } from 'react'
 

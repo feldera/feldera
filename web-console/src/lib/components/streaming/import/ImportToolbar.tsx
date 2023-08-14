@@ -1,6 +1,6 @@
 import useGenerateRows from '$lib/compositions/streaming/import/useGenerateRows'
 import useInsertRows from '$lib/compositions/streaming/import/useInsertRows'
-import { Row } from '$lib/types/ddl'
+import { Row } from '$lib/functions/ddl'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { PipelineRevision, Relation } from '$lib/types/manager'
 import dayjs from 'dayjs'

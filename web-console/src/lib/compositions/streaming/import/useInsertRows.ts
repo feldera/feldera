@@ -1,7 +1,7 @@
 // Sends a set of rows to a pipeline table.
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { getValueFormatter, Row } from '$lib/types/ddl'
+import { getValueFormatter, Row } from '$lib/functions/ddl'
 import { ApiError, Field, PipelineId, PipelinesService, Relation } from '$lib/types/manager'
 import Papa from 'papaparse'
 import { useCallback } from 'react'

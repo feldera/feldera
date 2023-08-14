@@ -6,12 +6,11 @@ import useDrawerState from '$lib/compositions/streaming/builder/useDrawerState'
 import { randomString } from '$lib/functions/common/string'
 import {
   connectorDescrToType,
-  ConnectorType,
   connectorTypeToDirection,
   connectorTypeToIcon,
-  connectorTypeToTitle,
-  Direction
-} from '$lib/types/connectors'
+  connectorTypeToTitle
+} from '$lib/functions/connectors'
+import { ConnectorType, Direction } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { AttachedConnector, ConnectorDescr } from '$lib/types/manager'
 import { Dispatch, useEffect, useState } from 'react'

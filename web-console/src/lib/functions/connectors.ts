@@ -1,31 +1,9 @@
-import {
-  ConfigEditorDialog,
-  EditorSchema,
-  KafkaInputConnectorDialog,
-  KafkaInputSchema,
-  KafkaOutputConnectorDialog,
-  KafkaOutputSchema,
-  UrlConnectorDialog,
-  UrlSchema
-} from '$lib/components/connectors/dialogs'
+import { EditorSchema, KafkaInputSchema, KafkaOutputSchema, UrlSchema } from '$lib/components/connectors/dialogs'
 import assert from 'assert'
-import { Dispatch, SetStateAction } from 'react'
 import { match, P } from 'ts-pattern'
 
-import { ConnectorDescr } from './manager'
-
-export enum ConnectorType {
-  KAFKA_IN = 'KafkaIn',
-  KAFKA_OUT = 'KafkaOut',
-  URL = 'HTTP GET',
-  UNKNOWN = 'Unknown'
-}
-
-export enum Direction {
-  INPUT,
-  OUTPUT,
-  INPUT_OUTPUT
-}
+import { ConnectorType, Direction } from '$lib/types/connectors'
+import { ConnectorDescr } from '$lib/types/manager'
 
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
@@ -43,27 +21,6 @@ export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
       return ConnectorType.UNKNOWN
     })
 }
-
-// Given a connector return the right dialog component for updating it.
-export const ConnectorDialog = (props: {
-  show: boolean
-  setShow: Dispatch<SetStateAction<boolean>>
-  connector: ConnectorDescr
-}) =>
-  match(connectorDescrToType(props.connector))
-    .with(ConnectorType.KAFKA_IN, () => {
-      return <KafkaInputConnectorDialog {...props} />
-    })
-    .with(ConnectorType.KAFKA_OUT, () => {
-      return <KafkaOutputConnectorDialog {...props} />
-    })
-    .with(ConnectorType.URL, () => {
-      return <UrlConnectorDialog {...props} />
-    })
-    .with(ConnectorType.UNKNOWN, () => {
-      return <ConfigEditorDialog {...props} />
-    })
-    .exhaustive()
 
 // Given an existing ConnectorDescr return the KafkaInputSchema
 // if connector is of type KAFKA_IN.

@@ -57,7 +57,7 @@ and run `yarn install`.
 
 ## OpenAPI bindings
 
-The bindings for OpenAPI (under src/types/manager) are generated using
+The bindings for OpenAPI (under src/lib/types/manager) are generated using
 [openapi typescript codegen](https://www.npmjs.com/package/openapi-typescript-codegen).
 
 If you change the API, execute the following steps to update the bindings:
@@ -71,15 +71,12 @@ regenerating the API bindings.
 
 ## File Organization
 
-- `@core`: Settings, style and overrides.
-- `analytics`: Logic to handle projects (SQL editor, programs).
-- `components`: contains reusable React components.
-- `configs`: Theme configuration (see also Material UI themes).
-- `data`: Logic for handling connectors (Add, Update, Delete).
-- `home`: Home page.
-- `layouts`: General layout components.
-- `navigation`: Side-bar Menu.
-- `pages`: accessible website pages (e.g. `pages/index.tsx` is the homepage)
-- `streaming`: Logic for building, managing Pipelines.
-- `types`: Types used throughout the app, OpenAPI generated types.
-- `utils`: contains utility functions.
+-  `@core/`: Settings, style and MUI overrides.
+-  `lib/`: Imported modules
+-  `lib/components/`: Reusable React components.
+-  `lib/compositions/`: Modules that encapsulate app state management
+-  `lib/functions/`: Pure functions, or functions that perform side effects through dependency injection
+-  `lib/functions/common`: Utility functions that are not specific to this project
+-  `lib/services/`: Functions that describe side effects (persistent storage, networking etc.)
+-  `lib/types/`: Types used throughout the app, OpenAPI generated types.
+-  `pages/`: Webapp pages used by file-based routing

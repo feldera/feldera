@@ -1,7 +1,7 @@
 // InputNodes are on the left and connect to tables of the program.
 
 import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
-import { connectorDescrToType, connectorTypeToIcon } from '$lib/types/connectors'
+import { connectorDescrToType, connectorTypeToIcon } from '$lib/functions/connectors'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
 
 import { Icon } from '@iconify/react'

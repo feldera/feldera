@@ -4,7 +4,7 @@ import useStatusNotification from '$lib/components/common/errors/useStatusNotifi
 import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
 import useTableUpdater from '$lib/compositions/streaming/inspection/useTableUpdater'
 import { useAsyncError } from '$lib/functions/common/react'
-import { Row, rowToAnchor } from '$lib/types/ddl'
+import { Row, rowToAnchor } from '$lib/functions/ddl'
 import { NeighborhoodQuery, OpenAPI, Pipeline, PipelineRevision, Relation } from '$lib/types/manager'
 import { useCallback, useEffect, useState } from 'react'
 

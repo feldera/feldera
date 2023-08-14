@@ -4,7 +4,7 @@
 // Also indicates if the example was modified after generation due to type
 // constraints (overflow etc.).
 
-import { getValueFormatter, typeRange } from '$lib/types/ddl'
+import { getValueFormatter, typeRange } from '$lib/functions/ddl'
 import { Field } from '$lib/types/manager'
 
 import { Grid, Typography } from '@mui/material'

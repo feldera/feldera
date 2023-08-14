@@ -2,7 +2,7 @@
 // generator may have custom generation and validation methods.
 
 import { getRandomDate } from '$lib/functions/common/date'
-import { dateTimeRange, findBaseType, typeRange } from '$lib/types/ddl'
+import { dateTimeRange, findBaseType, typeRange } from '$lib/functions/ddl'
 import { ColumnType, Field } from '$lib/types/manager'
 import assert from 'assert'
 import * as d3 from 'd3-random'
