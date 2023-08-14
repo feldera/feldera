@@ -401,8 +401,8 @@ test-adapters:
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
     FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.1.13
-        RUN docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.1.13 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3
+        RUN docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
             redpanda start --smp 2 && \
             # Redpanda takes a few seconds to initialize.
             sleep 10 && \
@@ -544,7 +544,7 @@ test-docker-compose:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
     WITH DOCKER --pull postgres \
-                --pull docker.redpanda.com/vectorized/redpanda:v23.1.13 \
+                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
                 --load ghcr.io/feldera/demo-container=+build-demo-container
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 500000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
