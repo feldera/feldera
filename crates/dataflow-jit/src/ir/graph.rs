@@ -122,8 +122,15 @@ pub trait GraphExt {
         FunctionBuilder::new(self.layout_cache().clone())
     }
 
-    fn source(&mut self, key_layout: LayoutId, name: Option<Box<str>>) -> NodeId {
-        self.add_node(Source::new(key_layout, name))
+    fn source(&mut self, key_layout: LayoutId) -> NodeId {
+        self.add_node(Source::new(key_layout, None))
+    }
+
+    fn named_source<N>(&mut self, key_layout: LayoutId, name: N) -> NodeId
+    where
+        N: Into<Box<str>>,
+    {
+        self.add_node(Source::new(key_layout, Some(name.into())))
     }
 
     fn source_map(&mut self, key_layout: LayoutId, value_layout: LayoutId) -> NodeId {

@@ -240,7 +240,7 @@ mod tests {
                 .build(),
         );
 
-        let source = graph.source(i32, None);
+        let source = graph.source(i32);
 
         let flat_map = graph.add_node(Node::FlatMap(FlatMap::new(
             source,
@@ -345,7 +345,7 @@ mod tests {
                 .build(),
         );
 
-        let source = graph.source(i32, None);
+        let source = graph.source(i32);
 
         let filter_map = graph.add_node(Node::FilterMap(FilterMap::new(
             source,
