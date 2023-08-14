@@ -31,8 +31,24 @@ pub enum RowInput {
 }
 
 impl RowInput {
+    pub const fn as_set(&self) -> Option<&CollectionHandle<Row, i32>> {
+        if let Self::Set(handle) = self {
+            Some(handle)
+        } else {
+            None
+        }
+    }
+
     pub fn as_set_mut(&mut self) -> Option<&mut CollectionHandle<Row, i32>> {
         if let Self::Set(handle) = self {
+            Some(handle)
+        } else {
+            None
+        }
+    }
+
+    pub const fn as_map(&self) -> Option<&CollectionHandle<Row, (Row, i32)>> {
+        if let Self::Map(handle) = self {
             Some(handle)
         } else {
             None
