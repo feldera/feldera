@@ -5,7 +5,6 @@ use dbsp::{
     RootCircuit, OrdZSet, Stream,
 };
 use crate::model::{Bid, Event};
-use std::collections::VecDeque;
 
 ///
 /// Query 19: Auction TOP-10 Price (Not in original suite)
@@ -45,15 +44,15 @@ pub fn q19(input: NexmarkStream) -> Q19Stream {
 
     bids_by_auction
         .aggregate(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(
-            VecDeque::with_capacity(TOP_BIDS),
-            |top: &mut VecDeque<Bid>, (_price, bid): &(usize, Bid), _w| {
+            Vec::with_capacity(TOP_BIDS),
+            |top: &mut Vec<Bid>, (_price, bid): &(usize, Bid), _w| {
                 if top.len() >= TOP_BIDS {
-                    top.pop_front();
+                    top.remove(0);
                 }
-                top.push_back(bid.clone());
+                top.push(bid.clone());
             },
         ))
-        .flat_map(|(_, vec)| -> VecDeque<Bid> { (*vec).clone() })
+        .flat_map(|(_, vec)| -> Vec<Bid> { (*vec).clone() })
 }
 
 #[cfg(test)]

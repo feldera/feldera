@@ -30,7 +30,7 @@ pub use circuit::{
 };
 pub use operator::{CollectionHandle, InputHandle, OutputHandle, UpsertHandle};
 pub use trace::ord::{OrdIndexedZSet, OrdZSet};
-pub use trace::{DBData, DBTimestamp, DBWeight};
+pub use trace::{DBData, DBTimestamp, DBWeight, Rkyv};
 
 #[cfg(doc)]
 pub mod tutorial;

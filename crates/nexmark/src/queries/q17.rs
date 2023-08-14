@@ -4,7 +4,7 @@ use dbsp::{
     RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use crate::{model::Event, queries::OrdinalDate};
-use arcstr::ArcStr;
+use dbsp::algebra::ArcStr;
 use std::time::{Duration, SystemTime};
 use time::{
     format_description::well_known::{iso8601, iso8601::FormattedComponents, Iso8601},

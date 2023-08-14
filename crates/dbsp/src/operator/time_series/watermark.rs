@@ -1,6 +1,6 @@
 use crate::{
     operator::communication::new_exchange_operators,
-    trace::{cursor::Cursor, BatchReader},
+    trace::{cursor::Cursor, BatchReader, Rkyv},
     Circuit, NumEntries, RootCircuit, Runtime, Stream,
 };
 use size_of::SizeOf;
@@ -35,7 +35,7 @@ where
     pub fn watermark_monotonic<W, TS>(&self, watermark_func: W) -> Stream<RootCircuit, TS>
     where
         W: Fn(&B::Key) -> TS + 'static,
-        TS: Ord + Clone + Default + SizeOf + NumEntries + Send + 'static,
+        TS: Ord + Clone + Default + SizeOf + NumEntries + Send + Rkyv + 'static,
     {
         let local_watermark = self.stream_fold(TS::default(), move |old_watermark, batch| {
             let mut cursor = batch.cursor();

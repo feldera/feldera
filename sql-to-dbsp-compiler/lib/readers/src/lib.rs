@@ -13,6 +13,7 @@ use dbsp::{
 };
 use derive_more::{Add, AddAssign, From, Into, Neg, Sub};
 use paste::paste;
+use rkyv::Archive;
 use serde::{Deserialize, Serialize};
 use size_of::*;
 use sqlvalue::{SqlRow, SqlValue, ToSqlRow};

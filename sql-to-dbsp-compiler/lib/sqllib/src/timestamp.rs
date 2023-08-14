@@ -18,7 +18,20 @@ use crate::{
 /// Similar to a unix timestamp: a positive time interval between Jan 1 1970 and
 /// the current time. The supported range is limited (e.g., up to 2038 in
 /// MySQL). We use milliseconds to represent the interval.
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
+#[derive(
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Timestamp {
     // since unix epoch
     milliseconds: i64,
@@ -314,7 +327,21 @@ some_polymorphic_function1!(floor_week, Timestamp, Timestamp, Timestamp);
 
 //////////////////////////// Date
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Date {
     // since unix epoch
     days: i32,
@@ -552,7 +579,21 @@ some_polymorphic_function1!(extract_hour, Date, Date, i64);
 
 //////////////////////////// Time
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Time {
     nanoseconds: u64,
 }

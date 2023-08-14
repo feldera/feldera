@@ -4,7 +4,8 @@ use dbsp::{
     operator::{FilterMap, Max},
     RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
-use arcstr::ArcStr;
+use dbsp::algebra::ArcStr;
+use rkyv::{Archive, Serialize, Deserialize};
 use size_of::SizeOf;
 
 /// Query 9: Winning Bids (Not in original suite)
@@ -56,12 +57,10 @@ use size_of::SizeOf;
 /// WHERE rownum <= 1;
 /// ```
 
-#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, bincode::Decode, bincode::Encode)]
+#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, Archive, Serialize, Deserialize)]
 pub struct Q9Output(
     u64,
-    #[bincode(with_serde)]
     ArcStr,
-    #[bincode(with_serde)]
     ArcStr,
     usize,
     usize,
@@ -69,13 +68,11 @@ pub struct Q9Output(
     u64,
     u64,
     usize,
-    #[bincode(with_serde)]
     ArcStr,
     u64,
     u64,
     usize,
     u64,
-    #[bincode(with_serde)]
     ArcStr,
 );
 

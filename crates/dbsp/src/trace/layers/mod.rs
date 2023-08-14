@@ -26,6 +26,8 @@ use std::{
     ops::{Add, Sub},
 };
 
+use super::Rkyv;
+
 /// A collection of tuples, and types for building and enumerating them.
 ///
 /// There are some implicit assumptions about the elements in trie-structured
@@ -245,6 +247,7 @@ pub trait OrdOffset:
     + HasZero
     + SizeOf
     + Sized
+    + Rkyv
     + 'static
 {
     fn from_usize(offset: usize) -> Self;
@@ -263,6 +266,7 @@ where
         + HasZero
         + SizeOf
         + Sized
+        + Rkyv
         + 'static,
     <O as TryInto<usize>>::Error: Debug,
     <O as TryFrom<usize>>::Error: Debug,

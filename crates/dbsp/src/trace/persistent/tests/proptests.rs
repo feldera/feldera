@@ -11,12 +11,12 @@ use crate::{
         ord::{OrdIndexedZSet, OrdKeyBatch, OrdValBatch, OrdZSet},
         persistent::{cursor::PersistentTraceCursor, PersistentTrace},
         spine_fueled::{Spine, SpineCursor},
-        Batch, BatchReader, Builder, Trace,
+        Batch, BatchReader, Builder, Deserializable, Rkyv, Serializer, Trace,
     },
 };
-use bincode::{Decode, Encode};
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     cmp::Ordering,
@@ -50,7 +50,7 @@ const WEIGHT_RANGE: Range<isize> = -10..10;
 /// The tests ensure that the RocksDB based data-structure adhere to the same
 /// ordering as the DRAM based version which is defined through the [`Ord`]
 /// trait.
-#[derive(Clone, Debug, Encode, Decode, Arbitrary, SizeOf)]
+#[derive(Clone, Debug, Arbitrary, SizeOf, Archive, Serialize, Deserialize)]
 pub(super) struct ComplexKey {
     /// We ignore this type for ordering.
     pub(super) _a: isize,
@@ -95,10 +95,10 @@ impl Ord for ComplexKey {
 pub(super) fn spine_ptrace_are_equal<B>(spine: &Spine<B>, ptrace: &PersistentTrace<B>) -> bool
 where
     B: Batch + 'static,
-    B::Key: Clone + Debug + Eq + Ord + Decode + Encode,
-    B::Val: Clone + Debug + Eq + Ord + Decode + Encode,
-    B::R: Clone + Debug + Eq + Ord + Decode + Encode,
-    B::Time: Encode + Decode + Ord,
+    B::Key: Clone + Debug + Eq + Ord + Rkyv,
+    B::Val: Clone + Debug + Eq + Ord + Rkyv,
+    B::R: Clone + Debug + Eq + Ord + Rkyv,
+    B::Time: Rkyv + Ord,
 {
     let mut spine_cursor = spine.cursor();
     let mut ptcursor = ptrace.cursor();
@@ -232,10 +232,10 @@ fn cursor_trait<B, I>(
 ) where
     I: Ord + Clone + 'static,
     B: Batch<Item = I> + 'static,
-    B::Key: Arbitrary + Ord + Clone + Encode + Decode,
-    B::Val: Arbitrary + Ord + Clone + Encode + Decode,
-    B::R: Arbitrary + Ord + Clone + MonoidValue + Encode + Decode,
-    B::Time: Arbitrary + Clone + Encode + Decode + Default,
+    B::Key: Arbitrary + Ord + Clone + Rkyv,
+    B::Val: Arbitrary + Ord + Clone + Rkyv,
+    B::R: Arbitrary + Ord + Clone + MonoidValue + Rkyv,
+    B::Time: Arbitrary + Clone + Rkyv + Default,
 {
     // Builder interface wants sorted, unique(?) keys:
     data.sort_unstable();
@@ -244,7 +244,9 @@ fn cursor_trait<B, I>(
     // Instantiate a Batch
     let mut batch_builder = B::Builder::new_builder(B::Time::default());
     for data_tuple in data.into_iter() {
-        batch_builder.push(data_tuple);
+        if !data_tuple.1.is_zero() {
+            batch_builder.push(data_tuple);
+        }
     }
     let batch = batch_builder.done();
 
@@ -263,10 +265,10 @@ fn cursor_trait<B, I>(
         model_cursor: &SpineCursor<B>,
         totest_cursor: &PersistentTraceCursor<B>,
     ) where
-        B::Key: Ord + Clone + Encode + Decode,
-        B::Val: Ord + Clone + Encode + Decode,
-        B::Time: Encode + Decode,
-        B::R: MonoidValue + Encode + Decode,
+        B::Key: Ord + Clone + Rkyv,
+        B::Val: Ord + Clone + Rkyv,
+        B::Time: Rkyv,
+        B::R: MonoidValue + Rkyv,
     {
         assert_eq!(
             model_cursor.key_valid(),
@@ -384,7 +386,7 @@ fn kr_tuples<K: Arbitrary + Clone, R: Default + Arbitrary + Clone>(
 enum TraceAction<T, I, R>
 where
     I: Ord + Clone + 'static,
-    R: Ord + Clone + MonoidValue + Encode + Decode,
+    R: Ord + Clone + MonoidValue + Rkyv,
     T: Clone + 'static,
 {
     ClearDirtyFlag,
@@ -402,7 +404,7 @@ fn trace_action<T, I, R>(
 where
     T: Arbitrary + Debug + Clone + 'static,
     I: Debug + Ord + Clone + 'static,
-    R: Debug + Ord + Clone + MonoidValue + Encode + Decode,
+    R: Debug + Ord + Clone + MonoidValue + Rkyv,
 {
     prop_oneof![
         Just(TraceAction::ClearDirtyFlag),
@@ -419,7 +421,7 @@ fn trace_actions<T, I, R>(
 where
     T: Arbitrary + Debug + Clone + 'static,
     I: Arbitrary + Debug + Ord + Clone + 'static,
-    R: Arbitrary + Debug + Ord + Clone + MonoidValue + Encode + Decode,
+    R: Arbitrary + Debug + Ord + Clone + MonoidValue + Rkyv,
 {
     prop::collection::vec(trace_action::<T, I, R>(is, rs), TRACE_ACTIONS_RANGE)
 }
@@ -430,10 +432,10 @@ fn trace_trait<B, I>(actions: Vec<TraceAction<B::Time, I, B::R>>)
 where
     I: Ord + Clone + 'static,
     B: Batch<Item = I> + 'static,
-    B::Key: Arbitrary + Ord + Clone + Encode + Decode,
-    B::Val: Arbitrary + Ord + Clone + Encode + Decode,
-    B::R: Arbitrary + Ord + Clone + MonoidValue + Encode + Decode,
-    B::Time: Arbitrary + Clone + Encode + Decode + Default,
+    B::Key: Arbitrary + Ord + Clone + Rkyv,
+    B::Val: Arbitrary + Ord + Clone + Rkyv,
+    B::R: Arbitrary + Ord + Clone + MonoidValue + Rkyv,
+    B::Time: Arbitrary + Clone + Rkyv + Default,
 {
     let mut model = Spine::<B>::new(None);
     let mut ptrace = PersistentTrace::<B>::new(None);
@@ -445,10 +447,10 @@ where
         model: &Spine<B>,
         totest: &PersistentTrace<B>,
     ) where
-        B::Key: Debug + Ord + Clone + Encode + Decode,
-        B::Val: Debug + Ord + Clone + Encode + Decode,
-        B::Time: Encode + Decode,
-        B::R: Debug + MonoidValue + Encode + Decode,
+        B::Key: Debug + Ord + Clone + Rkyv,
+        B::Val: Debug + Ord + Clone + Rkyv,
+        B::Time: Rkyv,
+        B::R: Debug + MonoidValue + Rkyv,
     {
         assert_eq!(
             model.dirty(),
@@ -546,8 +548,8 @@ proptest! {
     }
 
     #[test]
-    fn cursor_indexed_zset_ptrace_behaves_like_spine(ks in kvr_tuples::<ComplexKey, usize, isize>(WEIGHT_RANGE), ops in actions::<ComplexKey, usize, ()>()) {
-        cursor_trait::<OrdIndexedZSet<ComplexKey, usize, isize>, (ComplexKey, usize)>(ks, ops);
+    fn cursor_indexed_zset_ptrace_behaves_like_spine(ks in kvr_tuples::<ComplexKey, u64, isize>(WEIGHT_RANGE), ops in actions::<ComplexKey, u64, ()>()) {
+        cursor_trait::<OrdIndexedZSet<ComplexKey, u64, isize>, (ComplexKey, u64)>(ks, ops);
     }
 
     // Verify that our [`Trace`] implementation behaves the same as the spine
@@ -569,7 +571,7 @@ proptest! {
     }
 
     #[test]
-    fn indexed_zset_trace_behaves_like_spine(actions in trace_actions::<(), (ComplexKey, usize), isize>(kv_tuple::<ComplexKey, usize>(), WEIGHT_RANGE)) {
-        trace_trait::<OrdIndexedZSet<ComplexKey, usize, isize>, (ComplexKey, usize)>(actions);
+    fn indexed_zset_trace_behaves_like_spine(actions in trace_actions::<(), (ComplexKey, u64), isize>(kv_tuple::<ComplexKey, u64>(), WEIGHT_RANGE)) {
+        trace_trait::<OrdIndexedZSet<ComplexKey, u64, isize>, (ComplexKey, u64)>(actions);
     }
 }

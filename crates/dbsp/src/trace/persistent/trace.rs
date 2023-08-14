@@ -5,22 +5,22 @@ use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use bincode::{decode_from_slice, Decode, Encode};
 use rand::Rng;
+use rkyv::{to_bytes, Archive, Deserialize, Serialize};
 use rocksdb::compaction_filter::Decision;
 use rocksdb::{BoundColumnFamily, MergeOperands, Options, WriteBatch};
 use size_of::SizeOf;
 use uuid::Uuid;
 
-use super::{rocksdb_key_comparator, PersistentTraceCursor, ReusableEncodeBuffer, Values};
-use super::{BINCODE_CONFIG, ROCKS_DB_INSTANCE};
+use super::ROCKS_DB_INSTANCE;
+use super::{rocksdb_key_comparator, PersistentTraceCursor, Values};
 use crate::algebra::AddAssignByRef;
 use crate::circuit::Activator;
 use crate::time::{Antichain, Timestamp};
 use crate::trace::cursor::Cursor;
 use crate::trace::{
-    AntichainRef, Batch, BatchReader, Builder, Consumer, DBData, DBTimestamp, DBWeight, HasZero,
-    Trace, ValueConsumer,
+    unaligned_deserialize, AntichainRef, Batch, BatchReader, Builder, Consumer, DBData,
+    DBTimestamp, DBWeight, HasZero, Trace, ValueConsumer,
 };
 use crate::NumEntries;
 
@@ -253,7 +253,7 @@ where
 }
 
 /// The data-type that is persisted as the value in RocksDB.
-#[derive(Debug, Decode, Encode)]
+#[derive(Debug, Archive, Serialize, Deserialize)]
 pub(super) enum PersistedValue<V, T, R>
 where
     V: DBData,
@@ -271,7 +271,7 @@ where
 
 /// A merge-op is what [`PersistentTrace`] supplies to the RocksDB instance to
 /// indicate how to update the values.
-#[derive(Clone, Debug, Decode, Encode)]
+#[derive(Clone, Debug, Archive, Serialize, Deserialize)]
 enum MergeOp<V, T, R>
 where
     V: DBData,
@@ -304,12 +304,10 @@ where
     R: DBWeight,
     T: DBTimestamp,
 {
-    let (_key, _) =
-        decode_from_slice::<K, _>(new_key, BINCODE_CONFIG).expect("Can't decode_from_slice");
+    let _key: K = unaligned_deserialize(new_key);
 
     let mut vals: Values<V, T, R> = if let Some(val) = existing_val {
-        let (decoded_val, _): (PersistedValue<V, T, R>, usize) =
-            decode_from_slice(val, BINCODE_CONFIG).expect("Can't decode current value");
+        let decoded_val: PersistedValue<V, T, R> = unaligned_deserialize(val);
         match decoded_val {
             PersistedValue::Values(vals) => vals,
             PersistedValue::Tombstone => Vec::new(),
@@ -319,9 +317,7 @@ where
     };
 
     for op in operands {
-        let (decoded_update, _): (MergeOp<V, T, R>, usize) =
-            decode_from_slice(op, BINCODE_CONFIG).expect("Can't decode current value");
-
+        let decoded_update: MergeOp<V, T, R> = unaligned_deserialize(op);
         match decoded_update {
             MergeOp::Insert(new_vals) => {
                 for (v, tws) in new_vals {
@@ -423,8 +419,7 @@ where
         PersistedValue::Tombstone
     };
 
-    let mut buf = ReusableEncodeBuffer::with_capacity(existing_val.map(|v| v.len()).unwrap_or(0));
-    buf.encode(&vals).expect("Can't encode `vals`");
+    let buf = to_bytes(&vals).expect("Can't encode `vals`");
     Some(buf.into())
 }
 
@@ -438,8 +433,7 @@ where
 {
     // TODO: Ideally we shouldn't have to pay the price of decoding the whole
     // Vec<(V, Vec<(T, R)>)> as we only care about what the enum variant is.
-    let (decoded_val, _): (PersistedValue<V, T, R>, usize) =
-        decode_from_slice(val, BINCODE_CONFIG).expect("Can't decode current value");
+    let decoded_val: PersistedValue<V, T, R> = unaligned_deserialize(val);
     match decoded_val {
         PersistedValue::Values(_vals) => Decision::Keep,
         PersistedValue::Tombstone => Decision::Remove,
@@ -503,16 +497,13 @@ where
     /// Recede to works by sending a `RecedeTo` command to every key in the
     /// trace.
     fn recede_to(&mut self, frontier: &B::Time) {
-        let mut tmp_key = ReusableEncodeBuffer::default();
-        let mut tmp_val = ReusableEncodeBuffer::default();
-
         let mut cursor = self.cursor();
         while cursor.key_valid() {
             let key = cursor.key();
-            let encoded_key = tmp_key.encode(&key).expect("Can't encode `key`");
+            let encoded_key = to_bytes(key).expect("Can't encode `key`");
 
             let update: MergeOp<B::Val, B::Time, B::R> = MergeOp::RecedeTo(frontier.clone());
-            let encoded_update = tmp_val.encode(&update).expect("Can't encode `vals`");
+            let encoded_update = to_bytes(&update).expect("Can't encode `vals`");
 
             ROCKS_DB_INSTANCE
                 .merge_cf(&self.cf, encoded_key, encoded_update)
@@ -599,19 +590,14 @@ where
     fn add_batch_to_cf(&mut self, batch: B) {
         use crate::trace::cursor::CursorDebug;
 
-        let mut tmp_key = ReusableEncodeBuffer::default();
-        let mut tmp_val = ReusableEncodeBuffer::default();
-
         let mut sstable = WriteBatch::default();
         let mut batch_cursor = batch.cursor();
         while batch_cursor.key_valid() {
             let key = batch_cursor.key();
-            let encoded_key = tmp_key.encode(&key).expect("Can't encode `key`");
+            let encoded_key = to_bytes(key).expect("Can't encode `key`");
             let vals: Values<B::Val, B::Time, B::R> = batch_cursor.val_to_vec();
             self.approximate_len += vals.len();
-            let encoded_vals = tmp_val
-                .encode(&MergeOp::Insert(vals))
-                .expect("Can't encode `vals`");
+            let encoded_vals = to_bytes(&MergeOp::Insert(vals)).expect("Can't encode `vals`");
             sstable.merge_cf(&self.cf, encoded_key, encoded_vals);
 
             batch_cursor.step_key();

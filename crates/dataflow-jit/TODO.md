@@ -16,7 +16,7 @@
   - Instead of `OrdZSet<Row, Weight>` we want a custom collection that holds untyped values, a truly untyped `DynVec`
   - Requires changes in a lot of the more fundamental `Trace`-related traits
   - A switch to an internally iterated api could address this
-- [ ] Implement `bincode::{Encode, Decode}` for row values
+- [ ] Implement `rkyv::{Archive, Serialize, Deserialize}` for row values
 - [ ] Better layout algorithm
   - [ ] Add switch to make all null flags standalone booleans (that is, instead of bitsets make them each take up one byte)
   - [ ] Allow null niching strings

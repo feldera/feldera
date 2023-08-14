@@ -5,6 +5,7 @@ use crate::{
     trace::ord::{OrdKeyBatch, OrdValBatch},
     DBData, DBWeight,
 };
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::fmt::{Debug, Display, Formatter};
 
@@ -27,8 +28,9 @@ const EPOCH_MASK: u32 = 0x80000000;
     Hash,
     PartialOrd,
     Ord,
-    bincode::Encode,
-    bincode::Decode,
+    Archive,
+    Serialize,
+    Deserialize,
 )]
 #[repr(transparent)]
 pub struct NestedTimestamp32(u32);

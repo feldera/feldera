@@ -90,10 +90,11 @@ use crate::{
     NumEntries,
 };
 use rand::Rng;
+use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::{
     cmp::max,
-    fmt::{self, Debug, Display, Write},
+    fmt::{self, Debug, Display, Formatter, Write},
     marker::PhantomData,
     mem::replace,
 };
@@ -131,6 +132,35 @@ where
     }
 }
 
+impl<B> Debug for Spine<B>
+where
+    B: Batch,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let mut cursor = self.cursor();
+        writeln!(f, "spine:")?;
+        while cursor.key_valid() {
+            writeln!(f, "{:?}:", cursor.key())?;
+            while cursor.val_valid() {
+                writeln!(f, "{:?}:", cursor.val())?;
+                cursor.map_times(|t, w| {
+                    writeln!(
+                        f,
+                        "{}",
+                        textwrap::indent(format!("{t:?} -> {w:?}").as_str(), "        ")
+                    )
+                    .expect("can't write out");
+                });
+
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        writeln!(f)?;
+        Ok(())
+    }
+}
+
 // TODO.
 impl<B> Clone for Spine<B>
 where
@@ -138,6 +168,30 @@ where
 {
     fn clone(&self) -> Self {
         unimplemented!()
+    }
+}
+
+impl<B> Archive for Spine<B>
+where
+    B: Batch,
+{
+    type Archived = ();
+    type Resolver = ();
+
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        unimplemented!();
+    }
+}
+
+impl<B: Batch, S: Serializer + ?Sized> Serialize<S> for Spine<B> {
+    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        unimplemented!();
+    }
+}
+
+impl<B: Batch, D: Fallible> Deserialize<Spine<B>, D> for Archived<Spine<B>> {
+    fn deserialize(&self, _deserializer: &mut D) -> Result<Spine<B>, D::Error> {
+        unimplemented!();
     }
 }
 

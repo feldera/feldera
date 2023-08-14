@@ -33,9 +33,11 @@ use crate::{
     time::{AntichainRef, Timestamp},
     NumEntries,
 };
-#[cfg(feature = "persistence")]
-use bincode::{Decode, Encode};
 use rand::Rng;
+use rkyv::{
+    archived_root, ser::serializers::AllocSerializer, AlignedVec, Archive, Archived, Deserialize,
+    Infallible, Serialize,
+};
 use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
 
@@ -46,23 +48,39 @@ use std::{fmt::Debug, hash::Hash};
 /// must be generic over any relational data, it is sufficient to impose
 /// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
-#[cfg(feature = "persistence")]
-pub trait DBData:
-    Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Decode + Encode + 'static
+pub trait DBData: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Rkyv + 'static {}
+impl<T> DBData for T where T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Rkyv + 'static {}
+
+/// Trait for data that can be serialized and deserialized with [`rkyv`].
+pub trait Rkyv: Archive + Serialize<Serializer> + Deserializable {}
+impl<T> Rkyv for T where T: Archive + Serialize<Serializer> + Deserializable {}
+
+/// Trait for data that can be deserialized with [`rkyv`].
+pub trait Deserializable: Archive<Archived = Self::ArchivedDeser> + Sized {
+    type ArchivedDeser: Deserialize<Self, Deserializer>;
+}
+impl<T: Archive> Deserializable for T
+where
+    Archived<T>: Deserialize<T, Deserializer>,
 {
+    type ArchivedDeser = Archived<T>;
 }
 
-#[cfg(not(feature = "persistence"))]
-pub trait DBData: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
+/// The particular [`rkyv::ser::Serializer`] that we use.
+pub type Serializer = AllocSerializer<1024>;
 
-#[cfg(feature = "persistence")]
-impl<T> DBData for T where
-    T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Decode + Encode + 'static
-{
+/// The particular [`rkyv`] deserializer that we use.
+pub type Deserializer = Infallible;
+
+/// Deserializes `bytes` as type `T` using `rkyv`, tolerating `bytes` being
+/// misaligned.
+pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
+    let mut aligned_bytes = AlignedVec::new();
+    aligned_bytes.extend_from_slice(bytes);
+    unsafe { archived_root::<T>(&aligned_bytes[..]) }
+        .deserialize(&mut Infallible)
+        .unwrap()
 }
-
-#[cfg(not(feature = "persistence"))]
-impl<T> DBData for T where T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + 'static {}
 
 /// Trait for data types used as weights.
 ///
@@ -186,7 +204,7 @@ pub trait Trace: BatchReader {
 /// useful for views derived from other sources in ways that prevent the
 /// construction of batches from the type of data in the view (for example,
 /// filtered views, or views with extended time coordinates).
-pub trait BatchReader: NumEntries + SizeOf + 'static
+pub trait BatchReader: NumEntries + Rkyv + SizeOf + 'static
 where
     Self: Sized,
 {

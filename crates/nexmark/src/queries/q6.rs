@@ -5,7 +5,6 @@ use dbsp::{
     RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
 use crate::model::Event;
-use std::collections::VecDeque;
 
 /// Query 6: Average Selling Price by Seller
 ///
@@ -95,14 +94,14 @@ pub fn q6(input: NexmarkStream) -> Q6Stream {
     // 10 closed auctions.
     // TODO: use linear aggregation when ready (#138).
     winning_bids_by_seller_indexed.aggregate(<Fold<_, UnimplementedSemigroup<_>, _, _>>::with_output(
-        VecDeque::with_capacity(NUM_AUCTIONS_PER_SELLER),
-        |top: &mut VecDeque<usize>, val: &(u64, usize), _w| {
+        Vec::with_capacity(NUM_AUCTIONS_PER_SELLER),
+        |top: &mut Vec<usize>, val: &(u64, usize), _w| {
             if top.len() >= NUM_AUCTIONS_PER_SELLER {
-                top.pop_front();
+                top.remove(0);
             }
-            top.push_back(val.1);
+            top.push(val.1);
         },
-        |top: VecDeque<usize>| -> usize {
+        |top: Vec<usize>| -> usize {
             let len = top.len();
             let sum: usize = Iterator::sum(top.into_iter());
             sum / len
