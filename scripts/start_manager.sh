@@ -34,6 +34,13 @@ else
     DB_CONNECTION_STRING="--db-connection-string=postgresql://${PGUSER}@localhost"
 fi
 
+manager_pid=$(pgrep "pipeline-mana" || echo "")
+
+if [ -n "$manager_pid" ]; then
+    echo "Previous manager instance is running"
+    exit 1
+fi
+
 cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build $RUST_BUILD_PROFILE $PG_EMBED
 cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --bin pipeline-manager $RUST_BUILD_PROFILE $PG_EMBED -- \
     --bind-address="${BIND_ADDRESS}" \
