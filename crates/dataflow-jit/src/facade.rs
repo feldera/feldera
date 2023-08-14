@@ -44,12 +44,17 @@ impl<'a> Demands<'a> {
         }
     }
 
-    pub fn add_csv_demand(
+    pub fn add_csv_deserialize(
         &mut self,
         layout: LayoutId,
         column_mappings: Vec<(usize, usize, Option<&'a str>)>,
     ) {
         let displaced = self.csv.insert(layout, column_mappings);
+        assert_eq!(displaced, None);
+    }
+
+    pub fn add_json_deserialize(&mut self, layout: LayoutId, mappings: JsonMapping) {
+        let displaced = self.json_deser.insert(layout, mappings);
         assert_eq!(displaced, None);
     }
 }
@@ -631,8 +636,8 @@ mod tests {
             .layout();
 
         let mut demands = Demands::new();
-        demands.add_csv_demand(transactions_layout, transaction_mappings());
-        demands.add_csv_demand(demographics_layout, demographic_mappings());
+        demands.add_csv_deserialize(transactions_layout, transaction_mappings());
+        demands.add_csv_deserialize(demographics_layout, demographic_mappings());
 
         // Create the circuit
         let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), demands);
@@ -802,8 +807,8 @@ mod tests {
         );
 
         let mut demands = Demands::new();
-        demands.add_csv_demand(transactions_layout, transaction_mappings());
-        demands.add_csv_demand(demographics_layout, demographic_mappings());
+        demands.add_csv_deserialize(transactions_layout, transaction_mappings());
+        demands.add_csv_deserialize(demographics_layout, demographic_mappings());
 
         // Create the circuit
         let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), demands);
