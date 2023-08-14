@@ -1,7 +1,7 @@
 use crate::{ControllerError, DeCollectionHandle, SerBatch};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
-use erased_serde::{Serialize as ErasedSerialize};
+use erased_serde::Serialize as ErasedSerialize;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
@@ -22,7 +22,7 @@ pub use self::{
         byte_record_deserializer, string_record_deserializer, CsvEncoderConfig, CsvParserConfig,
     },
     deserializer::FieldParseError,
-    json::{JsonParserConfig, JsonUpdateFormat},
+    json::{JsonEncoderConfig, JsonParserConfig, JsonUpdateFormat},
 };
 use self::{
     csv::{CsvInputFormat, CsvOutputFormat},

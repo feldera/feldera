@@ -106,7 +106,7 @@ impl Display for ConfigError {
             Self::ParserConfigParseError {
                 endpoint_name,
                 error,
-                config
+                config,
             } => {
                 write!(
                     f,

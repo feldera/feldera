@@ -209,7 +209,13 @@ impl OutputFormat for CsvOutputFormat {
             CsvEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
                 request.query_string().as_bytes(),
             )))
-            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, request.query_string()))?,
+            .map_err(|e| {
+                ControllerError::encoder_config_parse_error(
+                    endpoint_name,
+                    &e,
+                    request.query_string(),
+                )
+            })?,
         ))
     }
 

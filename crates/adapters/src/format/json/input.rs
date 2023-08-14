@@ -224,8 +224,13 @@ impl InputFormat for JsonInputFormat {
         input_stream: &dyn DeCollectionHandle,
         config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError> {
-        let config = JsonParserConfig::deserialize(config)
-            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, &serde_yaml::to_string(&config).unwrap_or_default()))?;
+        let config = JsonParserConfig::deserialize(config).map_err(|e| {
+            ControllerError::parser_config_parse_error(
+                endpoint_name,
+                &e,
+                &serde_yaml::to_string(&config).unwrap_or_default(),
+            )
+        })?;
         Ok(Box::new(JsonParser::new(input_stream, config)) as Box<dyn Parser>)
     }
 
@@ -238,7 +243,13 @@ impl InputFormat for JsonInputFormat {
             JsonParserConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
                 request.query_string().as_bytes(),
             )))
-            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, &request.query_string()))?,
+            .map_err(|e| {
+                ControllerError::parser_config_parse_error(
+                    endpoint_name,
+                    &e,
+                    request.query_string(),
+                )
+            })?,
         ))
     }
 }
