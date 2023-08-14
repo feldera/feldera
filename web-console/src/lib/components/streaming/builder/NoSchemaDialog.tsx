@@ -16,7 +16,7 @@ const MissingSchemaDialog = (props: {
   const router = useRouter()
   const handleClose = () => {
     props.setOpen(false)
-    router.push(`/analytics/editor/${props.program_id}`)
+    router.push(`/analytics/editor/?program_id=${props.program_id}`)
   }
 
   return (

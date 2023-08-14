@@ -23,7 +23,9 @@ import {
   ProgramsService,
   ProgramStatus,
   UpdateProgramRequest
-} from '../services/manager'
+} from '$lib/services/manager'
+import invariant from 'tiny-invariant'
+import { mkQuery } from '$lib/functions/common/tanstack'
 
 // Updates just the program status in the query cache.
 export const programStatusUpdate = (queryClient: QueryClient, programId: ProgramId, newStatus: ProgramStatus) => {
@@ -130,60 +132,36 @@ export const invalidatePipeline = (queryClient: QueryClient, pipeline_id: Pipeli
 export const defaultQueryFn = async (context: QueryFunctionContext) => {
   return match(context.queryKey)
     .with(['programCode', { program_id: P.select() }], program_id => {
-      if (typeof program_id == 'string') {
-        return ProgramsService.getProgram(program_id, true)
-      } else {
-        throw new Error('Invalid query key, program_id should be a string')
-      }
+      invariant(typeof program_id == 'string', 'Invalid query key, program_id should be a string')
+      return ProgramsService.getProgram(program_id, true)
     })
     .with(['programStatus', { program_id: P.select() }], program_id => {
-      if (typeof program_id == 'string') {
-        return ProgramsService.getProgram(program_id, false)
-      } else {
-        throw new Error('Invalid query key, program_id should be a string')
-      }
+      invariant(typeof program_id == 'string', 'Invalid query key, program_id should be a string')
+      return ProgramsService.getProgram(program_id, false)
     })
     .with(['pipelineStatus', { pipeline_id: P.select() }], pipeline_id => {
-      if (typeof pipeline_id == 'string') {
-        return PipelinesService.getPipeline(pipeline_id)
-      } else {
-        throw new Error('Invalid query key, pipeline_id should be a string')
-      }
+      invariant(typeof pipeline_id == 'string', 'Invalid query key, pipeline_id should be a string')
+      return PipelinesService.getPipeline(pipeline_id)
     })
     .with(['pipelineConfig', { pipeline_id: P.select() }], pipeline_id => {
-      if (typeof pipeline_id == 'string') {
-        return PipelinesService.getPipelineConfig(pipeline_id)
-      } else {
-        throw new Error('Invalid query key, pipeline_id should be a string')
-      }
+      invariant(typeof pipeline_id == 'string', 'Invalid query key, pipeline_id should be a string')
+      return PipelinesService.getPipelineConfig(pipeline_id)
     })
     .with(['pipelineStats', { pipeline_id: P.select() }], pipeline_id => {
-      if (typeof pipeline_id == 'string') {
-        return PipelinesService.pipelineStats(pipeline_id)
-      } else {
-        throw new Error('Invalid query key, pipeline_id should be a string')
-      }
+      invariant(typeof pipeline_id == 'string', 'Invalid query key, pipeline_id should be a string')
+      return PipelinesService.pipelineStats(pipeline_id)
     })
     .with(['pipelineLastRevision', { pipeline_id: P.select() }], pipeline_id => {
-      if (typeof pipeline_id == 'string') {
-        return PipelinesService.pipelineDeployed(pipeline_id)
-      } else {
-        throw new Error('Invalid query key, pipeline_id should be a string')
-      }
+      invariant(typeof pipeline_id == 'string', 'Invalid query key, pipeline_id should be a string')
+      return PipelinesService.pipelineDeployed(pipeline_id)
     })
     .with(['pipelineValidate', { pipeline_id: P.select() }], pipeline_id => {
-      if (typeof pipeline_id == 'string') {
-        return PipelinesService.pipelineValidate(pipeline_id)
-      } else {
-        throw new Error('Invalid query key, pipeline_id should be a string')
-      }
+      invariant(typeof pipeline_id == 'string', 'Invalid query key, pipeline_id should be a string')
+      return PipelinesService.pipelineValidate(pipeline_id)
     })
     .with(['connectorStatus', { connector_id: P.select() }], connector_id => {
-      if (typeof connector_id == 'string') {
-        return ConnectorsService.getConnector(connector_id)
-      } else {
-        throw new Error('Invalid query key, connector_id should be a string')
-      }
+      invariant(typeof connector_id == 'string', 'Invalid query key, connector_id should be a string')
+      return ConnectorsService.getConnector(connector_id)
     })
     .with(['program'], () => ProgramsService.getPrograms())
     .with(['connector'], () => ConnectorsService.listConnectors())
@@ -192,3 +170,17 @@ export const defaultQueryFn = async (context: QueryFunctionContext) => {
       throw new Error('Invalid query key, maybe you need to update defaultQueryFn.ts')
     })
 }
+
+export const PipelineManagerQuery = mkQuery({
+  program: () => ProgramsService.getPrograms(),
+  programCode: (programId: string) => ProgramsService.getProgram(programId, true),
+  programStatus: (programId: string) => ProgramsService.getProgram(programId, false),
+  pipeline: () => PipelinesService.listPipelines(),
+  pipelineStatus: PipelinesService.getPipeline,
+  pipelineConfig: PipelinesService.getPipelineConfig,
+  pipelineStats: PipelinesService.pipelineStats,
+  pipelineLastRevision: PipelinesService.pipelineDeployed,
+  pipelineValidate: PipelinesService.pipelineValidate,
+  connector: () => ConnectorsService.listConnectors(),
+  connectorStatus: ConnectorsService.getConnector
+})

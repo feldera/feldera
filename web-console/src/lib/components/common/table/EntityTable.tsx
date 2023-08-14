@@ -10,12 +10,7 @@ import { Icon } from '@iconify/react'
 import Card from '@mui/material/Card'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
-import {
-  DataGridPro,
-  DataGridProProps,
-  GridRenderCellParams,
-  GridValidRowModel
-} from '@mui/x-data-grid-pro'
+import { DataGridPro, DataGridProProps, GridRenderCellParams, GridValidRowModel } from '@mui/x-data-grid-pro'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
 import { UseQueryResult } from '@tanstack/react-query'
 
