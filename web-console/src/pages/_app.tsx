@@ -4,7 +4,6 @@ import 'src/styles/globals.css'
 
 import StatusSnackBar from '$lib/components/common/errors/StatusSnackBar'
 import StandardVerticalLayout from '$lib/components/layouts/StandardVerticalLayout'
-import { usePageHeader } from '$lib/compositions/global/pageHeader'
 import themeConfig from '$lib/functions/configs/themeConfig'
 import { defaultQueryFn } from '$lib/services/defaultQueryFn'
 import { OpenAPI } from '$lib/types/manager'
@@ -72,7 +71,7 @@ const App = (props: ExtendedAppProps) => {
   // Variables
   const getLayout =
     Component.getLayout ?? ((page: ReactElement) => <StandardVerticalLayout>{page}</StandardVerticalLayout>)
-  usePageHeader(s => s.setHeader)({ title: null })
+
   return (
     <CacheProvider value={emotionCache}>
       <Head>
