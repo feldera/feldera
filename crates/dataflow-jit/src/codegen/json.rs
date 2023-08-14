@@ -17,6 +17,7 @@ type ColumnIdx = usize;
 /// The function signature used for json deserialization functions
 pub type DeserializeJsonFn = unsafe extern "C" fn(*mut u8, &serde_json::Value);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JsonMapping {
     pub layout: LayoutId,
     /// A map between column indices and the json pointer used to access them
