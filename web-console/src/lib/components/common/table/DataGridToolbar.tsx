@@ -12,7 +12,7 @@ const DataGridToolbar = ({ children }: { children: ReactNode }) => {
         flexWrap: 'wrap',
         alignItems: 'center',
         justifyContent: 'space-between',
-        p: theme => theme.spacing(2, 6, 4, 6)
+        p: theme => theme.spacing(2, 4, 2, 4)
       }}
     >
       {/* Align single item to the end (right) */}

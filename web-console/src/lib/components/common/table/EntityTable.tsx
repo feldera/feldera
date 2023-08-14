@@ -5,7 +5,7 @@
 
 import QuickSearch from '$lib/components/common/table/QuickSearch'
 import { escapeRegExp } from '$lib/functions/common/string'
-import { ChangeEvent, Dispatch, MutableRefObject, ReactNode, useEffect, useState } from 'react'
+import { ChangeEvent, Children, Dispatch, MutableRefObject, ReactNode, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 
 import { Icon } from '@iconify/react'
@@ -25,6 +25,7 @@ import { UseQueryResult } from '@tanstack/react-query'
 import { DataGridFooter } from './DataGridFooter'
 import DataGridToolbar from './DataGridToolbar'
 import { ErrorOverlay } from './ErrorOverlay'
+import { Button } from '@mui/material'
 
 // This is a workaround for the following issue:
 // https://github.com/mui/mui-x/issues/5239
@@ -52,6 +53,7 @@ export type EntityTableProps<TData extends GridValidRowModel> = {
   addActions?: boolean
   tableProps: DataGridProProps<TData>
   apiRef?: MutableRefObject<GridApiPro>
+  toolbarChildren?: ReactNode
   footerChildren?: ReactNode
 }
 
@@ -160,9 +162,9 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
           },
           toolbar: {
             children: [
-              <GridToolbarFilterButton key='0' />,
+              ...Children.toArray(props.toolbarChildren),
               <QuickSearch
-                key='1'
+                key='99'
                 value={searchText}
                 clearSearch={() => handleSearch('')}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)}

@@ -22,7 +22,7 @@ import { Button } from '@mui/material'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
-import { GridColDef, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
+import { GridColDef, GridRenderCellParams, GridToolbarFilterButton, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 const DataSourceTable = () => {
@@ -160,6 +160,12 @@ const DataSourceTable = () => {
     setShowDialog(true)
   }, [])
 
+  const btnAdd = (
+    <Button variant='contained' size='small' href='/connectors/create' key='0'>
+      Add connector
+    </Button>
+  )
+
   return (
     <>
       <Card>
@@ -173,11 +179,12 @@ const DataSourceTable = () => {
           hasSearch
           hasFilter
           addActions
-          footerChildren={
-            <Button variant='contained' size='small' href='/connectors/create'>
-              Add connector
-            </Button>
-          }
+          toolbarChildren={[
+            btnAdd,
+            <GridToolbarFilterButton key='1' />,
+            <div style={{ marginLeft: 'auto' }} key='2' />
+          ]}
+          footerChildren={btnAdd}
         />
       </Card>
 

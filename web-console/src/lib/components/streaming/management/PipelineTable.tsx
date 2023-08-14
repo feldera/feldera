@@ -565,6 +565,12 @@ export default function PipelineTable() {
     return newRow
   }
 
+  const btnAdd = (
+    <Button variant='contained' size='small' href='/streaming/builder' key='0'>
+      Add pipeline
+    </Button>
+  )
+
   return (
     <Card>
       <DataGridPro
@@ -590,20 +596,18 @@ export default function PipelineTable() {
             variant: 'outlined'
           },
           toolbar: {
-            children: (
+            children: [
+              btnAdd,
+              <div style={{ marginLeft: 'auto' }} key='2' />,
               <QuickSearch
                 value={searchText}
                 clearSearch={() => handleSearch('')}
                 onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)}
               />
-            )
+            ]
           },
           footer: {
-            children: (
-              <Button variant='contained' size='small' href='/streaming/builder'>
-                Add pipeline
-              </Button>
-            )
+            children: btnAdd
           }
         }}
       />

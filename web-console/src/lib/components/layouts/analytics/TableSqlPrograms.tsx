@@ -23,7 +23,7 @@ import { Button } from '@mui/material'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
-import { GridColDef, GridRenderCellParams, useGridApiRef } from '@mui/x-data-grid-pro'
+import { GridColDef, GridRenderCellParams, GridToolbarFilterButton, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 const getStatusObj = (status: ProgramStatus) =>
@@ -174,6 +174,12 @@ const TableSqlPrograms = () => {
     rows: rows
   }
 
+  const btnAdd = (
+    <Button variant='contained' size='small' href='/analytics/editor' key='0'>
+      Add SQL program
+    </Button>
+  )
+
   return (
     <Card>
       <EntityTable
@@ -187,11 +193,8 @@ const TableSqlPrograms = () => {
         onDeleteRow={deleteProject}
         onEditClicked={row => router.push(`/analytics/editor?program_id=${row.program_id}`)}
         apiRef={apiRef}
-        footerChildren={
-          <Button variant='contained' size='small' href='/analytics/editor'>
-            Add SQL program
-          </Button>
-        }
+        toolbarChildren={[btnAdd, <GridToolbarFilterButton key='1' />, <div style={{ marginLeft: 'auto' }} key='2' />]}
+        footerChildren={btnAdd}
       />
     </Card>
   )
