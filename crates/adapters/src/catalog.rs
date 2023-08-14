@@ -1,6 +1,6 @@
 use crate::{
-    DeCollectionHandle, DeSetHandle, DeScalarHandle, DeScalarHandleImpl, DeZSetHandle, SerOutputBatchHandle,
-    SerOutputBatchHandleImpl,
+    DeCollectionHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
+    SerOutputBatchHandle, SerOutputBatchHandleImpl,
 };
 use dbsp::{
     algebra::ZRingValue,

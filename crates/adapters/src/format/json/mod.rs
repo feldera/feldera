@@ -6,13 +6,14 @@ mod output;
 
 pub use input::{JsonInputFormat, JsonParserConfig};
 pub use output::{JsonEncoderConfig, JsonOutputFormat};
+use utoipa::ToSchema;
 
 /// Supported JSON data change event formats.
 ///
 /// Each element in a JSON-formatted input stream specifies
 /// an update to one or more records in an input table.  We support
 /// several different ways to represent such updates.
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, ToSchema)]
 pub enum JsonUpdateFormat {
     /// Insert/delete format.
     ///
@@ -26,6 +27,7 @@ pub enum JsonUpdateFormat {
     /// ```
     #[serde(rename = "insert_delete")]
     InsertDelete,
+
     #[serde(rename = "weighted")]
     Weighted,
 

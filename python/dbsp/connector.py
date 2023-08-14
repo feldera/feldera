@@ -14,9 +14,11 @@ from feldera_api_client.models.kafka_output_config import KafkaOutputConfig
 from feldera_api_client.models.file_input_config import FileInputConfig
 from feldera_api_client.models.file_output_config import FileOutputConfig
 from feldera_api_client.models.csv_parser_config import CsvParserConfig
+from feldera_api_client.models.json_parser_config import JsonParserConfig
 from feldera_api_client.models.new_connector_request import NewConnectorRequest
 from feldera_api_client.models.update_connector_request import UpdateConnectorRequest
 from feldera_api_client.models.csv_encoder_config import CsvEncoderConfig
+from feldera_api_client.models.json_encoder_config import JsonEncoderConfig
 from feldera_api_client.models.connector_config import ConnectorConfig
 from feldera_api_client.api.connectors import new_connector
 from feldera_api_client.api.connectors import update_connector
@@ -95,3 +97,12 @@ class CsvInputFormatConfig(FormatConfig):
 class CsvOutputFormatConfig(FormatConfig):
     def __init__(self, **csv_config_options):
         super().__init__('csv', CsvEncoderConfig.from_dict(csv_config_options))
+
+class JsonInputFormatConfig(FormatConfig):
+    def __init__(self, **json_config_options):
+        super().__init__('json', JsonParserConfig.from_dict(json_config_options))
+
+
+class JsonOutputFormatConfig(FormatConfig):
+    def __init__(self, **json_config_options):
+        super().__init__('json', JsonEncoderConfig.from_dict(json_config_options))

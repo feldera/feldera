@@ -18,6 +18,9 @@ from .file_output_config import FileOutputConfig
 from .format_config import FormatConfig
 from .format_config_config import FormatConfigConfig
 from .input_endpoint_config import InputEndpointConfig
+from .json_encoder_config import JsonEncoderConfig
+from .json_parser_config import JsonParserConfig
+from .json_update_format import JsonUpdateFormat
 from .kafka_input_config import KafkaInputConfig
 from .kafka_input_config_log_level import KafkaInputConfigLogLevel
 from .kafka_log_level import KafkaLogLevel
@@ -84,6 +87,9 @@ __all__ = (
     "FormatConfig",
     "FormatConfigConfig",
     "InputEndpointConfig",
+    "JsonEncoderConfig",
+    "JsonParserConfig",
+    "JsonUpdateFormat",
     "KafkaInputConfig",
     "KafkaInputConfigLogLevel",
     "KafkaLogLevel",

@@ -47,11 +47,7 @@ impl MockInputConsumerState {
     ) -> Self {
         let format = <dyn InputFormat>::get_format(&format_config.name).unwrap();
         let parser = format
-            .new_parser(
-                "mock_input_endpoint",
-                input_handle,
-                &format_config.config,
-            )
+            .new_parser("mock_input_endpoint", input_handle, &format_config.config)
             .unwrap();
         Self::new(parser)
     }
