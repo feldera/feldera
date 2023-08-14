@@ -28,7 +28,26 @@ pip3 install websockets
 
 [tasks.start_manager]
 script = '''
-../../scripts/start_manager.sh
+old_manager_pid=$(pgrep "pipeline-mana" || echo "")
+echo "Old manager: " $old_manager_pid
+if [ -n "$old_manager_pid" ]; then
+    echo "Previous manager instance is running"
+    exit 1
+fi
+../../scripts/start_manager.sh &
+manager_pid=$!
+while true; do
+    if curl --output /dev/null --silent --head --fail http://localhost:8080; then
+        echo "Pipeline manager is up and running"
+        break
+    else
+        if ! ps -p $manager_pid > /dev/null; then
+            echo "Manager process has terminated unexpectedly"
+            exit 1
+        fi
+        sleep 1
+    fi
+done
 '''
 
 [tasks.python_api_test]

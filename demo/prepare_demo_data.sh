@@ -17,6 +17,6 @@ do
     # TimeSeriesEnrich data is the same as we loaded in SimpleSelect
     if [ "$project_name" != "demo01-TimeSeriesEnrich" ]
     then
-        python3  "${project_dir}/run.py" --dbsp_url ${DBSP_MANAGER} --actions prepare
+        python3  "${project_dir}/run.py" --dbsp_url ${DBSP_MANAGER} --actions prepare &
     fi
 done
