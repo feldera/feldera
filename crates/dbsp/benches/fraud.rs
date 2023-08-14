@@ -67,7 +67,7 @@
 //! ```
 
 use anyhow::Result;
-use bincode::{Decode, Encode};
+use chrono::{NaiveDate, NaiveDateTime};
 use clap::Parser;
 use crossbeam::channel::bounded;
 use csv::Reader as CsvReader;
@@ -81,14 +81,15 @@ use dbsp::{
     CollectionHandle, DBSPHandle, OrdIndexedZSet, Runtime, Stream,
 };
 use itertools::Itertools;
-use serde::{de::Error as _, Deserialize, Deserializer};
+use rkyv::{Archive, Serialize};
+use serde::de::Error as _;
 use size_of::SizeOf;
 use std::{
     hash::Hash,
     io::{stdin, Read},
     thread::spawn,
 };
-use time::{Date, Instant, PrimitiveDateTime};
+use time::Instant;
 
 // TODO: add a test harness.
 
@@ -99,7 +100,20 @@ const DEFAULT_BATCH_SIZE: &str = "10000";
 
 const DAY_IN_SECONDS: i64 = 24 * 3600;
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Decode, Encode, SizeOf)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    SizeOf,
+    Archive,
+    Serialize,
+    rkyv::Deserialize,
+    serde::Deserialize,
+)]
 struct QueryResult {
     // day: Weekday,
     // age: u32,
@@ -119,7 +133,18 @@ struct QueryResult {
 }
 
 #[derive(
-    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Deserialize, Decode, Encode, SizeOf,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    SizeOf,
+    Archive,
+    Serialize,
+    rkyv::Deserialize,
+    serde::Deserialize,
 )]
 struct Demographics {
     cc_num: F64,
@@ -133,17 +158,26 @@ struct Demographics {
     long: F64,
     city_pop: u32,
     job: u32,
-    #[bincode(with_serde)]
-    dob: Date,
+    dob: NaiveDate,
 }
 
 #[derive(
-    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Deserialize, Decode, Encode, SizeOf,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    SizeOf,
+    Archive,
+    Serialize,
+    rkyv::Deserialize,
+    serde::Deserialize,
 )]
 struct Transaction {
-    #[bincode(with_serde)]
-    #[serde(deserialize_with = "primitive_date_time_from_str")]
-    trans_date_trans_time: PrimitiveDateTime,
+    #[serde(deserialize_with = "naive_date_time_from_str")]
+    trans_date_trans_time: NaiveDateTime,
     cc_num: F64,
     merchant: u32,
     category: u32,
@@ -155,14 +189,12 @@ struct Transaction {
     is_fraud: u32,
 }
 
-fn primitive_date_time_from_str<'de, D: Deserializer<'de>>(
+fn naive_date_time_from_str<'de, D: serde::Deserializer<'de>>(
     d: D,
-) -> Result<PrimitiveDateTime, D::Error> {
-    let s: String = Deserialize::deserialize(d)?;
+) -> Result<NaiveDateTime, D::Error> {
+    let s: String = serde::Deserialize::deserialize(d)?;
 
-    let format = time::macros::format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
-
-    match time::PrimitiveDateTime::parse(&s, &format) {
+    match NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S") {
         Ok(o) => Ok(o),
         Err(err) => Err(D::Error::custom(err)),
     }
@@ -210,7 +242,7 @@ impl FraudBenchmark {
             let (transactions, htransactions) = circuit.add_input_zset::<Transaction, Weight>();
 
             let amounts = transactions.map_index(|t| {
-                let timestamp = t.trans_date_trans_time.assume_utc().unix_timestamp();
+                let timestamp = t.trans_date_trans_time.and_utc().timestamp();
                 (t.cc_num, (timestamp, t.amt))
             });
 
@@ -219,7 +251,7 @@ impl FraudBenchmark {
 
             let enriched_transactions: Stream<_, EnrichedTransactions> = transactions_by_ccnum
                 .join_index(&demographics_by_ccnum, |cc_num, tran, dem| {
-                    let timestamp = tran.trans_date_trans_time.assume_utc().unix_timestamp();
+                    let timestamp = tran.trans_date_trans_time.and_utc().timestamp();
                     Some(((*cc_num, timestamp), (tran.clone(), dem.clone())))
                 });
 

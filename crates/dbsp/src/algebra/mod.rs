@@ -10,6 +10,9 @@ mod present;
 
 pub mod zset;
 
+pub mod arcstr;
+pub use self::arcstr::ArcStr;
+
 pub use checked_int::CheckedInt;
 pub use floats::{F32, F64};
 pub use lattice::Lattice;

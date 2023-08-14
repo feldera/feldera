@@ -1,7 +1,7 @@
 use super::NexmarkStream;
 use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 use crate::model::Event;
-use arcstr::ArcStr;
+use dbsp::algebra::ArcStr;
 
 ///
 /// Query 22: Get URL Directories (Not in original suite)
@@ -61,45 +61,45 @@ pub fn q22(input: NexmarkStream) -> Q22Stream {
 mod tests {
     use super::*;
     use crate::{generator::tests::make_bid, model::Bid};
-    use dbsp::zset;
+    use dbsp::{zset, arcstr_literal};
     use rstest::rstest;
 
     #[rstest]
     #[case::bids_with_well_formed_urls(
         vec![vec![
             Event::Bid(Bid {
-                channel: arcstr::literal!("https://example.com/foo/bar/zed"),
+                channel: arcstr_literal!("https://example.com/foo/bar/zed"),
                 ..make_bid()
             }),
             Event::Bid(Bid {
-                channel: arcstr::literal!("https://example.com/dir1/dir2/dir3/dir4/dir5"),
+                channel: arcstr_literal!("https://example.com/dir1/dir2/dir3/dir4/dir5"),
                 ..make_bid()
             }),
         ]],
         vec![zset!{
-            (1, 1, 99, arcstr::literal!("https://example.com/foo/bar/zed"), arcstr::literal!("foo"), arcstr::literal!("bar"), arcstr::literal!("zed")) => 1,
-            (1, 1, 99, arcstr::literal!("https://example.com/dir1/dir2/dir3/dir4/dir5"), arcstr::literal!("dir1"), arcstr::literal!("dir2"), arcstr::literal!("dir3")) => 1,
+            (1, 1, 99, arcstr_literal!("https://example.com/foo/bar/zed"), arcstr_literal!("foo"), arcstr_literal!("bar"), arcstr_literal!("zed")) => 1,
+            (1, 1, 99, arcstr_literal!("https://example.com/dir1/dir2/dir3/dir4/dir5"), arcstr_literal!("dir1"), arcstr_literal!("dir2"), arcstr_literal!("dir3")) => 1,
         }],
     )]
     #[case::bids_mixed_with_non_urls(
         vec![vec![
             Event::Bid(Bid {
-                channel: arcstr::literal!("https://example.com/foo/bar/zed"),
+                channel: arcstr_literal!("https://example.com/foo/bar/zed"),
                 ..make_bid()
             }),
             Event::Bid(Bid {
-                channel: arcstr::literal!("Google"),
+                channel: arcstr_literal!("Google"),
                 ..make_bid()
             }),
             Event::Bid(Bid {
-                channel: arcstr::literal!("https:badly.formed/dir1/dir2/dir3"),
+                channel: arcstr_literal!("https:badly.formed/dir1/dir2/dir3"),
                 ..make_bid()
             }),
         ]],
         vec![zset!{
-            (1, 1, 99, arcstr::literal!("https://example.com/foo/bar/zed"), arcstr::literal!("foo"), arcstr::literal!("bar"), arcstr::literal!("zed")) => 1,
-            (1, 1, 99, arcstr::literal!("Google"), arcstr::literal!(""), arcstr::literal!(""), arcstr::literal!("")) => 1,
-            (1, 1, 99, arcstr::literal!("https:badly.formed/dir1/dir2/dir3"), arcstr::literal!("dir3"), arcstr::literal!(""), arcstr::literal!("")) => 1,
+            (1, 1, 99, arcstr_literal!("https://example.com/foo/bar/zed"), arcstr_literal!("foo"), arcstr_literal!("bar"), arcstr_literal!("zed")) => 1,
+            (1, 1, 99, arcstr_literal!("Google"), arcstr_literal!(""), arcstr_literal!(""), arcstr_literal!("")) => 1,
+            (1, 1, 99, arcstr_literal!("https:badly.formed/dir1/dir2/dir3"), arcstr_literal!("dir3"), arcstr_literal!(""), arcstr_literal!("")) => 1,
         }],
     )]
     fn test_q22(#[case] input_event_batches: Vec<Vec<Event>>, #[case] expected_zsets: Vec<Q22Set>) {

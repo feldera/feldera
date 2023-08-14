@@ -9,6 +9,7 @@ mod tests;
 pub use builders::ColumnLayerBuilder;
 pub use consumer::{ColumnLayerConsumer, ColumnLayerValues};
 pub use cursor::ColumnLayerCursor;
+use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
@@ -28,8 +29,12 @@ use std::{
 };
 
 /// A layer of unordered values
-#[derive(Debug, Clone, Eq, PartialEq, SizeOf)]
-pub struct ColumnLayer<K, R> {
+#[derive(Debug, Clone, Eq, PartialEq, SizeOf, Archive, Serialize, Deserialize)]
+pub struct ColumnLayer<K, R>
+where
+    K: 'static,
+    R: 'static,
+{
     // Invariant: keys.len == diffs.len
     pub(super) keys: Vec<K>,
     pub(super) diffs: Vec<R>,

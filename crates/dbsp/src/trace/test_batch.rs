@@ -12,6 +12,12 @@ use rand::thread_rng;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaChaRng;
+use rkyv::ser::Serializer;
+use rkyv::Archive;
+use rkyv::Archived;
+use rkyv::Deserialize;
+use rkyv::Fallible;
+use rkyv::Serialize;
 use size_of::SizeOf;
 use std::{
     cmp::max,
@@ -242,13 +248,60 @@ where
 
 /// Inefficient but simple batch implementation as a B-tree map.
 #[derive(Clone, Debug, PartialEq, Eq, SizeOf)]
-pub struct TestBatch<K, V, T, R> {
+pub struct TestBatch<K, V, T, R>
+where
+    K: Ord,
+    V: Ord,
+    T: Ord,
+{
     data: BTreeMap<(K, V, T), R>,
     lower_key_bound: Option<K>,
     lower_val_bound: Option<V>,
 }
 
-impl<K, V, T, R> NumEntries for TestBatch<K, V, T, R> {
+impl<K, V, T, R> Archive for TestBatch<K, V, T, R>
+where
+    K: Ord,
+    V: Ord,
+    T: Ord,
+{
+    type Archived = ();
+    type Resolver = ();
+
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        unimplemented!();
+    }
+}
+
+impl<K, V, T, R, S: Serializer + ?Sized> Serialize<S> for TestBatch<K, V, T, R>
+where
+    K: Ord,
+    V: Ord,
+    T: Ord,
+{
+    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        unimplemented!();
+    }
+}
+
+impl<K, V, T, R, D: Fallible> Deserialize<TestBatch<K, V, T, R>, D>
+    for Archived<TestBatch<K, V, T, R>>
+where
+    K: Ord,
+    V: Ord,
+    T: Ord,
+{
+    fn deserialize(&self, _deserializer: &mut D) -> Result<TestBatch<K, V, T, R>, D::Error> {
+        unimplemented!();
+    }
+}
+
+impl<K, V, T, R> NumEntries for TestBatch<K, V, T, R>
+where
+    K: Ord,
+    V: Ord,
+    T: Ord,
+{
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
     fn num_entries_shallow(&self) -> usize {
@@ -338,8 +391,13 @@ where
     }
 }
 
-#[derive(SizeOf)]
-pub struct TestBatchBatcher<K, V, T, R> {
+#[derive(SizeOf, Archive, Serialize, Deserialize)]
+pub struct TestBatchBatcher<K, V, T, R>
+where
+    K: Ord,
+    V: Ord,
+    T: Ord,
+{
     time: T,
     result: TestBatch<K, V, T, R>,
 }
@@ -383,7 +441,12 @@ where
 }
 
 #[derive(SizeOf)]
-pub struct TestBatchBuilder<K, V, T, R> {
+pub struct TestBatchBuilder<K, V, T, R>
+where
+    K: Ord,
+    V: Ord,
+    T: Ord,
+{
     time: T,
     result: TestBatch<K, V, T, R>,
 }
@@ -425,7 +488,12 @@ where
 }
 
 #[derive(SizeOf)]
-pub struct TestBatchMerger<K, V, T, R> {
+pub struct TestBatchMerger<K, V, T, R>
+where
+    K: Ord,
+    V: Ord,
+    T: Ord,
+{
     result: TestBatch<K, V, T, R>,
 }
 

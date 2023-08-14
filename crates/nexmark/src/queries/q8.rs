@@ -1,7 +1,7 @@
 use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{operator::FilterMap, RootCircuit, OrdIndexedZSet, OrdZSet, Stream};
-use arcstr::ArcStr;
+use dbsp::algebra::ArcStr;
 
 ///
 /// Query 8: Monitor New Users
@@ -98,7 +98,8 @@ mod tests {
         model::{Auction, Event, Person},
     };
     use dbsp::{zset, RootCircuit};
-    use arcstr::ArcStr;
+    use dbsp::algebra::ArcStr;
+    use dbsp::arcstr_literal;
     use rstest::rstest;
 
     #[rstest]
@@ -108,10 +109,10 @@ mod tests {
     // in the next.
     #[case::people_with_auction(
         vec![vec![
-            (1, arcstr::literal!("James Potter"), 9_000),
-            (2, arcstr::literal!("Lily Potter"), 12_000),
-            (3, arcstr::literal!("Harry Potter"), 15_000),
-            (4, arcstr::literal!("Albus D"), 18_000)]],
+            (1, arcstr_literal!("James Potter"), 9_000),
+            (2, arcstr_literal!("Lily Potter"), 12_000),
+            (3, arcstr_literal!("Harry Potter"), 15_000),
+            (4, arcstr_literal!("Albus D"), 18_000)]],
         vec![vec![
             (1, 11_000),
             (2, 15_000),

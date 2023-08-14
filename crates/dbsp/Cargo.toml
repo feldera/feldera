@@ -40,23 +40,21 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 impl-trait-for-tuples = "0.2"
 itertools = "0.10.5"
 textwrap = "0.15.0"
-ordered-float = { version = "3.0.0", features = ["serde"] }
+ordered-float = { version = "3.0.0", features = ["serde", "rkyv"] }
 bitvec = "1.0.1"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 crossbeam = "0.8.2"
 rocksdb = { version = "0.21", default-features = false, features = [
     "multi-threaded-cf",
 ], optional = true }
-bincode = { version = "2.0.0-rc.2", features = ["serde"] }
 uuid = { version = "1.1.2", features = ["v4"], optional = true }
 arc-swap = "1.5.1"
 mimalloc-rust-sys = "1.7.2"
 rand = "0.8.5"
 rust_decimal = "1.29"
-
-    [dependencies.size-of]
-    version = "0.1.5"
-    features = ["hashbrown", "time-std", "xxhash-xxh3"]
+rkyv = "0.7.42"
+arcstr = { version = "1.1.4" }
+size-of = { version = "0.1.5", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
 
 [dev-dependencies]
 csv = "1.2.2"
@@ -72,7 +70,7 @@ indicatif = "0.17.0-rc.11"
 clap = { version = "3.2.8", features = ["derive", "env"] }
 reqwest = { version = "0.11.11", features = ["blocking"] }
 serde_json = "1.0.87"
-arcstr = { version = "1.1.4" }
+chrono = { version = "0.4.26", features = ["rkyv", "serde"] }
 
 [dependencies.time]
 version = "0.3.20"

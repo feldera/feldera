@@ -3,6 +3,7 @@ use dbsp::{
     operator::FilterMap,
     RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
+use rkyv::{Archive, Serialize, Deserialize};
 use crate::{model::Event, queries::OrdinalDate};
 use size_of::SizeOf;
 use std::{
@@ -56,7 +57,7 @@ use time::{
 /// GROUP BY DATE_FORMAT(dateTime, 'yyyy-MM-dd');
 /// ```
 
-#[derive(Eq, Clone, SizeOf, Debug, Default, Hash, PartialEq, PartialOrd, Ord, bincode::Decode, bincode::Encode)]
+#[derive(Eq, Clone, SizeOf, Debug, Default, Hash, PartialEq, PartialOrd, Ord, Archive, Serialize, Deserialize)]
 pub struct Q15Output {
     day: String,
     total_bids: usize,

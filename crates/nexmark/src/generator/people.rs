@@ -6,7 +6,7 @@ use super::{
     super::{config as nexmark_config, model::Person},
     config, NexmarkGenerator,
 };
-use arcstr::ArcStr;
+use dbsp::{algebra::ArcStr, arcstr_literal};
 use rand::{seq::SliceRandom, Rng};
 use std::{
     cmp::min,
@@ -16,25 +16,25 @@ use std::{
 // Keep the number of states small so that the example queries will find
 // results even with a small batch of events.
 static US_STATES: [ArcStr; 6] = [
-    arcstr::literal!("AZ"),
-    arcstr::literal!("CA"),
-    arcstr::literal!("ID"),
-    arcstr::literal!("OR"),
-    arcstr::literal!("WA"),
-    arcstr::literal!("WY"),
+    arcstr_literal!("AZ"),
+    arcstr_literal!("CA"),
+    arcstr_literal!("ID"),
+    arcstr_literal!("OR"),
+    arcstr_literal!("WA"),
+    arcstr_literal!("WY"),
 ];
 
 static US_CITIES: [ArcStr; 10] = [
-    arcstr::literal!("Phoenix"),
-    arcstr::literal!("Los Angeles"),
-    arcstr::literal!("San Francisco"),
-    arcstr::literal!("Boise"),
-    arcstr::literal!("Portland"),
-    arcstr::literal!("Bend"),
-    arcstr::literal!("Redmond"),
-    arcstr::literal!("Seattle"),
-    arcstr::literal!("Kent"),
-    arcstr::literal!("Cheyenne"),
+    arcstr_literal!("Phoenix"),
+    arcstr_literal!("Los Angeles"),
+    arcstr_literal!("San Francisco"),
+    arcstr_literal!("Boise"),
+    arcstr_literal!("Portland"),
+    arcstr_literal!("Bend"),
+    arcstr_literal!("Redmond"),
+    arcstr_literal!("Seattle"),
+    arcstr_literal!("Kent"),
+    arcstr_literal!("Cheyenne"),
 ];
 
 const FIRST_NAMES: &[&str] = &[

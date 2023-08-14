@@ -1,4 +1,5 @@
 use crate::algebra::{HasOne, HasZero, MulByRef};
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -16,8 +17,9 @@ use super::{F64, F32};
     Hash,
     SizeOf,
     Default,
-    bincode::Decode,
-    bincode::Encode,
+    Archive,
+    Serialize,
+    Deserialize,
 )]
 pub struct Present;
 

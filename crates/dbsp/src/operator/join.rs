@@ -882,6 +882,7 @@ mod test {
         },
         zset, Circuit, DBTimestamp, RootCircuit, Runtime, Stream, Timestamp,
     };
+    use rkyv::{Archive, Deserialize, Serialize};
     use size_of::SizeOf;
     use std::{
         fmt::{Display, Formatter},
@@ -1131,8 +1132,9 @@ mod test {
         Eq,
         PartialEq,
         SizeOf,
-        bincode::Decode,
-        bincode::Encode,
+        Archive,
+        Serialize,
+        Deserialize,
     )]
     struct Label(pub usize, pub u16);
 
@@ -1152,8 +1154,9 @@ mod test {
         Eq,
         PartialEq,
         SizeOf,
-        bincode::Decode,
-        bincode::Encode,
+        Archive,
+        Serialize,
+        Deserialize,
     )]
     struct Edge(pub usize, pub usize);
 

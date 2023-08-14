@@ -1,7 +1,5 @@
-use bincode::{Decode, Encode};
 use proptest::{collection, prelude::*};
 use proptest_derive::Arbitrary;
-use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 
 #[derive(
@@ -10,14 +8,15 @@ use size_of::SizeOf;
     Eq,
     PartialOrd,
     Ord,
-    Serialize,
-    Deserialize,
+    serde::Serialize,
+    serde::Deserialize,
     Clone,
     Hash,
     SizeOf,
-    Encode,
-    Decode,
     Arbitrary,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct TestStruct {
     pub id: u32,

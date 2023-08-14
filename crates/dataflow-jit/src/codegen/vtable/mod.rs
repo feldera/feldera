@@ -27,9 +27,8 @@ use std::{
 // TODO: The unwinding issues can be solved by creating unwind table entries for
 // our generated functions, this'll also make our code more debug-able
 // https://github.com/bytecodealliance/wasmtime/issues/5574
-// TODO: bincode Encode/Decode impls
 // TODO: serde Serialize/Deserialize impls?
-// TODO: rkyv Archive impls
+// TODO: rkyv Archive/Serialize/Deserialize impls
 
 macro_rules! vtable {
     ($($func:ident: $ty:ty),+ $(,)?) => {

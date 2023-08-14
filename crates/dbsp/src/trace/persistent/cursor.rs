@@ -5,13 +5,13 @@
 
 use std::sync::Arc;
 
-use bincode::decode_from_slice;
+use rkyv::to_bytes;
 use rocksdb::{BoundColumnFamily, DBRawIterator};
 
 use super::trace::PersistedValue;
-use super::{ReusableEncodeBuffer, Values, BINCODE_CONFIG, ROCKS_DB_INSTANCE};
+use super::{Values, ROCKS_DB_INSTANCE};
 use crate::algebra::PartialOrder;
-use crate::trace::{Batch, Cursor};
+use crate::trace::{unaligned_deserialize, Batch, Cursor};
 
 #[derive(PartialEq, Eq)]
 enum Direction {
@@ -42,9 +42,6 @@ pub struct PersistentTraceCursor<'s, B: Batch + 's> {
 
     /// Lower key bound: the cursor must not expose keys below this bound.
     lower_key_bound: &'s Option<B::Key>,
-
-    /// Temporary storage serializing seeked keys.
-    tmp_key: ReusableEncodeBuffer,
 }
 
 impl<'s, B> PersistentTraceCursor<'s, B>
@@ -87,10 +84,8 @@ where
             }
 
             if let (Some(k), Some(v)) = (iter.key(), iter.value()) {
-                let (key, _) =
-                    decode_from_slice(k, BINCODE_CONFIG).expect("Can't decode current key");
-                let (values, _): (PersistedValue<B::Val, B::Time, B::R>, usize) =
-                    decode_from_slice(v, BINCODE_CONFIG).expect("Can't decode current value");
+                let key: B::Key = unaligned_deserialize(k);
+                let values: PersistedValue<B::Val, B::Time, B::R> = unaligned_deserialize(v);
                 match values {
                     PersistedValue::Values(vals) => {
                         return (Some(key), Some(vals));
@@ -131,7 +126,6 @@ impl<'s, B: Batch> PersistentTraceCursor<'s, B> {
             cur_key,
             cur_vals,
             lower_key_bound,
-            tmp_key: ReusableEncodeBuffer(Vec::new()),
         };
 
         if let Some(bound) = lower_key_bound {
@@ -259,7 +253,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
             }
         }
 
-        let encoded_key = self.tmp_key.encode(key).expect("Can't encode `key`");
+        let encoded_key = to_bytes(key).expect("Can't encode `key`");
         self.db_iter.seek(encoded_key);
         self.cur_key = Some(key.clone());
 
@@ -303,7 +297,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
             }
         }
 
-        let encoded_key = self.tmp_key.encode(key).expect("Can't encode `key`");
+        let encoded_key = to_bytes(key).expect("Can't encode `key`");
         self.db_iter.seek(encoded_key);
         self.cur_key = Some(key.clone());
 

@@ -7,7 +7,20 @@ use geo::Point;
 use size_of::*;
 
 #[derive(
-    Default, Eq, Ord, Clone, Hash, PartialEq, PartialOrd, SizeOf, Serialize, Deserialize, Debug,
+    Default,
+    Eq,
+    Ord,
+    Clone,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    SizeOf,
+    Serialize,
+    Deserialize,
+    Debug,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct GeoPoint(F64, F64);
 

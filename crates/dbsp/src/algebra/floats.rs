@@ -21,6 +21,7 @@ macro_rules! float {
             #[size_of(skip_all)]
             #[cfg_attr(feature = "with-serde", derive(Serialize, Deserialize))]
             #[cfg_attr(feature = "with-serde", serde(transparent))]
+            #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
             pub struct $outer(OrderedFloat<$inner>);
 
             impl $outer {
@@ -396,64 +397,10 @@ impl From<F64> for F32 {
     }
 }
 
-impl bincode::Encode for F64 {
-    fn encode<E: bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-    ) -> core::result::Result<(), bincode::error::EncodeError> {
-        bincode::Encode::encode(&self.0 .0, encoder)?;
-        Ok(())
-    }
-}
-
-impl bincode::Decode for F64 {
-    fn decode<D: bincode::de::Decoder>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        let f: f64 = bincode::Decode::decode(decoder)?;
-        Ok(Self::new(f))
-    }
-}
-
-impl<'de> bincode::BorrowDecode<'de> for F64 {
-    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        let f: f64 = bincode::BorrowDecode::borrow_decode(decoder)?;
-        Ok(Self::new(f))
-    }
-}
-
-impl bincode::Encode for F32 {
-    fn encode<E: bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-    ) -> core::result::Result<(), bincode::error::EncodeError> {
-        bincode::Encode::encode(&self.0 .0, encoder)?;
-        Ok(())
-    }
-}
-
-impl bincode::Decode for F32 {
-    fn decode<D: bincode::de::Decoder>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        let f: f32 = bincode::Decode::decode(decoder)?;
-        Ok(Self::new(f))
-    }
-}
-
-impl<'de> bincode::BorrowDecode<'de> for F32 {
-    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        let f: f32 = bincode::BorrowDecode::borrow_decode(decoder)?;
-        Ok(Self::new(f))
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use rkyv::Deserialize;
+
     use super::{F32, F64};
     use std::str::FromStr;
 
@@ -466,8 +413,6 @@ mod tests {
 
     #[test]
     fn f64_decode_encode() {
-        let mut slice = [0u8; 12];
-
         for input in [
             F64::new(-1.0),
             F64::new(0.0),
@@ -479,19 +424,15 @@ mod tests {
         ]
         .into_iter()
         {
-            let length =
-                bincode::encode_into_slice(input, &mut slice, bincode::config::standard()).unwrap();
-            let decoded: F64 =
-                bincode::decode_from_slice(&slice[..length], bincode::config::standard())
-                    .unwrap()
-                    .0;
+            let encoded = rkyv::to_bytes::<_, 256>(&input).unwrap();
+            let archived = unsafe { rkyv::archived_root::<F64>(&encoded[..]) };
+            let decoded: F64 = archived.deserialize(&mut rkyv::Infallible).unwrap();
             assert_eq!(decoded, input);
         }
     }
 
     #[test]
     fn f32_decode_encode() {
-        let mut slice = [0u8; 12];
         for input in [
             F32::new(-1.0),
             F32::new(0.0),
@@ -503,12 +444,9 @@ mod tests {
         ]
         .into_iter()
         {
-            let length =
-                bincode::encode_into_slice(input, &mut slice, bincode::config::standard()).unwrap();
-            let decoded: F32 =
-                bincode::decode_from_slice(&slice[..length], bincode::config::standard())
-                    .unwrap()
-                    .0;
+            let encoded = rkyv::to_bytes::<_, 256>(&input).unwrap();
+            let archived = unsafe { rkyv::archived_root::<F32>(&encoded[..]) };
+            let decoded: F32 = archived.deserialize(&mut rkyv::Infallible).unwrap();
             assert_eq!(decoded, input);
         }
     }

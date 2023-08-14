@@ -4,7 +4,8 @@ use dbsp::{
     operator::{FilterMap, Max},
     RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
-use arcstr::ArcStr;
+use dbsp::algebra::ArcStr;
+use rkyv::{Archive, Serialize, Deserialize};
 use size_of::SizeOf;
 use std::{
     hash::Hash,
@@ -78,15 +79,13 @@ use time::{
     PartialOrd,
     Ord,
     SizeOf,
-    bincode::Encode,
-    bincode::Decode,
+    Archive,
+    Serialize,
+    Deserialize,
 )]
 pub struct Q16Output {
-    #[bincode(with_serde)]
     channel: ArcStr,
-    #[bincode(with_serde)]
     day: ArcStr,
-    #[bincode(with_serde)]
     minute: ArcStr,
     total_bids: usize,
     rank1_bids: usize,
@@ -114,8 +113,9 @@ type Q16Stream = Stream<RootCircuit, OrdZSet<Q16Output, isize>>;
     PartialOrd,
     Ord,
     SizeOf,
-    bincode::Decode,
-    bincode::Encode,
+    Archive,
+    Serialize,
+    Deserialize,
 )]
 pub struct Q16Intermediate1(
     isize,
@@ -141,8 +141,9 @@ pub struct Q16Intermediate1(
     PartialOrd,
     Ord,
     SizeOf,
-    bincode::Decode,
-    bincode::Encode,
+    Archive,
+    Serialize,
+    Deserialize,
 )]
 pub struct Q16Intermediate2(
     isize,

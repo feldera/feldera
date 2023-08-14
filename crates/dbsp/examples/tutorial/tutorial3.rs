@@ -1,27 +1,27 @@
 use anyhow::Result;
+use chrono::NaiveDate;
 use csv::Reader;
 use dbsp::{operator::FilterMap, CollectionHandle, OrdZSet, OutputHandle, RootCircuit, ZSet};
-use serde::Deserialize;
+use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
-use time::Date;
 
 #[derive(
     Clone,
     Debug,
-    Deserialize,
     Eq,
     PartialEq,
     Ord,
     PartialOrd,
     Hash,
     SizeOf,
-    bincode::Decode,
-    bincode::Encode,
+    Archive,
+    Serialize,
+    rkyv::Deserialize,
+    serde::Deserialize,
 )]
 struct Record {
     location: String,
-    #[bincode(with_serde)]
-    date: Date,
+    date: NaiveDate,
     daily_vaccinations: Option<u64>,
 }
 fn build_circuit(

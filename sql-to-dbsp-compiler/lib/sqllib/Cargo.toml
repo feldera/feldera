@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 dbsp = { path = "../../../crates/dbsp" }
-rust_decimal = { version = "1.29", features = ["maths"] }
+rust_decimal = { version = "1.29", features = ["maths", "rkyv"] }
 geo = { version = "0.26.0" }
 geo-types = { version = "0.7" }
 size-of = { version = "0.1.5", features = ["rust_decimal"] }
@@ -16,3 +16,4 @@ chrono = { version = "0.4.23" }
 like = { version = "0.3.1" }
 paste = { version = "1.0.12" }
 regex = { version = "1.9.1" }
+rkyv = "0.7.42"

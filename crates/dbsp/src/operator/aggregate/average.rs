@@ -8,6 +8,7 @@ use crate::{
     utils::VecExt,
     Circuit, DBData, DBTimestamp, DBWeight, OrdIndexedZSet, Stream,
 };
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     hash::Hash,
@@ -22,7 +23,20 @@ use std::{
 /// average value can be obtained by dividing `sum` by `count`.  `Avg` forms a
 /// commutative monoid with point-wise plus operation `(sum1, count1) + (sum2,
 /// count2) = (sum1 + sum2, count1 + count2)`.
-#[derive(Debug, Default, Clone, Eq, Hash, PartialEq, Ord, PartialOrd, SizeOf)]
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Eq,
+    Hash,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    SizeOf,
+    Archive,
+    Serialize,
+    Deserialize,
+)]
 pub struct Avg<T, R> {
     sum: T,
     count: R,
@@ -61,35 +75,6 @@ impl<T, R> Avg<T, R> {
         } else {
             Some(self.sum.clone() / T::from(self.count.clone()))
         }
-    }
-}
-
-impl<T, R> bincode::Encode for Avg<T, R>
-where
-    T: bincode::Encode + bincode::Decode,
-    R: bincode::Encode + bincode::Decode,
-{
-    fn encode<E: bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-    ) -> core::result::Result<(), bincode::error::EncodeError> {
-        bincode::Encode::encode(&self.sum, encoder)?;
-        bincode::Encode::encode(&self.count, encoder)?;
-        Ok(())
-    }
-}
-
-impl<T, R> bincode::Decode for Avg<T, R>
-where
-    T: bincode::Encode + bincode::Decode,
-    R: bincode::Encode + bincode::Decode,
-{
-    fn decode<D: bincode::de::Decoder>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        let sum: T = bincode::Decode::decode(decoder)?;
-        let count: R = bincode::Decode::decode(decoder)?;
-        Ok(Self::new(sum, count))
     }
 }
 
@@ -306,6 +291,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use rkyv::Deserialize;
+
     use crate::{
         indexed_zset,
         operator::aggregate::average::{apply_average, Avg},
@@ -330,21 +317,16 @@ mod tests {
 
     #[test]
     fn avg_decode_encode() {
-        let mut slice = [0u8; 20];
+        type Type = Avg<u64, i64>;
         for input in [
-            Avg::new(usize::MIN, isize::MIN),
             Avg::new(0, 0),
-            Avg::new(usize::MAX, isize::MAX),
-        ]
-        .into_iter()
-        {
-            let _length =
-                bincode::encode_into_slice(&input, &mut slice, bincode::config::standard())
-                    .unwrap();
-            let decoded: Avg<usize, isize> =
-                bincode::decode_from_slice(&slice, bincode::config::standard())
-                    .unwrap()
-                    .0;
+            Avg::new(u64::MAX, i64::MAX),
+            Avg::new(u64::MIN, i64::MIN),
+        ] {
+            let input: Type = input;
+            let encoded = rkyv::to_bytes::<_, 256>(&input).unwrap();
+            let archived = unsafe { rkyv::archived_root::<Type>(&encoded[..]) };
+            let decoded: Type = archived.deserialize(&mut rkyv::Infallible).unwrap();
             assert_eq!(decoded, input);
         }
     }

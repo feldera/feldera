@@ -82,15 +82,15 @@
 
 //! ```rust
 //! use anyhow::Result;
+//! use chrono::NaiveDate;
 //! use csv::Reader;
 //! use serde::Deserialize;
-//! use time::Date;
 //!
 //! #[allow(dead_code)]
 //! #[derive(Debug, Deserialize)]
 //! struct Record {
 //!     location: String,
-//!     date: Date,
+//!     date: NaiveDate,
 //!     daily_vaccinations: Option<u64>,
 //! }
 //!
@@ -165,13 +165,13 @@
 //! ```rust
 //! # use anyhow::Result;
 //! # use dbsp::{CollectionHandle, RootCircuit, ZSet};
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # use chrono::NaiveDate;
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! fn build_circuit(circuit: &mut RootCircuit) -> Result<CollectionHandle<Record, isize>> {
@@ -204,14 +204,14 @@
 //! # use anyhow::Result;
 //! # use csv::Reader;
 //! # use dbsp::{CollectionHandle, RootCircuit, ZSet};
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::NaiveDate;
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(circuit: &mut RootCircuit) -> Result<CollectionHandle<Record, isize>> {
@@ -247,20 +247,40 @@
 //! ```
 //!
 //! The compiler will point out a problem: `Record` lacks several traits
-//! required for the record type of the "Z-sets".  We can derive all of them:
+//! required for the record type of the "Z-sets".  We need `SizeOf` from the
+//! `size_of` crate and `Archive`, `Serialize`, and `Deserialize` from the
+//! `rkyv` crate.  We can derive all of them:
 //!
 //! ```
-//! use serde::Deserialize;
+//! use rkyv::{Archive, Serialize};
 //! use size_of::SizeOf;
-//! use time::Date;
+//! use chrono::NaiveDate;
 //!
-//! #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! #[derive(
+//!     Clone,
+//!     Debug,
+//!     Eq,
+//!     PartialEq,
+//!     Ord,
+//!     PartialOrd,
+//!     Hash,
+//!     SizeOf,
+//!     Archive,
+//!     Serialize,
+//!     rkyv::Deserialize,
+//!     serde::Deserialize,
+//! )]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! ```
+//!
+//! > 💡 There are two `Deserialize` traits above.  DBSP requires
+//! `rkyv::Deserialize` to support distributed computations, by allowing data to
+//! be moved from one host to another.  Our example uses `serde::Deserialize` to
+//! parse CSV.
 //!
 //! ## Execution
 //!
@@ -272,14 +292,14 @@
 //! # use anyhow::Result;
 //! # use csv::Reader;
 //! # use dbsp::{CollectionHandle, RootCircuit, ZSet};
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::NaiveDate;
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(circuit: &mut RootCircuit) -> Result<CollectionHandle<Record, isize>> {
@@ -336,14 +356,14 @@
 //! # use anyhow::Result;
 //! # use csv::Reader;
 //! # use dbsp::{operator::FilterMap, CollectionHandle, OrdZSet, OutputHandle, RootCircuit, ZSet};
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::NaiveDate;
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(
@@ -400,14 +420,14 @@
 //! # use anyhow::Result;
 //! # use csv::Reader;
 //! # use dbsp::{operator::FilterMap, CollectionHandle, OrdZSet, OutputHandle, RootCircuit, ZSet};
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::NaiveDate;
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! fn build_circuit(
@@ -467,14 +487,14 @@
 //! # use anyhow::Result;
 //! # use csv::Reader;
 //! # use dbsp::{operator::FilterMap, CollectionHandle, OrdZSet, OutputHandle, RootCircuit, ZSet};
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::NaiveDate;
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! # fn build_circuit(
@@ -591,14 +611,14 @@
 //! # use dbsp::{
 //! #     operator::FilterMap, CollectionHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit,
 //! # };
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::{Datelike, NaiveDate};
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -731,14 +751,14 @@
 //! #     },
 //! #     CollectionHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit,
 //! # };
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::{Datelike, NaiveDate};
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -870,22 +890,21 @@
 //! #     },
 //! #     CollectionHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit,
 //! # };
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::{Datelike, NaiveDate};
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
 //! fn build_circuit(
 //!     circuit: &mut RootCircuit,
-//! ) -> Result<(
-//!     CollectionHandle<Record, isize>,
-//!     OutputHandle<OrdIndexedZSet<(String, i32, u8), (isize, isize), isize>>,
+//! ) -> Result<( CollectionHandle<Record, isize>,
+//!   OutputHandle<OrdIndexedZSet<(String, i32, u8), (isize, isize), isize>>,
 //! )> {
 //!     let (input_stream, input_handle) = circuit.add_input_zset::<Record,
 //! isize>();     // ...
@@ -942,7 +961,7 @@
 //!     Ok(())
 //! }
 //! ```
-//!
+//! 
 //! The whole program is in `tutorial6.rs`.  If we run it, it prints both per-month
 //! vaccination numbers and 3-month moving averages:
 //!
@@ -1016,18 +1035,18 @@
 //! # use dbsp::{
 //! #     operator::FilterMap, CollectionHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit,
 //! # };
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::{Datelike, NaiveDate};
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
-//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct VaxMonthly {
 //! #     count: u64,
 //! #     year: i32,
@@ -1144,14 +1163,14 @@
 //! #     },
 //! #     CollectionHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit,
 //! # };
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::{Datelike, NaiveDate};
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1247,14 +1266,14 @@
 //! #     },
 //! #     CollectionHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit,
 //! # };
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::{Datelike, NaiveDate};
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1353,14 +1372,14 @@
 //! #     },
 //! #     CollectionHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit,
 //! # };
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::{Datelike, NaiveDate};
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1420,14 +1439,14 @@
 //! #     },
 //! #     CollectionHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit,
 //! # };
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::{Datelike, NaiveDate};
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
@@ -1545,18 +1564,18 @@
 //! # use dbsp::{
 //! #     operator::FilterMap, CollectionHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit,
 //! # };
-//! # use serde::Deserialize;
+//! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
-//! # use time::Date;
+//! # use chrono::{Datelike, NaiveDate};
 //! #
-//! # #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct Record {
 //! #     location: String,
-//! #     date: Date,
+//! #     date: NaiveDate,
 //! #     daily_vaccinations: Option<u64>,
 //! # }
 //! #
-//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
 //! # struct VaxMonthly {
 //! #     count: u64,
 //! #     year: i32,

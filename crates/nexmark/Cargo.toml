@@ -21,17 +21,16 @@ publish = false
 dbsp = { path = "../dbsp" }
 anyhow = "1.0.57"
 csv = "1.2.2"
-arcstr = { version = "1.1.4", features = ["serde"] }
-rust_decimal = { version = "1.26.1" }
+rust_decimal = { version = "1.26.1", features = [ "rkyv" ] }
 regex = { version = "1.6.0" }
 time = { version = "0.3.14", features = ["formatting"] }
 paste = { version = "1.0.9" }
-bincode = { version = "2.0.0-rc.2" }
 
 rand = { version = "0.8", features = ["small_rng"] }
 clap = { version = "3.2.8", features = ["derive", "env"] }
 cached = { version = "0.38.0" }
 serde = { version = "1.0", features = ["derive"] }
+rkyv = "0.7.42"
 
     [dependencies.size-of]
     version = "0.1.3"

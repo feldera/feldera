@@ -528,9 +528,6 @@ name = "arcstr"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f907281554a3d0312bb7aab855a8e0ef6cbf1614d06de54105039ca8b34460e"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "arrayvec"
@@ -1176,25 +1173,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
-name = "bincode"
-version = "2.0.0-rc.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f11ea1a0346b94ef188834a65c068a03aec181c94896d481d7a0a40d85b0ce95"
-dependencies = [
- "bincode_derive",
- "serde",
-]
-
-[[package]]
-name = "bincode_derive"
-version = "2.0.0-rc.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e30759b3b99a1b802a7a3aa21c85c3ded5c28e1c83170d82d70f08bbf7f3e4c"
-dependencies = [
- "virtue",
-]
-
-[[package]]
 name = "bindgen"
 version = "0.65.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1566,6 +1544,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "rkyv",
  "serde",
  "time 0.1.45",
  "wasm-bindgen",
@@ -2249,7 +2228,6 @@ name = "dataflow-jit"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode",
  "bitflags 2.4.0",
  "bitvec",
  "chrono",
@@ -2272,6 +2250,7 @@ dependencies = [
  "pretty",
  "proptest",
  "proptest-derive",
+ "rkyv",
  "rust_decimal",
  "schemars",
  "serde",
@@ -2294,8 +2273,8 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "arcstr",
- "bincode",
  "bitvec",
+ "chrono",
  "clap 3.2.25",
  "criterion",
  "crossbeam",
@@ -2317,6 +2296,7 @@ dependencies = [
  "rand_chacha",
  "rand_xoshiro",
  "reqwest",
+ "rkyv",
  "rocksdb",
  "rust_decimal",
  "serde",
@@ -2344,7 +2324,6 @@ dependencies = [
  "anyhow",
  "async-stream",
  "awc",
- "bincode",
  "bstr",
  "bytestring",
  "chrono",
@@ -2371,6 +2350,7 @@ dependencies = [
  "proptest-derive",
  "psutil",
  "rdkafka",
+ "rkyv",
  "rustls",
  "serde",
  "serde_json",
@@ -2390,9 +2370,7 @@ name = "dbsp_nexmark"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "arcstr",
  "ascii_table",
- "bincode",
  "cached 0.38.0",
  "clap 3.2.25",
  "csv",
@@ -2404,6 +2382,7 @@ dependencies = [
  "paste",
  "rand",
  "regex",
+ "rkyv",
  "rstest",
  "rust_decimal",
  "serde",
@@ -4044,6 +4023,7 @@ checksum = "2fc2dbde8f8a79f2102cc474ceb0ad68e3b80b85289ea62389b60e66777e4213"
 dependencies = [
  "num-traits",
  "rand",
+ "rkyv",
  "serde",
 ]
 
@@ -4771,6 +4751,7 @@ dependencies = [
  "dbsp",
  "derive_more",
  "paste",
+ "rkyv",
  "serde",
  "size-of",
  "sqlvalue",
@@ -5562,7 +5543,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4e36eca171fddeda53901b0a436573b3f2391eaa9189d439b2bd8ea8cebd7e3"
 dependencies = [
  "arcstr",
+ "chrono",
  "hashbrown 0.13.2",
+ "ordered-float",
  "rust_decimal",
  "size-of-derive",
  "time 0.3.25",
@@ -5665,6 +5648,7 @@ dependencies = [
  "num",
  "paste",
  "regex",
+ "rkyv",
  "rust_decimal",
  "serde",
  "size-of",
@@ -6512,12 +6496,6 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
-
-[[package]]
-name = "virtue"
-version = "0.0.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9dcc60c0624df774c82a0ef104151231d37da4962957d691c011c852b2473314"
 
 [[package]]
 name = "vsimd"

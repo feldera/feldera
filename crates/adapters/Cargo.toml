@@ -32,7 +32,6 @@ serde_json = { version = "1.0.103", features = ["raw_value"] }
 serde_urlencoded = "0.7.1"
 form_urlencoded = "1.2.0"
 csv = "1.2.2"
-bincode = { version = "2.0.0-rc.2", features = ["serde"] }
 # cmake-build is required on Windows.
 rdkafka = { version = "0.33.2", features = ["cmake-build"], optional = true }
 actix = "0.13"
@@ -58,6 +57,7 @@ uuid = { version = "1.3.3", features = ["v4", "std"] }
 webpki-roots = "0.25.1"
 rustls = "0.20.8"
 lazy_static = "1.4.0"
+rkyv = "0.7.42"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 psutil = "3.2.2"

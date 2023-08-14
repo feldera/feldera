@@ -7,13 +7,8 @@ use crate::{
     utils::NativeRepr,
     ThinStr,
 };
-use bincode::{
-    de::Decoder,
-    enc::Encoder,
-    error::{DecodeError, EncodeError},
-    Decode, Encode,
-};
 use chrono::NaiveTime;
+use rkyv::{ser::Serializer, Archive, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::{
     alloc::Layout,
@@ -297,21 +292,24 @@ impl SizeOf for Row {
     }
 }
 
-impl Encode for Row {
-    fn encode<E>(&self, _encoder: &mut E) -> Result<(), EncodeError>
-    where
-        E: Encoder,
-    {
-        todo!()
+impl Archive for Row {
+    type Archived = ();
+    type Resolver = ();
+
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        unimplemented!();
     }
 }
 
-impl Decode for Row {
-    fn decode<D>(_decoder: &mut D) -> Result<Self, DecodeError>
-    where
-        D: Decoder,
-    {
-        todo!()
+impl<S: Serializer + ?Sized> Serialize<S> for Row {
+    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        unimplemented!();
+    }
+}
+
+impl<D: Fallible> Deserialize<Row, D> for () {
+    fn deserialize(&self, _deserializer: &mut D) -> Result<Row, D::Error> {
+        unimplemented!();
     }
 }
 

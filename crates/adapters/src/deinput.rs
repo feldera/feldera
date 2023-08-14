@@ -407,13 +407,11 @@ mod test {
         format::string_record_deserializer, DeCollectionHandle, DeMapHandle, DeScalarHandle,
         DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
     };
-    use bincode::{Decode, Encode};
     use csv::{Reader as CsvReader, Writer as CsvWriter};
     use dbsp::{
         algebra::F32, trace::Batch, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
     };
     use erased_serde::Deserializer as ErasedDeserializer;
-    use serde::{Deserialize, Serialize};
     use serde_json::{de::StrRead, to_string as to_json_string, Deserializer as JsonDeserializer};
     use size_of::SizeOf;
     use std::hash::Hash;
@@ -423,17 +421,18 @@ mod test {
     #[derive(
         Clone,
         Debug,
-        Encode,
-        Decode,
         Default,
         Hash,
         PartialEq,
         Eq,
         PartialOrd,
         Ord,
-        Deserialize,
-        Serialize,
+        serde::Deserialize,
+        serde::Serialize,
         SizeOf,
+        rkyv::Archive,
+        rkyv::Serialize,
+        rkyv::Deserialize,
     )]
     struct TestStruct {
         id: i64,

@@ -7,9 +7,9 @@
 //! also include the employee's second-level manager.
 
 use anyhow::Result;
-use bincode::{Decode, Encode};
 use clap::Parser;
 use dbsp::{operator::FilterMap, IndexedZSet, OrdZSet, OutputHandle, Runtime, Stream};
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::hash::Hash;
 
@@ -18,7 +18,9 @@ type EmployeeID = usize;
 /// Indicates that `manager` is the immediate manager of `employee`.
 ///
 /// If `manager == employee` then `manager` is the CEO.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Encode, Decode)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Archive, Serialize, Deserialize,
+)]
 struct Manages {
     manager: EmployeeID,
     employee: EmployeeID,
@@ -26,7 +28,9 @@ struct Manages {
 
 /// Indicates that `manager` is the immediate manager of `employee` and that
 /// `grandmanager` is the immedate manager of `manager`.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Encode, Decode)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Archive, Serialize, Deserialize,
+)]
 struct SkipLevel {
     grandmanager: EmployeeID,
     manager: EmployeeID,

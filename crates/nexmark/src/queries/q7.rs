@@ -4,7 +4,7 @@ use dbsp::{
     operator::{FilterMap, Min},
     RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
 };
-use arcstr::ArcStr;
+use dbsp::algebra::ArcStr;
 
 ///
 /// Query 7: Highest Bid

@@ -7,10 +7,25 @@
 //!   represented as days.
 
 use num::PrimInt;
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::ops::Mul;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    SizeOf,
+    Archive,
+    Serialize,
+    Deserialize,
+)]
 pub struct ShortInterval {
     milliseconds: i64,
 }
@@ -52,7 +67,21 @@ where
 
 /////////////////////////
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    SizeOf,
+    Archive,
+    Serialize,
+    Deserialize,
+)]
 pub struct LongInterval {
     days: i32,
 }

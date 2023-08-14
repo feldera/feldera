@@ -147,6 +147,7 @@ impl<R: Rng> NexmarkGenerator<R> {
 mod tests {
     use super::super::tests::make_test_generator;
     use super::*;
+    use dbsp::arcstr_literal;
     use rstest::rstest;
 
     #[test]
@@ -170,8 +171,8 @@ mod tests {
         assert_eq!(
             Auction {
                 id: FIRST_AUCTION_ID as u64,
-                item_name: arcstr::literal!("AAA"),
-                description: arcstr::literal!("AAA"),
+                item_name: arcstr_literal!("AAA"),
+                description: arcstr_literal!("AAA"),
                 initial_bid: 100,
                 reserve: 200,
                 date_time: 0,
