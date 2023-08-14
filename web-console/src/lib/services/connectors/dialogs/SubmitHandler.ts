@@ -12,7 +12,7 @@ import {
   NewConnectorResponse,
   UpdateConnectorRequest,
   UpdateConnectorResponse
-} from '$lib/types/manager'
+} from '$lib/services/manager'
 import { FieldValues, SubmitHandler } from 'react-hook-form'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'

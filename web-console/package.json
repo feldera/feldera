@@ -24,7 +24,7 @@
     "lint": "eslint --max-warnings 0 --fix \"src/**/*.{js,jsx,ts,tsx}\"",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
-    "generate-openapi": "cargo run --bin dbsp_pipeline_manager -- --dump-openapi && openapi --input ./openapi.json --output ./src/lib/types/manager && rm ./openapi.json"
+    "generate-openapi": "cargo run --bin dbsp_pipeline_manager -- --dump-openapi && openapi --input ./openapi.json --output ./src/lib/services/manager && rm ./openapi.json"
   },
   "dependencies": {
     "@emotion/cache": "^11.11.0",
@@ -94,6 +94,7 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "postcss": "^8.4.27",
     "prettier": "^3.0.1",
+    "reactour": "^1.19.0",
     "typescript": "^5.1.6"
   }
 }

@@ -1,7 +1,7 @@
 // A dialog that displays a random generation settings form for every field in
 // the table.
 
-import { ColumnType, Field, Relation } from '$lib/types/manager'
+import { ColumnType, Field, Relation } from '$lib/services/manager'
 import { forwardRef, ReactElement, Ref, useState } from 'react'
 import { match, P } from 'ts-pattern'
 

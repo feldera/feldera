@@ -1,6 +1,6 @@
 // What happens when we select a program in the sqlPlaceholder node.
 
-import { Pipeline, ProgramDescr } from '$lib/types/manager'
+import { Pipeline, ProgramDescr } from '$lib/services/manager'
 import { useCallback } from 'react'
 import { NodeProps, useReactFlow } from 'reactflow'
 

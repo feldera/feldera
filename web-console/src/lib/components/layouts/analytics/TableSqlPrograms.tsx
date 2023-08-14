@@ -13,7 +13,7 @@ import {
   ProgramStatus,
   UpdateProgramRequest,
   UpdateProgramResponse
-} from '$lib/types/manager'
+} from '$lib/services/manager'
 import { useRouter } from 'next/router'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'

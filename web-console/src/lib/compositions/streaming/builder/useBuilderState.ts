@@ -2,7 +2,7 @@
 // the server for creating a pipeline.
 
 import { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
-import { ProgramDescr, RuntimeConfig } from '$lib/types/manager'
+import { ProgramDescr, RuntimeConfig } from '$lib/services/manager'
 import { create } from 'zustand'
 
 interface PipelineBuilderState {

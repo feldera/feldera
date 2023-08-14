@@ -3,7 +3,7 @@
 // Changes color depending on compilation status and displays a tooltip with
 // more information.
 
-import { ProgramStatus } from '$lib/types/manager'
+import { ProgramStatus } from '$lib/services/manager'
 import CustomChip from 'src/@core/components/mui/chip'
 import { ThemeColor } from 'src/@core/layouts/types'
 import { match, P } from 'ts-pattern'

@@ -5,7 +5,7 @@
 
 import { readLineFromStream } from '$lib/functions/common/stream'
 import { csvLineToRow, Row } from '$lib/functions/ddl'
-import { NeighborhoodQuery, Relation } from '$lib/types/manager'
+import { NeighborhoodQuery, Relation } from '$lib/services/manager'
 import { parse } from 'csv-parse'
 import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
 

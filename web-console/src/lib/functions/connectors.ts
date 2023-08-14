@@ -3,7 +3,7 @@ import assert from 'assert'
 import { match, P } from 'ts-pattern'
 
 import { ConnectorType, Direction } from '$lib/types/connectors'
-import { ConnectorDescr } from '$lib/types/manager'
+import { ConnectorDescr } from '$lib/services/manager'
 
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {

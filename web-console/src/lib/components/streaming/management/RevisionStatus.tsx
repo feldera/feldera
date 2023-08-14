@@ -10,7 +10,7 @@ import {
   PipelineRevision,
   PipelineStatus,
   ProgramDescr
-} from '$lib/types/manager'
+} from '$lib/services/manager'
 import { Change, diffLines } from 'diff'
 import {
   Dispatch,

@@ -6,7 +6,7 @@
 
 import { readLineFromStream } from '$lib/functions/common/stream'
 import { parseValueSafe } from '$lib/functions/ddl'
-import { Chunk, Relation } from '$lib/types/manager'
+import { Chunk, Relation } from '$lib/services/manager'
 import { parse } from 'csv-parse'
 import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
 

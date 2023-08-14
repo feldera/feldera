@@ -3,7 +3,7 @@
 
 import { getRandomDate } from '$lib/functions/common/date'
 import { dateTimeRange, findBaseType, typeRange } from '$lib/functions/ddl'
-import { ColumnType, Field } from '$lib/types/manager'
+import { ColumnType, Field } from '$lib/services/manager'
 import assert from 'assert'
 import * as d3 from 'd3-random'
 import dayjs, { Dayjs } from 'dayjs'

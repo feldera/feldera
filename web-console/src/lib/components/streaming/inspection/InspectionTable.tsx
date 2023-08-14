@@ -5,7 +5,7 @@ import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
 import useTableUpdater from '$lib/compositions/streaming/inspection/useTableUpdater'
 import { useAsyncError } from '$lib/functions/common/react'
 import { Row, rowToAnchor } from '$lib/functions/ddl'
-import { NeighborhoodQuery, OpenAPI, Pipeline, PipelineRevision, Relation } from '$lib/types/manager'
+import { NeighborhoodQuery, OpenAPI, Pipeline, PipelineRevision, Relation } from '$lib/services/manager'
 import { useCallback, useEffect, useState } from 'react'
 
 import Card from '@mui/material/Card'

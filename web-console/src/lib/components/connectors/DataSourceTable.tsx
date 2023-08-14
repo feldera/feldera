@@ -14,7 +14,7 @@ import {
   ConnectorsService,
   UpdateConnectorRequest,
   UpdateConnectorResponse
-} from '$lib/types/manager'
+} from '$lib/services/manager'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 

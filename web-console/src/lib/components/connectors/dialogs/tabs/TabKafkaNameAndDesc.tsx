@@ -2,7 +2,7 @@
 // connectors.
 
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
-import { KafkaInputConfig, KafkaOutputConfig } from '$lib/types/manager'
+import { KafkaInputConfig, KafkaOutputConfig } from '$lib/services/manager'
 import { Control, Controller, FieldErrors } from 'react-hook-form'
 
 import { FormControl, FormHelperText, Grid } from '@mui/material'

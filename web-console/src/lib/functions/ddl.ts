@@ -12,7 +12,7 @@ import { match, P } from 'ts-pattern'
 
 import { GridCellParams } from '@mui/x-data-grid-pro'
 
-import { ColumnType, Field, Relation } from '../types/manager'
+import { ColumnType, Field, Relation } from '../services/manager'
 
 // Representing we get back from the ingress rest API.
 export interface Row {

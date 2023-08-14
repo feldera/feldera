@@ -15,9 +15,9 @@ import {
   SqlCompilerMessage,
   UpdateProgramRequest,
   UpdateProgramResponse
-} from '$lib/types/manager'
-import { ProgramDescr } from '$lib/types/manager/models/ProgramDescr'
-import { ProgramsService } from '$lib/types/manager/services/ProgramsService'
+} from '$lib/services/manager'
+import { ProgramDescr } from '$lib/services/manager/models/ProgramDescr'
+import { ProgramsService } from '$lib/services/manager/services/ProgramsService'
 import assert from 'assert'
 import { Dispatch, MutableRefObject, SetStateAction, useEffect, useRef, useState } from 'react'
 import { match, P } from 'ts-pattern'

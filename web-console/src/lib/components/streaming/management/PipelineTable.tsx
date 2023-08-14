@@ -27,7 +27,7 @@ import {
   Relation,
   UpdatePipelineRequest,
   UpdatePipelineResponse
-} from '$lib/types/manager'
+} from '$lib/services/manager'
 import { ConnectorStatus, GlobalMetrics, InputConnectorMetrics, OutputConnectorMetrics } from '$lib/types/pipeline'
 import { format } from 'd3-format'
 import Link from 'next/link'

@@ -12,7 +12,7 @@ import {
 } from '$lib/functions/connectors'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
-import { AttachedConnector, ConnectorDescr } from '$lib/types/manager'
+import { AttachedConnector, ConnectorDescr } from '$lib/services/manager'
 import { Dispatch, useEffect, useState } from 'react'
 
 import { Icon } from '@iconify/react'

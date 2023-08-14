@@ -1,7 +1,7 @@
 // Logic to delete a pipeline.
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { ApiError, PipelineId, PipelinesService } from '$lib/types/manager'
+import { ApiError, PipelineId, PipelinesService } from '$lib/services/manager'
 import { useCallback } from 'react'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'

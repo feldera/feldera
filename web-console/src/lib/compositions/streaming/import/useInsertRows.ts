@@ -2,7 +2,7 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { getValueFormatter, Row } from '$lib/functions/ddl'
-import { ApiError, Field, PipelineId, PipelinesService, Relation } from '$lib/types/manager'
+import { ApiError, Field, PipelineId, PipelinesService, Relation } from '$lib/services/manager'
 import Papa from 'papaparse'
 import { useCallback } from 'react'
 

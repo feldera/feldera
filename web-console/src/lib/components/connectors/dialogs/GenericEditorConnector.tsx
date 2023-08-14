@@ -7,7 +7,7 @@ import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/servic
 import { connectorTypeToIcon, parseEditorSchema } from '$lib/functions/connectors'
 import { ConnectorType } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
-import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from '$lib/types/manager'
+import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from '$lib/services/manager'
 import { useEffect, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import * as yup from 'yup'

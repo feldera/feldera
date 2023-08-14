@@ -1,7 +1,7 @@
 // The placeholder node to select a program.
 
 import useSqlPlaceholderClick from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
-import { ProgramDescr } from '$lib/types/manager'
+import { ProgramDescr } from '$lib/services/manager'
 import React, { memo, useEffect, useState } from 'react'
 import { NodeProps } from 'reactflow'
 

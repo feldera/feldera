@@ -21,7 +21,7 @@ import {
   ProgramDescr,
   UpdatePipelineRequest,
   UpdatePipelineResponse
-} from '$lib/types/manager'
+} from '$lib/services/manager'
 import assert from 'assert'
 import { useRouter } from 'next/router'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'

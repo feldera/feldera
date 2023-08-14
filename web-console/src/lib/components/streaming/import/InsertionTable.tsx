@@ -4,7 +4,7 @@
 // the dbsp table.
 
 import { getValueFormatter, Row, sqlTypeToDataGridType } from '$lib/functions/ddl'
-import { Field, Pipeline, PipelineRevision, Relation } from '$lib/types/manager'
+import { Field, Pipeline, PipelineRevision, Relation } from '$lib/services/manager'
 import { useEffect, useState } from 'react'
 
 import Card from '@mui/material/Card'

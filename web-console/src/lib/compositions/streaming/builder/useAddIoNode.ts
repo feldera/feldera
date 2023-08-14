@@ -1,8 +1,8 @@
 // Logic to add either a input or output node to the graph.
 
 import { randomString } from '$lib/functions/common/string'
-import { AttachedConnector, ProgramSchema } from '$lib/types/manager'
-import { ConnectorDescr } from '$lib/types/manager/models/ConnectorDescr'
+import { AttachedConnector, ProgramSchema } from '$lib/services/manager'
+import { ConnectorDescr } from '$lib/services/manager/models/ConnectorDescr'
 import { useCallback } from 'react'
 import { getConnectedEdges, useReactFlow } from 'reactflow'
 

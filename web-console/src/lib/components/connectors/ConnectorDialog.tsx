@@ -9,7 +9,7 @@ import { match } from 'ts-pattern'
 
 import { connectorDescrToType } from '$lib/functions/connectors'
 import { ConnectorType } from '$lib/types/connectors'
-import { ConnectorDescr } from '$lib/types/manager'
+import { ConnectorDescr } from '$lib/services/manager'
 
 // Given a connector return the right dialog component for updating it.
 export const ConnectorDialog = (props: {

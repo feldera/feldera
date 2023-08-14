@@ -5,7 +5,7 @@
 // constraints (overflow etc.).
 
 import { getValueFormatter, typeRange } from '$lib/functions/ddl'
-import { Field } from '$lib/types/manager'
+import { Field } from '$lib/services/manager'
 
 import { Grid, Typography } from '@mui/material'
 
