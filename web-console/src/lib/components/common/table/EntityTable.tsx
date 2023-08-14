@@ -3,9 +3,7 @@
 // It is used to display a list of entities in a table. It's the generic version
 // of a table we use to display programs, pipelines, etc.
 
-import QuickSearch from '$lib/components/common/table/QuickSearch'
-import { escapeRegExp } from '$lib/functions/common/string'
-import { ChangeEvent, Children, Dispatch, MutableRefObject, ReactNode, useEffect, useState } from 'react'
+import { Children, Dispatch, MutableRefObject, ReactNode, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 
 import { Icon } from '@iconify/react'
@@ -16,16 +14,15 @@ import {
   DataGridPro,
   DataGridProProps,
   GridRenderCellParams,
-  GridToolbarFilterButton,
   GridValidRowModel
 } from '@mui/x-data-grid-pro'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
 import { UseQueryResult } from '@tanstack/react-query'
 
-import { DataGridFooter } from './DataGridFooter'
-import DataGridToolbar from './DataGridToolbar'
-import { ErrorOverlay } from './ErrorOverlay'
-import { Button } from '@mui/material'
+import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
+import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
+import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
+import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 
 // This is a workaround for the following issue:
 // https://github.com/mui/mui-x/issues/5239
@@ -69,7 +66,6 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
 
   const { setRows, fetchRows, onUpdateRow, onDeleteRow, onEditClicked, tableProps, addActions } = props
 
-  const [searchText, setSearchText] = useState<string>('')
   const [filteredData, setFilteredData] = useState<TData[]>([])
 
   const { isLoading, isError, data, error } = fetchRows
@@ -119,27 +115,6 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
     }
   }, [isLoading, isError, data, setRows, error])
 
-  const handleSearch = (searchValue: string) => {
-    setSearchText(searchValue)
-    if (searchValue.length == 0) {
-      setFilteredData([])
-      return
-    }
-
-    const searchRegex = new RegExp(escapeRegExp(searchValue), 'i')
-    if (!isLoading && !isError) {
-      const filteredRows = data.filter((row: any) => {
-        return Object.keys(row).some(field => {
-          // @ts-ignore
-          if (row[field] !== null) {
-            return searchRegex.test(row[field].toString())
-          }
-        })
-      })
-      setFilteredData(filteredRows)
-    }
-  }
-
   return (
     <Card>
       <DataGridPro
@@ -163,12 +138,7 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
           toolbar: {
             children: [
               ...Children.toArray(props.toolbarChildren),
-              <QuickSearch
-                key='99'
-                value={searchText}
-                clearSearch={() => handleSearch('')}
-                onChange={(event: ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)}
-              />
+              <DataGridSearch fetchRows={fetchRows} setFilteredData={setFilteredData} key='99' />
             ]
           },
           footer: {

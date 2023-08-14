@@ -5,7 +5,6 @@
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
 import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
-import QuickSearch from '$lib/components/common/table/QuickSearch'
 import AnalyticsPipelineTput from '$lib/components/streaming/management/AnalyticsPipelineTput'
 import { PipelineRevisionStatusChip } from '$lib/components/streaming/management/RevisionStatus'
 import { ClientPipelineStatus, usePipelineStateStore } from '$lib/compositions/streaming/management/StatusContext'
@@ -13,7 +12,7 @@ import useDeletePipeline from '$lib/compositions/streaming/management/useDeleteP
 import usePausePipeline from '$lib/compositions/streaming/management/usePausePipeline'
 import useShutdownPipeline from '$lib/compositions/streaming/management/useShutdownPipeline'
 import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
-import { escapeRegExp, humanSize } from '$lib/functions/common/string'
+import { humanSize } from '$lib/functions/common/string'
 import {
   ApiError,
   AttachedConnector,
@@ -62,6 +61,7 @@ import {
   useGridApiRef
 } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 
 interface ConnectorData {
   relation: Relation
@@ -372,7 +372,6 @@ const pipelineStatusToClientStatus = (status: PipelineStatus) => {
 }
 
 export default function PipelineTable() {
-  const [searchText, setSearchText] = useState<string>('')
   const [rows, setRows] = useState<Pipeline[]>([])
   const [filteredData, setFilteredData] = useState<Pipeline[]>([])
   const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
@@ -409,26 +408,6 @@ export default function PipelineTable() {
     ({ row }) => <DetailPanelContent row={row} />,
     []
   )
-
-  const handleSearch = (searchValue: string) => {
-    setSearchText(searchValue)
-    const searchRegex = new RegExp(escapeRegExp(searchValue), 'i')
-    if (!isLoading && !isError) {
-      const filteredRows = data.filter((row: any) => {
-        return Object.keys(row).some(field => {
-          // @ts-ignore
-          if (row[field] !== null) {
-            return searchRegex.test(row[field].toString())
-          }
-        })
-      })
-      if (searchValue.length) {
-        setFilteredData(filteredRows)
-      } else {
-        setFilteredData([])
-      }
-    }
-  }
 
   // Only show the details tab button if this pipeline has a revision
   function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value' | 'row'>) {
@@ -571,6 +550,8 @@ export default function PipelineTable() {
     </Button>
   )
 
+  const fetchRows = useQuery({ initialData: rows })
+
   return (
     <Card>
       <DataGridPro
@@ -599,11 +580,7 @@ export default function PipelineTable() {
             children: [
               btnAdd,
               <div style={{ marginLeft: 'auto' }} key='2' />,
-              <QuickSearch
-                value={searchText}
-                clearSearch={() => handleSearch('')}
-                onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleSearch(event.target.value)}
-              />
+              <DataGridSearch fetchRows={fetchRows} setFilteredData={setFilteredData} key='99' />
             ]
           },
           footer: {
