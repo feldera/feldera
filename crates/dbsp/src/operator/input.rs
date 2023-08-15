@@ -125,7 +125,40 @@ impl RootCircuit {
         (stream, zset_handle)
     }
 
-    fn add_upsert<K, VI, V, F, B>(
+    fn add_set_update<K, B>(&self, input_stream: Stream<Self, Vec<(K, bool)>>) -> Stream<Self, B>
+    where
+        K: DBData,
+        B: Batch<Key = K, Val = (), Time = ()>,
+        B::R: ZRingValue,
+    {
+        let sorted = input_stream
+            .apply_owned(move |mut upserts| {
+                // Sort the vector by key, preserving the history of updates for each key.
+                // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
+                upserts.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+
+                // Find the last upsert for each key, that's the only one that matters.
+                upserts.dedup_by(|(k1, v1), (k2, v2)| {
+                    if k1 == k2 {
+                        swap(v1, v2);
+                        true
+                    } else {
+                        false
+                    }
+                });
+
+                upserts
+                    .into_iter()
+                    .map(|(k, v)| (k, if v { Some(()) } else { None }))
+                    .collect::<Vec<_>>()
+            })
+            // UpsertHandle shards its inputs.
+            .mark_sharded();
+
+        sorted.update_set::<B>()
+    }
+
+    fn add_upsert_indexed<K, VI, V, F, B>(
         &self,
         input_stream: Stream<Self, Vec<(K, VI)>>,
         upsert_func: F,
@@ -237,8 +270,7 @@ impl RootCircuit {
             let input_stream = self.add_source(input);
             let upsert_handle = <UpsertHandle<K, bool>>::new(input_handle);
 
-            let upsert =
-                self.add_upsert(input_stream, |insert| if insert { Some(()) } else { None });
+            let upsert: Stream<RootCircuit, OrdZSet<K, R>> = self.add_set_update(input_stream);
 
             (upsert, upsert_handle)
         })
@@ -321,7 +353,7 @@ impl RootCircuit {
             let input_stream = self.add_source(input);
             let zset_handle = <UpsertHandle<K, Option<V>>>::new(input_handle);
 
-            let upsert = self.add_upsert(input_stream, |val| val);
+            let upsert = self.add_upsert_indexed(input_stream, |val| val);
 
             (upsert, zset_handle)
         })
