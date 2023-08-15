@@ -161,7 +161,7 @@ const DataSourceTable = () => {
   }, [])
 
   const btnAdd = (
-    <Button variant='contained' size='small' href='/connectors/create' key='0'>
+    <Button variant='contained' size='small' href='/connectors/create/' key='0'>
       Add connector
     </Button>
   )

@@ -545,7 +545,7 @@ export default function PipelineTable() {
   }
 
   const btnAdd = (
-    <Button variant='contained' size='small' href='/streaming/builder' id='btn-add-pipeline' key='0'>
+    <Button variant='contained' size='small' href='/streaming/builder/' id='btn-add-pipeline' key='0'>
       Add pipeline
     </Button>
   )

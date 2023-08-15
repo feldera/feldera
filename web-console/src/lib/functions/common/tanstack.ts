@@ -1,5 +1,5 @@
 type FunctionType = (...args: any) => any
-type Arguments<F extends Function> = F extends (...args: infer A) => any ? A : never
+type Arguments<F extends FunctionType> = F extends (...args: infer A) => any ? A : never
 
 type ResType<U extends Record<string, FunctionType>, P extends keyof U> = {
   queryKey: string
