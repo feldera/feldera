@@ -1,4 +1,4 @@
-import { Button, Card, Grid, Typography, Box } from '@mui/material'
+import { Button, Card, Typography, Box } from '@mui/material'
 
 export const WelcomeCard = () => (
   <Card sx={{ p: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>

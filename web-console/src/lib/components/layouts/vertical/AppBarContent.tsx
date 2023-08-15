@@ -1,6 +1,6 @@
 // This is the top bar that decides whether to show the hamburger menu or not it
-import PageHeader from '$lib/components/layouts/pageHeader'
-import { usePageHeader } from '$lib/compositions/global/pageHeader'
+// import PageHeader from '$lib/components/layouts/pageHeader'
+// import { usePageHeader } from '$lib/compositions/global/pageHeader'
 import Magnify from 'mdi-material-ui/Magnify'
 import Menu from 'mdi-material-ui/Menu'
 import { Settings } from 'src/@core/context/settingsContext'
