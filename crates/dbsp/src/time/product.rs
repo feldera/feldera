@@ -2,7 +2,7 @@ use crate::{
     algebra::{Lattice, PartialOrder},
     circuit::Scope,
     time::Timestamp,
-    trace::ord::OrdValBatch,
+    trace::ord::{OrdKeyBatch, OrdValBatch},
     DBData, DBTimestamp, DBWeight,
 };
 use size_of::SizeOf;
@@ -82,6 +82,7 @@ where
     type Nested = Product<Self, u32>;
 
     type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
+    type OrdKeyBatch<K: DBData, R: DBWeight> = OrdKeyBatch<K, Self, R>;
 
     fn minimum() -> Self {
         Self::new(TOuter::minimum(), TInner::minimum())

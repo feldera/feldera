@@ -13,6 +13,96 @@ use crate::{
 };
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
+impl<C, K> Stream<C, Vec<(K, Option<()>)>>
+where
+    C: Circuit,
+    <C as WithClock>::Time: DBTimestamp,
+{
+    /// Convert a stream of inserts and deletes into a stream of Z-set updates.
+    ///
+    /// The input stream carries changes to a set in the form of
+    /// insert and delete commands.  The set semantics implies that inserting an
+    /// element that already exists in the set is a no-op.  Likewise, deleting
+    /// an element that is not in the set is a no-op.  This operator converts
+    /// these commands into batches of updates to a Z-set, which is the input
+    /// format of most DBSP operators.
+    ///
+    /// The operator assumes that the input vector is sorted by key.
+    ///
+    /// This is a stateful operator that internally maintains the trace of the
+    /// collection.
+    pub fn update_set<B>(&self) -> Stream<C, B>
+    where
+        K: DBData,
+        B::R: DBData + ZRingValue,
+        B: Batch<Key = K, Val = (), Time = ()>,
+    {
+        let circuit = self.circuit();
+
+        // We build the following circuit to implement the set update semantics.
+        // The collection is accumulated into a trace using integrator
+        // (TraceAppend + Z1Trace = integrator).  The `Upsert` operator
+        // evaluates each command in the input stream against the trace
+        // and computes a batch of updates to be added to the trace.
+        //
+        // ```text
+        //                          ┌────────────────────────────►
+        //                          │
+        //                          │
+        //  self        ┌──────┐    │        ┌───────────┐  trace
+        // ────────────►│Upsert├────┴───────►│TraceAppend├────┐
+        //              └──────┘   delta     └───────────┘    │
+        //                 ▲                  ▲               │
+        //                 │                  │               │
+        //                 │                  │   ┌───────┐   │
+        //                 └──────────────────┴───┤Z1Trace│◄──┘
+        //                    z1trace             └───────┘
+        // ```
+        circuit.region("update_set", || {
+            let bounds = <TraceBounds<K, ()>>::unbounded();
+
+            let (ExportStream { local, export }, z1feedback) = circuit.add_feedback_with_export(
+                Z1Trace::new(false, circuit.root_scope(), bounds.clone()),
+            );
+            local.mark_sharded_if(self);
+
+            let delta =
+                circuit.add_binary_operator(
+                    <Upsert<
+                        Spine<<<C as WithClock>::Time as Timestamp>::OrdKeyBatch<K, B::R>>,
+                        B,
+                    >>::new(),
+                    &local,
+                    &self.try_sharded_version(),
+                );
+            delta.mark_sharded_if(self);
+
+            let trace = circuit.add_binary_operator_with_preference(
+                <TraceAppend<
+                    Spine<<<C as WithClock>::Time as Timestamp>::OrdKeyBatch<K, B::R>>,
+                    B,
+                    C,
+                >>::new(circuit.clone()),
+                (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                (
+                    &delta.try_sharded_version(),
+                    OwnershipPreference::PREFER_OWNED,
+                ),
+            );
+            trace.mark_sharded_if(self);
+
+            z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+            circuit.cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
+            circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
+            circuit.cache_insert(
+                TraceId::new(delta.origin_node_id().clone()),
+                (trace, bounds),
+            );
+            delta
+        })
+    }
+}
+
 impl<C, K, V> Stream<C, Vec<(K, Option<V>)>>
 where
     C: Circuit,

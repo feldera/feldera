@@ -2,7 +2,7 @@ use crate::{
     algebra::{Lattice, PartialOrder},
     circuit::Scope,
     time::{Product, Timestamp},
-    trace::ord::OrdValBatch,
+    trace::ord::{OrdKeyBatch, OrdValBatch},
     DBData, DBWeight,
 };
 use size_of::SizeOf;
@@ -87,6 +87,7 @@ impl PartialOrder for NestedTimestamp32 {
 impl Timestamp for NestedTimestamp32 {
     type Nested = Product<Self, u32>;
     type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
+    type OrdKeyBatch<K: DBData, R: DBWeight> = OrdKeyBatch<K, Self, R>;
 
     fn minimum() -> Self {
         Self::new(false, 0)

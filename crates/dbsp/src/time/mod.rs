@@ -7,8 +7,11 @@ mod product;
 use crate::{
     algebra::{Lattice, PartialOrder},
     circuit::Scope,
-    trace::{ord::OrdValBatch, Batch},
-    DBData, DBWeight, OrdIndexedZSet,
+    trace::{
+        ord::{OrdKeyBatch, OrdValBatch},
+        Batch,
+    },
+    DBData, DBWeight, OrdIndexedZSet, OrdZSet,
 };
 use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
@@ -93,6 +96,8 @@ pub trait Timestamp:
     /// think of a better one.
     type OrdValBatch<K: DBData, V: DBData, R: DBWeight>: Batch<Key = K, Val = V, Time = Self, R = R>
         + SizeOf;
+
+    type OrdKeyBatch<K: DBData, R: DBWeight>: Batch<Key = K, Val = (), Time = Self, R = R> + SizeOf;
 
     fn minimum() -> Self;
 
@@ -199,6 +204,7 @@ impl Timestamp for UnitTimestamp {
     type Nested = ();
 
     type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
+    type OrdKeyBatch<K: DBData, R: DBWeight> = OrdKeyBatch<K, Self, R>;
 
     fn minimum() -> Self {
         UnitTimestamp
@@ -224,6 +230,7 @@ impl Timestamp for () {
     type Nested = NestedTimestamp32;
 
     type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdIndexedZSet<K, V, R>;
+    type OrdKeyBatch<K: DBData, R: DBWeight> = OrdZSet<K, R>;
 
     fn minimum() -> Self {}
     fn advance(&self, _scope: Scope) -> Self {}
@@ -239,6 +246,7 @@ impl Timestamp for u32 {
     type Nested = NestedTimestamp32;
 
     type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
+    type OrdKeyBatch<K: DBData, R: DBWeight> = OrdKeyBatch<K, Self, R>;
 
     fn minimum() -> Self {
         0
