@@ -2,7 +2,7 @@ type FunctionType = (...args: any) => any
 type Arguments<F extends FunctionType> = F extends (...args: infer A) => any ? A : never
 
 type ResType<U extends Record<string, FunctionType>, P extends keyof U> = {
-  queryKey: string
+  queryKey: readonly unknown[]
   queryFn: () => ReturnType<U[P]>
 }
 
@@ -15,7 +15,7 @@ export const mkQuery = <U extends Record<string, FunctionType>>(
         key,
         (...args: unknown[]) => {
           return {
-            queryKey: key + '/' + args.map(String).join('/'),
+            queryKey: [key, ...args], // key + '/' + args.map(String).join('/'),
             queryFn: () => value(...args)
           }
         }
