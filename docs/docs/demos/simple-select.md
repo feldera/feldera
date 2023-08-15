@@ -6,7 +6,7 @@ and visiting <http://localhost:8085/>.
 
 ## SQL program
 
-Let's look at the program first.  Click on Existing Programs in the
+Let's look at the program first.  Click on "SQL Programs" in the
 sidebar, and then click on the pencil icon next to Simple Data
 Selection.  You should see the following SQL, which defines a table
 named `users` and a view named `output_users`, where the view is
@@ -40,7 +40,7 @@ look at these.
 
 ### Input connector
 
-Start with the input connector.  Click on Existing Connectors on the
+Start with the input connector.  Click on "SQL Connectors" on the
 sidebar, then click on the pencil icon on the `DEMOGRAPHICS` row.  A
 dialog should pop up like the one below, which allows the input
 connector's name and description to be edited.
@@ -60,7 +60,7 @@ the upper-right corner.
 
 ### Output connector
 
-Now let's look at the output connector.  Click on Existing Connectors
+Now let's look at the output connector.  Click on "SQL Connectors"
 on the sidebar, then click on the pencil icon on the `TRANSACTIONS`
 row.  This brings up a dialog just like the corresponding one for an
 input connector.

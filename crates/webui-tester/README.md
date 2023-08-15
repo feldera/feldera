@@ -1,6 +1,6 @@
 # webui-tester
 
-Is an utility crate to run integration tests against the web-ui.
+Is an utility crate to run integration tests against the web-console.
 
 ## Setup
 

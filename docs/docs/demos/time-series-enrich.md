@@ -47,7 +47,7 @@ view that joins the tables on `cc_num`.
 
 The demo includes this example. To see the SQL for these tables and
 views, start the Feldera Platform demo, visit <http://localhost:8085/>, click on
-Existing Programs in the sidebar, and then click on the pencil icon
+"SQL Programs" in the sidebar, and then click on the pencil icon
 next to Time Series Enrichment.  It shows a SQL program with a `CREATE
 TABLE` command for each table and a `CREATE VIEW` command for the
 join.

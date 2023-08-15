@@ -63,28 +63,27 @@ install-python:
 
 build-webui-deps:
     FROM +install-deps
-    COPY web-ui/package.json ./web-ui/package.json
-    COPY web-ui/yarn.lock ./web-ui/yarn.lock
+    COPY web-console/package.json ./web-console/package.json
+    COPY web-console/yarn.lock ./web-console/yarn.lock
 
-    RUN cd web-ui && yarn install
+    RUN cd web-console && yarn install
 
 build-webui:
     FROM +build-webui-deps
-    COPY --dir web-ui/public web-ui/public
-    COPY --dir web-ui/src web-ui/src
-    COPY --dir web-ui/styles web-ui/styles
-    COPY web-ui/.editorconfig web-ui/
-    COPY web-ui/.eslintrc.json web-ui/
-    COPY web-ui/.prettierrc.js web-ui/
-    COPY web-ui/next-env.d.ts ./web-ui/next-env.d.ts
-    COPY web-ui/next.config.js ./web-ui/next.config.js
-    COPY web-ui/next.d.ts ./web-ui/next.d.ts
-    COPY web-ui/tsconfig.json ./web-ui/tsconfig.json
+    COPY --dir web-console/public web-console/public
+    COPY --dir web-console/src web-console/src
+    COPY web-console/.editorconfig web-console/
+    COPY web-console/.eslintrc.json web-console/
+    COPY web-console/.prettierrc.js web-console/
+    COPY web-console/next-env.d.ts ./web-console/next-env.d.ts
+    COPY web-console/next.config.js ./web-console/next.config.js
+    COPY web-console/next.d.ts ./web-console/next.d.ts
+    COPY web-console/tsconfig.json ./web-console/tsconfig.json
 
-    RUN cd web-ui && yarn format:check
-    RUN cd web-ui && yarn build
-    RUN cd web-ui && yarn export
-    SAVE ARTIFACT ./web-ui/out
+    RUN cd web-console && yarn format:check
+    RUN cd web-console && yarn build
+    RUN cd web-console && yarn export
+    SAVE ARTIFACT ./web-console/out
 
 prepare-cache:
     # We download and pre-build dependencies to cache it using cargo-chef.
@@ -275,8 +274,8 @@ build-manager:
 
     FROM +build-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     # For some reason if this ENV before the FROM line it gets invalidated
-    ENV WEBUI_BUILD_DIR=/dbsp/web-ui/out
-    COPY ( +build-webui/out ) ./web-ui/out
+    ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
+    COPY ( +build-webui/out ) ./web-console/out
 
     RUN rm -rf crates/pipeline_manager
     COPY --keep-ts --dir crates/pipeline_manager crates/pipeline_manager

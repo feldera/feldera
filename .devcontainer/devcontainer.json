@@ -17,7 +17,8 @@
 				"ms-vsliveshare.vsliveshare",
 				"rust-lang.rust-analyzer",
 				"serayuzgur.crates",
-				"vadimcn.vscode-lldb"
+				"vadimcn.vscode-lldb",
+				"mike-co.import-sorter"
 			],
 			"settings": {
 				"editor.formatOnSave": true,

@@ -47,7 +47,12 @@ async fn smoke_workflow() -> Result<()> {
     let menu = VerticalMenu::from(elem);
 
     // First we make a program, then we compile it.
-    menu.navigate_to("SQL Editor").await?;
+    menu.navigate_to("SQL Programs").await?;
+    driver
+        .find(By::Id("btn-add-sql-program"))
+        .await?
+        .click()
+        .await?;
     let code_page = SqlEditor::from(driver.find(By::Id("editor-content")).await?);
     let program_name = format!("My Program {}", nanos);
     code_page.set_code(SQL_CODE, &driver).await?;
@@ -59,7 +64,7 @@ async fn smoke_workflow() -> Result<()> {
         .await?;
 
     // Next we make a connector.
-    menu.navigate_to("Connector Creator").await?;
+    menu.navigate_to("Connectors").await?;
     let connector_creator =
         ConnectorCreator::from(driver.find(By::Id("connector-creator-content")).await?);
     connector_creator
@@ -72,7 +77,12 @@ async fn smoke_workflow() -> Result<()> {
         .await?;
 
     // Finally we make a pipeline.
-    menu.navigate_to("Pipeline Builder").await?;
+    menu.navigate_to("Pipelines").await?;
+    driver
+        .find(By::Id("btn-add-pipeline"))
+        .await?
+        .click()
+        .await?;
     let pipeline_builder =
         PipelineBuilder::from(driver.find(By::Id("pipeline-builder-content")).await?);
     let pipeline_name = format!("My Pipeline {}", nanos);
@@ -98,7 +108,7 @@ async fn smoke_workflow() -> Result<()> {
         .await?;
 
     // Start the pipeline.
-    menu.navigate_to("Pipeline Management").await?;
+    menu.navigate_to("Pipelines").await?;
     let pipeline_management =
         PipelineManagementTable::from(driver.find(By::Id("pipeline-management-content")).await?);
     pipeline_management.start(&pipeline_name).await?;
