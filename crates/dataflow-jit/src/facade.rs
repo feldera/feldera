@@ -22,20 +22,22 @@ use dbsp::{
 };
 use rust_decimal::Decimal;
 use serde_json::{Deserializer, Value};
-use std::{collections::BTreeMap, mem::transmute, ops::Not, path::Path, thread, time::Instant};
+use std::{
+    collections::BTreeMap, io::Read, mem::transmute, ops::Not, path::Path, thread, time::Instant,
+};
 
 // TODO: A lot of this still needs fleshing out, mainly the little tweaks that
 // users may want to add to parsing and how to do that ergonomically.
 // We also need checks to make sure that the type is being fully initialized, as
 // well as support for parsing maps from csv
 
-pub struct Demands<'a> {
+pub struct Demands {
     #[allow(clippy::type_complexity)]
-    csv: BTreeMap<LayoutId, Vec<(usize, usize, Option<&'a str>)>>,
+    csv: BTreeMap<LayoutId, Vec<(usize, usize, Option<String>)>>,
     json_deser: BTreeMap<LayoutId, JsonMapping>,
 }
 
-impl<'a> Demands<'a> {
+impl Demands {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
@@ -47,7 +49,7 @@ impl<'a> Demands<'a> {
     pub fn add_csv_deserialize(
         &mut self,
         layout: LayoutId,
-        column_mappings: Vec<(usize, usize, Option<&'a str>)>,
+        column_mappings: Vec<(usize, usize, Option<String>)>,
     ) {
         let displaced = self.csv.insert(layout, column_mappings);
         assert_eq!(displaced, None);
@@ -107,13 +109,11 @@ impl DbspCircuit {
         config: CodegenConfig,
         demands: Demands,
     ) -> Self {
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let arena = Arena::<()>::new();
-            tracing::trace!(
-                "created circuit from graph:\n{}",
-                Pretty::pretty(&graph, &arena, graph.layout_cache()).pretty(DEFAULT_WIDTH),
-            );
-        }
+        let arena = Arena::<()>::new();
+        tracing::trace!(
+            "created circuit from graph:\n{}",
+            Pretty::pretty(&graph, &arena, graph.layout_cache()).pretty(DEFAULT_WIDTH),
+        );
 
         let sources = graph.source_nodes();
         let sinks = graph.sink_nodes();
@@ -132,13 +132,10 @@ impl DbspCircuit {
                     .validate_graph(&graph)
                     .expect("failed to validate graph after optimization");
 
-                if tracing::enabled!(tracing::Level::TRACE) {
-                    let arena = Arena::<()>::new();
-                    tracing::trace!(
-                        "optimized graph:\n{}",
-                        Pretty::pretty(&graph, &arena, graph.layout_cache()).pretty(DEFAULT_WIDTH),
-                    );
-                }
+                tracing::trace!(
+                    "optimized graph:\n{}",
+                    Pretty::pretty(&graph, &arena, graph.layout_cache()).pretty(DEFAULT_WIDTH),
+                );
             }
         }
 
@@ -320,7 +317,10 @@ impl DbspCircuit {
     }
 
     // TODO: We probably want other ways to ingest json, e.g. `&[u8]`, `R: Read`, etc.
-    pub fn append_json_input(&mut self, target: NodeId, json: &str) {
+    pub fn append_json_input<R>(&mut self, target: NodeId, json: R)
+    where
+        R: Read,
+    {
         let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
             panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
         });
@@ -340,7 +340,7 @@ impl DbspCircuit {
                     };
 
                     let mut batch = Vec::new();
-                    let stream = Deserializer::from_str(json).into_iter::<Value>();
+                    let stream = Deserializer::from_reader(json).into_iter::<Value>();
                     for value in stream {
                         // FIXME: Error handling
                         let value = value.unwrap();
@@ -835,9 +835,9 @@ mod tests {
         "/../../demo/project_demo01-TimeSeriesEnrich",
     );
 
-    fn transaction_mappings() -> Vec<(usize, usize, Option<&'static str>)> {
+    fn transaction_mappings() -> Vec<(usize, usize, Option<String>)> {
         vec![
-            (0, 0, Some("%F %T")),
+            (0, 0, Some("%F %T".into())),
             (1, 1, None),
             (2, 2, None),
             (3, 3, None),
@@ -850,7 +850,7 @@ mod tests {
         ]
     }
 
-    fn demographic_mappings() -> Vec<(usize, usize, Option<&'static str>)> {
+    fn demographic_mappings() -> Vec<(usize, usize, Option<String>)> {
         vec![
             (0, 0, None),
             (1, 1, None),
@@ -863,7 +863,7 @@ mod tests {
             (8, 8, None),
             (9, 9, None),
             (10, 10, None),
-            (11, 11, Some("%F")),
+            (11, 11, Some("%F".into())),
         ]
     }
 

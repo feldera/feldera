@@ -92,6 +92,14 @@ impl Node {
         }
     }
 
+    pub const fn as_source(&self) -> Option<&Source> {
+        if let Self::Source(source) = self {
+            Some(source)
+        } else {
+            None
+        }
+    }
+
     pub const fn as_sink(&self) -> Option<&Sink> {
         if let Self::Sink(sink) = self {
             Some(sink)

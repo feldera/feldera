@@ -1079,6 +1079,15 @@ impl<'a> CodegenCtx<'a> {
         }
     }
 
+    fn assert(&self, cond: Value, builder: &mut FunctionBuilder<'_>) {
+        debug_assert!(builder.value_type(cond).is_int());
+        let trap = builder.ins().trapz(cond, TRAP_ASSERT_FALSE);
+
+        self.comment(trap, || {
+            format!("trap if {cond} is false ({})", false as u8)
+        });
+    }
+
     fn debug_assert_false(&self, is_null: Value, builder: &mut FunctionBuilder<'_>) {
         if self.debug_assertions() {
             debug_assert!(builder.value_type(is_null).is_int());
