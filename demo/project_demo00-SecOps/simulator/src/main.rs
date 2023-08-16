@@ -1,9 +1,9 @@
+use circular_queue::CircularQueue;
 use futures::executor::block_on;
 use mockd::datetime::date_range;
 use rand::{random, thread_rng, Rng};
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
-    // client::DefaultClientContext,
     config::{FromClientConfig, RDKafkaLogLevel},
     producer::{BaseRecord, DefaultProducerContext, Producer, ThreadedProducer},
     util::Timeout,
@@ -11,13 +11,8 @@ use rdkafka::{
 };
 use serde::Serialize;
 use serde_json::json;
-use std::{
-    sync::Arc,
-};
-use circular_queue::CircularQueue;
+use std::sync::Arc;
 
-static TOPIC_REPOSITORY: &str = "secops_repository";
-static TOPIC_GIT_COMMIT: &str = "secops_git_commit";
 static TOPIC_VULNERABILITY: &str = "secops_vulnerability";
 static TOPIC_PIPELINE: &str = "secops_pipeline";
 static TOPIC_PIPELINE_SOURCES: &str = "secops_pipeline_sources";
@@ -99,18 +94,24 @@ impl KafkaProducer {
             .set_log_level(RDKafkaLogLevel::Debug);
         let producer = ThreadedProducer::from_config(&producer_config).unwrap();
 
-        Self { producer: Arc::new(producer) }
+        Self {
+            producer: Arc::new(producer),
+        }
     }
 
-    pub fn insert_into_topic<T, I>(&self, topic: &str, data: I, message_size: usize)
+    pub fn insert_into_topic<T, I>(&self, topic: &str, data: I, updates_per_message: usize)
     where
         T: Serialize + Clone,
         I: IntoIterator<Item = T>,
     {
-        self.send_to_topic(topic, data.into_iter().map(|x| (x, true)), message_size)
+        self.send_to_topic(
+            topic,
+            data.into_iter().map(|x| (x, true)),
+            updates_per_message,
+        )
     }
 
-    pub fn send_to_topic<T, I>(&self, topic: &str, data: I, message_size: usize)
+    pub fn send_to_topic<T, I>(&self, topic: &str, data: I, updates_per_message: usize)
     where
         T: Serialize + Clone,
         I: IntoIterator<Item = (T, bool)>,
@@ -125,7 +126,7 @@ impl KafkaProducer {
             };
             serde_json::to_writer(&mut bytes, &json).unwrap();
             updates += 1;
-            if updates >= message_size {
+            if updates >= updates_per_message {
                 let record = <BaseRecord<(), [u8], ()>>::to(topic).payload(&bytes);
                 self.producer.send(record).unwrap();
                 bytes.clear();
@@ -140,7 +141,6 @@ impl KafkaProducer {
             self.producer.send(record).unwrap();
         }
         self.producer.flush(Timeout::Never).unwrap();
-        // println!("Data written to '{topic}'");
     }
 
     pub fn send_string(&self, string: &str, topic: &str) {
@@ -180,10 +180,10 @@ where
             updates.push((val.clone(), true));
         }
 
-        self.producer.send_to_topic(&self.topic, updates, self.chunk_size);
+        self.producer
+            .send_to_topic(&self.topic, updates, self.chunk_size);
     }
 }
-
 
 fn random_date() -> String {
     date_range(
@@ -269,21 +269,6 @@ struct Repository {
     name: String,
 }
 
-fn generate_repositories(num_repos: u64) -> Vec<Repository> {
-    (0..num_repos)
-        .map(|repository_id| Repository {
-            repository_id: repository_id,
-            _type: if random::<bool>() {
-                "public".to_string()
-            } else {
-                "private".to_string()
-            },
-            url: format!("https://github.com/myorg/repo{repository_id}"),
-            name: format!("repo{repository_id}"),
-        })
-        .collect()
-}
-
 // create table git_commit (
 //    git_commit_id bigint not null,
 //    repository_id bigint not null foreign key references repository(repository_id),
@@ -298,18 +283,6 @@ struct GitCommit {
     commit_id: String,
     commit_date: String,
     commit_owner: String,
-}
-
-fn generate_commits(repository_id: u64, num_commits: u64) -> Vec<GitCommit> {
-    (0..num_commits)
-        .map(|commit| GitCommit {
-            git_commit_id: (repository_id << 32) + commit,
-            repository_id,
-            commit_id: format!("{:x}", random::<u128>()),
-            commit_date: random_date(),
-            commit_owner: format!("user{}", random::<u16>()),
-        })
-        .collect()
 }
 
 // create table vulnerability (
@@ -564,7 +537,11 @@ fn main() {
     }
 
     let num_pipelines = if args.len() == 2 {
-        let num_pipelines: isize = args.get(1).unwrap().parse().expect("Num pipelines should be an integer");
+        let num_pipelines: isize = args
+            .get(1)
+            .unwrap()
+            .parse()
+            .expect("Num pipelines should be an integer");
         if num_pipelines > 0 {
             Some(num_pipelines as u64)
         } else {
@@ -576,54 +553,50 @@ fn main() {
 
     println!("Creating topics.");
     let _kafka_resources = KafkaResources::create_topics(&[
-        (TOPIC_REPOSITORY, 1, "-1"),
-        (TOPIC_GIT_COMMIT, 1, "-1"),
         (TOPIC_VULNERABILITY, 1, "-1"),
         (TOPIC_CLUSTER, 1, "-1"),
-        (TOPIC_PIPELINE, 1, "1073741824"),
-        (TOPIC_PIPELINE_SOURCES, 1, "1073741824"),
-        (TOPIC_ARTIFACT, 1, "1073741824"),
-        (TOPIC_K8SOBJECT, 1, "1073741824"),
+        (TOPIC_PIPELINE, 1, "536870912"),
+        (TOPIC_PIPELINE_SOURCES, 1, "536870912"),
+        (TOPIC_ARTIFACT, 1, "536870912"),
+        (TOPIC_K8SOBJECT, 1, "536870912"),
     ]);
 
     let producer = KafkaProducer::new();
 
     println!("Generating repositories");
-    let repositories = generate_repositories(NUM_REPOSITORIES);
-    // println!("repos: {repositories:#?}");
-    producer.insert_into_topic(TOPIC_REPOSITORY, repositories, 100);
-
-    println!("Generating commits");
-    for repo_id in 0..NUM_REPOSITORIES {
-        let commits = generate_commits(repo_id, NUM_COMMITS_PER_REPO);
-        // println!("commits: {commits:#?}");
-        producer.insert_into_topic(TOPIC_GIT_COMMIT, commits, 100);
-    }
 
     println!("Generating vulnerabilities");
     let vulnerabilities = generate_vulnerabilities(NUM_VULNERABILITIES);
-    // println!("vulnerabilities: {vulnerabilities:#?}");
     producer.insert_into_topic(TOPIC_VULNERABILITY, vulnerabilities, 100);
 
     println!("Generating k8s clusters");
     let clusters = generate_clusters(NUM_CLUSTERS);
-    // println!("clusters: {clusters:#?}");
     producer.insert_into_topic(TOPIC_CLUSTER, clusters, 100);
 
     println!("Generating pipelines");
     let mut generated_pipelines = 0;
 
-    let mut pipeline_producer = CircularProducer::new(TOPIC_PIPELINE, 100, 100_000, producer.clone());
-    let mut pipeline_sources_producer = CircularProducer::new(TOPIC_PIPELINE_SOURCES, 100, 100_000 * NUM_SOURCES_PER_PIPELINE as usize, producer.clone());
-    let mut artifacts_producer = CircularProducer::new(TOPIC_ARTIFACT, 100, 100_000 * (NUM_SOURCES_PER_PIPELINE + 1) as usize, producer.clone());
-    let mut k8sobjects_producer = CircularProducer::new(TOPIC_K8SOBJECT, 100, 2 * 100_000, producer.clone());
+    let mut pipeline_producer =
+        CircularProducer::new(TOPIC_PIPELINE, 100, 100_000, producer.clone());
+    let mut pipeline_sources_producer = CircularProducer::new(
+        TOPIC_PIPELINE_SOURCES,
+        100,
+        100_000 * NUM_SOURCES_PER_PIPELINE as usize,
+        producer.clone(),
+    );
+    let mut artifacts_producer = CircularProducer::new(
+        TOPIC_ARTIFACT,
+        100,
+        100_000 * (NUM_SOURCES_PER_PIPELINE + 1) as usize,
+        producer.clone(),
+    );
+    let mut k8sobjects_producer =
+        CircularProducer::new(TOPIC_K8SOBJECT, 100, 2 * 100_000, producer.clone());
 
     loop {
         let (pipelines, pipeline_sources, artifacts, k8sobjects) =
             generate_pipelines(generated_pipelines, generated_pipelines + 300);
 
-        // println!("pipelines: {pipelines:#?}");
-        // println!("pipeline_sources: {pipeline_sources:#?}");
         pipeline_producer.push(&pipelines);
         pipeline_sources_producer.push(&pipeline_sources);
         artifacts_producer.push(&artifacts);

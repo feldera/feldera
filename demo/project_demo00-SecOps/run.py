@@ -28,7 +28,7 @@ def prepare(args=[]):
         cmd = ["./secops_simulator",  "%s" % num_pipelines]
         subprocess.run(cmd, cwd=os.path.join(SCRIPT_DIR, "simulator"))
     else:
-        cmd = ["cargo", "run", "--release",  "--", "%s" % num_pipelines]
+        cmd = ["cargo", "run", "--release", "--", "%s" % num_pipelines]
         # Override --release if RUST_BUILD_PROFILE is set
         if "RUST_BUILD_PROFILE" in os.environ:
             cmd[2] = os.environ["RUST_BUILD_PROFILE"]
@@ -41,6 +41,14 @@ def prepare(args=[]):
 def make_config(project):
     config = DBSPPipelineConfig(project, 8, "SecOps Pipeline")
 
+    config.add_kafka_input(
+        name="secops_pipeline",
+        stream="PIPELINE",
+        config=KafkaInputConfig.from_dict(
+            {"topics": ["secops_pipeline"], "auto.offset.reset": "earliest"}
+        ),
+        format=JsonInputFormatConfig(update_format = "insert_delete"),
+    )
     config.add_kafka_input(
         name="secops_pipeline_sources",
         stream="PIPELINE_SOURCES",
