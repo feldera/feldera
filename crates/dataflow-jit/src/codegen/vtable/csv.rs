@@ -23,7 +23,7 @@ impl Codegen {
     pub(crate) fn codegen_layout_from_csv(
         &mut self,
         layout_id: LayoutId,
-        csv_layout: &[(CsvIndex, ColumnIndex, Option<&str>)],
+        csv_layout: &[(CsvIndex, ColumnIndex, Option<String>)],
     ) -> FuncId {
         tracing::trace!("creating from csv vtable function for {layout_id}");
 
@@ -67,7 +67,7 @@ impl Codegen {
                 &mut builder,
             );
 
-            for &(csv_column, row_column, format) in csv_layout {
+            for &(csv_column, row_column, ref format) in csv_layout {
                 let column_ty = row_layout.column_type(row_column);
                 let nullable = row_layout.column_nullable(row_column);
 
@@ -103,7 +103,7 @@ impl Codegen {
 
                     // Date
                     } else if column_ty.is_date() {
-                        let format = format.unwrap();
+                        let format = format.as_deref().unwrap();
                         let (format_ptr, format_len) = ctx.import_string(format, &mut builder);
 
                         // Parse the value from the csv
@@ -127,7 +127,7 @@ impl Codegen {
 
                     // Timestamp
                     } else if column_ty.is_timestamp() {
-                        let format = format.unwrap();
+                        let format = format.as_deref().unwrap();
                         let (format_ptr, format_len) = ctx.import_string(format, &mut builder);
 
                         // Parse the value from the csv
@@ -240,7 +240,7 @@ impl Codegen {
                     // Parse the value from the csv
                     let func = ctx.imports.get(intrinsic, ctx.module, builder.func);
                     let parsed = if column_ty.is_date() || column_ty.is_timestamp() {
-                        let format = format.unwrap();
+                        let format = format.as_deref().unwrap();
                         let (format_ptr, format_len) = ctx.import_string(format, &mut builder);
                         builder.call_fn(func, &[byte_record, csv_column, format_ptr, format_len])
                     } else {

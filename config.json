@@ -1,0 +1,43 @@
+{
+    "workers": 4,
+    "optimize": true,
+    "release": true,
+    "inputs": {
+        "TRANSACTIONS": {
+            "file": "./demo/project_demo01-TimeSeriesEnrich/transactions_20K.csv",
+            "kind": {
+                "Csv": [
+                    [0, 0, "%F %T"],
+                    [1, 1, null],
+                    [2, 2, null],
+                    [3, 3, null],
+                    [4, 4, null],
+                    [5, 5, null],
+                    [6, 6, null],
+                    [7, 7, null],
+                    [8, 8, null],
+                    [9, 9, null]
+                ]
+            }
+        },
+        "DEMOGRAPHICS": {
+            "file": "./demo/project_demo01-TimeSeriesEnrich/demographics.csv",
+            "kind": {
+                "Csv": [
+                    [0, 0, null],
+                    [1, 1, null],
+                    [2, 2, null],
+                    [3, 3, null],
+                    [4, 4, null],
+                    [5, 5, null],
+                    [6, 6, null],
+                    [7, 7, null],
+                    [8, 8, null],
+                    [9, 9, null],
+                    [10, 10, null],
+                    [11, 11, "%F"]
+                ]
+            }
+        }
+    }
+}

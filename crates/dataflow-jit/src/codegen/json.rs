@@ -6,9 +6,10 @@ use crate::{
     ir::{ColumnType, LayoutId},
     utils::HashMap,
 };
-use cranelift::prelude::FunctionBuilder;
+use cranelift::prelude::{FunctionBuilder, IntCC};
 use cranelift_codegen::ir::{InstBuilder, MemFlags};
 use cranelift_module::{FuncId, Module};
+use std::mem::align_of;
 
 // The index of a column within a row
 // TODO: Newtyping for column indices within the layout interfaces
@@ -17,7 +18,7 @@ type ColumnIdx = usize;
 /// The function signature used for json deserialization functions
 pub type DeserializeJsonFn = unsafe extern "C" fn(*mut u8, &serde_json::Value);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct JsonMapping {
     pub layout: LayoutId,
     /// A map between column indices and the json pointer used to access them
@@ -30,7 +31,6 @@ pub struct JsonMapping {
 impl Codegen {
     pub(crate) fn deserialize_json(&mut self, mappings: &JsonMapping) -> FuncId {
         let layout_id = mappings.layout;
-
         tracing::trace!(
             "creating json deserializer for {}",
             self.layout_cache.row_layout(layout_id),
@@ -68,8 +68,12 @@ impl Codegen {
             let layout_cache = ctx.layout_cache.clone();
             let (layout, row_layout) = layout_cache.get_layouts(layout_id);
 
-            // ctx.debug_assert_ptr_valid(place, layout.align(), &mut builder);
-            // ctx.debug_assert_ptr_valid(json_map, align_of::<JsonValue>() as u32, &mut builder);
+            ctx.debug_assert_ptr_valid(place, layout.align(), &mut builder);
+            ctx.debug_assert_ptr_valid(
+                json_map,
+                align_of::<serde_json::Value>() as u32,
+                &mut builder,
+            );
 
             for (column_idx, (column_ty, nullable)) in row_layout.iter().enumerate() {
                 // TODO: Json pointers include `/`s to delimit each token, so
@@ -177,6 +181,98 @@ impl Codegen {
 
                     ty => unreachable!("unhandled type in json deserialization: {ty}"),
                 }
+            }
+
+            builder.ins().return_(&[]);
+
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        self.finalize_function(func_id)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn serialize_json(&mut self, mappings: &JsonMapping) -> FuncId {
+        let layout_id = mappings.layout;
+        tracing::trace!(
+            "creating json serializer for {}",
+            self.layout_cache.row_layout(layout_id),
+        );
+
+        // fn(row: *mut u8, ptr: *mut u8, length: usize, capacity: usize)
+        let ptr_ty = self.module.isa().pointer_type();
+        let func_id = self.create_function([ptr_ty; 4], None);
+
+        self.set_comment_writer(
+            &format!("serialize_json_{layout_id}"),
+            &format!(
+                "fn(row: *mut {}, ptr: *mut u8, length: usize, capacity: usize)",
+                self.layout_cache.row_layout(layout_id),
+            ),
+        );
+
+        {
+            let ctx = CodegenCtx::new(
+                self.config,
+                &mut self.module,
+                &mut self.data_ctx,
+                &mut self.data,
+                self.layout_cache.clone(),
+                self.intrinsics.import(self.comment_writer.clone()),
+                self.comment_writer.clone(),
+            );
+            let mut builder =
+                FunctionBuilder::new(&mut self.module_ctx.func, &mut self.function_ctx);
+
+            // Create the entry block
+            let entry_block = builder.create_entry_block();
+            let [place, _ptr, length, capacity]: [_; 4] =
+                builder.block_params(entry_block).try_into().unwrap();
+
+            let layout_cache = ctx.layout_cache.clone();
+            let (layout, row_layout) = layout_cache.get_layouts(layout_id);
+
+            if ctx.debug_assertions() {
+                // Ensure that the row pointer is well formed
+                ctx.assert_ptr_valid(place, layout.align(), &mut builder);
+
+                // Ensure that length <= capacity
+                let length_le_capacity =
+                    builder
+                        .ins()
+                        .icmp(IntCC::UnsignedLessThanOrEqual, length, capacity);
+                ctx.assert(length_le_capacity, &mut builder);
+
+                // Ensure that capacity <= isize::MAX
+                let capacity_le_max = builder.ins().icmp_imm(
+                    IntCC::UnsignedLessThanOrEqual,
+                    length,
+                    isize::MAX as i64,
+                );
+                ctx.assert(capacity_le_max, &mut builder);
+            }
+
+            // TODO: We can infer/calculate the structure of the json from the information avaliable,
+            // like if a column is stored in `/foo/bar/baz` and another in `/foo/bar/bing` then we know
+            // that the structure looks like `{ "foo": { "bar": { "baz": ..., "bing": ... }}}`
+            // and we can adapt our serialization ordering to allow us to create nested structures
+
+            for (column_idx, (_column_ty, _nullable)) in row_layout.iter().enumerate() {
+                // TODO: Json pointers include `/`s to delimit each token, so
+                // if a "pointer" doesn't have any `/`s then we can index
+                // directly with that single ident, potentially saving work
+                let json_pointer = &*mappings.mappings[&column_idx];
+                assert!(
+                    !json_pointer.is_empty(),
+                    "json pointers cannot be empty (column {column_idx} of {layout_id})",
+                );
+                assert!(
+                    json_pointer.starts_with('/'),
+                    "json pointers must start with `/` (this restriction may be loosened in the future)",
+                );
+
+                todo!()
             }
 
             builder.ins().return_(&[]);
