@@ -34,7 +34,10 @@ use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig, RuntimeConfig
 use crate::PipelineState;
 use anyhow::Error as AnyError;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
+use log::error;
 use num_traits::FromPrimitive;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use psutil::process::{Process, ProcessError};
 use serde::{Serialize, Serializer};
 use std::{
     collections::BTreeMap,
@@ -49,6 +52,11 @@ pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
     #[serde(serialize_with = "serialize_pipeline_state")]
     state: AtomicU32,
+
+    /// Resident state size of the pipeline process.
+    // This field is computed on-demand by calling `ControllerStatus::update`.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    pub rss_bytes: Option<AtomicU64>,
 
     /// Total number of records currently buffered by all endpoints.
     pub buffered_input_records: AtomicU64,
@@ -93,6 +101,8 @@ impl GlobalControllerMetrics {
     fn new() -> Self {
         Self {
             state: AtomicU32::from(PipelineState::Paused as u32),
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            rss_bytes: Some(AtomicU64::new(0)),
             buffered_input_records: AtomicU64::new(0),
             total_input_records: AtomicU64::new(0),
             total_processed_records: AtomicU64::new(0),
@@ -506,10 +516,31 @@ impl ControllerStatus {
         true
     }
 
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn rss() -> Result<u64, ProcessError> {
+        Ok(Process::current()?.memory_info()?.rss())
+    }
+
     pub fn update(&self) {
         self.global_metrics
             .pipeline_complete
             .store(self.pipeline_complete(), Ordering::Release);
+
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        {
+            match Self::rss() {
+                Ok(rss) => {
+                    self.global_metrics
+                        .rss_bytes
+                        .as_ref()
+                        .unwrap()
+                        .store(rss, Ordering::Release);
+                }
+                Err(e) => {
+                    error!("Failed to fetch RSS of the process: {e}");
+                }
+            }
+        }
     }
 }
 
