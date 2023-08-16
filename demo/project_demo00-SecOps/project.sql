@@ -1,20 +1,3 @@
--- Git repository.
-create table repository (
-    repository_id bigint not null,
-    type varchar not null,
-    url varchar not null,
-    name varchar not null
-);
-
--- Commit inside a Git repo.
-create table git_commit (
-    git_commit_id bigint not null,
-    repository_id bigint not null foreign key references repository(repository_id),
-    commit_id varchar not null,
-    commit_date timestamp not null,
-    commit_owner varchar not null
-);
-
 -- CI/CD pipeline.
 create table pipeline (
     pipeline_id bigint not null,
@@ -26,7 +9,7 @@ create table pipeline (
 
 -- Git commits used by each pipeline.
 create table pipeline_sources (
-    git_commit_id bigint not null foreign key references git_commit(git_commit_id),
+    git_commit_id bigint not null,
     pipeline_id bigint not null foreign key references pipeline(pipeline_id)
 );
 
@@ -49,7 +32,7 @@ create table vulnerability (
     vulnerability_id bigint not null,
     discovery_date timestamp not null,
     discovered_by_user_id bigint not null,
-    discovered_in bigint not null foreign key references git_commit(git_commit_id),
+    discovered_in bigint not null,
     update_date timestamp,
     updated_by_user_id bigint,
     checksum varchar not null,
