@@ -75,9 +75,9 @@ const App = (props: ExtendedAppProps) => {
   return (
     <CacheProvider value={emotionCache}>
       <Head>
-        <title>{`${themeConfig.templateName} - WebUI`}</title>
-        <meta name='description' content={`${themeConfig.templateName} – WebConsole.`} />
-        <meta name='keywords' content='Database Stream Processor Configuration UI' />
+        <title>{`${themeConfig.templateName} - Web Console`}</title>
+        <meta name='description' content={`${themeConfig.templateName} – Web Console.`} />
+        <meta name='keywords' content='Feldera Continuous Analytics Platform' />
         <meta name='viewport' content='initial-scale=1, width=device-width' />
       </Head>
 
