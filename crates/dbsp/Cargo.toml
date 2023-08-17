@@ -55,6 +55,9 @@ rust_decimal = "1.29"
 rkyv = "0.7.42"
 arcstr = { version = "1.1.4" }
 size-of = { version = "0.1.5", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
+tarpc = { version = "0.33.0", features = ["full"] }
+futures = "0.3"
+tokio = { version = "1.25.0", features = ["macros", "rt", "rt-multi-thread"] }
 
 [dev-dependencies]
 csv = "1.2.2"
@@ -149,3 +152,11 @@ path = "examples/tutorial/tutorial8.rs"
 [[example]]
 name = "tutorial9"
 path = "examples/tutorial/tutorial9.rs"
+
+[[example]]
+name = "coord"
+path = "examples/dist/coord.rs"
+
+[[example]]
+name = "pool"
+path = "examples/dist/pool.rs"
