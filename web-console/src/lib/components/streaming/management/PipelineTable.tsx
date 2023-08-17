@@ -679,6 +679,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
     .with([ClientPipelineStatus.PAUSING, P._], () => ['spinner', 'edit'])
     .with([ClientPipelineStatus.PAUSED, true], () => ['start', 'shutdown', 'edit'])
     .with([ClientPipelineStatus.SHUTTING_DOWN, P._], () => ['spinner', 'edit'])
+    .with([ClientPipelineStatus.FAILED, P._], () => ['shutdown', 'edit'])
     .otherwise(() => ['edit'])
 
   return (
