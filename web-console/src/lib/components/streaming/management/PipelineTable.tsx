@@ -62,6 +62,7 @@ import {
 } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import DataGridSearch from '$lib/components/common/table/DataGridSearch'
+import dayjs from 'dayjs'
 
 interface ConnectorData {
   relation: Relation
@@ -250,7 +251,13 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
       <Grid container spacing={3} sx={{ height: 1, width: '95%' }} alignItems='stretch'>
         <Grid item xs={4}>
           <Card>
-            <List subheader={<ListSubheader>Configuration</ListSubheader>}>
+            <List subheader={<ListSubheader>Configuration</ListSubheader>} dense>
+              <ListItem>
+                <ListItemIcon>
+                  <Icon icon='fluent-emoji-high-contrast:id-button' fontSize={20} />
+                </ListItemIcon>
+                <ListItemText primary={pipelineRevisionQuery.data?.pipeline.pipeline_id || 'not set'} />
+              </ListItem>
               <ListItem>
                 <ListItemIcon>
                   <Icon icon='bi:filetype-sql' fontSize={20} />
@@ -265,7 +272,9 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                         <Icon icon='clarity:date-line' fontSize={20} />
                       </ListItemIcon>
                     </Tooltip>
-                    <ListItemText primary={state.created || 'Not running'} />
+                    <ListItemText
+                      primary={state.created ? dayjs(state.created).format('MM/DD/YYYY HH:MM') : 'Not running'}
+                    />
                   </ListItem>
                   <ListItem>
                     <Tooltip title='Pipeline Port'>
