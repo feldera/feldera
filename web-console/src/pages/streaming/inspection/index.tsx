@@ -3,7 +3,6 @@
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
-import { usePageHeader } from '$lib/compositions/global/pageHeader'
 import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from '$lib/services/manager'
 import { useRouter } from 'next/router'
 import { SyntheticEvent, useEffect, useState } from 'react'
@@ -29,6 +28,7 @@ import {
 import Grid from '@mui/material/Grid'
 import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
+import PageHeader from 'src/lib/components/layouts/pageHeader'
 
 const TitleBreadCrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
   const { tables, views, relation } = props
@@ -210,14 +210,6 @@ const IntrospectInputOutput = () => {
   const relationValid =
     pipeline && relation && tables && views && (tables.includes(relation) || views.includes(relation))
 
-  usePageHeader(s => s.setHeader)(
-    relationValid
-      ? {
-          title: <TitleBreadCrumb pipeline={pipeline} relation={relation} tables={tables} views={views} />
-        }
-      : { title: null }
-  )
-
   return pipelineId !== undefined &&
     !configQuery.isLoading &&
     !configQuery.isError &&
@@ -225,6 +217,7 @@ const IntrospectInputOutput = () => {
     !pipelineRevisionQuery.isError &&
     relationValid ? (
     <Grid container spacing={6} className='match-height'>
+      <PageHeader title={<TitleBreadCrumb pipeline={pipeline} relation={relation} tables={tables} views={views} />} />
       <Grid item xs={12}>
         {tables.includes(relation) && (
           <TableWithInsertTab pipeline={pipeline} handleChange={handleChange} tab={tab} relation={relation} />
