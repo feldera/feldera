@@ -180,11 +180,17 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
         headerName: 'Records',
         flex: 0.15,
         renderCell: params => {
-          const records =
-            direction === 'input'
-              ? inputMetrics.get(params.row.relation.name)?.total_records
-              : outputMetrics.get(params.row.relation.name)?.transmitted_records
-          return format('.1s')(records || 0)
+          if (params.row.connections.length > 0) {
+            const records =
+              direction === 'input'
+                ? inputMetrics.get(params.row.relation.name)?.total_records
+                : outputMetrics.get(params.row.relation.name)?.transmitted_records
+            return format('.1s')(records || 0)
+          } else {
+            // TODO: we need to count records also when relation doesn't have
+            // connections in the backend.
+            return '-'
+          }
         }
       },
       {
