@@ -76,7 +76,7 @@ const App = (props: ExtendedAppProps) => {
     <CacheProvider value={emotionCache}>
       <Head>
         <title>{`${themeConfig.templateName} - WebUI`}</title>
-        <meta name='description' content={`${themeConfig.templateName} – WebUI.`} />
+        <meta name='description' content={`${themeConfig.templateName} – WebConsole.`} />
         <meta name='keywords' content='Database Stream Processor Configuration UI' />
         <meta name='viewport' content='initial-scale=1, width=device-width' />
       </Head>

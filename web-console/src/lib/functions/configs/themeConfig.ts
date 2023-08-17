@@ -18,7 +18,7 @@ type ThemeConfig = {
 }
 
 const themeConfig: ThemeConfig = {
-  templateName: 'dbsp',
+  templateName: 'Feldera',
   mode: 'light' /* light | dark */,
   contentWidth: 'boxed' /* full | boxed */,
   routingLoader: true,
