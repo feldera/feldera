@@ -3,7 +3,6 @@ import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIn
 import Metadata from '$lib/components/streaming/builder/Metadata'
 import MissingSchemaDialog from '$lib/components/streaming/builder/NoSchemaDialog'
 import PipelineGraph from '$lib/components/streaming/builder/PipelineBuilder'
-import { usePageHeader } from '$lib/compositions/global/pageHeader'
 import { connectorConnects, useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
 import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
@@ -319,11 +318,6 @@ export const PipelineWithProvider = (props: {
     pushMessage,
     queryClient
   ])
-
-  usePageHeader(s => s.setHeader)({
-    title: 'Pipeline Creator',
-    subtitle: 'Define an end-to-end pipeline with analytics.'
-  })
 
   return (
     <>

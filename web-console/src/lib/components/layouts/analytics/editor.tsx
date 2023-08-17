@@ -3,7 +3,6 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
-import { usePageHeader } from '$lib/compositions/global/pageHeader'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { programQueryCacheUpdate, programStatusUpdate } from '$lib/services/defaultQueryFn'
 import {
@@ -495,8 +494,6 @@ const Editors = (props: { programId: string | null }) => {
     debouncedCodeEditStateUpdate()
   }
   useDisplayCompilerErrorsInEditor(project, editorRef)
-
-  usePageHeader(s => s.setHeader)({ title: 'SQL Editor', subtitle: 'Define your analytics and data transformations.' })
 
   return (programId !== null && loaded) || programId == null ? (
     <Grid container spacing={6}>

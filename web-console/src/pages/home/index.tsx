@@ -12,7 +12,6 @@ import CardContent from '@mui/material/CardContent'
 import CardHeader from '@mui/material/CardHeader'
 import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
-import { usePageHeader } from 'src/lib/compositions/global/pageHeader'
 
 const CardSupport = () => {
   return (
@@ -47,7 +46,6 @@ const CardSupport = () => {
 }
 
 const Home = () => {
-  usePageHeader(s => s.setHeader)({ title: null })
   return (
     <Grid container spacing={6}>
       <Grid item xs={7}>
