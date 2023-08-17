@@ -1,16 +1,11 @@
 // This is the top bar that decides whether to show the hamburger menu or not it
-import Magnify from 'mdi-material-ui/Magnify'
 import Menu from 'mdi-material-ui/Menu'
 import { Settings } from 'src/@core/context/settingsContext'
 import ModeToggler from 'src/@core/layouts/components/shared-components/ModeToggler'
-import NotificationDropdown from 'src/@core/layouts/components/shared-components/NotificationDropdown'
-import UserDropdown from 'src/@core/layouts/components/shared-components/UserDropdown'
 
 // also has the search bar and the user dropdown and the notification dropdown.
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
-import TextField from '@mui/material/TextField'
 
 interface Props {
   hidden: boolean
@@ -30,22 +25,9 @@ const AppBarContent = (props: Props) => {
               <Menu />
             </IconButton>
           ) : null}
-          <TextField
-            size='small'
-            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 4 } }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position='start'>
-                  <Magnify fontSize='small' />
-                </InputAdornment>
-              )
-            }}
-          />
         </Box>
         <Box className='actions-right' sx={{ display: 'flex', alignItems: 'center', mb: 'auto' }}>
           <ModeToggler settings={settings} saveSettings={saveSettings} />
-          <NotificationDropdown />
-          <UserDropdown />
         </Box>
       </Box>
     </Box>
