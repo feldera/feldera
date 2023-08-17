@@ -1,7 +1,6 @@
 import Editors from '$lib/components/layouts/analytics/editor'
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
-import { usePageHeader } from 'src/lib/compositions/global/pageHeader'
 
 const Editor = () => {
   // Get the project id from the URL
@@ -16,7 +15,6 @@ const Editor = () => {
     }
   }, [router, programId, setProgramId])
 
-  usePageHeader(s => s.setHeader)({ title: null })
   return programId !== undefined && <Editors programId={programId} />
 }
 
