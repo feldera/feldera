@@ -603,6 +603,27 @@ intrinsics! {
     deserialize_json_i64 = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_f32 = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_f64 = fn(ptr, ptr, usize, ptr) -> bool,
+
+    // `std::string::String::push_str()`
+    // fn(buffer: &mut String, ptr: *const u8, len: usize)
+    std_string_push = fn(ptr, ptr, usize),
+    // `std::string::String::reserve()`
+    // fn(buffer: &mut String, additional: usize)
+    std_string_reserve = fn(ptr, usize),
+    write_i8_to_std_string = fn(ptr, i8),
+    write_u8_to_std_string = fn(ptr, u8),
+    write_u16_to_std_string = fn(ptr, u16),
+    write_i16_to_std_string = fn(ptr, i16),
+    write_u32_to_std_string = fn(ptr, u32),
+    write_i32_to_std_string = fn(ptr, i32),
+    write_u64_to_std_string = fn(ptr, u64),
+    write_i64_to_std_string = fn(ptr, i64),
+    write_f32_to_std_string = fn(ptr, f32),
+    write_f64_to_std_string = fn(ptr, f64),
+    write_date_to_std_string = fn(ptr, date),
+    write_timestamp_to_std_string = fn(ptr, timestamp),
+    write_decimal_to_std_string = fn(ptr, u64, u64),
+    write_escaped_string_to_std_string = fn(ptr, ptr, usize),
 }
 
 /// Allocates memory with the given size and alignment
@@ -1766,4 +1787,58 @@ extern "C" fn deserialize_json_f32(
     } else {
         true
     }
+}
+
+unsafe extern "C" fn std_string_push(buffer: &mut String, ptr: *const u8, len: usize) {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    buffer.push_str(string);
+}
+
+unsafe extern "C" fn std_string_reserve(buffer: &mut String, additional: usize) {
+    buffer.reserve(additional);
+}
+
+unsafe extern "C" fn write_escaped_string_to_std_string(
+    buffer: &mut String,
+    ptr: *const u8,
+    len: usize,
+) {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    write!(buffer, "{string:?}").unwrap();
+}
+
+unsafe extern "C" fn write_decimal_to_std_string(buffer: &mut String, lo: u64, hi: u64) {
+    let decimal = decimal_from_parts(lo, hi);
+    write!(buffer, "{decimal}").unwrap();
+}
+
+unsafe extern "C" fn write_date_to_std_string(buffer: &mut String, date: i32) {
+    let date = NaiveDate::from_num_days_from_ce_opt(date).unwrap();
+    write!(buffer, "{}", date.format("%Y-%m-%d")).unwrap();
+}
+
+unsafe extern "C" fn write_timestamp_to_std_string(buffer: &mut String, timestamp: i64) {
+    let timestamp = Utc.timestamp_millis_opt(timestamp).unwrap();
+    write!(buffer, "{}", timestamp.format("%+")).unwrap();
+}
+
+macro_rules! write_primitives_to_std_string {
+    ($($primitive:ident),+ $(,)?) => {
+        paste::paste! {
+            $(
+                unsafe extern "C" fn [<write_ $primitive _to_std_string>](buffer: &mut String, value: $primitive) {
+                    write!(buffer, "{value}").unwrap();
+                }
+            )+
+        }
+    };
+}
+
+write_primitives_to_std_string! {
+    i8,  u8,
+    u16, i16,
+    u32, i32,
+    u64, i64,
+    f32,
+    f64,
 }

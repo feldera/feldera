@@ -1,6 +1,6 @@
 use crate::{
     codegen::{
-        json::{DeserializeJsonFn, JsonMapping},
+        json::{DeserializeJsonFn, JsonDeserConfig},
         CodegenConfig, NativeLayout, NativeLayoutCache, VTable,
     },
     dataflow::{CompiledDataflow, JitHandle, RowInput, RowOutput},
@@ -34,7 +34,7 @@ use std::{
 pub struct Demands {
     #[allow(clippy::type_complexity)]
     csv: BTreeMap<LayoutId, Vec<(usize, usize, Option<String>)>>,
-    json_deser: BTreeMap<LayoutId, JsonMapping>,
+    json_deser: BTreeMap<LayoutId, JsonDeserConfig>,
 }
 
 impl Demands {
@@ -55,7 +55,7 @@ impl Demands {
         assert_eq!(displaced, None);
     }
 
-    pub fn add_json_deserialize(&mut self, layout: LayoutId, mappings: JsonMapping) {
+    pub fn add_json_deserialize(&mut self, layout: LayoutId, mappings: JsonDeserConfig) {
         let displaced = self.json_deser.insert(layout, mappings);
         assert_eq!(displaced, None);
     }
@@ -316,7 +316,8 @@ impl DbspCircuit {
         }
     }
 
-    // TODO: We probably want other ways to ingest json, e.g. `&[u8]`, `R: Read`, etc.
+    // TODO: We probably want other ways to ingest json, e.g. `&[u8]`, `R: Read`,
+    // etc.
     pub fn append_json_input<R>(&mut self, target: NodeId, json: R)
     where
         R: Read,

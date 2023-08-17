@@ -1,6 +1,6 @@
 use clap::Parser;
 use dataflow_jit::{
-    codegen::{json::JsonMapping, CodegenConfig},
+    codegen::{json::JsonDeserConfig, CodegenConfig},
     dataflow::CompiledDataflow,
     facade::Demands,
     ir::{GraphExt, Validator},
@@ -17,6 +17,7 @@ use std::{
     io::{self, BufReader, Read},
     path::{Path, PathBuf},
     process::ExitCode,
+    time::Instant,
 };
 
 fn main() -> ExitCode {
@@ -57,7 +58,7 @@ struct Input {
 
 #[derive(Debug, Deserialize)]
 enum InputKind {
-    Json(JsonMapping),
+    Json(JsonDeserConfig),
     Csv(Vec<(usize, usize, Option<String>)>),
 }
 
@@ -128,7 +129,11 @@ fn run(program: &Path, config: &Path) -> ExitCode {
         }
     }
 
+    let start = Instant::now();
     circuit.step().unwrap();
+
+    let elapsed = start.elapsed();
+    println!("stepped in {elapsed:#?}");
 
     for (sink, _) in sinks {
         let output = circuit.consolidate_output(sink);
