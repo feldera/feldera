@@ -49,7 +49,17 @@ Refer to the (Get Started page)[../intro] for basic instructions on spinning up 
 
 ## Manually starting the demos
 
-You can prepare and run multiple demos. To prepare a demo, launch Pipeline Manager and navigate to the directory of the demo, e.g.
+You can prepare and run multiple demos. When initializing any demo, Pipeline Manager needs to be running. Preparing the demos might take more than 10 minutes.
+
+#### All demos
+
+To prepare all available demos, run
+```bash
+DBSP_MANAGER="http://localhost:8080" demo/create_demo_projects.sh && DBSP_MANAGER="http://localhost:8080" demo/prepare_demo_data.sh
+```
+
+#### Single demo
+To prepare a single demo navigate to the directory of the demo, e.g.
 ```bash
 cd demo/project_demo00-SecOps
 ```
@@ -67,5 +77,7 @@ python3 run.py --dbsp_url http://localhost:8080 --actions prepare
 ```
 
 > You should update `--dbsp_url` depending on where Pipeline Manager is getting served from.
+
+<br/>
 
 Now you can see the prepared demos on the Pipeline Management page of the Web Console.

@@ -140,3 +140,8 @@ required for the demo.  The message should say the particular port.
 To correct the problem, find and stop the process listening on the
 port, or edit a copy of `docker-compose.yml` to use a different port
 number.
+
+## Development
+
+If you would like to build and run Feldera from source check out the
+[Development workflow](contributors/dev-flow) guide.

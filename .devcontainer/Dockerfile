@@ -15,6 +15,7 @@ ENV LC_ALL=en_US.UTF-8
 RUN apt-get update && \
    apt-get install -y \
    curl \
+   unzip \
    git \
    gnupg2 \
    sudo \
@@ -37,7 +38,22 @@ RUN apt-get install -y nodejs
 RUN npm install --global yarn
 RUN npm install --global openapi-typescript-codegen
 
-# Switch to non-root user
+## Install Redpanda rpk to enable preparing demos
+
+RUN ARCH=`dpkg --print-architecture`; \
+   curl -LO --output-dir $HOME https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$ARCH.zip \
+   && unzip $HOME/rpk-linux-$ARCH.zip -d /bin/ \
+   && rpk version \
+   && rm $HOME/rpk-linux-$ARCH.zip
+
+## Install python dependencies for the demos
+
+RUN \
+      pip3 install openapi-python-client==0.15.0 websockets \
+   && pip3 install gdown
+
+## Switch to non-root user
+
 USER $USERNAME
 ENV HOME /home/$USERNAME
 

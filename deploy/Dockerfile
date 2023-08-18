@@ -106,7 +106,7 @@ RUN apt update && apt install pkg-config \
     # Install DBSP python library and dependencies
     && ./pipeline-manager --dump-openapi \
       && rm pipeline-manager \
-      && pip3 install openapi-python-client websockets \
+      && pip3 install openapi-python-client==0.15.0 websockets \
       && cd python \
       && rm -rf feldera-api-client \
       && openapi-python-client generate --path ../openapi.json --fail-on-warning \
