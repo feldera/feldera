@@ -2,6 +2,8 @@ use crate::algebra::{HasOne, HasZero, MulByRef};
 use size_of::SizeOf;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
+use super::{F64, F32};
+
 /// A zero-sized weight that indicates a value is present
 #[derive(
     Debug,
@@ -87,6 +89,15 @@ impl<T> Mul<T> for Present {
     }
 }
 
+impl<T: Copy> Mul<&T> for &Present {
+    type Output = T;
+
+    #[inline]
+    fn mul(self, rhs: &T) -> Self::Output {
+        *rhs
+    }
+}
+
 impl MulAssign for Present {
     fn mul_assign(&mut self, _rhs: Self) {}
 }
@@ -105,6 +116,24 @@ impl MulByRef<Present> for i32 {
 }
 
 impl MulByRef<Present> for i64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, _other: &Present) -> Self::Output {
+        *self
+    }
+}
+
+impl MulByRef<Present> for F32 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, _other: &Present) -> Self::Output {
+        *self
+    }
+}
+
+impl MulByRef<Present> for F64 {
     type Output = Self;
 
     #[inline]
