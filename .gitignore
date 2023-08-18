@@ -31,7 +31,7 @@ lcov.info
 
 benches/galen_data/
 benches/gdelt-data/
-benches/ldbc-graphalytics-data/
+**/benches/ldbc-graphalytics-data/
 
 nexmark_results.csv
 nexmark_comment.txt
