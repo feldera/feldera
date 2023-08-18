@@ -1,6 +1,6 @@
 // Shows the throughput of the pipeline in a graph.
 //
-// Also smooths the throughout over a few seconds.
+// Also smooths the throughput over a few seconds.
 
 import { GlobalMetrics } from '$lib/types/pipeline'
 import { ApexOptions } from 'apexcharts'
@@ -11,16 +11,14 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import { useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
+import { discreteDerivative } from 'ts-practical-fp'
 
 const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
   const theme = useTheme()
 
-  const totalProcessed = props.metrics
-    .slice(1)
-    .map(m => m.total_processed_records)
-    .filter(x => x != 0)
-  const throughput = totalProcessed.slice(1).map((x, i) => x - totalProcessed[i])
-  const smoothTput = throughput.slice(1).map((x, i) => x * 0.6 + 0.4 * throughput[i])
+  const totalProcessed = discreteDerivative(props.metrics, m => m.total_processed_records).filter(x => x != 0)
+  const throughput = discreteDerivative(totalProcessed, (n1, n0) => n1 - n0)
+  const smoothTput = discreteDerivative(throughput, (n1, n0) => n1 * 0.6 + 0.4 * n0)
 
   const series = [
     {

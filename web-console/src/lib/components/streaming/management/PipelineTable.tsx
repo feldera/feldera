@@ -23,12 +23,10 @@ import {
   PipelineRevision,
   PipelinesService,
   PipelineStatus,
-  ProgramDescr,
   Relation,
   UpdatePipelineRequest,
   UpdatePipelineResponse
 } from '$lib/services/manager'
-import { ConnectorStatus, GlobalMetrics, InputConnectorMetrics, OutputConnectorMetrics } from '$lib/types/pipeline'
 import { format } from 'd3-format'
 import Link from 'next/link'
 import router from 'next/router'
@@ -57,11 +55,15 @@ import {
   GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
   GridColDef,
   GridRenderCellParams,
+  GridRowId,
   GridValueSetterParams,
   useGridApiRef
 } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import DataGridSearch from '$lib/components/common/table/DataGridSearch'
+import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
+import { PipelineManagerQuery } from 'src/lib/services/defaultQueryFn'
+import { useHash } from '@mantine/hooks'
 import dayjs from 'dayjs'
 
 interface ConnectorData {
@@ -105,10 +107,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
   const { descriptor, state } = props.row
 
-  const pipelineRevisionQuery = useQuery<PipelineRevision>([
-    'pipelineLastRevision',
-    { pipeline_id: descriptor.pipeline_id }
-  ])
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(descriptor.pipeline_id))
   useEffect(() => {
     if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
       setInputs(getConnectorData(pipelineRevisionQuery.data, 'input'))
@@ -122,39 +121,11 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
     setOutputs
   ])
 
-  const [globalMetrics, setGlobalMetrics] = useState<GlobalMetrics[]>([])
-  const [inputMetrics, setInputMetrics] = useState<Map<string, InputConnectorMetrics>>(new Map())
-  const [outputMetrics, setOutputMetrics] = useState<Map<string, OutputConnectorMetrics>>(new Map())
-  const pipelineStatsQuery = useQuery<any>(['pipelineStats', { pipeline_id: descriptor.pipeline_id }], {
-    enabled: state.current_status == PipelineStatus.RUNNING,
-    refetchInterval: 1000
+  const { globalMetrics, inputMetrics, outputMetrics } = usePipelineMetrics({
+    pipelineId: descriptor.pipeline_id,
+    status: state.current_status,
+    refetchMs: 1000
   })
-
-  useEffect(() => {
-    if (!pipelineStatsQuery.isLoading && !pipelineStatsQuery.isError) {
-      const metrics = pipelineStatsQuery.data['global_metrics']
-      setGlobalMetrics(oldMetrics => [...oldMetrics, metrics])
-
-      const newInputMetrics = new Map<string, InputConnectorMetrics>()
-      pipelineStatsQuery.data['inputs'].forEach((cs: ConnectorStatus) => {
-        // @ts-ignore (config is untyped needs backend fix)
-        newInputMetrics.set(cs.config['stream'], cs.metrics as InputConnectorMetrics)
-      })
-      setInputMetrics(newInputMetrics)
-
-      const newOutputMetrics = new Map<string, OutputConnectorMetrics>()
-      pipelineStatsQuery.data['outputs'].forEach((cs: ConnectorStatus) => {
-        // @ts-ignore (config is untyped needs backend fix)
-        newOutputMetrics.set(cs.config['stream'], cs.metrics as OutputConnectorMetrics)
-      })
-      setOutputMetrics(newOutputMetrics)
-    }
-    if (state.current_status == PipelineStatus.SHUTDOWN) {
-      setGlobalMetrics([])
-      setInputMetrics(new Map())
-      setOutputMetrics(new Map())
-    }
-  }, [pipelineStatsQuery.isLoading, pipelineStatsQuery.isError, pipelineStatsQuery.data, state.current_status])
 
   function getRelationColumns(direction: InputOrOutput): GridColDef<ConnectorData>[] {
     return [
@@ -398,7 +369,8 @@ export default function PipelineTable() {
 
   const shutdownPipelineClick = useShutdownPipeline()
 
-  const { isLoading, isError, data, error } = useQuery<Pipeline[]>(['pipeline'], {
+  const { isLoading, isError, data, error } = useQuery({
+    ...PipelineManagerQuery.pipeline(),
     refetchInterval: 2000
   })
   useEffect(() => {
@@ -429,10 +401,7 @@ export default function PipelineTable() {
     const { value: isExpanded, row: row } = props
     const [hasRevision, setHasRevision] = useState<boolean>(false)
 
-    const pipelineRevisionQuery = useQuery<PipelineRevision | null>([
-      'pipelineLastRevision',
-      { pipeline_id: props.row.descriptor.pipeline_id }
-    ])
+    const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(props.row.descriptor.pipeline_id))
     useEffect(() => {
       if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
         setHasRevision(true)
@@ -463,7 +432,8 @@ export default function PipelineTable() {
   const columns: GridColDef[] = [
     {
       ...GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
-      renderCell: params => <CustomDetailPanelToggle id={params.id} value={params.value} row={params.row} />
+      renderCell: params => <CustomDetailPanelToggle id={params.id} value={params.value} row={params.row} />,
+      valueGetter: params => params.row.isExpanded
     },
     {
       field: 'name',
@@ -565,7 +535,14 @@ export default function PipelineTable() {
     </Button>
   )
 
-  const fetchRows = useQuery({ initialData: rows })
+  const fetchRows = useQuery(['dynamicPipelines'], { initialData: rows })
+
+  const [expandedRows, setExpandedRows] = useState<GridRowId[]>([])
+  {
+    // Cannot initialize in useState because hash is not available during SSR
+    const [hash] = useHash()
+    useEffect(() => setExpandedRows([hash.slice(1)]), [hash])
+  }
 
   return (
     <Card>
@@ -602,6 +579,8 @@ export default function PipelineTable() {
             children: btnAdd
           }
         }}
+        detailPanelExpandedRowIds={expandedRows}
+        onDetailPanelExpandedRowIdsChange={setExpandedRows}
       />
     </Card>
   )
@@ -616,7 +595,8 @@ const PipelineActions = (params: { row: Pipeline }) => {
   const deletePipelineClick = useDeletePipeline()
 
   const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
-  const curProgramQuery = useQuery<ProgramDescr>(['programCode', { program_id: pipeline.program_id }], {
+  const curProgramQuery = useQuery({
+    ...PipelineManagerQuery.programCode(pipeline.program_id!),
     enabled: pipeline.program_id != null
   })
   const programReady =
