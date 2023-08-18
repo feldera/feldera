@@ -8,6 +8,10 @@ homepage = "https://github.com/feldera/dbsp"
 repository = "https://github.com/feldera/dbsp"
 keywords = ["DBSP", "streaming", "analytics", "database"]
 categories = ["algorithms", "data-structures"]
+publish = true
+
+    [package.metadata.release]
+    release = true
 
     [package.metadata.docs.rs]
     all-features = true

@@ -2,6 +2,7 @@
 name = "tuple"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 # None so far, the code is just a macro

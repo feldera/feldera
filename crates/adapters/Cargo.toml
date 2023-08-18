@@ -8,6 +8,7 @@ homepage = "https://github.com/feldera/dbsp"
 repository = "https://github.com/feldera/dbsp"
 keywords = ["DBSP", "streaming", "analytics", "database"]
 categories = ["database", "api-bindings", "network-programming"]
+publish = false
 
 [features]
 default = ["with-kafka"]
