@@ -4,7 +4,7 @@ import useStatusNotification from '$lib/components/common/errors/useStatusNotifi
 import { getValueFormatter, Row } from '$lib/functions/ddl'
 import { ApiError, Field, PipelineId, PipelinesService, Relation } from '$lib/services/manager'
 import Papa from 'papaparse'
-import { useCallback } from 'react'
+import { Dispatch, SetStateAction, useCallback } from 'react'
 
 import { useMutation } from '@tanstack/react-query'
 
@@ -35,13 +35,14 @@ function useInsertRows() {
   })
 
   const insertRows = useCallback(
-    (pipeline_id: PipelineId, relation: Relation, rows: Row[]) => {
+    (pipeline_id: PipelineId, relation: Relation, rows: Row[], setRows: Dispatch<SetStateAction<Row[]>>) => {
       if (!pipelineInsertLoading) {
         const csv_data = Papa.unparse(rows.map(row => rowToCsvLine(relation, row)))
         pipelineInsert(
           { pipeline_id, relation: relation.name, csv_data },
           {
             onSuccess: () => {
+              setRows([])
               pushMessage({ message: `${rows.length} Row(s) inserted`, key: new Date().getTime(), color: 'success' })
             },
             onError: error => {

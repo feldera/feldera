@@ -97,10 +97,10 @@ const ImportToolbar = (props: {
   // Sends new rows to the table
   const insertRows = useInsertRows()
   const handleInsertRows = useCallback(() => {
-    if (relation) {
-      insertRows(pipelineRevision.pipeline.pipeline_id, relation, rows)
+    if (relation && rows.length > 0) {
+      insertRows(pipelineRevision.pipeline.pipeline_id, relation, rows, setRows)
     }
-  }, [insertRows, pipelineRevision, relation, rows])
+  }, [insertRows, pipelineRevision, relation, rows, setRows])
 
   return relation && pipelineRevision ? (
     <GridToolbarContainer>
