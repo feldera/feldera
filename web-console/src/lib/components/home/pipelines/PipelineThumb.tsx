@@ -1,19 +1,14 @@
 import { Pipeline } from '$lib/services/manager/models/Pipeline'
 import { ApexOptions } from 'apexcharts'
 import ReactApexcharts from 'src/@core/components/react-apexcharts'
-import { ThemeColor } from 'src/@core/layouts/types'
 
-import { Box, Link, Typography } from '@mui/material'
+import { Box, Button, Collapse, Link, Typography } from '@mui/material'
 import { discreteDerivative } from 'ts-practical-fp'
 import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import { format } from 'numerable'
-
-interface DataType {
-  name: string
-  designation: string
-  tput: number
-  chartColor?: ThemeColor
-}
+import { PipelineStatus } from 'src/lib/services/manager'
+import { Icon } from '@iconify/react'
+import { useState } from 'react'
 
 export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) => {
   const { globalMetrics } = usePipelineMetrics({
@@ -31,12 +26,14 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
       data: throughput
     }
   ]
-  const item: DataType = {
+  const item = {
     name: props.descriptor.name,
-    designation: props.descriptor.description,
+    description: props.descriptor.description,
     tput: throughput.at(-1) || 0,
-    chartColor: 'secondary'
+    chartColor: 'secondary',
+    active: props.state.current_status === PipelineStatus.RUNNING
   }
+  const [sqlHover, setSqlHover] = useState(false)
   return (
     <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center' }}>
       <Box
@@ -56,16 +53,51 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
             </Link>
           </Typography>
           <Typography variant='body2' sx={{ color: 'text.disabled' }}>
-            {item.designation}
+            {item.description}
           </Typography>
         </Box>
-        <Typography sx={{ fontWeight: 500, color: 'text.disabled' }}>
-          {format(item.tput, '0.0\u00A0aOps/s', { zeroFormat: '0\u00A0Ops/s' }) || '0 '}
-        </Typography>
+        <Box sx={{ display: 'flex', position: 'relative', alignItems: 'center' }}>
+          <ReactApexcharts type='line' width={80} height={40} options={props.apexOptions} series={series} />
+        </Box>
       </Box>
-      <Box sx={{ display: 'flex', position: 'relative', alignItems: 'center' }}>
-        <ReactApexcharts type='line' width={80} height={40} options={props.apexOptions} series={series} />
-      </Box>
+
+      {item.active ? (
+        <>
+          <Button
+            variant={sqlHover ? 'outlined' : 'text'}
+            sx={{ textTransform: 'none', flex: 'none' }}
+            size='small'
+            disabled={!props.descriptor.program_id}
+            href={`/analytics/editor/?program_id=${props.descriptor.program_id}`}
+            target='_blank'
+            rel='noreferrer'
+            onMouseEnter={e => setSqlHover(true)}
+            onMouseLeave={e => setSqlHover(false)}
+          >
+            <Collapse orientation='horizontal' in={!sqlHover}>
+              <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center' }}>
+                <Typography sx={{ fontWeight: 500, color: 'text.disabled' }}>
+                  {format(item.tput, '0.0\u00A0aOps/s', { zeroFormat: '0\u00A0Ops/s' }) || '0 '}
+                </Typography>
+                <Icon icon='bx:dots-vertical-rounded' fontSize={28} style={{ margin: -4, marginRight: -16 }}></Icon>
+              </Box>
+            </Collapse>
+            <Collapse orientation='horizontal' in={sqlHover}>
+              SQL
+            </Collapse>
+          </Button>
+        </>
+      ) : (
+        <Button
+          variant='outlined'
+          size='small'
+          href={`/analytics/editor/?program_id=${props.descriptor.program_id}`}
+          target='_blank'
+          rel='noreferrer'
+        >
+          SQL
+        </Button>
+      )}
     </Box>
   )
 }
