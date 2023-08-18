@@ -14,7 +14,8 @@ import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
 import { PipelineThumb } from '$lib/components/home/pipelines/PipelineThumb'
 import { PipelineStatus } from 'src/lib/services/manager'
 import { partition } from 'ts-practical-fp'
-import { ListItem } from '@mui/material'
+import { Accordion, AccordionDetails, AccordionSummary, ListItem } from '@mui/material'
+import { Icon } from '@iconify/react'
 
 const Pipelines = () => {
   const theme = useTheme()
@@ -35,8 +36,17 @@ const Pipelines = () => {
       <CardContent>
         {thumbs}
         <ListItem></ListItem>
-        <Typography color='text.secondary'>and {inactive.length} inactive</Typography>
       </CardContent>
+      <Accordion disableGutters>
+        <AccordionSummary expandIcon={<Icon icon='bx:chevron-down' fontSize={32} />}>
+          <Typography color='text.secondary'>and {inactive.length} inactive</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          {inactive.map(p => (
+            <PipelineThumb {...p} apexOptions={apexOptions} key={p.descriptor.pipeline_id}></PipelineThumb>
+          ))}
+        </AccordionDetails>
+      </Accordion>
     </Card>
   )
 }

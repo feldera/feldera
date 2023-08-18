@@ -71,7 +71,7 @@ const VerticalNavLink = ({ item, navVisible, toggleNavVisibility }: Props) => {
       >
         <MenuNavLink
           className={isNavLinkActive() ? 'active' : ''}
-          {...(item.openInNewTab ? { target: '_blank' } : null)}
+          {...(item.openInNewTab ? { target: '_blank', rel: 'noreferrer' } : null)}
           onClick={e => {
             if (item.path === undefined) {
               e.preventDefault()

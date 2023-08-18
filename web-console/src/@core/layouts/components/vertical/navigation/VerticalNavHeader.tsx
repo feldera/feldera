@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import darkLogo from 'public/images/feldera-primary-dark.svg'
-import lightLogo from 'public/images/feldera-primary-main.svg'
+import darkLogo from 'public/images/feldera/LogoWhite.svg'
+import lightLogo from 'public/images/feldera/LogoSolid.svg'
 import { ReactNode } from 'react'
 import { Settings } from 'src/@core/context/settingsContext'
 
