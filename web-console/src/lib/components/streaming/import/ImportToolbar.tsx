@@ -1,11 +1,12 @@
 import useGenerateRows from '$lib/compositions/streaming/import/useGenerateRows'
 import useInsertRows from '$lib/compositions/streaming/import/useInsertRows'
 import { Row } from '$lib/functions/ddl'
-import { LS_PREFIX } from '$lib/types/localStorage'
 import { PipelineRevision, Relation } from '$lib/services/manager'
+import { LS_PREFIX } from '$lib/types/localStorage'
 import dayjs from 'dayjs'
 import Papa from 'papaparse'
 import { ChangeEvent, Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
+import useDefaultRows from 'src/lib/compositions/streaming/import/useDefaultRows'
 
 import { Icon } from '@iconify/react'
 import { useLocalStorage } from '@mantine/hooks'
@@ -60,6 +61,7 @@ const ImportToolbar = (props: {
     setRows([])
   }
 
+  const insertDefaultRows = useDefaultRows(apiRef, setRows, relation)
   const insertRandomRows = useGenerateRows(apiRef, setRows, relation, settings)
 
   // Function to handle the CSV file import
@@ -108,6 +110,9 @@ const ImportToolbar = (props: {
         Clear
       </Button>
       <RngSettingsDialog relation={relation} settings={settings} setSettings={setSettings} />
+      <Button size='small' onClick={() => insertDefaultRows(1)} startIcon={<Icon icon='majesticons:add-row' />}>
+        Add Default Row
+      </Button>
       <Button size='small' onClick={() => insertRandomRows(1)} startIcon={<Icon icon='mdi:add' />}>
         1 Random Row
       </Button>
