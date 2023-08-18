@@ -8,10 +8,14 @@ homepage = "https://github.com/feldera/dbsp"
 repository = "https://github.com/feldera/dbsp"
 keywords = ["DBSP", "streaming", "analytics", "Nexmark", "benchmark"]
 categories = []
+publish = false
 
     [package.metadata.docs.rs]
     all-features = true
     rustdoc-args = ["--cfg", "docsrs"]
+
+    [package.metadata.release]
+    release = false
 
 [dependencies]
 dbsp = { path = "../dbsp" }

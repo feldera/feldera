@@ -2,6 +2,7 @@
 name = "readers"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 paste = { version = "1.0.12" }
