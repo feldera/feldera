@@ -34,7 +34,7 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import { format } from 'd3-format'
 import dayjs from 'dayjs'
 import Link from 'next/link'
-import router from 'next/router'
+import { useRouter } from 'next/navigation'
 import React, { useCallback, useEffect, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
@@ -104,6 +104,7 @@ function getConnectorData(revision: PipelineRevision, direction: InputOrOutput):
 }
 
 const DetailPanelContent = (props: { row: Pipeline }) => {
+  const router = useRouter()
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
   const { descriptor, state } = props.row
@@ -621,6 +622,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
 
   const state = usePipelineState(params)
 
+  const router = useRouter()
   const startPipelineClick = useStartPipeline()
   const pausePipelineClick = usePausePipeline()
   const shutdownPipelineClick = useShutdownPipeline()
@@ -667,7 +669,6 @@ const PipelineActions = (params: { row: Pipeline }) => {
         <IconButton
           className='editButton'
           size='small'
-          href='#'
           onClick={e => {
             e.preventDefault()
             router.push(`/streaming/builder/?pipeline_id=${pipeline.pipeline_id}`)
