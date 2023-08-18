@@ -1742,6 +1742,8 @@ pub struct PipelineIdOrNameQuery {
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier."),
         ("table_name" = String, Path, description = "SQL table name."),
         ("format" = String, Query, description = "Input data format, e.g., 'csv' or 'json'."),
+        ("array" = Option<bool>, Query, description = "Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`."),
+        ("update_format" = Option<JsonUpdateFormat>, Query, description = "JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'."),
     ),
     tag = "Pipelines",
     request_body(
@@ -1825,6 +1827,7 @@ async fn http_input(
         ("query" = Option<OutputQuery>, Query, description = "Query to execute on the table. Must be one of 'table', 'neighborhood', or 'quantiles'. The default value is 'table'"),
         ("mode" = Option<EgressMode>, Query, description = "Output mode. Must be one of 'watch' or 'snapshot'. The default value is 'watch'"),
         ("quantiles" = Option<u32>, Query, description = "For 'quantiles' queries: the number of quantiles to output. The default value is 100."),
+        ("array" = Option<bool>, Query, description = "Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`"),
     ),
     request_body(
         content = Option<NeighborhoodQuery>,

@@ -6,7 +6,8 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
-from ...types import UNSET, Response
+from ...models.json_update_format import JsonUpdateFormat
+from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
@@ -14,11 +15,21 @@ def _get_kwargs(
     table_name: str,
     *,
     format_: str,
+    array: Union[Unset, None, bool] = UNSET,
+    update_format: Union[Unset, None, JsonUpdateFormat] = UNSET,
 ) -> Dict[str, Any]:
     pass
 
     params: Dict[str, Any] = {}
     params["format"] = format_
+
+    params["array"] = array
+
+    json_update_format: Union[Unset, None, str] = UNSET
+    if not isinstance(update_format, Unset):
+        json_update_format = update_format.value if update_format else None
+
+    params["update_format"] = json_update_format
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -73,6 +84,8 @@ def sync_detailed(
     *,
     client: Union[AuthenticatedClient, Client],
     format_: str,
+    array: Union[Unset, None, bool] = UNSET,
+    update_format: Union[Unset, None, JsonUpdateFormat] = UNSET,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Push data to a SQL table.
 
@@ -90,6 +103,13 @@ def sync_detailed(
         pipeline_id (str):
         table_name (str):
         format_ (str):
+        array (Union[Unset, None, bool]):
+        update_format (Union[Unset, None, JsonUpdateFormat]): Supported JSON data change event
+            formats.
+
+            Each element in a JSON-formatted input stream specifies
+            an update to one or more records in an input table.  We support
+            several different ways to represent such updates.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -103,6 +123,8 @@ def sync_detailed(
         pipeline_id=pipeline_id,
         table_name=table_name,
         format_=format_,
+        array=array,
+        update_format=update_format,
     )
 
     response = client.get_httpx_client().request(
@@ -118,6 +140,8 @@ def sync(
     *,
     client: Union[AuthenticatedClient, Client],
     format_: str,
+    array: Union[Unset, None, bool] = UNSET,
+    update_format: Union[Unset, None, JsonUpdateFormat] = UNSET,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Push data to a SQL table.
 
@@ -135,6 +159,13 @@ def sync(
         pipeline_id (str):
         table_name (str):
         format_ (str):
+        array (Union[Unset, None, bool]):
+        update_format (Union[Unset, None, JsonUpdateFormat]): Supported JSON data change event
+            formats.
+
+            Each element in a JSON-formatted input stream specifies
+            an update to one or more records in an input table.  We support
+            several different ways to represent such updates.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -149,6 +180,8 @@ def sync(
         table_name=table_name,
         client=client,
         format_=format_,
+        array=array,
+        update_format=update_format,
     ).parsed
 
 
@@ -158,6 +191,8 @@ async def asyncio_detailed(
     *,
     client: Union[AuthenticatedClient, Client],
     format_: str,
+    array: Union[Unset, None, bool] = UNSET,
+    update_format: Union[Unset, None, JsonUpdateFormat] = UNSET,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Push data to a SQL table.
 
@@ -175,6 +210,13 @@ async def asyncio_detailed(
         pipeline_id (str):
         table_name (str):
         format_ (str):
+        array (Union[Unset, None, bool]):
+        update_format (Union[Unset, None, JsonUpdateFormat]): Supported JSON data change event
+            formats.
+
+            Each element in a JSON-formatted input stream specifies
+            an update to one or more records in an input table.  We support
+            several different ways to represent such updates.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -188,6 +230,8 @@ async def asyncio_detailed(
         pipeline_id=pipeline_id,
         table_name=table_name,
         format_=format_,
+        array=array,
+        update_format=update_format,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -201,6 +245,8 @@ async def asyncio(
     *,
     client: Union[AuthenticatedClient, Client],
     format_: str,
+    array: Union[Unset, None, bool] = UNSET,
+    update_format: Union[Unset, None, JsonUpdateFormat] = UNSET,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Push data to a SQL table.
 
@@ -218,6 +264,13 @@ async def asyncio(
         pipeline_id (str):
         table_name (str):
         format_ (str):
+        array (Union[Unset, None, bool]):
+        update_format (Union[Unset, None, JsonUpdateFormat]): Supported JSON data change event
+            formats.
+
+            Each element in a JSON-formatted input stream specifies
+            an update to one or more records in an input table.  We support
+            several different ways to represent such updates.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -233,5 +286,7 @@ async def asyncio(
             table_name=table_name,
             client=client,
             format_=format_,
+            array=array,
+            update_format=update_format,
         )
     ).parsed
