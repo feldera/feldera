@@ -22,6 +22,7 @@ def _get_kwargs(
     query: Union[Unset, None, OutputQuery] = UNSET,
     mode: Union[Unset, None, EgressMode] = UNSET,
     quantiles: Union[Unset, None, int] = UNSET,
+    array: Union[Unset, None, bool] = UNSET,
 ) -> Dict[str, Any]:
     pass
 
@@ -41,6 +42,8 @@ def _get_kwargs(
     params["mode"] = json_mode
 
     params["quantiles"] = quantiles
+
+    params["array"] = array
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -107,6 +110,7 @@ def sync_detailed(
     query: Union[Unset, None, OutputQuery] = UNSET,
     mode: Union[Unset, None, EgressMode] = UNSET,
     quantiles: Union[Unset, None, int] = UNSET,
+    array: Union[Unset, None, bool] = UNSET,
 ) -> Response[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates from a SQL view or table.
 
@@ -129,6 +133,7 @@ def sync_detailed(
             three pre-defined queries to inspect the contents of a table or view.
         mode (Union[Unset, None, EgressMode]):
         quantiles (Union[Unset, None, int]):
+        array (Union[Unset, None, bool]):
         json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
             table or view.
             The neighborhood is defined in terms of its central point (`anchor`)
@@ -150,6 +155,7 @@ def sync_detailed(
         query=query,
         mode=mode,
         quantiles=quantiles,
+        array=array,
     )
 
     response = client.get_httpx_client().request(
@@ -169,6 +175,7 @@ def sync(
     query: Union[Unset, None, OutputQuery] = UNSET,
     mode: Union[Unset, None, EgressMode] = UNSET,
     quantiles: Union[Unset, None, int] = UNSET,
+    array: Union[Unset, None, bool] = UNSET,
 ) -> Optional[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates from a SQL view or table.
 
@@ -191,6 +198,7 @@ def sync(
             three pre-defined queries to inspect the contents of a table or view.
         mode (Union[Unset, None, EgressMode]):
         quantiles (Union[Unset, None, int]):
+        array (Union[Unset, None, bool]):
         json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
             table or view.
             The neighborhood is defined in terms of its central point (`anchor`)
@@ -213,6 +221,7 @@ def sync(
         query=query,
         mode=mode,
         quantiles=quantiles,
+        array=array,
     ).parsed
 
 
@@ -226,6 +235,7 @@ async def asyncio_detailed(
     query: Union[Unset, None, OutputQuery] = UNSET,
     mode: Union[Unset, None, EgressMode] = UNSET,
     quantiles: Union[Unset, None, int] = UNSET,
+    array: Union[Unset, None, bool] = UNSET,
 ) -> Response[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates from a SQL view or table.
 
@@ -248,6 +258,7 @@ async def asyncio_detailed(
             three pre-defined queries to inspect the contents of a table or view.
         mode (Union[Unset, None, EgressMode]):
         quantiles (Union[Unset, None, int]):
+        array (Union[Unset, None, bool]):
         json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
             table or view.
             The neighborhood is defined in terms of its central point (`anchor`)
@@ -269,6 +280,7 @@ async def asyncio_detailed(
         query=query,
         mode=mode,
         quantiles=quantiles,
+        array=array,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -286,6 +298,7 @@ async def asyncio(
     query: Union[Unset, None, OutputQuery] = UNSET,
     mode: Union[Unset, None, EgressMode] = UNSET,
     quantiles: Union[Unset, None, int] = UNSET,
+    array: Union[Unset, None, bool] = UNSET,
 ) -> Optional[Union[Chunk, ErrorResponse]]:
     """Subscribe to a stream of updates from a SQL view or table.
 
@@ -308,6 +321,7 @@ async def asyncio(
             three pre-defined queries to inspect the contents of a table or view.
         mode (Union[Unset, None, EgressMode]):
         quantiles (Union[Unset, None, int]):
+        array (Union[Unset, None, bool]):
         json_body (Optional[NeighborhoodQuery]): A request to output a specific neighborhood of a
             table or view.
             The neighborhood is defined in terms of its central point (`anchor`)
@@ -331,5 +345,6 @@ async def asyncio(
             query=query,
             mode=mode,
             quantiles=quantiles,
+            array=array,
         )
     ).parsed
