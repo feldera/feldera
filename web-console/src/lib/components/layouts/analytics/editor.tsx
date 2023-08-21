@@ -320,7 +320,6 @@ const useCompileProjectIfChanged = (
   useEffect(() => {
     if (
       !isLoading &&
-      !isError &&
       state == 'isUpToDate' &&
       project.program_id !== '' &&
       lastCompiledVersion !== undefined &&
@@ -369,8 +368,12 @@ const usePollCompilationStatus = (
   const compilationStatus = useQuery<ProgramDescr>({
     queryKey: ['programStatus', { program_id: project.program_id }],
     refetchInterval: data =>
-      data === undefined || data.status === 'Pending' || data.status === 'CompilingSql' ? 1000 : false,
-    enabled: project.program_id !== '' && (project.status === 'Pending' || project.status === 'CompilingSql')
+      data === undefined || data.status === 'None' || data.status === 'Pending' || data.status === 'CompilingSql'
+        ? 1000
+        : false,
+    enabled:
+      project.program_id !== '' &&
+      (project.status === 'None' || project.status === 'Pending' || project.status === 'CompilingSql')
   })
 
   useEffect(() => {
@@ -398,7 +401,7 @@ const usePollCompilationStatus = (
           setLastCompiledVersion(project.version)
         })
         .with('None', () => {
-          // Wait -- shouldn't it be pending?
+          // Wait -- need to call /compile
         })
         .exhaustive()
 
