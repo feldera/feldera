@@ -14,7 +14,7 @@ Continous Feature Update.  It shows a SQL program similar to the one
 for Time Series Enrichment, but with a more sophisticated join in the
 view.
 
-If you click on Pipeline Management, then on the pencil icon next to
+If you click on Pipelines, then on the pencil icon next to
 Fraud Detection Features Pipeline, you will see the following pipeline
 structure:
 

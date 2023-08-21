@@ -53,7 +53,7 @@ TABLE` command for each table and a `CREATE VIEW` command for the
 join.
 
 The demo also includes a pipeline that uses this program.  On the
-sidebar, click on Pipeline Management, then on the pencil icon next to
+sidebar, click on Pipelines, then on the pencil icon next to
 Time Series Enrichment Pipeline.  This displays the pipeline
 structure, including the program and how it is attached to connectors:
 

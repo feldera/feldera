@@ -14,18 +14,16 @@ Let's take a quick tour around the options on the sidebar.
 
 ![Analytics](analytics.png)
 
-The top group of tabs allows a Feldera Platform user to define the structure of
+Click on the "SQL Programs" tab.  This tab
+allows a Feldera Platform user to define the structure of
 data and specify analyses.  The user writes both of these in SQL: data
 definitions as `CREATE TABLE` commands, and analyses as `CREATE VIEW`
 commands.  Feldera Platform implements a rich SQL feature set that permits
 sophisticated SQL written for popular SQL databases to run with only
 minimal changes.
 
-The "Add SQL Programs" button allows a user to add and name new SQL programs by
-typing or pasting.
-
-Click on "SQL Programs" to show a list of the SQL programs that
-are already defined. This list displays each program's name and
+In addition to an "Add SQL Program" button for creating a new program,
+This tab displays a list of each existing program's name and
 description, which one may double-click to edit. Each program also
 has a status that indicates whether it is fully compiled, and two
 icons for actions: a pencil <icon icon="bx:pencil" /> to view or edit the
@@ -58,19 +56,9 @@ happens through **connectors**, which are divided into **input
 connectors** for obtaining data from a source to feed into a table and
 **output connectors** that receive data output by views.
 
-Let's look at the "Input & Output" tabs, which allow a user to create
-and manage input and output connectors. The following section on
-pipelines will then show how to connect input and output to programs
-to form streaming pipelines.
-
-Click on "Add Connector" to see the types of connectors that Feldera Platform
-supports.  Input and output connectors are listed separately.  Apache
-[Kafka], the most widely used kind of connector, is listed twice
-because Feldera Platform supports it for both input and outputa:
-
-![Connector Creator](connector-creator.png)
-
-Click on ""SQL Connectors"" to see a list of the input and output
+Click on the "Connectors" tab, which allow a user to create and manage
+input and output connectors.  In addition to an "Add Connector" button
+to create a new connector, this tab shows a list of the input and output
 connectors that have already been created. The list shows each
 connector's name and description, which one may double-click to edit,
 along with its type. Pencil and trash can icons allow one to edit and
@@ -82,6 +70,13 @@ Click on one of the pencil icons to see what kinds of settings are
 available for each connector. The available settings vary with the
 connector type. The connectors in the demo are already set up
 properly, so don't make changes.
+
+Click on "Add Connector" to see the types of connectors that Feldera Platform
+supports.  Input and output connectors are listed separately.  Apache
+[Kafka], the most widely used kind of connector, is listed twice
+because Feldera Platform supports it for both input and output:
+
+![Connector Creator](connector-creator.png)
 
 The next section shows how to combine programs and connectors to form
 streaming pipelines.
@@ -96,9 +91,9 @@ A user assembles a **pipeline** by attaching a program's tables to
 input connectors and its views to output connectors.  The "Pipelines"
 page allow a Feldera Platform user to set up, manage and monitor pipelines.
 
-The "Add Pipeline" button allows a user to create new pipelines.
-
-Click on "Pipeline Management" to list the existing pipelines. Each row has a
+Click on the "Pipelines" tab to see a list of the existing pipelines
+as well as an "Add Pipeline" button for creating a new pipeline.  Each
+row in the list has a
 name and description (which one can edit), and an indication of whether the
 pipeline is stopped, running, or paused. When you start the demo for the first
 time, all of the pipelines should be shown as `INACTIVE`, meaning stopped, with
