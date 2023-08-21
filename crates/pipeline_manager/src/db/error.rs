@@ -54,7 +54,7 @@ pub enum DBError {
         program_id: ProgramId,
     },
     OutdatedProgramVersion {
-        expected_version: Version,
+        latest_version: Version,
     },
     UnknownPipeline {
         pipeline_id: PipelineId,
@@ -322,10 +322,10 @@ impl Display for DBError {
             DBError::ProgramInUseByPipeline { program_id } => {
                 write!(f, "Program id '{program_id}' is in use by a pipeline")
             }
-            DBError::OutdatedProgramVersion { expected_version } => {
+            DBError::OutdatedProgramVersion { latest_version } => {
                 write!(
                     f,
-                    "Outdated program version. Expected version: '{expected_version}'"
+                    "Outdated program version. Latest version: '{latest_version}'"
                 )
             }
             DBError::UnknownPipeline { pipeline_id } => {
