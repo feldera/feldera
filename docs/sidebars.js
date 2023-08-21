@@ -39,15 +39,7 @@ const sidebars = {
           }
       ]
     },
-    {
-      type: 'category',
-      label: 'Demos',
-      link: {
-        type: 'doc',
-        id: 'demos/index'
-      },
-      items: ['demos/simple-select', 'demos/time-series-enrich', 'demos/fraud-detection', 'demos/secops']
-    },
+    'demo/demo',
     {
       type: 'category',
       label: 'SQL Reference',
