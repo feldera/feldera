@@ -14,6 +14,9 @@ export type ProgramStatus =
   | 'CompilingRust'
   | 'Success'
   | {
+      /**
+       * SQL compiler returned an error.
+       */
       SqlError: Array<SqlCompilerMessage>
     }
   | {
