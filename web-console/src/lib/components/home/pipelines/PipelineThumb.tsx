@@ -71,8 +71,8 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
             href={`/analytics/editor/?program_id=${props.descriptor.program_id}`}
             target='_blank'
             rel='noreferrer'
-            onMouseEnter={e => setSqlHover(true)}
-            onMouseLeave={e => setSqlHover(false)}
+            onMouseEnter={() => setSqlHover(true)}
+            onMouseLeave={() => setSqlHover(false)}
           >
             <Collapse orientation='horizontal' in={!sqlHover}>
               <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center' }}>
