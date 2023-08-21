@@ -297,12 +297,12 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
         r"
                     Welcome to
 
-███████ ███████ ██      ██████  ███████ ██████   █████  
-██      ██      ██      ██   ██ ██      ██   ██ ██   ██ 
-█████   █████   ██      ██   ██ █████   ██████  ███████ 
-██      ██      ██      ██   ██ ██      ██   ██ ██   ██ 
-██      ███████ ███████ ██████  ███████ ██   ██ ██   ██ 
-                
+███████ ███████ ██      ██████  ███████ ██████   █████
+██      ██      ██      ██   ██ ██      ██   ██ ██   ██
+█████   █████   ██      ██   ██ █████   ██████  ███████
+██      ██      ██      ██   ██ ██      ██   ██ ██   ██
+██      ███████ ███████ ██████  ███████ ██   ██ ██   ██
+
 Web UI URL: {}
 API server URL: {}
 Documentation: https://docs.feldera.io
@@ -436,7 +436,7 @@ fn example_duplicate_name() -> ErrorResponse {
 
 fn example_outdated_program_version() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::OutdatedProgramVersion {
-        expected_version: Version(5),
+        latest_version: Version(5),
     })
 }
 

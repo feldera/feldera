@@ -64,7 +64,9 @@ pub(crate) trait Storage {
     ) -> Result<ProgramDescr, DBError> {
         let descr = self.get_program_by_id(tenant_id, program_id, false).await?;
         if descr.version != expected_version {
-            return Err(DBError::OutdatedProgramVersion { expected_version });
+            return Err(DBError::OutdatedProgramVersion {
+                latest_version: descr.version,
+            });
         }
 
         Ok(descr)
