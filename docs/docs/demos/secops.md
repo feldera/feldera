@@ -15,9 +15,7 @@ running those vulnerable images.
 
 Suppose each record in `pipeline` represents a run of the CI build
 pipeline, using sources associated with the pipeline via
-`pipeline_sources`, each record in which is associated with a Git
-commit in `git_commit`, which in turn is drawn from a Git repository
-represented as `repository`.  When a vulnerability is discovered, a
+`pipeline_sources`.  When a vulnerability is discovered, a
 `vulnerability` record associates it with `pipeline_sources`.
 
 A pipeline produces `artifact`s, which may in turn have further
@@ -29,18 +27,6 @@ The following diagram illustrates these relationships:
 
 ```mermaid
 erDiagram
-    repository {
-        bigint repository_id PK
-        varchar type
-        varchar url
-        varchar name
-    }
-    git_commit {
-        bigint git_commit_id PK
-        bigint repository_id FK
-        timestamp commit_date
-        varchar commit_owner
-    }
     pipeline {
         bigint pipeline_id PK
         timestamp create_date
@@ -48,7 +34,7 @@ erDiagram
     }
     pipeline_sources {
         bigint pipeline_id FK
-        bigint git_commit_id FK
+        bigint git_commit_id
     }
     artifact {
        string artifact_id PK
@@ -79,8 +65,6 @@ erDiagram
         bigint deployed_id FK
     }
     pipeline ||--|| pipeline_sources : "has sources"
-    pipeline_sources ||--o{ git_commit : "from Git commit"
-    git_commit ||--|| repository : "within Git repository"
     k8sobject ||--|| artifact : "built from"
     k8sobject ||--o{ k8scluster : "deployed as"
     vulnerability ||--|| pipeline_sources : "discovered in"
@@ -104,8 +88,6 @@ upper case:
 ```mermaid
 erDiagram
     pipeline ||--|| pipeline_sources : "has sources"
-    pipeline_sources ||--o{ git_commit : "from Git commit"
-    git_commit ||--|| repository : "within Git repository"
     k8sobject ||--|| artifact : "built from"
     k8sobject ||--o{ k8scluster : "deployed as"
     vulnerability ||--|| pipeline_sources : "discovered in"
@@ -137,7 +119,7 @@ pencil icon next to SecOps demo.  It shows a SQL program with a
 each view.
 
 The demo also includes a pipeline that uses this program.  On the
-sidebar, click on Pipeline Management, then on the pencil icon next to
+sidebar, click on Pipelines, then on the pencil icon next to
 SecOps Pipeline.  This displays the pipeline structure, including the
 program and how it is attached to connectors:
 
@@ -153,9 +135,10 @@ which is for `k8scluster_vulnerability_stats`, the view that reports
 overall vulnerability statistics across Kubernetes clusters.
 
 Let's take a look at how the vulnerability statistics can evolve as we
-feed data into the pipeline.  From the Pipeline Management tab, click
+feed data into the pipeline.  From the Pipelines tab, click
 on the play icon.  Wait a few seconds for the pipeline to start
-running, then click on the `+` to expand the list of input and output
+running, then click on the <icon icon="material-symbols:expand-more"
+/> to expand the list of input and output
 connectors, then on the eye on the row for
 `K8SCLUSTER_VULNERABILITY_STATS`.  The page refreshes to show the data
 in the view.  It should look something like this:

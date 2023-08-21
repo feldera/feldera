@@ -21,7 +21,7 @@ CREATE VIEW output_users AS SELECT * FROM users;
 ## Pipeline
 
 The demo includes a pipeline that uses this program.  Let's examine
-it.  On the sidebar, click on Pipeline Management, then on the pencil
+it.  On the sidebar, click on Pipelines, then on the pencil
 icon next to SimpleSelect Pipeline.  This displays the pipeline
 structure, including the program and how it is attached to connectors:
 
@@ -40,7 +40,7 @@ look at these.
 
 ### Input connector
 
-Start with the input connector.  Click on "SQL Connectors" on the
+Start with the input connector.  Click on "Connectors" on the
 sidebar, then click on the pencil icon on the `DEMOGRAPHICS` row.  A
 dialog should pop up like the one below, which allows the input
 connector's name and description to be edited.
@@ -60,7 +60,7 @@ the upper-right corner.
 
 ### Output connector
 
-Now let's look at the output connector.  Click on "SQL Connectors"
+Now let's look at the output connector.  Click on "Connectors"
 on the sidebar, then click on the pencil icon on the `TRANSACTIONS`
 row.  This brings up a dialog just like the corresponding one for an
 input connector.
@@ -78,18 +78,19 @@ the upper-right corner.
 
 ## Running the Pipeline
 
-Go back to the main pipeline view, by clicking on Pipeline Management
-in the sidebar.  Expand the view of the SimpleSelect Pipeline row, by
-clicking on the `+` at its left side, then click on its play icon to
-start the pipeline.  It should take a few seconds to start.  This
-pipeline only has a tiny amount of data (3 records!), which it should
-process too quickly to perceive.  The pipeline will remain running,
-waiting for more data, but since no more input will arrive, the output
-will not change.
+Go back to the main pipeline view, by clicking on Pipelines in the
+sidebar.  Click on its play icon to start the pipeline.  It should
+take a few seconds to start.  This pipeline only has a tiny amount of
+data (3 records!), which it should process too quickly to perceive.
+The pipeline will remain running, waiting for more data, but since no
+more input will arrive, the output will not change.
 
-Click on the eye icon for the `users` input table.  The browser will
-refresh to show the contents of the input connector, three records
-with the contents `user1`, `user2`, `user3`.
+An expander arrow <icon icon="material-symbols:expand-more" should
+have appeared next to the pipeline name.  Click on it, then within the
+list of tables that appears, click on the eye icon for the `users`
+input table.  The browser will refresh to show the contents of the
+input connector, three records with the contents `user1`, `user2`,
+`user3`.
 
 Click on the back button, then on the eye icon for the `output_users` output
 view.  The browser will refresh to show the contents of the output connector,
