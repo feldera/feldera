@@ -19,21 +19,34 @@ const sidebars = {
     'tour/tour',
     {
       type: 'category',
+      label: 'Tutorials',
+      link: {
+        type: 'doc',
+        id: 'tutorials/index'
+      },
+      items: [
+          {
+              type: 'category',
+              label: 'Feldera: the Basics',
+              link: {
+                  type: 'doc',
+                  id: 'tutorials/basics/index',
+              },
+              items: [
+                  'tutorials/basics/part1',
+                  'tutorials/basics/part2'
+              ]
+          }
+      ]
+    },
+    {
+      type: 'category',
       label: 'Demos',
       link: {
         type: 'doc',
         id: 'demos/index'
       },
       items: ['demos/simple-select', 'demos/time-series-enrich', 'demos/fraud-detection', 'demos/secops']
-    },
-    {
-      type: 'category',
-      label: 'Guides',
-      link: {
-        type: 'doc',
-        id: 'guides/index'
-      },
-      items: ['guides/writing-sql', 'guides/debugging-sql']
     },
     {
       type: 'category',
