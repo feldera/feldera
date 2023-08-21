@@ -31,6 +31,7 @@ import { useDebouncedCallback } from 'use-debounce'
 import { Card, CardContent } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { partition } from 'ts-practical-fp'
 
 const stateToSaveLabel = (state: SaveIndicatorState): string =>
   match(state)
@@ -50,6 +51,8 @@ const stateToSaveLabel = (state: SaveIndicatorState): string =>
       return 'New Pipeline'
     })
     .exhaustive()
+
+const detachConnector = (c: AttachedConnector) => ({...c, relation_name: ''} as AttachedConnector)
 
 export const PipelineWithProvider = (props: {
   pipelineId: PipelineId | undefined
@@ -97,55 +100,57 @@ export const PipelineWithProvider = (props: {
       pipelineId !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
   })
   useEffect(() => {
-    if (saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing') {
-      if (
-        !pipelineQuery.isLoading &&
-        !pipelineQuery.isError &&
-        !projects.isLoading &&
-        !projects.isError &&
-        !connectorQuery.isLoading &&
-        !connectorQuery.isError
-      ) {
-        const descriptor = pipelineQuery.data.descriptor
-        setPipelineId(() => descriptor.pipeline_id)
-        setName(descriptor.name)
-        setDescription(descriptor.description)
-        setConfig(descriptor.config)
-        setSaveState('isUpToDate')
+    if (saveState === 'isSaving' || saveState === 'isModified' || saveState === 'isDebouncing') {
+      return
+    }
+    const isReady = !(
+      pipelineQuery.isLoading ||
+      pipelineQuery.isError ||
+      projects.isLoading ||
+      projects.isError ||
+      connectorQuery.isLoading ||
+      connectorQuery.isError
+    )
+    if (!isReady && pipelineId === undefined) {
+      setProject(undefined)
+      setSaveState('isNew')
+      setName('')
+      setDescription('')
+      // TODO: Set to 8 for now, needs to be configurable eventually
+      setConfig({ workers: 8 })
+      return
+    }
+    if (!isReady) {
+      return
+    }
+    const descriptor = pipelineQuery.data.descriptor
+    setPipelineId(() => descriptor.pipeline_id)
+    setName(descriptor.name)
+    setDescription(descriptor.description)
+    setConfig(descriptor.config)
+    setSaveState('isUpToDate')
 
-        const attachedConnectors = descriptor.attached_connectors
-        let invalidConnections: AttachedConnector[] = []
-        let validConnections: AttachedConnector[] = attachedConnectors
+    const attachedConnectors = descriptor.attached_connectors
+    console.log(attachedConnectors)
+
+    // We don't set so `setSaveState` here because we don't want to override
+    // the saveState every time the backend returns some result. Because it
+    // could cancel potentially in-progress saves (started by client action).
+
+    const project = (id => id ? projects.data.find(p => p.program_id === id) : undefined)(descriptor.program_id)
+    const validConnections = !project
+      ? attachedConnectors
+      : (() => {
+        setMissingSchemaDialog(!project.schema)
+
+        console.log(project.schema)
         console.log(attachedConnectors)
+        const [validConnections, invalidConnections] = partition(attachedConnectors,
+          connector => connectorConnects(project.schema, connector)
+        )
 
-        // We don't set so `setSaveState` here because we don't want to override
-        // the saveState every time the backend returns some result. Because it
-        // could cancel potentially in-progress saves (started by client action).
-
-        if (descriptor.program_id) {
-          const foundProject = projects.data.find(p => p.program_id === descriptor.program_id)
-          if (foundProject) {
-            if (!foundProject.schema) {
-              setMissingSchemaDialog(true)
-            } else {
-              setMissingSchemaDialog(false)
-            }
-
-            if (attachedConnectors) {
-              console.log(foundProject.schema)
-              console.log(attachedConnectors)
-              invalidConnections = attachedConnectors.filter(attached_connector => {
-                return !connectorConnects(attached_connector, foundProject.schema)
-              })
-              validConnections = attachedConnectors.filter(attached_connector => {
-                return connectorConnects(attached_connector, foundProject.schema)
-              })
-            }
-
-            setProject(foundProject)
-            replacePlaceholder(foundProject)
-          }
-        }
+        setProject(project)
+        replacePlaceholder(project)
 
         if (invalidConnections.length > 0) {
           pushMessage({
@@ -157,25 +162,20 @@ export const PipelineWithProvider = (props: {
           })
         }
 
-        if (validConnections) {
-          validConnections.forEach(attached_connector => {
-            const connector = connectorQuery.data.find(
-              connector => connector.connector_id === attached_connector.connector_id
-            )
-            if (connector) {
-              addConnector(connector, attached_connector)
-            }
-          })
-        }
-      } else if (pipelineId === undefined) {
-        setProject(undefined)
-        setSaveState('isNew')
-        setName('')
-        setDescription('')
-        // TODO: Set to 8 for now, needs to be configurable eventually
-        setConfig({ workers: 8 })
+        const connectors = invalidConnections.map(detachConnector)
+        validConnections.push(...connectors)
+
+        return validConnections
+      })()
+
+    validConnections.forEach(attached_connector => {
+      const connector = connectorQuery.data.find(
+        connector => connector.connector_id === attached_connector.connector_id
+      )
+      if (connector) {
+        addConnector(connector, attached_connector)
       }
-    }
+    })
   }, [
     connectorQuery.isLoading,
     connectorQuery.isError,
@@ -210,97 +210,100 @@ export const PipelineWithProvider = (props: {
       debouncedSave()
     }
 
-    if (saveState === 'isModified') {
-      setSaveState('isSaving')
-
-      // Create a new pipeline
-      if (pipelineId === undefined) {
-        newPipelineMutate(
-          {
-            name,
-            program_id: project?.program_id,
-            description,
-            config
-          },
-          {
-            onError: (error: ApiError) => {
-              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-              setSaveState('isUpToDate')
-              console.log('error', error)
-            },
-            onSuccess: (data: NewPipelineResponse) => {
-              setPipelineId(data.pipeline_id)
-              setSaveState('isUpToDate')
-            }
-          }
-        )
-      } else {
-        // Update an existing pipeline
-        const connectors: Array<AttachedConnector> = getEdges().map(edge => {
-          const source = getNode(edge.source)
-          const target = getNode(edge.target)
-          const connector = source?.id === 'sql' ? target : source
-
-          const ac: AttachedConnector | undefined = connector?.data.ac
-          //console.log('edge.sourceHandle', edge.sourceHandle, 'edge', edge)
-          if (ac == undefined) {
-            throw new Error('data.ac in an edge was undefined')
-          }
-          const tableOrView = ac.is_input
-            ? removePrefix(edge.targetHandle || '', 'table-')
-            : removePrefix(edge.sourceHandle || '', 'view-')
-          ac.relation_name = tableOrView
-
-          return ac
-        })
-
-        const updateRequest = {
-          name,
-          description,
-          program_id: project?.program_id,
-          config,
-          connectors
-        }
-
-        updatePipelineMutate(
-          { pipeline_id: pipelineId, request: updateRequest },
-          {
-            onSettled: () => {
-              assert(pipelineId !== undefined)
-              invalidatePipeline(queryClient, pipelineId)
-            },
-            onError: (error: ApiError) => {
-              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-              setSaveState('isUpToDate')
-            },
-            onSuccess: () => {
-              // It's important to update the query cache here because otherwise
-              // sometimes the query cache will be out of date and the UI will
-              // show the old connectors again after deletion.
-              queryClient.setQueryData(
-                ['pipelineStatus', { pipeline_id: pipelineId }],
-                (oldData: Pipeline | undefined) => {
-                  return oldData
-                    ? {
-                        ...oldData,
-                        descriptor: {
-                          ...oldData.descriptor,
-                          name,
-                          description,
-                          program_id: project?.program_id,
-                          config,
-                          attached_connectors: connectors
-                        }
-                      }
-                    : oldData
-                }
-              )
-              setSaveState('isUpToDate')
-            }
-          }
-        )
-      }
+    if (saveState !== 'isModified') {
+      return
     }
+
+    setSaveState('isSaving')
+
+    // Create a new pipeline
+    if (pipelineId === undefined) {
+      newPipelineMutate(
+        {
+          name,
+          program_id: project?.program_id,
+          description,
+          config
+        },
+        {
+          onError: (error: ApiError) => {
+            pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
+            setSaveState('isUpToDate')
+            console.log('error', error)
+          },
+          onSuccess: (data: NewPipelineResponse) => {
+            setPipelineId(data.pipeline_id)
+            setSaveState('isUpToDate')
+          }
+        }
+      )
+      return
+    }
+
+    // Update an existing pipeline
+    const connectors: Array<AttachedConnector> = getEdges().map(edge => {
+      const source = getNode(edge.source)
+      const target = getNode(edge.target)
+      const connector = source?.id === 'sql' ? target : source
+
+      const ac: AttachedConnector | undefined = connector?.data.ac
+      //console.log('edge.sourceHandle', edge.sourceHandle, 'edge', edge)
+      if (ac == undefined) {
+        throw new Error('data.ac in an edge was undefined')
+      }
+      const tableOrView = ac.is_input
+        ? removePrefix(edge.targetHandle || '', 'table-')
+        : removePrefix(edge.sourceHandle || '', 'view-')
+      ac.relation_name = tableOrView
+
+      return ac
+    })
+
+    const updateRequest = {
+      name,
+      description,
+      program_id: project?.program_id,
+      config,
+      connectors
+    }
+
+    updatePipelineMutate(
+      { pipeline_id: pipelineId, request: updateRequest },
+      {
+        onSettled: () => {
+          assert(pipelineId !== undefined)
+          invalidatePipeline(queryClient, pipelineId)
+        },
+        onError: (error: ApiError) => {
+          pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
+          setSaveState('isUpToDate')
+        },
+        onSuccess: () => {
+          // It's important to update the query cache here because otherwise
+          // sometimes the query cache will be out of date and the UI will
+          // show the old connectors again after deletion.
+          queryClient.setQueryData(
+            ['pipelineStatus', { pipeline_id: pipelineId }],
+            (oldData: Pipeline | undefined) => {
+              return oldData
+                ? {
+                    ...oldData,
+                    descriptor: {
+                      ...oldData.descriptor,
+                      name,
+                      description,
+                      program_id: project?.program_id,
+                      config,
+                      attached_connectors: connectors
+                    }
+                  }
+                : oldData
+            }
+          )
+          setSaveState('isUpToDate')
+        }
+      }
+    )
   }, [
     saveState,
     debouncedSave,
