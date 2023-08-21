@@ -1,4 +1,4 @@
-import { Button, Card, Typography, Box, Avatar, Collapse, CardMedia, IconButton, Container } from '@mui/material'
+import { Button, Card, Typography, Box, Avatar, Collapse, IconButton } from '@mui/material'
 import { Icon } from '@iconify/react'
 import { useState } from 'react'
 
@@ -8,7 +8,10 @@ const WelcomeCard = (props: { setCard: (card: number) => void }) => (
       <Icon icon='bx:help-circle' fontSize='2rem' />
     </Avatar>
     <Typography variant='h5' sx={{ textAlign: 'center' }}>
-      <Typography color='silver' variant='h5' component='span'>Welcome to the</Typography> Feldera Continuous Analytics Platform
+      <Typography color='silver' variant='h5' component='span'>
+        Welcome to the
+      </Typography>{' '}
+      Feldera Continuous Analytics Platform
     </Typography>
     <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-evenly' }}>
       <Button onClick={() => props.setCard(1)}>Watch introduction</Button>
