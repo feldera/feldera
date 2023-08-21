@@ -34,7 +34,10 @@ export const parseKafkaInputSchema = (connector: ConnectorDescr): KafkaInputSche
     description: connector.description,
     host: config.transport.config['bootstrap.servers'],
     auto_offset: config.transport.config['auto.offset.reset'],
-    topics: config.transport.config.topics
+    topics: config.transport.config.topics,
+    format_name: config.format.name,
+    json_update_format: config.format.config?.update_format || 'raw',
+    json_array: config.format.config?.array || false
   }
 }
 
@@ -50,7 +53,9 @@ export const parseKafkaOutputSchema = (connector: ConnectorDescr): KafkaOutputSc
     description: connector.description,
     host: config.transport.config['bootstrap.servers'],
     auto_offset: config.transport.config['auto.offset.reset'],
-    topic: config.transport.config.topic
+    topic: config.transport.config.topic,
+    format_name: config.format.name,
+    json_array: config.format.config?.array || false
   }
 }
 
@@ -65,7 +70,9 @@ export const parseUrlSchema = (connector: ConnectorDescr): UrlSchema => {
     name: connector.name,
     description: connector.description,
     url: config.transport.config.path,
-    format: config.format.name
+    format_name: config.format.name,
+    json_update_format: config.format.config?.update_format || 'raw',
+    json_array: config.format.config?.array || false
   }
 }
 
