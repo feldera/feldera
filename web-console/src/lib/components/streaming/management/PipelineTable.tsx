@@ -369,10 +369,11 @@ export default function PipelineTable() {
 
   const shutdownPipelineClick = useShutdownPipeline()
 
-  const { isLoading, isError, data, error } = useQuery({
+  const pipelineQuery = useQuery({
     ...PipelineManagerQuery.pipeline(),
     refetchInterval: 2000
   })
+  const { isLoading, isError, data, error } = pipelineQuery
   useEffect(() => {
     if (!isLoading && !isError) {
       setRows(data)
@@ -535,8 +536,6 @@ export default function PipelineTable() {
     </Button>
   )
 
-  const fetchRows = useQuery(['dynamicPipelines'], { initialData: rows })
-
   const [expandedRows, setExpandedRows] = useState<GridRowId[]>([])
   {
     // Cannot initialize in useState because hash is not available during SSR
@@ -572,7 +571,7 @@ export default function PipelineTable() {
             children: [
               btnAdd,
               <div style={{ marginLeft: 'auto' }} key='2' />,
-              <DataGridSearch fetchRows={fetchRows} setFilteredData={setFilteredData} key='99' />
+              <DataGridSearch fetchRows={pipelineQuery} setFilteredData={setFilteredData} key='99' />
             ]
           },
           footer: {
