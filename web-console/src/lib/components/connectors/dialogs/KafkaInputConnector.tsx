@@ -8,7 +8,13 @@ import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/servic
 import { connectorTypeToConfig, connectorTypeToIcon, parseKafkaInputSchema } from '$lib/functions/connectors'
 import { ConnectorType } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
-import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from '$lib/services/manager'
+import {
+  ConnectorDescr,
+  ConnectorId,
+  FormatConfig,
+  NewConnectorRequest,
+  UpdateConnectorRequest
+} from '$lib/services/manager'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import * as yup from 'yup'
@@ -27,13 +33,17 @@ import Typography from '@mui/material/Typography'
 
 import { AddConnectorCard } from './AddConnectorCard'
 import Transition from './tabs/Transition'
+import TabInputFormatDetails from './tabs/TabInputFormatDetails'
 
 const schema = yup.object().shape({
   name: yup.string().required(),
   description: yup.string().default(''),
   host: yup.string().required(),
   auto_offset: yup.string().default('none'),
-  topics: yup.array().of(yup.string().required()).required()
+  topics: yup.array().of(yup.string().required()).required(),
+  format_name: yup.string().required().oneOf(['json', 'csv']),
+  json_update_format: yup.string().oneOf(['raw', 'insert_delete']).default('raw'),
+  json_array: yup.bool().required()
 })
 
 export type KafkaInputSchema = yup.InferType<typeof schema>
@@ -53,6 +63,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
     control,
     reset,
     handleSubmit,
+    watch,
     formState: { errors }
   } = useForm<KafkaInputSchema>({
     resolver: yupResolver(schema),
@@ -61,7 +72,10 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
       description: '',
       host: '',
       auto_offset: 'earliest',
-      topics: []
+      topics: [],
+      format_name: 'json',
+      json_update_format: 'raw',
+      json_array: false
     },
     values: curValues
   })
@@ -84,6 +98,16 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
     data: KafkaInputSchema,
     connector_id?: string
   ): [ConnectorId | undefined, NewConnectorRequest | UpdateConnectorRequest] => {
+    const format: FormatConfig = {
+      name: data.format_name,
+      config:
+        data.format_name === 'json'
+          ? {
+              update_format: data.json_update_format,
+              array: data.json_array
+            }
+          : {}
+    }
     return [
       connector_id,
       {
@@ -98,7 +122,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
               topics: data.topics
             }
           },
-          format: { name: 'csv' }
+          format: format
         }
       }
     ]
@@ -118,9 +142,14 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   useEffect(() => {
     if ((errors?.name || errors?.description) && props.show) {
       setActiveTab('detailsTab')
+    } else if ((errors?.host || errors?.topics || errors?.auto_offset) && props.show) {
+      setActiveTab('sourceTab')
+    } else if ((errors?.format_name || errors?.json_array || errors?.json_update_format) && props.show) {
+      setActiveTab('formatTab')
     }
   }, [props.show, errors])
 
+  const tabList = ['detailsTab', 'sourceTab', 'formatTab']
   return (
     <Dialog
       fullWidth
@@ -172,8 +201,8 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                   value='detailsTab'
                   label={
                     <TabLabel
-                      title='Details'
-                      subtitle='Enter Details'
+                      title='Metadata'
+                      subtitle='Description'
                       active={activeTab === 'detailsTab'}
                       icon={<Icon icon='bx:file' />}
                     />
@@ -191,6 +220,18 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                     />
                   }
                 />
+                <Tab
+                  disableRipple
+                  value='formatTab'
+                  label={
+                    <TabLabel
+                      title='Format'
+                      active={activeTab === 'formatTab'}
+                      subtitle='Data details'
+                      icon={<Icon icon='lucide:file-json-2' />}
+                    />
+                  }
+                />
               </TabList>
               <TabPanel
                 value='detailsTab'
@@ -203,7 +244,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                   activeTab={activeTab}
                   setActiveTab={setActiveTab}
                   formId='create-kafka-input'
-                  tabsArr={['detailsTab', 'sourceTab']}
+                  tabsArr={tabList}
                 />
               </TabPanel>
               <TabPanel
@@ -216,7 +257,21 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                   activeTab={activeTab}
                   setActiveTab={setActiveTab}
                   formId='create-kafka-input'
-                  tabsArr={['detailsTab', 'sourceTab']}
+                  tabsArr={tabList}
+                />
+              </TabPanel>
+              <TabPanel
+                value='formatTab'
+                sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
+              >
+                {/* @ts-ignore: TODO: This type mismatch seems like a bug in hook-form and/or resolvers */}
+                <TabInputFormatDetails control={control} errors={errors} watch={watch} />
+                <TabFooter
+                  isUpdate={props.connector !== undefined}
+                  activeTab={activeTab}
+                  setActiveTab={setActiveTab}
+                  formId='create-kafka-input'
+                  tabsArr={tabList}
                 />
               </TabPanel>
             </TabContext>

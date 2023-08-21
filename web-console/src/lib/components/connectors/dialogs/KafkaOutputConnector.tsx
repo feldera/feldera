@@ -7,7 +7,13 @@ import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/servic
 import { connectorTypeToConfig, connectorTypeToIcon, parseKafkaOutputSchema } from '$lib/functions/connectors'
 import { ConnectorType } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
-import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from '$lib/services/manager'
+import {
+  ConnectorDescr,
+  ConnectorId,
+  FormatConfig,
+  NewConnectorRequest,
+  UpdateConnectorRequest
+} from '$lib/services/manager'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import * as yup from 'yup'
@@ -27,6 +33,7 @@ import Typography from '@mui/material/Typography'
 import { AddConnectorCard } from './AddConnectorCard'
 import TabkafkaOutputDetails from './tabs/TabKafkaOutputDetails'
 import Transition from './tabs/Transition'
+import TabOutputFormatDetails from './tabs/TabOutputFormatDetails'
 
 const schema = yup
   .object({
@@ -34,18 +41,13 @@ const schema = yup
     description: yup.string().default(''),
     host: yup.string().required(),
     auto_offset: yup.string().default('earliest'),
-    topic: yup.string()
+    topic: yup.string().default(''),
+    format_name: yup.string().required().oneOf(['json', 'csv']),
+    json_array: yup.bool().required()
   })
   .required()
 
-export type KafkaOutputSchema = {
-  // yup.InferType<typeof schema>
-  topic: string | undefined
-  name: string
-  description: string
-  host: string
-  auto_offset: string
-}
+export type KafkaOutputSchema = yup.InferType<typeof schema>
 
 export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const [activeTab, setActiveTab] = useState<string>('detailsTab')
@@ -61,6 +63,7 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const {
     control,
     handleSubmit,
+    watch,
     reset,
     formState: { errors }
   } = useForm<KafkaOutputSchema>({
@@ -70,7 +73,9 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
       description: '',
       host: '',
       auto_offset: 'earliest',
-      topic: ''
+      topic: '',
+      format_name: 'json',
+      json_array: false
     },
     values: curValues
   })
@@ -94,6 +99,15 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
     data: KafkaOutputSchema,
     connector_id?: string
   ): [ConnectorId | undefined, NewConnectorRequest | UpdateConnectorRequest] => {
+    const format: FormatConfig = {
+      name: data.format_name,
+      config:
+        data.format_name === 'json'
+          ? {
+              array: data.json_array
+            }
+          : {}
+    }
     return [
       connector_id,
       {
@@ -108,7 +122,7 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
               topic: data.topic
             }
           },
-          format: { name: 'csv' }
+          format: format
         }
       }
     ]
@@ -130,8 +144,14 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
   useEffect(() => {
     if ((errors?.name || errors?.description) && props.show) {
       setActiveTab('detailsTab')
+    } else if ((errors?.host || errors?.topic || errors?.auto_offset) && props.show) {
+      setActiveTab('sourceTab')
+    } else if ((errors?.format_name || errors?.json_array) && props.show) {
+      setActiveTab('formatTab')
     }
   }, [props.show, errors])
+
+  const tabList = ['detailsTab', 'sourceTab', 'formatTab']
 
   return (
     <Dialog
@@ -203,6 +223,18 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                     />
                   }
                 />
+                <Tab
+                  disableRipple
+                  value='formatTab'
+                  label={
+                    <TabLabel
+                      title='Format'
+                      active={activeTab === 'formatTab'}
+                      subtitle='Data details'
+                      icon={<Icon icon='lucide:file-json-2' />}
+                    />
+                  }
+                />
               </TabList>
               <TabPanel
                 value='detailsTab'
@@ -215,7 +247,7 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                   activeTab={activeTab}
                   setActiveTab={setActiveTab}
                   formId='create-kafka'
-                  tabsArr={['detailsTab', 'sourceTab']}
+                  tabsArr={tabList}
                 />
               </TabPanel>
               <TabPanel
@@ -228,7 +260,20 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                   activeTab={activeTab}
                   setActiveTab={setActiveTab}
                   formId='create-kafka'
-                  tabsArr={['detailsTab', 'sourceTab']}
+                  tabsArr={tabList}
+                />
+              </TabPanel>
+              <TabPanel
+                value='formatTab'
+                sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
+              >
+                <TabOutputFormatDetails control={control} errors={errors} watch={watch} />
+                <TabFooter
+                  isUpdate={props.connector !== undefined}
+                  activeTab={activeTab}
+                  setActiveTab={setActiveTab}
+                  formId='create-kafka'
+                  tabsArr={tabList}
                 />
               </TabPanel>
             </TabContext>
