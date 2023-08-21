@@ -198,6 +198,9 @@ const useFetchExistingProject = (
   })
   useEffect(() => {
     if (!loaded && codeQuery.data && !codeQuery.isLoading && !codeQuery.isError) {
+      if (codeQuery.data.version > lastCompiledVersion && codeQuery.data.status !== 'None') {
+        setLastCompiledVersion(codeQuery.data.version)
+      }
       setProject({
         program_id: codeQuery.data.program_id,
         name: codeQuery.data.name,
@@ -206,9 +209,6 @@ const useFetchExistingProject = (
         version: codeQuery.data.version,
         code: codeQuery.data.code || ''
       })
-      if (codeQuery.data.version > lastCompiledVersion && codeQuery.data.status !== 'None') {
-        setLastCompiledVersion(codeQuery.data.version)
-      }
       setState('isUpToDate')
       setLoaded(true)
     }
@@ -322,7 +322,6 @@ const useCompileProjectIfChanged = (
       !isLoading &&
       state == 'isUpToDate' &&
       project.program_id !== '' &&
-      lastCompiledVersion !== undefined &&
       project.version > lastCompiledVersion &&
       project.status !== 'Pending' &&
       project.status !== 'CompilingSql'
