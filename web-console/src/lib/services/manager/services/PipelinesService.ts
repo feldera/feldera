@@ -3,6 +3,7 @@
 /* eslint-disable */
 import type { Chunk } from '../models/Chunk'
 import type { EgressMode } from '../models/EgressMode'
+import type { JsonUpdateFormat } from '../models/JsonUpdateFormat'
 import type { NeighborhoodQuery } from '../models/NeighborhoodQuery'
 import type { NewPipelineRequest } from '../models/NewPipelineRequest'
 import type { NewPipelineResponse } from '../models/NewPipelineResponse'
@@ -187,6 +188,7 @@ export class PipelinesService {
    * @param query Query to execute on the table. Must be one of 'table', 'neighborhood', or 'quantiles'. The default value is 'table'
    * @param mode Output mode. Must be one of 'watch' or 'snapshot'. The default value is 'watch'
    * @param quantiles For 'quantiles' queries: the number of quantiles to output. The default value is 100.
+   * @param array Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`
    * @param requestBody When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.
    * @returns Chunk Connection to the endpoint successfully established. The body of the response contains a stream of data chunks.
    * @throws ApiError
@@ -198,6 +200,7 @@ export class PipelinesService {
     query?: OutputQuery | null,
     mode?: EgressMode | null,
     quantiles?: number | null,
+    array?: boolean | null,
     requestBody?: NeighborhoodQuery | null
   ): CancelablePromise<Chunk> {
     return __request(OpenAPI, {
@@ -211,7 +214,8 @@ export class PipelinesService {
         format: format,
         query: query,
         mode: mode,
-        quantiles: quantiles
+        quantiles: quantiles,
+        array: array
       },
       body: requestBody,
       mediaType: 'application/json',
@@ -239,6 +243,8 @@ export class PipelinesService {
    * @param tableName SQL table name.
    * @param format Input data format, e.g., 'csv' or 'json'.
    * @param requestBody Contains the new input data in CSV.
+   * @param array Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`.
+   * @param updateFormat JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'.
    * @returns any Data successfully delivered to the pipeline.
    * @throws ApiError
    */
@@ -246,7 +252,9 @@ export class PipelinesService {
     pipelineId: string,
     tableName: string,
     format: string,
-    requestBody: string
+    requestBody: string,
+    array?: boolean | null,
+    updateFormat?: JsonUpdateFormat | null
   ): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'POST',
@@ -256,14 +264,15 @@ export class PipelinesService {
         table_name: tableName
       },
       query: {
-        format: format
+        format: format,
+        array: array,
+        update_format: updateFormat
       },
       body: requestBody,
       mediaType: 'text/csv',
       errors: {
-        400: `Unknown data format specified in the '?format=' argument.`,
+        400: `Error parsing input data.`,
         404: `Pipeline is not currently running because it has been shutdown or not yet started.`,
-        422: `Error parsing input data.`,
         500: `Request failed.`
       }
     })
