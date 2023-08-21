@@ -3624,9 +3624,9 @@ ts-pattern@^5.0.5:
   resolved "https://registry.yarnpkg.com/ts-pattern/-/ts-pattern-5.0.5.tgz#20f82d50ea56c1d9cd1aa772911f7bb545d9607d"
   integrity sha512-tL0w8U/pgaacOmkb9fRlYzWEUDCfVjjv9dD4wHTgZ61MjhuMt46VNWTG747NqW6vRzoWIKABVhFSOJ82FvXrfA==
 
-"ts-practical-fp@https://github.com/Karakatiza666/ts-practical-fp#351fb99524a29b9db51c02a1e26745b172b01ee0":
+"ts-practical-fp@https://github.com/Karakatiza666/ts-practical-fp#8059c46793f4f62cadfda97fbcdae8bea0575183":
   version "0.1.0"
-  resolved "https://github.com/Karakatiza666/ts-practical-fp#351fb99524a29b9db51c02a1e26745b172b01ee0"
+  resolved "https://github.com/Karakatiza666/ts-practical-fp#8059c46793f4f62cadfda97fbcdae8bea0575183"
   dependencies:
     ts-binary-newtypes "https://github.com/Karakatiza666/ts-binary-newtypes"
     typescript "^4.9.5"
