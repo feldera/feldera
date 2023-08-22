@@ -52,7 +52,7 @@ const stateToSaveLabel = (state: SaveIndicatorState): string =>
     })
     .exhaustive()
 
-const detachConnector = (c: AttachedConnector) => ({...c, relation_name: ''} as AttachedConnector)
+const detachConnector = (c: AttachedConnector) => ({ ...c, relation_name: '' }) as AttachedConnector
 
 export const PipelineWithProvider = (props: {
   pipelineId: PipelineId | undefined
@@ -137,36 +137,36 @@ export const PipelineWithProvider = (props: {
     // the saveState every time the backend returns some result. Because it
     // could cancel potentially in-progress saves (started by client action).
 
-    const project = (id => id ? projects.data.find(p => p.program_id === id) : undefined)(descriptor.program_id)
+    const project = (id => (id ? projects.data.find(p => p.program_id === id) : undefined))(descriptor.program_id)
     const validConnections = !project
       ? attachedConnectors
       : (() => {
-        setMissingSchemaDialog(!project.schema)
+          setMissingSchemaDialog(!project.schema)
 
-        console.log(project.schema)
-        console.log(attachedConnectors)
-        const [validConnections, invalidConnections] = partition(attachedConnectors,
-          connector => connectorConnects(project.schema, connector)
-        )
+          console.log(project.schema)
+          console.log(attachedConnectors)
+          const [validConnections, invalidConnections] = partition(attachedConnectors, connector =>
+            connectorConnects(project.schema, connector)
+          )
 
-        setProject(project)
-        replacePlaceholder(project)
+          setProject(project)
+          replacePlaceholder(project)
 
-        if (invalidConnections.length > 0) {
-          pushMessage({
-            key: new Date().getTime(),
-            color: 'warning',
-            message: `Could not attach ${
-              invalidConnections.length
-            } connector(s): No tables/views named ${invalidConnections.map(c => c.relation_name).join(', ')} found.`
-          })
-        }
+          if (invalidConnections.length > 0) {
+            pushMessage({
+              key: new Date().getTime(),
+              color: 'warning',
+              message: `Could not attach ${
+                invalidConnections.length
+              } connector(s): No tables/views named ${invalidConnections.map(c => c.relation_name).join(', ')} found.`
+            })
+          }
 
-        const connectors = invalidConnections.map(detachConnector)
-        validConnections.push(...connectors)
+          const connectors = invalidConnections.map(detachConnector)
+          validConnections.push(...connectors)
 
-        return validConnections
-      })()
+          return validConnections
+        })()
 
     validConnections.forEach(attached_connector => {
       const connector = connectorQuery.data.find(
@@ -282,24 +282,21 @@ export const PipelineWithProvider = (props: {
           // It's important to update the query cache here because otherwise
           // sometimes the query cache will be out of date and the UI will
           // show the old connectors again after deletion.
-          queryClient.setQueryData(
-            ['pipelineStatus', { pipeline_id: pipelineId }],
-            (oldData: Pipeline | undefined) => {
-              return oldData
-                ? {
-                    ...oldData,
-                    descriptor: {
-                      ...oldData.descriptor,
-                      name,
-                      description,
-                      program_id: project?.program_id,
-                      config,
-                      attached_connectors: connectors
-                    }
+          queryClient.setQueryData(['pipelineStatus', { pipeline_id: pipelineId }], (oldData: Pipeline | undefined) => {
+            return oldData
+              ? {
+                  ...oldData,
+                  descriptor: {
+                    ...oldData.descriptor,
+                    name,
+                    description,
+                    program_id: project?.program_id,
+                    config,
+                    attached_connectors: connectors
                   }
-                : oldData
-            }
-          )
+                }
+              : oldData
+          })
           setSaveState('isUpToDate')
         }
       }
