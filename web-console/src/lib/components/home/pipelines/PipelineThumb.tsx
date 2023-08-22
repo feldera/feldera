@@ -77,7 +77,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
             <Collapse orientation='horizontal' in={!sqlHover}>
               <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center' }}>
                 <Typography sx={{ fontWeight: 500, color: 'text.disabled' }}>
-                  {format(item.tput, '0.0\u00A0aOps/s', { zeroFormat: '0\u00A0Ops/s' }) || '0 '}
+                  {format(item.tput, '0.0\u00A0arows/s', { zeroFormat: '0\u00A0rows/s' }) || '0 '}
                 </Typography>
                 <Icon icon='bx:dots-vertical-rounded' fontSize={28} style={{ margin: -4, marginRight: -16 }}></Icon>
               </Box>
