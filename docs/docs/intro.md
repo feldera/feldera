@@ -88,7 +88,7 @@ You also need `curl` and a web browser such as Chrome or Firefox.
 3. Visit <http://localhost:8085/> in your web browser to bring up the
    Feldera Platform Console UI.
 
-4. Try out one of the [demos](demos).
+4. Try out one of the [demos](demo/).
 
 ## Stop the demo
 
