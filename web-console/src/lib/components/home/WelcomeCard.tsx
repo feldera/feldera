@@ -1,4 +1,4 @@
-import { Button, Card, Typography, Box, Avatar, Collapse, IconButton } from '@mui/material'
+import { Button, Card, Typography, Box, Avatar, Modal } from '@mui/material'
 import { Icon } from '@iconify/react'
 import { useState } from 'react'
 
@@ -25,38 +25,37 @@ const WelcomeCard = (props: { setCard: (card: number) => void }) => (
   </Card>
 )
 
-const VideoCard = (props: { setCard: (card: number) => void }) => (
-  <Box sx={{ position: 'relative' }}>
-    <iframe
-      width='100%'
-      height='490'
-      src='https://www.youtube.com/embed/iT4k5DCnvPU'
-      title='YouTube video player'
-      frameborder='0'
-      allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
-      allowfullscreen
-    ></iframe>
-    <Box
-      sx={{ position: 'absolute', left: '0', top: '0', p: 0.5, m: 1.8, backgroundColor: 'primary.contrastText' }}
-      onClick={() => props.setCard(0)}
-    >
-      <IconButton size='small' sx={{ m: 0 }}>
-        <Icon icon='bx:x' fontSize={36} />
-      </IconButton>
-    </Box>
-  </Box>
-)
-
 export const WelcomeTile = () => {
   const [card, setCard] = useState(0)
   return (
     <>
-      <Collapse in={card == 0} orientation='vertical'>
-        <WelcomeCard setCard={setCard}></WelcomeCard>
-      </Collapse>
-      <Collapse in={card == 1} orientation='vertical'>
-        <VideoCard setCard={setCard}></VideoCard>
-      </Collapse>
+      <WelcomeCard setCard={setCard}></WelcomeCard>
+      <Modal
+        open={card === 1}
+        onClose={() => setCard(0)}
+        aria-labelledby='modal-modal-title'
+        aria-describedby='modal-modal-description'
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '80%',
+            height: '80%'
+          }}
+        >
+          <iframe
+            width='100%'
+            height='100%'
+            src='https://www.youtube.com/embed/iT4k5DCnvPU'
+            title='YouTube video player'
+            allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+            allowFullScreen
+          ></iframe>
+        </Box>
+      </Modal>
     </>
   )
 }
