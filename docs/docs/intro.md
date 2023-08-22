@@ -66,7 +66,7 @@ You also need `curl` and a web browser such as Chrome or Firefox.
 
    :::
 
-2. Launch containers for the demo, including the DBSP manager,
+2. Launch containers for the demo, including the pipeline manager,
    Postgres to support it, and a SecOps demo that uses Redpanda.  From
    the directory where you ran the command above:
 
