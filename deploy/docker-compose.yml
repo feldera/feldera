@@ -10,9 +10,9 @@ services:
       timeout: 5s
       retries: 5
 
-  dbsp:
+  pipeline-manager:
     tty: true
-    image: ghcr.io/feldera/dbsp-manager
+    image: ghcr.io/feldera/pipeline-manager
     ports:
       - "8085:8080"
     depends_on:
@@ -66,7 +66,7 @@ services:
   demo:
     profiles: ["demo"]
     depends_on:
-      dbsp:
+      pipeline-manager:
         condition: service_started
     image: ghcr.io/feldera/demo-container
     environment:
@@ -77,4 +77,4 @@ services:
       - bash
       - -c
       # Run the SecOps demo
-      - "cd demo/project_demo00-SecOps && python3 run.py --dbsp_url http://dbsp:8080 --actions prepare create compile $${SECOPS_DEMO_ARGS}"
+      - "cd demo/project_demo00-SecOps && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile $${SECOPS_DEMO_ARGS}"

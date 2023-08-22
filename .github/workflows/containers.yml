@@ -1,12 +1,12 @@
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 0,6,12,18 * * *'
   release:
       types: [published]
 
 env:
   REGISTRY: ghcr.io
-  DBSP_IMAGE: ghcr.io/${{ github.repository_owner }}/dbsp-manager
+  DBSP_IMAGE: ghcr.io/${{ github.repository_owner }}/pipeline-manager
   DEMO_IMAGE: ghcr.io/${{ github.repository_owner }}/demo-container
 
 jobs:
@@ -27,8 +27,8 @@ jobs:
         env:
           muix_license: ${{ secrets.muix_license }}
 
-      - name: Docker meta (dbsp-manager)
-        id: meta_dbsp
+      - name: Docker meta (pipeline-manager)
+        id: meta_pipeline_manager
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.DBSP_IMAGE }}
@@ -74,15 +74,15 @@ jobs:
         run: docker push ${{ env.DBSP_IMAGE }} && docker push ${{ env.DEMO_IMAGE }}
 
       # Tagged DBSP image
-      - name: Push (dbsp-manager)
+      - name: Push (pipeline-manager)
         uses: docker/build-push-action@v4
         if: github.event_name == 'release'
         with:
           context: .
           file: deploy/Dockerfile
           push: true
-          tags: ${{ steps.meta_dbsp.outputs.tags }}
-          labels: ${{ steps.meta_dbsp.outputs.labels }}
+          tags: ${{ steps.meta_pipeline_manager.outputs.tags }}
+          labels: ${{ steps.meta_pipeline_manager.outputs.labels }}
 
       # Tagged demo image
       - name: Push (demo-container)
@@ -98,7 +98,7 @@ jobs:
 
       - uses: actions/delete-package-versions@v4
         with:
-          package-name: dbsp-manager
+          package-name: pipeline-manager
           package-type: 'container'
           min-versions-to-keep: 5
           delete-only-untagged-versions: 'true'

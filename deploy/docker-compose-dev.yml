@@ -5,11 +5,11 @@ services:
     ports:
       - 6666:5432 # Used for pipeline manager integration tests
 
-  dbsp:
+  pipeline-manager:
    build:
      context: ../
      dockerfile: deploy/Dockerfile
-   image: ghcr.io/feldera/dbsp-manager
+   image: ghcr.io/feldera/pipeline-manager
 
   demo:
     build:
