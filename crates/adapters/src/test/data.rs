@@ -46,12 +46,13 @@ pub fn generate_test_batch(size: usize) -> impl Strategy<Value = Vec<TestStruct>
 ///
 /// Makes sure elements are unique and ordered across all batches.
 pub fn generate_test_batches(
+    min_batches: usize,
     max_batches: usize,
     max_records: usize,
 ) -> impl Strategy<Value = Vec<Vec<TestStruct>>> {
     collection::vec(
         collection::vec(any::<TestStruct>(), 0..=max_records),
-        0..=max_batches,
+        min_batches..=max_batches,
     )
     .prop_map(|batches| {
         let mut index = 0;
@@ -76,7 +77,7 @@ pub fn generate_test_batches_with_weights(
     max_records: usize,
 ) -> impl Strategy<Value = Vec<Vec<(TestStruct, i64)>>> {
     collection::vec(
-        collection::vec(any::<(TestStruct, i64)>(), 0..=max_records),
+        collection::vec((any::<TestStruct>(), -2i64..=2i64), 0..=max_records),
         0..=max_batches,
     )
     .prop_map(|batches| {

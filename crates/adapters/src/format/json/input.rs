@@ -80,7 +80,7 @@ trait UpdateFormat {
     fn apply(self, parser: &mut JsonParser) -> Result<usize, ParseError>;
 }
 
-impl<'de> UpdateFormat for InsDelUpdate<'de> {
+impl<'a> UpdateFormat for InsDelUpdate<&'a RawValue> {
     fn error() -> &'static str {
         "error deserializing JSON string as a single-row update"
     }
@@ -395,7 +395,7 @@ impl JsonParser {
 
             num_updates += match self.config.update_format {
                 JsonUpdateFormat::InsertDelete => {
-                    self.apply_update::<InsDelUpdate>(update, &mut errors)
+                    self.apply_update::<InsDelUpdate<_>>(update, &mut errors)
                 }
                 JsonUpdateFormat::Debezium => {
                     self.apply_update::<DebeziumUpdate>(update, &mut errors)

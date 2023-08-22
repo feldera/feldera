@@ -1,7 +1,7 @@
-use super::WeightedUpdate;
+use super::InsDelUpdate;
 use crate::{ControllerError, Encoder, OutputConsumer, OutputFormat, SerBatch};
 use actix_web::HttpRequest;
-use anyhow::Result as AnyResult;
+use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
 use serde::{Deserialize, Serialize};
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -16,6 +16,14 @@ const fn default_buffer_size_records() -> usize {
     10_000
 }
 
+/// The largest weight of a record that can be output using
+/// a JSON format without explicit weights.  Such formats require
+/// duplicating the record `w` times, which is expensive for large
+/// weights (and is most likely not what the user intends).
+const MAX_DUPLICATES: i64 = 1_000_000;
+
+// TODO: support multiple update formats, e.g., `WeightedUpdate`
+// suppors arbitrary weights beyond `MAX_DUPLICATES`.
 #[derive(Deserialize, Serialize, ToSchema)]
 pub struct JsonEncoderConfig {
     #[serde(default = "default_buffer_size_records")]
@@ -94,38 +102,53 @@ impl Encoder for JsonEncoder {
             let mut cursor = batch.cursor();
 
             while cursor.key_valid() {
-                let w = cursor.weight();
-                if self.config.array {
-                    if num_records == 0 {
-                        buffer.push(b'[');
-                    } else {
-                        buffer.push(b',');
-                    }
-                }
-                // `WeightedUpdate` format is the only one that supports non-unit weights,
-                // so we use it to serialize output records.
-                serde_json::to_writer(
-                    &mut buffer,
-                    &WeightedUpdate {
-                        table: None,
-                        weight: w,
-                        data: cursor.key(),
-                    },
-                )?;
-                if !self.config.array {
-                    buffer.push(b'\n');
-                }
-                num_records += 1;
+                let mut w = cursor.weight();
 
-                if num_records >= self.config.buffer_size_records {
+                if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
+                    bail!(
+                        "Unable to output record '{}' with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.",
+                        serde_json::to_string(cursor.key()).unwrap_or_default()
+                    );
+                }
+
+                while w != 0 {
                     if self.config.array {
-                        buffer.push(b']');
+                        if num_records == 0 {
+                            buffer.push(b'[');
+                        } else {
+                            buffer.push(b',');
+                        }
+                    }
+                    serde_json::to_writer(
+                        &mut buffer,
+                        &InsDelUpdate {
+                            table: None,
+                            insert: if w > 0 { Some(cursor.key()) } else { None },
+                            delete: if w < 0 { Some(cursor.key()) } else { None },
+                        },
+                    )?;
+
+                    if w > 0 {
+                        w -= 1;
+                    } else {
+                        w += 1;
                     }
 
-                    // println!("push_buffer {}", std::str::from_utf8(&buffer).unwrap());
-                    self.output_consumer.push_buffer(&buffer);
-                    buffer.clear();
-                    num_records = 0;
+                    if !self.config.array {
+                        buffer.push(b'\n');
+                    }
+                    num_records += 1;
+
+                    if num_records >= self.config.buffer_size_records {
+                        if self.config.array {
+                            buffer.push(b']');
+                        }
+
+                        // println!("push_buffer {}", std::str::from_utf8(&buffer).unwrap());
+                        self.output_consumer.push_buffer(&buffer);
+                        buffer.clear();
+                        num_records = 0;
+                    }
                 }
 
                 cursor.step_key();
@@ -150,7 +173,7 @@ impl Encoder for JsonEncoder {
 mod test {
     use super::{JsonEncoder, JsonEncoderConfig};
     use crate::{
-        format::{json::WeightedUpdate, Encoder},
+        format::{json::InsDelUpdate, Encoder},
         seroutput::SerBatchImpl,
         test::{MockOutputConsumer, TestStruct},
         SerBatch,
@@ -170,7 +193,13 @@ mod test {
         let zsets = batches
             .iter()
             .map(|batch| {
-                let zset = OrdZSet::from_keys((), batch.clone());
+                let zset = OrdZSet::from_keys(
+                    (),
+                    batch
+                        .iter()
+                        .map(|(x, w)| (x.clone(), *w))
+                        .collect::<Vec<_>>(),
+                );
                 Arc::new(<SerBatchImpl<_, TestStruct, ()>>::new(zset)) as Arc<dyn SerBatch>
             })
             .collect::<Vec<_>>();
@@ -179,12 +208,23 @@ mod test {
         let expected_output = batches
             .into_iter()
             .flat_map(|batch| {
-                let zset = OrdZSet::from_keys((), batch);
+                let zset = OrdZSet::from_keys(
+                    (),
+                    batch
+                        .iter()
+                        .map(|(x, w)| (x.clone(), *w))
+                        .collect::<Vec<_>>(),
+                );
                 zset.iter()
-                    .map(|(data, (), weight)| WeightedUpdate {
-                        table: None,
-                        weight,
-                        data,
+                    .flat_map(|(data, (), weight)| {
+                        println!("data: {data:?}, weight: {weight}");
+                        let range = if weight > 0 { 0..weight } else { weight..0 };
+
+                        range.map(move |_| InsDelUpdate {
+                            table: None,
+                            insert: if weight > 0 { Some(data.clone()) } else { None },
+                            delete: if weight < 0 { Some(data.clone()) } else { None },
+                        })
                     })
                     .collect::<Vec<_>>()
             })
@@ -197,12 +237,12 @@ mod test {
 
         let actual_output = if array {
             serde_json::Deserializer::from_slice(&consumer_data.lock().unwrap())
-                .into_iter::<Vec<WeightedUpdate<TestStruct>>>()
+                .into_iter::<Vec<InsDelUpdate<TestStruct>>>()
                 .flat_map(|item| item.unwrap())
                 .collect::<Vec<_>>()
         } else {
             serde_json::Deserializer::from_slice(&consumer_data.lock().unwrap())
-                .into_iter::<WeightedUpdate<TestStruct>>()
+                .into_iter::<InsDelUpdate<TestStruct>>()
                 .map(|item| item.unwrap())
                 .collect::<Vec<_>>()
         };
@@ -229,7 +269,7 @@ mod test {
                         i: Some(10),
                         s: "bar".to_string(),
                     },
-                    5,
+                    -1,
                 ),
             ],
             vec![
@@ -240,7 +280,7 @@ mod test {
                         i: None,
                         s: "foo".to_string(),
                     },
-                    -1,
+                    -2,
                 ),
                 (
                     TestStruct {
@@ -249,7 +289,7 @@ mod test {
                         i: Some(10),
                         s: "bar".to_string(),
                     },
-                    -2,
+                    2,
                 ),
             ],
             vec![
@@ -260,7 +300,7 @@ mod test {
                         i: Some(15),
                         s: "buzz".to_string(),
                     },
-                    1,
+                    -1,
                 ),
                 (
                     TestStruct {
@@ -269,7 +309,7 @@ mod test {
                         i: None,
                         s: "".to_string(),
                     },
-                    2,
+                    3,
                 ),
             ],
         ]

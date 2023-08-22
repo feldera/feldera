@@ -229,6 +229,10 @@ impl Catalog {
         // Create handle for the stream itself.
         let delta_handle = stream.output();
 
+        // Improve the odds that `integrate_trace` below reuses the trace of `stream`
+        // if one exists.
+        let stream = stream.try_sharded_version();
+
         // Create handles for the neighborhood query.
         let (neighborhood_descr_stream, neighborhood_descr_handle) =
             circuit.add_input_stream::<(bool, Option<NeighborhoodDescr<D, ()>>)>();

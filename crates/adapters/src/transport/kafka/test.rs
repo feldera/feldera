@@ -91,7 +91,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(2))]
 
     #[test]
-    fn proptest_kafka_input(data in generate_test_batches(100, 1000)) {
+    fn proptest_kafka_input(data in generate_test_batches(0, 100, 1000)) {
 
         let _ = log::set_logger(&TEST_LOGGER);
         log::set_max_level(LevelFilter::Debug);
@@ -220,7 +220,7 @@ format:
     }
 
     #[test]
-    fn proptest_kafka_end_to_end(data in generate_test_batches(100, 1000)) {
+    fn proptest_kafka_end_to_end(data in generate_test_batches(0, 100, 1000)) {
         let _ = log::set_logger(&TEST_LOGGER);
         log::set_max_level(LevelFilter::Debug);
 

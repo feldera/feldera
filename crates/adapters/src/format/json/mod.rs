@@ -106,19 +106,20 @@ pub struct DebeziumPayload<'a> {
 }
 
 /// A data change event in the insert/delete format.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct InsDelUpdate<'a> {
+pub struct InsDelUpdate<T> {
     // This field is currently ignored.  We will add support for it in the future.
     #[doc(hidden)]
     #[allow(dead_code)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     table: Option<String>,
     /// When present and not `null`, this field specifies a record to be inserted to the table.
-    #[serde(borrow)]
-    insert: Option<&'a RawValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    insert: Option<T>,
     /// When present and not `null`, this field specifies a record to be deleted from the table.
-    #[serde(borrow)]
-    delete: Option<&'a RawValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delete: Option<T>,
 }
 
 // TODO: implement support for parsing this format.
@@ -127,6 +128,7 @@ pub struct InsDelUpdate<'a> {
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[allow(dead_code)]
 pub struct WeightedUpdate<T: ?Sized> {
+    #[serde(skip_serializing_if = "Option::is_none")]
     table: Option<String>,
     weight: i64,
     data: T,

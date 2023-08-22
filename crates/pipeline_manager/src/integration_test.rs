@@ -119,7 +119,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
                 let _api_server = crate::api::run(db, api_config).await.unwrap();
             })
     });
-    tokio::time::sleep(Duration::from_millis(1000)).await;
+    tokio::time::sleep(Duration::from_millis(3000)).await;
     tmp_dir
 }
 
@@ -698,7 +698,7 @@ async fn json_ingress() {
     assert!(req.status().is_success());
 
     let quantiles = config.quantiles_json(&id, "T1").await;
-    assert_eq!(quantiles, "[{\"data\":{\"C1\":10,\"C2\":true,\"C3\":null},\"table\":null,\"weight\":1},{\"data\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"},\"table\":null,\"weight\":1}]");
+    assert_eq!(quantiles, "[{\"insert\":{\"C1\":10,\"C2\":true,\"C3\":null}},{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}}]");
 
     let hood = config
         .neighborhood_json(
@@ -709,7 +709,7 @@ async fn json_ingress() {
             10,
         )
         .await;
-    assert_eq!(hood, "[{\"data\":{\"index\":0,\"key\":{\"C1\":10,\"C2\":true,\"C3\":null}},\"table\":null,\"weight\":1},{\"data\":{\"index\":1,\"key\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},\"table\":null,\"weight\":1}]");
+    assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"C1\":10,\"C2\":true,\"C3\":null}}},{\"insert\":{\"index\":1,\"key\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}}}]");
 
     // Push more data using insert/delete format.
     let req = config
@@ -726,7 +726,7 @@ async fn json_ingress() {
     assert!(req.status().is_success());
 
     let quantiles = config.quantiles_json(&id, "T1").await;
-    assert_eq!(quantiles, "[{\"data\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"},\"table\":null,\"weight\":1}]");
+    assert_eq!(quantiles, "[{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}}]");
 
     // Format data as json array.
     let req = config
@@ -753,7 +753,7 @@ async fn json_ingress() {
     assert!(req.status().is_success());
 
     let quantiles = config.quantiles_json(&id, "T1").await;
-    assert_eq!(quantiles, "[{\"data\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":50,\"C2\":true,\"C3\":\"\"},\"table\":null,\"weight\":1}]");
+    assert_eq!(quantiles, "[{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}},{\"insert\":{\"C1\":50,\"C2\":true,\"C3\":\"\"}}]");
 
     // Trigger parse errors.
     let mut req = config
@@ -773,7 +773,7 @@ async fn json_ingress() {
     // Even records that are parsed successfully don't get ingested when
     // using array format.
     let quantiles = config.quantiles_json(&id, "T1").await;
-    assert_eq!(quantiles, "[{\"data\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":50,\"C2\":true,\"C3\":\"\"},\"table\":null,\"weight\":1}]");
+    assert_eq!(quantiles, "[{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}},{\"insert\":{\"C1\":50,\"C2\":true,\"C3\":\"\"}}]");
 
     let mut req = config
         .post_json(
@@ -831,7 +831,7 @@ not_a_number,true,ΑαΒβΓγΔδ
     let quantiles = config.quantiles_json(&id, "T1").await;
     assert_eq!(
         quantiles,
-        "[{\"data\":{\"C1\":15,\"C2\":true,\"C3\":\"foo\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":16,\"C2\":false,\"C3\":\"unicode🚲\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":25,\"C2\":true,\"C3\":\"\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"},\"table\":null,\"weight\":1},{\"data\":{\"C1\":60,\"C2\":true,\"C3\":\"hello\"},\"table\":null,\"weight\":1}]"
+        "[{\"insert\":{\"C1\":15,\"C2\":true,\"C3\":\"foo\"}},{\"insert\":{\"C1\":16,\"C2\":false,\"C3\":\"unicode🚲\"}},{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":25,\"C2\":true,\"C3\":\"\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}},{\"insert\":{\"C1\":60,\"C2\":true,\"C3\":\"hello\"}}]"
     );
 
     // Shutdown the pipeline
