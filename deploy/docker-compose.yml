@@ -62,6 +62,10 @@ services:
       - 18082:18082
       - 19092:19092
       - 19644:9644
+    deploy:
+      resources:
+        limits:
+          memory: 3GB
 
   demo:
     profiles: ["demo"]
