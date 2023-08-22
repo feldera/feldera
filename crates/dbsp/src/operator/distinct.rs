@@ -23,6 +23,53 @@ use std::{
 circuit_cache_key!(DistinctId<C, D>(GlobalNodeId => Stream<C, D>));
 circuit_cache_key!(DistinctIncrementalId<C, D>(GlobalNodeId => Stream<C, D>));
 
+impl<C, D> Stream<C, D>
+where
+    C: Circuit,
+    D: 'static,
+{
+    /// Marks the data within the current stream as distinct, meaning that all
+    /// further calls to `.distinct()` will have no effect.
+    ///
+    /// This must only be used on streams whose integral contain elements with
+    /// unit weights only, otherwise this will cause the dataflow to yield
+    /// incorrect results
+    pub fn mark_distinct(&self) -> Self {
+        self.circuit().cache_insert(
+            DistinctIncrementalId::new(self.origin_node_id().clone()),
+            self.clone(),
+        );
+        self.clone()
+    }
+
+    /// Returns `true` if a distinct version of the current stream exists
+    pub fn has_distinct_version(&self) -> bool {
+        self.circuit()
+            .cache_contains(&DistinctIncrementalId::<C, D>::new(
+                self.origin_node_id().clone(),
+            ))
+    }
+
+    /// Returns the distinct version of the stream if it exists
+    /// Otherwise, returns `self`.
+    pub fn try_distinct_version(&self) -> Self {
+        self.circuit()
+            .cache_get(&DistinctIncrementalId::new(self.origin_node_id().clone()))
+            .unwrap_or_else(|| self.clone())
+    }
+
+    /// Marks `self` as distinct if `input` has a distinct version of itself
+    pub fn mark_distinct_if<C2, D2>(&self, input: &Stream<C2, D2>)
+    where
+        C2: Circuit,
+        D2: 'static,
+    {
+        if input.has_distinct_version() {
+            self.mark_distinct();
+        }
+    }
+}
+
 impl<C, Z> Stream<C, Z>
 where
     C: Circuit,
