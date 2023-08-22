@@ -501,7 +501,7 @@ test-rust:
 
 # TODO: the following two container tasks duplicate work that we otherwise do in the Dockerfile,
 # but by mostly repeating ourselves, we can reuse earlier Earthly stages to speed up the CI.
-build-dbsp-manager-container:
+build-pipeline-manager-container:
     FROM +install-rust
     WORKDIR /
 
@@ -522,7 +522,7 @@ build-dbsp-manager-container:
     COPY sql-to-dbsp-compiler/temp /database-stream-processor/sql-to-dbsp-compiler/temp
     RUN ./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
     ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
-    SAVE IMAGE ghcr.io/feldera/dbsp-manager
+    SAVE IMAGE ghcr.io/feldera/pipeline-manager
 
 # TODO: mirrors the Dockerfile. See note above.
 build-demo-container:
@@ -545,7 +545,7 @@ test-docker-compose:
     COPY deploy/docker-compose.yml .
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
-                --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
+                --load ghcr.io/feldera/pipeline-manager=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container=+build-demo-container
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
@@ -556,7 +556,7 @@ integration-test-container:
     COPY +test-manager/test_binary .
     # Check that the binary does indeed run integration tests
     RUN ./test_binary integration_test --list | grep integration_test
-    ENV TEST_DBSP_URL=http://dbsp:8080
+    ENV TEST_DBSP_URL=http://pipeline-manager:8080
     ENTRYPOINT ["./test_binary", "integration_test::"]
     SAVE IMAGE itest:latest
 
@@ -566,10 +566,10 @@ integration-tests:
     COPY deploy/docker-compose.yml .
     COPY deploy/.env .
     WITH DOCKER --pull postgres \
-                --load ghcr.io/feldera/dbsp-manager=+build-dbsp-manager-container \
+                --load ghcr.io/feldera/pipeline-manager=+build-pipeline-manager-container \
                 --compose docker-compose.yml \
                 --service db \
-                --service dbsp \
+                --service pipeline-manager \
                 --load itest:latest=+integration-test-container
         RUN sleep 5 && docker run --env-file .env --network default_default itest:latest
     END
