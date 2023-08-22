@@ -6,7 +6,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  DBSP_IMAGE: ghcr.io/${{ github.repository_owner }}/pipeline-manager
+  PIPELINE_MANAGER_IMAGE: ghcr.io/${{ github.repository_owner }}/pipeline-manager
   DEMO_IMAGE: ghcr.io/${{ github.repository_owner }}/demo-container
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
         id: meta_pipeline_manager
         uses: docker/metadata-action@v4
         with:
-          images: ${{ env.DBSP_IMAGE }}
+          images: ${{ env.PIPELINE_MANAGER_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
 
@@ -71,7 +71,7 @@ jobs:
       # Push untagged images when the workflow is not triggered by a release
       - name: Push containers
         if: github.event_name != 'release'
-        run: docker push ${{ env.DBSP_IMAGE }} && docker push ${{ env.DEMO_IMAGE }}
+        run: docker push ${{ env.PIPELINE_MANAGER_IMAGE }} && docker push ${{ env.DEMO_IMAGE }}
 
       # Tagged DBSP image
       - name: Push (pipeline-manager)
