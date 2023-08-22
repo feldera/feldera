@@ -1,0 +1,14 @@
+/**
+ *
+ * @param arr
+ * @param predicate
+ * @returns [is true, is false]
+ */
+export const partition = <T>(arr: T[], predicate: (v: T, i: number, ar: T[]) => boolean) =>
+  arr.reduce(
+    (acc, item, index, array) => {
+      acc[+!predicate(item, index, array)].push(item)
+      return acc
+    },
+    [[], []] as [T[], T[]]
+  )

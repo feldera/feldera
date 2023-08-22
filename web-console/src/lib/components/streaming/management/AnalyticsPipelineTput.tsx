@@ -11,7 +11,7 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import { useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
-import { discreteDerivative } from 'ts-practical-fp'
+import { discreteDerivative } from '$lib/functions/common/math'
 
 const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
   const theme = useTheme()
