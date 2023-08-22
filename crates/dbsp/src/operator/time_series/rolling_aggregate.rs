@@ -332,6 +332,7 @@ impl<B> Stream<RootCircuit, B> {
                 &tree,
                 &feedback.delayed_trace,
             )
+            .mark_distinct()
             .mark_sharded();
 
         feedback.connect(&output);

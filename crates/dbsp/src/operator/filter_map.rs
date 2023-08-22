@@ -230,6 +230,7 @@ where
             .circuit()
             .add_unary_operator(FilterVals::new(filter_func), &self.try_sharded_version());
         filtered.mark_sharded_if(self);
+        filtered.mark_distinct_if(self);
         filtered
     }
 

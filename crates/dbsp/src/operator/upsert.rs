@@ -67,14 +67,16 @@ where
             local.mark_sharded_if(self);
 
             let delta =
-                circuit.add_binary_operator(
-                    <Upsert<
-                        Spine<<<C as WithClock>::Time as Timestamp>::OrdKeyBatch<K, B::R>>,
-                        B,
-                    >>::new(),
-                    &local,
-                    &self.try_sharded_version(),
-                );
+                circuit
+                    .add_binary_operator(
+                        <Upsert<
+                            Spine<<<C as WithClock>::Time as Timestamp>::OrdKeyBatch<K, B::R>>,
+                            B,
+                        >>::new(),
+                        &local,
+                        &self.try_sharded_version(),
+                    )
+                    .mark_distinct();
             delta.mark_sharded_if(self);
 
             let trace = circuit.add_binary_operator_with_preference(
@@ -160,15 +162,16 @@ where
             );
             local.mark_sharded_if(self);
 
-            let delta =
-                circuit.add_binary_operator(
+            let delta = circuit
+                .add_binary_operator(
                     <Upsert<
                         Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<K, V, B::R>>,
                         B,
                     >>::new(),
                     &local,
                     &self.try_sharded_version(),
-                );
+                )
+                .mark_distinct();
             delta.mark_sharded_if(self);
 
             let trace = circuit.add_binary_operator_with_preference(
