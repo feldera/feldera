@@ -65,6 +65,8 @@ import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePi
 import { PipelineManagerQuery } from 'src/lib/services/defaultQueryFn'
 import { useHash } from '@mantine/hooks'
 import dayjs from 'dayjs'
+import { useLocalStorage } from '@mantine/hooks'
+import { LS_PREFIX } from '$lib/types/localStorage'
 
 interface ConnectorData {
   relation: Relation
@@ -536,11 +538,19 @@ export default function PipelineTable() {
     </Button>
   )
 
-  const [expandedRows, setExpandedRows] = useState<GridRowId[]>([])
+  const [expandedRows, setExpandedRows] = useLocalStorage({
+    key: LS_PREFIX + 'pipelines/expanded',
+    defaultValue: [] as GridRowId[]
+  })
+
   {
     // Cannot initialize in useState because hash is not available during SSR
     const [hash] = useHash()
-    useEffect(() => setExpandedRows([hash.slice(1)]), [hash])
+    useEffect(() => {
+      if (hash) {
+        setExpandedRows([...expandedRows, hash.slice(1)])
+      }
+    }, [hash, expandedRows, setExpandedRows])
   }
 
   return (
