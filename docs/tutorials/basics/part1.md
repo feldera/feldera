@@ -131,7 +131,7 @@ icon="bx:chevron-down" /> on the left.  You should see the list of tables and
 views defined in your program.  Click on the <icon icon="bx:upload" /> icon next
 to the `PART` table.  This will open the view where you can insert new rows to
 the table using a configurable random data generator (feel free to play around
-with it!) or by entering the data manually.  For example, I created the
+with it!) or by entering the data manually.  For example, you might add the
 following rows:
 
 | ID          | NAME           |
@@ -164,13 +164,13 @@ output of the query:
 
 ![PREFERRED_VENDOR](preferred-vendor1.png)
 
-## Step 5. Making changes
+## Step 5. Make changes
 
 Let us see what happens if we add more input rows to the `PRICE` table:
 
 ![Insert more PRICE rows](price-update.png)
 
-Click `INSERT ROWS` and back to the `PREFERRED_VENDOR` view.  The view has
+Click `INSERT ROWS` and switch back to the `PREFERRED_VENDOR` view.  The view has
 changed: DarkMatter Devices is now the cheapest supplier of Warp Cores, while
 Gravitech Dynamics offers lowest-priced Flux Capacitors.
 
@@ -183,8 +183,22 @@ Feldera queries are always-on: the query engine continuously updates
 all views in response to input changes, making the most up-to-date results
 available at any time.
 
-> **_NOTE:_** The Web Console currently does not support deleting records.  Use
-> the REST API described in the next part of the tutorial instead.
+:::note
+
+The Web Console does not yet support deleting records.  Use the REST API
+described in the next part of the tutorial instead.
+
+:::
+
+## Step 6. Stop the pipeline
+
+Click the stop icon <icon icon="bx:stop-circle" /> to shutdown the pipeline.
+
+:::caution
+
+All pipeline state will be lost.
+
+:::
 
 ## Takeaways
 
