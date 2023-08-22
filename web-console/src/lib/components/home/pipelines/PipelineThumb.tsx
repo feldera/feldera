@@ -3,7 +3,7 @@ import { ApexOptions } from 'apexcharts'
 import ReactApexcharts from 'src/@core/components/react-apexcharts'
 
 import { Box, Button, Collapse, Link, Typography } from '@mui/material'
-import { discreteDerivative } from 'ts-practical-fp'
+import { discreteDerivative } from '$lib/functions/common/math'
 import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import { format } from 'numerable'
 import { PipelineStatus } from 'src/lib/services/manager'

@@ -13,7 +13,7 @@ import { useQuery } from '@tanstack/react-query'
 import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
 import { PipelineThumb } from '$lib/components/home/pipelines/PipelineThumb'
 import { PipelineStatus } from 'src/lib/services/manager'
-import { partition } from 'ts-practical-fp'
+import { partition } from '$lib/functions/common/array'
 import { Accordion, AccordionDetails, AccordionSummary, ListItem } from '@mui/material'
 import { Icon } from '@iconify/react'
 

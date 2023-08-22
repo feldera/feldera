@@ -31,7 +31,7 @@ import { useDebouncedCallback } from 'use-debounce'
 import { Card, CardContent } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { partition } from 'ts-practical-fp'
+import { partition } from '$lib/functions/common/array'
 
 const stateToSaveLabel = (state: SaveIndicatorState): string =>
   match(state)
