@@ -34,7 +34,8 @@ const sidebars = {
               },
               items: [
                   'tutorials/basics/part1',
-                  'tutorials/basics/part2'
+                  'tutorials/basics/part2',
+                  'tutorials/basics/part3'
               ]
           }
       ]
