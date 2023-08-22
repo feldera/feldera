@@ -868,7 +868,7 @@ mod test_with_kafka {
         // We cannot use proptest macros in `async` context, so generate
         // some random data manually.
         let mut runner = TestRunner::default();
-        let data = generate_test_batches(100, 1000)
+        let data = generate_test_batches(0, 100, 1000)
             .new_tree(&mut runner)
             .unwrap()
             .current();
