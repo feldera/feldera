@@ -557,6 +557,7 @@ integration-test-container:
     # Check that the binary does indeed run integration tests
     RUN ./test_binary integration_test --list | grep integration_test
     ENV TEST_DBSP_URL=http://pipeline-manager:8080
+    ENV RUST_BACKTRACE=1
     ENTRYPOINT ["./test_binary", "integration_test::"]
     SAVE IMAGE itest:latest
 
