@@ -1,4 +1,4 @@
-//! Test for https://github.com/feldera/dbsp/issues/146
+//! Test for https://github.com/feldera/feldera/issues/146
 
 use crate::{
     codegen::CodegenConfig,

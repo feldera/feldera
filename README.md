@@ -1,11 +1,11 @@
 # The Feldera Continuous Analytics Platform
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![CI workflow](https://github.com/feldera/dbsp/actions/workflows/ci.yml/badge.svg)](https://github.com/feldera/dbsp/actions)
+[![CI workflow](https://github.com/feldera/feldera/actions/workflows/ci.yml/badge.svg)](https://github.com/feldera/feldera/actions)
 <!--
-[![codecov](https://codecov.io/gh/feldera/dbsp/branch/main/graph/badge.svg?token=0wZcmD11gt)](https://codecov.io/gh/feldera/dbsp)
+[![codecov](https://codecov.io/gh/feldera/feldera/branch/main/graph/badge.svg?token=0wZcmD11gt)](https://codecov.io/gh/feldera/feldera)
 -->
-[![nightly](https://github.com/feldera/dbsp/actions/workflows/containers.yml/badge.svg)](https://github.com/feldera/dbsp/actions/workflows/containers.yml)
+[![nightly](https://github.com/feldera/feldera/actions/workflows/containers.yml/badge.svg)](https://github.com/feldera/feldera/actions/workflows/containers.yml)
 
 The [Feldera Continuous Analytics Platform](https://www.feldera.com/), or Feldera Platform in short, is a
 fast computational engine and associated components for *continuous analytics* over data in motion. Feldera Platform
@@ -75,7 +75,7 @@ Next, run the following command to download a Docker Compose file, and use it to
 a Feldera Platform deployment suitable for demos, development and testing:
 
 ```text
-curl https://raw.githubusercontent.com/feldera/dbsp/main/deploy/docker-compose.yml | docker compose -f - --profile demo up
+curl https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | docker compose -f - --profile demo up
 ```
 
 It can take some time for the container images to be downloaded. About ten seconds after that, the DBSP
@@ -109,7 +109,7 @@ described in the accompanying paper:
 - [Budiu, Chajed, McSherry, Ryzhyk, Tannen. DBSP: Automatic
   Incremental View Maintenance for Rich Query Languages, Conference on
   Very Large Databases, August 2023, Vancouver,
-  Canada](https://github.com/feldera/dbsp/blob/main/docs/static/vldb23.pdf)
+  Canada](https://github.com/feldera/feldera/blob/main/docs/static/vldb23.pdf)
 
 - Here is [a presentation about DBSP](https://www.youtube.com/watch?v=iT4k5DCnvPU) at the 2023
 Apache Calcite Meetup.

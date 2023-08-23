@@ -885,7 +885,7 @@ mod test {
         circuit.kill().unwrap();
     }
 
-    // Test derived from issue #199 (https://github.com/feldera/dbsp/issues/199).
+    // Test derived from issue #199 (https://github.com/feldera/feldera/issues/199).
     #[test]
     fn test_partitioned_rolling_aggregate2() {
         let (circuit, (input, expected)) = RootCircuit::build(move |circuit| {

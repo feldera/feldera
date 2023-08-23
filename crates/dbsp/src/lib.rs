@@ -11,7 +11,7 @@
 //! reasonable starting point.  For complete examples, visit the [`examples`][1]
 //! directory in the DBSP repository.
 //!
-//! [1]: https://github.com/feldera/dbsp/tree/main/crates/dbsp/examples
+//! [1]: https://github.com/feldera/feldera/tree/main/crates/dbsp/examples
 //!
 //! # Theory
 //!
@@ -19,7 +19,7 @@
 //!
 //! - [Budiu, Chajed, McSherry, Ryzhyk, Tannen. DBSP: Automatic Incremental View
 //!   Maintenance for Rich Query Languages, Conference on Very Large Databases, August
-//!   2023, Vancouver, Canada](https://github.com/feldera/dbsp/blob/main/docs/static/vldb23.pdf)
+//!   2023, Vancouver, Canada](https://github.com/feldera/feldera/blob/main/docs/static/vldb23.pdf)
 //!
 //! - Here is [a presentation about DBSP](https://www.youtube.com/watch?v=iT4k5DCnvPU)
 //!   at the 2023
