@@ -13,17 +13,15 @@ release() {
         exit 1
     fi
 
-    if [ $1 = "major" ]; then
-        cargo set-version --bump major -p pipeline-manager
+    if ! (cargo set-version --version) >/dev/null 2>&1; then
+        echo >&2 "$0: cargo-edit not installed, please run 'cargo install cargo-edit'"
+        exit 1
     fi
 
-    if [ $1 = "minor" ]; then
-        cargo set-version --bump minor -p pipeline-manager
-    fi
-
-    if [ $1 = "patch" ]; then
-        cargo set-version --bump patch -p pipeline-manager
-    fi
+    case $1 in
+        major|minor|patch) cargo set-version --bump $1 -p pipeline-manager ;;
+        *) echo >&2 "Argument must be 'major' or 'minor' or 'patch'"; exit 1 ;;
+    esac
 
     version=`cargo run --bin=api-server -- -V | awk '{print $NF}'`
 
