@@ -2,6 +2,7 @@
 //
 // Also smooths the throughput over a few seconds.
 
+import { discreteDerivative } from '$lib/functions/common/math'
 import { GlobalMetrics } from '$lib/types/pipeline'
 import { ApexOptions } from 'apexcharts'
 import { format } from 'd3-format'
@@ -11,7 +12,6 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import { useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
-import { discreteDerivative } from '$lib/functions/common/math'
 
 const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
   const theme = useTheme()

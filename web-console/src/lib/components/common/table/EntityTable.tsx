@@ -3,6 +3,10 @@
 // It is used to display a list of entities in a table. It's the generic version
 // of a table we use to display programs, pipelines, etc.
 
+import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
+import DataGridSearch from '$lib/components/common/table/DataGridSearch'
+import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
+import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { Children, Dispatch, MutableRefObject, ReactNode, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 
@@ -13,11 +17,6 @@ import Tooltip from '@mui/material/Tooltip'
 import { DataGridPro, DataGridProProps, GridRenderCellParams, GridValidRowModel } from '@mui/x-data-grid-pro'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
 import { UseQueryResult } from '@tanstack/react-query'
-
-import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
-import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
-import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
-import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 
 // This is a workaround for the following issue:
 // https://github.com/mui/mui-x/issues/5239

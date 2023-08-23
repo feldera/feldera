@@ -3,7 +3,6 @@
 
 import EntityTable from '$lib/components/common/table/EntityTable'
 import { connectorDescrToType } from '$lib/functions/connectors'
-import type { ConnectorType, Direction } from '$lib/types/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
 import { Dispatch, useState } from 'react'
 
@@ -12,6 +11,7 @@ import Card from '@mui/material/Card'
 import { GridColDef, GridRenderCellParams } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 
+import type { ConnectorType, Direction } from '$lib/types/connectors'
 const SelectSourceTable = (props: {
   direction: Direction
   typ: ConnectorType

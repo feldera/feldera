@@ -2,9 +2,10 @@
 /* tslint:disable */
 /* eslint-disable */
 import { ApiError } from './ApiError'
+import { CancelablePromise } from './CancelablePromise'
+
 import type { ApiRequestOptions } from './ApiRequestOptions'
 import type { ApiResult } from './ApiResult'
-import { CancelablePromise } from './CancelablePromise'
 import type { OnCancel } from './CancelablePromise'
 import type { OpenAPIConfig } from './OpenAPI'
 

@@ -1,21 +1,21 @@
 // Should display a list of active pipelines with stats, just a placeholder
 // right now.
 
+import { PipelineThumb } from '$lib/components/home/pipelines/PipelineThumb'
+import { partition } from '$lib/functions/common/array'
+import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
 import { ApexOptions } from 'apexcharts'
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
+import { PipelineStatus } from 'src/lib/services/manager'
 
+import { Icon } from '@iconify/react'
+import { Accordion, AccordionDetails, AccordionSummary, ListItem } from '@mui/material'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import CardHeader from '@mui/material/CardHeader'
 import { Theme, useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 import { useQuery } from '@tanstack/react-query'
-import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
-import { PipelineThumb } from '$lib/components/home/pipelines/PipelineThumb'
-import { PipelineStatus } from 'src/lib/services/manager'
-import { partition } from '$lib/functions/common/array'
-import { Accordion, AccordionDetails, AccordionSummary, ListItem } from '@mui/material'
-import { Icon } from '@iconify/react'
 
 const Pipelines = () => {
   const theme = useTheme()

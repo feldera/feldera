@@ -2,12 +2,12 @@
 //
 // It just has an editor for the YAML config.
 
+import { connectorTypeToIcon, parseEditorSchema } from '$lib/functions/connectors'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
-import { connectorTypeToIcon, parseEditorSchema } from '$lib/functions/connectors'
+import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from '$lib/services/manager'
 import { ConnectorType } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
-import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from '$lib/services/manager'
 import { useEffect, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import * as yup from 'yup'

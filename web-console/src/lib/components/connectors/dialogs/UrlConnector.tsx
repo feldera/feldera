@@ -2,10 +2,8 @@
 
 import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
 import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
-import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { connectorTypeToConfig, connectorTypeToIcon, parseUrlSchema } from '$lib/functions/connectors'
-import { ConnectorType } from '$lib/types/connectors'
-import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
+import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import {
   ConnectorDescr,
   ConnectorId,
@@ -13,8 +11,11 @@ import {
   NewConnectorRequest,
   UpdateConnectorRequest
 } from '$lib/services/manager'
+import { ConnectorType } from '$lib/types/connectors'
+import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
+import { PLACEHOLDER_VALUES } from 'src/lib/functions/placeholders'
 import * as yup from 'yup'
 
 import { yupResolver } from '@hookform/resolvers/yup'
@@ -22,6 +23,7 @@ import { Icon } from '@iconify/react'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
+import { FormControl, FormHelperText, Grid, TextField } from '@mui/material'
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
@@ -30,10 +32,8 @@ import Tab from '@mui/material/Tab'
 import Typography from '@mui/material/Typography'
 
 import { AddConnectorCard } from './AddConnectorCard'
-import Transition from './tabs/Transition'
 import TabInputFormatDetails from './tabs/TabInputFormatDetails'
-import { FormControl, FormHelperText, Grid, TextField } from '@mui/material'
-import { PLACEHOLDER_VALUES } from 'src/lib/functions/placeholders'
+import Transition from './tabs/Transition'
 
 const schema = yup.object().shape({
   name: yup.string().required(),

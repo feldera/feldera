@@ -1,12 +1,14 @@
 import { KafkaInputSchema } from '$lib/components/connectors/dialogs'
 import { Control, Controller, FieldErrors, UseFormWatch } from 'react-hook-form'
+
+import { FormControlLabel, Switch } from '@mui/material'
 import FormControl from '@mui/material/FormControl'
 import FormHelperText from '@mui/material/FormHelperText'
 import Grid from '@mui/material/Grid'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
-import { FormControlLabel, Switch } from '@mui/material'
+
 import { UrlSchema } from '../UrlConnector'
 
 const TabInputFormatDetails = (props: {

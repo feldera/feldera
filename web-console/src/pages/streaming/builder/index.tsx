@@ -6,6 +6,7 @@ import PipelineGraph from '$lib/components/streaming/builder/PipelineBuilder'
 import { connectorConnects, useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
 import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
+import { partition } from '$lib/functions/common/array'
 import { removePrefix } from '$lib/functions/common/string'
 import { invalidatePipeline } from '$lib/services/defaultQueryFn'
 import {
@@ -31,7 +32,6 @@ import { useDebouncedCallback } from 'use-debounce'
 import { Card, CardContent } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { partition } from '$lib/functions/common/array'
 
 const stateToSaveLabel = (state: SaveIndicatorState): string =>
   match(state)

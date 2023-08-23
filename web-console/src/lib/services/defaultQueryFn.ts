@@ -8,10 +8,7 @@
 //    no queryFn is provided (ideally we never provide a queryFn to reduce
 //    duplication and bugs but always rely on defaultQueryFn to route to the correct API call)
 
-import { match, P } from 'ts-pattern'
-
-import { QueryClient, QueryFunctionContext } from '@tanstack/react-query'
-
+import { mkQuery } from '$lib/functions/common/tanstack'
 import {
   ConnectorsService,
   Pipeline,
@@ -25,7 +22,9 @@ import {
   UpdateProgramRequest
 } from '$lib/services/manager'
 import invariant from 'tiny-invariant'
-import { mkQuery } from '$lib/functions/common/tanstack'
+import { match, P } from 'ts-pattern'
+
+import { QueryClient, QueryFunctionContext } from '@tanstack/react-query'
 
 // Updates just the program status in the query cache.
 export const programStatusUpdate = (queryClient: QueryClient, programId: ProgramId, newStatus: ProgramStatus) => {
