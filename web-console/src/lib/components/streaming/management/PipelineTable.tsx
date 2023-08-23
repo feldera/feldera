@@ -20,7 +20,6 @@ import {
   ApiError,
   AttachedConnector,
   ConnectorDescr,
-  ErrorResponse,
   Pipeline,
   PipelineId,
   PipelineRevision,
