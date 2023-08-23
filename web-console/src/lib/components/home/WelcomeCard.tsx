@@ -15,10 +15,10 @@ const WelcomeCard = (props: { setCard: (card: number) => void }) => (
     </Typography>
     <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-evenly' }}>
       <Button onClick={() => props.setCard(1)}>Watch introduction</Button>
-      <Button href='https://docs.feldera.io/docs/tour/' target='_blank' rel='noreferrer'>
+      <Button href='https://www.feldera.com/docs/tour/' target='_blank' rel='noreferrer'>
         Take the tour
       </Button>
-      <Button href='https://docs.feldera.io/docs/demos/' target='_blank' rel='noreferrer'>
+      <Button href='https://www.feldera.com/docs/demos/' target='_blank' rel='noreferrer'>
         Follow the demos
       </Button>
     </Box>

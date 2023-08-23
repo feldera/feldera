@@ -12,10 +12,10 @@ const FooterContent = () => {
       <Typography sx={{ mr: 2 }}>{`© ${new Date().getFullYear()} Feldera`}</Typography>
       {hidden ? null : (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', '& :not(:last-child)': { mr: 4 } }}>
-          <Link href='https://feldera.github.io/website/about-us'>About</Link>
+          <Link href='https://www.feldera.com/about-us'>About</Link>
           <Link href='mailto:learnmore@feldera.com'>Contact</Link>
-          <Link href='https://feldera.github.io/website/docs/what-is-feldera'>Documentation</Link>
-          <Link href='https://feldera.github.io/website/slack'>Support</Link>
+          <Link href='https://www.feldera.com/docs/what-is-feldera'>Documentation</Link>
+          <Link href='https://www.feldera.com/slack'>Support</Link>
         </Box>
       )}
     </Box>
