@@ -2,7 +2,7 @@
 // while data is being fetched on initial page loads.
 
 import Image from 'next/image'
-import MainLogo from 'public/images/feldera-primary-main.svg'
+import MainLogo from 'public/images/feldera/LogoSolid.svg'
 
 import Box, { BoxProps } from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
