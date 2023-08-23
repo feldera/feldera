@@ -557,6 +557,10 @@ mod tests {
                 );
 
                 unsafe { serialize_json(row.as_ptr(), &mut serialize_buffer) }
+                // assert_eq!(
+                //     json_value,
+                //     serde_json::from_str::<serde_json::Value>(&serialize_buffer).unwrap(),
+                // );
                 println!("{serialize_buffer}");
                 serialize_buffer.clear();
             }

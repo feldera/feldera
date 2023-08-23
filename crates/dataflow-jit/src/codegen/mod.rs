@@ -1079,6 +1079,7 @@ impl<'a> CodegenCtx<'a> {
         }
     }
 
+    #[allow(dead_code)]
     fn assert(&self, cond: Value, builder: &mut FunctionBuilder<'_>) {
         debug_assert!(builder.value_type(cond).is_int());
         let trap = builder.ins().trapz(cond, TRAP_ASSERT_FALSE);
