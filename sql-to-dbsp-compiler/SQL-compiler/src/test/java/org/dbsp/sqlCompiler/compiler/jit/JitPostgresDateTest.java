@@ -14,7 +14,7 @@ public class JitPostgresDateTest extends PostgresDateTests {
 
     // TODO: all ignored tests below are JIT bugs
 
-    @Test @Ignore("No support for intervals https://github.com/feldera/dbsp/issues/309")
+    @Test @Ignore("No support for intervals https://github.com/feldera/feldera/issues/309")
     public void testDiff() {
         this.q("SELECT (f1 - date '2000-01-01') day AS \"Days From 2K\" FROM DATE_TBL;\n" +
                 " Days From 2K \n" +
@@ -37,7 +37,7 @@ public class JitPostgresDateTest extends PostgresDateTests {
                 "null"); // Added manually
     }
 
-    @Test @Ignore("Incorrect result for dates before 1970 https://github.com/feldera/dbsp/issues/400")
+    @Test @Ignore("Incorrect result for dates before 1970 https://github.com/feldera/feldera/issues/400")
     public void testLt() {
         this.q("SELECT f1 FROM DATE_TBL WHERE f1 < '2000-01-01';\n" +
                 " f1       \n" +

@@ -390,7 +390,7 @@ public class CalciteCompiler implements IWritesLogs {
                 CoreRules.FILTER_VALUES_MERGE,
                 CoreRules.PROJECT_FILTER_VALUES_MERGE,
                 // Rule is buggy; disabled due to
-                // https://github.com/feldera/dbsp/issues/217
+                // https://github.com/feldera/feldera/issues/217
                 //CoreRules.PROJECT_VALUES_MERGE
                 CoreRules.AGGREGATE_VALUES
         );

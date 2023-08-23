@@ -54,7 +54,7 @@ You also need `curl` and a web browser such as Chrome or Firefox.
    how to set up the demo's containers:
 
    ```bash
-   curl -O https://raw.githubusercontent.com/feldera/dbsp/main/deploy/docker-compose.yml
+   curl -O https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml
    ```
 
    You only need to do the first time.

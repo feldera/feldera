@@ -12,7 +12,7 @@ sudo apt-get install -y nodejs
 sudo npm install --global yarn
 sudo npm install --global openapi-typescript-codegen
 
-git clone https://github.com/feldera/dbsp.git
+git clone https://github.com/feldera/feldera.git
 cd dbsp/web-console
 ```
 

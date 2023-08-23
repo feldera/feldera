@@ -16,7 +16,7 @@ public class JitTimeTests extends TimeTests {
         return new DBSPCompiler(options);
     }
 
-    @Test @Ignore("No support for intervals https://github.com/feldera/dbsp/issues/309")
+    @Test @Ignore("No support for intervals https://github.com/feldera/feldera/issues/309")
     public void timestampDiffTest() {
         String query =
                 "SELECT timestampdiff(MONTH, TIMESTAMP'2021-02-28 12:00:00', TIMESTAMP'2021-03-28 11:59:59'), " +
@@ -27,7 +27,7 @@ public class JitTimeTests extends TimeTests {
         );
     }
 
-    @Test @Ignore("No support for intervals https://github.com/feldera/dbsp/issues/309")
+    @Test @Ignore("No support for intervals https://github.com/feldera/feldera/issues/309")
     public void timestampAddTableTest() {
         String query =
                 "SELECT TIMESTAMPADD(SECOND, 10, COL1), " +
@@ -40,7 +40,7 @@ public class JitTimeTests extends TimeTests {
         );
     }
 
-    @Test @Ignore("IString parsing not supported https://github.com/feldera/dbsp/issues/338")
+    @Test @Ignore("IString parsing not supported https://github.com/feldera/feldera/issues/338")
     public void castTimestampToStringToTimestamp() {
         String query = "SELECT CAST(CAST(T.COL1 AS STRING) AS Timestamp) FROM T";
         this.testQuery(query, new DBSPTimestampLiteral(0));

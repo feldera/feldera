@@ -5,16 +5,16 @@
   "version": "0.0.1",
   "author": {
     "name": "DBSP",
-    "url": "https://github.com/feldera/dbsp"
+    "url": "https://github.com/feldera/feldera"
   },
   "bugs": {
-    "url": "https://github.com/feldera/dbsp/issues"
+    "url": "https://github.com/feldera/feldera/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/feldera/dbsp.git"
+    "url": "https://github.com/feldera/feldera.git"
   },
-  "homepage": "https://github.com/feldera/dbsp",
+  "homepage": "https://github.com/feldera/feldera",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

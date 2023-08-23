@@ -41,7 +41,7 @@ has instructions on how to fork a repository.  After forking do not
 forget to add dbsp as a remote repository:
 
 ```shell
-git remote add upstream https://github.com/feldera/dbsp.git
+git remote add upstream https://github.com/feldera/feldera.git
 ```
 
 ### Workflow
@@ -164,7 +164,7 @@ mvn package
 
 If you want to develop DBSP without installing the required toolchains
 locally, you can use Github Codespaces; from
-https://github.com/feldera/dbsp, click on the green `<> Code` button,
+https://github.com/feldera/feldera, click on the green `<> Code` button,
 then select Codespaces and click on "Create codespace on main".
 
 ## Learning the DBSP Rust code

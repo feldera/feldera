@@ -97,4 +97,4 @@ written by the inventors of that theory. See our
 Feldera code is available on [Github][Feldera] using an MIT open-source
 license. It consists of a Rust runtime and a SQL compiler.
 
-[Feldera]: https://github.com/feldera/dbsp
+[Feldera]: https://github.com/feldera/feldera
