@@ -18,7 +18,7 @@ data from Redpanda, a Kafka-compatible message queue.
 ## Step 0. Launch Feldera
 
 Make sure that you have Feldera up and running by following the [Getting
-Started](/docs/intro.md) guide.  Open the Feldera Web Console on
+Started](/intro.md) guide.  Open the Feldera Web Console on
 [localhost:8085](http://localhost:8085).
 
 ## Step 1. Declare input tables
@@ -196,5 +196,5 @@ Let us recap what we have learned so far:
 
 - A SQL program is instantiated as part of a **pipeline**.
 
-- Feldera evaluates queries **continuously**, updating their results 
+- Feldera evaluates queries **continuously**, updating their results
   as input data changes.
