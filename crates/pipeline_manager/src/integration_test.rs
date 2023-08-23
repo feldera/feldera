@@ -403,7 +403,9 @@ async fn setup() -> TestConfig {
             format!("http://localhost:{}", TEST_DBSP_DEFAULT_PORT).to_owned()
         }
     };
-    let client = awc::Client::default();
+    let client = awc::ClientBuilder::new()
+        .timeout(Duration::from_secs(10))
+        .finish();
     let bearer_token = bearer_token().await;
     let config = TestConfig {
         dbsp_url,
