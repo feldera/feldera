@@ -59,7 +59,7 @@ Some ways that you can give us your feedback:
 
 # Example
 
-```
+```rust
 use dbsp::{operator::FilterMap, IndexedZSet, OrdIndexedZSet, OutputHandle, Runtime};
 
 type Node = usize;
