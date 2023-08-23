@@ -4,15 +4,18 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
+import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
 import AnalyticsPipelineTput from '$lib/components/streaming/management/AnalyticsPipelineTput'
 import { PipelineRevisionStatusChip } from '$lib/components/streaming/management/RevisionStatus'
 import { ClientPipelineStatus, usePipelineStateStore } from '$lib/compositions/streaming/management/StatusContext'
 import useDeletePipeline from '$lib/compositions/streaming/management/useDeletePipeline'
 import usePausePipeline from '$lib/compositions/streaming/management/usePausePipeline'
+import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import useShutdownPipeline from '$lib/compositions/streaming/management/useShutdownPipeline'
 import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
 import { humanSize } from '$lib/functions/common/string'
+import { tuple } from '$lib/functions/common/tuple'
 import {
   ApiError,
   AttachedConnector,
@@ -27,7 +30,10 @@ import {
   UpdatePipelineRequest,
   UpdatePipelineResponse
 } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
+import { LS_PREFIX } from '$lib/types/localStorage'
 import { format } from 'd3-format'
+import dayjs from 'dayjs'
 import Link from 'next/link'
 import router from 'next/router'
 import React, { useCallback, useEffect, useState } from 'react'
@@ -35,6 +41,7 @@ import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
 
 import { Icon } from '@iconify/react'
+import { useHash, useLocalStorage } from '@mantine/hooks'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { Button } from '@mui/material'
 import Badge from '@mui/material/Badge'
@@ -60,13 +67,6 @@ import {
   useGridApiRef
 } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import DataGridSearch from '$lib/components/common/table/DataGridSearch'
-import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
-import { PipelineManagerQuery } from 'src/lib/services/defaultQueryFn'
-import { useHash } from '@mantine/hooks'
-import dayjs from 'dayjs'
-import { useLocalStorage } from '@mantine/hooks'
-import { LS_PREFIX } from '$lib/types/localStorage'
 
 interface ConnectorData {
   relation: Relation
@@ -303,50 +303,6 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   )
 }
 
-const statusToChip = (
-  status: ClientPipelineStatus | undefined,
-  error: ErrorResponse | null,
-  onDelete: ((event: any) => void) | undefined
-) => {
-  return match(status)
-    .with(undefined, () => <CustomChip rounded size='small' skin='light' label='Unknown' />)
-    .with(ClientPipelineStatus.UNKNOWN, () => <CustomChip rounded size='small' skin='light' label={status} />)
-    .with(ClientPipelineStatus.INACTIVE, () => <CustomChip rounded size='small' skin='light' label={status} />)
-    .with(ClientPipelineStatus.INITIALIZING, () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
-    ))
-    .with(ClientPipelineStatus.PROVISIONING, () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
-    ))
-    .with(ClientPipelineStatus.CREATE_FAILURE, () => (
-      <CustomChip rounded size='small' skin='light' color='error' label={status} />
-    ))
-    .with(ClientPipelineStatus.STARTING, () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
-    ))
-    .with(ClientPipelineStatus.STARTUP_FAILURE, () => (
-      <CustomChip rounded size='small' skin='light' color='error' label={status} />
-    ))
-    .with(ClientPipelineStatus.RUNNING, () => (
-      <CustomChip rounded size='small' skin='light' color='success' label={status} />
-    ))
-    .with(ClientPipelineStatus.PAUSING, () => (
-      <CustomChip rounded size='small' skin='light' color='info' label={status} />
-    ))
-    .with(ClientPipelineStatus.PAUSED, () => (
-      <CustomChip rounded size='small' skin='light' color='info' label={status} />
-    ))
-    .with(ClientPipelineStatus.FAILED, () => (
-      <Tooltip title={error?.message || 'Unknown Error'} disableInteractive>
-        <CustomChip rounded size='small' skin='light' color='error' label={status} onDelete={onDelete} />
-      </Tooltip>
-    ))
-    .with(ClientPipelineStatus.SHUTTING_DOWN, () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
-    ))
-    .exhaustive()
-}
-
 const pipelineStatusToClientStatus = (status: PipelineStatus) => {
   return match(status)
     .with(PipelineStatus.SHUTDOWN, () => ClientPipelineStatus.INACTIVE)
@@ -362,14 +318,11 @@ const pipelineStatusToClientStatus = (status: PipelineStatus) => {
 export default function PipelineTable() {
   const [rows, setRows] = useState<Pipeline[]>([])
   const [filteredData, setFilteredData] = useState<Pipeline[]>([])
-  const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
   const setPipelineStatus = usePipelineStateStore(state => state.setStatus)
   const [paginationModel, setPaginationModel] = useState({
     pageSize: 7,
     page: 0
   })
-
-  const shutdownPipelineClick = useShutdownPipeline()
 
   const pipelineQuery = useQuery({
     ...PipelineManagerQuery.pipeline(),
@@ -472,18 +425,7 @@ export default function PipelineTable() {
       field: 'status',
       headerName: 'Status',
       flex: 1,
-      renderCell: (params: GridRenderCellParams) => {
-        const status = statusToChip(pipelineStatus.get(params.row.descriptor.pipeline_id), params.row.state.error, () =>
-          shutdownPipelineClick(params.row.descriptor.pipeline_id)
-        )
-        return (
-          <Badge badgeContent={params.row.warn_cnt} color='warning'>
-            <Badge badgeContent={params.row.error_cnt} color='error'>
-              {status}
-            </Badge>
-          </Badge>
-        )
-      }
+      renderCell: PipelineStatusCell
     },
     {
       field: 'actions',
@@ -595,22 +537,95 @@ export default function PipelineTable() {
   )
 }
 
-const PipelineActions = (params: { row: Pipeline }) => {
+const usePipelineState = (params: { row: Pipeline }) => {
   const pipeline = params.row.descriptor
-
-  const startPipelineClick = useStartPipeline()
-  const pausePipelineClick = usePausePipeline()
-  const shutdownPipelineClick = useShutdownPipeline()
-  const deletePipelineClick = useDeletePipeline()
-
   const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
   const curProgramQuery = useQuery({
     ...PipelineManagerQuery.programCode(pipeline.program_id!),
     enabled: pipeline.program_id != null
   })
+
   const programReady =
     !curProgramQuery.isLoading && !curProgramQuery.isError && curProgramQuery.data.status === 'Success'
   const currentStatus = pipelineStatus.get(pipeline.pipeline_id) ?? ClientPipelineStatus.UNKNOWN
+  return tuple(currentStatus, programReady)
+}
+
+const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) => {
+  const state = usePipelineState(params)
+
+  const shutdownPipelineClick = useShutdownPipeline()
+
+  const chip = match(state)
+    .with([ClientPipelineStatus.UNKNOWN, P._], () => <CustomChip rounded size='small' skin='light' label={state[0]} />)
+    .with([ClientPipelineStatus.INACTIVE, true], () => (
+      <CustomChip rounded size='small' skin='light' label={state[0]} />
+    ))
+    .with([ClientPipelineStatus.INACTIVE, false], () => (
+      <CustomChip rounded size='small' skin='light' color='info' label='Compiling' />
+    ))
+    .with([ClientPipelineStatus.INITIALIZING, P._], () => (
+      <CustomChip rounded size='small' skin='light' color='secondary' label={state[0]} />
+    ))
+    .with([ClientPipelineStatus.PROVISIONING, P._], () => (
+      <CustomChip rounded size='small' skin='light' color='secondary' label={state[0]} />
+    ))
+    .with([ClientPipelineStatus.CREATE_FAILURE, P._], () => (
+      <CustomChip rounded size='small' skin='light' color='error' label={state[0]} />
+    ))
+    .with([ClientPipelineStatus.STARTING, P._], () => (
+      <CustomChip rounded size='small' skin='light' color='secondary' label={state[0]} />
+    ))
+    .with([ClientPipelineStatus.STARTUP_FAILURE, P._], () => (
+      <CustomChip rounded size='small' skin='light' color='error' label={state[0]} />
+    ))
+    .with([ClientPipelineStatus.RUNNING, P._], () => (
+      <CustomChip rounded size='small' skin='light' color='success' label={state[0]} />
+    ))
+    .with([ClientPipelineStatus.PAUSING, P._], () => (
+      <CustomChip rounded size='small' skin='light' color='info' label={state[0]} />
+    ))
+    .with([ClientPipelineStatus.PAUSED, true], () => (
+      <CustomChip rounded size='small' skin='light' color='info' label={state[0]} />
+    ))
+    .with([ClientPipelineStatus.PAUSED, false], () => (
+      <CustomChip rounded size='small' skin='light' color='info' label='Compiling' />
+    ))
+    .with([ClientPipelineStatus.FAILED, P._], () => (
+      <Tooltip title={params.row.state.error?.message || 'Unknown Error'} disableInteractive>
+        <CustomChip
+          rounded
+          size='small'
+          skin='light'
+          color='error'
+          label={state[0]}
+          onDelete={() => shutdownPipelineClick(params.row.descriptor.pipeline_id)}
+        />
+      </Tooltip>
+    ))
+    .with([ClientPipelineStatus.SHUTTING_DOWN, P._], () => (
+      <CustomChip rounded size='small' skin='light' color='secondary' label={state[0]} />
+    ))
+    .exhaustive()
+
+  return (
+    <Badge badgeContent={params.row.warn_cnt} color='warning'>
+      <Badge badgeContent={params.row.error_cnt} color='error'>
+        {chip}
+      </Badge>
+    </Badge>
+  )
+}
+
+const PipelineActions = (params: { row: Pipeline }) => {
+  const pipeline = params.row.descriptor
+
+  const state = usePipelineState(params)
+
+  const startPipelineClick = useStartPipeline()
+  const pausePipelineClick = usePausePipeline()
+  const shutdownPipelineClick = useShutdownPipeline()
+  const deletePipelineClick = useDeletePipeline()
 
   const actions = {
     pause: () => (
@@ -628,7 +643,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
       </Tooltip>
     ),
     spinner: () => (
-      <Tooltip title={pipelineStatus.get(pipeline.pipeline_id)}>
+      <Tooltip title={state[0]}>
         <IconButton size='small'>
           <Icon icon='svg-spinners:270-ring-with-bg' fontSize={20} />
         </IconButton>
@@ -672,7 +687,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
     )
   }
 
-  const enabled = match([currentStatus, programReady])
+  const enabled = match(state)
     .returnType<(keyof typeof actions)[]>()
     .with([ClientPipelineStatus.INACTIVE, true], () => ['start', 'edit', 'delete'])
     .with([ClientPipelineStatus.INACTIVE, false], () => ['edit', 'delete'])
