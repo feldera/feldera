@@ -525,11 +525,13 @@ build-demo-container:
 test-docker-compose:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
+    # Remove resource limits from Redpanda because that does not work from docker-in-docker
+    RUN apk add --no-cache python3 py3-pip && pip3 install yq && cat docker-compose.yml | yq 'del(.services.redpanda.deploy)' -y > docker-compose-no-resources.yml
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --load ghcr.io/feldera/pipeline-manager=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container=+build-demo-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
+        RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose-no-resources.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
 # Fetches the test binary from test-manager, and produces a container image out of it
