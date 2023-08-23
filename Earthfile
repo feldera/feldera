@@ -320,24 +320,6 @@ test-sql:
     FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package
 
-install-docs-deps:
-    FROM +install-deps
-    COPY docs/package.json ./docs/package.json
-    COPY docs/yarn.lock ./docs/yarn.lock
-    RUN cd docs && yarn install
-
-build-docs:
-    FROM +install-docs-deps
-    COPY docs/ docs/
-    COPY ( +build-manager/pipeline-manager ) ./docs/pipeline-manager
-    RUN cd docs && ./pipeline-manager --dump-openapi \
-        && (jq '.servers= [{url: "http://localhost:8080/v0"}]' openapi.json > openapi_docs.json) \
-        && rm openapi.json
-    RUN cd docs && yarn format:check
-    RUN cd docs && yarn lint
-    RUN cd docs && yarn build --no-minify
-    SAVE ARTIFACT docs/out AS LOCAL docs/out
-
 build-nexmark:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
