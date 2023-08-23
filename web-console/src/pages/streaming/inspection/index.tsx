@@ -8,6 +8,7 @@ import { useRouter } from 'next/router'
 import { SyntheticEvent, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 import { Controller, useForm } from 'react-hook-form'
+import PageHeader from 'src/lib/components/layouts/pageHeader'
 
 import { Icon } from '@iconify/react'
 import TabContext from '@mui/lab/TabContext'
@@ -28,7 +29,6 @@ import {
 import Grid from '@mui/material/Grid'
 import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
-import PageHeader from 'src/lib/components/layouts/pageHeader'
 
 const TitleBreadCrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
   const { tables, views, relation } = props

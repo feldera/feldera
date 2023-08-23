@@ -3,10 +3,8 @@
 import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
 import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/tabs/TabKafkaNameAndDesc'
 import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
-import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { connectorTypeToConfig, connectorTypeToIcon, parseKafkaOutputSchema } from '$lib/functions/connectors'
-import { ConnectorType } from '$lib/types/connectors'
-import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
+import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import {
   ConnectorDescr,
   ConnectorId,
@@ -14,6 +12,8 @@ import {
   NewConnectorRequest,
   UpdateConnectorRequest
 } from '$lib/services/manager'
+import { ConnectorType } from '$lib/types/connectors'
+import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import * as yup from 'yup'
@@ -32,8 +32,8 @@ import Typography from '@mui/material/Typography'
 
 import { AddConnectorCard } from './AddConnectorCard'
 import TabkafkaOutputDetails from './tabs/TabKafkaOutputDetails'
-import Transition from './tabs/Transition'
 import TabOutputFormatDetails from './tabs/TabOutputFormatDetails'
+import Transition from './tabs/Transition'
 
 const schema = yup
   .object({

@@ -1,14 +1,14 @@
+import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
+import { discreteDerivative } from '$lib/functions/common/math'
 import { Pipeline } from '$lib/services/manager/models/Pipeline'
 import { ApexOptions } from 'apexcharts'
-import ReactApexcharts from 'src/@core/components/react-apexcharts'
-
-import { Box, Button, Collapse, Link, Typography } from '@mui/material'
-import { discreteDerivative } from '$lib/functions/common/math'
-import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import { format } from 'numerable'
-import { PipelineStatus } from 'src/lib/services/manager'
-import { Icon } from '@iconify/react'
 import { useState } from 'react'
+import ReactApexcharts from 'src/@core/components/react-apexcharts'
+import { PipelineStatus } from 'src/lib/services/manager'
+
+import { Icon } from '@iconify/react'
+import { Box, Button, Collapse, Link, Typography } from '@mui/material'
 
 export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) => {
   const { globalMetrics } = usePipelineMetrics({

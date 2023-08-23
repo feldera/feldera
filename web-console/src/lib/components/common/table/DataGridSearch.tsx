@@ -1,11 +1,11 @@
 // An input field that can be used to search the table (on the client-side).
 
+import QuickSearch from '$lib/components/common/table/QuickSearch'
+import { escapeRegExp } from '$lib/functions/common/string'
 import { ChangeEvent, Dispatch, SetStateAction, useState } from 'react'
 
-import { UseQueryResult } from '@tanstack/react-query'
 import { GridValidRowModel } from '@mui/x-data-grid-pro'
-import { escapeRegExp } from '$lib/functions/common/string'
-import QuickSearch from '$lib/components/common/table/QuickSearch'
+import { UseQueryResult } from '@tanstack/react-query'
 
 const DataGridSearch = <TData extends GridValidRowModel>(props: {
   fetchRows: UseQueryResult<TData[], unknown>

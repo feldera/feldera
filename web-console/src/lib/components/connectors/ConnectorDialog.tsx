@@ -4,12 +4,11 @@ import {
   KafkaOutputConnectorDialog,
   UrlConnectorDialog
 } from '$lib/components/connectors/dialogs'
+import { connectorDescrToType } from '$lib/functions/connectors'
+import { ConnectorDescr } from '$lib/services/manager'
+import { ConnectorType } from '$lib/types/connectors'
 import { Dispatch, SetStateAction } from 'react'
 import { match } from 'ts-pattern'
-
-import { connectorDescrToType } from '$lib/functions/connectors'
-import { ConnectorType } from '$lib/types/connectors'
-import { ConnectorDescr } from '$lib/services/manager'
 
 // Given a connector return the right dialog component for updating it.
 export const ConnectorDialog = (props: {

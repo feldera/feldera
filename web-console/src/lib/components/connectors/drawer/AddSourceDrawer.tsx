@@ -10,9 +10,9 @@ import {
   connectorTypeToIcon,
   connectorTypeToTitle
 } from '$lib/functions/connectors'
+import { AttachedConnector, ConnectorDescr } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
-import { AttachedConnector, ConnectorDescr } from '$lib/services/manager'
 import { Dispatch, useEffect, useState } from 'react'
 
 import { Icon } from '@iconify/react'

@@ -1,6 +1,7 @@
-import { Button, Card, Typography, Box, Avatar, Modal } from '@mui/material'
-import { Icon } from '@iconify/react'
 import { useState } from 'react'
+
+import { Icon } from '@iconify/react'
+import { Avatar, Box, Button, Card, Modal, Typography } from '@mui/material'
 
 const WelcomeCard = (props: { setCard: (card: number) => void }) => (
   <Card sx={{ p: 4, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
