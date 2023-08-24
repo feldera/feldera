@@ -343,10 +343,10 @@ export default function PipelineTable() {
   // Only show the details tab button if this pipeline has a revision
   function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value' | 'row'>) {
     console.log('CustomDetailPanelToggle')
-    const { value: isExpanded, row: row } = props
+    const { value: isExpanded, row } = props
     const [hasRevision, setHasRevision] = useState<boolean>(false)
 
-    const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(props.row.descriptor.pipeline_id))
+    const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(row.descriptor.pipeline_id))
     useEffect(() => {
       if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
         setHasRevision(true)
@@ -472,17 +472,23 @@ export default function PipelineTable() {
     key: LS_PREFIX + 'pipelines/expanded',
     defaultValue: [] as GridRowId[]
   })
+  const [hash, setHash] = useHash()
 
-  {
-    // Cannot initialize in useState because hash is not available during SSR
-    const [hash] = useHash()
-    useEffect(() => {
-      const anchor = hash.slice(1)
-      if (!hash || expandedRows.includes(anchor)) {
-        return
-      }
-      setExpandedRows([...expandedRows, anchor])
-    }, [hash, expandedRows, setExpandedRows])
+  // Cannot initialize in useState because hash is not available during SSR
+  useEffect(() => {
+    const anchor = hash.slice(1)
+    if (!anchor || expandedRows.includes(anchor)) {
+      return
+    }
+    setExpandedRows([...expandedRows, anchor])
+  }, [hash, expandedRows, setExpandedRows])
+
+  const updateExpandedRows = (newExpandedRows: GridRowId[]) => {
+    const anchor = hash.slice(1)
+    if (newExpandedRows.length < expandedRows.length && !newExpandedRows.includes(anchor)) {
+      setHash('')
+    }
+    setExpandedRows(newExpandedRows)
   }
 
   return (
@@ -521,7 +527,7 @@ export default function PipelineTable() {
           }
         }}
         detailPanelExpandedRowIds={expandedRows}
-        onDetailPanelExpandedRowIdsChange={setExpandedRows}
+        onDetailPanelExpandedRowIdsChange={updateExpandedRows}
       />
     </Card>
   )
