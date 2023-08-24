@@ -1,5 +1,5 @@
 /**
- *
+ * Group elements into two based on a binary predicate
  * @param arr
  * @param predicate
  * @returns [is true, is false]

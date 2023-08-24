@@ -1,13 +1,19 @@
-// Escape regular expressions
-//
-// See: https://stackoverflow.com/questions/3561493/is-there-a-regexp-escape-function-in-javascript
+/**
+ * Escape regular expression string.
+ * @see https://stackoverflow.com/questions/3561493/is-there-a-regexp-escape-function-in-javascript
+ * @param value
+ * @returns
+ */
 export const escapeRegExp = (value: string) => {
   return value.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
 }
 
-// Check if a string is a valid URL using the Javascript URL class
-//
-// See: https://stackoverflow.com/questions/61634973/yup-validation-of-website-using-url-very-strict
+/**
+ * Check if a string is a valid URL using the Javascript URL class.
+ * @see https://stackoverflow.com/questions/61634973/yup-validation-of-website-using-url-very-strict
+ * @param url
+ * @returns
+ */
 export const isUrl = (url: string | undefined) => {
   if (!url) return false
   try {
@@ -19,15 +25,27 @@ export const isUrl = (url: string | undefined) => {
   return true
 }
 
-// Generate a random name, used for giving random names in certain cases.
+/**
+ * Generate a random name, used for giving random names in certain cases.
+ * @returns
+ */
 export const randomString = (): string => new Date().getTime().toString(36) + Math.random().toString(36).slice(2)
 
-// Remove a prefix in a string (if it exists)
+/**
+ * Remove a prefix in a string if it exists
+ * @param value
+ * @param prefix
+ * @returns
+ */
 export const removePrefix = (value: string, prefix: string) =>
   value.startsWith(prefix) ? value.slice(prefix.length) : value
 
-// Convert bytes (number of) to a human readable string
-// e.g., 1024 returns "1 KiB"
+/**
+ * Convert bytes (number of) to a human readable string
+ * @example humanSize(1024) // "1 KiB"
+ * @param bytes
+ * @returns
+ */
 export function humanSize(bytes: number): string {
   const thresh = 1024
   if (Math.abs(bytes) < thresh) {
