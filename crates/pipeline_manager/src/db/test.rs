@@ -129,6 +129,12 @@ pub(crate) async fn setup_pg() -> (ProjectDB, tokio_postgres::Config) {
     use pg_client_config::load_config;
 
     let mut config = load_config(None).unwrap();
+
+    // Workaround for https://github.com/3liz/pg-event-server/issues/1.
+    if let Ok(pguser) = std::env::var("PGUSER") {
+        config.user(&pguser);
+    };
+
     let test_db = format!("test_{}", rand::thread_rng().gen::<u32>());
     let (client, conn) = config
         .connect(tokio_postgres::NoTls)
