@@ -342,6 +342,7 @@ export default function PipelineTable() {
 
   // Only show the details tab button if this pipeline has a revision
   function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value' | 'row'>) {
+    console.log('CustomDetailPanelToggle')
     const { value: isExpanded, row: row } = props
     const [hasRevision, setHasRevision] = useState<boolean>(false)
 
@@ -476,9 +477,11 @@ export default function PipelineTable() {
     // Cannot initialize in useState because hash is not available during SSR
     const [hash] = useHash()
     useEffect(() => {
-      if (hash) {
-        setExpandedRows([...expandedRows, hash.slice(1)])
+      const anchor = hash.slice(1)
+      if (!hash || expandedRows.includes(anchor)) {
+        return
       }
+      setExpandedRows([...expandedRows, anchor])
     }, [hash, expandedRows, setExpandedRows])
   }
 
