@@ -36,7 +36,7 @@ Continuous Analytics Platform](https://www.feldera.com).
 - The formal theory behind DBSP, as a [paper] or as [video] of a talk.
 
 [Rustdocs]: https://docs.rs/dbsp
-[1]: https://docs.feldera.io/docs/what-is-feldera
+[1]: https://www.feldera.com/docs/what-is-feldera
 [paper]: https://github.com/feldera/dbsp/blob/main/docs/static/vldb23.pdf
 [video]: https://www.youtube.com/watch?v=iT4k5DCnvPU
 
@@ -51,7 +51,7 @@ Some ways that you can give us your feedback:
 - [Submit a pull request].  DBSP uses the [Developer Certificate of
   Origin] (DCO) (see the [contribution guidelines]).
 
-[community Slack]: https://feldera.github.io/website/slack/
+[community Slack]: https://www.feldera.com/slack/
 [file an issue]: https://github.com/feldera/feldera/issues
 [submit a pull request]: https://github.com/feldera/feldera/pulls
 [Developer Certificate of Origin]: https://developercertificate.org/
