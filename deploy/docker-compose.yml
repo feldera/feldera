@@ -76,5 +76,5 @@ services:
     command:
       - bash
       - -c
-      # Run the SecOps demo
-      - "cd demo/project_demo00-SecOps && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile $${SECOPS_DEMO_ARGS}"
+      # Run the SecOps demo after giving the service some time to initialize
+      - "sleep 5 && cd demo/project_demo00-SecOps && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile $${SECOPS_DEMO_ARGS}"
