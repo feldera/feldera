@@ -2,7 +2,7 @@
 // to.
 
 import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
-import { zip } from '$lib/functions/common/function'
+import { zipDefault } from '$lib/functions/common/tuple'
 import { memo } from 'react'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
 
@@ -117,7 +117,7 @@ function SqlNode({ id, data }: NodeProps) {
       />
 
       <CardContent sx={{ textAlign: 'center', '& svg': { mb: 2 } }}>
-        {zip(inputs, outputs).map((e, idx) => {
+        {zipDefault<any, any>(undefined, undefined)(inputs, outputs).map((e, idx) => {
           const input = e[0]
           const output = e[1]
 

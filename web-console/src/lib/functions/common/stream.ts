@@ -1,7 +1,8 @@
-// Read from a stream, yielding one line at a time.
-//
-// Adapted from:
-// https://developer.mozilla.org/en-US/docs/Web/API/ReadableStreamDefaultReader/read#example_2_-_handling_text_line_by_line
+/**
+ * Read from a stream, yielding one line at a time.
+ * @see https://developer.mozilla.org/en-US/docs/Web/API/ReadableStreamDefaultReader/read#example_2_-_handling_text_line_by_line
+ * @param response
+ */
 export async function* readLineFromStream(response: Response) {
   const utf8Decoder = new TextDecoder('utf-8')
   if (!response.body) {
