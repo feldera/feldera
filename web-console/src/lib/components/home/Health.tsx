@@ -8,11 +8,17 @@ import Typography from '@mui/material/Typography'
 import { useQuery } from '@tanstack/react-query'
 import { nonNull } from '$lib/functions/common/function'
 import { PipelineManagerQuery } from 'src/lib/services/defaultQueryFn'
-import { ProgramDescr } from 'src/lib/services/manager'
+import { Pipeline, ProgramDescr } from 'src/lib/services/manager'
 import { match, P } from 'ts-pattern'
-import { Accordion, AccordionSummary, AccordionDetails, Box, useTheme, Button, Stack } from '@mui/material'
+import { Accordion, AccordionSummary, AccordionDetails, Box, useTheme, Stack, IconButton, Link } from '@mui/material'
 import { alpha } from '@mui/material'
 import { useClipboard } from '@mantine/hooks'
+
+const ProgramLink = ({ program }: { program: ProgramDescr }) => (
+  <Link href={`/analytics/editor/?program_id=${program.program_id}`} target='_blank' rel='noreferrer'>
+    @ {program.name}
+  </Link>
+)
 
 const programErrors = (program: ProgramDescr) =>
   match(program.status)
@@ -20,17 +26,69 @@ const programErrors = (program: ProgramDescr) =>
     .with({ SqlError: P.select() }, es =>
       es.map(
         e =>
-          new Error(e.message, { cause: { ...e, source: `Program SqlError @ ${program.name}\n${program.program_id}` } })
+          new Error(e.message, {
+            cause: {
+              ...e,
+              source: (
+                <>
+                  Program SqlError <ProgramLink program={program} />
+                  <br />
+                  {program.program_id}
+                </>
+              )
+            }
+          })
       )
     )
     .with({ RustError: P.select() }, e => [
-      new Error(e, { cause: { source: `Program RustError @ ${program.name}\n${program.program_id}` } })
+      new Error(e, {
+        cause: {
+          source: (
+            <>
+              Program RustError <ProgramLink program={program} />
+              <br />
+              {program.program_id}
+            </>
+          )
+        }
+      })
     ])
     .with({ SystemError: P.select() }, e => [
-      new Error(e, { cause: { source: `Program SystemError @ ${program.name}\n${program.program_id}` } })
+      new Error(e, {
+        cause: {
+          source: (
+            <>
+              Program SystemError <ProgramLink program={program} />
+              <br />
+              {program.program_id}
+            </>
+          )
+        }
+      })
     ])
     .with(P._, () => [])
     .exhaustive()
+
+const pipelineErrors = (p: Pipeline) =>
+  nonNull(p.state.error)
+    ? [
+        new Error(p.state.error.message, {
+          cause: {
+            ...p.state.error,
+            source: (
+              <>
+                Pipeline Error{' '}
+                <Link href={`/streaming/management/#${p.descriptor.pipeline_id}`} target='_blank' rel='noreferrer'>
+                  @ {p.descriptor.name}
+                </Link>
+                <br />
+                {p.descriptor.pipeline_id}
+              </>
+            )
+          }
+        })
+      ]
+    : []
 
 const Health = () => {
   const theme = useTheme()
@@ -38,19 +96,7 @@ const Health = () => {
   const programsQuery = useQuery(PipelineManagerQuery.program())
 
   const errors = [
-    ...(pipelinesQuery.isError
-      ? [pipelinesQuery.error as Error]
-      : (pipelinesQuery.data ?? [])
-          .filter(p => nonNull(p.state.error))
-          .map(
-            p =>
-              new Error(p.state.error!.message, {
-                cause: {
-                  ...p.state.error,
-                  source: `Pipeline Error @ ${p.descriptor.name}\n${p.descriptor.pipeline_id}`
-                }
-              })
-          )),
+    ...(pipelinesQuery.isError ? [pipelinesQuery.error as Error] : (pipelinesQuery.data ?? []).flatMap(pipelineErrors)),
     ...(programsQuery.isError ? [programsQuery.error as Error] : (programsQuery.data ?? []).flatMap(programErrors))
   ]
   const { copy } = useClipboard()
@@ -100,25 +146,25 @@ const Health = () => {
                       <Box sx={{ p: 2, overflow: 'scroll', maxHeight: '10rem', width: '100%', height: '100%' }}>
                         <pre style={{ margin: '0', fontSize: '14px' }}>{e.message}</pre>
                       </Box>
-                      <Box
-                        sx={{
-                          position: 'relative',
-                          backgroundColor: alpha(theme.palette.error.main, 0.2),
-                          width: '100%',
-                          height: '10rem'
-                        }}
-                      >
-                        <Typography sx={{ overflow: 'scroll', height: '100%' }}>
-                          <pre style={{ margin: '0', fontSize: '14px' }}>{cause}</pre>
-                        </Typography>
-                        <Button
-                          sx={{ position: 'absolute', top: 0, right: 0, mr: 4 }}
-                          onClick={() => copy(cause)}
-                          size='small'
+                      {!['{}', ''].includes(cause) && (
+                        <Box
+                          sx={{
+                            position: 'relative',
+                            backgroundColor: alpha(theme.palette.error.main, 0.2)
+                          }}
                         >
-                          <Icon icon='bx:copy' fontSize={24}></Icon>
-                        </Button>
-                      </Box>
+                          <Box sx={{ overflow: 'scroll', maxHeight: '10rem', width: '100%', height: '100%' }}>
+                            <pre style={{ margin: '0', fontSize: '14px' }}>{cause}</pre>
+                          </Box>
+                          <IconButton
+                            sx={{ position: 'absolute', top: 0, right: 0, mr: 4 }}
+                            onClick={() => copy(cause)}
+                            size='small'
+                          >
+                            <Icon icon='bx:copy' fontSize={24}></Icon>
+                          </IconButton>
+                        </Box>
+                      )}
                     </Card>
                   )
                 })}
