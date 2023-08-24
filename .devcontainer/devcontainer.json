@@ -26,7 +26,8 @@
 				"files.exclude": {
 					"**/CODE_OF_CONDUCT.md": true,
 					"**/LICENSE": true
-				}
+				},
+				"importSorter.generalConfiguration.configurationFilePath": "./import-sorter.json"
 			}
 		}
 	},
