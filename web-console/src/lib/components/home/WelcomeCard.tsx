@@ -44,13 +44,15 @@ export const WelcomeTile = () => {
             left: '50%',
             transform: 'translate(-50%, -50%)',
             width: '80%',
-            height: '80%'
+            height: '80%',
+            backgroundColor: 'black'
           }}
         >
           <iframe
             width='100%'
             height='100%'
             src='https://www.youtube.com/embed/iT4k5DCnvPU'
+            style={{ borderStyle: 'none' }}
             title='YouTube video player'
             allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
             allowFullScreen
