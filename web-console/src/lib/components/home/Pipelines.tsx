@@ -4,9 +4,9 @@
 import { PipelineThumb } from '$lib/components/home/pipelines/PipelineThumb'
 import { partition } from '$lib/functions/common/array'
 import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
+import { PipelineStatus } from '$lib/services/manager'
 import { ApexOptions } from 'apexcharts'
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
-import { PipelineStatus } from 'src/lib/services/manager'
 
 import { Icon } from '@iconify/react'
 import { Accordion, AccordionDetails, AccordionSummary, ListItem } from '@mui/material'

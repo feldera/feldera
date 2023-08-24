@@ -3,6 +3,7 @@
 import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
 import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
 import { connectorTypeToConfig, connectorTypeToIcon, parseUrlSchema } from '$lib/functions/connectors'
+import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import {
   ConnectorDescr,
@@ -15,7 +16,6 @@ import { ConnectorType } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
-import { PLACEHOLDER_VALUES } from 'src/lib/functions/placeholders'
 import * as yup from 'yup'
 
 import { yupResolver } from '@hookform/resolvers/yup'

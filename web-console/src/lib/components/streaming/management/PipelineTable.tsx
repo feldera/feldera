@@ -16,6 +16,7 @@ import useShutdownPipeline from '$lib/compositions/streaming/management/useShutd
 import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
 import { humanSize } from '$lib/functions/common/string'
 import { tuple } from '$lib/functions/common/tuple'
+import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
 import {
   ApiError,
   AttachedConnector,
@@ -29,7 +30,6 @@ import {
   UpdatePipelineRequest,
   UpdatePipelineResponse
 } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { format } from 'd3-format'
 import dayjs from 'dayjs'
