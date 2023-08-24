@@ -122,7 +122,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
     setOutputs
   ])
 
-  const { globalMetrics, inputMetrics, outputMetrics } = usePipelineMetrics({
+  const metrics = usePipelineMetrics({
     pipelineId: descriptor.pipeline_id,
     status: state.current_status,
     refetchMs: 1000
@@ -156,8 +156,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           if (params.row.connections.length > 0) {
             const records =
               direction === 'input'
-                ? inputMetrics.get(params.row.relation.name)?.total_records
-                : outputMetrics.get(params.row.relation.name)?.transmitted_records
+                ? metrics.input.get(params.row.relation.name)?.total_records
+                : metrics.output.get(params.row.relation.name)?.transmitted_records
             return format('.1s')(records || 0)
           } else {
             // TODO: we need to count records also when relation doesn't have
@@ -173,8 +173,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
         renderCell: params => {
           const bytes =
             direction === 'input'
-              ? inputMetrics.get(params.row.relation.name)?.total_bytes
-              : outputMetrics.get(params.row.relation.name)?.transmitted_bytes
+              ? metrics.input.get(params.row.relation.name)?.total_bytes
+              : metrics.output.get(params.row.relation.name)?.transmitted_bytes
           return humanSize(bytes || 0)
         }
       },
@@ -264,7 +264,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
 
         <Grid item xs={8}>
           <Paper>
-            <AnalyticsPipelineTput metrics={globalMetrics} />
+            <AnalyticsPipelineTput metrics={metrics.global} />
           </Paper>
         </Grid>
 
