@@ -6,7 +6,8 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use rand::Rng;
-use rkyv::{to_bytes, Archive, Deserialize, Serialize};
+use rkyv::ser::Serializer;
+use rkyv::{to_bytes, Archive, Deserialize, Serialize, Archived, Fallible};
 use rocksdb::compaction_filter::Decision;
 use rocksdb::{BoundColumnFamily, MergeOperands, Options, WriteBatch};
 use size_of::SizeOf;
@@ -127,6 +128,30 @@ where
     fn num_entries_deep(&self) -> usize {
         // Same as Spine implementation:
         self.num_entries_shallow()
+    }
+}
+
+impl<B> Archive for PersistentTrace<B>
+where
+    B: Batch,
+{
+    type Archived = ();
+    type Resolver = ();
+
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        unimplemented!();
+    }
+}
+
+impl<B: Batch, S: Serializer + ?Sized> Serialize<S> for PersistentTrace<B> {
+    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        unimplemented!();
+    }
+}
+
+impl<B: Batch, D: Fallible> Deserialize<PersistentTrace<B>, D> for Archived<PersistentTrace<B>> {
+    fn deserialize(&self, _deserializer: &mut D) -> Result<PersistentTrace<B>, D::Error> {
+        unimplemented!();
     }
 }
 
