@@ -214,6 +214,7 @@ build-cache:
     # it breaks `cargo build` in non-CI builds (because there is no
     # lib.rs and we don't want to check that in as it gets overwritten)
     COPY --dir sql-to-dbsp-compiler/temp sql-to-dbsp-compiler/temp
+    CACHE sql-to-dbsp-compiler/temp/target
     RUN rm -f sql-to-dbsp-compiler/temp/src/lib.rs && touch sql-to-dbsp-compiler/temp/src/lib.rs
     RUN cd sql-to-dbsp-compiler/temp && cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --no-run
 
