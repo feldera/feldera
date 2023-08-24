@@ -1,6 +1,7 @@
 [workspace]
 members = ["crates/*", "sql-to-dbsp-compiler/lib/*"]
 exclude = ["sql-to-dbsp-compiler/temp"]
+resolver = "2"
 
     [workspace.metadata.release]
     release = false
