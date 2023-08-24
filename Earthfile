@@ -525,10 +525,11 @@ build-demo-container:
 test-docker-compose:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
+    ENV FELDERA_VERSION=latest
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
-                --load ghcr.io/feldera/pipeline-manager=+build-pipeline-manager-container \
-                --load ghcr.io/feldera/demo-container=+build-demo-container
+                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+                --load ghcr.io/feldera/demo-container:latest=+build-demo-container
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
@@ -548,8 +549,9 @@ integration-tests:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
     COPY deploy/.env .
+    ENV FELDERA_VERSION=latest
     WITH DOCKER --pull postgres \
-                --load ghcr.io/feldera/pipeline-manager=+build-pipeline-manager-container \
+                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --compose docker-compose.yml \
                 --service db \
                 --service pipeline-manager \
