@@ -376,8 +376,7 @@ export default function PipelineTable() {
   const columns: GridColDef[] = [
     {
       ...GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
-      renderCell: params => <CustomDetailPanelToggle id={params.id} value={params.value} row={params.row} />,
-      valueGetter: params => params.row.isExpanded
+      renderCell: params => <CustomDetailPanelToggle id={params.id} value={params.value} row={params.row} />
     },
     {
       field: 'name',
