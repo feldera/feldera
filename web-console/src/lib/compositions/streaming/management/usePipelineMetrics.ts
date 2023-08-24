@@ -12,41 +12,57 @@ export function usePipelineMetrics(props: {
   refetchMs: number
   keepMs?: number
 }) {
-  const [globalMetrics, setGlobalMetrics] = useState<GlobalMetrics[]>([])
-  const [inputMetrics, setInputMetrics] = useState<Map<string, InputConnectorMetrics>>(new Map())
-  const [outputMetrics, setOutputMetrics] = useState<Map<string, OutputConnectorMetrics>>(new Map())
+  const [metrics, setMetrics] = useState({
+    global: [] as GlobalMetrics[],
+    input: new Map<string, InputConnectorMetrics>(),
+    output: new Map<string, OutputConnectorMetrics>()
+  })
   const pipelineStatsQuery = useQuery({
     ...PipelineManagerQuery.pipelineStats(props.pipelineId),
     enabled: props.status == PipelineStatus.RUNNING,
     refetchInterval: props.refetchMs
   })
-  const keepElems = nonNull(props.keepMs) ? Math.ceil(props.keepMs / props.refetchMs) - 1 : globalMetrics.length
 
   useEffect(() => {
     if (!pipelineStatsQuery.isLoading && !pipelineStatsQuery.isError) {
       const metrics = pipelineStatsQuery.data['global_metrics']
-      setGlobalMetrics(oldMetrics => [...oldMetrics.slice(-keepElems), metrics])
 
       const newInputMetrics = new Map<string, InputConnectorMetrics>()
       pipelineStatsQuery.data['inputs'].forEach((cs: ConnectorStatus) => {
         // @ts-ignore (config is untyped needs backend fix)
         newInputMetrics.set(cs.config['stream'], cs.metrics as InputConnectorMetrics)
       })
-      setInputMetrics(newInputMetrics)
 
       const newOutputMetrics = new Map<string, OutputConnectorMetrics>()
       pipelineStatsQuery.data['outputs'].forEach((cs: ConnectorStatus) => {
         // @ts-ignore (config is untyped needs backend fix)
         newOutputMetrics.set(cs.config['stream'], cs.metrics as OutputConnectorMetrics)
       })
-      setOutputMetrics(newOutputMetrics)
+
+      setMetrics(old => {
+        const keepElems = nonNull(props.keepMs) ? Math.ceil(props.keepMs / props.refetchMs) - 1 : old.global.length
+        return {
+          global: [...old.global.slice(-keepElems), metrics],
+          input: newInputMetrics,
+          output: newOutputMetrics
+        }
+      })
     }
     if (props.status == PipelineStatus.SHUTDOWN) {
-      setGlobalMetrics([])
-      setInputMetrics(new Map())
-      setOutputMetrics(new Map())
+      setMetrics({
+        global: [],
+        input: new Map(),
+        output: new Map()
+      })
     }
-  }, [pipelineStatsQuery.isLoading, pipelineStatsQuery.isError, pipelineStatsQuery.data, props.status, keepElems])
+  }, [
+    pipelineStatsQuery.isLoading,
+    pipelineStatsQuery.isError,
+    pipelineStatsQuery.data,
+    props.status,
+    props.keepMs,
+    props.refetchMs
+  ])
 
-  return { globalMetrics, inputMetrics, outputMetrics }
+  return metrics
 }

@@ -11,14 +11,14 @@ import { Icon } from '@iconify/react'
 import { Box, Button, Collapse, Link, Typography } from '@mui/material'
 
 export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) => {
-  const { globalMetrics } = usePipelineMetrics({
+  const metrics = usePipelineMetrics({
     pipelineId: props.descriptor.pipeline_id,
     status: props.state.current_status,
     refetchMs: 1000,
     keepMs: 10000
   })
 
-  const totalProcessed = discreteDerivative(globalMetrics, m => m.total_processed_records).filter(x => x != 0)
+  const totalProcessed = discreteDerivative(metrics.global, m => m.total_processed_records).filter(x => x != 0)
   const throughput = discreteDerivative(totalProcessed, (n1, n0) => n1 - n0)
 
   const series = [
