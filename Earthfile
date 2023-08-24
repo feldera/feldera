@@ -162,8 +162,11 @@ build-cache:
 
     FROM +install-rust
     COPY --keep-ts +prepare-cache/recipe.json ./
+    # Make ./target available across builds. See: https://github.com/earthly/earthly/pull/3186
+    CACHE ./target
     RUN cargo +$RUST_TOOLCHAIN chef cook $RUST_BUILD_PROFILE --workspace --all-targets
     RUN cargo +$RUST_TOOLCHAIN chef cook $RUST_BUILD_PROFILE --clippy --workspace
+
     # I have no clue why we need all these commands below to build all
     # dependencies (since we just did a build --workspace --all-targets). But if
     # we don't run all of them, it will go and compile dependencies during
@@ -214,9 +217,6 @@ build-cache:
     RUN rm -f sql-to-dbsp-compiler/temp/src/lib.rs && touch sql-to-dbsp-compiler/temp/src/lib.rs
     RUN cd sql-to-dbsp-compiler/temp && cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --no-run
 
-    SAVE ARTIFACT --keep-ts $CARGO_HOME
-    SAVE ARTIFACT --keep-ts ./target
-
 build-dbsp:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
@@ -233,10 +233,6 @@ build-dbsp:
     RUN cd crates/dbsp && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
-    # Update target folder for future tasks, the whole --keep-ts,
-    # args were an attempt in fixing the dependency problem (see build-cache)
-    # but it doesn't seem to make a difference.
-    SAVE ARTIFACT --keep-ts ./target/* ./target
 
 build-adapters:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -251,8 +247,6 @@ build-adapters:
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_adapters -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --no-run
 
-    SAVE ARTIFACT --keep-ts ./target/* ./target
-
 build-dataflow-jit:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
@@ -266,7 +260,6 @@ build-dataflow-jit:
     RUN cd crates/dataflow-jit && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dataflow-jit --no-run
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dataflow-jit -- -D warnings
-    SAVE ARTIFACT --keep-ts ./target/* ./target
 
 build-manager:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
