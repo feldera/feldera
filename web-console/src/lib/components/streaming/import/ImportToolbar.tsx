@@ -1,3 +1,4 @@
+import useDefaultRows from '$lib/compositions/streaming/import/useDefaultRows'
 import useGenerateRows from '$lib/compositions/streaming/import/useGenerateRows'
 import useInsertRows from '$lib/compositions/streaming/import/useInsertRows'
 import { Row } from '$lib/functions/ddl'
@@ -6,7 +7,6 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import dayjs from 'dayjs'
 import Papa from 'papaparse'
 import { ChangeEvent, Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
-import useDefaultRows from 'src/lib/compositions/streaming/import/useDefaultRows'
 
 import { Icon } from '@iconify/react'
 import { useLocalStorage } from '@mantine/hooks'

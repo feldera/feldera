@@ -1,8 +1,8 @@
 import { nonNull } from '$lib/functions/common/function'
+import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
+import { PipelineStatus } from '$lib/services/manager'
 import { ConnectorStatus, GlobalMetrics, InputConnectorMetrics, OutputConnectorMetrics } from '$lib/types/pipeline'
 import { useEffect, useState } from 'react'
-import { PipelineManagerQuery } from 'src/lib/services/defaultQueryFn'
-import { PipelineStatus } from 'src/lib/services/manager'
 
 import { useQuery } from '@tanstack/react-query'
 

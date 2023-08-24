@@ -1,18 +1,28 @@
 // Should display aggregate health of all pipelines, just a placeholder right
 // now.
 
+import { nonNull } from '$lib/functions/common/function'
+import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
+import { Pipeline, ProgramDescr } from '$lib/services/manager'
+import { match, P } from 'ts-pattern'
+
 import { Icon } from '@iconify/react'
+import { useClipboard } from '@mantine/hooks'
+import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
+  alpha,
+  Box,
+  IconButton,
+  Link,
+  Stack,
+  useTheme
+} from '@mui/material'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import Typography from '@mui/material/Typography'
 import { useQuery } from '@tanstack/react-query'
-import { nonNull } from '$lib/functions/common/function'
-import { PipelineManagerQuery } from 'src/lib/services/defaultQueryFn'
-import { Pipeline, ProgramDescr } from 'src/lib/services/manager'
-import { match, P } from 'ts-pattern'
-import { Accordion, AccordionSummary, AccordionDetails, Box, useTheme, Stack, IconButton, Link } from '@mui/material'
-import { alpha } from '@mui/material'
-import { useClipboard } from '@mantine/hooks'
 
 const ProgramLink = ({ program }: { program: ProgramDescr }) => (
   <Link href={`/analytics/editor/?program_id=${program.program_id}`} target='_blank' rel='noreferrer'>

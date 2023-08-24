@@ -1,6 +1,7 @@
 // Browse tables and views & insert data into tables.
 
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
+import PageHeader from '$lib/components/layouts/pageHeader'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
 import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from '$lib/services/manager'
@@ -8,7 +9,6 @@ import { useRouter } from 'next/router'
 import { SyntheticEvent, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 import { Controller, useForm } from 'react-hook-form'
-import PageHeader from 'src/lib/components/layouts/pageHeader'
 
 import { Icon } from '@iconify/react'
 import TabContext from '@mui/lab/TabContext'
