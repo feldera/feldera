@@ -34,7 +34,6 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import { format } from 'd3-format'
 import dayjs from 'dayjs'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import React, { useCallback, useEffect, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
@@ -104,7 +103,6 @@ function getConnectorData(revision: PipelineRevision, direction: InputOrOutput):
 }
 
 const DetailPanelContent = (props: { row: Pipeline }) => {
-  const router = useRouter()
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
   const { descriptor, state } = props.row
@@ -188,12 +186,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
             <Tooltip title={direction === 'input' ? 'Inspect Table' : 'Inspect View'}>
               <IconButton
                 size='small'
-                onClick={e => {
-                  e.preventDefault()
-                  router.push(
-                    `/streaming/inspection?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}`
-                  )
-                }}
+                href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}`}
               >
                 <Icon icon='bx:show' fontSize={20} />
               </IconButton>
@@ -202,12 +195,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               <Tooltip title='Import Data'>
                 <IconButton
                   size='small'
-                  onClick={e => {
-                    e.preventDefault()
-                    router.push(
-                      `/streaming/inspection?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}&tab=insert`
-                    )
-                  }}
+                  href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}&tab=insert`}
                 >
                   <Icon icon='bx:upload' fontSize={20} />
                 </IconButton>
@@ -622,7 +610,6 @@ const PipelineActions = (params: { row: Pipeline }) => {
 
   const state = usePipelineState(params)
 
-  const router = useRouter()
   const startPipelineClick = useStartPipeline()
   const pausePipelineClick = usePausePipeline()
   const shutdownPipelineClick = useShutdownPipeline()
@@ -669,10 +656,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
         <IconButton
           className='editButton'
           size='small'
-          onClick={e => {
-            e.preventDefault()
-            router.push(`/streaming/builder/?pipeline_id=${pipeline.pipeline_id}`)
-          }}
+          href={`/streaming/builder/?pipeline_id=${pipeline.pipeline_id}`}
         >
           <Icon icon='bx:pencil' fontSize={20} />
         </IconButton>
