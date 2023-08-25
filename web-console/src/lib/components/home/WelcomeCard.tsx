@@ -19,7 +19,7 @@ const WelcomeCard = (props: { setCard: (card: number) => void }) => (
       <Button href='https://www.feldera.com/docs/tour/' target='_blank' rel='noreferrer'>
         Take the tour
       </Button>
-      <Button href='https://www.feldera.com/docs/demos/' target='_blank' rel='noreferrer'>
+      <Button href='https://www.feldera.com/docs/demo/' target='_blank' rel='noreferrer'>
         Follow the demos
       </Button>
     </Box>
