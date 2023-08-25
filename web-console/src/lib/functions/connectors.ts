@@ -33,6 +33,7 @@ export const parseKafkaInputSchema = (connector: ConnectorDescr): KafkaInputSche
     description: connector.description,
     host: config.transport.config['bootstrap.servers'],
     auto_offset: config.transport.config['auto.offset.reset'],
+    group_id: config.transport.config['group.id'] || '',
     topics: config.transport.config.topics,
     format_name: config.format.name,
     json_update_format: config.format.config?.update_format || 'raw',

@@ -58,6 +58,30 @@ const TabKafkaInputDetails = (props: {
       </Grid>
 
       <Grid item xs={12}>
+        <FormControl>
+          <Controller
+            name='group_id'
+            control={props.control}
+            render={({ field }) => (
+              <TextField
+                fullWidth
+                label='Group ID'
+                placeholder='my-group-id'
+                error={Boolean(props.errors.group_id)}
+                aria-describedby='validation-group-id'
+                {...field}
+              />
+            )}
+          />
+          {props.errors.group_id && (
+            <FormHelperText sx={{ color: 'error.main' }} id='validation-group-id'>
+              {props.errors.group_id.message}
+            </FormHelperText>
+          )}
+        </FormControl>
+      </Grid>
+
+      <Grid item xs={12}>
         <FormControl fullWidth>
           <Controller
             name='topics'
