@@ -303,6 +303,42 @@ const pipelineStatusToClientStatus = (status: PipelineStatus) => {
     .exhaustive()
 }
 
+// Only show the details tab button if this pipeline has a revision
+function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value' | 'row'>) {
+  const { value: isExpanded, row: row } = props
+  const [hasRevision, setHasRevision] = useState<boolean>(false)
+
+  const pipelineRevisionQuery = useQuery<PipelineRevision | null>([
+    'pipelineLastRevision',
+    { pipeline_id: props.row.descriptor.pipeline_id }
+  ])
+  useEffect(() => {
+    if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
+      setHasRevision(true)
+    }
+  }, [pipelineRevisionQuery.isLoading, pipelineRevisionQuery.isError, pipelineRevisionQuery.data])
+
+  return (isExpanded ||
+    row.state.current_status === PipelineStatus.RUNNING ||
+    row.state.current_status === PipelineStatus.PAUSED) &&
+    hasRevision ? (
+    <IconButton size='small' tabIndex={-1} aria-label={isExpanded ? 'Close' : 'Open'}>
+      <ExpandMoreIcon
+        sx={{
+          transform: `rotateZ(${isExpanded ? 180 : 0}deg)`,
+          transition: theme =>
+            theme.transitions.create('transform', {
+              duration: theme.transitions.duration.shortest
+            })
+        }}
+        fontSize='inherit'
+      />
+    </IconButton>
+  ) : (
+    <></>
+  )
+}
+
 export default function PipelineTable() {
   const [rows, setRows] = useState<Pipeline[]>([])
   const [filteredData, setFilteredData] = useState<Pipeline[]>([])
@@ -339,40 +375,6 @@ export default function PipelineTable() {
     ({ row }) => <DetailPanelContent row={row} />,
     []
   )
-
-  // Only show the details tab button if this pipeline has a revision
-  function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value' | 'row'>) {
-    console.log('CustomDetailPanelToggle')
-    const { value: isExpanded, row } = props
-    const [hasRevision, setHasRevision] = useState<boolean>(false)
-
-    const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(row.descriptor.pipeline_id))
-    useEffect(() => {
-      if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
-        setHasRevision(true)
-      }
-    }, [pipelineRevisionQuery.isLoading, pipelineRevisionQuery.isError, pipelineRevisionQuery.data])
-
-    return (isExpanded ||
-      row.state.current_status === PipelineStatus.RUNNING ||
-      row.state.current_status === PipelineStatus.PAUSED) &&
-      hasRevision ? (
-      <IconButton size='small' tabIndex={-1} aria-label={isExpanded ? 'Close' : 'Open'}>
-        <ExpandMoreIcon
-          sx={{
-            transform: `rotateZ(${isExpanded ? 180 : 0}deg)`,
-            transition: theme =>
-              theme.transitions.create('transform', {
-                duration: theme.transitions.duration.shortest
-              })
-          }}
-          fontSize='inherit'
-        />
-      </IconButton>
-    ) : (
-      <></>
-    )
-  }
 
   const columns: GridColDef[] = [
     {
@@ -477,11 +479,24 @@ export default function PipelineTable() {
   // Cannot initialize in useState because hash is not available during SSR
   useEffect(() => {
     const anchor = hash.slice(1)
-    if (!anchor || expandedRows.includes(anchor)) {
-      return
-    }
-    setExpandedRows([...expandedRows, anchor])
-  }, [hash, expandedRows, setExpandedRows])
+
+    setExpandedRows(expandedRows =>
+      (expandedRows.includes(anchor) ? expandedRows : [...expandedRows, anchor]).filter(
+        row =>
+          data?.find(
+            p =>
+              p.descriptor.pipeline_id === row &&
+              [
+                PipelineStatus.PROVISIONING,
+                PipelineStatus.INITIALIZING,
+                PipelineStatus.PAUSED,
+                PipelineStatus.RUNNING,
+                PipelineStatus.SHUTTING_DOWN
+              ].includes(p.state.current_status)
+          )
+      )
+    )
+  }, [hash, setExpandedRows, data])
 
   const updateExpandedRows = (newExpandedRows: GridRowId[]) => {
     const anchor = hash.slice(1)
