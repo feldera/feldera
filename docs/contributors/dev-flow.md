@@ -45,7 +45,7 @@ TODO
 
 ## Launch the prepared demo
 
-Refer to the (Get Started page)[../intro] for basic instructions on spinning up and interacting with the demos from a separate docker-compose.
+Refer to the [Get Started page](/intro) for basic instructions on spinning up and interacting with the demos from a separate docker-compose.
 
 ## Manually starting the demos
 
