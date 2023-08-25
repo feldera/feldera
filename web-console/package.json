@@ -26,6 +26,7 @@
     "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
     "generate-openapi": "cargo run --bin pipeline-manager -- --dump-openapi && openapi --input ./openapi.json --output ./src/lib/services/manager && rm ./openapi.json"
   },
+  "//": ["For @iconify/react: Wait for fix of https://github.com/iconify/iconify/issues/249 before upgrading to version >4.1.0"],
   "dependencies": {
     "@emotion/cache": "^11.11.0",
     "@emotion/react": "^11.11.1",
@@ -33,7 +34,7 @@
     "@emotion/styled": "^11.11.0",
     "@faker-js/faker": "^8.0.2",
     "@hookform/resolvers": "^3.2.0",
-    "@iconify/react": "^4.1.1",
+    "@iconify/react": "4.1.0",
     "@mantine/hooks": "^6.0.19",
     "@monaco-editor/react": "^4.5.1",
     "@mui/base": "^5.0.0-beta.10",
