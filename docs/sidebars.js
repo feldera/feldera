@@ -64,14 +64,18 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'API Reference',
-      items: ['api/rest', 'api/feldera']
+      label: 'API References',
+      items: ['api/rest', 'api/rust']
     },
     'papers',
     {
       type: 'category',
-      label: 'For Contributors',
-      items: ['contributors/compiler', 'contributors/dev-flow', 'contributors/rust']
+      label: 'Contributing',
+      link: {
+	  type: 'doc',
+	  id: 'contributors/intro',
+      },
+      items: ['contributors/compiler', 'contributors/dev-flow']
     }
   ]
 }
