@@ -1,17 +1,23 @@
 use circular_queue::CircularQueue;
 use futures::executor::block_on;
+use log::{info, warn};
 use mockd::datetime::date_range;
 use rand::{random, thread_rng, Rng};
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
     config::{FromClientConfig, RDKafkaLogLevel},
+    consumer::{BaseConsumer, Consumer},
     producer::{BaseRecord, DefaultProducerContext, Producer, ThreadedProducer},
     util::Timeout,
-    ClientConfig,
+    ClientConfig, Offset, TopicPartitionList,
 };
 use serde::Serialize;
 use serde_json::json;
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    thread::sleep,
+    time::{Duration, Instant},
+};
 
 static TOPIC_VULNERABILITY: &str = "secops_vulnerability";
 static TOPIC_PIPELINE: &str = "secops_pipeline";
@@ -26,23 +32,27 @@ static NUM_VULNERABILITIES: u64 = 100u64;
 static NUM_SOURCES_PER_PIPELINE: u64 = 4;
 static NUM_CLUSTERS: u64 = 10;
 
-pub struct KafkaResources {
-    // admin_client: AdminClient<DefaultClientContext>,
-    // topics: Vec<String>,
-}
+// The generator will try to stay ahead of the consumer
+// by at least this many messages.
+static GENERATOR_THRESHOLD: i64 = 1000;
+
+// Frequency of polling for consumer offset.
+static CONSUMER_LAG_POLL_PERIOD: Duration = Duration::from_millis(3000);
+
+pub struct KafkaResources {}
 
 /// An object that creates Kafka topics on startup and deletes them
 /// on drop.  Helps make sure that test runs don't leave garbage behind.
 impl KafkaResources {
     pub fn create_topics(topics: &[(&str, i32, &str)]) -> Self {
-        let mut admin_config = ClientConfig::new();
-        admin_config
+        let mut client_config = ClientConfig::new();
+        client_config
             .set(
                 "bootstrap.servers",
                 std::env::var("REDPANDA_BROKERS").unwrap_or("localhost".to_string()),
             )
             .set_log_level(RDKafkaLogLevel::Debug);
-        let admin_client = AdminClient::from_config(&admin_config).unwrap();
+        let admin_client = AdminClient::from_config(&client_config).unwrap();
 
         let new_topics = topics
             .iter()
@@ -61,13 +71,7 @@ impl KafkaResources {
 
         block_on(admin_client.create_topics(&new_topics, &AdminOptions::new())).unwrap();
 
-        Self {
-            /*admin_client,
-            topics: topics
-                .iter()
-                .map(|(topic_name, _)| topic_name.to_string())
-                .collect::<Vec<_>>(),*/
-        }
+        Self {}
     }
 }
 
@@ -528,7 +532,51 @@ fn generate_pipelines(
     (pipelines, sources, artifacts, k8sobjects)
 }
 
+// Returns `true` if the consumer, if any, is catching up with the producer.
+// Uses consumer offset in TOPIC_PIPELINE_SOURCES as indicator.
+// Assumes ther consumer group id is also TOPIC_PIPELINE_SOURCES
+// (the demo script must ensure this is the case).
+fn consumer_catching_up() -> bool {
+    let mut topics = TopicPartitionList::new();
+    topics.add_partition(TOPIC_PIPELINE_SOURCES, 0);
+
+    let mut client_config = ClientConfig::new();
+    client_config
+        .set(
+            "bootstrap.servers",
+            std::env::var("REDPANDA_BROKERS").unwrap_or("localhost".to_string()),
+        )
+        .set("group.id", TOPIC_PIPELINE_SOURCES)
+        .set_log_level(RDKafkaLogLevel::Debug);
+    let consumer = BaseConsumer::from_config(&client_config).unwrap();
+    let offset = match consumer.committed_offsets(topics.clone(), Duration::from_millis(3000)) {
+        Ok(offsets) => offsets.elements()[0].offset(),
+        Err(e) => {
+            warn!("Error retrieving offsets: {e}");
+            return false;
+        }
+    };
+
+    // println!("consumer offset: {offset:?}");
+
+    let offset = match offset {
+        Offset::Offset(offset) => offset,
+        Offset::Beginning => 0,
+        Offset::Invalid => 0,
+        _ => panic!("Unexpected offset {offset:?}"),
+    };
+
+    let (_low, high) = consumer
+        .fetch_watermarks(TOPIC_PIPELINE_SOURCES, 0, Duration::from_millis(3000))
+        .unwrap();
+    // println!("low watermark: {low}, high watermark: {high}");
+
+    high - offset < GENERATOR_THRESHOLD
+}
+
 fn main() {
+    env_logger::init();
+
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() > 2 {
@@ -551,7 +599,7 @@ fn main() {
         None
     };
 
-    println!("Creating topics.");
+    info!("Creating topics.");
     let _kafka_resources = KafkaResources::create_topics(&[
         (TOPIC_VULNERABILITY, 1, "-1"),
         (TOPIC_CLUSTER, 1, "-1"),
@@ -563,17 +611,17 @@ fn main() {
 
     let producer = KafkaProducer::new();
 
-    println!("Generating repositories");
+    info!("Generating repositories");
 
-    println!("Generating vulnerabilities");
+    info!("Generating vulnerabilities");
     let vulnerabilities = generate_vulnerabilities(NUM_VULNERABILITIES);
     producer.insert_into_topic(TOPIC_VULNERABILITY, vulnerabilities, 100);
 
-    println!("Generating k8s clusters");
+    info!("Generating k8s clusters");
     let clusters = generate_clusters(NUM_CLUSTERS);
     producer.insert_into_topic(TOPIC_CLUSTER, clusters, 100);
 
-    println!("Generating pipelines");
+    info!("Generating pipelines");
     let mut generated_pipelines = 0;
 
     let mut pipeline_producer =
@@ -593,6 +641,9 @@ fn main() {
     let mut k8sobjects_producer =
         CircularProducer::new(TOPIC_K8SOBJECT, 100, 2 * 100_000, producer.clone());
 
+    let mut last_poll = Instant::now();
+
+    let mut pause = false;
     loop {
         let (pipelines, pipeline_sources, artifacts, k8sobjects) =
             generate_pipelines(generated_pipelines, generated_pipelines + 300);
@@ -608,6 +659,24 @@ fn main() {
             if generated_pipelines >= num_pipelines {
                 break;
             }
+        }
+
+        // Stop producing if the consumer is behind.  This makes sure that the
+        // consumer doesn't write to Kafka continuously when the demo is not
+        // running or paused.
+        if last_poll.elapsed() >= CONSUMER_LAG_POLL_PERIOD && num_pipelines.is_none() {
+            while !consumer_catching_up() {
+                if !pause {
+                    info!("Pausing the SecOps test data generator");
+                    pause = true;
+                }
+                sleep(Duration::from_millis(1_000));
+            }
+            if pause {
+                info!("Unpausing the SecOps test data generator");
+                pause = false;
+            }
+            last_poll = Instant::now();
         }
     }
 }

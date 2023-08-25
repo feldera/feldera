@@ -16,3 +16,5 @@ csv = "1.2.2"
 rand = "0.8.5"
 mockd = { version = "0.4.1", features = ["datetime"] }
 circular-queue = "0.2.6"
+log="0.4.20"
+env_logger="0.10.0"
