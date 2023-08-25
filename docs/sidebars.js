@@ -65,7 +65,7 @@ const sidebars = {
     {
       type: 'category',
       label: 'API Reference',
-      items: ['api/rest', 'api/feldera', 'api/python']
+      items: ['api/rest', 'api/feldera']
     },
     'papers',
     {
