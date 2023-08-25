@@ -17,7 +17,9 @@ Compose plugin.  If you don't already have them, install them one of
 these ways:
 
 * On Mac OS, Windows, or Linux, install [Docker Desktop][1], which
-  includes the Docker Compose plugin.
+  includes the Docker Compose plugin. If you're on Apple Silicon,
+  we recommend [enabling Rosetta](https://docs.docker.com/desktop/settings/mac/#use-rosetta-for-x86amd64-emulation-on-apple-silicon)
+  for x86/amd64 emulation.
 
 * On Linux only, first install [Docker Engine][2] and the [Docker
   Compose plugin][3].
