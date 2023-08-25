@@ -272,7 +272,7 @@ impl KafkaInputEndpointInner {
         // Context object to intercept rebalancing events and errors.
         let context = KafkaInputContext::new();
 
-        eprintln!("Creating Kafka consumer");
+        debug!("Creating Kafka consumer");
         // Create Kafka consumer.
         let kafka_consumer = BaseConsumer::from_config_and_context(&client_config, context)?;
 
