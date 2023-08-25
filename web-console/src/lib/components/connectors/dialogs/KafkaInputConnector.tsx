@@ -40,6 +40,7 @@ const schema = yup.object().shape({
   description: yup.string().default(''),
   host: yup.string().required(),
   auto_offset: yup.string().default('none'),
+  group_id: yup.string().required(),
   topics: yup.array().of(yup.string().required()).required(),
   format_name: yup.string().required().oneOf(['json', 'csv']),
   json_update_format: yup.string().oneOf(['raw', 'insert_delete']).default('raw'),
@@ -75,7 +76,8 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
       topics: [],
       format_name: 'json',
       json_update_format: 'raw',
-      json_array: false
+      json_array: false,
+      group_id: ''
     },
     values: curValues
   })
@@ -119,6 +121,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
             config: {
               'bootstrap.servers': data.host,
               'auto.offset.reset': data.auto_offset,
+              'group.id': data.group_id,
               topics: data.topics
             }
           },
@@ -142,7 +145,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   useEffect(() => {
     if ((errors?.name || errors?.description) && props.show) {
       setActiveTab('detailsTab')
-    } else if ((errors?.host || errors?.topics || errors?.auto_offset) && props.show) {
+    } else if ((errors?.host || errors?.topics || errors?.auto_offset || errors?.group_id) && props.show) {
       setActiveTab('sourceTab')
     } else if ((errors?.format_name || errors?.json_array || errors?.json_update_format) && props.show) {
       setActiveTab('formatTab')
