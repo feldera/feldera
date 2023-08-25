@@ -79,7 +79,7 @@ curl https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compos
 ```
 
 It can take some time for the container images to be downloaded. About ten seconds after that, the DBSP
-web interface will become available. Visit [http://localhost:8085](http://localhost:8085) on your browser
+web interface will become available. Visit [http://localhost:8080](http://localhost:8080) on your browser
 to bring it up. We suggest going through our [demos](https://docs.feldera.io/docs/demos) next.
 
 Our [Getting Started](https://docs.feldera.io/docs/intro) guide has more detailed instructions on running the demo.

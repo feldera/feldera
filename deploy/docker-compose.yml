@@ -14,7 +14,7 @@ services:
     tty: true
     image: ghcr.io/feldera/pipeline-manager:${FELDERA_VERSION:-v0.1.0}
     ports:
-      - "8085:8080"
+      - "8080:8080"
     depends_on:
      db:
        condition: service_healthy

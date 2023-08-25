@@ -12,7 +12,7 @@ curl https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compos
 This will bring up a DBSP and Postgres container.
 
 Open your browser and you should now be able to see the Feldera Console UI
-on `localhost:8085`. If you don't, double check that there are no
+on `localhost:8080`. If you don't, double check that there are no
 port conflicts on your system (you can view and modify the port mappings in
 `deploy/docker-compose.yml`).
 
