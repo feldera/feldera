@@ -30,10 +30,6 @@ release() {
     esac
     new_version=`cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version'`
 
-    # Patch the docker-compose.yml file with the new version
-    sed "s/\:\-v${old_version}/\:\-v${new_version}/g" ../deploy/docker-compose.yml > /tmp/docker-compose-bumped.yml
-    mv /tmp/docker-compose-bumped.yml ../deploy/docker-compose.yml
-
     # Commit the new version
     tag="v$new_version"
     if git rev-parse "$tag" >/dev/null 2>&1; then
@@ -43,6 +39,10 @@ release() {
     git commit -am "release: bump project version to $new_version" -s
     git tag -a v$new_version -m "v$new_version"
 
+    # Patch the docker-compose.yml file with the new version. Check this
+    # change in only after we confirm the new containers are available.
+    sed "s/\:\-v${old_version}/\:\-v${new_version}/g" ../deploy/docker-compose.yml > /tmp/docker-compose-bumped.yml
+    mv /tmp/docker-compose-bumped.yml ../deploy/docker-compose.yml
 }
 
 release "$@"
