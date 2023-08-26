@@ -19,7 +19,7 @@ data from Redpanda, a Kafka-compatible message queue.
 
 Make sure that you have Feldera up and running by following the [Getting
 Started](/intro.md) guide.  Open the Feldera Web Console on
-[localhost:8085](http://localhost:8085).
+[localhost:8080](http://localhost:8080).
 
 ## Step 1. Declare input tables
 
