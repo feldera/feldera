@@ -20,7 +20,7 @@ to familiarize yourself with Feldera concepts and user interface.
 
 We'll start by looking at how the DevSecOps demo defines its input
 tables using SQL.  Fire up the Feldera Platform demo and visit
-<http://localhost:8085/> to bring up the UI.  On the sidebar, click on
+<http://localhost:8080/> to bring up the UI.  On the sidebar, click on
 "SQL Programs", then find the "SecOps demo" row in the table of
 programs and click on the pencil icon <icon icon="bx:pencil" />.  The
 SQL `create table` statements at the top of the program establish the
