@@ -10,8 +10,8 @@ We will use Feldera to implement a real-time analytics pipeline for a
 supply chain management system.  The pipeline ingests data about suppliers,
 customers, and orders, and maintains an up-to-date summary of
 this data in an OLAP database.  The data can arrive from a variety of sources,
-such as databases and event streams.  In this tutorial we will ingest
-data from Redpanda, a Kafka-compatible message queue.
+such as databases and event streams.  In this tutorial we will ingest data from
+Amazon S3 and Redpanda, a Kafka-compatible message queue.
 
 ![Real-time supply chain analytics](supply-chain-analytics.png)
 
@@ -109,9 +109,9 @@ Navigate to the `Pipelines` section and click `ADD PIPELINE`.  Give the new
 pipeline a name, e.g., "Supply Chain Test Pipeline" and select "Supply Chain
 Analytics" from the list of SQL programs.
 
-The selected program is visualized as a rectangle with a little blue stub for each
-table and view declared in the program.  These can be used to connect data sources
-and sinks.  For the time being, we will run our pipeline without any sources or
+The selected program is visualized as a rectangle with a blue dot for each table
+and view declared in the program.  These can be used to connect data sources and
+sinks.  For the time being, we will run our pipeline without any sources or
 sinks.  We will build more exciting pipelines in the next part of the tutorial.
 
 ![Pipeline Builder](pipeline-builder.png)

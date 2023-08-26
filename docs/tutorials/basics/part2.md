@@ -7,7 +7,7 @@ send query outputs to external sinks.  Feldera supports two methods to
 accomplish this: (1) HTTP-based and (2) connector-based input/output.  We cover
 these two methods in this and the next sections of the tutorial respectively.
 
-Specifically, in this section we will:
+In Part 2 of the tutorial we will
 
 - Learn to send inputs to and consume outputs from a Feldera pipeline via HTTP.
 
