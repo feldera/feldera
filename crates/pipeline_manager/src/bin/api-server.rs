@@ -11,9 +11,9 @@ use tokio::sync::Mutex;
 // Entrypoint to bring up a standalone api-server.
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let name = "[local-runner]".cyan();
+    let name = "[api-server]".magenta();
     pipeline_manager::logging::init_logging(name);
-    let cli = Command::new("Feldera local runner service");
+    let cli = Command::new("Feldera API server");
     let cli = DatabaseConfig::augment_args(cli);
     let cli = ApiServerConfig::augment_args(cli);
     let matches = cli.get_matches();
