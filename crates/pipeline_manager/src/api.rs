@@ -748,6 +748,10 @@ async fn do_new_program(
         )
         .await
         .map(|(program_id, version)| {
+            info!(
+                "Created program {program_id} with version {version} (tenant:{})",
+                *tenant_id
+            );
             HttpResponse::Created()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(&NewProgramResponse {
@@ -824,6 +828,10 @@ async fn update_program(
             &body.code,
         )
         .await?;
+    info!(
+        "Updated program {program_id} to version {version} (tenant:{})",
+        *tenant_id
+    );
 
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -874,7 +882,10 @@ async fn compile_program(
         .await
         .prepare_program_for_compilation(*tenant_id, program_id, body.version)
         .await?;
-
+    info!(
+        "Compilation request accepted for program {program_id} version {} (tenant:{})",
+        body.version, *tenant_id
+    );
     Ok(HttpResponse::Accepted().finish())
 }
 
@@ -913,8 +924,9 @@ async fn delete_program(
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let program_id = ProgramId(parse_uuid_param(&req, "program_id")?);
-
-    Ok(do_delete_program(state, *tenant_id, program_id).await?)
+    let resp = do_delete_program(state, *tenant_id, program_id).await?;
+    info!("Deleted program {program_id} (tenant:{})", *tenant_id);
+    Ok(resp)
 }
 
 async fn do_delete_program(
@@ -995,6 +1007,7 @@ async fn new_pipeline(
         )
         .await?;
 
+    info!("Created pipeline {pipeline_id} (tenant:{})", *tenant_id);
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&NewPipelineResponse {
@@ -1072,6 +1085,7 @@ async fn update_pipeline(
         )
         .await?;
 
+    info!("Updated pipeline {pipeline_id} (tenant:{})", *tenant_id);
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&UpdatePipelineResponse { version }))
@@ -1392,6 +1406,10 @@ async fn pipeline_action(
         })?,
     }
 
+    info!(
+        "Accepted '{action}' action for pipeline {pipeline_id} (tenant:{})",
+        *tenant_id
+    );
     Ok(HttpResponse::Accepted().finish())
 }
 
@@ -1433,6 +1451,7 @@ async fn pipeline_delete(
         .delete_pipeline(*tenant_id, pipeline_id)
         .await?;
 
+    info!("Deleted pipeline {pipeline_id} (tenant:{})", *tenant_id);
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -1530,6 +1549,7 @@ async fn new_connector(
         )
         .await?;
 
+    info!("Created connector {connector_id} (tenant:{})", *tenant_id);
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&NewConnectorResponse { connector_id }))
@@ -1586,6 +1606,7 @@ async fn update_connector(
         )
         .await?;
 
+    info!("Updated connector {connector_id} (tenant:{})", *tenant_id);
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&UpdateConnectorResponse {}))
@@ -1624,6 +1645,7 @@ async fn delete_connector(
         .delete_connector(*tenant_id, connector_id)
         .await?;
 
+    info!("Deleted connector {connector_id} (tenant:{})", *tenant_id);
     Ok(HttpResponse::Ok().finish())
 }
 
