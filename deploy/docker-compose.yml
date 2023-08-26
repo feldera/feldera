@@ -22,7 +22,7 @@ services:
     environment:
       - RUST_BACKTRACE=1
       - REDPANDA_BROKERS=redpanda:9092
-      - RUST_LOG
+      - RUST_LOG=info,actix_web=error,tokio_postgres=info
       - AUTH_CLIENT_ID
       - AUTH_ISSUER
     command:
