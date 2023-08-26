@@ -41,7 +41,7 @@ release() {
 
     # Patch the docker-compose.yml file with the new version. Check this
     # change in only after we confirm the new containers are available.
-    sed "s/\:\-v${old_version}/\:\-v${new_version}/g" ../deploy/docker-compose.yml > /tmp/docker-compose-bumped.yml
+    sed "s/\:\-${old_version}/\:\-${new_version}/g" ../deploy/docker-compose.yml > /tmp/docker-compose-bumped.yml
     mv /tmp/docker-compose-bumped.yml ../deploy/docker-compose.yml
 }
 
