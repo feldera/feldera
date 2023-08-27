@@ -62,7 +62,7 @@ const navigation = (): VerticalNavItemsType => {
     },
     {
       title: 'Documentation',
-      path: 'https://docs.feldera.io/docs/tutorials/',
+      path: 'https://www.feldera.com/docs/what-is-feldera/',
       icon: 'bx:file',
       openInNewTab: true
     }
