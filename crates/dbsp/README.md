@@ -37,7 +37,7 @@ Continuous Analytics Platform](https://www.feldera.com).
 
 [Rustdocs]: https://docs.rs/dbsp
 [1]: https://www.feldera.com/docs/what-is-feldera
-[paper]: https://github.com/feldera/dbsp/blob/main/docs/static/vldb23.pdf
+[paper]: https://www.feldera.com/vldb23.pdf
 [video]: https://www.youtube.com/watch?v=iT4k5DCnvPU
 
 ## Feedback
