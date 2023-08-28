@@ -653,7 +653,7 @@ impl Compiler {
                             let schema = serde_json::from_str(&schema_json)
                                 .map_err(|e| { ManagerError::invalid_program_schema(e.to_string()) })?;
                             db.set_program_schema(tenant_id, program_id, schema).await?;
-
+                            info!("Invoking rust compiler for program {program_id} version {version} (tenant {tenant_id}). This will take a while.");
                             debug!("Set ProgramStatus::CompilingRust '{program_id}', version '{version}'");
                             job = Some(CompilationJob::rust(tenant_id, &config, program_id, version).await?);
                         }
@@ -661,6 +661,7 @@ impl Compiler {
                             Self::version_binary(&config, &db, program_id, version).await?;
                             // Rust compiler succeeded -- declare victory.
                             db.set_program_status_guarded(tenant_id, program_id, version, ProgramStatus::Success).await?;
+                            info!("Successfully invoked rust compiler for program {program_id} version {version} (tenant {tenant_id}).");
                             debug!("Set ProgramStatus::Success '{program_id}', version '{version}'");
                             job = None;
                         }
