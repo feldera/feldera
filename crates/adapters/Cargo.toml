@@ -37,7 +37,6 @@ rdkafka = { version = "0.33.2", features = ["cmake-build"], optional = true }
 actix = "0.13"
 actix-web = "4.3"
 actix-web-static-files = "4.0.0"
-actix-test = "0.1.1"
 static-files = "0.2.3"
 mime = "0.3.16"
 log = "0.4.17"
@@ -63,6 +62,7 @@ rkyv = "0.7.42"
 psutil = "3.2.2"
 
 [dev-dependencies]
+actix-test = "0.1.1"
 bstr = { version = "0.2.1", features = ["serde1"] }
 serde_json = "1.0.89"
 size-of = { version = "0.1.2", features = ["time-std"] }
