@@ -434,9 +434,10 @@ bar,false,-10
         endpoint.start().unwrap();
 
         // The first 10 records should take about 100 ms to arrive.  In practice
-        // it seems to take longer, so be generous.
-        let n1_time = wait(|| n_recs(&zset) >= 10, Some(500))
-            .unwrap_or_else(|| panic!("only {} records after 200 ms", n_recs(&zset)));
+        // on busy CI systems it often seems to take longer, so be generous.
+        let timeout_ms = 2000;
+        let n1_time = wait(|| n_recs(&zset) >= 10, Some(timeout_ms))
+            .unwrap_or_else(|| panic!("only {} records after {timeout_ms} ms", n_recs(&zset)));
         let n1 = n_recs(&zset);
         println!("{n1} records took {n1_time} ms to arrive");
 
