@@ -1,3 +1,7 @@
+---
+slug: /
+---
+
 # What is Feldera?
 
 Feldera **Continuous Analytics Platform**, also known as

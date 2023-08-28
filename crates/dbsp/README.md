@@ -36,7 +36,7 @@ Continuous Analytics Platform](https://www.feldera.com).
 - The formal theory behind DBSP, as a [paper] or as [video] of a talk.
 
 [Rustdocs]: https://docs.rs/dbsp
-[1]: https://www.feldera.com/docs/what-is-feldera
+[1]: https://www.feldera.com/docs/
 [paper]: https://www.feldera.com/vldb23.pdf
 [video]: https://www.youtube.com/watch?v=iT4k5DCnvPU
 
