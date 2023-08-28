@@ -537,7 +537,7 @@ impl Compiler {
                 && map.contains(&(program.program_id.0, program.version.0))
             {
                 let path = config.versioned_executable(program.program_id, program.version);
-                info!("File {:?} exists, but the program status is CompilingRust. Removing the file to start compilaiton again.", path.file_name());
+                info!("File {:?} exists, but the program status is CompilingRust. Removing the file to start compilation again.", path.file_name());
                 db.delete_compiled_binary_ref(program.program_id, program.version)
                     .await?;
                 let r = fs::remove_file(path.clone()).await;
@@ -564,7 +564,7 @@ impl Compiler {
                 && !map.contains(&(program.program_id.0, program.version.0))
             {
                 info!(
-                    "Program {} does not have a local artifact despite being in the {:?} state. Resetting compilation status.",
+                    "Program {} does not have a local artifact despite being in the {:?} state. Removing binary references to the program and re-queuing it for compilation.",
                     program.program_id, program.status
                 );
                 db.set_program_for_compilation(
@@ -574,6 +574,8 @@ impl Compiler {
                     ProgramStatus::Pending,
                 )
                 .await?;
+                db.delete_compiled_binary_ref(program.program_id, program.version)
+                    .await?;
             }
         }
         Ok(())
@@ -990,6 +992,13 @@ mod test {
             super::ProgramStatus::CompilingRust,
             super::ProgramStatus::Success,
         ] {
+            if state == super::ProgramStatus::Success {
+                db.lock()
+                    .await
+                    .create_compiled_binary_ref(pid, vid, format!("dummy"))
+                    .await
+                    .unwrap();
+            }
             db.lock()
                 .await
                 .set_program_status_guarded(tid, pid, vid, state)
@@ -1000,6 +1009,50 @@ mod test {
                 .unwrap();
             check_program_status_pending(&db, "p1").await;
         }
+    }
+
+    #[tokio::test]
+    async fn test_compiler_reconcile_after_upgrade() {
+        let tid = TenantRecord::default().id;
+        let tmp_dir = TempDir::new().unwrap();
+        let workdir = tmp_dir.path().to_str().unwrap();
+        let conf = CompilerConfig {
+            sql_compiler_home: "".to_owned(),
+            dbsp_override_path: Some("../../".to_owned()),
+            debug: false,
+            precompile: false,
+            compiler_working_directory: workdir.to_owned(),
+        };
+
+        let (db, _temp) = crate::db::test::setup_pg().await;
+        let db = Arc::new(Mutex::new(db));
+
+        // Create successfully compiled program
+        let (pid, vid) = create_program(&db, "p1").await;
+
+        db.lock()
+            .await
+            .set_program_status_guarded(tid, pid, vid, super::ProgramStatus::Success)
+            .await
+            .unwrap();
+
+        db.lock()
+            .await
+            .create_compiled_binary_ref(pid, vid, format!("dummy"))
+            .await
+            .unwrap();
+
+        // Start without any local filesystem state
+        super::Compiler::reconcile_local_state(&conf, &db)
+            .await
+            .unwrap();
+
+        // Attempt to create a new binary ref to simulate a successful compilation
+        db.lock()
+            .await
+            .create_compiled_binary_ref(pid, vid, format!("dummy1"))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
