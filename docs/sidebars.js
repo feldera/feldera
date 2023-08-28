@@ -72,8 +72,8 @@ const sidebars = {
       type: 'category',
       label: 'Contributing',
       link: {
-	  type: 'doc',
-	  id: 'contributors/intro',
+        type: 'doc',
+        id: 'contributors/intro',
       },
       items: ['contributors/compiler', 'contributors/dev-flow']
     }
