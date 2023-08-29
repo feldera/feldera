@@ -90,6 +90,7 @@ const TabKafkaInputDetails = (props: {
               <Autocomplete
                 {...field}
                 fullWidth
+                autoSelect
                 multiple
                 freeSolo
                 options={[]}
