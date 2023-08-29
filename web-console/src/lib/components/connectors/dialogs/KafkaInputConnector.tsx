@@ -41,7 +41,11 @@ const schema = yup.object().shape({
   host: yup.string().required(),
   auto_offset: yup.string().default('none'),
   group_id: yup.string().required(),
-  topics: yup.array().of(yup.string().required()).required(),
+  topics: yup
+    .array()
+    .of(yup.string().min(1, 'Topic name should be >=1 character').required())
+    .min(1, 'Provide at least one topic (press enter to add the topic).')
+    .required('required'),
   format_name: yup.string().required().oneOf(['json', 'csv']),
   json_update_format: yup.string().oneOf(['raw', 'insert_delete']).default('raw'),
   json_array: yup.bool().required()
