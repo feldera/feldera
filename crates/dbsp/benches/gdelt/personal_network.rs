@@ -22,10 +22,9 @@
 //! ```
 
 use crate::data::PersonalNetworkGkgEntry;
-use arcstr::ArcStr;
 use bitvec::vec::BitVec;
 use dbsp::{
-    algebra::{IndexedZSet, MulByRef, ZRingValue},
+    algebra::{ArcStr, IndexedZSet, MulByRef, ZRingValue},
     circuit::{
         metadata::{OperatorLocation, OperatorMeta},
         operator_traits::{BinaryOperator, Operator},
@@ -45,11 +44,13 @@ use dbsp::{
     },
     Circuit, DBData, DBWeight, NumEntries, OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
-use hashbrown::HashMap;
+use rand::Rng;
+use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
     cmp::min,
+    collections::HashMap,
     fmt::{self, Debug},
     marker::PhantomData,
     panic::Location,
@@ -276,7 +277,13 @@ where
     }
 }
 
-struct SpineProbes<'a, K, V, R, O = usize> {
+struct SpineProbes<'a, K, V, R, O = usize>
+where
+    K: SizeOf,
+    V: 'static,
+    O: SizeOf,
+    R: 'static,
+{
     probes: Vec<HashedKVBatchProbe<'a, K, V, R, O>>,
     contains_key: BitVec,
     current: usize,
@@ -370,14 +377,25 @@ where
     }
 }
 
-struct HashedKVBatchProbe<'a, K, V, R, O> {
+#[derive(SizeOf)]
+struct HashedKVBatchProbe<'a, K, V, R, O>
+where
+    K: SizeOf,
+    V: 'static,
+    R: 'static,
+    O: SizeOf,
+{
     batch: &'a HashedKVBatch<K, V, R, O>,
     current: usize,
     start: usize,
     end: usize,
 }
 
-impl<'a, K, V, R, O> HashedKVBatchProbe<'a, K, V, R, O> {
+impl<'a, K, V, R, O> HashedKVBatchProbe<'a, K, V, R, O>
+where
+    K: SizeOf,
+    O: SizeOf,
+{
     const fn new(batch: &'a HashedKVBatch<K, V, R, O>) -> Self {
         Self {
             batch,
@@ -428,7 +446,13 @@ impl<'a, K, V, R, O> HashedKVBatchProbe<'a, K, V, R, O> {
 // TODO: We can use an `O: OrdOffset` instead of the `usize` offsets we
 // currently use
 #[derive(Clone, SizeOf)]
-struct HashedKVBatch<K, V, R, O = usize> {
+struct HashedKVBatch<K, V, R, O = usize>
+where
+    K: SizeOf,
+    O: SizeOf,
+    V: 'static,
+    R: 'static,
+{
     // Invariant: Each offset within `keys` and each offset within keys +1 are valid indices into
     // `offsets`
     keys: HashMap<K, O, Xxh3Builder>,
@@ -439,7 +463,53 @@ struct HashedKVBatch<K, V, R, O = usize> {
     values: ColumnLayer<V, R>,
 }
 
-impl<K, V, R, O> HashedKVBatch<K, V, R, O> {
+impl<K, V, R, O> Archive for HashedKVBatch<K, V, R, O>
+where
+    K: SizeOf,
+    V: 'static,
+    R: 'static,
+    O: SizeOf,
+{
+    type Archived = ();
+    type Resolver = ();
+
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        unimplemented!();
+    }
+}
+
+impl<K, V, R, O, S> Serialize<S> for HashedKVBatch<K, V, R, O>
+where
+    K: SizeOf,
+    V: 'static,
+    R: 'static,
+    O: SizeOf,
+    S: Serializer + ?Sized,
+{
+    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        unimplemented!();
+    }
+}
+
+impl<K, V, R, O, D> Deserialize<HashedKVBatch<K, V, R, O>, D>
+    for Archived<HashedKVBatch<K, V, R, O>>
+where
+    K: SizeOf,
+    V: 'static,
+    R: 'static,
+    O: SizeOf,
+    D: Fallible,
+{
+    fn deserialize(&self, _deserializer: &mut D) -> Result<HashedKVBatch<K, V, R, O>, D::Error> {
+        unimplemented!();
+    }
+}
+
+impl<K, V, R, O> HashedKVBatch<K, V, R, O>
+where
+    K: SizeOf,
+    O: SizeOf,
+{
     fn probe(&self) -> HashedKVBatchProbe<'_, K, V, R, O> {
         HashedKVBatchProbe::new(self)
     }
@@ -463,7 +533,7 @@ impl<K, V, R, O> HashedKVBatch<K, V, R, O> {
         for (idx, key) in layer_keys.into_iter().enumerate() {
             debug_assert!(!keys.contains_key(&key));
             debug_assert!(offsets.len() > idx);
-            keys.insert_unique_unchecked(key, O::from_usize(idx));
+            keys.insert(key, O::from_usize(idx));
         }
 
         Self {
@@ -474,7 +544,11 @@ impl<K, V, R, O> HashedKVBatch<K, V, R, O> {
     }
 }
 
-impl<K, V, R, O> NumEntries for HashedKVBatch<K, V, R, O> {
+impl<K, V, R, O> NumEntries for HashedKVBatch<K, V, R, O>
+where
+    K: SizeOf,
+    O: SizeOf,
+{
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
     fn num_entries_shallow(&self) -> usize {
@@ -527,6 +601,14 @@ where
     }
 
     fn truncate_keys_below(&mut self, _lower_bound: &Self::Key) {}
+
+    fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut Vec<Self::Key>)
+    where
+        Self::Time: PartialEq<()>,
+        RG: Rng,
+    {
+        unimplemented!();
+    }
 }
 
 impl<K, V, R, O> Batch for HashedKVBatch<K, V, R, O>
@@ -567,7 +649,7 @@ where
 
             // Add the key and the offset of the start of its value range to the keys map
             debug_assert!(!keys.contains_key(&key));
-            keys.insert_unique_unchecked(key, O::from_usize(offsets.len() - 1));
+            keys.insert(key, O::from_usize(offsets.len() - 1));
 
             // Record the end of the current key's values in offsets
             offsets.push(O::from_usize(values.boundary()));
@@ -585,17 +667,19 @@ where
 
 impl<K, V, R, O> Debug for HashedKVBatch<K, V, R, O>
 where
-    K: Debug,
-    V: Debug,
+    K: Debug + SizeOf,
+    V: Debug + 'static,
     R: Debug,
     O: OrdOffset + Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct KVBatch<'a, K, V, R, O>(&'a HashedKVBatch<K, V, R, O>);
+        struct KVBatch<'a, K: SizeOf, V: 'static, R: 'static, O: SizeOf>(
+            &'a HashedKVBatch<K, V, R, O>,
+        );
 
         impl<K, V, R, O> Debug for KVBatch<'_, K, V, R, O>
         where
-            K: Debug,
+            K: Debug + SizeOf,
             V: Debug,
             R: Debug,
             O: OrdOffset + Debug,

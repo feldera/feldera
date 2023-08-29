@@ -56,13 +56,13 @@
 //!
 //! [GKG cookbook]: http://data.gdeltproject.org/documentation/GDELT-Global_Knowledge_Graph_Codebook-V2.1.pdf
 
-use arcstr::{literal, ArcStr};
 use csv::{ReaderBuilder, Trim};
-use dbsp::CollectionHandle;
-use hashbrown::{HashMap, HashSet};
+use dbsp::{algebra::ArcStr, arcstr_literal as literal, CollectionHandle};
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     cmp::Ordering,
+    collections::{HashMap, HashSet},
     fs::{self, File},
     hash::{Hash, Hasher},
     io::{BufReader, BufWriter, Write},
@@ -83,7 +83,7 @@ type Interner = HashSet<ArcStr, Xxh3Builder>;
 type Invalid = HashSet<&'static str, Xxh3Builder>;
 type Normalizations = HashMap<&'static str, &'static [ArcStr], Xxh3Builder>;
 
-#[derive(Debug, Clone, SizeOf)]
+#[derive(Debug, Clone, SizeOf, Archive, Serialize, Deserialize)]
 pub struct PersonalNetworkGkgEntry {
     pub id: ArcStr,
     pub date: u64,
@@ -234,11 +234,12 @@ pub fn parse_personal_network_gkg(
                             if let Some(normals) = normalizations.get(person) {
                                 people.extend(normals.iter().cloned());
                             } else {
-                                people.push(
-                                    interner
-                                        .get_or_insert_with(person, |person| ArcStr::from(person))
-                                        .clone(),
-                                );
+                                people.push(loop {
+                                    if let Some(s) = interner.get(person) {
+                                        break s.clone();
+                                    }
+                                    interner.insert(ArcStr::from(person));
+                                });
                             }
                         }
                     }
@@ -302,7 +303,7 @@ pub fn build_gdelt_normalizations() -> (Interner, Normalizations, Invalid) {
         interner.extend(NORMALS.iter().flat_map(|&(_, person)| person).cloned());
 
         let mut map = HashMap::with_capacity_and_hasher(NORMALS.len(), Xxh3Builder::new());
-        map.extend(NORMALS);
+        map.extend(NORMALS.iter().copied());
         map
     };
 
