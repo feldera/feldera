@@ -102,35 +102,6 @@ macro_rules! arcstr_format {
         $crate::algebra::ArcStr($crate::algebra::arcstr::arcstr_inner_format!($($toks)*))
     };
 }
-/*
-struct RkyvAsString;
-
-impl ArchiveWith<Inner> for RkyvAsString {
-    type Archived = Archived<String>;
-    type Resolver = Resolver<String>;
-
-    unsafe fn resolve_with(field: &Inner, pos: usize, resolver: StringResolver, out: *mut Self::Archived) {
-        let s = String::from(field.as_str());
-        s.resolve(pos, resolver, out);
-    }
-}
-
-impl<S: Fallible + ?Sized> SerializeWith<Inner, S> for RkyvAsString
-{
-    fn serialize_with(field: &Inner, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        let s = ArchivedString::from(field.as_str());
-        s.serialize(serializer)
-    }
-}
-
-impl<D: Fallible + ?Sized> DeserializeWith<Archived<String>, Inner, D> for RkyvAsString
-{
-    fn deserialize_with(field: &Archived<String>, deserializer: &mut D) -> Result<Inner, D::Error> {
-        let s = field.deserialize(deserializer)?;
-        Ok(Inner::new(s))
-    }
-}
-*/
 
 #[derive(Debug)]
 pub struct AsString;
