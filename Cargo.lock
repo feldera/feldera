@@ -2281,7 +2281,6 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "arcstr",
- "bitvec",
  "chrono",
  "clap 3.2.25",
  "criterion",
