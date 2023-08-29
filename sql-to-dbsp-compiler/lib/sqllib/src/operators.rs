@@ -1,111 +1,86 @@
 use dbsp::algebra::{F32, F64};
 
 use crate::{
-    for_all_compare, for_all_int_compare, for_all_int_operator, for_all_numeric_compare,
-    for_all_numeric_operator, some_existing_operator, some_operator,
+    for_all_compare,
+    for_all_int_operator,
+    for_all_int_compare,
+    for_all_numeric_operator,
+    for_all_numeric_compare,
+    some_operator,
+    some_existing_operator
 };
 
-use core::ops::{Add, Mul, Sub};
+use rust_decimal::{Decimal};
 use num::PrimInt;
-use rust_decimal::Decimal;
+use core::ops::{Add,Sub,Mul};
 
 #[inline(always)]
 pub(crate) fn eq<T>(left: T, right: T) -> bool
-where
-    T: Eq,
-{
-    left == right
-}
+where T: Eq
+{ left == right }
 
 for_all_compare!(eq, bool);
 
 #[inline(always)]
 pub(crate) fn neq<T>(left: T, right: T) -> bool
-where
-    T: Eq,
-{
-    left != right
-}
+where T: Eq
+{ left != right }
 
 for_all_compare!(neq, bool);
 
 #[inline(always)]
 pub(crate) fn lt<T>(left: T, right: T) -> bool
-where
-    T: Ord,
-{
-    left < right
-}
+where T: Ord
+{ left < right }
 
 for_all_compare!(lt, bool);
 
 #[inline(always)]
 pub(crate) fn gt<T>(left: T, right: T) -> bool
-where
-    T: Ord,
-{
-    left > right
-}
+where T: Ord
+{ left > right }
 
 for_all_compare!(gt, bool);
 
 #[inline(always)]
 pub(crate) fn lte<T>(left: T, right: T) -> bool
-where
-    T: Ord,
-{
-    left <= right
-}
+where T: Ord
+{ left <= right }
 
 for_all_compare!(lte, bool);
 
 #[inline(always)]
 pub(crate) fn gte<T>(left: T, right: T) -> bool
-where
-    T: Ord,
-{
-    left >= right
-}
+where T: Ord
+{ left >= right }
 
 for_all_compare!(gte, bool);
 
 #[inline(always)]
 fn plus<T>(left: T, right: T) -> T
-where
-    T: Add<Output = T>,
-{
-    left + right
-}
+where T: Add<Output = T>
+{ left + right }
 
 for_all_numeric_operator!(plus);
 
 #[inline(always)]
 fn minus<T>(left: T, right: T) -> T
-where
-    T: Sub<Output = T>,
-{
-    left - right
-}
+where T: Sub<Output = T>
+{ left - right }
 
 for_all_numeric_operator!(minus);
 
 #[inline(always)]
 fn modulo<T>(left: T, right: T) -> T
-where
-    T: PrimInt,
-{
-    left % right
-}
+where T: PrimInt
+{ left % right }
 
 for_all_int_operator!(modulo);
 
 #[inline(always)]
 fn times<T>(left: T, right: T) -> T
-where
-    T: Mul<Output = T>,
-{
-    left * right
-}
+where T: Mul<Output = T>
+{ left * right }
 
 for_all_numeric_operator!(times);
 
@@ -135,36 +110,27 @@ for_all_int_operator!(shiftl);
 
 #[inline(always)]
 fn band<T>(left: T, right: T) -> T
-where
-    T: PrimInt,
-{
-    left & right
-}
+where T: PrimInt
+{ left & right }
 
 for_all_int_operator!(band);
 
 #[inline(always)]
 fn bor<T>(left: T, right: T) -> T
-where
-    T: PrimInt,
-{
-    left | right
-}
+where T: PrimInt
+{ left | right }
 
 for_all_int_operator!(bor);
 
 #[inline(always)]
 fn bxor<T>(left: T, right: T) -> T
-where
-    T: PrimInt,
-{
-    left ^ right
-}
+where T: PrimInt
+{ left ^ right }
 
 for_all_int_operator!(bxor);
 
 /* div for integers is implemented manually, since it does not follow the
-pattern: the base function already returns an Option */
+   pattern: the base function already returns an Option */
 #[inline(always)]
 pub fn div_i16_i16(left: i16, right: i16) -> Option<i16> {
     match right {

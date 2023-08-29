@@ -88,9 +88,8 @@ pub struct OutputCollectionHandles {
     /// [`Stream::neighborhood`] operator.
     pub neighborhood_handle: Box<dyn SerOutputBatchHandle>,
 
-    /// A stream that contains the full snapshot of the neighborhood.  Only
-    /// produces an output whenever the `neighborhood_descr_handle` input is
-    /// set to `Some(..)`.
+    /// A stream that contains the full snapshot of the neighborhood.  Only produces
+    /// an output whenever the `neighborhood_descr_handle` input is set to `Some(..)`.
     pub neighborhood_snapshot_handle: Box<dyn SerOutputBatchHandle>,
 
     /// Input stream used to submit the quantiles query.
@@ -209,13 +208,12 @@ impl Catalog {
     }
 
     /// Add a named input stream handle to the catalog.
-    pub fn register_input_collection_handle<N, H>(&mut self, name: N, handle: H)
+    fn register_input_collection_handle<H>(&mut self, name: &str, handle: H)
     where
-        N: Into<String>,
         H: DeCollectionHandle + 'static,
     {
         self.input_collection_handles
-            .insert(name.into(), Box::new(handle));
+            .insert(name.to_owned(), Box::new(handle));
     }
 
     /// Add an output stream of Z-sets to the catalog.
