@@ -102,7 +102,13 @@ const TabKafkaInputDetails = (props: {
               />
             )}
           />
-          <FormHelperText>What topics to consume from.</FormHelperText>
+          {props.errors.topics ? (
+            <FormHelperText sx={{ color: 'error.main' }} id='validation-topics'>
+              {props.errors.topics.message}
+            </FormHelperText>
+          ) : (
+            <FormHelperText>What topics to consume from.</FormHelperText>
+          )}
         </FormControl>
       </Grid>
     </Grid>
