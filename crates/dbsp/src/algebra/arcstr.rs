@@ -1,6 +1,6 @@
 use std::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
-    ops::Deref,
+    ops::Deref, borrow::Borrow,
 };
 
 use arcstr::ArcStr as Inner;
@@ -19,6 +19,24 @@ pub struct ArcStr(#[with(AsString)] pub Inner);
 impl ArcStr {
     pub fn new() -> Self {
         Self(Inner::new())
+    }
+}
+
+impl AsRef<[u8]> for ArcStr {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl AsRef<str> for ArcStr {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl Borrow<str> for ArcStr {
+    fn borrow(&self) -> &str {
+        &self.0
     }
 }
 
