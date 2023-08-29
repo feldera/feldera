@@ -40,7 +40,6 @@ impl-trait-for-tuples = "0.2"
 itertools = "0.10.5"
 textwrap = "0.15.0"
 ordered-float = { version = "3.9.1", features = ["serde", "rkyv"] }
-bitvec = "1.0.1"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 crossbeam = "0.8.2"
 rocksdb = { version = "0.21", default-features = false, features = [
