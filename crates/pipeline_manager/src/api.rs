@@ -292,7 +292,8 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
         server.listen(listener)?.run()
     };
 
-    let url = format!("http://{}:{}", api_config.bind_address, api_config.port);
+    let addr = env::var("BANNER_ADDR").unwrap_or(api_config.bind_address);
+    let url = format!("http://{}:{}", addr, api_config.port);
     info!(
         r"
                     Welcome to
@@ -305,7 +306,7 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
 
 Web UI URL: {}
 API server URL: {}
-Documentation: https://docs.feldera.io
+Documentation: https://www.feldera.com/docs/
         ",
         url, url
     );
