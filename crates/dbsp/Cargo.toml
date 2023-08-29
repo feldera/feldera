@@ -24,7 +24,6 @@ default = ["with-serde"]
 persistence = ["rocksdb", "uuid"]
 with-serde = ["serde"]
 with-csv = ["csv"]
-__gdelt = ["size-of/arcstr"]
 
 [dependencies]
 num = "0.4.0"
@@ -109,7 +108,6 @@ harness = false
 [[bench]]
 name = "gdelt"
 harness = false
-required-features = ["__gdelt"]
 
 [[example]]
 name = "orgchart"
