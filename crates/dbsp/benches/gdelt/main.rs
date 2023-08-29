@@ -5,9 +5,9 @@ use crate::data::{
     build_gdelt_normalizations, get_gkg_file, get_master_file, parse_personal_network_gkg,
     GDELT_URL, GKG_SUFFIX,
 };
-use arcstr::ArcStr;
 use clap::Parser;
 use dbsp::{
+    algebra::ArcStr,
     trace::{BatchReader, Cursor},
     Runtime,
 };
