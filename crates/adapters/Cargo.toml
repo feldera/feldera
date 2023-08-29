@@ -16,7 +16,7 @@ with-kafka = ["rdkafka"]
 test-utils = ["size-of", "proptest", "proptest-derive"]
 
 [dependencies]
-awc = { version = "3.1.1", features = ["rustls"] }
+awc = { version = "3.1.1", default-features=false, features = ["compress-gzip", "compress-brotli", "cookies", "rustls"] }
 async-stream = "0.3.5"
 num-traits = "0.2.15"
 num-derive = "0.3.3"
@@ -35,7 +35,7 @@ csv = "1.2.2"
 # cmake-build is required on Windows.
 rdkafka = { version = "0.33.2", features = ["cmake-build"], optional = true }
 actix = "0.13"
-actix-web = "4.3"
+actix-web = { version = "4.3", default-features = false, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
 actix-web-static-files = "4.0.0"
 static-files = "0.2.3"
 mime = "0.3.16"
@@ -72,7 +72,6 @@ proptest-derive = "0.3.0"
 futures = "0.3.25"
 bytestring = "1.2.0"
 actix-codec = "0.5.0"
-actix-web = "4.3"
 async-stream = "0.3.5"
 futures-timer = "3.0.2"
 
