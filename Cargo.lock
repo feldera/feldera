@@ -2293,6 +2293,7 @@ dependencies = [
  "impl-trait-for-tuples",
  "indicatif",
  "itertools",
+ "log",
  "mimalloc-rust-sys",
  "num",
  "once_cell",

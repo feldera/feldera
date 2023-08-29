@@ -3,7 +3,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use super::{F64, F32};
+use super::{F32, F64};
 
 /// A zero-sized weight that indicates a value is present
 #[derive(

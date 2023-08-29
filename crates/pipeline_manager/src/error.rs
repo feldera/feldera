@@ -23,6 +23,7 @@ use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
 use dbsp_adapters::{DetailedError, ErrorResponse};
+use log::Level;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     backtrace::Backtrace,
@@ -210,6 +211,14 @@ impl DetailedError for ManagerError {
             Self::IoError { .. } => Cow::from("ManagerIoError"),
             Self::InvalidProgramSchema { .. } => Cow::from("InvalidProgramSchema"),
             Self::RustCompilerError { .. } => Cow::from("RustCompilerError"),
+        }
+    }
+
+    fn log_level(&self) -> Level {
+        match self {
+            Self::DBError { db_error } => db_error.log_level(),
+            Self::RunnerError { runner_error } => runner_error.log_level(),
+            _ => Level::Error,
         }
     }
 }

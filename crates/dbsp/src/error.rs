@@ -1,5 +1,6 @@
 use crate::{RuntimeError, SchedulerError};
 use anyhow::Error as AnyError;
+use log::Level;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     borrow::Cow,
@@ -10,6 +11,9 @@ use std::{
 
 pub trait DetailedError: StdError + Serialize {
     fn error_code(&self) -> Cow<'static, str>;
+    fn log_level(&self) -> Level {
+        Level::Error
+    }
 }
 
 #[derive(Debug)]
