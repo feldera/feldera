@@ -77,10 +77,119 @@ Open the detailed view of the pipeline (click the chevron icon <icon
 icon="bx:chevron-down" /> next to it) and examine the contents of the input
 tables and the output views.
 
-## Step 2. Create Kafka/RedPanda connectors
+## Step 2. Create Kafka/Redpanda connectors
 
-:::info under construction
+Next, we will add a pair of connectors to our pipeline to ingest changes to the `PRICE`
+table from a Kafka topic and output changes to the `PREFERRED_VENDOR` table to
+another Kafka topic.
 
-This section is under construction
+### Install Redpanda
 
-:::
+To complete this part of the tutorial, you will need access to a Kafka cluster.  For your
+convenience, the Feldera Docker Compose file contains instructions to bring up a local
+instance of Redpanda, a Kafka-compatible message queue.  If you started Feldera
+in the demo mode (by supplying the `--profile demo` switch to `docker compose`) then
+the Redpanda container should already be running.  Otherwise, you can start it
+using the following command:
+
+```bash
+curl https://raw.githubusercontent.com/feldera/dbsp/main/deploy/docker-compose.yml | docker compose -f - up redpanda
+```
+
+Next, you will need to install `rpk`, the Redpanda CLI, by following the instructions on
+[redpanda.com](https://docs.redpanda.com/current/get-started/rpk-install/).  On
+success, you will be able to retrieve the state of the Redpanda cluster using:
+
+```bash
+rpk -X brokers=127.0.0.1:19092 cluster metadata
+```
+
+### Create input/output topics
+
+Create a pair of Redpanda topics that will be used to send input updates
+to the `PRICE` table and receive output changes from the `PREFERRED_VENDOR` view.
+
+```bash
+rpk -X brokers=127.0.0.1:19092 topic create price preferred_vendor
+```
+
+### Create connectors
+
+Navigate to the `Pipelines` section of the Web Console and click the <icon icon="bx:pencil" />
+icon next to our test pipeline to open the pipeline editor.
+
+Click `Add a new input`, choose `NEW` Kafka connector, and specify the following configuration
+for the connector:
+
+![Input Kafka connector config: METADATA section](price-kafka-metadata.png)
+![Input Kafka connector config: SERVER section](price-kafka-server.png)
+![Input Kafka connector confif: FORMAT section](price-kafka-format.png)
+
+Use the mouse to attach the connector to the `PRICE` table.
+
+Click `Add a new output`, choose `NEW` Kafka connector, and specify the following configuration
+for the connector:
+
+![Output Kafka connector config: DETAILS section](preferred_vendor-kafka-details.png)
+![Output Kafka connector config: SERVER section](preferred_vendor-kafka-server.png)
+![Output Kafka connector config: FORMAT section](preferred_vendor-kafka-format.png)
+
+Attach this connector to the `PREFERRED_VENDOR` view.  The pipeline
+configuration should now look like this:
+
+![Pipeline with all connectors attached](pipeline-builder-all-connectors.png)
+
+### Run the pipeline
+
+Go back to the `Pipelines` view.  If the previous configuration of the pipeline
+is still running, shut it down using the <icon icon="bx:stop" /> icon.  Start the
+new configuration of the pipeline by clicking on <icon icon="bx:play-circle" />.
+
+The `GET` connectors instantly ingest input files from S3 and the output
+Redpanda connector writes computed view updates to the output topic.  Use the
+Redpanda CLI to inspect the outputs:
+
+```bash
+rpk -X brokers=127.0.0.1:19092 topic consume preferred_vendor -f '%v'
+```
+
+which should output:
+
+```json
+{"insert":{"PART_ID":1,"PART_NAME":"Flux Capacitor","VENDOR_ID":2,"VENDOR_NAME":"HyperDrive Innovations","PRICE":"10000"}}
+{"insert":{"PART_ID":2,"PART_NAME":"Warp Core","VENDOR_ID":1,"VENDOR_NAME":"Gravitech Dynamics","PRICE":"15000"}}
+{"insert":{"PART_ID":3,"PART_NAME":"Kyber Crystal","VENDOR_ID":3,"VENDOR_NAME":"DarkMatter Devices","PRICE":"9000"}}
+```
+
+In a different terminal, push input updates to the `price` topic using the JSON
+format we are already familiar with from [Part2](part2.md) of the tutorial:
+
+```bash
+echo '
+{"delete": {"part": 1, "vendor": 2, "price": 10000}}
+{"insert": {"part": 1, "vendor": 2, "price": 30000}}
+{"delete": {"part": 2, "vendor": 1, "price": 15000}}
+{"insert": {"part": 2, "vendor": 1, "price": 50000}}
+{"insert": {"part": 1, "vendor": 3, "price": 20000}}
+{"insert": {"part": 2, "vendor": 3, "price": 11000}}' | rpk -X brokers=127.0.0.1:19092 topic produce price -f '%v'
+```
+
+You should see the following new output updates in the `preferred_vendor` topic:
+
+```json
+{"delete":{"PART_ID":1,"PART_NAME":"Flux Capacitor","VENDOR_ID":2,"VENDOR_NAME":"HyperDrive Innovations","PRICE":"10000"}}
+{"insert":{"PART_ID":1,"PART_NAME":"Flux Capacitor","VENDOR_ID":3,"VENDOR_NAME":"DarkMatter Devices","PRICE":"20000"}}
+{"delete":{"PART_ID":2,"PART_NAME":"Warp Core","VENDOR_ID":1,"VENDOR_NAME":"Gravitech Dynamics","PRICE":"15000"}}
+{"insert":{"PART_ID":2,"PART_NAME":"Warp Core","VENDOR_ID":3,"VENDOR_NAME":"DarkMatter Devices","PRICE":"11000"}}
+```
+
+## Takeaways
+
+To summarize Part 3 of the tutorial,
+
+- A Feldera pipeline can ingest data from multiple sources and send outputs to
+  multiple destinations using input and output connectors.
+
+- Combined with the incremental query evaluation mechanism, this enables Feldera
+  to analyze data on the fly as it moves from sources to destinations, so that
+  the destination receives up-to-date query results in real time.
