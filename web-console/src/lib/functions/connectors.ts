@@ -52,7 +52,6 @@ export const parseKafkaOutputSchema = (connector: ConnectorDescr): KafkaOutputSc
     name: connector.name,
     description: connector.description,
     host: config.transport.config['bootstrap.servers'],
-    auto_offset: config.transport.config['auto.offset.reset'],
     topic: config.transport.config.topic,
     format_name: config.format.name,
     json_array: config.format.config?.array || false
