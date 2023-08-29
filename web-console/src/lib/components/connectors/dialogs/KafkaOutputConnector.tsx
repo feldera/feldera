@@ -40,7 +40,6 @@ const schema = yup
     name: yup.string().required(),
     description: yup.string().default(''),
     host: yup.string().required(),
-    auto_offset: yup.string().default('earliest'),
     topic: yup.string().default(''),
     format_name: yup.string().required().oneOf(['json', 'csv']),
     json_array: yup.bool().required()
@@ -72,7 +71,6 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
       name: '',
       description: '',
       host: '',
-      auto_offset: 'earliest',
       topic: '',
       format_name: 'json',
       json_array: false
@@ -118,7 +116,6 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
             name: connectorTypeToConfig(ConnectorType.KAFKA_OUT),
             config: {
               'bootstrap.servers': data.host,
-              'auto.offset.reset': data.auto_offset,
               topic: data.topic
             }
           },
@@ -144,7 +141,7 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
   useEffect(() => {
     if ((errors?.name || errors?.description) && props.show) {
       setActiveTab('detailsTab')
-    } else if ((errors?.host || errors?.topic || errors?.auto_offset) && props.show) {
+    } else if ((errors?.host || errors?.topic) && props.show) {
       setActiveTab('sourceTab')
     } else if ((errors?.format_name || errors?.json_array) && props.show) {
       setActiveTab('formatTab')
