@@ -27,29 +27,27 @@
 //!   indicate invalid pipeline or endpoint configuration.
 //! * [`ControllerError::InputTransportError`],
 //!   [`ControllerError::OutputTransportError`],
-//!   [`ControllerError::ParseError`], [`ControllerError::EncodeError`] are
-//!   errors returned by transport and format adapters as dynamically typed
+//!   [`ControllerError::ParseError`],
+//!   [`ControllerError::EncodeError`]
+//!   are errors returned by transport and format adapters as dynamically typed
 //!   `anyhow::Error` instances.
-//! * [`ControllerError`] includes all errors that arise from operating a
-//!   streaming pipeline consisting of input adapters, output adapters, and a
-//!   DBSP circuit, via the controller API, including all of the above error
-//!   types.
-//! * [`PipelineError`] errors additionally include errors related to
-//!   interacting with the client via HTTP endpoints (e.g., invalid API
-//!   arguments).
+//! * [`ControllerError`] includes all errors that arise from operating a streaming
+//!   pipeline consisting of input adapters, output adapters, and a DBSP circuit,
+//!   via the controller API, including all of the above error types.
+//! * [`PipelineError`] errors additionally include errors related to interacting
+//!   with the client via HTTP endpoints (e.g., invalid API arguments).
 //!
 //! ## [`struct ErrorResponse`](`ErrorResponse`)
 //!
-//! This type represents the body of an HTTP error response returned by all
-//! endpoints in this crate and in the manager crate.  An instance of
-//! [`ErrorResponse`] can be generated from any type that implements `trait
-//! DetailedError`, including all types in our error hierarchy.
+//! This type represents the body of an HTTP error response returned by all endpoints
+//! in this crate and in the manager crate.  An instance of [`ErrorResponse`] can be
+//! generated from any type that implements `trait DetailedError`, including all types
+//! in our error hierarchy.
 //!
 //! ## Implementing `trait ResponseError`
 //!
-//! Finally, we implement the `actix-web` `ResponseError` trait for
-//! [`PipelineError`], which allows [`PipelineError`] to be returned as an error
-//! type by HTTP endpoints.
+//! Finally, we implement the `actix-web` `ResponseError` trait for [`PipelineError`],
+//! which allows [`PipelineError`] to be returned as an error type by HTTP endpoints.
 
 use crate::{ConfigError, ControllerError, ParseError};
 use actix_web::{
@@ -304,8 +302,8 @@ impl ResponseError for ControllerError {
     }
 }
 
-// Implement `ResponseError`, so that `PipelineError` can be returned as error
-// type by HTTP endpoint handlers.
+// Implement `ResponseError`, so that `PipelineError` can be returned as error type by HTTP
+// endpoint handlers.
 impl ResponseError for PipelineError {
     fn status_code(&self) -> StatusCode {
         match self {
