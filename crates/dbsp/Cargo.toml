@@ -58,6 +58,7 @@ size-of = { version = "0.1.5", features = ["hashbrown", "time-std", "xxhash-xxh3
 tarpc = { version = "0.33.0", features = ["full"] }
 futures = "0.3"
 tokio = { version = "1.25.0", features = ["macros", "rt", "rt-multi-thread"] }
+log = "0.4.20"
 
 [dev-dependencies]
 csv = "1.2.2"

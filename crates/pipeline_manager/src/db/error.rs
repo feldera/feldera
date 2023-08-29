@@ -6,6 +6,7 @@ use actix_web::{
 use dbsp_adapters::DetailedError;
 use dbsp_adapters::ErrorResponse;
 use deadpool_postgres::PoolError;
+use log::Level;
 use refinery::Error as RefineryError;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{backtrace::Backtrace, borrow::Cow, error::Error as StdError, fmt, fmt::Display};
@@ -431,6 +432,16 @@ impl DetailedError for DBError {
             Self::RevisionNotChanged => Cow::from("RevisionNotChanged"),
             Self::TablesNotInSchema { .. } => Cow::from("TablesNotInSchema"),
             Self::ViewsNotInSchema { .. } => Cow::from("ViewsNotInSchema"),
+        }
+    }
+
+    fn log_level(&self) -> Level {
+        match self {
+            Self::UnknownProgram { .. } => Level::Info,
+            Self::UnknownPipeline { .. } => Level::Info,
+            Self::UnknownConnector { .. } => Level::Info,
+            Self::UnknownName { .. } => Level::Info,
+            _ => Level::Error,
         }
     }
 }

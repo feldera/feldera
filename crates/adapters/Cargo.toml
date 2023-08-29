@@ -39,7 +39,7 @@ actix-web = { version = "4.3", default-features = false, features = ["cookies", 
 actix-web-static-files = "4.0.0"
 static-files = "0.2.3"
 mime = "0.3.16"
-log = "0.4.17"
+log = "0.4.20"
 size-of = { version = "0.1.2", features = ["time-std"], optional = true }
 futures = { version = "0.3.28" }
 futures-util = { version = "0.3.28" }

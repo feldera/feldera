@@ -55,7 +55,7 @@ use actix_web::{
 };
 use anyhow::Error as AnyError;
 use dbsp::{operator::sample::MAX_QUANTILES, DetailedError};
-use log::{error, warn};
+use log::{error, log, warn, Level};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::{
@@ -113,9 +113,11 @@ impl ErrorResponse {
     {
         let result = Self::from_error_nolog(error);
 
-        error!(
+        log!(
+            error.log_level(),
             "[HTTP error response] {}: {}",
-            result.error_code, result.message
+            result.error_code,
+            result.message
         );
         // Uncomment this when all pipeline manager errors implement `ResponseError`
         // if error.status_code() == StatusCode::INTERNAL_SERVER_ERROR {
@@ -267,6 +269,15 @@ impl DetailedError for PipelineError {
             Self::InvalidNeighborhoodSpec { .. } => Cow::from("InvalidNeighborhoodSpec"),
             Self::ParseErrors { .. } => Cow::from("ParseErrors"),
             Self::ControllerError { error } => error.error_code(),
+        }
+    }
+
+    fn log_level(&self) -> Level {
+        match self {
+            Self::Initializing => Level::Info,
+            Self::Terminating => Level::Info,
+            Self::ControllerError { error } => error.log_level(),
+            _ => Level::Error,
         }
     }
 }
