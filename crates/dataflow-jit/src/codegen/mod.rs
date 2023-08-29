@@ -2192,7 +2192,7 @@ impl<'a> CodegenCtx<'a> {
                 };
                 let intrinsic = self.imports.get(intrinsic, self.module, builder.func);
                 // TODO: This should return the error for NaN values
-                builder.call_fn(intrinsic, &[src, slot_ptr]);
+                builder.ins().call(intrinsic, &[src, slot_ptr]);
 
                 // Load the decimal from the stack slot
                 builder.ins().stack_load(to_ty, slot, 0)
@@ -2218,7 +2218,7 @@ impl<'a> CodegenCtx<'a> {
                     _ => unreachable!("unknown int to decimal cast: cast {a} to {b}"),
                 };
                 let intrinsic = self.imports.get(intrinsic, self.module, builder.func);
-                builder.call_fn(intrinsic, &[src, slot_ptr]);
+                builder.ins().call(intrinsic, &[src, slot_ptr]);
 
                 // Load the decimal from the stack slot
                 builder.ins().stack_load(to_ty, slot, 0)
