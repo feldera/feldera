@@ -29,8 +29,8 @@ lcov.info
 *.iml
 .DS_Store
 
-benches/galen_data/
-benches/gdelt-data/
+**/benches/galen_data/
+**/benches/gdelt-data/
 **/benches/ldbc-graphalytics-data/
 
 nexmark_results.csv
