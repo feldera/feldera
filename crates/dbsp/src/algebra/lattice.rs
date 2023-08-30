@@ -11,7 +11,15 @@ use std::{
     time::Duration,
 };
 
-/// A bounded partially ordered type supporting joins and meets.
+/// A "lattice" is a partially ordered set in which every pair of elements has a
+/// least upper bound, called a "join", and greatest lower bound, called a
+/// "meet".  See <https://en.wikipedia.org/wiki/Lattice_(order)>.
+///
+/// DBSP uses lattices to work with [Timestamp]s, which are only [partially
+/// ordered].
+///
+/// [Timestamp]: crate::time::Timestamp
+/// [partially ordered]: crate::time#comparing-times
 pub trait Lattice: PartialOrder {
     /// The smallest element greater than or equal to both arguments.
     ///

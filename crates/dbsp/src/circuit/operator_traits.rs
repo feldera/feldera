@@ -384,6 +384,13 @@ where
 /// timestamps and hence can be produced before consuming new inputs.  This way
 /// a strict operator can be used as part of a feedback loop where its output is
 /// needed before input for the current timestamp is available.
+///
+/// The only strict operators that DBSP makes available are [Z1] and its variant
+/// [Z1Nested].
+///
+/// [Z1]: crate::operator::Z1
+/// [Z1Nested]: crate::operator::Z1Nested
+/// [Z1Trace]: crate::operator::trace::Z1Trace
 pub trait StrictOperator<O>: Operator {
     /// Returns the output value computed based on data consumed by the operator
     /// during previous timestamps.  This method is invoked **before**

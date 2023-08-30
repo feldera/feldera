@@ -1,15 +1,5 @@
-//! Traits and types for navigating order sequences of
-//! `(key, val, time, diff)` tuples.
-//!
-//! The `Cursor` trait contains several methods for efficiently navigating
-//! ordered collections of tuples of the form `(key, val, time, diff)`.  The
-//! tuples are ordered by key, then by value within each key.  Ordering by time
-//! is not guaranteed, in particular [`CursorList`](`cursor_list::CursorList`)
-//! cursors can contain out-of-order and duplicate timestamps.
-//!
-//! The cursor is different from an iterator both because it allows navigation
-//! on multiple levels (key and val), but also because it supports efficient
-//! seeking (via the `seek_key` and `seek_val` methods).
+//! Traits and types for navigating ordered sequences of `(key, val, time,
+//! diff)` tuples.
 
 pub mod cursor_empty;
 pub mod cursor_group;
@@ -29,7 +19,45 @@ pub use cursor_list::CursorList;
 pub use cursor_pair::CursorPair;
 pub use reverse::ReverseKeyCursor;
 
-/// A cursor for navigating ordered `(key, val, time, diff)` tuples.
+/// A cursor for `(key, val, time, diff)` tuples.
+///
+/// A cursor navigates an ordered collection of `(key, val, time, diff)` tuples
+/// in order by key, then by value within each key.  In the time-diff pairs
+/// associated with each key-value pair, the times may not be ordered or unique
+/// and, in particular, [`CursorList`](`cursor_list::CursorList`) cursors can
+/// contain out-of-order and duplicate timestamps.  Because duplicate times are
+/// possible, it's possible to have multiple diffs even when `T = ()`.
+///
+/// Cursors are not iterators because they allow navigation on multiple levels
+/// (by key and value) and because they support efficient seeking (via
+/// `seek_key` and `seek_val`).
+///
+/// A cursor can have a valid position on a key or an invalid position before
+/// the first key or after the last key.  A cursor with a valid key
+/// position can have a valid value position on a value or an invalid value
+/// position before the first value or after the last value.
+///
+/// A cursor for an empty collection of tuples does not have any valid key (or
+/// value) positions.
+///
+/// A cursor for a non-empty collection is initially positioned on the first
+/// value in the first key.  Moving from one key to another positions the cursor
+/// on the first value within the new key.  Every key in a nonempty collection
+/// has at least one value.
+///
+/// The following is typical code for iterating through all of the key-value
+/// pairs navigated by a cursor:
+///
+/// ```ignore
+/// let cursor = ...obtain cursor...;
+/// while cursor.key_valid() {
+///     while cursor.val_valid() {
+///         /// Do something with the current key-value pair.
+///         cursor.step_val();
+///     }
+///     cursor.step_key();
+/// }
+/// ```
 pub trait Cursor<K, V, T, R> {
     /// Indicates if the current key is valid.
     ///
@@ -92,14 +120,13 @@ pub trait Cursor<K, V, T, R> {
     where
         F: FnMut(U, &T, &R) -> U;
 
-    /// Returns the weight associated with the current key/value pair.
+    /// Returns the weight associated with the current key/value pair.  This
+    /// concept only makes sense for cursors with unit timestamp type (`T=()`),
+    /// since otherwise there is no singular definition of weight.  This method
+    /// is more convenient, and may be more efficient, than the equivalent call
+    /// to [`Self::map_times`].
     ///
-    /// This method is only defined for cursors with unit timestamp type
-    /// (`T=()`), which contain exactly one weight per key/value pair.  It
-    /// is more convenient (and potentially more efficient) than using
-    /// [`Self::map_times`] to iterate over a single value.
-    ///
-    /// If the current key and value are not valid, behavior is unspecified
+    /// If the current key and value are not valid, behavior is unspecified.
     fn weight(&mut self) -> R
     where
         T: PartialEq<()>;
@@ -123,22 +150,29 @@ pub trait Cursor<K, V, T, R> {
     /// Moves the cursor to the previous key.
     fn step_key_reverse(&mut self);
 
-    /// Advances the cursor to the specified key.
+    /// Advances the cursor to the specified key.  If `key` itself is not
+    /// present, advances to the first key greater than `key`; if there is no
+    /// such key, the cursor becomes invalid.
+    ///
+    /// This has no effect if the cursor is already positioned past `key`, so it
+    /// might be desirable to call [`rewind_keys`](Self::rewind_keys) first.
     fn seek_key(&mut self, key: &K);
 
-    /// Move the cursor to the first key that satisfies `predicate`.
+    /// Advances the cursor to the first key that satisfies `predicate`.
     /// Assumes that `predicate` remains true once it turns true.
     fn seek_key_with<P>(&mut self, predicate: P)
     where
         P: Fn(&K) -> bool + Clone;
 
-    /// Move the cursor back to the first key that satisfies `predicate`.
+    /// Move the cursor backward to the first key that satisfies `predicate`.
     /// Assumes that `predicate` remains true once it turns true.
     fn seek_key_with_reverse<P>(&mut self, predicate: P)
     where
         P: Fn(&K) -> bool + Clone;
 
-    /// Moves the cursor back to the specified key.
+    /// Moves the cursor backward to the specified key.  If `key` itself is not
+    /// present, moves backward to the first key less than `key`; if there is no
+    /// such key, the cursor becomes invalid.
     fn seek_key_reverse(&mut self, key: &K);
 
     /// Advances the cursor to the next value.
@@ -178,14 +212,13 @@ pub trait Cursor<K, V, T, R> {
     /// Move the cursor to the last value for the current key.
     fn fast_forward_vals(&mut self);
 
-    /// Indicates that the current `(key, value)` pair is valid.
-    ///
-    /// A value of `false` indicates that the cursor has exhausted all pairs.
+    /// Reports whether the current `(key, value)` pair is valid.
+    /// Returns `false` if the cursor has exhausted all pairs.
     fn keyval_valid(&self) -> bool {
         self.key_valid() && self.val_valid()
     }
 
-    /// Returns current `(key, value)` pair.  Undefined behavior if invalid.
+    /// Returns current `(key, value)` pair.  Panics if invalid.
     fn keyval(&self) -> (&K, &V) {
         (self.key(), self.val())
     }

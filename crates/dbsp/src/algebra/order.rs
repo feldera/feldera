@@ -1,5 +1,13 @@
 use std::time::Duration;
 
+/// A type that is partially ordered.
+///
+/// This trait is distinct from Rust's `PartialOrd` trait to allow for a
+/// different ordering.  In particular, `PartialOrder` compares multidimensional
+/// [`Timestamp`] representations for DBSP logical time, and `PartialOrd`
+/// compares them for other purposes such as sorting.
+///
+/// [`Timestamp`]: crate::time::Timestamp
 pub trait PartialOrder: Eq {
     /// Returns true if one element is strictly less than the other
     #[inline]

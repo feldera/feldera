@@ -16,8 +16,24 @@ const EPOCH_MASK: u32 = 0x80000000;
 /// remaining 31 bits for the child clock.
 ///
 /// This representation precisely captures the nested clock value, but only
-/// distinguishes the latest parent clock cycle, or "epoch", (higher-order bit
+/// distinguishes the latest parent clock cycle, or "epoch" (higher-order bit
 /// set to `1`) from all previous epochs (higher order bit is `0`).
+/// 
+/// This is useful because, in DBSP, computations inside a nested circuit only
+/// need to distinguish between updates added during the current run of the
+/// nested circuit from those added all previous runs.  Thus, we only need a
+/// single bit for the outer time stamp.  When the nested clock epoch completes,
+/// all tuples with outer timestamp `1` are demoted to `0`, with [`recede_to`],
+/// so they appear as old updates during the next run of the circuit.
+///
+/// The downside of the 1-bit clock is that it requires rewriting timestamps
+/// and rearranging batches in the trace at the end of every clock epoch.
+/// Unlike merging of batches, which can be done in the background, this
+/// work must be completed synchronously before the start of the next
+/// epoch. This cost should be roughly proportional to the number of
+/// updates added to the trace during the last epoch.
+///
+/// [`recede_to`]: crate::trace::Trace::recede_to
 #[derive(
     Clone,
     SizeOf,
