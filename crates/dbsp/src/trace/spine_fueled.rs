@@ -111,7 +111,7 @@ pub struct Spine<B>
 where
     B: Batch,
 {
-    pub merging: Vec<MergeState<B>>,
+    merging: Vec<MergeState<B>>,
     lower: Antichain<B::Time>,
     upper: Antichain<B::Time>,
     effort: usize,
