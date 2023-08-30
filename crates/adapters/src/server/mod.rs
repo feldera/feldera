@@ -113,6 +113,10 @@ struct Args {
     #[arg(short, long)]
     metadata_file: Option<String>,
 
+    /// TCP bind address
+    #[arg(short, long, default_value = "127.0.0.1")]
+    bind_address: String,
+
     /// Run the server on this port if it is available. If the port is in
     /// use or no default port is specified, an unused TCP port is allocated
     /// automatically
@@ -157,13 +161,10 @@ fn run_server<F>(args: Args, circuit_factory: F) -> Result<(), ControllerError>
 where
     F: Fn(usize) -> (DBSPHandle, Catalog) + Send + 'static,
 {
-    let listener = match args.default_port {
-        Some(port) => TcpListener::bind(("127.0.0.1", port))
-            .or_else(|_| TcpListener::bind(("127.0.0.1", 0)))
-            .map_err(|e| ControllerError::io_error(format!("binding to TCP port {port}"), e))?,
-        None => TcpListener::bind(("127.0.0.1", 0))
-            .map_err(|e| ControllerError::io_error("binding to TCP port".to_string(), e))?,
-    };
+    let bind_address = args.bind_address.clone();
+    let port = args.default_port.unwrap_or(0);
+    let listener = TcpListener::bind((bind_address, port))
+        .map_err(|e| ControllerError::io_error(format!("binding to TCP port {port}"), e))?;
 
     let port = listener
         .local_addr()
@@ -922,6 +923,7 @@ outputs:
         let args = Args {
             config_file: config_file.path().display().to_string(),
             metadata_file: None,
+            bind_address: "127.0.0.1".to_string(),
             default_port: None,
         };
         thread::spawn(move || {
