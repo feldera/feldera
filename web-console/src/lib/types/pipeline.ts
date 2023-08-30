@@ -6,6 +6,7 @@ export interface GlobalConfig {
 }
 
 export interface GlobalMetrics {
+  rss_bytes: number
   buffered_input_records: number
   total_input_records: number
   total_processed_records: number

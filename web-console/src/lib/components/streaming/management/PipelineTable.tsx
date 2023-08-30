@@ -7,6 +7,7 @@ import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
 import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
 import AnalyticsPipelineTput from '$lib/components/streaming/management/AnalyticsPipelineTput'
+import PipelineMemoryGraph from '$lib/components/streaming/management/PipelineMemoryGraph'
 import { PipelineRevisionStatusChip } from '$lib/components/streaming/management/RevisionStatus'
 import { ClientPipelineStatus, usePipelineStateStore } from '$lib/compositions/streaming/management/StatusContext'
 import useDeletePipeline from '$lib/compositions/streaming/management/useDeletePipeline'
@@ -250,13 +251,16 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
             </List>
           </Card>
         </Grid>
-
-        <Grid item xs={8}>
+        <Grid item xs={5}>
           <Paper>
             <AnalyticsPipelineTput metrics={metrics.global} />
           </Paper>
         </Grid>
-
+        <Grid item xs={3}>
+          <Paper>
+            <PipelineMemoryGraph metrics={metrics.global} />
+          </Paper>
+        </Grid>
         <Grid item xs={12}>
           {/* className referenced by webui-tester */}
           <Paper className='inputStats'>
