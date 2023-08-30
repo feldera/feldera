@@ -18,9 +18,20 @@ use std::{
 /// elements to maintain the *minimal* antichain, those incomparable elements no
 /// greater than any other element.
 ///
-/// Two antichains are equal if the contain the same set of elements, even if in
+/// Two antichains are equal if they contain the same set of elements, even if in
 /// different orders. This can make equality testing quadratic, though linear in
 /// the common case that the sequences are identical.
+///
+/// DBSP logical times are, in generally, only [partially ordered].  That means
+/// that a collection of logical times may have multiple different lower bounds,
+/// and an antichain is a way to track all of them.  Thus, DBSP uses antichains
+/// to track the lower and upper time bounds of [batches], as returned by
+/// [`BatchReader::lower`] and [`BatchReader::upper`] as [`AntichainRef`]s.
+///
+/// [partially ordered]: crate::time#comparing-times
+/// [batches]: crate::trace
+/// [`BatchReader::lower`]: crate::trace::BatchReader::lower
+/// [`BatchReader::upper`]: crate::trace::BatchReader::upper
 #[derive(Default, SizeOf, Archive, Serialize, Deserialize)]
 pub struct Antichain<T>
 where
@@ -383,7 +394,9 @@ where
     }
 }
 
-/// A wrapper for the elements of an antichain
+/// A wrapper for the elements of an [`Antichain`].
+///
+/// Typically obtained via [`Antichain::as_ref`].
 #[derive(Default, SizeOf)]
 pub struct AntichainRef<'a, T: 'a> {
     /// Elements contained within the antichain

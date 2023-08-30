@@ -1,14 +1,37 @@
-//! Traits and datastructures representing a collection trace.
+//! # Traces
 //!
-//! A collection trace is a set of updates of the form `(key, val, time, diff)`,
-//! which determine the contents of a collection at given times by accumulating
-//! updates whose time field is less or equal to the target field.
+//! A "trace" describes how a collection of key-value pairs changes over time.
+//! A "batch" is a mostly immutable trace.  This module provides traits and
+//! structures for expressing traces in DBSP as collections of `(key, val, time,
+//! diff)` tuples.
 //!
-//! The `Trace` trait describes those types and methods that a data structure
-//! must implement to be viewed as a collection trace. This trait allows
-//! operator implementations to be generic with respect to the type of trace,
-//! and allows various data structures to be interpretable as multiple different
-//! types of trace.
+//! The base trait for a trace is [`BatchReader`], which allows a trace to be
+//! read in sorted order by key and value.  `BatchReader` provides [`Cursor`] to
+//! step through a batch's tuples without modifying them, and [`Consumer`] to
+//! read tuples while taking ownership.
+//!
+//! The [`Batch`] trait extends [`BatchReader`] with types and methods for
+//! creating new traces from ordered tuples ([`Batch::Builder`]) or unordered
+//! tuples ([`Batch::Batcher`]), or by merging traces of like types
+//! ([`Batch::Merger`]).
+//!
+//! The [`Trace`] trait, which also extends [`BatchReader`], adds methods to
+//! append new batches.  New tuples must not have times earlier than any of the
+//! tuples already in the trace.
+//!
+//! # Time within traces
+//!
+//! See the [time](crate::time) module documentation for a description of
+//! logical times.
+//!
+//! Traces are sorted by key and value.  They are not sorted with respect to
+//! time: reading a trace might obtain out of order and duplicate times among
+//! the `(time, diff)` pairs associated with a key and value.
+//!
+//! Traces keep track of the lower and upper bounds among their tuples' times.
+//! If the trace contains incomparable times, then it will have multiple lower
+//! and upper bounds, one for each category of incomparable time, in an
+//! [`Antichain`](crate::time::Antichain).
 
 pub mod consolidation;
 pub mod cursor;
@@ -107,10 +130,13 @@ impl<T> DBWeight for T where T: DBData + MonoidValue {}
 pub trait DBTimestamp: DBData + Timestamp {}
 impl<T> DBTimestamp for T where T: DBData + Timestamp {}
 
-/// An append-only collection of `(key, val, time, diff)` tuples.
+/// A set of `(key, val, time, diff)` tuples that can be read and extended.
 ///
-/// The trace must be constructable from, and navigable by the `Key`, `Val`,
-/// `Time` types, but does not need to return them.
+/// `Trace` extends [`BatchReader`], most notably with [`insert`][Self::insert]
+/// for adding new batches of tuples.
+///
+/// See [crate documentation](crate::trace) for more information on batches and
+/// traces.
 pub trait Trace: BatchReader {
     /// The type of an immutable collection of updates.
     type Batch: Batch<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R>;
@@ -118,32 +144,16 @@ pub trait Trace: BatchReader {
     /// Allocates a new empty trace.
     fn new(activator: Option<Activator>) -> Self;
 
-    /// Push all timestamps in the trace back to `frontier`.
+    /// Pushes all timestamps in the trace back to `frontier` or less, by
+    /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  This
+    /// has no effect on timestamps that are already less than or equal to
+    /// `frontier`.  For later timestamps, it reduces the number of distinct
+    /// timestamps in the trace, which in turn allows the trace to combine
+    /// tuples that now have the same key, value, and time by adding their
+    /// weights, reducing memory consumption.
     ///
-    /// Modifies all timestamps `t` that are not less than or equal to
-    /// `frontier` to `t.meet(frontier)`.  As a result, the trace can no
-    /// longer distinguish between timestamps that map to the same value,
-    /// but it will contain fewer different timestamps, thus reducing its
-    /// memory footprint.
-    ///
-    /// This also enables us to use fewer bits to represent timestamps.
-    /// In DBSP, computations inside a nested circuit only need to distinguish
-    /// between updates added during the current run of the nested circuit
-    /// vs all previous runs.  Thus, we only need a single bit for the outer
-    /// time stamp.  When the nested clock epoch completes, all tuples with
-    /// outer timestamp `1` are demoted to `0`, so they appear as old
-    /// updates during the next run of the circuit.
-    ///
-    /// The downside of the 1-bit clock is that it requires rewriting timestamps
-    /// and rearranging batches in the trace at the end of every clock epoch.
-    /// Unlike merging of batches, which can be done in the background, this
-    /// work must be completed synchronously before the start of the next
-    /// epoch. This cost should be roughly proportional to the number of
-    /// updates added to the trace during the last epoch.
-    ///
-    /// See [`NestedTimestamp32`](`crate::time::NestedTimestamp32`) for an
-    /// example of a timestamp type that takes advantage of the 1-bit
-    /// timestamp representation.
+    /// See [`NestedTimestamp`](crate::time::NestedTimestamp32) for information
+    /// on how DBSP can take advantage of its usage of time.
     fn recede_to(&mut self, frontier: &Self::Time);
 
     /// Exert merge effort, even without updates.
@@ -196,14 +206,16 @@ pub trait Trace: BatchReader {
     fn lower_value_bound(&self) -> &Option<Self::Val>;
 }
 
-/// A batch of updates whose contents may be read.
+/// A set of `(key, value, time, diff)` tuples whose contents may be read in
+/// order by key and value.
 ///
-/// This is a restricted interface to batches of updates, which support the
-/// reading of the batch's contents, but do not expose ways to construct the
-/// batches. This trait is appropriate for views of the batch, and is especially
-/// useful for views derived from other sources in ways that prevent the
-/// construction of batches from the type of data in the view (for example,
-/// filtered views, or views with extended time coordinates).
+/// A `BatchReader` is a mostly read-only interface.  This is especially useful
+/// for views derived from other sources in ways that prevent the construction
+/// of batches from the type of data in the view (for example, filtered views,
+/// or views with extended time coordinates).
+///
+/// See [crate documentation](crate::trace) for more information on batches and
+/// traces.
 pub trait BatchReader: NumEntries + Rkyv + SizeOf + 'static
 where
     Self: Sized,
@@ -297,7 +309,19 @@ where
         RG: Rng;
 }
 
-/// An immutable collection of updates.
+/// A [`BatchReader`] plus features for constructing new batches.
+/// 
+/// [`Batch`] extends [`BatchReader`] with types for constructing new batches
+/// from ordered tuples ([`Self::Builder`]) or unordered tuples
+/// ([`Self::Batcher`]), or by merging traces of like types ([`Self::Merger`]),
+/// plus some convenient methods for using those types.
+///
+/// A `Batch` is mostly immutable, with the exception of [`recede_to`].
+///
+/// See [crate documentation](crate::trace) for more information on batches and
+/// traces.
+///
+/// [`recede_to`]: Self::recede_to
 pub trait Batch: BatchReader + Clone
 where
     Self: Sized,
@@ -356,10 +380,9 @@ where
         Self::Builder::new_builder(time).done()
     }
 
-    /// Push all timestamps in the batch back to `frontier`.
-    ///
-    /// Modifies all timestamps `t` that are not less than or equal to
-    /// `frontier` to `t.meet(frontier)`.  See [`Trace::recede_to`].
+    /// Pushes all timestamps in the trace back to `frontier` or less, by
+    /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  See
+    /// [`Trace::recede_to`].
     fn recede_to(&mut self, frontier: &Self::Time);
 }
 

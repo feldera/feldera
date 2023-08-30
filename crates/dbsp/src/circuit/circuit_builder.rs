@@ -407,7 +407,7 @@ impl<D> StreamValue<D> {
 ///     indexed batches.  Use [`Stream::stream_join`], which outputs a
 ///     non-indexed Z-set.
 ///
-///     These functions also work for joining a stream of deltas with an
+///     `stream_join` also works for joining a stream of deltas with an
 ///     invariant stream of data where the latter is used as a lookup table.
 ///
 ///     If the output of the join function grows monotonically as `(k, v1, v2)`

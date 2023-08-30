@@ -1,33 +1,39 @@
-//! An append-only collection of update batches.
+//! General-purpose implementation of a trace.
 //!
-//! The `Spine` is a general-purpose trace implementation based on collection
-//! and merging immutable batches of updates. It is generic with respect to the
-//! batch type, and can be instantiated for any implementor of `trace::Batch`.
+//! A [`Spine`] is a trace implemented in terms of a collection of batches.  The
+//! cursor for a spine reads all of the batches in parallel and merges their
+//! streams of tuples to provide the same external behavior as a single trace.
+//! 
+//! The time cost of merging the streams in the cursor increases with the number
+//! of batches.  There is also a memory cost if the batches contain tuples with
+//! the same key, value, and time, especially if their weights would add to
+//! zero.  Thus, a spine merges batches when two of them have similar sizes. In
+//! this way, it allows the addition of more tuples, which may then be merged
+//! with other immutable collections.
 //!
 //! ## Design
 //!
 //! This spine is represented as a list of layers, where each element in the
-//! list is either
+//! list is either:
 //!
-//!   1. MergeState::Vacant  empty
-//!   2. MergeState::Single  a single batch
-//!   3. MergeState::Double  a pair of batches
+//!   1. [`MergeState::Vacant`]: no batch.
+//!   2. [`MergeState::Single`]: a single batch.
+//!   3. [`MergeState::Double`]: a pair of batches.
 //!
 //! Each "batch" has the option to be `None`, indicating a non-batch that
 //! nonetheless acts as a number of updates proportionate to the level at which
 //! it exists (for bookkeeping).
 //!
-//! Each of the batches at layer i contains at most 2^i elements.
+//! Each of the batches at layer `i` contains at most `2^i` elements.
 //!
-//! Each batch at layer i is treated as if it contains exactly 2^i elements,
-//! even though it may actually contain fewer elements. This allows us to
-//! decouple the physical representation from logical amounts of effort invested
-//! in each batch. It allows us to begin compaction and to reduce the number of
-//! updates, without compromising our ability to continue to move updates along
-//! the spine. We are explicitly making the trade-off that while some batches
-//! might compact at lower levels, we want to treat them as if they contained
-//! their full set of updates for accounting reasons (to apply work to higher
-//! levels).
+//! Each batch at layer `i` is treated as if it contains exactly `2^i` elements,
+//! even though it may contain fewer. This decouples the physical representation
+//! from the logical amount of effort invested in a batch. It allows us to begin
+//! compaction and to reduce the number of updates, without compromising our
+//! ability to continue to move updates along the spine. We are explicitly
+//! making the trade-off that while some batches might compact at lower levels,
+//! we want to treat them as if they contained their full set of updates for
+//! accounting reasons (to apply work to higher levels).
 //!
 //! We maintain the invariant that for any in-progress merge at level k there
 //! should be fewer than 2^k records at levels lower than k. That is, even if we
@@ -100,12 +106,11 @@ use std::{
 };
 use textwrap::indent;
 
-/// An append-only collection of update tuples.
+/// General-purpose [trace][crate::trace::Trace] implementation based on
+/// collection and merging immutable batches of updates.
 ///
-/// A spine maintains a small number of immutable collections of update tuples,
-/// merging the collections when two have similar sizes. In this way, it allows
-/// the addition of more tuples, which may then be merged with other immutable
-/// collections.
+/// See [module documentation][crate::trace::spine_fueled] for a description of
+/// the internal data structures.
 #[derive(SizeOf)]
 pub struct Spine<B>
 where

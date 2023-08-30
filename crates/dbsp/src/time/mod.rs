@@ -1,4 +1,62 @@
-//! Types that represent logical time in DBSP.
+//! # Logical time
+//!
+//! Every value produced by a DBSP operator is logically labelled by the time
+//! when it was produced.  A logical time can be represented as an array of
+//! integers whose length is equal to the nesting depth of the circuit and whose
+//! `i`th element is the local time of the circuit at the `i`th nesting level.
+//! A root circuit has a 1-dimensional logical clock, which starts at 0 and
+//! increments by 1 at each clock tick, a nested circuit has a 2-dimensional
+//! logical clock, and so on.
+//!
+//! The [`Timestamp`] trait captures common functionality of logical time
+//! representation.
+//!
+//! # Lossy times
+//!
+//! In practice, if a logical time needs to be stored explicitly (which is not
+//! always necessary), we use a more compact "lossy" representation of logical
+//! time that stores just enough timing information for operators that compute
+//! on the data.
+//!
+//! ## Example: Untimed data
+//!
+//! We use unit type `()` for untimed data, where we only track values and not
+//! the time when each value was generated.
+//!
+//! The [`integrate_trace`](`crate::circuit::Stream::integrate_trace`) operator
+//! computes the union of all Z-sets in its input stream generated during the
+//! current clock epoch, i.e., since the last
+//! [`clock_start`](`crate::circuit::operator_traits::Operator::clock_start`)
+//! invocation.  Its consumers only need to know the current value of the
+//! sum and not when each update was produced.  It therefore stores its output
+//! in an untimed [`Trace`]([`crate::trace::Trace`]), i.e., a trace whose
+//! timestamp type is `()`.
+//!
+//! ## Example: [`NestedTimestamp32`]
+//!
+//! [`NestedTimestamp32`] represents nested timestamp `(c1, c2)`, but only uses
+//! 1 bit for `c1`, which is enough to distinguish data generated in the latest
+//! clock epoch from all earlier epochs.  This distinction by itself is
+//! sufficient for all existing DBSP operators.
+//!
+//! [`join`](`crate::circuit::Stream::join`) and
+//! [`distinct`](`crate::circuit::Stream::distinct`) methods compute incremental
+//! versions of `join` and `distinct` operators within nested scopes.  They need
+//! to know the exact local time in the child circuit when each key-value tuple
+//! was generated; however they do not require the exact parent clock value as
+//! long as they can distinguish between values generated during the current
+//! epoch (i.e., the current parent clock cycle) from older values.  They
+//! therefore take advantage of the lossy timestamp representation implemented
+//! by [`NestedTimestamp32`].
+//!
+//! # Comparing times
+//!
+//! Timestamps partially order logical time.  Multidimensional timestamps, in
+//! particular, are not totally ordered: `(x1,x2) <= (y1,y2)` if and only if `x1
+//! <= y1 && x2 <= y2`, so that, e.g. `(1,2)` and `(2,1)` are not comparable.
+//! The [`PartialOrder`] trait that bounds `Timestamp` allows this logical time
+//! ordering to be separate from the ordinary [`PartialOrd`] used for, e.g.,
+//! sorting.
 
 mod antichain;
 mod nested_ts32;
@@ -23,57 +81,8 @@ pub use product::Product;
 
 /// Logical timestamp.
 ///
-/// A DBSP circuit runs on a discrete logical clock that starts at 0
-/// on the `clock_start` event and increments by 1 at each clock tick.
-/// A nested circuit has a two-dimensional clock that consists of the
-/// parent clock `c1 `and its local clock `c2`: `(c1, c2)`.  A second-level
-/// nested circuit has a three-dimensional clock: `((c1, c2), c3)`, etc.
-///
-/// Every value produced by an operator is logically labelled by the
-/// time when it was produced.  Depending on what we do with the data,
-/// this time may or may not be stored explicitly.  In the former case,
-/// it is often beneficial to use a lossy representation that stores just
-/// enough timing information required by operators that compute on the
-/// data.
-///
-/// Thus, while we can represent any DBSP timestamp as an array of
-/// integers whose length is equal to the nesting depth of the circuit
-/// and whose `i`th element is the local time of the circuit at the `i`th
-/// nesting level, in practice we use several more compact "lossy"
-/// representations.  For example, we use unit type `()` for untimed data,
-/// where we only track values and not the time when each value was generated.
-///
-/// As another example, the [`NestedTimestamp32`] type represents nested
-/// timestamp `(c1, c2)`, but only uses 1 bit for `c1` to distinguish data
-/// generated in the latest clock epoch from all earlier epochs (which is
-/// sufficient for all existing DBSP operators).
-///
-/// The `Timestamp` trait captures common functionality of any (lossy or
-/// lossless) time representation.
-///
-/// # Example: Untimed data
-///
-/// The [`integrate_trace`](`crate::circuit::Stream::integrate_trace`) operator
-/// computes the union of all Z-sets in its input stream generated during the
-/// current clock epoch, i.e., since the last
-/// [`clock_start`](`crate::circuit::operator_traits::Operator::clock_start`)
-/// invocation.  Its consumers only need to know the current value of the
-/// sum and not when each update was produced.  It therefore stores its output
-/// in an untimed [`Trace`]([`crate::trace::Trace`]), i.e., a trace whose
-/// timestamp type is `()`.
-///
-/// # Example: `NestedTimestamp32`.
-///
-/// [`join`](`crate::circuit::Stream::join`) and
-/// [`distinct`](`crate::circuit::Stream::distinct`) methods compute
-/// incremental versions
-/// of `join` and `distinct` operators within nested scopes.  They need to know
-/// the exact local time in the child circuit when each key-value tuple was
-/// generated; however they do not require the exact parent clock value as long
-/// as they can distinguish between values generated during the current epoch
-/// (i.e., the current parent clock cycle) from older values.  They therefore
-/// take advantage of the lossy timestamp representation implemented by the
-/// `NestedTimestamp32` type.
+/// See [crate documentation](crate::time) for an overview of logical time in
+/// DBSP.
 // TODO: Conversion to/from the most general time representation (`[usize]`).
 // TODO: Model overflow by having `advance` return Option<Self>.
 pub trait Timestamp:
@@ -178,11 +187,13 @@ pub trait Timestamp:
 
 /// Zero-dimensional clock that doesn't need to count ticks.
 ///
-/// This type is only used to bootstrap the recursive definition of
-/// the `WithClock` trait.
+/// This type is only used to bootstrap the recursive definition of the
+/// `WithClock` trait.  You can otherwise use `()` as the type for an empty
+/// timestamp.
 #[derive(
     Clone, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, SizeOf, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(doc(hidden))]
 pub struct UnitTimestamp;
 
 impl PartialOrder for UnitTimestamp {
