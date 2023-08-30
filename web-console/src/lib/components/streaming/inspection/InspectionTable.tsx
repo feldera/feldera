@@ -1,6 +1,8 @@
 // Browse the contents of a table or a view.
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import { InspectionToolbar } from '$lib/components/streaming/inspection/InspectionToolbar'
+import { PercentilePagination } from '$lib/components/streaming/inspection/PercentilePagination'
 import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
 import useTableUpdater from '$lib/compositions/streaming/inspection/useTableUpdater'
 import { useAsyncError } from '$lib/functions/common/react'
@@ -9,10 +11,8 @@ import { NeighborhoodQuery, OpenAPI, Pipeline, PipelineRevision, Relation } from
 import { useCallback, useEffect, useState } from 'react'
 
 import Card from '@mui/material/Card'
-import { DataGridPro, GridPaginationModel, GridToolbar } from '@mui/x-data-grid-pro'
+import { DataGridPro, GridPaginationModel, GridRowSelectionModel } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
-
-import { PercentilePagination } from './PercentilePagination'
 
 const FETCH_QUANTILES = 100
 
@@ -221,6 +221,8 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
     setNeighborhood({ ...DEFAULT_NEIGHBORHOOD, anchor })
   }
 
+  const [rowSelectionModel, setRowSelectionModel] = useState<GridRowSelectionModel>([])
+
   return relation ? (
     <Card>
       <DataGridPro
@@ -265,7 +267,7 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
           ])}
         slots={{
           pagination: PercentilePagination,
-          toolbar: GridToolbar
+          toolbar: InspectionToolbar
         }}
         slotProps={{
           pagination: {
@@ -285,7 +287,9 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
               fileName: relation.name,
               delimiter: ',',
               utf8WithBom: true
-            }
+            },
+            pipelineId: pipeline.descriptor.pipeline_id,
+            relation: relation.name
           }
         }}
         loading={isLoading}
@@ -297,6 +301,11 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
         pageSizeOptions={[PAGE_SIZE]}
         onPaginationModelChange={model => handlePaginationModelChange(model)}
         paginationModel={paginationModel}
+        checkboxSelection
+        onRowSelectionModelChange={newRowSelectionModel => {
+          setRowSelectionModel(newRowSelectionModel)
+        }}
+        rowSelectionModel={rowSelectionModel}
         // Next two lines are a work-around because DataGridPro needs an
         // accurate rowCount for pagination to work which we don't have.
         //
