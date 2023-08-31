@@ -1,3 +1,4 @@
+use crate::db::{ProgramId, Version};
 /// A local runner that watches for pipeline objects in the API
 /// and instantiates them locally as processes.
 use crate::db_notifier::{DbNotification, Operation};
@@ -24,6 +25,7 @@ use std::{
     process::{Child, Command},
     sync::Arc,
 };
+use tokio::io::AsyncWriteExt;
 use tokio::{
     fs,
     fs::{create_dir_all, remove_dir_all},
@@ -186,7 +188,8 @@ impl PipelineAutomaton {
                                 None,
                             )
                             .await;
-                            pipeline.set_location(format!("127.0.0.1:{port}"));
+                            let host = &self.config.pipeline_host;
+                            pipeline.set_location(format!("{host}:{port}"));
                             pipeline.set_created();
                             self.update_pipeline_runtime_state(&pipeline).await?;
                             poll_timeout = Self::INITIALIZATION_POLL_PERIOD;
@@ -600,6 +603,7 @@ impl PipelineAutomaton {
     async fn start(&self, pr: PipelineRevision) -> Result<PipelineHandle, ManagerError> {
         let pipeline_id = pr.pipeline.pipeline_id;
         let program_id = pr.pipeline.program_id.unwrap();
+        let version = pr.program.version;
 
         log::debug!("Pipeline config is '{:?}'", pr.config);
 
@@ -648,7 +652,7 @@ impl PipelineAutomaton {
             }
             .into());
         }
-        let fetched_executable = binary_ref_to_url(&executable_ref.unwrap(), pipeline_id).await?;
+        let fetched_executable = fetch_binary_ref(&self.config, &executable_ref.unwrap(), pipeline_id, program_id, version).await?;
 
         // Run executable, set current directory to pipeline directory, pass metadata
         // file and config as arguments.
@@ -749,10 +753,13 @@ async fn reconcile(
     }
 }
 
-pub async fn binary_ref_to_url(
+pub async fn fetch_binary_ref(
+    config: &LocalRunnerConfig,
     binary_ref: &str,
     pipeline_id: PipelineId,
-) -> Result<String, RunnerError> {
+    program_id: ProgramId,
+    version: Version,
+) -> Result<String, ManagerError> {
     let parsed =
         url::Url::parse(binary_ref).expect("Can only be invoked with valid URLs created by us");
     match parsed.scheme() {
@@ -765,18 +772,65 @@ pub async fn binary_ref_to_url(
                 Ok(false) => Err(RunnerError::BinaryFetchError {
                     pipeline_id,
                     error: format!(
-                        "fileref {} for binary required by pipeline {pipeline_id} does not exist",
+                        "Binary required by pipeline {pipeline_id} does not exist at URL {}",
                         parsed.path()
                     ),
-                }),
+                }.into()),
                 Err(e) => Err(RunnerError::BinaryFetchError {
                     pipeline_id,
                     error: format!(
-                        "Check fileref {} for binary required by pipeline {pipeline_id} returned an error: {}",
+                        "Accessing URL {} for binary required by pipeline {pipeline_id} returned an error: {}",
                         parsed.path(),
                         e
                     ),
-                }),
+                }.into()),
+            }
+        }
+        // Access a file over HTTP/HTTPS
+        // TODO: implement retries
+        "http" | "https" => {
+            let resp = reqwest::get(binary_ref).await;
+            match resp {
+                Ok(resp) => {
+                    let resp = resp.bytes().await.expect("Binary reference should be accessible as bytes");
+                    let resp_ref = resp.as_ref();
+                    let path = config.binary_file_path(pipeline_id, program_id, version);
+                    let mut file = tokio::fs::File::options()
+                        .create(true)
+                        .write(true)
+                        .read(true)
+                        .mode(0o760)
+                        .open(path.clone())
+                        .await
+                        .map_err(|e| 
+                            ManagerError::io_error(
+                                format!("File creation failed ({:?}) while saving {pipeline_id} binary fetched from '{}'", path, parsed.path()),
+                                e,
+                            )
+                        )?;
+                    file.write_all(resp_ref).await.map_err(|e| 
+                            ManagerError::io_error(
+                                format!("File write failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
+                                e,
+                            )
+                        )?;
+                    file.flush().await.map_err(|e| 
+                            ManagerError::io_error(
+                                format!("File flush() failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
+                                e,
+                            )
+                        )?;
+                    Ok(path.into_os_string().into_string().expect("Path should be valid Unicode"))
+                }
+                Err(e) => {
+                    Err(RunnerError::BinaryFetchError {
+                        pipeline_id,
+                        error: format!(
+                            "Fetching URL {} for binary required by pipeline {pipeline_id} returned an error: {}",
+                            parsed.path(), e
+                       ),
+                    }.into())
+                }
             }
         }
         _ => todo!("Unsupported URL scheme for binary ref"),

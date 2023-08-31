@@ -114,7 +114,7 @@ struct Args {
     metadata_file: Option<String>,
 
     /// TCP bind address
-    #[arg(short, long, default_value = "127.0.0.1")]
+    #[arg(short, long, default_value = "0.0.0.0")]
     bind_address: String,
 
     /// Run the server on this port if it is available. If the port is in

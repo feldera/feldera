@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 
 // Entrypoint to bring up the standalone compiler service.
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let name = "[compiler]".cyan();
     pipeline_manager::logging::init_logging(name);
     let cli = Command::new("Feldera compiler service");
@@ -26,6 +26,11 @@ async fn main() {
         .map_err(|err| err.exit())
         .unwrap();
     let compiler_config = compiler_config.canonicalize().unwrap();
+
+    if compiler_config.precompile {
+        Compiler::precompile_dependencies(&compiler_config).await?;
+        return Ok(());
+    }
     let db: ProjectDB = ProjectDB::connect(
         &database_config,
         #[cfg(feature = "pg-embed")]
@@ -40,4 +45,5 @@ async fn main() {
     tokio::signal::ctrl_c()
         .await
         .expect("Failed to listen for ctrl-c event");
+    Ok(())
 }
