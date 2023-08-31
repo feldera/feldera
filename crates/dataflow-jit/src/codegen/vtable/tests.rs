@@ -447,7 +447,7 @@ mod proptests {
     prop_compose! {
         fn timestamp()(date in date(), time in time()) -> DateTime<Utc> {
             let datetime = NaiveDateTime::new(date, time);
-            DateTime::from_utc(datetime, Utc)
+            DateTime::from_naive_utc_and_offset(datetime, Utc)
         }
     }
 
