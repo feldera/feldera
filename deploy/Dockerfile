@@ -37,7 +37,7 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json --bin=pipeline-manager --no-default-features
 COPY . .
-RUN /root/.cargo/bin/cargo build --release --bin=pipeline-manager --no-default-features
+RUN /root/.cargo/bin/cargo build --release --package=pipeline-manager --no-default-features
 
 # Java build can be performed in parallel
 FROM base as javabuild
@@ -47,7 +47,7 @@ COPY sql-to-dbsp-compiler /sql/sql-to-dbsp-compiler
 RUN cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
 
 # Minimal image for running the pipeline manager
-FROM base as release
+from base as release
 ENV PATH="$PATH:/root/.cargo/bin"
 # Pipeline manager binary
 COPY --from=builder /app/target/release/pipeline-manager pipeline-manager
@@ -69,6 +69,40 @@ COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql
 RUN ./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
 ENV BANNER_ADDR localhost
 ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
+
+# Standalone api-server
+FROM ubuntu:22.04 as api-server
+COPY --from=builder /app/target/release/api-server api-server
+ENV BANNER_ADDR localhost
+ENTRYPOINT ["./api-server", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir"]
+
+# Standalone compiler-server
+FROM base as compiler-server
+ENV PATH="$PATH:/root/.cargo/bin"
+COPY --from=builder /app/target/release/compiler-server compiler-server
+# SQL compiler uber jar
+RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
+COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
+# The crates needed for the SQL compiler
+COPY crates/dbsp database-stream-processor/crates/dbsp
+COPY crates/adapters database-stream-processor/crates/adapters
+COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
+COPY README.md database-stream-processor/README.md
+RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
+
+# Copy over the rust code and sql-to-dbsp script
+COPY sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
+COPY sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/temp
+COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+# Run the precompile phase to speed up Rust compilations during deployment
+RUN ./compiler-server --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
+ENTRYPOINT ["./compiler-server", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
+
+# Standalone local-runner
+FROM ubuntu:22.04 as local-runner
+COPY --from=builder /app/target/release/local-runner local-runner
+ENTRYPOINT ["./local-runner", "--runner-working-directory=/working-dir"] 
+
 
 ##### The stages below are used to build the demo container
 
@@ -118,6 +152,7 @@ RUN apt update && apt install pkg-config \
    # cleanup packages we don't need anymore
    && apt remove python3-pip unzip pkg-config -y && apt autoremove -y
 CMD bash
+
 
 # By default, only build the release version
 FROM release

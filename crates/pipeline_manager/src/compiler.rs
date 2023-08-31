@@ -3,6 +3,8 @@ use crate::config::CompilerConfig;
 use crate::db::storage::Storage;
 use crate::db::{DBError, ProgramId, ProjectDB, Version};
 use crate::error::ManagerError;
+use actix_files::NamedFile;
+use actix_web::{get, web, HttpRequest, HttpServer, Responder};
 use futures_util::join;
 use log::warn;
 use log::{debug, error, info, trace};
@@ -125,6 +127,37 @@ fn main() {
     });
 }"#;
 
+// Simple endpoint to serve compiled binaries
+#[get("/binary/{program_id}/{version}")]
+async fn index(
+    state: web::Data<CompilerConfig>,
+    req: HttpRequest,
+) -> Result<impl Responder, ManagerError> {
+    let program_id = match req.match_info().get("program_id") {
+        None => Err(ManagerError::MissingUrlEncodedParam {
+            param: "program_id",
+        }),
+        Some(id) => match id.parse::<Uuid>() {
+            Err(e) => Err(ManagerError::InvalidUuidParam {
+                value: id.to_string(),
+                error: e.to_string(),
+            }),
+            Ok(uuid) => Ok(uuid),
+        },
+    }?;
+    let program_id = ProgramId(program_id);
+    let version = match req.match_info().get("version") {
+        None => Err(ManagerError::MissingUrlEncodedParam { param: "version" }),
+        Some(version) => match version.parse::<i64>() {
+            Err(_) => Err(ManagerError::MissingUrlEncodedParam { param: "version" }),
+            Ok(version) => Ok(version),
+        },
+    }?;
+    let version = Version(version);
+    let path = state.versioned_executable(program_id, version);
+    Ok(NamedFile::open_async(path).await)
+}
+
 impl Compiler {
     pub async fn run(
         config: &CompilerConfig,
@@ -133,8 +166,21 @@ impl Compiler {
         Self::create_working_directory(config).await?;
         let compiler_task = spawn(Self::compiler_task(config.clone(), db.clone()));
         let gc_task = spawn(Self::gc_task(config.clone(), db));
-        let r = join!(compiler_task, gc_task);
+        let config_copy = web::Data::new(config.clone());
+        let port = config.binary_ref_port;
+        let http = spawn(
+            HttpServer::new(move || {
+                actix_web::App::new()
+                    .app_data(config_copy.clone())
+                    .service(index)
+            })
+            .bind(("0.0.0.0", port))
+            .unwrap()
+            .run(),
+        );
+        let r = join!(compiler_task, gc_task, http);
         r.0.unwrap()?;
+
         Ok(())
     }
 
@@ -300,13 +346,14 @@ impl Compiler {
                 e,
             )
         })?;
-        let absolute_path = destination.canonicalize()
-                    .expect("Destination is not a symlink, and the path is guaranteed to exist if fs::copy succeeds");
 
         db.create_compiled_binary_ref(
             program_id,
             version,
-            format!("file://{}", absolute_path.display()),
+            format!(
+                "http://{}:{}/binary/{program_id}/{version}",
+                config.binary_ref_host, config.binary_ref_port
+            ),
         )
         .await?;
         Ok(())
@@ -960,6 +1007,8 @@ mod test {
             debug: false,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
+            binary_ref_host: "127.0.0.1".to_string(),
+            binary_ref_port: 9090,
         };
 
         let (db, _temp) = crate::db::test::setup_pg().await;
@@ -1023,6 +1072,8 @@ mod test {
             debug: false,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
+            binary_ref_host: "127.0.0.1".to_string(),
+            binary_ref_port: 9090,
         };
 
         let (db, _temp) = crate::db::test::setup_pg().await;
@@ -1067,6 +1118,8 @@ mod test {
             debug: false,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
+            binary_ref_host: "127.0.0.1".to_string(),
+            binary_ref_port: 9090,
         };
 
         let (db, _temp) = crate::db::test::setup_pg().await;
