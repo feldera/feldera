@@ -826,7 +826,10 @@ fn convert_bigint_to_time(created_secs: i64) -> Result<DateTime<Utc>, DBError> {
             ))
         })?;
 
-    Ok(DateTime::<Utc>::from_utc(created_naive, Utc))
+    Ok(DateTime::<Utc>::from_naive_utc_and_offset(
+        created_naive,
+        Utc,
+    ))
 }
 
 // The goal for these methods is to avoid multiple DB interactions as much as
