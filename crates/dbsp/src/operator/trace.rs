@@ -607,7 +607,7 @@ where
 
         if scope == 0 && self.trace.is_none() {
             // TODO: use T::with_effort with configurable effort?
-            self.trace = Some(T::new(None));
+            self.trace = Some(T::new());
         }
     }
 
@@ -661,7 +661,7 @@ where
         if self.reset_on_clock_start {
             self.get_output()
         } else {
-            T::new(None)
+            T::new()
         }
     }
 }

@@ -14,7 +14,6 @@
 //! feeding data into the circuits and output handles for obtaining their
 //! output.
 
-mod activations;
 mod dbsp_handle;
 
 pub(crate) mod runtime;
@@ -27,7 +26,6 @@ pub mod operator_traits;
 pub mod schedule;
 pub mod trace;
 
-pub use activations::{Activations, Activator};
 pub use circuit_builder::{
     ChildCircuit, Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId,
     NodeId, OwnershipPreference, RootCircuit, Scope, Stream, WithClock,

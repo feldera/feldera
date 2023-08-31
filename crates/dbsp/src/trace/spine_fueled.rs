@@ -87,7 +87,6 @@
 
 use crate::{
     algebra::HasZero,
-    circuit::Activator,
     time::{Antichain, AntichainRef, Timestamp},
     trace::{
         cursor::{Cursor, CursorList},
@@ -120,7 +119,6 @@ where
     lower: Antichain<B::Time>,
     upper: Antichain<B::Time>,
     effort: usize,
-    activator: Option<Activator>,
     dirty: bool,
     lower_key_bound: Option<B::Key>,
     lower_val_bound: Option<B::Val>,
@@ -651,7 +649,7 @@ where
     B::Val: Ord,
 {
     fn default() -> Self {
-        <Self as Trace>::new(None)
+        <Self as Trace>::new()
     }
 }
 
@@ -663,8 +661,8 @@ where
 {
     type Batch = B;
 
-    fn new(activator: Option<Activator>) -> Self {
-        Self::with_effort(1, activator)
+    fn new() -> Self {
+        Self::with_effort(1)
     }
 
     fn recede_to(&mut self, frontier: &B::Time) {
@@ -693,10 +691,6 @@ where
                 // Introduce an empty batch with roughly `effort` number of virtual updates.
                 let level = (effort as usize).next_power_of_two().trailing_zeros() as usize;
                 self.introduce_batch(None, level);
-            }
-            // We were not in reduced form, so let's check again in the future.
-            if let Some(activator) = &self.activator {
-                activator.activate();
             }
         }
     }
@@ -744,13 +738,6 @@ where
 
         let index = batch.len().next_power_of_two();
         self.introduce_batch(Some(batch), index.trailing_zeros() as usize);
-
-        // If more than one batch remains reschedule ourself.
-        if !self.reduced() {
-            if let Some(activator) = &self.activator {
-                activator.activate();
-            }
-        }
     }
 
     fn clear_dirty_flag(&mut self) {
@@ -824,7 +811,7 @@ where
     /// applying a multiple of the batch's length in effort to each merge.
     /// The `effort` parameter is that multiplier. This value should be at
     /// least one for the merging to happen; a value of zero is not helpful.
-    pub fn with_effort(mut effort: usize, activator: Option<Activator>) -> Self {
+    pub fn with_effort(mut effort: usize) -> Self {
         // Zero effort is .. not smart.
         if effort == 0 {
             effort = 1;
@@ -835,7 +822,6 @@ where
             upper: Antichain::new(),
             merging: Vec::new(),
             effort,
-            activator,
             dirty: false,
             lower_key_bound: None,
             lower_val_bound: None,
@@ -1404,7 +1390,7 @@ mod test {
     proptest! {
         #[test]
         fn test_truncate_value_bounded_memory(batches in kvr_batches_monotone_values(50, 100, 20, 20, 500)) {
-            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
+            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new();
 
             for (i, tuples) in batches.into_iter().enumerate() {
                 let batch = OrdIndexedZSet::from_tuples((), tuples.clone());
@@ -1420,8 +1406,8 @@ mod test {
 
         #[test]
         fn test_zset_spine(batches in kr_batches(50, 2, 100, 20), seed in 0..u64::max_value()) {
-            let mut trace: Spine<OrdZSet<i32, i32>> = Spine::new(None);
-            let mut ref_trace: TestBatch<i32, (), (), i32> = TestBatch::new(None);
+            let mut trace: Spine<OrdZSet<i32, i32>> = Spine::new();
+            let mut ref_trace: TestBatch<i32, (), (), i32> = TestBatch::new();
 
             for (tuples, bound) in batches.into_iter() {
                 let batch = OrdZSet::from_tuples((), tuples.clone());
@@ -1449,8 +1435,8 @@ mod test {
 
         #[test]
         fn test_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 500, 20), seed in 0..u64::max_value()) {
-            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
-            let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None);
+            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new();
+            let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new();
 
             for (tuples, key_bound, val_bound) in batches.into_iter() {
                 let batch = OrdIndexedZSet::from_tuples((), tuples.clone());
@@ -1485,8 +1471,8 @@ mod test {
 
         #[test]
         fn test_zset_trace_spine(batches in kr_batches(100, 2, 500, 20), seed in 0..u64::max_value()) {
-            let mut trace: Spine<OrdKeyBatch<i32, u32, i32>> = Spine::new(None);
-            let mut ref_trace: TestBatch<i32, (), u32, i32> = TestBatch::new(None);
+            let mut trace: Spine<OrdKeyBatch<i32, u32, i32>> = Spine::new();
+            let mut ref_trace: TestBatch<i32, (), u32, i32> = TestBatch::new();
 
             for (time, (tuples, bound)) in batches.into_iter().enumerate() {
                 let batch = OrdKeyBatch::from_tuples(time as u32, tuples.clone());
@@ -1509,8 +1495,8 @@ mod test {
 
         #[test]
         fn test_indexed_zset_trace_spine(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::max_value()) {
-            let mut trace: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None);
-            let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None);
+            let mut trace: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new();
+            let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new();
 
             for (time, (tuples, key_bound, val_bound)) in batches.into_iter().enumerate() {
                 let batch = OrdValBatch::from_tuples(time as u32, tuples.clone());

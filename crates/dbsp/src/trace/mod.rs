@@ -52,7 +52,6 @@ pub mod test_batch;
 
 use crate::{
     algebra::{HasZero, MonoidValue},
-    circuit::Activator,
     time::{AntichainRef, Timestamp},
     NumEntries,
 };
@@ -142,7 +141,7 @@ pub trait Trace: BatchReader {
     type Batch: Batch<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R>;
 
     /// Allocates a new empty trace.
-    fn new(activator: Option<Activator>) -> Self;
+    fn new() -> Self;
 
     /// Pushes all timestamps in the trace back to `frontier` or less, by
     /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  This

@@ -250,11 +250,11 @@ fn cursor_trait<B, I>(
     }
     let batch = batch_builder.done();
 
-    let mut model = Spine::<B>::new(None);
+    let mut model = Spine::<B>::new();
     model.insert(batch.clone());
     let mut model_cursor = model.cursor();
 
-    let mut ptrace = PersistentTrace::<B>::new(None);
+    let mut ptrace = PersistentTrace::<B>::new();
     ptrace.insert(batch);
     let mut totest_cursor = ptrace.cursor();
 
@@ -437,8 +437,8 @@ where
     B::R: Arbitrary + Ord + Clone + MonoidValue + Rkyv,
     B::Time: Arbitrary + Clone + Rkyv + Default,
 {
-    let mut model = Spine::<B>::new(None);
-    let mut ptrace = PersistentTrace::<B>::new(None);
+    let mut model = Spine::<B>::new();
+    let mut ptrace = PersistentTrace::<B>::new();
 
     // We check the non-mutating functions after every
     // command/mutation.

@@ -336,7 +336,7 @@ where
         // Safety: This is the gather thread
         debug_assert!(unsafe { self.gather.all_channels_ready() });
 
-        let mut spine = Spine::new(None);
+        let mut spine = Spine::new();
         for worker in 0..self.gather.workers() {
             let batch = unsafe { self.gather.pop(worker) };
             spine.insert(batch);

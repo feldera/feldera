@@ -233,7 +233,7 @@ where
     /// when computing the consolidated batch.
     pub fn consolidate(&self) -> T {
         let batches = self.take_from_all();
-        let mut spine = Spine::new(None);
+        let mut spine = Spine::new();
 
         for batch in batches {
             spine.insert(batch);

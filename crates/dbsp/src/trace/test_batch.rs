@@ -3,7 +3,7 @@
 //! So far, only methods/traits used in tests have been implemented.
 
 use super::{
-    Activator, AntichainRef, Batch, BatchReader, Batcher, Builder, Consumer, Cursor, Merger, Trace,
+    AntichainRef, Batch, BatchReader, Batcher, Builder, Consumer, Cursor, Merger, Trace,
     ValueConsumer,
 };
 use crate::{algebra::HasZero, utils::VecExt, DBData, DBTimestamp, DBWeight, NumEntries};
@@ -412,7 +412,7 @@ where
     fn new_batcher(time: T) -> Self {
         Self {
             time,
-            result: TestBatch::new(None),
+            result: TestBatch::new(),
         }
     }
 
@@ -461,7 +461,7 @@ where
     fn new_builder(time: T) -> Self {
         Self {
             time,
-            result: TestBatch::new(None),
+            result: TestBatch::new(),
         }
     }
 
@@ -869,7 +869,7 @@ where
 {
     type Batch = Self;
 
-    fn new(_activator: Option<Activator>) -> Self {
+    fn new() -> Self {
         Self {
             data: BTreeMap::new(),
             lower_key_bound: None,

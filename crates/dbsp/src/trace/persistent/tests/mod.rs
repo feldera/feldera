@@ -27,12 +27,12 @@ fn vals_are_sorted() {
     let vset2 = val_builder.seal();
 
     let mut spine =
-        crate::trace::spine_fueled::Spine::<OrdIndexedZSet<String, usize, usize>>::new(None);
+        crate::trace::spine_fueled::Spine::<OrdIndexedZSet<String, usize, usize>>::new();
     spine.insert(vset1.clone());
     spine.insert(vset2.clone());
     spine.apply_fuel(10000);
 
-    let mut ptrace = PersistentTrace::<OrdIndexedZSet<String, usize, usize>>::new(None);
+    let mut ptrace = PersistentTrace::<OrdIndexedZSet<String, usize, usize>>::new();
     ptrace.insert(vset1);
     ptrace.insert(vset2);
 
@@ -44,9 +44,9 @@ fn empty_batch_ptrace() {
     let val_builder = <OrdValBatch<String, String, u32, usize> as Batch>::Batcher::new_batcher(0);
     let vset1 = val_builder.seal();
     let mut spine =
-        crate::trace::spine_fueled::Spine::<OrdValBatch<String, String, u32, usize>>::new(None);
+        crate::trace::spine_fueled::Spine::<OrdValBatch<String, String, u32, usize>>::new();
     spine.insert(vset1.clone());
-    let mut ptrace = PersistentTrace::<OrdValBatch<String, String, u32, usize>>::new(None);
+    let mut ptrace = PersistentTrace::<OrdValBatch<String, String, u32, usize>>::new();
     ptrace.insert(vset1);
 
     assert!(spine_ptrace_are_equal(&spine, &ptrace));
@@ -70,12 +70,12 @@ fn insert_bug() {
     let vset2 = val_builder.seal();
 
     let mut spine =
-        crate::trace::spine_fueled::Spine::<OrdValBatch<String, String, u32, usize>>::new(None);
+        crate::trace::spine_fueled::Spine::<OrdValBatch<String, String, u32, usize>>::new();
     spine.insert(vset1.clone());
     spine.insert(vset2.clone());
     spine.apply_fuel(10000);
 
-    let mut ptrace = PersistentTrace::<OrdValBatch<String, String, u32, usize>>::new(None);
+    let mut ptrace = PersistentTrace::<OrdValBatch<String, String, u32, usize>>::new();
     ptrace.insert(vset1);
     ptrace.insert(vset2);
 
@@ -97,12 +97,12 @@ fn times_are_sorted() {
     let vset2 = val_builder.seal();
 
     let mut spine =
-        crate::trace::spine_fueled::Spine::<OrdValBatch<String, String, u32, usize>>::new(None);
+        crate::trace::spine_fueled::Spine::<OrdValBatch<String, String, u32, usize>>::new();
     spine.insert(vset1.clone());
     spine.insert(vset2.clone());
     spine.apply_fuel(10000);
 
-    let mut ptrace = PersistentTrace::<OrdValBatch<String, String, u32, usize>>::new(None);
+    let mut ptrace = PersistentTrace::<OrdValBatch<String, String, u32, usize>>::new();
     ptrace.insert(vset1);
     ptrace.insert(vset2);
 
@@ -124,12 +124,12 @@ fn recede_to_bug() {
     let vset2 = val_builder.seal();
 
     let mut spine =
-        crate::trace::spine_fueled::Spine::<OrdValBatch<String, usize, u32, usize>>::new(None);
+        crate::trace::spine_fueled::Spine::<OrdValBatch<String, usize, u32, usize>>::new();
     spine.insert(vset1.clone());
     spine.insert(vset2.clone());
     spine.recede_to(&1);
 
-    let mut ptrace = PersistentTrace::<OrdValBatch<String, usize, u32, usize>>::new(None);
+    let mut ptrace = PersistentTrace::<OrdValBatch<String, usize, u32, usize>>::new();
     ptrace.insert(vset1);
     ptrace.insert(vset2);
     ptrace.recede_to(&1);
@@ -155,12 +155,12 @@ fn weights_cancellation() {
     let vset2 = val_builder.seal();
 
     let mut spine =
-        crate::trace::spine_fueled::Spine::<OrdValBatch<String, usize, u32, isize>>::new(None);
+        crate::trace::spine_fueled::Spine::<OrdValBatch<String, usize, u32, isize>>::new();
     spine.insert(vset1.clone());
     spine.insert(vset2.clone());
     spine.apply_fuel(10000);
 
-    let mut ptrace = PersistentTrace::<OrdValBatch<String, usize, u32, isize>>::new(None);
+    let mut ptrace = PersistentTrace::<OrdValBatch<String, usize, u32, isize>>::new();
     ptrace.insert(vset1);
     ptrace.insert(vset2);
 
@@ -220,7 +220,7 @@ fn timestamp_aggregation() {
 
     let mut spine = crate::trace::spine_fueled::Spine::<
         OrdKeyBatch<ComplexKey, NestedTimestamp32, isize>,
-    >::new(None);
+    >::new();
     spine.insert(vset1.clone());
     spine.exert(isize::MAX);
     spine.insert(vset2.clone());
@@ -229,8 +229,7 @@ fn timestamp_aggregation() {
     spine.exert(isize::MAX);
     spine.recede_to(&NestedTimestamp32::new(false, 2));
 
-    let mut ptrace =
-        PersistentTrace::<OrdKeyBatch<ComplexKey, NestedTimestamp32, isize>>::new(None);
+    let mut ptrace = PersistentTrace::<OrdKeyBatch<ComplexKey, NestedTimestamp32, isize>>::new();
     ptrace.insert(vset1);
     ptrace.insert(vset2);
     ptrace.insert(vset3);
@@ -290,7 +289,7 @@ fn weights_cancellation2() {
 
     let mut spine = crate::trace::spine_fueled::Spine::<
         OrdKeyBatch<ComplexKey, NestedTimestamp32, isize>,
-    >::new(None);
+    >::new();
     spine.insert(vset1.clone());
     spine.exert(isize::MAX);
     spine.insert(vset2.clone());
@@ -299,8 +298,7 @@ fn weights_cancellation2() {
     spine.exert(isize::MAX);
     spine.recede_to(&NestedTimestamp32::new(false, 2));
 
-    let mut ptrace =
-        PersistentTrace::<OrdKeyBatch<ComplexKey, NestedTimestamp32, isize>>::new(None);
+    let mut ptrace = PersistentTrace::<OrdKeyBatch<ComplexKey, NestedTimestamp32, isize>>::new();
     ptrace.insert(vset1);
     ptrace.insert(vset2);
     ptrace.insert(vset3);
@@ -319,11 +317,11 @@ fn cursor_weight() {
     val_builder.push_batch(&mut b);
     let vset1 = val_builder.seal();
 
-    let mut spine = crate::trace::spine_fueled::Spine::<OrdZSet<String, i32>>::new(None);
+    let mut spine = crate::trace::spine_fueled::Spine::<OrdZSet<String, i32>>::new();
     spine.insert(vset1.clone());
     spine.apply_fuel(10000);
 
-    let mut ptrace = PersistentTrace::<OrdZSet<String, i32>>::new(None);
+    let mut ptrace = PersistentTrace::<OrdZSet<String, i32>>::new();
     ptrace.insert(vset1);
 
     let mut ptrace_cursor = ptrace.cursor();
@@ -351,11 +349,11 @@ fn cursor_weight_multiple_values_bug() {
     let vset1 = val_builder.seal();
 
     let mut spine =
-        crate::trace::spine_fueled::Spine::<OrdIndexedZSet<String, String, i32>>::new(None);
+        crate::trace::spine_fueled::Spine::<OrdIndexedZSet<String, String, i32>>::new();
     spine.insert(vset1.clone());
     spine.apply_fuel(10000);
 
-    let mut ptrace = PersistentTrace::<OrdIndexedZSet<String, String, i32>>::new(None);
+    let mut ptrace = PersistentTrace::<OrdIndexedZSet<String, String, i32>>::new();
     ptrace.insert(vset1);
 
     let mut ptrace_cursor = ptrace.cursor();

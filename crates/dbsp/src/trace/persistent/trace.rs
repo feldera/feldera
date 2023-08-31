@@ -16,7 +16,6 @@ use uuid::Uuid;
 use super::ROCKS_DB_INSTANCE;
 use super::{rocksdb_key_comparator, PersistentTraceCursor, Values};
 use crate::algebra::AddAssignByRef;
-use crate::circuit::Activator;
 use crate::time::{Antichain, Timestamp};
 use crate::trace::cursor::Cursor;
 use crate::trace::{
@@ -60,7 +59,7 @@ where
     B: Batch,
 {
     fn default() -> Self {
-        PersistentTrace::new(None)
+        PersistentTrace::new()
     }
 }
 
@@ -477,10 +476,7 @@ where
     /// It works by creating a new column-family with a random name and
     /// configuring it with the right custom functions for comparison, merge,
     /// and compaction.
-    ///
-    /// # Arguments
-    /// - `activator`: This is not used, None should be supplied.
-    fn new(_activator: Option<Activator>) -> Self {
+    fn new() -> Self {
         // Create a new column family for the Trace
         let cf_name = Uuid::new_v4().to_string();
         let mut cf_options = Options::default();
