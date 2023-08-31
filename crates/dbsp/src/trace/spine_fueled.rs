@@ -680,7 +680,7 @@ where
     /// The units of effort are updates, and the method should be
     /// thought of as analogous to inserting as many empty updates,
     /// where the trace is permitted to perform proportionate work.
-    fn exert(&mut self, effort: &mut isize) {
+    fn exert(&mut self, effort: isize) {
         // If there is work to be done, ...
         self.tidy_layers();
         if !self.reduced() {
@@ -690,8 +690,8 @@ where
             }
             // Otherwise, we'll need to introduce fake updates to move merges along.
             else {
-                // Introduce an empty batch with roughly *effort number of virtual updates.
-                let level = (*effort as usize).next_power_of_two().trailing_zeros() as usize;
+                // Introduce an empty batch with roughly `effort` number of virtual updates.
+                let level = (effort as usize).next_power_of_two().trailing_zeros() as usize;
                 self.introduce_batch(None, level);
             }
             // We were not in reduced form, so let's check again in the future.
@@ -703,9 +703,8 @@ where
 
     fn consolidate(mut self) -> Option<B> {
         // Merge batches until there is nothing left to merge.
-        let mut fuel = isize::max_value();
         while !self.reduced() {
-            self.exert(&mut fuel);
+            self.exert(isize::max_value());
         }
         // Return the sole remaining batch (if one exists).
         for merging in self.merging.into_iter() {
@@ -886,8 +885,6 @@ where
         // Scale up by the effort parameter, which is calibrated to one as the
         // minimum amount of effort.
         fuel *= self.effort;
-        // Convert to an `isize` so we can observe any fuel shortfall.
-        let mut fuel = fuel as isize;
 
         // Step 1.  Apply fuel to each in-progress merge.
         //
@@ -899,7 +896,7 @@ where
         // `fuel` should be sufficient to fully merge all batches up to
         // `batch_index`.  This is required to maintain the invariant that
         // there should be no consecutive in-progress batches in the trace.
-        self.apply_fuel(&mut fuel);
+        self.apply_fuel(fuel as isize);
 
         // Step 2.  We must ensure the invariant that adjacent layers do not
         //          contain two batches will be satisfied when we insert the
@@ -974,7 +971,7 @@ where
     /// layers) we could do so in order to maintain fewer batches on average
     /// (at the risk of completing merges of large batches later, but tbh
     /// probably not much later).
-    pub fn apply_fuel(&mut self, fuel: &mut isize) {
+    pub fn apply_fuel(&mut self, fuel: isize) {
         // For the moment our strategy is to apply fuel independently to each merge
         // in progress, rather than prioritizing small merges. This sounds like a
         // great idea, but we need better accounting in place to ensure that merges
@@ -982,7 +979,7 @@ where
         // to pay back their debts.
         for index in 0..self.merging.len() {
             // Give each level independent fuel, for now.
-            let mut fuel = *fuel;
+            let mut fuel = fuel;
             // Pass along various logging stuffs, in case we need to report success.
             self.merging[index].work(&self.lower_val_bound, &mut fuel);
             // `fuel` could have a deficit at this point, meaning we over-spent when

@@ -516,8 +516,7 @@ where
                 let batch = batch_builder.done();
 
                 model.insert(batch.clone());
-                let mut fuel = isize::MAX;
-                model.exert(&mut fuel);
+                model.exert(isize::MAX);
 
                 ptrace.insert(batch);
 

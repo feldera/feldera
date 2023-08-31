@@ -30,8 +30,7 @@ fn vals_are_sorted() {
         crate::trace::spine_fueled::Spine::<OrdIndexedZSet<String, usize, usize>>::new(None);
     spine.insert(vset1.clone());
     spine.insert(vset2.clone());
-    let mut fuel = 10000;
-    spine.apply_fuel(&mut fuel);
+    spine.apply_fuel(10000);
 
     let mut ptrace = PersistentTrace::<OrdIndexedZSet<String, usize, usize>>::new(None);
     ptrace.insert(vset1);
@@ -74,8 +73,7 @@ fn insert_bug() {
         crate::trace::spine_fueled::Spine::<OrdValBatch<String, String, u32, usize>>::new(None);
     spine.insert(vset1.clone());
     spine.insert(vset2.clone());
-    let mut fuel = 10000;
-    spine.apply_fuel(&mut fuel);
+    spine.apply_fuel(10000);
 
     let mut ptrace = PersistentTrace::<OrdValBatch<String, String, u32, usize>>::new(None);
     ptrace.insert(vset1);
@@ -102,8 +100,7 @@ fn times_are_sorted() {
         crate::trace::spine_fueled::Spine::<OrdValBatch<String, String, u32, usize>>::new(None);
     spine.insert(vset1.clone());
     spine.insert(vset2.clone());
-    let mut fuel = 10000;
-    spine.apply_fuel(&mut fuel);
+    spine.apply_fuel(10000);
 
     let mut ptrace = PersistentTrace::<OrdValBatch<String, String, u32, usize>>::new(None);
     ptrace.insert(vset1);
@@ -161,8 +158,7 @@ fn weights_cancellation() {
         crate::trace::spine_fueled::Spine::<OrdValBatch<String, usize, u32, isize>>::new(None);
     spine.insert(vset1.clone());
     spine.insert(vset2.clone());
-    let mut fuel = 10000;
-    spine.apply_fuel(&mut fuel);
+    spine.apply_fuel(10000);
 
     let mut ptrace = PersistentTrace::<OrdValBatch<String, usize, u32, isize>>::new(None);
     ptrace.insert(vset1);
@@ -226,14 +222,11 @@ fn timestamp_aggregation() {
         OrdKeyBatch<ComplexKey, NestedTimestamp32, isize>,
     >::new(None);
     spine.insert(vset1.clone());
-    let mut fuel = isize::MAX;
-    spine.exert(&mut fuel);
+    spine.exert(isize::MAX);
     spine.insert(vset2.clone());
-    let mut fuel = isize::MAX;
-    spine.exert(&mut fuel);
+    spine.exert(isize::MAX);
     spine.insert(vset3.clone());
-    let mut fuel = isize::MAX;
-    spine.exert(&mut fuel);
+    spine.exert(isize::MAX);
     spine.recede_to(&NestedTimestamp32::new(false, 2));
 
     let mut ptrace =
@@ -299,14 +292,11 @@ fn weights_cancellation2() {
         OrdKeyBatch<ComplexKey, NestedTimestamp32, isize>,
     >::new(None);
     spine.insert(vset1.clone());
-    let mut fuel = isize::MAX;
-    spine.exert(&mut fuel);
+    spine.exert(isize::MAX);
     spine.insert(vset2.clone());
-    let mut fuel = isize::MAX;
-    spine.exert(&mut fuel);
+    spine.exert(isize::MAX);
     spine.insert(vset3.clone());
-    let mut fuel = isize::MAX;
-    spine.exert(&mut fuel);
+    spine.exert(isize::MAX);
     spine.recede_to(&NestedTimestamp32::new(false, 2));
 
     let mut ptrace =
@@ -331,8 +321,7 @@ fn cursor_weight() {
 
     let mut spine = crate::trace::spine_fueled::Spine::<OrdZSet<String, i32>>::new(None);
     spine.insert(vset1.clone());
-    let mut fuel = 10000;
-    spine.apply_fuel(&mut fuel);
+    spine.apply_fuel(10000);
 
     let mut ptrace = PersistentTrace::<OrdZSet<String, i32>>::new(None);
     ptrace.insert(vset1);
@@ -364,8 +353,7 @@ fn cursor_weight_multiple_values_bug() {
     let mut spine =
         crate::trace::spine_fueled::Spine::<OrdIndexedZSet<String, String, i32>>::new(None);
     spine.insert(vset1.clone());
-    let mut fuel = 10000;
-    spine.apply_fuel(&mut fuel);
+    spine.apply_fuel(10000);
 
     let mut ptrace = PersistentTrace::<OrdIndexedZSet<String, String, i32>>::new(None);
     ptrace.insert(vset1);

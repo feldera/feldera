@@ -157,7 +157,7 @@ pub trait Trace: BatchReader {
     fn recede_to(&mut self, frontier: &Self::Time);
 
     /// Exert merge effort, even without updates.
-    fn exert(&mut self, effort: &mut isize);
+    fn exert(&mut self, effort: isize);
 
     /// Merge all updates in a trace into a single batch.
     fn consolidate(self) -> Option<Self::Batch>;

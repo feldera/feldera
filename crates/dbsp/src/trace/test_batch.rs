@@ -881,7 +881,7 @@ where
         Batch::recede_to(self, frontier);
     }
 
-    fn exert(&mut self, _effort: &mut isize) {}
+    fn exert(&mut self, _effort: isize) {}
 
     fn consolidate(self) -> Option<Self::Batch> {
         if self.data.is_empty() {

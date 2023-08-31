@@ -537,7 +537,7 @@ where
         }
     }
 
-    fn exert(&mut self, _effort: &mut isize) {
+    fn exert(&mut self, _effort: isize) {
         // This is a no-op for the persistent trace as RocksDB will decide when
         // to apply the merge / compaction operators etc.
     }
