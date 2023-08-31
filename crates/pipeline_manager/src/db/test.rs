@@ -1182,15 +1182,19 @@ fn compare_pipelines(mut model_response: Vec<Pipeline>, mut impl_response: Vec<P
         model_response
             .iter_mut()
             .map(|p| {
-                p.state.created = DateTime::<Utc>::from_utc(NaiveDateTime::MIN, Utc);
-                p.state.status_since = DateTime::<Utc>::from_utc(NaiveDateTime::MIN, Utc);
+                p.state.created =
+                    DateTime::<Utc>::from_naive_utc_and_offset(NaiveDateTime::MIN, Utc);
+                p.state.status_since =
+                    DateTime::<Utc>::from_naive_utc_and_offset(NaiveDateTime::MIN, Utc);
             })
             .collect::<Vec<_>>(),
         impl_response
             .iter_mut()
             .map(|p| {
-                p.state.created = DateTime::<Utc>::from_utc(NaiveDateTime::MIN, Utc);
-                p.state.status_since = DateTime::<Utc>::from_utc(NaiveDateTime::MIN, Utc);
+                p.state.created =
+                    DateTime::<Utc>::from_naive_utc_and_offset(NaiveDateTime::MIN, Utc);
+                p.state.status_since =
+                    DateTime::<Utc>::from_naive_utc_and_offset(NaiveDateTime::MIN, Utc);
             })
             .collect::<Vec<_>>()
     );
