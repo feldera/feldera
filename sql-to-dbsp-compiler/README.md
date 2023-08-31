@@ -86,7 +86,7 @@ views                                           V
 
 ## Using the compiler
 
-See the [documentation](https://docs.feldera.io/guides/sql)
+See the [documentation](https://www.feldera.com/docs/sql/intro)
 
 ## Compiler architecture
 
