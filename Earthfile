@@ -309,7 +309,7 @@ build-sql:
     CACHE /root/.m2
 
     COPY sql-to-dbsp-compiler sql-to-dbsp-compiler
-    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package -DskipTests
+    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package -DskipTests --no-transfer-progress
     SAVE ARTIFACT sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies.jar
     SAVE ARTIFACT sql-to-dbsp-compiler
 
@@ -318,7 +318,7 @@ test-sql:
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
     FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package
+    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package --no-transfer-progress
 
 build-nexmark:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
