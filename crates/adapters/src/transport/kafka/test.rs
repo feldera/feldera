@@ -187,40 +187,36 @@ outputs:
     controller.stop().unwrap();
 }
 
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(2))]
+fn test_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
+    init_test_logger();
 
-    #[test]
-    fn proptest_kafka_input(data in generate_test_batches(0, 100, 1000)) {
-        init_test_logger();
+    let kafka_resources = KafkaResources::create_topics(&[(topic1, 1), (topic2, 2)]);
 
-        let kafka_resources = KafkaResources::create_topics(&[("input_test_topic1", 1), ("input_test_topic2", 2)]);
+    info!("proptest_kafka_input: Test: Specify invalid Kafka broker address");
 
-        info!("proptest_kafka_input: Test: Specify invalid Kafka broker address");
-
-        let config_str = r#"
+    let config_str = format!(
+        r#"
 stream: test_input
 transport:
     name: kafka
     config:
         bootstrap.servers: localhost:11111
         auto.offset.reset: "earliest"
-        topics: [input_test_topic1, input_test_topic2]
+        topics: [{topic1}, {topic2}]
         log_level: debug
 format:
     name: csv
-"#;
+"#
+    );
 
-        match mock_input_pipeline::<TestStruct>(
-            serde_yaml::from_str(config_str).unwrap(),
-        ) {
-            Ok(_) => panic!("expected an error"),
-            Err(e) => info!("proptest_kafka_input: Error: {e}"),
-        };
+    match mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()) {
+        Ok(_) => panic!("expected an error"),
+        Err(e) => info!("proptest_kafka_input: Error: {e}"),
+    };
 
-        info!("proptest_kafka_input: Test: Specify invalid Kafka topic name");
+    info!("proptest_kafka_input: Test: Specify invalid Kafka topic name");
 
-        let config_str = r#"
+    let config_str = r#"
 stream: test_input
 transport:
     name: kafka
@@ -232,84 +228,100 @@ format:
     name: csv
 "#;
 
-        match mock_input_pipeline::<TestStruct>(
-            serde_yaml::from_str(config_str).unwrap(),
-        ) {
-            Ok(_) => panic!("expected an error"),
-            Err(e) => info!("proptest_kafka_input: Error: {e}"),
-        };
+    match mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()) {
+        Ok(_) => panic!("expected an error"),
+        Err(e) => info!("proptest_kafka_input: Error: {e}"),
+    };
 
-        // auto.offset.reset: "earliest" - guarantees that on startup the
-        // consumer will observe all messages sent by the producer even if
-        // the producer starts earlier (the consumer won't start until the
-        // rebalancing protocol kicks in).
-        let config_str = r#"
+    // auto.offset.reset: "earliest" - guarantees that on startup the
+    // consumer will observe all messages sent by the producer even if
+    // the producer starts earlier (the consumer won't start until the
+    // rebalancing protocol kicks in).
+    let config_str = format!(
+        r#"
 stream: test_input
 transport:
     name: kafka
     config:
         auto.offset.reset: "earliest"
-        topics: [input_test_topic1, input_test_topic2]
+        topics: [{topic1}, {topic2}]
         log_level: debug
 format:
     name: csv
-"#;
+"#
+    );
 
-        info!("proptest_kafka_input: Building input pipeline");
+    info!("proptest_kafka_input: Building input pipeline");
 
-        let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct>(
-            serde_yaml::from_str(config_str).unwrap(),
-        ).unwrap();
+    let (endpoint, _consumer, zset) =
+        mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
 
-        endpoint.start().unwrap();
+    endpoint.start().unwrap();
 
-        let producer = TestProducer::new();
+    let producer = TestProducer::new();
 
-        info!("proptest_kafka_input: Test: Receive from a topic with a single partition");
+    info!("proptest_kafka_input: Test: Receive from a topic with a single partition");
 
-        // Send data to a topic with a single partition;
-        // Make sure all records arrive in the original order.
-        producer.send_to_topic(&data, "input_test_topic1");
+    // Send data to a topic with a single partition;
+    // Make sure all records arrive in the original order.
+    producer.send_to_topic(&data, topic1);
 
-        wait_for_output_ordered(&zset, &data);
-        zset.reset();
+    wait_for_output_ordered(&zset, &data);
+    zset.reset();
 
-        info!("proptest_kafka_input: Test: Receive from a topic with multiple partitions");
+    info!("proptest_kafka_input: Test: Receive from a topic with multiple partitions");
 
-        // Send data to a topic with multiple partitions.
-        // Make sure all records are delivered, but not necessarily in the original order.
-        producer.send_to_topic(&data, "input_test_topic2");
+    // Send data to a topic with multiple partitions.
+    // Make sure all records are delivered, but not necessarily in the original
+    // order.
+    producer.send_to_topic(&data, topic2);
 
-        wait_for_output_unordered(&zset, &data);
-        zset.reset();
+    wait_for_output_unordered(&zset, &data);
+    zset.reset();
 
-        info!("proptest_kafka_input: Test: pause/resume");
-        //println!("records before pause: {}", zset.state().flushed.len());
+    info!("proptest_kafka_input: Test: pause/resume");
+    //println!("records before pause: {}", zset.state().flushed.len());
 
-        // Paused endpoint shouldn't receive any data.
-        endpoint.pause().unwrap();
-        sleep(Duration::from_millis(1000));
+    // Paused endpoint shouldn't receive any data.
+    endpoint.pause().unwrap();
+    sleep(Duration::from_millis(1000));
 
-        kafka_resources.add_partition("input_test_topic2");
+    kafka_resources.add_partition(topic2);
 
-        producer.send_to_topic(&data, "input_test_topic2");
-        sleep(Duration::from_millis(1000));
-        assert_eq!(zset.state().flushed.len(), 0);
+    producer.send_to_topic(&data, topic2);
+    sleep(Duration::from_millis(1000));
+    assert_eq!(zset.state().flushed.len(), 0);
 
-        // Receive everything after unpause.
-        endpoint.start().unwrap();
-        wait_for_output_unordered(&zset, &data);
+    // Receive everything after unpause.
+    endpoint.start().unwrap();
+    wait_for_output_unordered(&zset, &data);
 
-        zset.reset();
+    zset.reset();
 
-        info!("proptest_kafka_input: Test: Disconnect");
-        // Disconnected endpoint should not receive any data.
-        endpoint.disconnect();
-        sleep(Duration::from_millis(1000));
+    info!("proptest_kafka_input: Test: Disconnect");
+    // Disconnected endpoint should not receive any data.
+    endpoint.disconnect();
+    sleep(Duration::from_millis(1000));
 
-        producer.send_to_topic(&data, "input_test_topic2");
-        sleep(Duration::from_millis(1000));
-        assert_eq!(zset.state().flushed.len(), 0);
+    producer.send_to_topic(&data, topic2);
+    sleep(Duration::from_millis(1000));
+    assert_eq!(zset.state().flushed.len(), 0);
+}
+
+/// If Kafka tests are going to fail because the server is not running or
+/// not functioning properly, it's good to fail quickly without printing a
+/// thousand records as part of the failure.
+#[test]
+fn kafka_input_trivial() {
+    test_kafka_input(Vec::new(), "trivial_test_topic1", "trivial_test_topic2");
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2))]
+
+    #[test]
+    fn proptest_kafka_input(data in generate_test_batches(0, 100, 1000)) {
+        test_kafka_input(data, "input_test_topic1", "input_test_topic2");
     }
 
     #[test]
