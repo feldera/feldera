@@ -1,9 +1,10 @@
 // Should display aggregate health of all pipelines, just a placeholder right
 // now.
 
+import { ReportErrorButton } from '$lib/components/home/health/ReportErrorButton'
 import { nonNull } from '$lib/functions/common/function'
 import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
-import { Pipeline, ProgramDescr } from '$lib/services/manager'
+import { Pipeline, ProgramDescr, ProgramsService } from '$lib/services/manager'
 import { match, P } from 'ts-pattern'
 
 import { Icon } from '@iconify/react'
@@ -41,7 +42,7 @@ const programErrors = (program: ProgramDescr) =>
               ...e,
               source: (
                 <>
-                  Program SqlError <ProgramLink program={program} />
+                  SQL Error <ProgramLink program={program} />
                   <br />
                   {program.program_id}
                 </>
@@ -50,29 +51,37 @@ const programErrors = (program: ProgramDescr) =>
           })
       )
     )
-    .with({ RustError: P.select() }, e => [
+    .with({ RustError: P.select() }, (e: string) => [
       new Error(e, {
         cause: {
           source: (
             <>
-              Program RustError <ProgramLink program={program} />
+              System Error <ProgramLink program={program} />
               <br />
               {program.program_id}
             </>
-          )
+          ),
+          report: {
+            Error: '```\n' + e + '\n```',
+            SQL: () => ProgramsService.getProgram(program.program_id, true).then(p => '```\n' + p.code + '\n```')
+          }
         }
       })
     ])
-    .with({ SystemError: P.select() }, e => [
+    .with({ SystemError: P.select() }, (e: string) => [
       new Error(e, {
         cause: {
           source: (
             <>
-              Program SystemError <ProgramLink program={program} />
+              System Error <ProgramLink program={program} />
               <br />
               {program.program_id}
             </>
-          )
+          ),
+          report: {
+            Error: '```\n' + e + '\n```',
+            SQL: () => ProgramsService.getProgram(program.program_id, true).then(p => '```\n' + p.code + '\n```')
+          }
         }
       })
     ])
@@ -127,7 +136,7 @@ const Health = () => {
           <AccordionSummary expandIcon={<Icon icon='bx:chevron-down' fontSize={32} />}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, pr: 4, width: '100%' }}>
               <Icon icon='bx:error-circle' fontSize={20} />
-              <Typography>Reported errors</Typography>
+              <Typography>Platform errors</Typography>
               <Typography variant='h6' sx={{ ml: 'auto' }}>
                 {errors.length}
               </Typography>
@@ -137,10 +146,11 @@ const Health = () => {
             <AccordionDetails>
               <Stack spacing={4}>
                 {errors.map((e, i) => {
-                  const cause = (({ source, ...rest }) => {
-                    void source
+                  const cause = e.cause ?? ({} as any)
+                  const causeStr = (({ source, report, ...rest }) => {
+                    void source, report
                     return JSON.stringify(rest, null, 2).replaceAll('\\n', '\n').replaceAll('\\"', '"')
-                  })(e.cause ?? ({} as any))
+                  })(cause)
                   return (
                     <Card key={i}>
                       <pre
@@ -148,15 +158,31 @@ const Health = () => {
                           padding: '0.5rem',
                           margin: '0',
                           fontSize: '14px',
-                          backgroundColor: alpha('#888', 0.15)
+                          backgroundColor: alpha('#888', 0.15),
+                          position: 'relative'
                         }}
                       >
-                        {(e.cause as any)?.['source']}
+                        {cause?.source}
+                        {cause?.report && <ReportErrorButton report={cause.report} />}
                       </pre>
-                      <Box sx={{ p: 2, overflow: 'scroll', maxHeight: '10rem', width: '100%', height: '100%' }}>
-                        <pre style={{ margin: '0', fontSize: '14px' }}>{e.message}</pre>
+                      <Box
+                        sx={{
+                          position: 'relative'
+                        }}
+                      >
+                        <Box sx={{ p: 2, overflow: 'scroll', maxHeight: '10rem', width: '100%', height: '100%' }}>
+                          <pre style={{ margin: '0', fontSize: '14px' }}>{e.message}</pre>
+                        </Box>
+
+                        <IconButton
+                          sx={{ position: 'absolute', top: 0, right: 0, mr: 4 }}
+                          onClick={() => copy(e.message)}
+                          size='small'
+                        >
+                          <Icon icon='bx:copy' fontSize={24}></Icon>
+                        </IconButton>
                       </Box>
-                      {!['{}', ''].includes(cause) && (
+                      {!['{}', ''].includes(causeStr) && (
                         <Box
                           sx={{
                             position: 'relative',
@@ -164,11 +190,11 @@ const Health = () => {
                           }}
                         >
                           <Box sx={{ overflow: 'scroll', maxHeight: '10rem', width: '100%', height: '100%' }}>
-                            <pre style={{ margin: '0', fontSize: '14px' }}>{cause}</pre>
+                            <pre style={{ margin: '0', fontSize: '14px' }}>{causeStr}</pre>
                           </Box>
                           <IconButton
                             sx={{ position: 'absolute', top: 0, right: 0, mr: 4 }}
-                            onClick={() => copy(cause)}
+                            onClick={() => copy(causeStr)}
                             size='small'
                           >
                             <Icon icon='bx:copy' fontSize={24}></Icon>
@@ -186,7 +212,7 @@ const Health = () => {
           <AccordionSummary expandIcon={<Icon icon='bx:chevron-down' fontSize={32} />}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, pr: 4, width: '100%' }}>
               <Icon icon='bx:error-circle' fontSize={20} />
-              <Typography>Reported warnings</Typography>
+              <Typography>Platform warnings</Typography>
               <Typography variant='h6' sx={{ ml: 'auto' }}>
                 0
               </Typography>
