@@ -186,7 +186,7 @@ impl PipelineAutomaton {
                                 None,
                             )
                             .await;
-                            pipeline.set_location(format!("127.0.0.1:{port}"));
+                            pipeline.set_location(port.to_string());
                             pipeline.set_created();
                             self.update_pipeline_runtime_state(&pipeline).await?;
                             poll_timeout = Self::INITIALIZATION_POLL_PERIOD;

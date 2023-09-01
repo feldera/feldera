@@ -386,9 +386,9 @@ impl RunnerApi {
         pipeline_id: PipelineId,
         method: Method,
         endpoint: &str,
-        location: &str,
+        port: &str,
     ) -> Result<HttpResponse, ManagerError> {
-        let response = Self::pipeline_http_request(pipeline_id, method, endpoint, location).await?;
+        let response = Self::pipeline_http_request(pipeline_id, method, endpoint, port).await?;
         let status = response.status();
 
         let mut response_builder = HttpResponse::build(status);
@@ -418,11 +418,11 @@ impl RunnerApi {
         pipeline_id: PipelineId,
         method: Method,
         endpoint: &str,
-        location: &str,
+        port: &str,
     ) -> Result<reqwest::Response, RunnerError> {
         let client = reqwest::Client::new();
         client
-            .request(method, &format!("http://{location}/{endpoint}",))
+            .request(method, &format!("http://localhost:{port}/{endpoint}",))
             .send()
             .await
             .map_err(|e| RunnerError::HttpForwardError {
@@ -452,11 +452,11 @@ impl RunnerApi {
             }
             _ => {}
         }
-        let location = pipeline_state.location;
+        let port = pipeline_state.location;
 
         // TODO: it might be better to have ?name={}, otherwise we have to
         // restrict name format
-        let url = format!("http://{location}/{endpoint}?{}", req.query_string());
+        let url = format!("http://localhost:{port}/{endpoint}?{}", req.query_string());
 
         let client = awc::Client::new();
 
