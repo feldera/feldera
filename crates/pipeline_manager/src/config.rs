@@ -27,10 +27,6 @@ fn default_db_connection_string() -> String {
     "".to_string()
 }
 
-fn default_binary_ref_port() -> u16 {
-    9090
-}
-
 /// Pipeline manager configuration read from a YAML config file or from command
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
@@ -199,17 +195,6 @@ pub struct CompilerConfig {
     #[serde(skip)]
     #[arg(long)]
     pub precompile: bool,
-
-    /// The hostname to use in a URL for making compiled binaries available
-    /// for runners. This will typically be a DNS name for the host running
-    /// this compiler service.
-    #[arg(long, default_value = "127.0.0.1")]
-    pub binary_ref_host: String,
-
-    /// The port to use in a URL for making compiled binaries available
-    /// for runners.
-    #[arg(long, default_value_t = default_binary_ref_port())]
-    pub binary_ref_port: u16,
 }
 
 impl CompilerConfig {
@@ -380,12 +365,6 @@ pub struct LocalRunnerConfig {
     #[serde(default = "default_working_directory")]
     #[arg(long, default_value_t = default_working_directory())]
     pub runner_working_directory: String,
-
-    /// The hostname or IP address over which pipelines created by
-    /// this local runner will be reachable
-    #[serde(default = "default_server_address")]
-    #[arg(long, default_value_t = default_server_address())]
-    pub pipeline_host: String,
 }
 
 impl LocalRunnerConfig {
@@ -417,17 +396,6 @@ impl LocalRunnerConfig {
         Path::new(&self.runner_working_directory)
             .join("pipelines")
             .join(format!("pipeline{pipeline_id}"))
-    }
-
-    /// Location to write the fetched pipeline binary to.
-    pub(crate) fn binary_file_path(
-        &self,
-        pipeline_id: PipelineId,
-        program: ProgramId,
-        version: Version,
-    ) -> PathBuf {
-        self.pipeline_dir(pipeline_id)
-            .join(format!("program_{program}_v{version}"))
     }
 
     /// Location to write the pipeline config file.

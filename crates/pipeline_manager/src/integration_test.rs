@@ -70,14 +70,11 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         dbsp_override_path: Some("../../".to_owned()),
         debug: false,
         precompile: true,
-        binary_ref_host: "127.0.0.1".to_string(),
-        binary_ref_port: 9090,
     }
     .canonicalize()
     .unwrap();
     let local_runner_config = LocalRunnerConfig {
         runner_working_directory: workdir.to_owned(),
-        pipeline_host: "127.0.0.1".to_owned(),
     }
     .canonicalize()
     .unwrap();
