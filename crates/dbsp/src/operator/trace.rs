@@ -698,8 +698,8 @@ where
         self.trace = Some(i);
 
         self.dirty[0] = dirty;
-        for d in self.dirty[1..].iter_mut() {
-            *d = *d || dirty;
+        if dirty {
+            self.dirty.fill(true);
         }
     }
 
