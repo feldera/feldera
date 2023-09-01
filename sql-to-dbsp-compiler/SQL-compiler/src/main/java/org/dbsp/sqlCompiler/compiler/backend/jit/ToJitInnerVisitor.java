@@ -450,7 +450,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
      * The function call is applied only when all arguments are non-null,
      * otherwise the result is immediately null.
      * @param name           Name of function to call.
-     * @param expression     Operations which is being translated.
+     * @param expression     Operation which is being translated.
      *                       Usually an ApplyExpression, but not always.
      * @param arguments      Arguments to supply to the function call.
      */
@@ -594,8 +594,23 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             return VisitDecision.STOP;
         }
         if (sourceType.is(JITStringType.class) && !destinationType.is(JITStringType.class)) {
-            JITInstructionPair result = this.createFunctionCall(
-                    "dbsp.str.parse", expression, expression.source);
+            JITInstructionPair result;
+            if (destinationType.is(JITTimestampType.class) ||
+                destinationType.is(JITDateType.class)) {
+                // two arguments needed.
+                String format;
+                if (destinationType.is(JITTimestampType.class))
+                    format = "%Y-%m-%d %H:%M:%S%.f";
+                else
+                    format = "%Y-%m-%d";
+                DBSPLiteral lit = new DBSPStringLiteral(format);
+                result = this.createFunctionCall("dbsp.str.parse", expression,
+                        // format seems to come second
+                        expression.source, lit);
+            } else {
+                result = this.createFunctionCall(
+                        "dbsp.str.parse", expression, expression.source);
+            }
             this.map(expression, result);
             return VisitDecision.STOP;
         }
