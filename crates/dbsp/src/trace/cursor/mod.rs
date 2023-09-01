@@ -32,18 +32,44 @@ pub use reverse::ReverseKeyCursor;
 /// (by key and value) and because they support efficient seeking (via
 /// `seek_key` and `seek_val`).
 ///
-/// A cursor can have a valid position on a key or an invalid position before
-/// the first key or after the last key.  A cursor with a valid key
-/// position can have a valid value position on a value or an invalid value
-/// position before the first value or after the last value.
+/// # Visiting keys
 ///
-/// A cursor for an empty collection of tuples does not have any valid key (or
-/// value) positions.
+/// A cursor visits keys in forward or reverse order, which is set as a mode.
+/// Initially, a cursor is in the forward mode, positioned on the first key (if
+/// the collection is non-empty).  A cursor in the forward mode can move and
+/// seek forward with, e.g., [`step_key`] and [`seek_key`], but not backward.
+/// The direction can be reversed using [`fast_forward_keys`], after which the
+/// cursor can move and seek backward only, e.g. with [`step_key_reverse`] and
+/// [`seek_key_reverse`].  The client may call [`rewind_keys`] and
+/// [`fast_forward_keys`] as many times as necessary to reposition the cursor to
+/// the first or last key in the forward or reverse mode, respectively.
 ///
-/// A cursor for a non-empty collection is initially positioned on the first
-/// value in the first key.  Moving from one key to another positions the cursor
-/// on the first value within the new key.  Every key in a nonempty collection
-/// has at least one value.
+/// A cursor can have a valid position on a key or an invalid position after the
+/// last key (in the forward mode) or before the first key (in the reverse
+/// mode).  A cursor for an empty collection of tuples does not have any valid
+/// key positions.
+///
+/// # Visiting values within a key
+///
+/// A cursor also visits values in a forward or reverse order.  Whenever a
+/// cursor moves to a new key, its value mode is reset to forward order and its
+/// value position is set to the first value in the key.  This is true even if
+/// the cursor is visiting keys in reverse order.  In forward order mode, the
+/// cursor can move and seek forward within the values, e.g. with [`step_val`]
+/// and [`seek_val`], but not backward.  The value direction may be reversed
+/// with [`fast_forward_vals`], after which the cursor may move and seek only
+/// backward within the values, e.g. with [`step_val_reverse`] and
+/// [`seek_val_reverse`].  The client may call [`rewind_vals`] and
+/// [`fast_forward_vals`] as many times as necessary to reposition the cursor to
+/// the first or last value in the forward or reverse mode, respectively.
+///
+/// A cursor with a valid key position can have a valid value position on a
+/// value or an invalid value position after the last value (in forward mode) or
+/// before the first value (in reverse mode).
+///
+/// Every key in a nonempty collection has at least one value.
+///
+/// # Example
 ///
 /// The following is typical code for iterating through all of the key-value
 /// pairs navigated by a cursor:
@@ -58,6 +84,19 @@ pub use reverse::ReverseKeyCursor;
 ///     cursor.step_key();
 /// }
 /// ```
+///
+/// [`step_key`]: `Self::step_key`
+/// [`seek_key`]: `Self::seek_key`
+/// [`step_key_reverse`]: `Self::step_key_reverse`
+/// [`seek_key_reverse`]: `Self::seek_key_reverse`
+/// [`rewind_keys`]: `Self::rewind_keys`
+/// [`fast_forward_keys`]: `Self::fast_forward_keys`
+/// [`step_val`]: `Self::step_val`
+/// [`seek_val`]: `Self::seek_val`
+/// [`step_val_reverse`]: `Self::step_val_reverse`
+/// [`seek_val_reverse`]: `Self::seek_val_reverse`
+/// [`rewind_vals`]: `Self::rewind_vals`
+/// [`fast_forward_vals`]: `Self::fast_forward_vals`
 pub trait Cursor<K, V, T, R> {
     /// Indicates if the current key is valid.
     ///
