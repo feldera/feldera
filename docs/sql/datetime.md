@@ -79,7 +79,7 @@ nanoseconds.
 ### Time literals
 
 `TIME` literals have the form `TIME '`HH:MM:SS.FFF`'`, where the
-fractional part is optional, and can have between 0 and 9 digits.  An
+fractional part is optional, and can have between 0 and 3 digits.  An
 example is: '23:59:59.132'.  The hours must be between 0 and 23, the
 minutes between 0 and 59, and the seconds between 0 and 59.  Exactly
 two digits must be used for hours, minuts, and seconds.  Spaces are
@@ -88,8 +88,8 @@ not allowed between quotes.
 ### Time operations
 
 `EXTRACT(<unit> FROM timestamp)` where `<unit>` is a time unit from
-`HOUR`, `MINUTE`, `SECOND`, `MILLISECOND`, `MICROSECOND`; the
-semantics is as described above.  Result is always a `BIGINT` value.
+`HOUR`, `MINUTE`, `SECOND`, `MILLISECOND`; the semantics is as
+described above.  Result is always a `BIGINT` value.
 
 The following abbreviations can be used as well:
 
