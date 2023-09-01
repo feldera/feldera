@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use rand::Rng;
 use rkyv::ser::Serializer;
-use rkyv::{to_bytes, Archive, Deserialize, Serialize, Archived, Fallible};
+use rkyv::{to_bytes, Archive, Archived, Deserialize, Fallible, Serialize};
 use rocksdb::compaction_filter::Decision;
 use rocksdb::{BoundColumnFamily, MergeOperands, Options, WriteBatch};
 use size_of::SizeOf;
@@ -346,41 +346,25 @@ where
         match decoded_update {
             MergeOp::Insert(new_vals) => {
                 for (v, tws) in new_vals {
-                    let mut found_v = false;
-                    let mut found_t = false;
-                    let mut delete_zero_w = false;
-                    for (existing_v, ref mut existing_tw) in vals.iter_mut() {
-                        if existing_v == &v {
-                            for (t, w) in &tws {
-                                for (existing_t, ref mut existing_w) in existing_tw.iter_mut() {
-                                    if existing_t == t {
-                                        existing_w.add_assign_by_ref(w);
-                                        found_t = true;
-                                        if existing_w.is_zero() {
-                                            delete_zero_w = true;
-                                        }
-                                    }
-                                }
-                                if !found_t {
-                                    existing_tw.push((t.clone(), w.clone()));
-                                    // TODO: May be better if push (above) inserts at the
-                                    // right place instead of paying the cost of sorting
-                                    // everything:
-                                    existing_tw.sort_unstable_by(|(t1, _), (t2, _)| t1.cmp(t2));
-                                    break;
-                                } else if delete_zero_w {
+                    if let Some((_, ref mut existing_tw)) = vals.iter_mut().find(|(ev, _)| ev == &v)
+                    {
+                        for (t, w) in &tws {
+                            if let Some((_, ref mut existing_w)) =
+                                existing_tw.iter_mut().find(|(et, _)| et == t)
+                            {
+                                existing_w.add_assign_by_ref(w);
+                                if existing_w.is_zero() {
                                     existing_tw.retain(|(_, w)| !w.is_zero());
                                 }
+                            } else {
+                                existing_tw.push((t.clone(), w.clone()));
+                                // TODO: May be better if push (above) inserts at the
+                                // right place instead of paying the cost of sorting
+                                // everything:
+                                existing_tw.sort_unstable_by(|(t1, _), (t2, _)| t1.cmp(t2));
+                                break;
                             }
-                            found_v = true;
-                            break;
                         }
-                    }
-
-                    if !found_v {
-                        //tws.sort_unstable_by(|(t1, _), (t2, _)| t1.cmp(t2));
-                        vals.push((v, tws));
-                    } else {
                         // Delete values which ended up with zero weights
                         vals.retain(|(_ret_v, ret_tws)| {
                             ret_tws
@@ -389,6 +373,8 @@ where
                                 .count()
                                 != 0
                         });
+                    } else {
+                        vals.push((v, tws));
                     }
                 }
             }
