@@ -23,7 +23,8 @@ RUN apt-get update && \
    openssl \
    cmake \
    pkg-config \
-   libssl-dev
+   libssl-dev \
+   libsasl2-dev
 
 ## Setup Java and Python
 
