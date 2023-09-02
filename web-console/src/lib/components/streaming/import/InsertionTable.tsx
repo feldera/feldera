@@ -5,6 +5,7 @@
 
 import { getValueFormatter, Row, sqlTypeToDataGridType } from '$lib/functions/ddl'
 import { Field, Pipeline, PipelineRevision, Relation } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { useEffect, useState } from 'react'
 
 import Card from '@mui/material/Card'
@@ -32,10 +33,7 @@ export const InsertionTable = ({ pipeline, name }: InspectionTableProps) => {
   const [isLoading, setLoading] = useState<boolean>(false)
   const apiRef = useGridApiRef()
 
-  const pipelineRevisionQuery = useQuery<PipelineRevision>([
-    'pipelineLastRevision',
-    { pipeline_id: pipeline?.descriptor.pipeline_id }
-  ])
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline?.descriptor.pipeline_id))
 
   // If a revision is loaded, find the requested relation that we want to insert
   // data into. We use it to display the table headers etc.

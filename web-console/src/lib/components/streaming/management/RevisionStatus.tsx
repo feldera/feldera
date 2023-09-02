@@ -2,15 +2,8 @@
 // revision. If clicked, a dialog is opened that shows the changes.
 
 import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
-import {
-  ApiError,
-  ErrorResponse,
-  Pipeline,
-  PipelineConfig,
-  PipelineRevision,
-  PipelineStatus,
-  ProgramDescr
-} from '$lib/services/manager'
+import { ErrorResponse, Pipeline, PipelineStatus } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { Change, diffLines } from 'diff'
 import {
   Dispatch,
@@ -241,7 +234,8 @@ export const PipelineRevisionStatusChip = (props: Props) => {
   const [validationError, setValidationError] = useState<ErrorResponse | undefined>(undefined)
   const [color, setColor] = useState<ThemeColor>('success')
 
-  const pipelineValidateQuery = useQuery<any, ApiError>(['pipelineValidate', { pipeline_id: pipeline.pipeline_id }], {
+  const pipelineValidateQuery = useQuery({
+    ...PipelineManagerQuery.pipelineValidate(pipeline.pipeline_id),
     retry: false
   })
   useEffect(() => {
@@ -251,14 +245,12 @@ export const PipelineRevisionStatusChip = (props: Props) => {
     }
   }, [pipeline.pipeline_id, pipelineValidateQuery])
 
-  const curPipelineConfigQuery = useQuery<PipelineConfig>(['pipelineConfig', { pipeline_id: pipeline.pipeline_id }])
-  const curProgramQuery = useQuery<ProgramDescr>(['programCode', { program_id: pipeline.program_id }], {
+  const curPipelineConfigQuery = useQuery(PipelineManagerQuery.pipelineConfig(pipeline.pipeline_id))
+  const curProgramQuery = useQuery({
+    ...PipelineManagerQuery.programCode(pipeline.program_id!),
     enabled: pipeline.program_id != null
   })
-  const pipelineRevisionQuery = useQuery<PipelineRevision>([
-    'pipelineLastRevision',
-    { pipeline_id: pipeline.pipeline_id }
-  ])
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.pipeline_id))
   useEffect(() => {
     if (
       !pipelineRevisionQuery.isLoading &&

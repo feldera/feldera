@@ -1,6 +1,6 @@
 import { nonNull } from '$lib/functions/common/function'
-import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
 import { PipelineStatus } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ConnectorStatus, GlobalMetrics, InputConnectorMetrics, OutputConnectorMetrics } from '$lib/types/pipeline'
 import { useEffect, useState } from 'react'
 

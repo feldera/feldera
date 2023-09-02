@@ -3,6 +3,7 @@
 // Sends either update or create requests to the backend.
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import { invalidateQuery } from '$lib/functions/common/tanstack'
 import {
   ApiError,
   ConnectorDescr,
@@ -13,6 +14,7 @@ import {
   UpdateConnectorRequest,
   UpdateConnectorResponse
 } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { FieldValues, SubmitHandler } from 'react-hook-form'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -40,7 +42,7 @@ export const ConnectorFormNewRequest = <TData extends FieldValues>(
     if (!newIsLoading) {
       newConnector(source_desc, {
         onSuccess: resp => {
-          queryClient.invalidateQueries(['connector'])
+          invalidateQuery(queryClient, PipelineManagerQuery.connector())
           pushMessage({ message: 'Connector created successfully!', key: new Date().getTime(), color: 'success' })
           onFormSubmitted({
             connector_id: resp.connector_id,
@@ -84,8 +86,8 @@ export const ConnectorFormUpdateRequest = <TData extends FieldValues>(
         { connector_id, request },
         {
           onSettled: () => {
-            queryClient.invalidateQueries(['connector'])
-            queryClient.invalidateQueries(['connectorStatus', { connector_id }])
+            invalidateQuery(queryClient, PipelineManagerQuery.connector())
+            invalidateQuery(queryClient, PipelineManagerQuery.connectorStatus(connector_id))
           },
           onSuccess: () => {
             pushMessage({ message: 'Connector updated successfully!', key: new Date().getTime(), color: 'success' })

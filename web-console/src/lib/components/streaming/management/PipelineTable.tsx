@@ -16,8 +16,8 @@ import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePi
 import useShutdownPipeline from '$lib/compositions/streaming/management/useShutdownPipeline'
 import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
 import { humanSize } from '$lib/functions/common/string'
+import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { tuple } from '$lib/functions/common/tuple'
-import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
 import {
   ApiError,
   AttachedConnector,
@@ -31,6 +31,7 @@ import {
   UpdatePipelineRequest,
   UpdatePipelineResponse
 } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { format } from 'd3-format'
 import dayjs from 'dayjs'
@@ -312,10 +313,7 @@ function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value
   const { value: isExpanded, row: row } = props
   const [hasRevision, setHasRevision] = useState<boolean>(false)
 
-  const pipelineRevisionQuery = useQuery<PipelineRevision | null>([
-    'pipelineLastRevision',
-    { pipeline_id: props.row.descriptor.pipeline_id }
-  ])
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(props.row.descriptor.pipeline_id))
   useEffect(() => {
     if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
       setHasRevision(true)
@@ -457,8 +455,8 @@ export default function PipelineTable() {
       },
       {
         onError: (error: ApiError) => {
-          queryClient.invalidateQueries(['pipeline'])
-          queryClient.invalidateQueries(['pipelineStatus', { program_id: newRow.descriptor.pipeline_id }])
+          invalidateQuery(queryClient, PipelineManagerQuery.pipeline())
+          invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(newRow.descriptor.pipeline_id))
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }

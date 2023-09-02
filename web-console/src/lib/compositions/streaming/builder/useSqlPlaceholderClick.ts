@@ -1,13 +1,14 @@
 // What happens when we select a program in the sqlPlaceholder node.
 
+import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
+import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
+import { setQueryData } from '$lib/functions/common/tanstack'
 import { Pipeline, ProgramDescr } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { useCallback } from 'react'
 import { NodeProps, useReactFlow } from 'reactflow'
 
 import { useQueryClient } from '@tanstack/react-query'
-
-import { useBuilderState } from './useBuilderState'
-import useDebouncedSave from './useDebouncedSave'
 
 // Replaces the program placeholder node with a sqlProgram node
 export function useReplacePlaceholder() {
@@ -75,10 +76,11 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
       const pipelineId = null
       if (pipelineId) {
         // TODO: figure out if it's better to optimistically update query here?
-        queryClient.setQueryData(['pipelineStatus', { pipeline_id: pipelineId }], (oldData: Pipeline | undefined) => {
-          return oldData
-            ? { ...oldData, descriptor: { ...oldData.descriptor, program_id: project.program_id } }
-            : oldData
+        setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId), (oldData: Pipeline | undefined) => {
+          if (!oldData) {
+            return oldData
+          }
+          return { ...oldData, descriptor: { ...oldData.descriptor, program_id: project.program_id } }
         })
       }
       replacePlaceholder(project)

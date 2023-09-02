@@ -7,7 +7,8 @@ import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
 import useTableUpdater from '$lib/compositions/streaming/inspection/useTableUpdater'
 import { useAsyncError } from '$lib/functions/common/react'
 import { Row, rowToAnchor } from '$lib/functions/ddl'
-import { NeighborhoodQuery, OpenAPI, Pipeline, PipelineRevision, Relation } from '$lib/services/manager'
+import { NeighborhoodQuery, OpenAPI, Pipeline, Relation } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { useCallback, useEffect, useState } from 'react'
 
 import Card from '@mui/material/Card'
@@ -49,10 +50,7 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   const tableUpdater = useTableUpdater()
 
   const throwError = useAsyncError()
-  const pipelineRevisionQuery = useQuery<PipelineRevision>([
-    'pipelineLastRevision',
-    { pipeline_id: pipeline?.descriptor.pipeline_id }
-  ])
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline?.descriptor.pipeline_id))
 
   // If a revision is loaded, find the requested relation that we want to
   // monitor. We use it to display the table headers etc.

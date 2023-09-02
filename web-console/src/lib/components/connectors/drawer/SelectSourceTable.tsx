@@ -4,6 +4,7 @@
 import EntityTable from '$lib/components/common/table/EntityTable'
 import { connectorDescrToType } from '$lib/functions/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { Dispatch, useState } from 'react'
 
 import Button from '@mui/material/Button'
@@ -18,7 +19,7 @@ const SelectSourceTable = (props: {
   onAddClick: Dispatch<ConnectorDescr>
 }) => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])
-  const fetchQuery = useQuery<ConnectorDescr[]>({ queryKey: ['connector'] })
+  const fetchQuery = useQuery(PipelineManagerQuery.connector())
 
   const columns: GridColDef[] = [
     {

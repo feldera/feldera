@@ -8,20 +8,19 @@ import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderS
 import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
 import { partition } from '$lib/functions/common/array'
 import { removePrefix } from '$lib/functions/common/string'
-import { invalidatePipeline } from '$lib/services/defaultQueryFn'
+import { setQueryData } from '$lib/functions/common/tanstack'
 import {
   ApiError,
   AttachedConnector,
-  ConnectorDescr,
   NewPipelineRequest,
   NewPipelineResponse,
   Pipeline,
   PipelineId,
   PipelinesService,
-  ProgramDescr,
   UpdatePipelineRequest,
   UpdatePipelineResponse
 } from '$lib/services/manager'
+import { invalidatePipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import assert from 'assert'
 import { useRouter } from 'next/router'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
@@ -93,9 +92,10 @@ export const PipelineWithProvider = (props: {
   const addConnector = useAddConnector()
 
   const { pushMessage } = useStatusNotification()
-  const projects = useQuery<ProgramDescr[]>(['program'])
-  const connectorQuery = useQuery<ConnectorDescr[]>(['connector'])
-  const pipelineQuery = useQuery<Pipeline>(['pipelineStatus', { pipeline_id: pipelineId }], {
+  const projects = useQuery(PipelineManagerQuery.program())
+  const connectorQuery = useQuery(PipelineManagerQuery.connector())
+  const pipelineQuery = useQuery({
+    ...PipelineManagerQuery.pipelineStatus(pipelineId!),
     enabled:
       pipelineId !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
   })
@@ -282,21 +282,26 @@ export const PipelineWithProvider = (props: {
           // It's important to update the query cache here because otherwise
           // sometimes the query cache will be out of date and the UI will
           // show the old connectors again after deletion.
-          queryClient.setQueryData(['pipelineStatus', { pipeline_id: pipelineId }], (oldData: Pipeline | undefined) => {
-            return oldData
-              ? {
-                  ...oldData,
-                  descriptor: {
-                    ...oldData.descriptor,
-                    name,
-                    description,
-                    program_id: project?.program_id,
-                    config,
-                    attached_connectors: connectors
-                  }
+          setQueryData(
+            queryClient,
+            PipelineManagerQuery.pipelineStatus(pipelineId),
+            (oldData: Pipeline | undefined) => {
+              if (!oldData) {
+                return oldData
+              }
+              return {
+                ...oldData,
+                descriptor: {
+                  ...oldData.descriptor,
+                  name,
+                  description,
+                  program_id: project?.program_id,
+                  config,
+                  attached_connectors: connectors
                 }
-              : oldData
-          })
+              }
+            }
+          )
           setSaveState('isUpToDate')
         }
       }

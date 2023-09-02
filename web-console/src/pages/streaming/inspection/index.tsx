@@ -4,7 +4,8 @@ import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import PageHeader from '$lib/components/layouts/pageHeader'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
-import { Pipeline, PipelineId, PipelineRevision, PipelineStatus } from '$lib/services/manager'
+import { Pipeline, PipelineId, PipelineStatus } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { useRouter } from 'next/router'
 import { SyntheticEvent, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
@@ -177,7 +178,8 @@ const IntrospectInputOutput = () => {
 
   // Load the pipeline
   const [pipeline, setPipeline] = useState<Pipeline | undefined>(undefined)
-  const configQuery = useQuery<Pipeline>(['pipelineStatus', { pipeline_id: pipelineId }], {
+  const configQuery = useQuery({
+    ...PipelineManagerQuery.pipelineStatus(pipelineId!),
     enabled: pipelineId !== undefined
   })
   useEffect(() => {
@@ -187,7 +189,8 @@ const IntrospectInputOutput = () => {
   }, [configQuery.isLoading, configQuery.isError, configQuery.data, setPipeline])
 
   // Load the last revision of the pipeline
-  const pipelineRevisionQuery = useQuery<PipelineRevision>(['pipelineLastRevision', { pipeline_id: pipelineId }], {
+  const pipelineRevisionQuery = useQuery({
+    ...PipelineManagerQuery.pipelineLastRevision(pipelineId!),
     enabled: pipelineId !== undefined
   })
   useEffect(() => {

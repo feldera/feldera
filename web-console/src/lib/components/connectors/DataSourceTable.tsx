@@ -6,6 +6,7 @@
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import EntityTable from '$lib/components/common/table/EntityTable'
 import { ConnectorDialog } from '$lib/components/connectors/ConnectorDialog'
+import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { connectorDescrToType, getStatusObj } from '$lib/functions/connectors'
 import {
   ApiError,
@@ -15,6 +16,7 @@ import {
   UpdateConnectorRequest,
   UpdateConnectorResponse
 } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 
@@ -32,7 +34,7 @@ const DataSourceTable = () => {
   const queryClient = useQueryClient()
 
   // Query to retrieve table content
-  const fetchQuery = useQuery<ConnectorDescr[]>(['connector'])
+  const fetchQuery = useQuery(PipelineManagerQuery.connector())
 
   // Update row name and description if edited in the cells:
   const mutation = useMutation<
@@ -54,8 +56,8 @@ const DataSourceTable = () => {
         },
         {
           onSettled: () => {
-            queryClient.invalidateQueries(['connector'])
-            queryClient.invalidateQueries(['connectorStatus', { connector_id: newRow.connector_id }])
+            invalidateQuery(queryClient, PipelineManagerQuery.connector())
+            invalidateQuery(queryClient, PipelineManagerQuery.connectorStatus(newRow.connector_id))
           },
           onError: (error: ApiError) => {
             pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
@@ -78,7 +80,7 @@ const DataSourceTable = () => {
         if (oldRow !== undefined) {
           deleteMutation.mutate(cur_row.connector_id, {
             onSettled: () => {
-              queryClient.invalidateQueries(['connector'])
+              invalidateQuery(queryClient, PipelineManagerQuery.connector())
             },
             onSuccess: () => {
               setRows(prevRows => prevRows.filter(row => row.connector_id !== cur_row.connector_id))
