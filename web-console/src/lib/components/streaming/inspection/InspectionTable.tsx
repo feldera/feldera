@@ -230,7 +230,7 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
         pagination
         disableColumnFilter
         density='compact'
-        getRowId={(row: any) => row.genId}
+        getRowId={(row: Row) => row.genId}
         initialState={{
           columns: {
             columnVisibilityModel: {
@@ -289,6 +289,7 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
               utf8WithBom: true
             },
             pipelineId: pipeline.descriptor.pipeline_id,
+            status: pipeline.state.current_status,
             relation: relation.name
           }
         }}
