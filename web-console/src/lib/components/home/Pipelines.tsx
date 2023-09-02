@@ -3,8 +3,8 @@
 
 import { PipelineThumb } from '$lib/components/home/pipelines/PipelineThumb'
 import { partition } from '$lib/functions/common/array'
-import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
 import { PipelineStatus } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ApexOptions } from 'apexcharts'
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
 

@@ -5,6 +5,7 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import EntityTable from '$lib/components/common/table/EntityTable'
+import { invalidateQuery } from '$lib/functions/common/tanstack'
 import {
   ApiError,
   ProgramDescr,
@@ -14,6 +15,7 @@ import {
   UpdateProgramRequest,
   UpdateProgramResponse
 } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { useRouter } from 'next/router'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
@@ -58,7 +60,7 @@ const TableSqlPrograms = () => {
   const router = useRouter()
 
   const [rows, setRows] = useState<ProgramDescr[]>([])
-  const fetchQuery = useQuery<ProgramDescr[]>({ queryKey: ['program'] })
+  const fetchQuery = useQuery(PipelineManagerQuery.program())
   const { pushMessage } = useStatusNotification()
 
   const apiRef = useGridApiRef()
@@ -133,8 +135,8 @@ const TableSqlPrograms = () => {
       },
       {
         onError: (error: ApiError) => {
-          queryClient.invalidateQueries(['program'])
-          queryClient.invalidateQueries(['programStatus', { program_id: newRow.program_id }])
+          invalidateQuery(queryClient, PipelineManagerQuery.program())
+          invalidateQuery(queryClient, PipelineManagerQuery.programStatus(newRow.program_id))
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }
@@ -157,7 +159,7 @@ const TableSqlPrograms = () => {
             },
             onError: error => {
               pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-              queryClient.invalidateQueries(['program'])
+              invalidateQuery(queryClient, PipelineManagerQuery.program())
             }
           })
         }

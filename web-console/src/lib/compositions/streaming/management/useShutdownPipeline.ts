@@ -2,8 +2,8 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { ClientPipelineStatus, usePipelineStateStore } from '$lib/compositions/streaming/management/StatusContext'
-import { invalidatePipeline } from '$lib/services/defaultQueryFn'
 import { ApiError, PipelineId, PipelinesService } from '$lib/services/manager'
+import { invalidatePipeline } from '$lib/services/pipelineManagerQuery'
 import { PipelineAction } from '$lib/types/pipeline'
 import { useCallback } from 'react'
 

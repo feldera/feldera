@@ -3,8 +3,8 @@
 
 import { ReportErrorButton } from '$lib/components/home/health/ReportErrorButton'
 import { nonNull } from '$lib/functions/common/function'
-import { PipelineManagerQuery } from '$lib/services/defaultQueryFn'
 import { Pipeline, ProgramDescr, ProgramsService } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { match, P } from 'ts-pattern'
 
 import { Icon } from '@iconify/react'

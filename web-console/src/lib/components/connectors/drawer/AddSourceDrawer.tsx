@@ -11,6 +11,7 @@ import {
   connectorTypeToTitle
 } from '$lib/functions/connectors'
 import { AttachedConnector, ConnectorDescr } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { Dispatch, useEffect, useState } from 'react'
@@ -112,7 +113,7 @@ const SideBarAddIo = () => {
     [ConnectorType.URL]: 0,
     [ConnectorType.UNKNOWN]: 0
   })
-  const { data, isLoading, isError } = useQuery<ConnectorDescr[]>({ queryKey: ['connector'] })
+  const { data, isLoading, isError } = useQuery(PipelineManagerQuery.connector())
   useEffect(() => {
     if (!isLoading && !isError) {
       const counts = data

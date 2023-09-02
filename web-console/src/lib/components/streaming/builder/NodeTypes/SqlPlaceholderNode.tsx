@@ -2,6 +2,7 @@
 
 import useSqlPlaceholderClick from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
 import { ProgramDescr } from '$lib/services/manager'
+import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import React, { memo, useEffect, useState } from 'react'
 import { NodeProps } from 'reactflow'
 
@@ -21,7 +22,7 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
     }
   }
 
-  const { isLoading, isError, data } = useQuery<ProgramDescr[]>(['program'])
+  const { isLoading, isError, data } = useQuery(PipelineManagerQuery.program())
   useEffect(() => {
     if (!isLoading && !isError) {
       setPrograms(data)

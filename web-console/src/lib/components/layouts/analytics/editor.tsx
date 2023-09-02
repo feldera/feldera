@@ -3,8 +3,9 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
+import CompileIndicator from '$lib/components/layouts/analytics/CompileIndicator'
+import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
-import { programQueryCacheUpdate, programStatusUpdate } from '$lib/services/defaultQueryFn'
 import {
   ApiError,
   CompileProgramRequest,
@@ -17,6 +18,7 @@ import {
 } from '$lib/services/manager'
 import { ProgramDescr } from '$lib/services/manager/models/ProgramDescr'
 import { ProgramsService } from '$lib/services/manager/services/ProgramsService'
+import { PipelineManagerQuery, programQueryCacheUpdate, programStatusUpdate } from '$lib/services/pipelineManagerQuery'
 import assert from 'assert'
 import { Dispatch, MutableRefObject, SetStateAction, useEffect, useRef, useState } from 'react'
 import { match, P } from 'ts-pattern'
@@ -29,8 +31,6 @@ import FormControl from '@mui/material/FormControl'
 import Grid from '@mui/material/Grid'
 import TextField from '@mui/material/TextField'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-
-import CompileIndicator from './CompileIndicator'
 
 // How many ms to wait until we save the project.
 const SAVE_DELAY = 2000
@@ -138,8 +138,8 @@ const useCreateProjectIfNew = (
           },
           {
             onSettled: () => {
-              queryClient.invalidateQueries(['program'])
-              queryClient.invalidateQueries(['programStatus', { program_id: project.program_id }])
+              invalidateQuery(queryClient, PipelineManagerQuery.program())
+              invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.program_id))
             },
             onSuccess: (data: NewProgramResponse) => {
               setProject((prevState: ProgramDescr) => ({
@@ -193,7 +193,8 @@ const useFetchExistingProject = (
   loaded: boolean,
   setLoaded: Dispatch<SetStateAction<boolean>>
 ) => {
-  const codeQuery = useQuery<number, ApiError, ProgramDescr>(['programCode', { program_id: programId }], {
+  const codeQuery = useQuery({
+    ...PipelineManagerQuery.programCode(programId!),
     enabled: programId != null && !loaded
   })
   useEffect(() => {
@@ -256,9 +257,9 @@ const useUpdateProjectIfChanged = (
         { program_id: project.program_id, update_request: updateRequest },
         {
           onSettled: () => {
-            queryClient.invalidateQueries(['program'])
-            queryClient.invalidateQueries(['programCode', { program_id: project.program_id }])
-            queryClient.invalidateQueries(['programStatus', { program_id: project.program_id }])
+            invalidateQuery(queryClient, PipelineManagerQuery.program())
+            invalidateQuery(queryClient, PipelineManagerQuery.programCode(project.program_id))
+            invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.program_id))
           },
           onSuccess: (data: UpdateProgramResponse) => {
             assert(project.program_id)
@@ -332,8 +333,8 @@ const useCompileProjectIfChanged = (
         { program_id: project.program_id, request: { version: project.version } },
         {
           onSettled: () => {
-            queryClient.invalidateQueries(['program'])
-            queryClient.invalidateQueries(['programStatus', { program_id: project.program_id }])
+            invalidateQuery(queryClient, PipelineManagerQuery.program())
+            invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.program_id))
           },
           onError: (error: ApiError) => {
             setProject((prevState: ProgramDescr) => ({ ...prevState, status: 'None' }))
@@ -364,8 +365,8 @@ const usePollCompilationStatus = (
   setLastCompiledVersion: Dispatch<SetStateAction<number>>
 ) => {
   const queryClient = useQueryClient()
-  const compilationStatus = useQuery<ProgramDescr>({
-    queryKey: ['programStatus', { program_id: project.program_id }],
+  const compilationStatus = useQuery({
+    ...PipelineManagerQuery.programStatus(project.program_id),
     refetchInterval: data =>
       data === undefined || data.status === 'None' || data.status === 'Pending' || data.status === 'CompilingSql'
         ? 1000

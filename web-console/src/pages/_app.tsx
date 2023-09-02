@@ -5,7 +5,6 @@ import 'src/styles/globals.css'
 import StatusSnackBar from '$lib/components/common/errors/StatusSnackBar'
 import StandardVerticalLayout from '$lib/components/layouts/StandardVerticalLayout'
 import themeConfig from '$lib/functions/configs/themeConfig'
-import { defaultQueryFn } from '$lib/services/defaultQueryFn'
 import { OpenAPI } from '$lib/services/manager'
 import Head from 'next/head'
 import { Router } from 'next/router'
@@ -59,9 +58,7 @@ if (themeConfig.routingLoader) {
 // provide the default query function to your app with defaultOptions
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: {
-      queryFn: defaultQueryFn
-    }
+    queries: {}
   }
 })
 
