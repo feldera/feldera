@@ -1,5 +1,6 @@
 // Browse tables and views & insert data into tables.
 
+import { BreadcrumbSelect } from '$lib/components/common/Breadcrumbs'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import PageHeader from '$lib/components/layouts/pageHeader'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
@@ -9,89 +10,32 @@ import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { useRouter } from 'next/router'
 import { SyntheticEvent, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
-import { Controller, useForm } from 'react-hook-form'
 
 import { Icon } from '@iconify/react'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
-import {
-  Alert,
-  AlertTitle,
-  Breadcrumbs,
-  FormControl,
-  InputLabel,
-  Link,
-  ListSubheader,
-  MenuItem,
-  Select,
-  SelectChangeEvent
-} from '@mui/material'
+import { Alert, AlertTitle, Breadcrumbs, Link, ListSubheader, MenuItem } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
 
-const TitleBreadCrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
-  const { tables, views, relation } = props
-  const { descriptor } = props.pipeline
-  const pipeline_id = descriptor.pipeline_id
-  const router = useRouter()
-
-  const switchRelation = (e: SelectChangeEvent<string>) => {
-    router.push(`/streaming/inspection/?pipeline_id=${pipeline_id}&relation=${e.target.value}`)
-  }
-
-  interface IFormInputs {
-    relation: string
-  }
-
-  const { control } = useForm<IFormInputs>({
-    defaultValues: {
-      relation: relation
-    }
-  })
-
-  return typeof relation === 'string' && (tables.length > 0 || views.length > 0) ? (
-    <Breadcrumbs separator={<Icon icon='bx:chevron-right' fontSize={20} />} aria-label='breadcrumb'>
-      <Link href={`/streaming/management/?pipeline_id=${descriptor.pipeline_id}`}>{descriptor.name}</Link>
-      <Controller
-        name='relation'
-        control={control}
-        defaultValue={relation}
-        render={({ field: { onChange, value } }) => {
-          return (
-            <FormControl>
-              <InputLabel htmlFor='relation-select'>Relation</InputLabel>
-              <Select
-                label='Select Relation'
-                id='relation-select'
-                onChange={e => {
-                  e.preventDefault()
-                  switchRelation(e)
-                  onChange(e)
-                }}
-                value={value}
-              >
-                <ListSubheader>Tables</ListSubheader>
-                {tables.map(item => (
-                  <MenuItem key={item} value={item}>
-                    {item}
-                  </MenuItem>
-                ))}
-                <ListSubheader>Views</ListSubheader>
-                {views.map(item => (
-                  <MenuItem key={item} value={item}>
-                    {item}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )
-        }}
-      />
-    </Breadcrumbs>
-  ) : (
-    <></>
+const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
+  return (
+    <BreadcrumbSelect label='Relation' value={props.relation}>
+      <ListSubheader>Tables</ListSubheader>
+      {props.tables.map(item => (
+        <MenuItem key={item} value={item}>
+          <Link href={`?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item}`}>{item}</Link>
+        </MenuItem>
+      ))}
+      <ListSubheader>Views</ListSubheader>
+      {props.views.map(item => (
+        <MenuItem key={item} value={item}>
+          <Link href={`?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item}`}>{item}</Link>
+        </MenuItem>
+      ))}
+    </BreadcrumbSelect>
   )
 }
 
@@ -220,7 +164,16 @@ const IntrospectInputOutput = () => {
     !pipelineRevisionQuery.isError &&
     relationValid ? (
     <Grid container spacing={6} className='match-height'>
-      <PageHeader title={<TitleBreadCrumb pipeline={pipeline} relation={relation} tables={tables} views={views} />} />
+      <PageHeader
+        title={
+          <Breadcrumbs separator={<Icon icon='bx:chevron-right' fontSize={20} />} aria-label='breadcrumb'>
+            <Link href={`/streaming/management/?pipeline_id=${pipeline.descriptor.pipeline_id}`}>
+              {pipeline.descriptor.name}
+            </Link>
+            <TablesBreadcrumb pipeline={pipeline} relation={relation} tables={tables} views={views}></TablesBreadcrumb>
+          </Breadcrumbs>
+        }
+      />
       <Grid item xs={12}>
         {tables.includes(relation) && (
           <TableWithInsertTab pipeline={pipeline} handleChange={handleChange} tab={tab} relation={relation} />
