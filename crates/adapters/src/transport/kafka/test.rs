@@ -2,13 +2,14 @@ use crate::{
     test::{
         generate_test_batches,
         kafka::{BufferConsumer, KafkaResources, TestProducer},
-        mock_input_pipeline, test_circuit, wait, MockDeZSet, TestStruct, TEST_LOGGER,
+        mock_input_pipeline, test_circuit, wait, MockDeZSet, TestStruct,
     },
     Controller, PipelineConfig,
 };
-use log::LevelFilter;
+use env_logger::Env;
+use log::info;
 use proptest::prelude::*;
-use std::{thread::sleep, time::Duration};
+use std::{io::Write, thread::sleep, time::Duration};
 
 /// Wait to receive all records in `data` in the same order.
 fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct>]) {
@@ -47,12 +48,26 @@ fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStru
     assert_eq!(zset_sorted, data_sorted);
 }
 
+fn init_test_logger() {
+    let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+        .format(move |buf, record| {
+            let t = chrono::Utc::now();
+            let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
+            writeln!(
+                buf,
+                "{t} {} {}",
+                buf.default_styled_level(record.level()),
+                record.args()
+            )
+        })
+        .try_init();
+}
+
 #[test]
 fn test_kafka_output_errors() {
-    let _ = log::set_logger(&TEST_LOGGER);
-    log::set_max_level(LevelFilter::Debug);
+    init_test_logger();
 
-    println!("Test invalid Kafka broker address");
+    info!("test_kafka_output_errors: Test invalid Kafka broker address");
 
     let config_str = r#"
 name: test
@@ -70,10 +85,10 @@ outputs:
             name: csv
 "#;
 
-    println!("Creating circuit");
+    info!("test_kafka_output_errors: Creating circuit");
     let (circuit, catalog) = test_circuit(4);
 
-    println!("Starting controller");
+    info!("test_kafka_output_errors: Starting controller");
     let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
 
     match Controller::with_config(
@@ -83,7 +98,7 @@ outputs:
         Box::new(|e| panic!("error: {e}")),
     ) {
         Ok(_) => panic!("expected an error"),
-        Err(e) => println!("error: {e}"),
+        Err(e) => info!("test_kafka_output_errors: error: {e}"),
     }
 }
 
@@ -94,8 +109,7 @@ fn kafka_end_to_end_test(
     message_max_bytes: usize,
     data: Vec<Vec<TestStruct>>,
 ) {
-    let _ = log::set_logger(&TEST_LOGGER);
-    log::set_max_level(LevelFilter::Debug);
+    init_test_logger();
     let input_topic = format!("{test_name}_input_topic");
     let output_topic = format!("{test_name}_output_topic");
 
@@ -139,10 +153,10 @@ outputs:
 "#
     );
 
-    println!("Creating circuit. Config {config_str}");
+    info!("{test_name}: Creating circuit. Config {config_str}");
     let (circuit, catalog) = test_circuit(4);
 
-    println!("Starting controller");
+    info!("{test_name}: Starting controller");
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
     let controller = Controller::with_config(
@@ -155,23 +169,22 @@ outputs:
 
     let buffer_consumer = BufferConsumer::new(&output_topic, format, format_config);
 
-    println!("Sending inputs");
+    info!("{test_name}: Sending inputs");
     let producer = TestProducer::new();
     producer.send_to_topic(&data, &input_topic);
 
-    println!("Starting controller");
+    info!("{test_name}: Starting controller");
     // Start controller.
     controller.start();
 
     // Wait for output buffer to contain all of `data`.
 
-    println!("Waiting for output");
+    info!("{test_name}: Waiting for output");
     buffer_consumer.wait_for_output_unordered(&data);
 
     drop(buffer_consumer);
 
     controller.stop().unwrap();
-    sleep(Duration::from_millis(100));
 }
 
 proptest! {
@@ -179,13 +192,11 @@ proptest! {
 
     #[test]
     fn proptest_kafka_input(data in generate_test_batches(0, 100, 1000)) {
-
-        let _ = log::set_logger(&TEST_LOGGER);
-        log::set_max_level(LevelFilter::Debug);
+        init_test_logger();
 
         let kafka_resources = KafkaResources::create_topics(&[("input_test_topic1", 1), ("input_test_topic2", 2)]);
 
-        println!("Test: Specify invalid Kafka broker address");
+        info!("proptest_kafka_input: Test: Specify invalid Kafka broker address");
 
         let config_str = r#"
 stream: test_input
@@ -204,10 +215,10 @@ format:
             serde_yaml::from_str(config_str).unwrap(),
         ) {
             Ok(_) => panic!("expected an error"),
-            Err(e) => println!("Error: {e}"),
+            Err(e) => info!("proptest_kafka_input: Error: {e}"),
         };
 
-        println!("Test: Specify invalid Kafka topic name");
+        info!("proptest_kafka_input: Test: Specify invalid Kafka topic name");
 
         let config_str = r#"
 stream: test_input
@@ -225,7 +236,7 @@ format:
             serde_yaml::from_str(config_str).unwrap(),
         ) {
             Ok(_) => panic!("expected an error"),
-            Err(e) => println!("Error: {e}"),
+            Err(e) => info!("proptest_kafka_input: Error: {e}"),
         };
 
         // auto.offset.reset: "earliest" - guarantees that on startup the
@@ -244,7 +255,7 @@ format:
     name: csv
 "#;
 
-        println!("Building input pipeline");
+        info!("proptest_kafka_input: Building input pipeline");
 
         let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct>(
             serde_yaml::from_str(config_str).unwrap(),
@@ -254,7 +265,7 @@ format:
 
         let producer = TestProducer::new();
 
-        println!("Test: Receive from a topic with a single partition");
+        info!("proptest_kafka_input: Test: Receive from a topic with a single partition");
 
         // Send data to a topic with a single partition;
         // Make sure all records arrive in the original order.
@@ -263,7 +274,7 @@ format:
         wait_for_output_ordered(&zset, &data);
         zset.reset();
 
-        println!("Test: Receive from a topic with multiple partitions");
+        info!("proptest_kafka_input: Test: Receive from a topic with multiple partitions");
 
         // Send data to a topic with multiple partitions.
         // Make sure all records are delivered, but not necessarily in the original order.
@@ -272,7 +283,7 @@ format:
         wait_for_output_unordered(&zset, &data);
         zset.reset();
 
-        println!("Test: pause/resume");
+        info!("proptest_kafka_input: Test: pause/resume");
         //println!("records before pause: {}", zset.state().flushed.len());
 
         // Paused endpoint shouldn't receive any data.
@@ -291,7 +302,7 @@ format:
 
         zset.reset();
 
-        println!("Test: Disconnect");
+        info!("proptest_kafka_input: Test: Disconnect");
         // Disconnected endpoint should not receive any data.
         endpoint.disconnect();
         sleep(Duration::from_millis(1000));

@@ -5,6 +5,7 @@ use crate::{
 };
 use csv::WriterBuilder as CsvWriterBuilder;
 use futures::executor::block_on;
+use log::error;
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
     client::DefaultClientContext,
@@ -86,7 +87,8 @@ impl Drop for KafkaResources {
         let _ = block_on(
             self.admin_client
                 .delete_topics(&topic_names, &AdminOptions::new()),
-        );
+        )
+        .map_err(|e| error!("Failed to delete topics {topic_names:?}: {e}"));
     }
 }
 

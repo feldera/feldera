@@ -388,7 +388,7 @@ test-adapters:
             redpanda start --smp 2 && \
             # Redpanda takes a few seconds to initialize.
             sleep 10 && \
-            RUST_BACKTRACE=1 cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters
+            RUST_BACKTRACE=1 cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters -- --nocapture
     END
 
 test-manager:

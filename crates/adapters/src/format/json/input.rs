@@ -469,6 +469,7 @@ mod test {
         transport::InputConsumer,
         FormatConfig, ParseError,
     };
+    use log::trace;
     use serde::Deserialize;
     use std::{borrow::Cow, fmt::Debug};
 
@@ -519,7 +520,7 @@ mod test {
         T: Debug + Eq + for<'de> Deserialize<'de> + Send + 'static,
     {
         for test in test_cases {
-            println!("test: {test:?}");
+            trace!("test: {test:?}");
             let format_config = FormatConfig {
                 name: Cow::from("json"),
                 config: serde_yaml::to_value(test.config).unwrap(),

@@ -210,6 +210,7 @@ mod test {
         SerBatch,
     };
     use dbsp::{trace::Batch, IndexedZSet, OrdZSet};
+    use log::trace;
     use std::sync::Arc;
 
     fn test_json(array: bool, batches: Vec<Vec<(TestStruct, i64)>>) {
@@ -248,7 +249,7 @@ mod test {
                 );
                 zset.iter()
                     .flat_map(|(data, (), weight)| {
-                        println!("data: {data:?}, weight: {weight}");
+                        trace!("data: {data:?}, weight: {weight}");
                         let range = if weight > 0 { 0..weight } else { weight..0 };
 
                         range.map(move |_| InsDelUpdate {
@@ -261,7 +262,7 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        println!(
+        trace!(
             "output: {}",
             std::str::from_utf8(&consumer_data.lock().unwrap()).unwrap()
         );
