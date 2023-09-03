@@ -1,12 +1,9 @@
-
 import NextLink, { LinkProps } from 'next/link'
 import { forwardRef } from 'react'
 
 // https://mui.com/material-ui/guides/routing/
 // Using Next.js link to leverage its SPA-like behaviour
-const LinkBehaviour = forwardRef<any, LinkProps>(
-  (props, ref) => (<NextLink ref={ref} {...props}/>)
-)
+const LinkBehaviour = forwardRef<any, LinkProps>((props, ref) => <NextLink ref={ref} {...props} />)
 
 export default {
   MuiLink: {
