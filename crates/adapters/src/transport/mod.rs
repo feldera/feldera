@@ -244,6 +244,10 @@ pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError) + Send + Sync>;
 pub trait OutputEndpoint: Send {
     fn connect(&self, async_error_callback: AsyncErrorCallback) -> AnyResult<()>;
 
+    /// Maximum buffer size that this transport can transmit.
+    /// The encoder should not generate buffers exceeding this size.
+    fn max_buffer_size_bytes(&self) -> usize;
+
     fn batch_start(&mut self) -> AnyResult<()> {
         Ok(())
     }

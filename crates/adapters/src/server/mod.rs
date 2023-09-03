@@ -887,7 +887,7 @@ mod test_with_kafka {
         ]);
 
         // Create buffer consumer
-        let buffer_consumer = BufferConsumer::new("test_server_output_topic");
+        let buffer_consumer = BufferConsumer::new("test_server_output_topic", "csv", "");
 
         // Config string
         let config_str = r#"

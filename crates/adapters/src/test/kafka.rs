@@ -1,8 +1,9 @@
 use crate::{
-    test::{wait, TestStruct},
+    test::{wait, MockDeZSet, TestStruct},
     transport::kafka::default_redpanda_server,
+    InputFormat,
 };
-use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
+use csv::WriterBuilder as CsvWriterBuilder;
 use futures::executor::block_on;
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
@@ -16,7 +17,7 @@ use rdkafka::{
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc,
     },
     thread,
     thread::JoinHandle,
@@ -140,7 +141,7 @@ impl TestProducer {
 /// Consumer thread: read from output topic, deserialize to a shared buffer.
 pub struct BufferConsumer {
     thread_handle: Option<JoinHandle<()>>,
-    buffer: Arc<Mutex<Vec<TestStruct>>>,
+    buffer: MockDeZSet<TestStruct>,
     shutdown_flag: Arc<AtomicBool>,
 }
 
@@ -152,14 +153,20 @@ impl Drop for BufferConsumer {
 }
 
 impl BufferConsumer {
-    pub fn new(topic: &str) -> Self {
-        let buffer: Arc<Mutex<Vec<TestStruct>>> = Arc::new(Mutex::new(Vec::new()));
-        let buffer_clone = buffer.clone();
-
+    pub fn new(topic: &str, format: &str, format_config_yaml: &str) -> Self {
         let shutdown_flag = Arc::new(AtomicBool::new(false));
         let shutdown_flag_clone = shutdown_flag.clone();
 
         let topic = topic.to_string();
+        let format = <dyn InputFormat>::get_format(format).unwrap();
+        let buffer = MockDeZSet::new();
+        let mut parser = format
+            .new_parser(
+                "BaseConsumer",
+                &buffer,
+                &serde_yaml::from_str::<serde_yaml::Value>(format_config_yaml).unwrap(),
+            )
+            .unwrap();
 
         // Consumer thread: read from output topic, deserialize to a shared buffer.
         let thread_handle = thread::Builder::new()
@@ -201,21 +208,7 @@ impl BufferConsumer {
                             // message.payload().map(|payload| consumer.input(payload));
 
                             if let Some(payload) = message.payload() {
-                                let mut builder = CsvReaderBuilder::new();
-                                builder.has_headers(false);
-                                let mut reader = builder.from_reader(payload);
-                                let mut buffer = buffer_clone.lock().unwrap();
-                                // let mut num_received = 0;
-                                for (record, w) in reader
-                                    .deserialize::<(TestStruct, i32)>()
-                                    .map(Result::unwrap)
-                                {
-                                    // num_received += 1;
-                                    assert_eq!(w, 1);
-                                    // println!("received record: {:?}", record);
-                                    buffer.push(record);
-                                }
-                                // println!("received {num_received} records");
+                                parser.input_chunk(payload);
                             }
                         }
                     }
@@ -235,11 +228,11 @@ impl BufferConsumer {
     }
 
     pub fn len(&self) -> usize {
-        self.buffer.lock().unwrap().len()
+        self.buffer.state().flushed.len()
     }
 
     pub fn clear(&self) {
-        self.buffer.lock().unwrap().clear()
+        self.buffer.state().reset()
     }
 
     pub fn wait_for_output_unordered(&self, data: &[Vec<TestStruct>]) {
@@ -257,8 +250,11 @@ impl BufferConsumer {
             .collect::<Vec<_>>();
         expected.sort();
 
-        let mut received = self.buffer.lock().unwrap().clone();
+        let mut received = self.buffer.state().flushed.clone();
         received.sort();
-        assert_eq!(expected, received);
+        assert_eq!(
+            expected.into_iter().map(|x| (x, true)).collect::<Vec<_>>(),
+            received
+        );
     }
 }

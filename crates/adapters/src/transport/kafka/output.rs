@@ -32,6 +32,13 @@ const OUTPUT_POLLING_INTERVAL: Duration = Duration::from_millis(100);
 
 const ERROR_BUFFER_SIZE: usize = 1000;
 
+const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
+
+/// Max metadata overhead added by Kafka to each message.  Useful payload size
+/// plus this overhead must not exceed `message.max.bytes`.
+// This value was established empirically.
+const MAX_MESSAGE_OVERHEAD: usize = 64;
+
 /// [`OutputTransport`] implementation that writes data to a Kafka topic.
 ///
 /// This output transport is only available if the crate is configured with
@@ -253,6 +260,7 @@ struct KafkaOutputEndpoint {
     kafka_producer: ThreadedProducer<KafkaOutputContext>,
     config: KafkaOutputConfig,
     parker: Parker,
+    max_message_size: usize,
 }
 
 impl KafkaOutputEndpoint {
@@ -284,6 +292,17 @@ impl KafkaOutputEndpoint {
         // Context object to intercept message delivery events.
         let context = KafkaOutputContext::new(parker.unparker().clone());
 
+        let message_max_bytes = client_config
+            .get("message.max.bytes")
+            .map(|s| s.parse::<usize>().unwrap_or(DEFAULT_MAX_MESSAGE_SIZE))
+            .unwrap_or(DEFAULT_MAX_MESSAGE_SIZE);
+        if message_max_bytes <= MAX_MESSAGE_OVERHEAD {
+            bail!("Invalid setting 'message.max.bytes={message_max_bytes}'. 'message.max.bytes' must be greated than {MAX_MESSAGE_OVERHEAD}");
+        }
+
+        let max_message_size = message_max_bytes - MAX_MESSAGE_OVERHEAD;
+        debug!("Configured max message size: {max_message_size} ('message.max.bytes={message_max_bytes}')");
+
         // Create Kafka producer.
         let kafka_producer = ThreadedProducer::from_config_and_context(&client_config, context)?;
 
@@ -291,6 +310,7 @@ impl KafkaOutputEndpoint {
             kafka_producer,
             config,
             parker,
+            max_message_size,
         })
     }
 
@@ -341,6 +361,10 @@ impl OutputEndpoint for KafkaOutputEndpoint {
             .write()
             .unwrap() = Some(async_error_callback);
         Ok(())
+    }
+
+    fn max_buffer_size_bytes(&self) -> usize {
+        self.max_message_size
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {

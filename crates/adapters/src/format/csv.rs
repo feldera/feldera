@@ -1,10 +1,10 @@
 use crate::{
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
-    util::split_on_newline,
+    util::{split_on_newline, truncate_ellipse},
     ControllerError, DeCollectionHandle, OutputConsumer, SerBatch,
 };
 use actix_web::HttpRequest;
-use anyhow::Result as AnyResult;
+use anyhow::{bail, Result as AnyResult};
 use csv::{
     Reader as CsvReader, ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder,
 };
@@ -18,6 +18,10 @@ use utoipa::ToSchema;
 mod deserializer;
 pub use deserializer::byte_record_deserializer;
 pub use deserializer::string_record_deserializer;
+
+/// When including a long CSV record in an error message,
+/// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.
+static MAX_RECORD_LEN_IN_ERRMSG: usize = 4096;
 
 /// CSV format parser.
 pub struct CsvInputFormat;
@@ -237,22 +241,23 @@ struct CsvEncoder {
     /// Builder used to create a new CSV writer for each received data
     /// buffer.
     builder: CsvWriterBuilder,
-
     config: CsvEncoderConfig,
-
     buffer: Vec<u8>,
+    max_buffer_size: usize,
 }
 
 impl CsvEncoder {
     fn new(output_consumer: Box<dyn OutputConsumer>, config: CsvEncoderConfig) -> Self {
         let mut builder = CsvWriterBuilder::new();
         builder.has_headers(false);
+        let max_buffer_size = output_consumer.max_buffer_size_bytes();
 
         Self {
             output_consumer,
             builder,
             config,
             buffer: Vec::new(),
+            max_buffer_size,
         }
     }
 }
@@ -271,20 +276,46 @@ impl Encoder for CsvEncoder {
             let mut cursor = batch.cursor();
 
             while cursor.key_valid() {
+                let prev_len = writer.get_ref().len();
+
                 let w = cursor.weight();
                 writer.serialize((cursor.key(), w))?;
-                num_records += 1;
+                let _ = writer.flush();
 
-                if num_records >= self.config.buffer_size_records {
+                // Drop the last encoded record if it exceeds max_buffer_size.
+                // The record will be included in the next buffer.
+                let new_len = writer.get_ref().len();
+                let overflow = if new_len > self.max_buffer_size {
+                    if num_records == 0 {
+                        let record = std::str::from_utf8(&writer.get_ref()[prev_len..new_len])
+                            .unwrap_or_default();
+                        // We should be able to fit at least one record in the buffer.
+                        bail!("CSV record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
+                              self.max_buffer_size,
+                              new_len - prev_len,
+                              truncate_ellipse(record, MAX_RECORD_LEN_IN_ERRMSG, "..."));
+                    }
+                    true
+                } else {
+                    num_records += 1;
+                    false
+                };
+
+                if num_records >= self.config.buffer_size_records || overflow {
                     let mut buffer = writer.into_inner()?;
-                    // println!("push_buffer {}", std::str::from_utf8(&buffer).unwrap());
+                    if overflow {
+                        buffer.truncate(prev_len);
+                    }
+                    // println!("push_buffer {}", buffer.len() /*std::str::from_utf8(&buffer).unwrap()*/);
                     self.output_consumer.push_buffer(&buffer);
                     buffer.clear();
                     num_records = 0;
                     writer = self.builder.from_writer(buffer);
                 }
 
-                cursor.step_key();
+                if !overflow {
+                    cursor.step_key();
+                }
             }
         }
 

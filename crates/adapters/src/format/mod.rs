@@ -498,6 +498,10 @@ pub trait Encoder: Send {
 }
 
 pub trait OutputConsumer: Send {
+    /// Maximum buffer size that this transport can transmit.
+    /// The encoder should not generate buffers exceeding this size.
+    fn max_buffer_size_bytes(&self) -> usize;
+
     fn batch_start(&mut self);
     fn push_buffer(&mut self, buffer: &[u8]);
     fn batch_end(&mut self);
