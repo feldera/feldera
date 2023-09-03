@@ -517,6 +517,9 @@ struct IngressArgs {
     // mode: HttpIngressMode,
     #[serde(default = "HttpInputTransport::default_format")]
     format: String,
+    /// Push data to the pipeline even if the pipeline is in a paused state.
+    #[serde(default)]
+    force: bool,
 }
 
 #[post("/ingress/{table_name}")]
@@ -541,7 +544,7 @@ async fn input_endpoint(
     let endpoint_name = format!("api-ingress-{table_name}-{}", Uuid::new_v4());
 
     // Create HTTP endpoint.
-    let endpoint = HttpInputEndpoint::new(&endpoint_name);
+    let endpoint = HttpInputEndpoint::new(&endpoint_name, args.force);
 
     // Create endpoint config.
     let config = InputEndpointConfig {
@@ -1058,7 +1061,14 @@ outputs:
         TestHttpReceiver::wait_for_output_unordered(&mut resp1, &data).await;
         TestHttpReceiver::wait_for_output_unordered(&mut resp2, &data).await;
 
-        let req = server.post("/ingress/test_input1");
+        // Force-push data in paused state.
+        println!("/pause");
+        let resp = server.get("/pause").send().await.unwrap();
+        assert!(resp.status().is_success());
+        sleep(Duration::from_millis(1000));
+
+        println!("Force-push data via HTTP");
+        let req = server.post("/ingress/test_input1?force=true");
 
         TestHttpSender::send_stream(req, &data).await;
 
@@ -1069,6 +1079,10 @@ outputs:
         TestHttpReceiver::wait_for_output_unordered(&mut resp2, &data).await;
         drop(resp1);
         drop(resp2);
+
+        println!("/start");
+        let resp = server.get("/start").send().await.unwrap();
+        assert!(resp.status().is_success());
 
         sleep(Duration::from_millis(5000));
 

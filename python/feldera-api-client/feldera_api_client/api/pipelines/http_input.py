@@ -14,6 +14,7 @@ def _get_kwargs(
     pipeline_id: str,
     table_name: str,
     *,
+    force: bool,
     format_: str,
     array: Union[Unset, None, bool] = UNSET,
     update_format: Union[Unset, None, JsonUpdateFormat] = UNSET,
@@ -21,6 +22,8 @@ def _get_kwargs(
     pass
 
     params: Dict[str, Any] = {}
+    params["force"] = force
+
     params["format"] = format_
 
     params["array"] = array
@@ -83,6 +86,7 @@ def sync_detailed(
     table_name: str,
     *,
     client: Union[AuthenticatedClient, Client],
+    force: bool,
     format_: str,
     array: Union[Unset, None, bool] = UNSET,
     update_format: Union[Unset, None, JsonUpdateFormat] = UNSET,
@@ -102,6 +106,7 @@ def sync_detailed(
     Args:
         pipeline_id (str):
         table_name (str):
+        force (bool):
         format_ (str):
         array (Union[Unset, None, bool]):
         update_format (Union[Unset, None, JsonUpdateFormat]): Supported JSON data change event
@@ -122,6 +127,7 @@ def sync_detailed(
     kwargs = _get_kwargs(
         pipeline_id=pipeline_id,
         table_name=table_name,
+        force=force,
         format_=format_,
         array=array,
         update_format=update_format,
@@ -139,6 +145,7 @@ def sync(
     table_name: str,
     *,
     client: Union[AuthenticatedClient, Client],
+    force: bool,
     format_: str,
     array: Union[Unset, None, bool] = UNSET,
     update_format: Union[Unset, None, JsonUpdateFormat] = UNSET,
@@ -158,6 +165,7 @@ def sync(
     Args:
         pipeline_id (str):
         table_name (str):
+        force (bool):
         format_ (str):
         array (Union[Unset, None, bool]):
         update_format (Union[Unset, None, JsonUpdateFormat]): Supported JSON data change event
@@ -179,6 +187,7 @@ def sync(
         pipeline_id=pipeline_id,
         table_name=table_name,
         client=client,
+        force=force,
         format_=format_,
         array=array,
         update_format=update_format,
@@ -190,6 +199,7 @@ async def asyncio_detailed(
     table_name: str,
     *,
     client: Union[AuthenticatedClient, Client],
+    force: bool,
     format_: str,
     array: Union[Unset, None, bool] = UNSET,
     update_format: Union[Unset, None, JsonUpdateFormat] = UNSET,
@@ -209,6 +219,7 @@ async def asyncio_detailed(
     Args:
         pipeline_id (str):
         table_name (str):
+        force (bool):
         format_ (str):
         array (Union[Unset, None, bool]):
         update_format (Union[Unset, None, JsonUpdateFormat]): Supported JSON data change event
@@ -229,6 +240,7 @@ async def asyncio_detailed(
     kwargs = _get_kwargs(
         pipeline_id=pipeline_id,
         table_name=table_name,
+        force=force,
         format_=format_,
         array=array,
         update_format=update_format,
@@ -244,6 +256,7 @@ async def asyncio(
     table_name: str,
     *,
     client: Union[AuthenticatedClient, Client],
+    force: bool,
     format_: str,
     array: Union[Unset, None, bool] = UNSET,
     update_format: Union[Unset, None, JsonUpdateFormat] = UNSET,
@@ -263,6 +276,7 @@ async def asyncio(
     Args:
         pipeline_id (str):
         table_name (str):
+        force (bool):
         format_ (str):
         array (Union[Unset, None, bool]):
         update_format (Union[Unset, None, JsonUpdateFormat]): Supported JSON data change event
@@ -285,6 +299,7 @@ async def asyncio(
             pipeline_id=pipeline_id,
             table_name=table_name,
             client=client,
+            force=force,
             format_=format_,
             array=array,
             update_format=update_format,

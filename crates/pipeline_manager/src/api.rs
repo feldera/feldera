@@ -1764,6 +1764,7 @@ pub struct PipelineIdOrNameQuery {
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier."),
         ("table_name" = String, Path, description = "SQL table name."),
+        ("force" = bool, Query, description = "When `true`, push data to the pipeline even if the pipeline is paused. The default value is `false`"),
         ("format" = String, Query, description = "Input data format, e.g., 'csv' or 'json'."),
         ("array" = Option<bool>, Query, description = "Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`."),
         ("update_format" = Option<JsonUpdateFormat>, Query, description = "JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'."),
