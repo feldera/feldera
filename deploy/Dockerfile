@@ -8,6 +8,8 @@ RUN apt update && apt install \
      libssl-dev pkg-config \
      # rdkafka dependency needs cmake and a CXX compiler
      cmake build-essential \
+     # rdkafka dependency needs libsasl \
+     libsasl2-dev \
      # To install rust
      curl  \
      # For running the SQL compiler
