@@ -7,6 +7,7 @@ use awc::{error::PayloadError, ClientRequest};
 use csv::ReaderBuilder as CsvReaderBuilder;
 use csv::WriterBuilder as CsvWriterBuilder;
 use futures::{Stream, StreamExt};
+use log::trace;
 
 pub struct TestHttpSender;
 pub struct TestHttpReceiver;
@@ -56,14 +57,14 @@ impl TestHttpReceiver {
 
         while received.len() < num_records {
             let bytes = response.next().await.unwrap().unwrap();
-            println!("TestHttpReceiver: received {} bytes", bytes.len());
+            trace!("TestHttpReceiver: received {} bytes", bytes.len());
 
             data.extend_from_slice(&bytes);
 
             if data[data.len() - 1] == b'\n' {
                 for chunk in serde_json::Deserializer::from_slice(&data).into_iter::<Chunk>() {
                     let chunk = chunk.unwrap();
-                    println!("TestHttpReceiver: chunk {}", chunk.sequence_number);
+                    trace!("TestHttpReceiver: chunk {}", chunk.sequence_number);
 
                     let mut builder = CsvReaderBuilder::new();
                     builder.has_headers(false);
