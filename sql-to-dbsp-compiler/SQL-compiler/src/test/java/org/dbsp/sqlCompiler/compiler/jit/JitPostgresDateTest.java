@@ -36,21 +36,4 @@ public class JitPostgresDateTest extends PostgresDateTests {
                 "        14710\n" +
                 "null"); // Added manually
     }
-
-    @Test @Ignore("Incorrect result for dates before 1970 https://github.com/feldera/feldera/issues/400")
-    public void testLt() {
-        this.q("SELECT f1 FROM DATE_TBL WHERE f1 < '2000-01-01';\n" +
-                " f1       \n" +
-                "---------------\n" +
-                " 04-09-1957\n" +
-                " 06-13-1957\n" +
-                " 02-28-1996\n" +
-                " 02-29-1996\n" +
-                " 03-01-1996\n" +
-                " 03-02-1996\n" +
-                " 02-28-1997\n" +
-                " 03-01-1997\n" +
-                " 03-02-1997");
-        //" 04-10-2040 BC";
-    }
 }
