@@ -139,7 +139,7 @@ outputs:
 "#
     );
 
-    println!("Creating circuit.  Config {config_str}");
+    println!("Creating circuit. Config {config_str}");
     let (circuit, catalog) = test_circuit(4);
 
     println!("Starting controller");
@@ -299,11 +299,6 @@ format:
         producer.send_to_topic(&data, "input_test_topic2");
         sleep(Duration::from_millis(1000));
         assert_eq!(zset.state().flushed.len(), 0);
-
-        sleep(Duration::from_millis(1000));
-
-        println!("Delete Kafka resources");
-        drop(kafka_resources);
     }
 
     #[test]
