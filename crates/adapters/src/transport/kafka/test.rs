@@ -87,6 +87,96 @@ outputs:
     }
 }
 
+fn kafka_end_to_end_test(
+    test_name: &str,
+    format: &str,
+    format_config: &str,
+    message_max_bytes: usize,
+    data: Vec<Vec<TestStruct>>,
+) {
+    let _ = log::set_logger(&TEST_LOGGER);
+    log::set_max_level(LevelFilter::Debug);
+    let input_topic = format!("{test_name}_input_topic");
+    let output_topic = format!("{test_name}_output_topic");
+
+    // Create topics.
+    let kafka_resources = KafkaResources::create_topics(&[(&input_topic, 1), (&output_topic, 1)]);
+
+    // Create controller.
+
+    // auto.offset.reset: "earliest" - guarantees that on startup the
+    // consumer will observe all messages sent by the producer even if
+    // the producer starts earlier (the consumer won't start until the
+    // rebalancing protocol kicks in).
+    let config_str = format!(
+        r#"
+name: test
+inputs:
+    test_input1:
+        stream: test_input1
+        transport:
+            name: kafka
+            config:
+                auto.offset.reset: "earliest"
+                group.instance.id: "{test_name}"
+                topics: [{input_topic}]
+                log_level: debug
+        format:
+            name: csv
+outputs:
+    test_output2:
+        stream: test_output1
+        transport:
+            name: kafka
+            config:
+                topic: {output_topic}
+                max_inflight_messages: 0
+                message.max.bytes: "{message_max_bytes}"
+        format:
+            name: {format}
+            config:
+                {format_config}
+"#
+    );
+
+    println!("Creating circuit.  Config {config_str}");
+    let (circuit, catalog) = test_circuit(4);
+
+    println!("Starting controller");
+    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+
+    let controller = Controller::with_config(
+        circuit,
+        catalog,
+        &config,
+        Box::new(|e| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    let buffer_consumer = BufferConsumer::new(&output_topic, format, format_config);
+
+    println!("Sending inputs");
+    let producer = TestProducer::new();
+    producer.send_to_topic(&data, &input_topic);
+
+    println!("Starting controller");
+    // Start controller.
+    controller.start();
+
+    // Wait for output buffer to contain all of `data`.
+
+    println!("Waiting for output");
+    buffer_consumer.wait_for_output_unordered(&data);
+
+    drop(buffer_consumer);
+
+    controller.stop().unwrap();
+    sleep(Duration::from_millis(100));
+
+    println!("Delete Kafka resources");
+    drop(kafka_resources);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2))]
 
@@ -220,76 +310,23 @@ format:
     }
 
     #[test]
-    fn proptest_kafka_end_to_end(data in generate_test_batches(0, 100, 1000)) {
-        let _ = log::set_logger(&TEST_LOGGER);
-        log::set_max_level(LevelFilter::Debug);
-
-        // Create topics.
-        let kafka_resources = KafkaResources::create_topics(&[("end_to_end_test_input_topic", 1), ("end_to_end_test_output_topic", 1)]);
-
-        // Create controller.
-
-        // auto.offset.reset: "earliest" - guarantees that on startup the
-        // consumer will observe all messages sent by the producer even if
-        // the producer starts earlier (the consumer won't start until the
-        // rebalancing protocol kicks in).
-        let config_str = r#"
-name: test
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: kafka
-            config:
-                auto.offset.reset: "earliest"
-                group.instance.id: "group0"
-                topics: [end_to_end_test_input_topic]
-                log_level: debug
-        format:
-            name: csv
-outputs:
-    test_output2:
-        stream: test_output1
-        transport:
-            name: kafka
-            config:
-                topic: end_to_end_test_output_topic
-                max_inflight_messages: 0
-        format:
-            name: csv
-"#;
-
-        println!("Creating circuit");
-        let (circuit, catalog) = test_circuit(4);
-
-        println!("Starting controller");
-        let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
-
-        let controller = Controller::with_config(
-            circuit,
-            catalog,
-            &config,
-            Box::new(|e| panic!("error: {e}"))
-        ).unwrap();
-
-        let buffer_consumer = BufferConsumer::new("end_to_end_test_output_topic");
-
-        let producer = TestProducer::new();
-        producer.send_to_topic(&data, "end_to_end_test_input_topic");
-
-        // Start controller.
-        controller.start();
-
-        // Wait for output buffer to contain all of `data`.
-
-        buffer_consumer.wait_for_output_unordered(&data);
-
-        drop(buffer_consumer);
-
-        controller.stop().unwrap();
-        sleep(Duration::from_millis(100));
-
-        println!("Delete Kafka resources");
-        drop(kafka_resources);
+    fn proptest_kafka_end_to_end_csv_large(data in generate_test_batches(0, 30, 1000)) {
+        kafka_end_to_end_test("proptest_kafka_end_to_end_csv_large", "csv", "", 1000000, data);
     }
+
+    #[test]
+    fn proptest_kafka_end_to_end_csv_small(data in generate_test_batches(0, 30, 1000)) {
+        kafka_end_to_end_test("proptest_kafka_end_to_end_csv_small", "csv", "", 1500, data);
+    }
+
+    #[test]
+    fn proptest_kafka_end_to_end_json_small(data in generate_test_batches(0, 30, 1000)) {
+        kafka_end_to_end_test("proptest_kafka_end_to_end_json_small", "json", "", 2048, data);
+    }
+
+    #[test]
+    fn proptest_kafka_end_to_end_json_array_small(data in generate_test_batches(0, 30, 1000)) {
+        kafka_end_to_end_test("proptest_kafka_end_to_end_json_array_small", "json", "array: true", 5000, data);
+    }
+
 }

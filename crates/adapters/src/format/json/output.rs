@@ -1,5 +1,7 @@
 use super::InsDelUpdate;
-use crate::{ControllerError, Encoder, OutputConsumer, OutputFormat, SerBatch};
+use crate::{
+    util::truncate_ellipse, ControllerError, Encoder, OutputConsumer, OutputFormat, SerBatch,
+};
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
@@ -21,6 +23,10 @@ const fn default_buffer_size_records() -> usize {
 /// duplicating the record `w` times, which is expensive for large
 /// weights (and is most likely not what the user intends).
 const MAX_DUPLICATES: i64 = 1_000_000;
+
+/// When including a long JSON record in an error message,
+/// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.
+static MAX_RECORD_LEN_IN_ERRMSG: usize = 4096;
 
 // TODO: support multiple update formats, e.g., `WeightedUpdate`
 // suppors arbitrary weights beyond `MAX_DUPLICATES`.
@@ -72,18 +78,20 @@ impl OutputFormat for JsonOutputFormat {
 struct JsonEncoder {
     /// Input handle to push serialized data to.
     output_consumer: Box<dyn OutputConsumer>,
-
     config: JsonEncoderConfig,
-
     buffer: Vec<u8>,
+    max_buffer_size: usize,
 }
 
 impl JsonEncoder {
     fn new(output_consumer: Box<dyn OutputConsumer>, config: JsonEncoderConfig) -> Self {
+        let max_buffer_size = output_consumer.max_buffer_size_bytes();
+
         Self {
             output_consumer,
             config,
             buffer: Vec::new(),
+            max_buffer_size,
         }
     }
 }
@@ -96,8 +104,14 @@ impl Encoder for JsonEncoder {
     fn encode(&mut self, batches: &[Arc<dyn SerBatch>]) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
 
-        let mut num_records = 0;
+        // Reserve one extra byte for the closing bracket `]`.
+        let max_buffer_size = if self.config.array {
+            self.max_buffer_size - 1
+        } else {
+            self.max_buffer_size
+        };
 
+        let mut num_records = 0;
         for batch in batches.iter() {
             let mut cursor = batch.cursor();
 
@@ -112,39 +126,56 @@ impl Encoder for JsonEncoder {
                 }
 
                 while w != 0 {
+                    let prev_len = buffer.len();
+
                     if self.config.array {
                         if num_records == 0 {
                             buffer.push(b'[');
                         } else {
                             buffer.push(b',');
                         }
-                    }
-                    serde_json::to_writer(
-                        &mut buffer,
-                        &InsDelUpdate {
-                            table: None,
-                            insert: if w > 0 { Some(cursor.key()) } else { None },
-                            delete: if w < 0 { Some(cursor.key()) } else { None },
-                        },
-                    )?;
-
-                    if w > 0 {
-                        w -= 1;
-                    } else {
-                        w += 1;
-                    }
-
-                    if !self.config.array {
+                    } else if num_records > 0 {
                         buffer.push(b'\n');
                     }
-                    num_records += 1;
+                    let update = InsDelUpdate {
+                        table: None,
+                        insert: if w > 0 { Some(cursor.key()) } else { None },
+                        delete: if w < 0 { Some(cursor.key()) } else { None },
+                    };
+                    serde_json::to_writer(&mut buffer, &update)?;
 
-                    if num_records >= self.config.buffer_size_records {
+                    // Drop the last encoded record if it exceeds max_buffer_size.
+                    // The record will be included in the next buffer.
+                    let buffer_full = buffer.len() > max_buffer_size;
+                    if buffer_full {
+                        if num_records == 0 {
+                            let record = std::str::from_utf8(&buffer[prev_len..buffer.len()])
+                                .unwrap_or_default();
+                            // We should be able to fit at least one record in the buffer.
+                            bail!("JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
+                                  self.max_buffer_size,
+                                  buffer.len() - prev_len,
+                                  truncate_ellipse(record, MAX_RECORD_LEN_IN_ERRMSG, "..."));
+                        }
+                        buffer.truncate(prev_len);
+                    } else {
+                        if w > 0 {
+                            w -= 1;
+                        } else {
+                            w += 1;
+                        }
+                        num_records += 1;
+                    }
+
+                    if num_records >= self.config.buffer_size_records || buffer_full {
                         if self.config.array {
                             buffer.push(b']');
                         }
 
-                        // println!("push_buffer {}", std::str::from_utf8(&buffer).unwrap());
+                        // println!(
+                        //     "push_buffer: {} bytes",
+                        //     buffer.len() /*std::str::from_utf8(&buffer).unwrap()*/
+                        // );
                         self.output_consumer.push_buffer(&buffer);
                         buffer.clear();
                         num_records = 0;
@@ -313,6 +344,23 @@ mod test {
                 ),
             ],
         ]
+    }
+
+    #[test]
+    fn test_long_record_error() {
+        let config = JsonEncoderConfig {
+            buffer_size_records: 3,
+            array: false,
+        };
+
+        let consumer = MockOutputConsumer::with_max_buffer_size_bytes(32);
+        let mut encoder = JsonEncoder::new(Box::new(consumer), config);
+        let zset = OrdZSet::from_keys((), test_data()[0].clone());
+
+        let err = encoder
+            .encode(&[Arc::new(<SerBatchImpl<_, TestStruct, ()>>::new(zset)) as Arc<dyn SerBatch>])
+            .unwrap_err();
+        assert_eq!(format!("{err}"), "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is 32 bytes, but the following record requires 47 bytes: '{\"insert\":{\"id\":0,\"b\":true,\"i\":null,\"s\":\"foo\"}}'.");
     }
 
     #[test]

@@ -259,6 +259,10 @@ impl OutputEndpoint for HttpOutputEndpoint {
         Ok(())
     }
 
+    fn max_buffer_size_bytes(&self) -> usize {
+        usize::MAX
+    }
+
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         self.inner.push_buffer(Some(buffer))
     }

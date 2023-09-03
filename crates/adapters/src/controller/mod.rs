@@ -1324,6 +1324,10 @@ impl OutputProbe {
 }
 
 impl OutputConsumer for OutputProbe {
+    fn max_buffer_size_bytes(&self) -> usize {
+        self.endpoint.max_buffer_size_bytes()
+    }
+
     fn batch_start(&mut self) {
         self.endpoint.batch_start().unwrap_or_else(|e| {
             self.controller
