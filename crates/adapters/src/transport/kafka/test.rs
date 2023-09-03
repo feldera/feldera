@@ -100,7 +100,7 @@ fn kafka_end_to_end_test(
     let output_topic = format!("{test_name}_output_topic");
 
     // Create topics.
-    let kafka_resources = KafkaResources::create_topics(&[(&input_topic, 1), (&output_topic, 1)]);
+    let _kafka_resources = KafkaResources::create_topics(&[(&input_topic, 1), (&output_topic, 1)]);
 
     // Create controller.
 
@@ -172,9 +172,6 @@ outputs:
 
     controller.stop().unwrap();
     sleep(Duration::from_millis(100));
-
-    println!("Delete Kafka resources");
-    drop(kafka_resources);
 }
 
 proptest! {
