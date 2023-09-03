@@ -652,7 +652,14 @@ impl PipelineAutomaton {
             }
             .into());
         }
-        let fetched_executable = fetch_binary_ref(&self.config, &executable_ref.unwrap(), pipeline_id, program_id, version).await?;
+        let fetched_executable = fetch_binary_ref(
+            &self.config,
+            &executable_ref.unwrap(),
+            pipeline_id,
+            program_id,
+            version,
+        )
+        .await?;
 
         // Run executable, set current directory to pipeline directory, pass metadata
         // file and config as arguments.
@@ -802,24 +809,24 @@ pub async fn fetch_binary_ref(
                         .mode(0o760)
                         .open(path.clone())
                         .await
-                        .map_err(|e| 
+                        .map_err(|e| {
                             ManagerError::io_error(
                                 format!("File creation failed ({:?}) while saving {pipeline_id} binary fetched from '{}'", path, parsed.path()),
                                 e,
                             )
-                        )?;
-                    file.write_all(resp_ref).await.map_err(|e| 
-                            ManagerError::io_error(
-                                format!("File write failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
-                                e,
-                            )
-                        )?;
-                    file.flush().await.map_err(|e| 
-                            ManagerError::io_error(
-                                format!("File flush() failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
-                                e,
-                            )
-                        )?;
+                        })?;
+                    file.write_all(resp_ref).await.map_err(|e| {
+                        ManagerError::io_error(
+                            format!("File write failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
+                            e,
+                        )
+                    })?;
+                    file.flush().await.map_err(|e| {
+                        ManagerError::io_error(
+                            format!("File flush() failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
+                            e,
+                        )
+                    })?;
                     Ok(path.into_os_string().into_string().expect("Path should be valid Unicode"))
                 }
                 Err(e) => {

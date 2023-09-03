@@ -64,15 +64,22 @@ struct HttpInputEndpointInner {
     state: AtomicU32,
     status_notifier: watch::Sender<()>,
     consumer: Mutex<Option<Box<dyn InputConsumer>>>,
+    /// Ingest data even if the pipeline is paused.
+    force: bool,
 }
 
 impl HttpInputEndpointInner {
-    fn new(name: &str) -> Self {
+    fn new(name: &str, force: bool) -> Self {
         Self {
             name: name.to_string(),
-            state: AtomicU32::new(PipelineState::Paused as u32),
+            state: AtomicU32::new(if force {
+                PipelineState::Running as u32
+            } else {
+                PipelineState::Paused as u32
+            }),
             status_notifier: watch::channel(()).0,
             consumer: Mutex::new(None),
+            force,
         }
     }
 }
@@ -88,9 +95,9 @@ pub(crate) struct HttpInputEndpoint {
 }
 
 impl HttpInputEndpoint {
-    pub(crate) fn new(name: &str) -> Self {
+    pub(crate) fn new(name: &str, force: bool) -> Self {
         Self {
-            inner: Arc::new(HttpInputEndpointInner::new(name)),
+            inner: Arc::new(HttpInputEndpointInner::new(name, force)),
         }
     }
 
@@ -205,10 +212,12 @@ impl InputEndpoint for HttpInputEndpoint {
     }
 
     fn pause(&self) -> AnyResult<()> {
-        self.inner
-            .state
-            .store(PipelineState::Paused as u32, Ordering::Release);
-        self.notify();
+        if !self.inner.force {
+            self.inner
+                .state
+                .store(PipelineState::Paused as u32, Ordering::Release);
+            self.notify();
+        }
 
         Ok(())
     }
