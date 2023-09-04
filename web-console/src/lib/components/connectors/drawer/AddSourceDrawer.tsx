@@ -2,7 +2,8 @@
 // pipeline builder.
 
 import { useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
-import useDrawerState from '$lib/compositions/streaming/builder/useDrawerState'
+import { useHashPart } from '$lib/compositions/useHashPart'
+import { inUnion } from '$lib/functions/common/array'
 import { randomString } from '$lib/functions/common/string'
 import {
   connectorDescrToType,
@@ -13,8 +14,8 @@ import {
 import { AttachedConnector, ConnectorDescr } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ConnectorType, Direction } from '$lib/types/connectors'
-import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
-import { Dispatch, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { tuple } from 'src/lib/functions/common/tuple'
 
 import { Icon } from '@iconify/react'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
@@ -39,22 +40,7 @@ const Header = styled(Box)<BoxProps>(({ theme }) => ({
   backgroundColor: theme.palette.background.paper
 }))
 
-interface IoSelectBoxProps {
-  icon: string
-  howMany: number
-  onSuccess: Dispatch<ConnectorDescr>
-  openSelectTable: () => void
-  closeDrawer: () => void
-  dialog: (props: ConnectorDialogProps) => React.ReactNode
-}
-
-const IoSelectBox = (props: IoSelectBoxProps) => {
-  const [show, setShow] = useState<boolean>(false)
-
-  const openDialog = () => {
-    props.closeDrawer()
-    setShow(true)
-  }
+const IoSelectBox = (props: { icon: string; howMany: number; onNew: string; onSelect: () => void }) => {
   const countColor = props.howMany === 0 ? 'secondary' : 'success'
 
   return (
@@ -72,7 +58,7 @@ const IoSelectBox = (props: IoSelectBoxProps) => {
         >
           <CardHeader avatar={<Icon icon={props.icon} fontSize='3rem' />} />
           <CardContent>
-            <Button fullWidth sx={{ mb: 1 }} variant='outlined' color='secondary' onClick={openDialog}>
+            <Button fullWidth sx={{ mb: 1 }} variant='outlined' color='secondary' href={`#${props.onNew}`}>
               New
             </Button>
             <Button
@@ -81,13 +67,12 @@ const IoSelectBox = (props: IoSelectBoxProps) => {
               variant='outlined'
               color='secondary'
               disabled={props.howMany === 0}
-              onClick={props.openSelectTable}
+              onClick={props.onSelect}
             >
               Select&nbsp;
               <Chip sx={{ p: 0, m: 0 }} label={props.howMany} size='small' color={countColor} variant='outlined' />
             </Button>
           </CardContent>
-          {props.dialog({ show, setShow, onSuccess: props.onSuccess })}
         </Card>
       </Grid>
     </>
@@ -102,10 +87,16 @@ const shouldDisplayConnector = (direction: Direction, connectorType: ConnectorTy
 }
 
 const SideBarAddIo = () => {
-  const [selectTable, setSelectTable] = useState<ConnectorType | undefined>()
-  const { isOpen, forNodes, close } = useDrawerState()
-  const drawerTitle = forNodes === 'inputNode' ? 'Add Input Source' : 'Add Output Destination'
-  const direction = forNodes === 'inputNode' ? Direction.INPUT : Direction.OUTPUT
+  const [hash, setHash] = useHashPart()
+
+  const [nodeType, connectorType] = (([nodeType, connectorType]) =>
+    tuple(
+      inUnion(['add_input', 'add_output'] as const, nodeType) ? nodeType : undefined,
+      connectorType ? (connectorType as ConnectorType) : undefined
+    ))(hash.split('/'))
+
+  const drawerTitle = nodeType === 'add_input' ? 'Add Input Source' : 'Add Output Destination'
+  const direction = nodeType === 'add_input' ? Direction.INPUT : Direction.OUTPUT
 
   const [sourceCounts, setSourceCounts] = useState<{ [key in ConnectorType]: number }>({
     [ConnectorType.KAFKA_IN]: 0,
@@ -135,22 +126,18 @@ const SideBarAddIo = () => {
     }
   }, [data, isLoading, isError])
 
-  const closeDrawer = () => {
-    close()
-    setSelectTable(undefined)
-  }
   const openSelectTable = (ioTable: ConnectorType | undefined) => {
-    setSelectTable(ioTable)
+    setHash(`${nodeType}/${ioTable ?? ''}`)
   }
 
   const addConnector = useAddConnector()
   const onAddClick = (connector: ConnectorDescr) => {
-    closeDrawer()
+    setHash('')
     const ac: AttachedConnector = {
       name: randomString(),
       connector_id: connector.connector_id,
       relation_name: '',
-      is_input: forNodes === 'inputNode'
+      is_input: nodeType === 'add_input'
     }
     addConnector(connector, ac)
   }
@@ -158,68 +145,55 @@ const SideBarAddIo = () => {
   return (
     <Drawer
       id='connector-drawer' // referenced by webui-tester
-      open={isOpen}
+      open={!!nodeType}
       anchor='right'
       variant='temporary'
-      onClose={closeDrawer}
+      onClose={() => setHash('')}
       ModalProps={{ keepMounted: true }}
       sx={{ '& .MuiDrawer-paper': { width: { xs: 300, sm: 600 }, backgroundColor: 'background.default' } }}
     >
       <Header>
         <Typography variant='h6'>
           <Breadcrumbs aria-label='breadcrumb' separator={<NavigateNextIcon fontSize='small' />}>
-            <Link underline='hover' color='inherit' onClick={() => setSelectTable(undefined)}>
+            <Link underline='hover' color='inherit' href={`#${nodeType}`}>
               {drawerTitle}
             </Link>
-            {selectTable && <Typography color='text.primary'>{connectorTypeToTitle(selectTable)}</Typography>}
+            {connectorType && <Typography color='text.primary'>{connectorTypeToTitle(connectorType)}</Typography>}
           </Breadcrumbs>
         </Typography>
 
-        <IconButton size='small' onClick={closeDrawer} sx={{ color: 'text.primary' }}>
+        <IconButton size='small' href='#' sx={{ color: 'text.primary' }}>
           <Icon icon='bx:x' fontSize={20} />
         </IconButton>
       </Header>
-      {!selectTable && (
+      {!connectorType && (
         <Grid container spacing={3}>
-          {shouldDisplayConnector(direction, ConnectorType.KAFKA_IN) && (
-            <IoSelectBox
-              dialog={KafkaInputConnectorDialog}
-              closeDrawer={close}
-              openSelectTable={() => openSelectTable(ConnectorType.KAFKA_IN)}
-              howMany={sourceCounts[ConnectorType.KAFKA_IN]}
-              onSuccess={onAddClick}
-              icon={connectorTypeToIcon(ConnectorType.KAFKA_IN)}
-            />
-          )}
-          {shouldDisplayConnector(direction, ConnectorType.KAFKA_OUT) && (
-            <IoSelectBox
-              dialog={KafkaOutputConnectorDialog}
-              closeDrawer={close}
-              openSelectTable={() => openSelectTable(ConnectorType.KAFKA_OUT)}
-              howMany={sourceCounts[ConnectorType.KAFKA_OUT]}
-              onSuccess={onAddClick}
-              icon={connectorTypeToIcon(ConnectorType.KAFKA_OUT)}
-            />
-          )}
-          {shouldDisplayConnector(direction, ConnectorType.URL) && (
-            <IoSelectBox
-              dialog={UrlConnectorDialog}
-              closeDrawer={close}
-              openSelectTable={() => openSelectTable(ConnectorType.URL)}
-              howMany={sourceCounts[ConnectorType.URL]}
-              onSuccess={onAddClick}
-              icon={connectorTypeToIcon(ConnectorType.URL)}
-            />
+          {[ConnectorType.KAFKA_IN, ConnectorType.KAFKA_OUT, ConnectorType.URL].map(
+            type =>
+              shouldDisplayConnector(direction, type) && (
+                <IoSelectBox
+                  key={type}
+                  icon={connectorTypeToIcon(type)}
+                  howMany={sourceCounts[type]}
+                  onNew={type}
+                  onSelect={() => openSelectTable(type)}
+                />
+              )
           )}
         </Grid>
       )}
-      {selectTable && (
+      {connectorType && (
         <Grid container spacing={3}>
           <Grid item xs={12}>
-            <SelectSourceTable direction={direction} typ={selectTable} onAddClick={onAddClick} />
+            <SelectSourceTable direction={direction} typ={connectorType} onAddClick={onAddClick} />
           </Grid>
         </Grid>
       )}
+      {[
+        tuple(ConnectorType.KAFKA_IN, KafkaInputConnectorDialog),
+        tuple(ConnectorType.KAFKA_OUT, KafkaOutputConnectorDialog),
+        tuple(ConnectorType.URL, UrlConnectorDialog)
+      ].map(([type, dialog]) => dialog({ show: hash === type, setShow: () => setHash(''), onSuccess: onAddClick }))}
     </Drawer>
   )
 }

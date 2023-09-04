@@ -1,7 +1,7 @@
 export enum ConnectorType {
   KAFKA_IN = 'KafkaIn',
   KAFKA_OUT = 'KafkaOut',
-  URL = 'HTTP GET',
+  URL = 'HTTP_GET',
   UNKNOWN = 'Unknown'
 }
 

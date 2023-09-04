@@ -12,3 +12,7 @@ export const partition = <T>(arr: T[], predicate: (v: T, i: number, ar: T[]) => 
     },
     [[], []] as [T[], T[]]
   )
+
+export function inUnion<T extends readonly string[]>(union: T, val: string): val is T[number] {
+  return union.includes(val)
+}

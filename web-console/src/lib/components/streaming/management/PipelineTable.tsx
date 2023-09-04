@@ -15,6 +15,7 @@ import usePausePipeline from '$lib/compositions/streaming/management/usePausePip
 import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import useShutdownPipeline from '$lib/compositions/streaming/management/useShutdownPipeline'
 import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
+import { useHashPart } from '$lib/compositions/useHashPart'
 import { humanSize } from '$lib/functions/common/string'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { tuple } from '$lib/functions/common/tuple'
@@ -41,7 +42,7 @@ import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
 
 import { Icon } from '@iconify/react'
-import { useHash, useLocalStorage } from '@mantine/hooks'
+import { useLocalStorage } from '@mantine/hooks'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { Button } from '@mui/material'
 import Badge from '@mui/material/Badge'
@@ -476,14 +477,12 @@ export default function PipelineTable() {
     key: LS_PREFIX + 'pipelines/expanded',
     defaultValue: [] as GridRowId[]
   })
-  const [hash, setHash] = useHash()
+  const [hash, setHash] = useHashPart()
 
   // Cannot initialize in useState because hash is not available during SSR
   useEffect(() => {
-    const anchor = hash.slice(1)
-
     setExpandedRows(expandedRows =>
-      (expandedRows.includes(anchor) ? expandedRows : [...expandedRows, anchor]).filter(
+      (expandedRows.includes(hash) ? expandedRows : [...expandedRows, hash]).filter(
         row =>
           data?.find(
             p =>
@@ -501,8 +500,7 @@ export default function PipelineTable() {
   }, [hash, setExpandedRows, data])
 
   const updateExpandedRows = (newExpandedRows: GridRowId[]) => {
-    const anchor = hash.slice(1)
-    if (newExpandedRows.length < expandedRows.length && !newExpandedRows.includes(anchor)) {
+    if (newExpandedRows.length < expandedRows.length && !newExpandedRows.includes(hash)) {
       setHash('')
     }
     setExpandedRows(newExpandedRows)
