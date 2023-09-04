@@ -11,7 +11,7 @@ import Typography from '@mui/material/Typography'
 
 const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
   const theme = useTheme()
-  console.log('sss', props.metrics)
+
   const memUsed = props.metrics.map(m => m.rss_bytes ?? 0)
   const smoothMemUsed = discreteDerivative(memUsed, (n1, n0) => n1 * 0.6 + 0.4 * n0)
 

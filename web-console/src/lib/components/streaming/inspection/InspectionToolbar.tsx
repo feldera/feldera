@@ -26,11 +26,12 @@ export const InspectionToolbar = (
       deleteRows(
         props.pipelineId,
         props.relation,
+        props.status !== PipelineStatus.RUNNING,
         Array.from(rows.values()).map(row => ({ delete: row.record }))
       )
       gridRef.current.setRowSelectionModel([])
     },
-    [props.pipelineId, props.relation, deleteRows, gridRef]
+    [props.pipelineId, props.relation, props.status, deleteRows, gridRef]
   )
   return (
     <GridToolbarContainer>
@@ -43,7 +44,7 @@ export const InspectionToolbar = (
           excelOptions
         }}
       />
-      <RowDeleteButton disabled={props.status !== PipelineStatus.RUNNING} onDeleteRows={onDeleteRows}></RowDeleteButton>
+      <RowDeleteButton onDeleteRows={onDeleteRows}></RowDeleteButton>
     </GridToolbarContainer>
   )
 }
