@@ -68,6 +68,7 @@ import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.circuit.ForeignKeyReference;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -109,6 +110,7 @@ public class CalciteCompiler implements IWritesLogs {
      * Perform additional type validation in top of the Calcite rules.
      */
     private final ValidateTypes validateTypes;
+    private final IErrorReporter errorReporter;
 
     /**
      * This class rewrites instances of the division operator in the SQL AST
@@ -247,6 +249,7 @@ public class CalciteCompiler implements IWritesLogs {
     public CalciteCompiler(CompilerOptions options, IErrorReporter errorReporter) {
         this.astRewriter = new RewriteDivision();
         this.options = options;
+        this.errorReporter = errorReporter;
 
         final boolean preserveCasing = false;
         Properties connConfigProp = new Properties();
@@ -563,7 +566,9 @@ public class CalciteCompiler implements IWritesLogs {
 
     List<RelColumnMetadata> createColumnsMetadata(SqlNodeList list) {
         List<RelColumnMetadata> result = new ArrayList<>();
+        boolean error = false;
         int index = 0;
+        Map<String, SqlNode> columnDefinition = new HashMap<>();
         for (SqlNode col: Objects.requireNonNull(list)) {
             SqlIdentifier name;
             SqlDataTypeSpec typeSpec;
@@ -586,12 +591,27 @@ public class CalciteCompiler implements IWritesLogs {
             } else {
                 throw new UnimplementedException(new CalciteObject(col));
             }
+            String colName = Catalog.identifierToString(name);
+            SqlNode previousColumn = columnDefinition.get(colName);
+            if (previousColumn != null) {
+                this.errorReporter.reportError(new SourcePositionRange(name.getParserPosition()),
+                        false, "Duplicate name", "Column with name " +
+                                Utilities.singleQuote(colName) + " already defined");
+                this.errorReporter.reportError(new SourcePositionRange(previousColumn.getParserPosition()),
+                        false, "Duplicate name",
+                        "Previous definition");
+                error = true;
+            } else {
+                columnDefinition.put(colName, col);
+            }
             RelDataType type = this.convertType(typeSpec);
             RelDataTypeField field = new RelDataTypeFieldImpl(
                     Catalog.identifierToString(name), index++, type);
             RelColumnMetadata meta = new RelColumnMetadata(field, isPrimaryKey, lateness, fks);
             result.add(meta);
         }
+        if (error)
+            throw new CompilationError("aborting.");
         return result;
     }
 

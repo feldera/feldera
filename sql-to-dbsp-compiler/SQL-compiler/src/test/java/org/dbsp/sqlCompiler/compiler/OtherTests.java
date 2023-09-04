@@ -82,7 +82,7 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 public class OtherTests extends BaseSQLTests implements IWritesLogs {
     private DBSPCompiler compileDef() {
-        DBSPCompiler compiler = testCompiler();
+        DBSPCompiler compiler = this.testCompiler();
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 INT NOT NULL" +
                 ", COL2 DOUBLE NOT NULL" +
@@ -374,6 +374,21 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 // TODO: Waiting for https://issues.apache.org/jira/browse/CALCITE-5861
                 Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
         }
+    }
+
+    @Test
+    public void duplicateColumnTest() {
+        DBSPCompiler compiler = this.testCompiler();
+        // allow multiple errors to be reported
+        compiler.options.optimizerOptions.throwOnError = false;
+        String ddl = "CREATE TABLE T (\n" +
+                "COL1 INT" +
+                ", COL1 DOUBLE" +
+                ")";
+        compiler.compileStatement(ddl);
+        String errors = compiler.messages.toString();
+        Assert.assertTrue(errors.contains("Column with name 'COL1' already defined"));
+        System.out.println(errors);
     }
 
     @Test
