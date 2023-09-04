@@ -567,3 +567,4 @@ all-tests:
     BUILD +test-sql
     BUILD +test-docker-compose
     BUILD +integration-tests
+
