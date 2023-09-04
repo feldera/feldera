@@ -31,10 +31,7 @@ const RETRY_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(2
 /// also be checking object versions and only issue notifications for version changes, and discard
 /// notifications about older versions. In the absence of such a check, there is a potential race +
 /// redundnacy between sync() calls and receiving notifications from the registered LISTEN calls
-pub(crate) async fn listen(
-    conn: Arc<tokio::sync::Mutex<ProjectDB>>,
-    tx: UnboundedSender<DbNotification>,
-) {
+pub async fn listen(conn: Arc<tokio::sync::Mutex<ProjectDB>>, tx: UnboundedSender<DbNotification>) {
     loop {
         let (client, mut connection) = conn
             .lock()
@@ -190,13 +187,13 @@ fn parse_notification(channel: &str, payload: &str) -> Result<DbNotification, No
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum DbNotification {
+pub enum DbNotification {
     Program(Operation, TenantId, ProgramId),
     Pipeline(Operation, TenantId, PipelineId),
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Operation {
+pub enum Operation {
     Add,
     Delete,
     Update,

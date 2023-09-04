@@ -19,7 +19,6 @@ RUN apt update --fix-missing && apt install \
   # To add the nodesource debian repository
   ca-certificates gnupg
 
-
 # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
   locale-gen

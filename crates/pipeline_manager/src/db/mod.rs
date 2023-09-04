@@ -508,7 +508,7 @@ impl From<PipelineStatus> for &'static str {
 /// A pipeline revision is a versioned, immutable configuration struct that
 /// contains all information necessary to run a pipeline.
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
-pub(crate) struct PipelineRevision {
+pub struct PipelineRevision {
     /// The revision number, starts at 1, increases every time the pipeline is
     /// comitted.
     pub(crate) revision: Revision,
