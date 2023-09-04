@@ -1,3 +1,4 @@
+/* generated using openapi-typescript-codegen -- do no edit */
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
@@ -241,6 +242,7 @@ export class PipelinesService {
    * ingested successfully.
    * @param pipelineId Unique pipeline identifier.
    * @param tableName SQL table name.
+   * @param force When `true`, push data to the pipeline even if the pipeline is paused. The default value is `false`
    * @param format Input data format, e.g., 'csv' or 'json'.
    * @param requestBody Contains the new input data in CSV.
    * @param array Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`.
@@ -251,6 +253,7 @@ export class PipelinesService {
   public static httpInput(
     pipelineId: string,
     tableName: string,
+    force: boolean,
     format: string,
     requestBody: string,
     array?: boolean | null,
@@ -264,6 +267,7 @@ export class PipelinesService {
         table_name: tableName
       },
       query: {
+        force: force,
         format: format,
         array: array,
         update_format: updateFormat
