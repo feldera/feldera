@@ -7,6 +7,7 @@ import { useMutation } from '@tanstack/react-query'
 type Args = [
   pipelineId: string,
   relation: string,
+  force: boolean,
   rows: Partial<Record<'insert' | 'delete', Record<string, unknown>>>[],
   isArray?: boolean
 ]
@@ -15,18 +16,18 @@ export function useInsertDeleteRows() {
   const { pushMessage } = useStatusNotification()
 
   const { mutate: pipelineDelete, isLoading } = useMutation<string, ApiError, Args>({
-    mutationFn: ([pipelineId, relation, rows, isArray]) => {
+    mutationFn: ([pipelineId, relation, force, rows, isArray]) => {
       return isArray
-        ? PipelinesService.httpInput(pipelineId, relation, 'json', JSON.stringify(rows), true)
-        : PipelinesService.httpInput(pipelineId, relation, 'json', rows.map(row => JSON.stringify(row)).join(''))
+        ? PipelinesService.httpInput(pipelineId, relation, force, 'json', JSON.stringify(rows), true)
+        : PipelinesService.httpInput(pipelineId, relation, force, 'json', rows.map(row => JSON.stringify(row)).join(''))
     }
   })
 
   return useCallback(
-    (...[pipelineId, relation, rows, isArray = true]: Args) => {
+    (...[pipelineId, relation, force, rows, isArray = false]: Args) => {
       const rowsLen = Object.keys(rows).length
       if (!isLoading) {
-        pipelineDelete([pipelineId, relation, rows, isArray], {
+        pipelineDelete([pipelineId, relation, force, rows, isArray], {
           onSuccess: () => {
             pushMessage({
               message: `${rowsLen}` + (rowsLen > 1 ? 'Rows deleted' : 'Row deleted'),
