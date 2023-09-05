@@ -388,7 +388,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         compiler.compileStatement(ddl);
         String errors = compiler.messages.toString();
         Assert.assertTrue(errors.contains("Column with name 'COL1' already defined"));
-        System.out.println(errors);
     }
 
     @Test
