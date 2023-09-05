@@ -16,6 +16,7 @@ import {
   alpha,
   Box,
   IconButton,
+  IconButtonProps,
   Link,
   Stack,
   useTheme
@@ -30,6 +31,9 @@ const ProgramLink = ({ program }: { program: ProgramDescr }) => (
     @ {program.name}
   </Link>
 )
+
+const limitAndAppend = (text: string | null | undefined, max: number, suffix: string) =>
+  text?.slice(0, max) + (text && text.length > max ? suffix : '')
 
 const programErrors = (program: ProgramDescr) =>
   match(program.status)
@@ -46,7 +50,14 @@ const programErrors = (program: ProgramDescr) =>
                   <br />
                   {program.program_id}
                 </>
-              )
+              ),
+              report: {
+                Error: '```\n' + limitAndAppend(e.message, 1000, '\n...Rest of the error...') + '\n```',
+                SQL: () =>
+                  ProgramsService.getProgram(program.program_id, true).then(
+                    p => '```\n' + limitAndAppend(p.code, 7000, '\n...Rest of the code...') + '\n```'
+                  )
+              }
             }
           })
       )
@@ -62,8 +73,11 @@ const programErrors = (program: ProgramDescr) =>
             </>
           ),
           report: {
-            Error: '```\n' + e + '\n```',
-            SQL: () => ProgramsService.getProgram(program.program_id, true).then(p => '```\n' + p.code + '\n```')
+            Error: '```\n' + limitAndAppend(e, 1000, '\n...Rest of the error...') + '\n```',
+            SQL: () =>
+              ProgramsService.getProgram(program.program_id, true).then(
+                p => '```\n' + limitAndAppend(p.code, 7000, '\n...Rest of the code...') + '\n```'
+              )
           }
         }
       })
@@ -79,8 +93,11 @@ const programErrors = (program: ProgramDescr) =>
             </>
           ),
           report: {
-            Error: '```\n' + e + '\n```',
-            SQL: () => ProgramsService.getProgram(program.program_id, true).then(p => '```\n' + p.code + '\n```')
+            Error: '```\n' + limitAndAppend(e, 1000, '\n...Rest of the error...') + '\n```',
+            SQL: () =>
+              ProgramsService.getProgram(program.program_id, true).then(
+                p => '```\n' + limitAndAppend(p.code, 7000, '\n...Rest of the code...') + '\n```'
+              )
           }
         }
       })
@@ -103,11 +120,51 @@ const pipelineErrors = (p: Pipeline) =>
                 <br />
                 {p.descriptor.pipeline_id}
               </>
-            )
+            ),
+            report: {
+              Error: '```\n' + limitAndAppend(p.state.error.message, 1000, '\n...Rest of the error...') + '\n```',
+              Version: String(p.descriptor.version),
+              ...(p =>
+                !p
+                  ? {}
+                  : {
+                      SQL: () =>
+                        ProgramsService.getProgram(p, true).then(
+                          p => '```\n' + limitAndAppend(p.code, 7000, '\n...Rest of the code...') + '\n```'
+                        )
+                    })(p.descriptor.program_id)
+            }
           }
         })
       ]
     : []
+
+const CopyButton = (props: IconButtonProps) => {
+  const theme = useTheme()
+  return (
+    <Box
+      sx={{
+        top: 0,
+        right: 0,
+        mx: 5,
+        my: 2,
+        position: 'absolute',
+        background: theme.palette.background.paper
+      }}
+    >
+      <IconButton
+        sx={{
+          border: 'solid',
+          borderRadius: '0.25rem'
+        }}
+        size='small'
+        {...props}
+      >
+        <Icon icon='bx:copy' fontSize={24}></Icon>
+      </IconButton>
+    </Box>
+  )
+}
 
 const Health = () => {
   const theme = useTheme()
@@ -174,13 +231,7 @@ const Health = () => {
                           <pre style={{ margin: '0', fontSize: '14px' }}>{e.message}</pre>
                         </Box>
 
-                        <IconButton
-                          sx={{ position: 'absolute', top: 0, right: 0, mr: 4 }}
-                          onClick={() => copy(e.message)}
-                          size='small'
-                        >
-                          <Icon icon='bx:copy' fontSize={24}></Icon>
-                        </IconButton>
+                        <CopyButton onClick={() => copy(e.message)}></CopyButton>
                       </Box>
                       {!['{}', ''].includes(causeStr) && (
                         <Box
@@ -192,13 +243,7 @@ const Health = () => {
                           <Box sx={{ overflow: 'scroll', maxHeight: '10rem', width: '100%', height: '100%' }}>
                             <pre style={{ margin: '0', fontSize: '14px' }}>{causeStr}</pre>
                           </Box>
-                          <IconButton
-                            sx={{ position: 'absolute', top: 0, right: 0, mr: 4 }}
-                            onClick={() => copy(causeStr)}
-                            size='small'
-                          >
-                            <Icon icon='bx:copy' fontSize={24}></Icon>
-                          </IconButton>
+                          <CopyButton onClick={() => copy(causeStr)}></CopyButton>
                         </Box>
                       )}
                     </Card>

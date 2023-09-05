@@ -30,7 +30,7 @@ export function useInsertDeleteRows() {
         pipelineDelete([pipelineId, relation, force, rows, isArray], {
           onSuccess: () => {
             pushMessage({
-              message: `${rowsLen}` + (rowsLen > 1 ? 'Rows deleted' : 'Row deleted'),
+              message: `${rowsLen} ` + (rowsLen > 1 ? 'rows deleted' : 'row deleted'),
               key: new Date().getTime(),
               color: 'success'
             })

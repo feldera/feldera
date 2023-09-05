@@ -1,13 +1,3 @@
-// Define a default query function that will receive the query key and decide
-// what API to call based on the query key.
-//
-//
-// This interplays with react-query in the following way:
-// -  The defaultQueryFn is installed in the QueryClientProvider in _app.tsx
-// -  The defaultQueryFn is used in the useQuery hook in the components whenever
-//    no queryFn is provided (ideally we never provide a queryFn to reduce
-//    duplication and bugs but always rely on defaultQueryFn to route to the correct API call)
-
 import { invalidateQuery, mkQuery, setQueryData } from '$lib/functions/common/tanstack'
 import {
   ConnectorsService,
