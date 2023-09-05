@@ -136,7 +136,7 @@ For JIT tests (ones whose names start with `Jit`, add `--features
 jit`, e.g.:
 
 ```
-$ mvn test -Dtest=itPostgresDateTest
+$ mvn test -Dtest=JitPostgresDateTest
 $ cd ../temp
 $ cargo test --features jit
 ```
