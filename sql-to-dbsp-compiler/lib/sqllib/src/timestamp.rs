@@ -191,63 +191,63 @@ pub fn minus_TimestampN_Timestamp_LongIntervalN(
 }
 
 pub fn extract_year_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    Date.year().into()
+    let date = value.to_dateTime();
+    date.year().into()
 }
 
 pub fn extract_month_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    Date.month().into()
+    let date = value.to_dateTime();
+    date.month().into()
 }
 
 pub fn extract_day_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    Date.day().into()
+    let date = value.to_dateTime();
+    date.day().into()
 }
 
 pub fn extract_quarter_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    (Date.month0() / 3 + 1).into()
+    let date = value.to_dateTime();
+    (date.month0() / 3 + 1).into()
 }
 
 pub fn extract_decade_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    (Date.year() / 10).into()
+    let date = value.to_dateTime();
+    (date.year() / 10).into()
 }
 
 pub fn extract_century_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    ((Date.year() + 99) / 100).into()
+    let date = value.to_dateTime();
+    ((date.year() + 99) / 100).into()
 }
 
 pub fn extract_millennium_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    ((Date.year() + 999) / 1000).into()
+    let date = value.to_dateTime();
+    ((date.year() + 999) / 1000).into()
 }
 
 pub fn extract_isoyear_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    Date.iso_week().year().into()
+    let date = value.to_dateTime();
+    date.iso_week().year().into()
 }
 
 pub fn extract_week_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    Date.iso_week().week().into()
+    let date = value.to_dateTime();
+    date.iso_week().week().into()
 }
 
 pub fn extract_dow_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    (Date.weekday().num_days_from_sunday() as i64) + Date::first_day_of_week()
+    let date = value.to_dateTime();
+    (date.weekday().num_days_from_sunday() as i64) + Date::first_day_of_week()
 }
 
 pub fn extract_isodow_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    (Date.weekday().num_days_from_monday() as i64) + 1
+    let date = value.to_dateTime();
+    (date.weekday().num_days_from_monday() as i64) + 1
 }
 
 pub fn extract_doy_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    Date.ordinal().into()
+    let date = value.to_dateTime();
+    date.ordinal().into()
 }
 
 pub fn extract_epoch_Timestamp(t: Timestamp) -> i64 {
@@ -255,28 +255,28 @@ pub fn extract_epoch_Timestamp(t: Timestamp) -> i64 {
 }
 
 pub fn extract_millisecond_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    (Date.second() * 1000 + Date.timestamp_subsec_millis()).into()
+    let date = value.to_dateTime();
+    (date.second() * 1000 + date.timestamp_subsec_millis()).into()
 }
 
 pub fn extract_microsecond_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    (Date.second() * 1_000_000 + Date.timestamp_subsec_micros()).into()
+    let date = value.to_dateTime();
+    (date.second() * 1_000_000 + date.timestamp_subsec_micros()).into()
 }
 
 pub fn extract_second_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    Date.second().into()
+    let date = value.to_dateTime();
+    date.second().into()
 }
 
 pub fn extract_minute_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    Date.minute().into()
+    let date = value.to_dateTime();
+    date.minute().into()
 }
 
 pub fn extract_hour_Timestamp(value: Timestamp) -> i64 {
-    let Date = value.to_dateTime();
-    Date.hour().into()
+    let date = value.to_dateTime();
+    date.hour().into()
 }
 
 some_polymorphic_function1!(extract_year, Timestamp, Timestamp, i64);
@@ -660,3 +660,28 @@ some_operator!(eq, Time, Time, bool);
 some_operator!(neq, Time, Time, bool);
 some_operator!(gte, Time, Time, bool);
 some_operator!(lte, Time, Time, bool);
+
+pub fn extract_millisecond_Time(value: Time) -> i64 {
+    let time = value.to_time();
+    (time.second() * 1000 + time.nanosecond() / 1_000_000).into()
+}
+
+pub fn extract_microsecond_Time(value: Time) -> i64 {
+    let time = value.to_time();
+    (time.second() * 1_000_000 + time.nanosecond() / 1000).into()
+}
+
+pub fn extract_second_Time(value: Time) -> i64 {
+    let time = value.to_time();
+    time.second().into()
+}
+
+pub fn extract_minute_Time(value: Time) -> i64 {
+    let time = value.to_time();
+    time.minute().into()
+}
+
+pub fn extract_hour_Time(value: Time) -> i64 {
+    let time = value.to_time();
+    time.hour().into()
+}

@@ -25,6 +25,9 @@
 
 package org.dbsp.util;
 
+import org.apache.calcite.avatica.util.DateTimeUtils;
+import org.apache.calcite.util.TimeString;
+
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -226,5 +229,24 @@ public class Utilities {
             offset += Character.charCount(codepoint);
         }
         return true;
+    }
+
+    public static long timeStringToNanoseconds(TimeString ts) {
+        // TimeString has a pretty strict format
+        String v = ts.toString();
+        long time = Integer.parseInt(v.substring(0, 2));
+        int m = Integer.parseInt(v.substring(3, 5));
+        time = time * 60 + m;
+        int s = Integer.parseInt(v.substring(6, 8));
+        time = time * 60 + s;
+        long ns = 0;
+        if (v.length() > 9) {
+            String tail = v.substring(9);
+            tail = tail + "000000000";
+            tail = tail.substring(0, 9);
+            ns = Long.parseLong(tail);
+        }
+        time = time * 1_000_000_000 + ns;
+        return time;
     }
 }

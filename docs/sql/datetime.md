@@ -1,35 +1,6 @@
-# Date/time operations
+# Date/time/time intervals
 
-`TIME` literals have the form `TIME 'HH:MM:SS.FFF`, where the
-fractional part is optional, and can have between 0 and 9 digits.
-Trailing spaces are not allowed.  A time represents a time within a
-day, limited to between 0 and 24 hours.
-
-Values of type `DATE`, `TIME`, and `TIMESTAMP` can be compared
-using `=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`, `<=>`,
-`BETWEEN`; the result is a Boolean.
-
-The following arithmetic operations are supported:
-
-| Operation                       | Result Type | Explanation                                               |
-|---------------------------------|--------------------|----------------------------------------------------|
-| `DATE` + `INTEGER`              | `DATE`             | Add a number of days to a date                     |
-| `DATE` + `INTERVAL`             | `TIMESTAMP`        | Add an interval to a date                          |
-| `DATE` + `TIME`                 | `TIMESTAMP`        | Create a timestamp from parts                      |
-| `INTERVAL` + `INTERVAL`         | `INTERVAL`         | Add two intervals; both must have the same type    |
-| `TIMESTAMP` + `INTERVAL`        | `TIMESTAMP`        | Add an interval to a timestamp                     |
-| `TIME` + `INTERVAL` (short)     | `TIME`             | Add an interval to a time                          |
-| `-` `INTERVAL`                  | `INTERVAL`         | Negate an interval                                 |
-| `DATE` - `DATE`                 | `INTERVAL`         | Compute the interval between two dates             |
-| `DATE` - `INTEGER`              | `DATE`             | Subtract a number of days from a date              |
-| `DATE` - `INTERVAL`             | `DATE`             | Subtract an interval from a date                   |
-| `TIME` - `TIME`                 | `INTERVAL` (short) | Compute the difference between two times           |
-| `TIME` - `INTERVAL` (short)     | `TIME`             | Subtract an interval from a time                   |
-| `TIMESTAMP` - `INTERVAL`        | `TIMESTAMP`        | Subtract an interval from a timestamp              |
-| `INTERVAL` - `INTERVAL`         | `INTERVAL`         | Subtract two intervals                             |
-| `INTERVAL` * `DOUBLE`           | `INTERVAL`         | Multiply an interval by a scalar                   |
-| `INTERVAL` / `DOUBLE`           | `INTERVAL`         | Divide an interval by a scalar                     |
-| `TIMESTAMP` - `TIMESTAMP`       | `INTERVAL` (long)  | Subtract two timestamps, convert result into days  |
+## Time units
 
 The following are legal time units:
 
@@ -53,14 +24,17 @@ The following are legal time units:
 | `MICROSECOND`   | A microsecond within a *minute*, including the number of seconds multiplied by 1,000,000, a number between 0 and 59,999,999                                                                                    |
 | `EPOCH`         | Number of seconds from Unix epoch, i.e., 1970/01/01.                                    |
 
+## Dates
 
-## Operations on dates
+### Date literals
 
 `DATE` literals have the form `DATE 'YYYY-MM-DD'`.  Trailing spaces
 are not allowed.
 
 Date literals can only represent 4-digit year positive values.
 Values BC or values greater than 10,000 years are not supported.
+
+### Date operations
 
 The following operations are available on dates:
 
@@ -93,7 +67,45 @@ For dates it always returns 0, since dates have no time component.
 
 `CEIL(datetime TO <unit>)`, where `<unit>` is a time unit.
 
-## Operations on timestamps
+Values of type `DATE` can be compared using `=`, `<>`, `!=`, `<`, `>`,
+`<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
+
+## Times
+
+A time represents the time of day, a value between 0 and 24 hours
+(excluding the latter).  Times are stored with a precision of
+nanoseconds.
+
+### Time literals
+
+`TIME` literals have the form `TIME '`HH:MM:SS.FFF`'`, where the
+fractional part is optional, and can have between 0 and 3 digits.  An
+example is: '23:59:59.132'.  The hours must be between 0 and 23, the
+minutes between 0 and 59, and the seconds between 0 and 59.  Exactly
+two digits must be used for hours, minuts, and seconds.  Spaces are
+not allowed between quotes.
+
+### Time operations
+
+`EXTRACT(<unit> FROM timestamp)` where `<unit>` is a time unit from
+`HOUR`, `MINUTE`, `SECOND`, `MILLISECOND`; the semantics is as
+described above.  Result is always a `BIGINT` value.
+
+The following abbreviations can be used as well:
+
+`HOUR(timestamp)` is an abbreviation for `EXTRACT(HOUR FROM timestamp)`.
+
+`MINUTE(timestamp)` is an abbreviation for `EXTRACT(MINUTE FROM timestamp)`.
+
+`SECOND(timestamp)` is an abbreviation for `EXTRACT(SECOND FROM
+timestamp)`.
+
+Values of type `TIME` can be compared using `=`, `<>`, `!=`, `<`, `>`,
+`<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
+
+## Timestamps
+
+### Timestamp literals
 
 A timestamp contains both a date and a time.  `TIMESTAMP` literals
 have the form `TIMESTAMP 'YYYY-MM-DD HH:MM:SS.FFF'`, where the
@@ -106,6 +118,8 @@ The precision of timestamps is milliseconds, additional digits of
 precision in timestamp literals are rounded to milliseconds.
 
 The following operations are available on timestamps:
+
+### Operations on timestamps
 
 `EXTRACT(<unit> FROM timestamp)` where `<unit>` is a time unit, as
 described above.  Result is always a `BIGINT` value.
@@ -128,6 +142,9 @@ timestamp)`.
 
 `SECOND(timestamp)` is an abbreviation for `EXTRACT(SECOND FROM
 timestamp)`.
+
+Values of type `TIMESTAMP` can be compared using `=`, `<>`, `!=`, `<`,
+`>`, `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
 `TIMESTAMPDIFF(<unit>, left, right)` computes the difference between
 two timestamps and expresses the result in the specified time units.
@@ -170,21 +187,41 @@ the following combinations are supported:
 |`INTERVAL MINUTE TO SECOND` | `INTERVAL '1000:01.001' MINUTE TO SECOND`       |
 |`INTERVAL SECOND`           | `INTERVAL '1000.000001' SECOND`                 |
 
-
 A leading negative sign applies to all fields; for example the
 negative sign in the interval literal `INTERVAL '-1 2:03:04' DAYS TO
 SECONDS` applies to both the days and hour/minute/second parts.
 
+## Other date/time/timestamp/time interval operations
+
+The following arithmetic operations are supported:
+
+| Operation                       | Result Type | Explanation                                               |
+|---------------------------------|--------------------|----------------------------------------------------|
+| `DATE` + `INTEGER`              | `DATE`             | Add a number of days to a date                     |
+| `DATE` + `INTERVAL`             | `TIMESTAMP`        | Add an interval to a date                          |
+| `DATE` + `TIME`                 | `TIMESTAMP`        | Create a timestamp from parts                      |
+| `INTERVAL` + `INTERVAL`         | `INTERVAL`         | Add two intervals; both must have the same type    |
+| `TIMESTAMP` + `INTERVAL`        | `TIMESTAMP`        | Add an interval to a timestamp                     |
+| `TIME` + `INTERVAL` (short)     | `TIME`             | Add an interval to a time                          |
+| `-` `INTERVAL`                  | `INTERVAL`         | Negate an interval                                 |
+| `DATE` - `DATE`                 | `INTERVAL`         | Compute the interval between two dates             |
+| `DATE` - `INTEGER`              | `DATE`             | Subtract a number of days from a date              |
+| `DATE` - `INTERVAL`             | `DATE`             | Subtract an interval from a date                   |
+| `TIME` - `TIME`                 | `INTERVAL` (short) | Compute the difference between two times           |
+| `TIME` - `INTERVAL` (short)     | `TIME`             | Subtract an interval from a time                   |
+| `TIMESTAMP` - `INTERVAL`        | `TIMESTAMP`        | Subtract an interval from a timestamp              |
+| `INTERVAL` - `INTERVAL`         | `INTERVAL`         | Subtract two intervals                             |
+| `INTERVAL` * `DOUBLE`           | `INTERVAL`         | Multiply an interval by a scalar                   |
+| `INTERVAL` / `DOUBLE`           | `INTERVAL`         | Divide an interval by a scalar                     |
+| `TIMESTAMP` - `TIMESTAMP`       | `INTERVAL` (long)  | Subtract two timestamps, convert result into days  |
+
 ## Timezones
 
-`DATE`, `TIME` and `TIMESTAMP` have no time zone. For those types,
-there is not even an implicit time zone, such as UTC (as in Java) or
-the local time zone.  It is left to the user or application to supply a
-time zone.
+`DATE`, `TIME` and `TIMESTAMP` have no time zone.
 
 ## Important unsupported operations
 
-Since DBSP is a *deterministic* query engine, it cannot offer support
-for any function that depends on the current time.  So the following
-are *not* supported: `LOCALTIME`, `LOCALTIMESTAMP`,
+Since DBSP is a *deterministic* query engine, it does not currently
+offer support for any function that depends on the current time.  So
+the following are *not* supported: `LOCALTIME`, `LOCALTIMESTAMP`,
 `CURRENT_TIME`, `CURRENT_DATE`, `CURRENT_TIMESTAMP`.

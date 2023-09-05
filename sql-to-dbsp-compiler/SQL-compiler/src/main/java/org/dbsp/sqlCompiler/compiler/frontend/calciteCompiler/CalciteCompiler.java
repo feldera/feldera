@@ -209,6 +209,12 @@ public class CalciteCompiler implements IWritesLogs {
             return DBSPTypeDecimal.MAX_SCALE;
         }
         @Override
+        public int getMaxPrecision(SqlTypeName typeName) {
+            if (typeName.equals(SqlTypeName.TIME))
+                return 9;
+            return super.getMaxPrecision(typeName);
+        }
+        @Override
         public boolean shouldConvertRaggedUnionTypesToVarying() { return true; }
     };
 
