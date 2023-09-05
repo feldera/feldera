@@ -28,7 +28,7 @@ use crate::NumEntries;
 /// A persistent trace implementation.
 ///
 /// - It mimics the (external) behavior of a `Spine`, but internally it uses a
-///   RocksDB ColumnFamily to store it's data.
+///   RocksDB ColumnFamily to store its data.
 ///
 /// - It also relies on merging and compaction of the RocksDB key-value store
 ///   rather than controlling these aspects itself.
