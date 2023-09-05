@@ -56,11 +56,7 @@ if (themeConfig.routingLoader) {
   })
 }
 // provide the default query function to your app with defaultOptions
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {}
-  }
-})
+const queryClient = new QueryClient({})
 
 const App = (props: ExtendedAppProps) => {
   const { Component, emotionCache = clientSideEmotionCache, pageProps } = props
