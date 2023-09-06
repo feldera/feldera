@@ -76,7 +76,7 @@
 //!
 //! ## Adapter API
 //!
-//! The transport adapter API consists of two traits:
+//! The transport adapter API consists of four traits:
 //!
 //! * [`InputTransport`] is a factory trait that creates [`InputEndpoint`]
 //!   instances.

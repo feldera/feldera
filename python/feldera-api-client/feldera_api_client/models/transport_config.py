@@ -16,7 +16,7 @@ class TransportConfig:
     """Transport endpoint configuration.
 
     Attributes:
-        name (str): Data transport name, e.g., "file", "kafka", "kinesis", etc.
+        name (str): Data transport name, e.g., `file`, `kafka`, `kinesis`
         config (Union[Unset, TransportConfigConfig]): Transport-specific endpoint configuration passed to
             `crate::OutputTransport::new_endpoint`
             and `crate::InputTransport::new_endpoint`.

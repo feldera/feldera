@@ -144,7 +144,7 @@ pub struct OutputEndpointConfig {
 /// Transport endpoint configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct TransportConfig {
-    /// Data transport name, e.g., "file", "kafka", "kinesis", etc.
+    /// Data transport name, e.g., `file`, `kafka`, `kinesis`
     pub name: Cow<'static, str>,
 
     /// Transport-specific endpoint configuration passed to
