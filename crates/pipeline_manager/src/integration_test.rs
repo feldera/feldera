@@ -892,3 +892,48 @@ async fn parse_datetime() {
         .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
         .await;
 }
+
+#[actix_web::test]
+#[serial]
+async fn quoted_columns() {
+    let config = setup().await;
+    let id = deploy_pipeline_without_connectors(
+        &config,
+        r#"create table t1("c1" integer not null, "C2" bool not null, "😁❤" varchar not null, "αβγ" boolean not null, ΔΘ boolean not null)"#,
+    )
+    .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .await;
+
+    // Push some data using default json config.
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=raw",
+                id
+            ),
+            r#"{"c1": 10, "C2": true, "😁❤": "foo", "αβγ": true, "δθ": false}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let quantiles = config.quantiles_json(&id, "T1").await;
+    assert_eq!(quantiles, "[{\"insert\":{\"C2\":true,\"c1\":10,\"ΔΘ\":false,\"αβγ\":true,\"😁❤\":\"foo\"}}]");
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .await;
+}
