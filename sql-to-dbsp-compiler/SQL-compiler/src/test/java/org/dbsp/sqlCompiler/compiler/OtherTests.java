@@ -629,7 +629,17 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
     @Test
     public void testSanitizeNames() throws IOException, InterruptedException {
-        String statements = "create table t1(c1 integer); create view v1 as select element(array [2, 3]) from t1;";
+        String statements = "create table t1(\n" +
+                "c1 integer,\n" +
+                "\"col\" boolean,\n" +
+                "\"SPACES INSIDE\" CHAR,\n" +
+                "\"CC\" CHAR,\n" +
+                "\"quoted \"\" with quote\" CHAR,\n" +
+                "U&\"d\\0061t\\0061\" CHAR,\n" + // 'data' spelled in Unicode
+                "José CHAR,\n"  +
+                "\"Gosé\" CHAR\n" +
+        ");\n" +
+                "create view v1 as select * from t1;";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(statements);
         DBSPCircuit circuit = getCircuit(compiler);

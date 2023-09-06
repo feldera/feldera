@@ -49,13 +49,15 @@ public class DBSPTypeStruct extends DBSPType {
          */
         public final String sanitizedName;
         public final String name;
+        public final boolean nameIsQuoted;
         public final DBSPType type;
 
-        public Field(CalciteObject node, String name, String sanitizedName, DBSPType type) {
+        public Field(CalciteObject node, String name, String sanitizedName, DBSPType type, boolean nameIsQuoted) {
             super(node);
             this.sanitizedName = sanitizedName;
             this.name = name;
             this.type = type;
+            this.nameIsQuoted = nameIsQuoted;
         }
 
         public String getName() {

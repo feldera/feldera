@@ -1033,9 +1033,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPTypeStruct.Field field) {
         if (!field.name.equals(field.sanitizedName)) {
-            this.builder.append("#[serde(rename=\"")
-                    .append(field.name)
-                    .append("\")]")
+            this.builder.append("#[serde(rename=")
+                    .append(Utilities.doubleQuote(field.name))
+                    .append(")]")
                     .newline();
         }
         this.builder.append(field.sanitizedName)

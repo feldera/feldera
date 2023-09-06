@@ -46,6 +46,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -109,7 +110,8 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
         for (RelColumnMetadata col: this.columns) {
             DBSPType fType = compiler.convertType(col.getType(), true);
-            fields.add(new DBSPTypeStruct.Field(this.getCalciteObject(), col.getName(), col.getName(), fType));
+            fields.add(new DBSPTypeStruct.Field(
+                    this.getCalciteObject(), col.getName(), col.getName(), fType, col.nameIsQuoted));
         }
         return new DBSPTypeStruct(this.getCalciteObject(), this.tableName, this.tableName, fields);
     }

@@ -31,11 +31,16 @@ public class RelColumnMetadata {
      */
     @Nullable
     public final ForeignKeyReference foreignKeyReference;
+    /**
+     * True if the column name was quoted.
+     */
+    public final boolean nameIsQuoted;
 
-    public RelColumnMetadata(RelDataTypeField field, boolean isPrimaryKey,
+    public RelColumnMetadata(RelDataTypeField field, boolean isPrimaryKey, boolean nameIsQuoted,
                              @Nullable RexNode lateness,
                              @Nullable ForeignKeyReference foreignKeyReference) {
         this.isPrimaryKey = isPrimaryKey;
+        this.nameIsQuoted = nameIsQuoted;
         this.field = field;
         this.lateness = lateness;
         this.foreignKeyReference = foreignKeyReference;

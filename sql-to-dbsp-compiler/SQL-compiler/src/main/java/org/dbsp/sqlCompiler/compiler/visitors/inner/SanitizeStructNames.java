@@ -49,7 +49,7 @@ public class SanitizeStructNames extends InnerRewriteVisitor {
         DBSPType type = this.transform(field.type);
         String sanitizedName = this.sanitizeName(field.name, "field", false, false);
         DBSPTypeStruct.Field result = new DBSPTypeStruct.Field(
-                field.getNode(), field.name, sanitizedName, type);
+                field.getNode(), field.name, sanitizedName, type, field.nameIsQuoted);
         this.pop(field);
         this.map(field, result);
         return VisitDecision.STOP;

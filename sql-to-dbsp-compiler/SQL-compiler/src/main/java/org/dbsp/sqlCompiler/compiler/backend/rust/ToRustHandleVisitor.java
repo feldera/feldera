@@ -144,7 +144,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                     .append(", ")
                     .append(Utilities.doubleQuote(field.name))
                     .append(", ")
-                    .append(field.sanitizedName.equals(field.name) ? "false" : "true")
+                    .append(Boolean.toString(field.nameIsQuoted))
                     .append(", ");
             field.type.accept(this.innerVisitor);
             this.builder.append(", ")

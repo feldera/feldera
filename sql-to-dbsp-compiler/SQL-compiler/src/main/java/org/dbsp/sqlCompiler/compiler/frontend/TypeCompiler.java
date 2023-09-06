@@ -65,7 +65,8 @@ public class TypeCompiler implements ICompilerComponent {
                 List<DBSPTypeStruct.Field> fields = new ArrayList<>();
                 for (RelDataTypeField field : dt.getFieldList()) {
                     DBSPType type = this.convertType(field.getType(), asStruct);
-                    fields.add(new DBSPTypeStruct.Field(new CalciteObject(dt), field.getName(), field.getName(), type));
+                    fields.add(new DBSPTypeStruct.Field(
+                            new CalciteObject(dt), field.getName(), field.getName(), type, false));
                 }
                 String name = structNameGen.nextName();
                 return new DBSPTypeStruct(node, name, name, fields);

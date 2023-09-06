@@ -26,6 +26,8 @@
 package org.dbsp.util;
 
 import org.apache.calcite.avatica.util.DateTimeUtils;
+import org.apache.calcite.sql.SqlIdentifier;
+import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
 
 import java.io.*;
@@ -126,6 +128,17 @@ public class Utilities {
         if (result == null)
             throw new RuntimeException("Key '" + key + "' does not exist in map");
         return result;
+    }
+
+    /**
+     * True when a simple identifier is quoted.
+     */
+    public static boolean identifierIsQuoted(SqlIdentifier id) {
+        // Heuristic: the name is quoted if it's shorter than the position would indicate.
+        SqlParserPos parserPosition = id.getParserPosition();
+        int posLen = parserPosition.getEndColumnNum() - parserPosition.getColumnNum();
+        int len = id.getSimple().length();
+        return posLen > len;
     }
 
     /**
