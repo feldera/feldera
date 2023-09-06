@@ -41,10 +41,16 @@
         "./src/lib/*"
       ]
     },
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
   "include": [
     "src",
-    "declaration.d.ts"
+    "declaration.d.ts",
+    ".next/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
