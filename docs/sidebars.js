@@ -65,7 +65,7 @@ const sidebars = {
     {
       type: 'category',
       label: 'API References',
-      items: ['api/rest', 'api/json', 'api/csv', 'api/rust']
+      items: ['api/rest', 'api/csv', 'api/rust']
     },
     'papers',
     {
