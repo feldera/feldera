@@ -11,7 +11,7 @@ use crate::{
         ord::{OrdIndexedZSet, OrdKeyBatch, OrdValBatch, OrdZSet},
         persistent::{cursor::PersistentTraceCursor, PersistentTrace},
         spine_fueled::{Spine, SpineCursor},
-        Batch, BatchReader, Builder, Deserializable, Rkyv, Serializer, Trace,
+        Batch, BatchReader, Builder, Rkyv, Trace,
     },
 };
 use proptest::prelude::*;
