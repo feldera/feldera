@@ -358,6 +358,37 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
+    public void testWith() throws IOException, InterruptedException {
+        String statement =
+                "create table VENDOR (\n" +
+                        "    id bigint not null primary key,\n" +
+                        "    name varchar,\n" +
+                        "    address varchar\n" +
+                        ");\n" +
+                        "\n" +
+                        "create table PART (\n" +
+                        "    id bigint not null primary key,\n" +
+                        "    name varchar\n" +
+                        ");\n" +
+                        "\n" +
+                        "create table PRICE (\n" +
+                        "    part bigint not null,\n" +
+                        "    vendor bigint not null,\n" +
+                        "    price decimal\n" +
+                        ");" +
+                        "" +
+                        "create view LOW_PRICE AS " +
+                        "with LOW_PRICE_CTE AS (" +
+                        "  select part, MIN(price) as price from PRICE group by part" +
+                        ") select * FROM LOW_PRICE_CTE";
+        File file = this.createInputScript(statement);
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        if (messages.errorCount() > 0)
+            throw new RuntimeException(messages.toString());
+        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+    }
+
+    @Test
     public void testProjectFiles() throws IOException, InterruptedException {
         // Compiles all the programs in the tests directory
         final String projectsDirectory = "../../demo/";
