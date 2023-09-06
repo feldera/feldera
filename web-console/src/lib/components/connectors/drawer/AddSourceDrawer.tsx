@@ -14,7 +14,7 @@ import {
 import { AttachedConnector, ConnectorDescr } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ConnectorType, Direction } from '$lib/types/connectors'
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { tuple } from 'src/lib/functions/common/tuple'
 
 import { Icon } from '@iconify/react'
@@ -193,7 +193,11 @@ const SideBarAddIo = () => {
         tuple(ConnectorType.KAFKA_IN, KafkaInputConnectorDialog),
         tuple(ConnectorType.KAFKA_OUT, KafkaOutputConnectorDialog),
         tuple(ConnectorType.URL, UrlConnectorDialog)
-      ].map(([type, dialog]) => dialog({ show: hash === type, setShow: () => setHash(''), onSuccess: onAddClick }))}
+      ].map(([type, dialog]) => (
+        <Fragment key={type}>
+          {dialog({ show: hash === type, setShow: () => setHash(''), onSuccess: onAddClick })}
+        </Fragment>
+      ))}
     </Drawer>
   )
 }

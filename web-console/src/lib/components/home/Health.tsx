@@ -154,10 +154,7 @@ const CopyButton = (props: IconButtonProps) => {
         borderRadius: '0.25rem'
       }}
     >
-      <IconButton
-        size='small'
-        {...props}
-      >
+      <IconButton size='small' {...props}>
         <Icon icon='bx:copy' fontSize={24}></Icon>
       </IconButton>
     </Box>
@@ -225,7 +222,16 @@ const Health = () => {
                           position: 'relative'
                         }}
                       >
-                        <Box sx={{ p: 2, overflow: 'scroll', minHeight: '4rem', maxHeight: '10rem', width: '100%', height: '100%' }}>
+                        <Box
+                          sx={{
+                            p: 2,
+                            overflow: 'scroll',
+                            minHeight: '4rem',
+                            maxHeight: '10rem',
+                            width: '100%',
+                            height: '100%'
+                          }}
+                        >
                           <pre style={{ margin: '0', fontSize: '14px' }}>{e.message}</pre>
                         </Box>
 
@@ -238,7 +244,15 @@ const Health = () => {
                             backgroundColor: alpha(theme.palette.error.main, 0.2)
                           }}
                         >
-                          <Box sx={{ overflow: 'scroll', minHeight: '4rem', maxHeight: '10rem', width: '100%', height: '100%' }}>
+                          <Box
+                            sx={{
+                              overflow: 'scroll',
+                              minHeight: '4rem',
+                              maxHeight: '10rem',
+                              width: '100%',
+                              height: '100%'
+                            }}
+                          >
                             <pre style={{ margin: '0', fontSize: '14px' }}>{causeStr}</pre>
                           </Box>
                           <CopyButton onClick={() => copy(causeStr)}></CopyButton>
