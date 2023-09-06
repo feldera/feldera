@@ -38,6 +38,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
 
+import java.util.Locale;
+
 /**
  * Generate Rust for a circuit, but with an API using handles.
  * Output generated has this structure:
@@ -125,7 +127,14 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 .newline();
     }
 
-    private void generateRenameMacro(String tableName, DBSPTypeStruct type) {
+    /**
+     * Generate a call to the Rust macro that describes how fields are named.
+     * (deserialize_table_record).
+     * @param tableName Table or view whose type is being described.
+     * @param type      Type of record in the table.
+     * @param output    True if this is a view (output).
+     */
+    private void generateRenameMacro(String tableName, DBSPTypeStruct type, boolean output) {
         this.builder.append("deserialize_table_record!(");
         this.builder.append(type.sanitizedName)
                 .append("[")
@@ -139,12 +148,18 @@ public class ToRustHandleVisitor extends ToRustVisitor {
             if (!first)
                 this.builder.append(",").newline();
             first = false;
+            String name = field.sanitizedName;
+            boolean quoted = field.nameIsQuoted;
+            if (output) {
+                name = name.toUpperCase(Locale.ENGLISH);
+                quoted = false;
+            }
             this.builder.append("(")
                     .append(field.sanitizedName)
                     .append(", ")
-                    .append(Utilities.doubleQuote(field.name))
+                    .append(Utilities.doubleQuote(name))
                     .append(", ")
-                    .append(Boolean.toString(field.nameIsQuoted))
+                    .append(Boolean.toString(quoted))
                     .append(", ");
             field.type.accept(this.innerVisitor);
             this.builder.append(", ")
@@ -163,7 +178,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         DBSPStructItem item = new DBSPStructItem(type);
         item.accept(this.innerVisitor);
         this.generateFromTrait(type);
-        this.generateRenameMacro(operator.outputName, type);
+        this.generateRenameMacro(operator.outputName, type, false);
 
         this.writeComments(operator)
                 .append("let (")
@@ -186,7 +201,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         DBSPStructItem item = new DBSPStructItem(type);
         item.accept(this.innerVisitor);
         this.generateFromTrait(type);
-        this.generateRenameMacro(operator.outputName, type);
+        this.generateRenameMacro(operator.outputName, type, true);
         return VisitDecision.STOP;
     }
 
