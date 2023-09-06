@@ -260,6 +260,10 @@ impl ConfigError {
 }
 
 /// Controller error.
+///
+/// Reports all errors that arise from operating a streaming pipeline consisting
+/// of input adapters, output adapters, and a DBSP circuit, via the controller
+/// API.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum ControllerError {

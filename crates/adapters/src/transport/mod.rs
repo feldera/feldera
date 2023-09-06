@@ -92,8 +92,8 @@ static OUTPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn OutputTransport>>> 
 
 /// Trait that represents a specific data transport.
 ///
-/// This is a factory trait that creates transport endpoints for a specific
-/// data format.
+/// This is a factory trait that creates transport endpoints for one kind of
+/// transports.
 pub trait InputTransport: Send + Sync {
     /// Unique name of the data transport.
     fn name(&self) -> Cow<'static, str>;
