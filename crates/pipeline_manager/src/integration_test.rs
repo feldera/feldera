@@ -846,3 +846,49 @@ not_a_number,true,ΑαΒβΓγΔδ
         .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
         .await;
 }
+
+#[actix_web::test]
+#[serial]
+async fn parse_datetime() {
+    let config = setup().await;
+    let id = deploy_pipeline_without_connectors(
+        &config,
+        "create table t1(t TIME, ts TIMESTAMP, d DATE);",
+    )
+    .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .await;
+
+    // The parser should trim leading and trailing white space when parsing dates/times.
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=raw",
+                id
+            ),
+            r#"{"t":"13:22:00","ts": "2021-05-20 12:12:33","d": "2021-05-20"}
+            {"t":" 11:12:33.483221092 ","ts": " 2024-02-25 12:12:33 ","d": " 2024-02-25 "}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let quantiles = config.quantiles_json(&id, "T1").await;
+    assert_eq!(quantiles, "[{\"insert\":{\"D\":\"2024-02-25\",\"T\":\"11:12:33.483221092\",\"TS\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"D\":\"2021-05-20\",\"T\":\"13:22:00\",\"TS\":\"2021-05-20 12:12:33\"}}]");
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .await;
+}

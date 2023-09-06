@@ -84,7 +84,7 @@ impl<'de> Deserialize<'de> for Timestamp {
         // and can only deserialize into an owned string.
         let timestamp_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
 
-        let timestamp = NaiveDateTime::parse_from_str(&timestamp_str, "%F %T%.f").map_err(|e| {
+        let timestamp = NaiveDateTime::parse_from_str(&timestamp_str.trim(), "%F %T%.f").map_err(|e| {
             D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
         })?;
 
@@ -405,7 +405,7 @@ impl<'de> Deserialize<'de> for Date {
         D: Deserializer<'de>,
     {
         let str: &'de str = Deserialize::deserialize(deserializer)?;
-        let date = NaiveDate::parse_from_str(str, "%Y-%m-%d")
+        let date = NaiveDate::parse_from_str(str.trim(), "%Y-%m-%d")
             .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
         Ok(Self::new(
             (date.and_time(NaiveTime::default()).timestamp() / 86400) as i32,
@@ -648,7 +648,7 @@ impl<'de> Deserialize<'de> for Time {
         D: Deserializer<'de>,
     {
         let str: &'de str = Deserialize::deserialize(deserializer)?;
-        let time = NaiveTime::parse_from_str(str, "%H:%M:%S%.f")
+        let time = NaiveTime::parse_from_str(str.trim(), "%H:%M:%S%.f")
             .map_err(|e| D::Error::custom(format!("invalid time string '{str}': {e}")))?;
         Ok(Self::from_time(time))
     }
