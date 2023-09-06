@@ -28,7 +28,6 @@ package org.dbsp.sqlCompiler.compiler;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.parser.SqlParseException;
-import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.junit.Assert;
 import org.junit.Test;
@@ -101,6 +100,15 @@ public class CalciteCompilerTests {
         // Tests that 'NUMBER' can be used as a type
         CalciteCompiler calcite = this.getCompiler();
         String ddl = "CREATE TABLE SOURCE (COL NUMBER)";
+        SqlNode node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
+    public void oneLetterTest() throws SqlParseException {
+        // Tests that 'G' can be used as a column name
+        CalciteCompiler calcite = this.getCompiler();
+        String ddl = "CREATE TABLE SOURCE (A CHAR, D CHAR, G CHAR, OF CHAR, M CHAR)";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
     }
