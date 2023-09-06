@@ -668,7 +668,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "\"quoted \"\" with quote\" CHAR,\n" +
                 "U&\"d\\0061t\\0061\" CHAR,\n" + // 'data' spelled in Unicode
                 "José CHAR,\n"  +
-                "\"Gosé\" CHAR\n" +
+                "\"Gosé\" CHAR,\n" +
+                "\"\uD83D\uDE00❤\" varchar not null,\n" +
+                "\"αβγ\" boolean not null,\n" +
+                "ΔΘ boolean not null" +
         ");\n" +
                 "create view v1 as select * from t1;";
         DBSPCompiler compiler = testCompiler();
