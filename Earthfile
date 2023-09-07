@@ -12,11 +12,16 @@ ENV RUST_VERSION=1.70.0
 ENV RUST_BUILD_MODE='' # set to --release for release builds
 
 install-deps:
-    RUN apt-get update
+    RUN apt-get update --fix-missing
     RUN apt-get install --yes build-essential curl libssl-dev build-essential pkg-config \
                               cmake git gcc clang libclang-dev python3-pip python3-plumbum \
                               hub numactl openjdk-19-jre-headless maven netcat jq \
-                              libsasl2-dev docker.io libenchant-2-2 graphviz
+                              libsasl2-dev docker.io libenchant-2-2 graphviz locales
+    # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
+    RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+        locale-gen
+    ENV LC_ALL en_US.UTF-8
+    ENV LANG en_US.UTF-8
     RUN curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash - && apt-get install -y nodejs
     RUN npm install --global yarn
     RUN npm install --global openapi-typescript-codegen
