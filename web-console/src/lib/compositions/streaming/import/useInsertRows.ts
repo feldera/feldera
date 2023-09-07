@@ -8,11 +8,7 @@ import { Dispatch, SetStateAction, useCallback } from 'react'
 
 import { useMutation } from '@tanstack/react-query'
 
-export interface TableInsert {
-  pipeline_id: PipelineId
-  relation: string
-  csv_data: string
-}
+type Args = [pipelineId: PipelineId, relation: string, force: boolean, csvData: string]
 
 // We convert fields to a tuple so that we can use it as a line in the CSV we're
 // sending to the server.
@@ -28,28 +24,31 @@ export function rowToCsvLine(relation: Relation, obj: Row): any[] {
 function useInsertRows() {
   const { pushMessage } = useStatusNotification()
 
-  const { mutate: pipelineInsert, isLoading: pipelineInsertLoading } = useMutation<string, ApiError, TableInsert>({
-    mutationFn: (args: TableInsert) => {
-      return PipelinesService.httpInput(args.pipeline_id, args.relation, 'csv', args.csv_data)
+  const { mutate: pipelineInsert, isLoading: pipelineInsertLoading } = useMutation<string, ApiError, Args>({
+    mutationFn: ([pipelineId, relation, force, csvData]) => {
+      return PipelinesService.httpInput(pipelineId, relation, force, 'csv', csvData)
     }
   })
 
   const insertRows = useCallback(
-    (pipeline_id: PipelineId, relation: Relation, rows: Row[], setRows: Dispatch<SetStateAction<Row[]>>) => {
+    (
+      pipelineId: PipelineId,
+      relation: Relation,
+      force: boolean,
+      rows: Row[],
+      setRows: Dispatch<SetStateAction<Row[]>>
+    ) => {
       if (!pipelineInsertLoading) {
-        const csv_data = Papa.unparse(rows.map(row => rowToCsvLine(relation, row)))
-        pipelineInsert(
-          { pipeline_id, relation: relation.name, csv_data },
-          {
-            onSuccess: () => {
-              setRows([])
-              pushMessage({ message: `${rows.length} Row(s) inserted`, key: new Date().getTime(), color: 'success' })
-            },
-            onError: error => {
-              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-            }
+        const csvData = Papa.unparse(rows.map(row => rowToCsvLine(relation, row)))
+        pipelineInsert([pipelineId, relation.name, force, csvData], {
+          onSuccess: () => {
+            setRows([])
+            pushMessage({ message: `${rows.length} Row(s) inserted`, key: new Date().getTime(), color: 'success' })
+          },
+          onError: error => {
+            pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           }
-        )
+        })
       }
     },
     [pipelineInsert, pipelineInsertLoading, pushMessage]
