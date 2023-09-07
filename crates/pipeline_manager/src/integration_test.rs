@@ -309,9 +309,10 @@ impl TestConfig {
             }
             let mut resp = self.get(format!("/v0/programs/{}", program_id)).await;
             let val: Value = resp.json().await.unwrap();
-            let status = val["status"].as_str().unwrap();
-            if status != "CompilingSql" && status != "CompilingRust" && status != "Pending" {
-                if status == "Success" {
+
+            let status = val["status"].clone();
+            if status != json!("CompilingSql") && status != json!("CompilingRust") && status != json!("Pending") {
+                if status == json!("Success") {
                     break;
                 } else {
                     panic!("Compilation failed with status {}", status);
