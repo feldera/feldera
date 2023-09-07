@@ -9,7 +9,15 @@ use crate::{
 use env_logger::Env;
 use log::info;
 use proptest::prelude::*;
-use std::{io::Write, thread::sleep, time::Duration};
+use std::{
+    io::Write,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    thread::sleep,
+    time::Duration,
+};
 
 /// Wait to receive all records in `data` in the same order.
 fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct>]) {
@@ -159,11 +167,19 @@ outputs:
     info!("{test_name}: Starting controller");
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
+    let running = Arc::new(AtomicBool::new(true));
+    let running_clone = running.clone();
+    let test_name_clone = test_name.to_string();
+
     let controller = Controller::with_config(
         circuit,
         catalog,
         &config,
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(move |e| if running_clone.load(Ordering::Acquire) {
+            panic!("{test_name_clone}: error: {e}")
+        } else {
+            info!("{test_name_clone}: error during shutdown (likely caused by Kafka topics being deleted): {e}")
+        }),
     )
     .unwrap();
 
@@ -185,6 +201,12 @@ outputs:
     drop(buffer_consumer);
 
     controller.stop().unwrap();
+
+    // Endpoint threads might still be running (`controller.stop()` doesn't wait
+    // for them to terminate).  Once `KafkaResources` is dropped, these threads
+    // may start throwing errors due to deleted Kafka topics.  Make sure these
+    // errors don't cause panics.
+    running.store(false, Ordering::Release);
 }
 
 fn test_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
