@@ -29,6 +29,7 @@ release() {
         *) echo >&2 "Argument must be 'major' or 'minor' or 'patch'"; exit 1 ;;
     esac
     new_version=`cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version'`
+    (cd .. && cargo make --cwd crates/pipeline_manager openapi_python)
 
     # Commit the new version
     tag="v$new_version"
