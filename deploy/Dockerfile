@@ -3,7 +3,7 @@
 # as of now. This will change later.
 FROM ubuntu:22.04 AS base
 ENV DEBIAN_FRONTEND noninteractive
-RUN apt update && apt install \
+RUN apt update --fix-missing && apt install \
      # pkg-config is required for cargo to find libssl
      libssl-dev pkg-config \
      # rdkafka dependency needs cmake and a CXX compiler
@@ -13,7 +13,16 @@ RUN apt update && apt install \
      # To install rust
      curl  \
      # For running the SQL compiler
-     openjdk-19-jre-headless -y
+     openjdk-19-jre-headless -y \
+     # Install locale-gen
+     locales
+
+# Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
+RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+    locale-gen
+ENV LC_ALL en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 # web-console build tools
 RUN curl -fsSL https://deb.nodesource.com/setup_19.x | bash -
