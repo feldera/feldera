@@ -2,11 +2,12 @@ import useDefaultRows from '$lib/compositions/streaming/import/useDefaultRows'
 import useGenerateRows from '$lib/compositions/streaming/import/useGenerateRows'
 import useInsertRows from '$lib/compositions/streaming/import/useInsertRows'
 import { Row } from '$lib/functions/ddl'
-import { PipelineRevision, Relation } from '$lib/services/manager'
+import { PipelineRevision, PipelineStatus, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import dayjs from 'dayjs'
 import Papa from 'papaparse'
 import { ChangeEvent, Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
+import { PipelineManagerQuery } from 'src/lib/services/pipelineManagerQuery'
 
 import { Icon } from '@iconify/react'
 import { useLocalStorage } from '@mantine/hooks'
@@ -17,6 +18,7 @@ import {
   GridToolbarContainer,
   GridToolbarDensitySelector
 } from '@mui/x-data-grid-pro'
+import { useQuery } from '@tanstack/react-query'
 
 import RngSettingsDialog, { StoredFieldSettings } from './RngSettingsDialog'
 
@@ -35,6 +37,9 @@ const ImportToolbar = (props: {
   rows: Row[]
 }) => {
   const { relation, setRows, pipelineRevision, setLoading, apiRef, rows } = props
+
+  const { data: pipeline } = useQuery(PipelineManagerQuery.pipelineStatus(pipelineRevision.pipeline.pipeline_id))
+  const isRunning = pipeline?.state.current_status === PipelineStatus.RUNNING
 
   const [settings, setSettings] = useLocalStorage<Map<string, StoredFieldSettings>>({
     key: [LS_PREFIX, 'rng-settings', pipelineRevision.program.program_id, relation.name].join('-'),
@@ -98,9 +103,9 @@ const ImportToolbar = (props: {
   const insertRows = useInsertRows()
   const handleInsertRows = useCallback(() => {
     if (relation && rows.length > 0) {
-      insertRows(pipelineRevision.pipeline.pipeline_id, relation, rows, setRows)
+      insertRows(pipelineRevision.pipeline.pipeline_id, relation, !isRunning, rows, setRows)
     }
-  }, [insertRows, pipelineRevision, relation, rows, setRows])
+  }, [insertRows, pipelineRevision, isRunning, relation, rows, setRows])
 
   return relation && pipelineRevision ? (
     <GridToolbarContainer>
