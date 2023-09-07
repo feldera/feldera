@@ -219,9 +219,6 @@ build-cache:
     RUN rm -f sql-to-dbsp-compiler/temp/src/lib.rs && touch sql-to-dbsp-compiler/temp/src/lib.rs
     RUN cd sql-to-dbsp-compiler/temp && cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --no-run
 
-    SAVE ARTIFACT --keep-ts $CARGO_HOME
-    SAVE ARTIFACT --keep-ts ./target
-
 build-dbsp:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
@@ -238,10 +235,6 @@ build-dbsp:
     RUN cd crates/dbsp && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
-    # Update target folder for future tasks, the whole --keep-ts,
-    # args were an attempt in fixing the dependency problem (see build-cache)
-    # but it doesn't seem to make a difference.
-    SAVE ARTIFACT --keep-ts ./target/* ./target
 
 build-adapters:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -260,9 +253,6 @@ build-adapters:
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
     RUN cp `cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE  --no-run --package dbsp_adapters --message-format=json | jq -r 'select(.target.kind[0] == "lib") | .executable' | grep -v null` test_binary
     SAVE ARTIFACT --keep-ts test_binary
-    # SAVE ARTIFACT --keep-ts ./target/* ./target - causes Earthly error:
-    # mkdir /tmp/earthly/buildkit/runc-overlayfs/snapshots/snapshots/6943/fs/target: not a directory
-    SAVE ARTIFACT --keep-ts ./target
 
 build-adapters-test-image:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -287,7 +277,6 @@ build-dataflow-jit:
     RUN cd crates/dataflow-jit && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dataflow-jit --no-run
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dataflow-jit -- -D warnings
-    SAVE ARTIFACT --keep-ts ./target/* ./target
 
 build-manager:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
