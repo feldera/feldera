@@ -1,6 +1,6 @@
 use circular_queue::CircularQueue;
 use futures::executor::block_on;
-use log::{info, warn};
+use log::{debug, info, warn};
 use mockd::datetime::date_range;
 use rand::{random, thread_rng, Rng};
 use rdkafka::{
@@ -557,7 +557,7 @@ fn consumer_catching_up() -> bool {
         }
     };
 
-    // println!("consumer offset: {offset:?}");
+    debug!("consumer offset: {offset:?}");
 
     let offset = match offset {
         Offset::Offset(offset) => offset,
@@ -569,7 +569,8 @@ fn consumer_catching_up() -> bool {
     let (_low, high) = consumer
         .fetch_watermarks(TOPIC_PIPELINE_SOURCES, 0, Duration::from_millis(3000))
         .unwrap();
-    // println!("low watermark: {low}, high watermark: {high}");
+
+    debug!("high watermark: {high}");
 
     high - offset < GENERATOR_THRESHOLD
 }

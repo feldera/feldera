@@ -32,7 +32,9 @@ def prepare(args=[]):
         # Override --release if RUST_BUILD_PROFILE is set
         if "RUST_BUILD_PROFILE" in os.environ:
             cmd[2] = os.environ["RUST_BUILD_PROFILE"]
-        subprocess.run(cmd, cwd=os.path.join(SCRIPT_DIR, "simulator"))
+        new_env = os.environ.copy()
+        new_env["RUST_LOG"] = "debug"
+        subprocess.run(cmd, cwd=os.path.join(SCRIPT_DIR, "simulator"), env=new_env)
     from plumbum.cmd import rpk
     rpk['topic', 'delete', 'secops_vulnerability_stats']()
     rpk['topic', 'create', 'secops_vulnerability_stats',
