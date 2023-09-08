@@ -109,7 +109,7 @@ const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
         <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>Throughput</Typography>
         <Typography variant='h5'>{format('.1s')(smoothTput[smoothTput.length - 1] || 0)} rows/sec</Typography>
       </CardContent>
-      <ReactApexcharts type='area' height={110} options={options} series={series} />
+      <ReactApexcharts type='area' height={110} width='100%' options={options} series={series} />
     </Card>
   )
 }

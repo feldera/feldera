@@ -2,6 +2,7 @@
 //
 // Can edit name and description directly in the table.
 // Also display status of the program.
+'use client'
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import EntityTable from '$lib/components/common/table/EntityTable'
@@ -16,7 +17,7 @@ import {
   UpdateProgramResponse
 } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
-import { useRouter } from 'next/router'
+import { useRouter } from 'next/navigation'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'

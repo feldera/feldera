@@ -1,10 +1,9 @@
 import themeConfig from '$lib/functions/configs/themeConfig'
 import Link from 'next/link'
-import { useRouter } from 'next/router'
+import { usePathname } from 'next/navigation'
 import { ElementType } from 'react'
-import { Settings } from 'src/@core/context/settingsContext'
+import { Settings } from 'src/@core/context/settingsTypes'
 import { NavLink } from 'src/@core/layouts/types'
-import { handleURLQueries } from 'src/@core/layouts/utils'
 
 import { Icon } from '@iconify/react'
 import Box, { BoxProps } from '@mui/material/Box'
@@ -50,12 +49,10 @@ const MenuItemTextMetaWrapper = styled(Box)<BoxProps>({
 })
 
 const VerticalNavLink = ({ item, navVisible, toggleNavVisibility }: Props) => {
-  const router = useRouter()
+  const pathname = usePathname()
   const IconTag: string = item.icon || ''
   const isNavLinkActive = () =>
-    (Array.isArray(item.path) ? item.path : [item.path]).find(
-      path => router.pathname === path || handleURLQueries(router, path)
-    )
+    (Array.isArray(item.path) ? item.path : [item.path]).find(path => path && pathname.startsWith(path) && path !== '/')
 
   return (
     <ListItem

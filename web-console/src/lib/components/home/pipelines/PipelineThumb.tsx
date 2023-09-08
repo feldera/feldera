@@ -1,3 +1,5 @@
+'use client'
+
 import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import { discreteDerivative } from '$lib/functions/common/math'
 import { PipelineStatus } from '$lib/services/manager'

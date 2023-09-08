@@ -1,4 +1,4 @@
-import { Settings } from 'src/@core/context/settingsContext'
+import { Settings } from 'src/@core/context/settingsTypes'
 
 import { ThemeOptions } from '@mui/material'
 import { deepmerge } from '@mui/utils'

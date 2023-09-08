@@ -1,4 +1,5 @@
 // A create/update dialog for a Kafka input connector.
+'use client'
 
 import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
 import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'

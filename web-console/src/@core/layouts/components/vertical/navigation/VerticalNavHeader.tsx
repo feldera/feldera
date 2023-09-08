@@ -3,7 +3,7 @@ import Link from 'next/link'
 import lightLogo from 'public/images/feldera/LogoSolid.svg'
 import darkLogo from 'public/images/feldera/LogoWhite.svg'
 import { ReactNode } from 'react'
-import { Settings } from 'src/@core/context/settingsContext'
+import { Settings } from 'src/@core/context/settingsTypes'
 
 import Box, { BoxProps } from '@mui/material/Box'
 import { styled } from '@mui/material/styles'

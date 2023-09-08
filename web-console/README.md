@@ -44,7 +44,6 @@ Build & export static website:
 
 ```bash
 yarn build
-yarn export
 ```
 
 Format the code & linting:

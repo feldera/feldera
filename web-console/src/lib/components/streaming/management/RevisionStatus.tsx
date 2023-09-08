@@ -259,9 +259,6 @@ export const PipelineRevisionStatusChip = (props: Props) => {
       !curPipelineConfigQuery.isLoading &&
       !curPipelineConfigQuery.isError
     ) {
-      console.log('pipelineRevisionQuery.data', pipelineRevisionQuery.data)
-      console.log('curPipelineConfigQuery.data', curPipelineConfigQuery.data)
-
       const configDiffResult = diffLines(
         JSON.stringify(pipelineRevisionQuery.data.config, null, 2),
         JSON.stringify(curPipelineConfigQuery.data, null, 2)

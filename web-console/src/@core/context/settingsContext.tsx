@@ -1,16 +1,11 @@
+'use client'
+
 import themeConfig from '$lib/functions/configs/themeConfig'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { createContext, ReactNode } from 'react'
-import { ContentWidth, ThemeColor } from 'src/@core/layouts/types'
+import { Settings } from 'src/@core/context/settingsTypes'
 
 import { useLocalStorage } from '@mantine/hooks'
-import { PaletteMode } from '@mui/material'
-
-export type Settings = {
-  mode: PaletteMode
-  themeColor: ThemeColor
-  contentWidth: ContentWidth
-}
 
 export type SettingsContextValue = {
   settings: Settings

@@ -1,4 +1,4 @@
-import { Settings } from 'src/@core/context/settingsContext'
+import { Settings } from 'src/@core/context/settingsTypes'
 import { NavLink, NavSectionTitle, VerticalNavItemsType } from 'src/@core/layouts/types'
 
 import VerticalNavLink from './VerticalNavLink'

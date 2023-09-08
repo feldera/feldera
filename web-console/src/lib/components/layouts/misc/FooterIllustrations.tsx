@@ -1,3 +1,5 @@
+'use client'
+
 import Image from 'next/image'
 import MiscMaskDark from 'public/images/pages/misc-mask-dark.png'
 import MiscMaskLight from 'public/images/pages/misc-mask-light.png'

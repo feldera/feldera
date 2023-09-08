@@ -50,8 +50,6 @@ fn main() {
             )
             .run("build")
             .expect("Could not run `yarn build`. Run it manually in web-console/ to debug.")
-            .run("export-to-out")
-            .expect("Could not run `yarn export-to-out`. Run it manually in web-console/ to debug.")
             .target(env::var("OUT_DIR").unwrap())
             .to_resource_dir()
             .build()

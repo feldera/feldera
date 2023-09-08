@@ -1,4 +1,5 @@
 // A create/update dialog for a Kafka output connector.
+'use client'
 
 import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
 import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/tabs/TabKafkaNameAndDesc'

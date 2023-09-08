@@ -1,3 +1,5 @@
+'use client'
+
 import VerticalNavItems from '$lib/functions/navigation/vertical'
 import { ReactNode } from 'react'
 import { useSettings } from 'src/@core/hooks/useSettings'

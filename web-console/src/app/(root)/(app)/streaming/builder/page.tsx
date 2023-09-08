@@ -1,3 +1,5 @@
+'use client'
+
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
 import Metadata from '$lib/components/streaming/builder/Metadata'
@@ -22,7 +24,7 @@ import {
 } from '$lib/services/manager'
 import { invalidatePipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import assert from 'assert'
-import { useRouter } from 'next/router'
+import { useSearchParams } from 'next/navigation'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
 import { match } from 'ts-pattern'
@@ -53,7 +55,7 @@ const stateToSaveLabel = (state: SaveIndicatorState): string =>
 
 const detachConnector = (c: AttachedConnector) => ({ ...c, relation_name: '' }) as AttachedConnector
 
-export const PipelineWithProvider = (props: {
+const PipelineWithProvider = (props: {
   pipelineId: PipelineId | undefined
   setPipelineId: Dispatch<SetStateAction<PipelineId | undefined>>
 }) => {
@@ -355,17 +357,15 @@ export const PipelineWithProvider = (props: {
   )
 }
 
-const Pipeline = () => {
-  const router = useRouter()
+export default () => {
   const [pipelineId, setPipelineId] = useState<PipelineId | undefined>(undefined)
+  const newPipelineId = useSearchParams().get('pipeline_id')
 
   useEffect(() => {
-    const { pipeline_id } = router.query
-    console.log(router.query)
-    if (router.isReady && typeof pipeline_id === 'string') {
-      setPipelineId(pipeline_id)
+    if (newPipelineId) {
+      setPipelineId(newPipelineId)
     }
-  }, [router.isReady, router.query, pipelineId, setPipelineId])
+  }, [newPipelineId, setPipelineId])
 
   return (
     <ReactFlowProvider>
@@ -373,5 +373,3 @@ const Pipeline = () => {
     </ReactFlowProvider>
   )
 }
-
-export default Pipeline
