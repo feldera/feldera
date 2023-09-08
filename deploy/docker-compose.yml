@@ -73,6 +73,7 @@ services:
       - RUST_BACKTRACE=1
       - REDPANDA_BROKERS=redpanda:9092
       - SECOPS_DEMO_ARGS
+      - RUST_LOG=info
     command:
       - bash
       - -c
