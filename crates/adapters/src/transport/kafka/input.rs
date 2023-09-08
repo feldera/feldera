@@ -138,6 +138,7 @@ used to configure the Kafka producer."#))))
 impl KafkaInputConfig {
     /// Set `option` to `val`; return an error if `option` is set to a different
     /// value.
+    #[allow(dead_code)]
     fn enforce_option(&mut self, option: &str, val: &str) -> AnyResult<()> {
         let option_val = self
             .kafka_options
@@ -173,8 +174,12 @@ impl KafkaInputConfig {
         // which also do not require these options.
         //
         // See https://docs.confluent.io/platform/current/clients/consumer.html#offset-management
-        self.enforce_option("enable.auto.commit", "false")?;
-        self.enforce_option("enable.auto.offset.store", "false")?;
+        //
+        // Note: we allow the user to override the options, so they can still enable auto commit
+        // if they know what they are doing, e.g., the secops demo requires the pipeline to commit
+        // its offset for the generator to know when to resume sending.
+        self.set_option_if_missing("enable.auto.commit", "false");
+        self.set_option_if_missing("enable.auto.offset.store", "false");
 
         let group_id = format!(
             "{}",
