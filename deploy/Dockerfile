@@ -1,8 +1,59 @@
 # The base image contains tools to build the code given that
 # we need a Java and Rust compiler to run alongside the pipeline manager
 # as of now. This will change later.
-FROM ubuntu:22.04 AS base
+# TODO: move base(s) to its *own* Dockerfile so it doesn't get built every CI run
+FROM --platform=$BUILDPLATFORM ubuntu:22.04 AS base
 ENV DEBIAN_FRONTEND noninteractive
+
+ARG TARGETPLATFORM
+
+RUN case "$TARGETPLATFORM" in \
+    "linux/arm64") echo aarch64-unknown-linux-gnu > /etc/target_triple ;; \
+    *) exit 1 ;; \
+    "linux/amd64") echo x86_64-unknown-linux-gnu > /etc/target_triple ;; \
+    *) exit 1 ;; \
+    esac
+
+RUN apt update --fix-missing && apt install \
+     # pkg-config is required for cargo to find libssl
+     libssl-dev pkg-config \
+     # rdkafka dependency needs cmake and a CXX compiler
+     cmake build-essential \
+     # rdkafka dependency needs libsasl \
+     libsasl2-dev \
+     # To install rust
+     curl  \
+     # For running the SQL compiler
+     openjdk-19-jre-headless -y \
+     # Install locale-gen
+     locales
+
+# Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
+RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+    locale-gen
+ENV LC_ALL en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+# web-console build tools
+RUN curl -fsSL https://deb.nodesource.com/setup_19.x | bash -
+RUN apt-get install --yes nodejs
+RUN npm install --global yarn
+RUN npm install --global openapi-typescript-codegen
+
+
+FROM --platform=$TARGETPLATFORM ubuntu:22.04 AS target-base
+ENV DEBIAN_FRONTEND noninteractive
+
+ARG TARGETPLATFORM
+
+RUN case "$TARGETPLATFORM" in \
+    "linux/arm64") echo aarch64-unknown-linux-gnu > /etc/target_triple ;; \
+    *) exit 1 ;; \
+    "linux/amd64") echo x86_64-unknown-linux-gnu > /etc/target_triple ;; \
+    *) exit 1 ;; \
+    esac
+
 RUN apt update --fix-missing && apt install \
      # pkg-config is required for cargo to find libssl
      libssl-dev pkg-config \
@@ -46,11 +97,12 @@ RUN /root/.cargo/bin/cargo chef prepare --recipe-path recipe.json
 # layer for faster incremental builds of source-code only changes
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
-RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json --bin=pipeline-manager --no-default-features
+RUN /root/.cargo/bin/cargo chef cook --target $(cat /etc/target_triple) --recipe-path recipe.json --bin=pipeline-manager --no-default-features
 COPY . .
-RUN /root/.cargo/bin/cargo build --release --package=pipeline-manager --no-default-features
+RUN /root/.cargo/bin/cargo build --target $(cat /etc/target_triple) --release --package=pipeline-manager --no-default-features
+RUN cp ./target/$(cat /etc/target_triple)/release/pipeline-manager ./target/release/pipeline-manager
 
-# Java build can be performed in parallel
+# Java build can be performed in parallel. Outputs should be architecture independent
 FROM base as javabuild
 RUN apt install maven -y
 RUN mkdir sql
@@ -58,7 +110,7 @@ COPY sql-to-dbsp-compiler /sql/sql-to-dbsp-compiler
 RUN cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
 
 # Minimal image for running the pipeline manager
-from base as release
+FROM target-base as release
 ENV PATH="$PATH:/root/.cargo/bin"
 # Pipeline manager binary
 COPY --from=builder /app/target/release/pipeline-manager pipeline-manager
@@ -82,13 +134,13 @@ ENV BANNER_ADDR localhost
 ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
 
 # Standalone api-server
-FROM ubuntu:22.04 as api-server
+FROM --platform=$TARGETPLATFORM ubuntu:22.04 as api-server
 COPY --from=builder /app/target/release/api-server api-server
 ENV BANNER_ADDR localhost
 ENTRYPOINT ["./api-server", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir"]
 
 # Standalone compiler-server
-FROM base as compiler-server
+FROM target-base as compiler-server
 ENV PATH="$PATH:/root/.cargo/bin"
 COPY --from=builder /app/target/release/compiler-server compiler-server
 # SQL compiler uber jar
@@ -110,9 +162,9 @@ RUN ./compiler-server --compiler-working-directory=/working-dir --sql-compiler-h
 ENTRYPOINT ["./compiler-server", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
 
 # Standalone local-runner
-FROM ubuntu:22.04 as local-runner
+FROM --platform=$TARGETPLATFORM ubuntu:22.04 as local-runner
 COPY --from=builder /app/target/release/local-runner local-runner
-ENTRYPOINT ["./local-runner", "--runner-working-directory=/working-dir"] 
+ENTRYPOINT ["./local-runner", "--runner-working-directory=/working-dir"]
 
 
 ##### The stages below are used to build the demo container
@@ -126,12 +178,13 @@ RUN /root/.cargo/bin/cargo chef prepare --recipe-path recipe.json
 # layer for faster incremental builds of source-code only changes
 FROM chef AS demo-builder
 COPY --from=demo-planner /app/recipe.json recipe.json
-RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json
+RUN /root/.cargo/bin/cargo chef cook --target $(cat /etc/target_triple) --release --recipe-path recipe.json
 COPY ./demo/project_demo00-SecOps/simulator/ .
-RUN /root/.cargo/bin/cargo build --release
+RUN /root/.cargo/bin/cargo build --target $(cat /etc/target_triple) --release
+RUN cp ./target/$(cat /etc/target_triple)/release/secops_simulator ./target/release/secops_simulator
 
 # The dev target adds an rpk client and demo projects
-FROM ubuntu:22.04 AS client
+FROM --platform=$TARGETPLATFORM ubuntu:22.04 AS client
 ENV DEBIAN_FRONTEND noninteractive
 ENV PATH="$PATH:/root/.cargo/bin"
 COPY --from=builder /app/target/release/pipeline-manager pipeline-manager
