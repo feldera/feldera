@@ -27,6 +27,13 @@ jobs:
         env:
           muix_license: ${{ secrets.muix_license }}
 
+      - name: Setup QEMU for multiarch
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+
       - name: Docker meta (pipeline-manager)
         id: meta_pipeline_manager
         uses: docker/metadata-action@v4
@@ -79,6 +86,7 @@ jobs:
         if: github.event_name == 'release'
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           file: deploy/Dockerfile
           push: true
           tags: ${{ steps.meta_pipeline_manager.outputs.tags }}
@@ -90,6 +98,7 @@ jobs:
         if: github.event_name == 'release'
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           file: deploy/Dockerfile
           target: client
           push: true
