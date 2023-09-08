@@ -5,7 +5,7 @@ use crate::{
 };
 use csv::WriterBuilder as CsvWriterBuilder;
 use futures::executor::block_on;
-use log::error;
+use log::{error, info};
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
     client::DefaultClientContext,
@@ -21,9 +21,11 @@ use std::{
         Arc,
     },
     thread,
-    thread::JoinHandle,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    thread::{sleep, JoinHandle},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+
+static MAX_TOPIC_PROBE_TIMEOUT: Duration = Duration::from_millis(20_000);
 
 pub struct KafkaResources {
     admin_client: AdminClient<DefaultClientContext>,
@@ -58,6 +60,37 @@ impl KafkaResources {
         let _ = block_on(admin_client.delete_topics(&topic_names, &AdminOptions::new()));
 
         block_on(admin_client.create_topics(&new_topics, &AdminOptions::new())).unwrap();
+
+        // Just because `create_topics` succeeded doesn't guarantee the new topics
+        // are avilable (see
+        // https://github.com/confluentinc/confluent-kafka-python/issues/524).
+        // Keep probing until they are.
+        let group_id = format!(
+            "{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        let kafka_consumer = admin_config
+            .set("group.id", &group_id)
+            .create::<BaseConsumer>()
+            .unwrap();
+
+        let start = Instant::now();
+        loop {
+            let res = kafka_consumer.subscribe(&topic_names);
+            if res.is_ok() {
+                break;
+            }
+            let err = res.unwrap_err();
+            info!("KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, retrying: {err}");
+            if start.elapsed() > MAX_TOPIC_PROBE_TIMEOUT {
+                panic!("KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, giving up after {}ms: {err}", MAX_TOPIC_PROBE_TIMEOUT.as_millis());
+            }
+            sleep(Duration::from_millis(1000));
+        }
 
         Self {
             admin_client,
