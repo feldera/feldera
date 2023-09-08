@@ -55,7 +55,7 @@ def make_config(project):
         name="secops_pipeline_sources",
         stream="PIPELINE_SOURCES",
         config=KafkaInputConfig.from_dict(
-            {"topics": ["secops_pipeline_sources"], "auto.offset.reset": "earliest", "group.id": "secops_pipeline_sources"}
+            {"topics": ["secops_pipeline_sources"], "auto.offset.reset": "earliest", "group.id": "secops_pipeline_sources", "enable.auto.commit": "true", "enable.auto.offset.store": "true"}
         ),
         format=JsonInputFormatConfig(update_format = "insert_delete"),
     )
