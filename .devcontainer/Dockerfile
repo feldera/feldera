@@ -24,7 +24,9 @@ RUN apt-get update && \
    cmake \
    pkg-config \
    libssl-dev \
-   libsasl2-dev
+   libsasl2-dev \
+   ca-certificates \
+   gnupg
 
 ## Setup Java and Python
 
@@ -33,9 +35,12 @@ RUN apt-get install -y \
    hub numactl openjdk-19-jre-headless maven
 
 ## Install nodejs and global packages
-
-RUN curl -fsSL https://deb.nodesource.com/setup_19.x | bash -
-RUN apt-get install -y nodejs
+# - nodejs
+RUN mkdir -p /etc/apt/keyrings
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+ENV NODE_MAJOR=20
+RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+RUN apt update --fix-missing && apt install nodejs
 RUN npm install --global yarn
 RUN npm install --global openapi-typescript-codegen
 
@@ -50,7 +55,7 @@ RUN ARCH=`dpkg --print-architecture`; \
 ## Install python dependencies for the demos
 
 RUN \
-      pip3 install openapi-python-client==0.15.0 websockets \
+   pip3 install openapi-python-client==0.15.0 websockets \
    && pip3 install gdown
 
 ## Switch to non-root user
