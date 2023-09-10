@@ -28,13 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL Compiler: Fixed a bug where it was not possible to add lower-case column
   names in tablesq ([#636](https://github.com/feldera/feldera/issues/636)).
 
-## Added
+### Added
 
 - REST API: A Pipeline can now receive deletes for rows in the paused state
   ([#612](https://github.com/feldera/feldera/issues/612)).
 
 
-## Removed
+### Removed
 
 - WebConsole: Removed the Auto Offset Reset option from the Kafka output
   connector configuration dialog (it only applies to Kafka inputs)
