@@ -22,7 +22,14 @@ install-deps:
         locale-gen
     ENV LC_ALL en_US.UTF-8
     ENV LANG en_US.UTF-8
-    RUN curl -fsSL https://deb.nodesource.com/setup_19.x | sudo -E bash - && apt-get install -y nodejs
+    # NodeJS install
+    RUN sudo apt-get install -y ca-certificates curl gnupg
+    RUN sudo mkdir -p /etc/apt/keyrings
+    RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+    ENV NODE_MAJOR=20
+    RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+    RUN sudo apt-get update
+    RUN sudo apt-get install nodejs -y
     RUN npm install --global yarn
     RUN npm install --global openapi-typescript-codegen
 
