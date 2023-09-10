@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL Compiler: Fixed a bug where 'c' and 'g' are not allowed column names
   ([#633](https://github.com/feldera/feldera/issues/633)).
 - SQL Compiler: Fixed a bug where it was not possible to add lower-case column
-  names in tablesq ([#636](https://github.com/feldera/feldera/issues/636)).
+  names in tables ([#636](https://github.com/feldera/feldera/issues/636)).
 
 ### Added
 
