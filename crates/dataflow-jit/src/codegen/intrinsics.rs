@@ -1229,13 +1229,15 @@ unsafe extern "C" fn csv_get_date(
     let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
     record
         .get(column)
-        .and_then(|date| match NaiveDate::parse_from_str(date.trim(), format) {
-            Ok(date) => Some(date.and_time(NaiveTime::MIN)),
-            Err(error) => {
-                tracing::error!("error parsing csv date from column {column}: {error}");
-                None
-            }
-        })
+        .and_then(
+            |date| match NaiveDate::parse_from_str(date.trim(), format) {
+                Ok(date) => Some(date.and_time(NaiveTime::MIN)),
+                Err(error) => {
+                    tracing::error!("error parsing csv date from column {column}: {error}");
+                    None
+                }
+            },
+        )
         .map_or(0, |date| date.timestamp_millis() / (86400 * 1000)) as i32
 }
 
@@ -1250,13 +1252,15 @@ unsafe extern "C" fn csv_get_nullable_date(
     if let Some(date) = record
         .get(column)
         .filter(|column| !column.trim().eq_ignore_ascii_case("null"))
-        .and_then(|date| match NaiveDate::parse_from_str(date.trim(), format) {
-            Ok(date) => Some(date.and_time(NaiveTime::MIN)),
-            Err(error) => {
-                tracing::error!("error parsing csv date from column {column}: {error}");
-                None
-            }
-        })
+        .and_then(
+            |date| match NaiveDate::parse_from_str(date.trim(), format) {
+                Ok(date) => Some(date.and_time(NaiveTime::MIN)),
+                Err(error) => {
+                    tracing::error!("error parsing csv date from column {column}: {error}");
+                    None
+                }
+            },
+        )
     {
         output.write((date.timestamp_millis() / (86400 * 1000)) as i32);
         false
@@ -1760,14 +1764,33 @@ extern "C" fn deserialize_json_f64(
     // The json pointer we're accessing the map with
     let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
 
-    if let Some(float) = map.pointer(json_pointer).and_then(JsonValue::as_f64) {
-        place.write(float);
-        false
+    if let Some(value) = map.pointer(json_pointer) {
+        let float = value
+            .as_f64()
+            // JSON can't represent NaN/Inf/-Inf for floats so users
+            // have to use a string, fun!
+            .or_else(|| {
+                let value = value.as_str()?;
+
+                Some(if value.eq_ignore_ascii_case("nan") {
+                    f64::NAN
+                } else if value.eq_ignore_ascii_case("inf") {
+                    f64::INFINITY
+                } else if value.eq_ignore_ascii_case("-inf") {
+                    f64::NEG_INFINITY
+                } else {
+                    return None;
+                })
+            });
+
+        if let Some(float) = float {
+            place.write(float);
+            return false;
+        }
+    }
 
     // Otherwise the value couldn't be found and is considered null
-    } else {
-        true
-    }
+    true
 }
 
 extern "C" fn deserialize_json_f32(
@@ -1779,14 +1802,36 @@ extern "C" fn deserialize_json_f32(
     // The json pointer we're accessing the map with
     let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
 
-    if let Some(float) = map.pointer(json_pointer).and_then(JsonValue::as_f64) {
-        place.write(float as f32);
-        false
+    if let Some(value) = map.pointer(json_pointer) {
+        let float = value
+            .as_f64()
+            // TODO: Should we emit an error when the f64 is OOB for a f32
+            // or just silently lose precision?
+            .map(|float| float as f32)
+            // JSON can't represent NaN/Inf/-Inf for floats so users
+            // have to use a string, fun!
+            .or_else(|| {
+                let value = value.as_str()?;
+
+                Some(if value.eq_ignore_ascii_case("nan") {
+                    f32::NAN
+                } else if value.eq_ignore_ascii_case("inf") {
+                    f32::INFINITY
+                } else if value.eq_ignore_ascii_case("-inf") {
+                    f32::NEG_INFINITY
+                } else {
+                    return None;
+                })
+            });
+
+        if let Some(float) = float {
+            place.write(float);
+            return false;
+        }
+    }
 
     // Otherwise the value couldn't be found and is considered null
-    } else {
-        true
-    }
+    true
 }
 
 unsafe extern "C" fn std_string_push(buffer: &mut String, ptr: *const u8, len: usize) {
@@ -1839,6 +1884,35 @@ write_primitives_to_std_string! {
     u16, i16,
     u32, i32,
     u64, i64,
-    f32,
-    f64,
+    // We can't use this for f32/f64 because JSON can't represent NaN or Inf
+}
+
+unsafe extern "C" fn write_f64_to_std_string(buffer: &mut String, value: f64) {
+    if value.is_finite() {
+        write!(buffer, "{value}")
+    } else if value.is_nan() {
+        write!(buffer, "\"NaN\"")
+    } else if value == f64::INFINITY {
+        write!(buffer, "\"Inf\"")
+    } else if value == f64::NEG_INFINITY {
+        write!(buffer, "\"-Inf\"")
+    } else {
+        unreachable!()
+    }
+    .unwrap();
+}
+
+unsafe extern "C" fn write_f32_to_std_string(buffer: &mut String, value: f32) {
+    if value.is_finite() {
+        write!(buffer, "{value}")
+    } else if value.is_nan() {
+        write!(buffer, "\"NaN\"")
+    } else if value == f32::INFINITY {
+        write!(buffer, "\"Inf\"")
+    } else if value == f32::NEG_INFINITY {
+        write!(buffer, "\"-Inf\"")
+    } else {
+        unreachable!()
+    }
+    .unwrap();
 }

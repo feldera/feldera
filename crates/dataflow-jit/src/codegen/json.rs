@@ -518,6 +518,7 @@ mod tests {
             r#"{ "foo": "foo data string", "bar": "bar data string", "baz": 10, "bing": 100, "bop": 96.542, "boop": -1245.53 }"#,
             r#"{ "foo": "second foo data string", "bar": null, "baz": -10000, "bing": null, "bop": -0.0, "boop": null }"#,
             r#"{ "baz": -32, "bar": null, "foo": "woah, now we switched the field orderings", "bop": 0.3 }"#,
+            r#"{ "baz": 0, "bar": null, "foo": "", "bop": "NaN", "boop": "Inf" }"#,
         ];
 
         #[rustfmt::skip]
@@ -525,6 +526,7 @@ mod tests {
             row!["foo data string", ?"bar data string", 10i64, ?100i64, 96.542f64, ?-1245.53f64],
             row!["second foo data string", null, -10000i64, null, -0.0, null],
             row!["woah, now we switched the field orderings", null, -32i64, null, 0.3, null],
+            row!["", null, 0i64, null, f64::NAN, ?f64::INFINITY],
         ];
 
         let (jit, layout_cache) = codegen.finalize_definitions();
