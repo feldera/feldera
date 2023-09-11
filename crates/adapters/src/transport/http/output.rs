@@ -253,7 +253,7 @@ impl HttpOutputEndpoint {
 }
 
 impl OutputEndpoint for HttpOutputEndpoint {
-    fn connect(&self, _async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
+    fn connect(&mut self, _async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
         // *self.inner.async_error_callback.write().unwrap() =
         // Some(async_error_callback);
         Ok(())
@@ -283,5 +283,9 @@ impl OutputEndpoint for HttpOutputEndpoint {
             *self.inner.sender.write().unwrap() = None;
         }
         Ok(())
+    }
+
+    fn is_durable(&self) -> bool {
+        false
     }
 }

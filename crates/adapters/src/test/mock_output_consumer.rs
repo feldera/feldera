@@ -1,4 +1,4 @@
-use crate::OutputConsumer;
+use crate::{transport::Step, OutputConsumer};
 use std::sync::{Arc, Mutex};
 
 pub struct MockOutputConsumer {
@@ -30,7 +30,7 @@ impl OutputConsumer for MockOutputConsumer {
         self.max_buffer_size_bytes
     }
 
-    fn batch_start(&mut self) {}
+    fn batch_start(&mut self, _step: Step) {}
     fn push_buffer(&mut self, buffer: &[u8]) {
         self.data.lock().unwrap().extend_from_slice(buffer)
     }

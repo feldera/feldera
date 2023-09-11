@@ -1,5 +1,6 @@
 use crate::{
     server::{PipelineError, MAX_REPORTED_PARSE_ERRORS},
+    transport::{InputReader, Step},
     ControllerError, InputConsumer, InputEndpoint, ParseError, PipelineState, TransportConfig,
 };
 use actix::Message;
@@ -206,11 +207,21 @@ impl HttpInputEndpoint {
 }
 
 impl InputEndpoint for HttpInputEndpoint {
-    fn connect(&mut self, consumer: Box<dyn InputConsumer>) -> AnyResult<()> {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        _start_step: Step,
+    ) -> AnyResult<Box<dyn InputReader>> {
         *self.inner.consumer.lock().unwrap() = Some(consumer);
-        Ok(())
+        Ok(Box::new(self.clone()))
     }
 
+    fn is_durable(&self) -> bool {
+        false
+    }
+}
+
+impl InputReader for HttpInputEndpoint {
     fn pause(&self) -> AnyResult<()> {
         if !self.inner.force {
             self.inner
@@ -222,7 +233,7 @@ impl InputEndpoint for HttpInputEndpoint {
         Ok(())
     }
 
-    fn start(&self) -> AnyResult<()> {
+    fn start(&self, _step: Step) -> AnyResult<()> {
         self.inner
             .state
             .store(PipelineState::Running as u32, Ordering::Release);

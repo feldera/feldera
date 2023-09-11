@@ -31,7 +31,7 @@ pub use output::{KafkaOutputConfig, KafkaOutputTransport};
 //     }
 // }
 
-fn rdkafka_loglevel_from(level: KafkaLogLevel) -> RDKafkaLogLevel {
+pub(crate) fn rdkafka_loglevel_from(level: KafkaLogLevel) -> RDKafkaLogLevel {
     match level {
         KafkaLogLevel::Emerg => RDKafkaLogLevel::Emerg,
         KafkaLogLevel::Alert => RDKafkaLogLevel::Alert,
@@ -49,7 +49,23 @@ fn rdkafka_loglevel_from(level: KafkaLogLevel) -> RDKafkaLogLevel {
 /// should return the actual cause of the failure).  Otherwise,
 /// returns `e`.  The first element of the returned tuple is
 /// `true` if `e` is a fatal error.
-fn refine_kafka_error<C>(client: &KafkaClient<C>, e: KafkaError) -> (bool, AnyError)
+///
+/// The [rd_kafka_fatal_error] documentation says:
+///
+///    This function is to be used with the Idempotent Producer and `error_cb`
+///    to detect fatal errors.
+///
+///    Generally all errors raised by `error_cb` are to be considered
+///    informational and temporary, the client will try to recover from all
+///    errors in a graceful fashion (by retrying, etc).
+///
+///    However, some errors should logically be considered fatal to retain
+///    consistency; in particular a set of errors that may occur when using the
+///    Idempotent Producer and the in-order or exactly-once producer guarantees
+///    can't be satisfied.
+///
+/// [rd_kafka_fatal_error]: https://docs.confluent.io/platform/current/clients/librdkafka/html/rdkafka_8h.html#a44c976534da6f3877cc514826c71607c
+pub(crate) fn refine_kafka_error<C>(client: &KafkaClient<C>, e: KafkaError) -> (bool, AnyError)
 where
     C: ClientContext,
 {
