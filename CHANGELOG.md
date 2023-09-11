@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2023-09-11
+
+### Fixed
+
+- SecOps demo: Fixes a regression in the SecOps demo related to auto-commit behavior
+  ([#667](https://github.com/feldera/feldera/pull/667)).
+
+### Added
+
+- WebConsole: The pipeline view now also shows a graph of memory utilization over time
+  ([#610](https://github.com/feldera/feldera/pull/610))
+
 ## [0.1.2] - 2023-09-07
 
 ### Fixed
