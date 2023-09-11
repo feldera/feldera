@@ -290,7 +290,7 @@ impl KafkaOutputEndpoint {
 }
 
 impl OutputEndpoint for KafkaOutputEndpoint {
-    fn connect(&self, async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
+    fn connect(&mut self, async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
         // Retrieve metadata for our producer.  This makes first contact with
         // the broker, which allows us to limit the time for initialization to
         // make sure that the configuration is correct.  After this, Kafka will
@@ -339,5 +339,9 @@ impl OutputEndpoint for KafkaOutputEndpoint {
             .send(record)
             .map_err(|(err, _record)| err)?;
         Ok(())
+    }
+
+    fn is_durable(&self) -> bool {
+        false
     }
 }

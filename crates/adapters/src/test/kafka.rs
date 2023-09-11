@@ -313,8 +313,21 @@ impl BufferConsumer {
     pub fn wait_for_output_unordered(&self, data: &[Vec<TestStruct>]) {
         let num_records: usize = data.iter().map(Vec::len).sum();
 
-        // println!("waiting for {num_records} records");
-        wait(|| self.len() == num_records, DEFAULT_TIMEOUT_MS).unwrap();
+        let mut n_received = 0;
+        wait(
+            move || {
+                let n = self.len();
+                if n != n_received {
+                    info!(
+                        "waiting for {num_records} records (received {})",
+                        self.len()
+                    );
+                    n_received = n;
+                }
+                n == num_records
+            },
+            DEFAULT_TIMEOUT_MS,
+        );
         //println!("{num_records} records received: {:?}",
         // received_data.lock().unwrap().iter().map(|r| r.id).collect::<Vec<_>>());
 

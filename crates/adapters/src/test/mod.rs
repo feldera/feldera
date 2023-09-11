@@ -1,8 +1,8 @@
 //! Test framework for the `adapters` crate.
 
 use crate::{
-    controller::InputEndpointConfig, Catalog, CircuitCatalog, DbspCircuitHandle,
-    DeserializeWithContext, FormatConfig, InputEndpoint, InputTransport, SqlSerdeConfig,
+    controller::InputEndpointConfig, transport::InputReader, Catalog, CircuitCatalog,
+    DbspCircuitHandle, DeserializeWithContext, FormatConfig, InputTransport, SqlSerdeConfig,
 };
 use anyhow::Result as AnyResult;
 use dbsp::Runtime;
@@ -99,7 +99,7 @@ where
 /// ```
 pub fn mock_input_pipeline<T>(
     config: InputEndpointConfig,
-) -> AnyResult<(Box<dyn InputEndpoint>, MockInputConsumer, MockDeZSet<T>)>
+) -> AnyResult<(Box<dyn InputReader>, MockInputConsumer, MockDeZSet<T>)>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
@@ -107,11 +107,11 @@ where
 
     let transport =
         <dyn InputTransport>::get_transport(&config.connector_config.transport.name).unwrap();
-    let mut endpoint = transport.new_endpoint(&config.connector_config.transport.config)?;
+    let endpoint = transport.new_endpoint(&config.connector_config.transport.config)?;
 
-    endpoint.connect(Box::new(consumer.clone()))?;
+    let reader = endpoint.open(Box::new(consumer.clone()), 0)?;
 
-    Ok((endpoint, consumer, input_handle))
+    Ok((reader, consumer, input_handle))
 }
 
 /// Create a simple test circuit that passes the input stream right through to
