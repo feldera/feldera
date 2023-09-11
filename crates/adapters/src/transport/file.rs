@@ -1,4 +1,7 @@
-use super::{InputConsumer, InputEndpoint, InputTransport, OutputEndpoint, OutputTransport};
+use super::{
+    InputConsumer, InputEndpoint, InputReader, InputTransport, OutputEndpoint, OutputTransport,
+    Step,
+};
 use crate::{OutputEndpointConfig, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
@@ -35,25 +38,55 @@ impl InputTransport for FileInputTransport {
     ///
     /// See [`InputTransport::new_endpoint()`] for more information.
     fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
-        let config = FileInputConfig::deserialize(config)?;
-        let ep = FileInputEndpoint::new(config);
+        let ep = FileInputEndpoint {
+            config: FileInputConfig::deserialize(config)?,
+        };
         Ok(Box::new(ep))
     }
 }
 
 struct FileInputEndpoint {
     config: FileInputConfig,
+}
+
+impl InputEndpoint for FileInputEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        _start_step: Step,
+    ) -> AnyResult<Box<dyn InputReader>> {
+        Ok(Box::new(FileInputReader::new(&self.config, consumer)?))
+    }
+
+    fn is_durable(&self) -> bool {
+        false
+    }
+}
+
+struct FileInputReader {
     status: Arc<AtomicU32>,
     unparker: Option<Unparker>,
 }
 
-impl FileInputEndpoint {
-    fn new(config: FileInputConfig) -> Self {
-        Self {
-            config,
-            status: Arc::new(AtomicU32::new(PipelineState::Paused as u32)),
-            unparker: None,
-        }
+impl FileInputReader {
+    fn new(config: &FileInputConfig, consumer: Box<dyn InputConsumer>) -> AnyResult<Self> {
+        let file = File::open(&config.path).map_err(|e| {
+            AnyError::msg(format!("Failed to open input file '{}': {e}", config.path))
+        })?;
+        let reader = match config.buffer_size_bytes {
+            Some(buffer_size) if buffer_size > 0 => BufReader::with_capacity(buffer_size, file),
+            _ => BufReader::new(file),
+        };
+
+        let parker = Parker::new();
+        let unparker = Some(parker.unparker().clone());
+        let status = Arc::new(AtomicU32::new(PipelineState::Paused as u32));
+        let status_clone = status.clone();
+        let follow = config.follow;
+        let _worker =
+            spawn(move || Self::worker_thread(reader, consumer, parker, status_clone, follow));
+
+        Ok(Self { status, unparker })
     }
 
     fn unpark(&self) {
@@ -105,27 +138,7 @@ impl FileInputEndpoint {
     }
 }
 
-impl InputEndpoint for FileInputEndpoint {
-    fn connect(&mut self, consumer: Box<dyn InputConsumer>) -> AnyResult<()> {
-        let file = File::open(&self.config.path).map_err(|e| {
-            AnyError::msg(format!(
-                "Failed to open input file '{}': {e}",
-                self.config.path
-            ))
-        })?;
-        let reader = match self.config.buffer_size_bytes {
-            Some(buffer_size) if buffer_size > 0 => BufReader::with_capacity(buffer_size, file),
-            _ => BufReader::new(file),
-        };
-
-        let parker = Parker::new();
-        self.unparker = Some(parker.unparker().clone());
-        let status = self.status.clone();
-        let follow = self.config.follow;
-        let _worker = spawn(move || Self::worker_thread(reader, consumer, parker, status, follow));
-        Ok(())
-    }
-
+impl InputReader for FileInputReader {
     fn pause(&self) -> AnyResult<()> {
         // Notify worker thread via the status flag.  The worker may
         // send another buffer downstream before the flag takes effect.
@@ -134,7 +147,7 @@ impl InputEndpoint for FileInputEndpoint {
         Ok(())
     }
 
-    fn start(&self) -> AnyResult<()> {
+    fn start(&self, _step: Step) -> AnyResult<()> {
         self.status
             .store(PipelineState::Running as u32, Ordering::Release);
 
@@ -152,7 +165,7 @@ impl InputEndpoint for FileInputEndpoint {
     }
 }
 
-impl Drop for FileInputEndpoint {
+impl Drop for FileInputReader {
     fn drop(&mut self) {
         self.disconnect();
     }
@@ -198,7 +211,7 @@ impl FileOutputEndpoint {
 
 impl OutputEndpoint for FileOutputEndpoint {
     fn connect(
-        &self,
+        &mut self,
         _async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
     ) -> AnyResult<()> {
         Ok(())
@@ -211,6 +224,10 @@ impl OutputEndpoint for FileOutputEndpoint {
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         self.file.write_all(buffer)?;
         Ok(())
+    }
+
+    fn is_durable(&self) -> bool {
+        false
     }
 }
 
@@ -284,12 +301,11 @@ format:
         assert!(!consumer.state().eoi);
 
         // Unpause the endpoint, wait for the data to appear at the output.
-        endpoint.start().unwrap();
+        endpoint.start(0).unwrap();
         wait(
             || zset.state().flushed.len() == test_data.len(),
             DEFAULT_TIMEOUT_MS,
-        )
-        .unwrap();
+        );
         for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
             assert!(polarity);
             assert_eq!(val, &test_data[i]);
@@ -343,12 +359,11 @@ format:
             assert!(!consumer.state().eoi);
 
             // Unpause the endpoint, wait for the data to appear at the output.
-            endpoint.start().unwrap();
+            endpoint.start(0).unwrap();
             wait(
                 || zset.state().flushed.len() == test_data.len(),
                 DEFAULT_TIMEOUT_MS,
-            )
-            .unwrap();
+            );
             for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
                 assert!(polarity);
                 assert_eq!(val, &test_data[i]);
@@ -365,7 +380,7 @@ format:
         temp_file.as_file().write_all(b"xxx\n").unwrap();
         temp_file.as_file().flush().unwrap();
 
-        endpoint.start().unwrap();
+        endpoint.start(0).unwrap();
         wait(
             || {
                 let state = consumer.state();

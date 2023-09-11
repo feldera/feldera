@@ -283,7 +283,7 @@ format:
     let (endpoint, _consumer, zset) =
         mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
 
-    endpoint.start().unwrap();
+    endpoint.start(0).unwrap();
 
     let producer = TestProducer::new();
 
@@ -320,7 +320,7 @@ format:
     assert_eq!(zset.state().flushed.len(), 0);
 
     // Receive everything after unpause.
-    endpoint.start().unwrap();
+    endpoint.start(0).unwrap();
     wait_for_output_unordered(&zset, &data);
 
     zset.reset();
