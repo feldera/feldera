@@ -108,8 +108,7 @@ where
 
     let transport =
         <dyn InputTransport>::get_transport(&config.connector_config.transport.name).unwrap();
-    let mut endpoint =
-        transport.new_endpoint(&config.stream, &config.connector_config.transport.config)?;
+    let mut endpoint = transport.new_endpoint(&config.connector_config.transport.config)?;
 
     endpoint.connect(Box::new(consumer.clone()))?;
 

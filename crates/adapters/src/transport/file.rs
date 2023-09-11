@@ -34,7 +34,7 @@ impl InputTransport for FileInputTransport {
     /// `config` as a [`FileInputConfig`].
     ///
     /// See [`InputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(&self, _name: &str, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
+    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
         let config = FileInputConfig::deserialize(config)?;
         let ep = FileInputEndpoint::new(config);
         Ok(Box::new(ep))
@@ -194,11 +194,7 @@ impl OutputTransport for FileOutputTransport {
     /// `config` as a [`FileOutputConfig`].
     ///
     /// See [`OutputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(
-        &self,
-        _name: &str,
-        config: &OutputEndpointConfig,
-    ) -> AnyResult<Box<dyn OutputEndpoint>> {
+    fn new_endpoint(&self, config: &OutputEndpointConfig) -> AnyResult<Box<dyn OutputEndpoint>> {
         let config = FileOutputConfig::deserialize(&config.connector_config.transport.config)?;
         let ep = FileOutputEndpoint::new(config)?;
 

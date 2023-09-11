@@ -844,10 +844,7 @@ impl ControllerInner {
             })?;
 
         let endpoint = transport
-            .new_endpoint(
-                endpoint_name,
-                &endpoint_config.connector_config.transport.config,
-            )
+            .new_endpoint(&endpoint_config.connector_config.transport.config)
             .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
 
         self.add_input_endpoint(endpoint_name, endpoint_config.clone(), endpoint)
@@ -990,7 +987,7 @@ impl ControllerInner {
                 })?;
 
         let endpoint = transport
-            .new_endpoint(endpoint_name, endpoint_config)
+            .new_endpoint(endpoint_config)
             .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
         self.add_output_endpoint(endpoint_name, endpoint_config, endpoint)
     }

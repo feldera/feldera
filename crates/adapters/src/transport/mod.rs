@@ -106,8 +106,6 @@ pub trait InputTransport: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `name` - unique input endpoint name.
-    ///
     /// * `config` - Transport-specific configuration.
     ///
     /// * `consumer` - Input consumer that will receive data from the endpoint.
@@ -117,7 +115,7 @@ pub trait InputTransport: Send + Sync {
     /// Fails if the specified configuration is invalid or the endpoint failed
     /// to initialize (e.g., the endpoint was not able to establish a network
     /// connection).
-    fn new_endpoint(&self, name: &str, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>>;
+    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>>;
 }
 
 impl dyn InputTransport {
@@ -206,8 +204,6 @@ pub trait OutputTransport: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `name` - unique input endpoint name.
-    ///
     /// * `config` - Transport-specific configuration.
     ///
     /// * `async_error_callback` - the endpoint must invoke this callback to
@@ -225,11 +221,7 @@ pub trait OutputTransport: Send + Sync {
     /// Fails if the specified configuration is invalid or the endpoint failed
     /// to initialize (e.g., the endpoint was not able to establish a network
     /// connection).
-    fn new_endpoint(
-        &self,
-        name: &str,
-        config: &OutputEndpointConfig,
-    ) -> AnyResult<Box<dyn OutputEndpoint>>;
+    fn new_endpoint(&self, config: &OutputEndpointConfig) -> AnyResult<Box<dyn OutputEndpoint>>;
 }
 
 impl dyn OutputTransport {

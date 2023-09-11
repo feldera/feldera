@@ -31,7 +31,7 @@ impl InputTransport for UrlInputTransport {
     /// interpreting `config` as a [`UrlInputConfig`].
     ///
     /// See [`InputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(&self, _name: &str, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
+    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
         let config = UrlInputConfig::deserialize(config)?;
         let ep = UrlInputEndpoint::new(config);
         Ok(Box::new(ep))
