@@ -22,8 +22,8 @@ Continuous Analytics Platform](https://www.feldera.com).
 
 - More sophisticated uses can be found as [examples] and [benchmarks]
 
-[tutorial]: https://docs.rs/dbsp/tutorial
-[`circuit` module documentation]: https://docs.rs/dbsp/circuit
+[tutorial]: https://docs.rs/dbsp/latest/dbsp/tutorial
+[`circuit` module documentation]: https://docs.rs/dbsp/latest/dbsp/circuit
 [examples]: https://github.com/feldera/feldera/tree/main/crates/dbsp/examples
 [benchmarks]: https://github.com/feldera/feldera/tree/main/crates/dbsp/benches
 
