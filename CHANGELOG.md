@@ -17,7 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - WebConsole: The pipeline view now also shows a graph of memory utilization over time
-  ([#610](https://github.com/feldera/feldera/pull/610))
+  ([#610](https://github.com/feldera/feldera/pull/610)).
+- WebConsole: Added way to delete rows when browsing the tables of a pipeline
+  ([#612](https://github.com/feldera/feldera/issues/612)).
+- WebConsole: Improved error reporting added the ability to open new github issues in the
+  Health dashboard ([#531](https://github.com/feldera/feldera/issues/531)).
 
 ## [0.1.2] - 2023-09-07
 
