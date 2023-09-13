@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.junit.Test;
 
 // https://github.com/postgres/postgres/blob/03734a7fed7d924679770adb78a7db8a37d14188/src/test/regress/expected/interval.out

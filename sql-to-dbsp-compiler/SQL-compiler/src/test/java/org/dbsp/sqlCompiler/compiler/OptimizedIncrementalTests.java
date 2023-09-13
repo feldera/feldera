@@ -23,8 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
-
 public class OptimizedIncrementalTests extends NaiveIncrementalTests {
     @Override
     public DBSPCompiler testCompiler() {

@@ -25,8 +25,10 @@ package org.dbsp.sqlCompiler;
 
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.ParameterException;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
@@ -40,7 +42,6 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * Main entry point of the SQL compiler.
@@ -123,8 +124,10 @@ public class CompilerMain {
             return compiler.messages;
         if (this.options.ioOptions.emitJsonSchema != null) {
             try {
-                PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(this.options.ioOptions.emitJsonSchema)));
-                outputStream.println(Objects.requireNonNull(compiler.ios).toPrettyString());
+                PrintStream outputStream = new PrintStream(
+                        Files.newOutputStream(Paths.get(this.options.ioOptions.emitJsonSchema)));
+                ObjectNode ios = compiler.getIOMetadataAsJson();
+                outputStream.println(ios.toPrettyString());
                 outputStream.close();
             } catch (IOException e) {
                 compiler.reportError(SourcePositionRange.INVALID, false,

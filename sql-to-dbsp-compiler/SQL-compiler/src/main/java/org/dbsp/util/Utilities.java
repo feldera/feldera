@@ -118,6 +118,12 @@ public class Utilities {
         return String.join(System.lineSeparator(), lines);
     }
 
+    public static void writeFile(Path filename, String contents) throws IOException {
+        try (FileWriter writer = new FileWriter(filename.toFile())) {
+            writer.write(contents);
+        }
+    }
+
     /**
      * Get a value that must exist in a map.
      * @param map  Map to look for.
@@ -217,6 +223,13 @@ public class Utilities {
             runProcess(directory, "cargo", "clean");
             compile(directory, quiet, extraArgs);
         }
+    }
+
+    public static void runJIT(String directory, String program, String config)
+            throws IOException, InterruptedException {
+        Utilities.runProcess(directory,
+                "cargo", "run", "-p", "dataflow-jit", "--bin", "dataflow-jit",
+                "--features", "binary", "--", "run", program, config);
     }
 
     public static <T> T last(List<T> data) {
