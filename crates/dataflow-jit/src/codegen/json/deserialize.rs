@@ -88,6 +88,7 @@ impl DeserializeResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct JsonDeserConfig {
+    #[serde(default)]
     pub layout: LayoutId,
     /// A map between column indices and the json pointer used to access them
     // TODO: We probably want a way for users to specify how flexible we are
