@@ -1,0 +1,50 @@
+{
+    "nodes": {
+        "1": {
+            "ConstantStream": {
+                "value": {
+                    "layout": {
+                        "Set": 1
+                    },
+                    "value": {
+                        "Set": [
+                            [
+                                {
+                                    "rows": [
+                                        {
+                                            "NonNull": {
+                                                "U32": 1
+                                            }
+                                        }
+                                    ]
+                                },
+                                1
+                            ]
+                        ]
+                    }
+                },
+                "layout": {
+                    "Set": 1
+                }
+            }
+        },
+        "2": {
+            "Sink": {
+                "input": 1,
+                "input_layout": {
+                    "Set": 1
+                }
+            }
+        }
+    },
+    "layouts": {
+        "1": {
+            "columns": [
+                {
+                    "nullable": false,
+                    "ty": "U32"
+                }
+            ]
+        }
+    }
+}
