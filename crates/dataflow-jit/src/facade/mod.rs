@@ -25,7 +25,13 @@ use dbsp::{
 use rust_decimal::Decimal;
 use serde_json::{Deserializer, Value};
 use std::{
-    collections::BTreeMap, error, io::Read, mem::transmute, ops::Not, path::Path, thread,
+    collections::{BTreeMap, BTreeSet},
+    error,
+    io::Read,
+    mem::transmute,
+    ops::Not,
+    path::Path,
+    thread,
     time::Instant,
 };
 
@@ -61,6 +67,23 @@ impl Demands {
     pub fn add_json_deserialize(&mut self, layout: LayoutId, mappings: JsonDeserConfig) {
         let displaced = self.json_deser.insert(layout, mappings);
         assert_eq!(displaced, None);
+    }
+
+    // TODO: Return result
+    fn validate(&self) {
+        let mut destination_columns = BTreeSet::new();
+        for (&layout_id, csv_columns) in &self.csv {
+            for &(csv_column, row_column, ref fmt) in csv_columns {
+                if !destination_columns.insert(row_column) {
+                    panic!(
+                        "multiple csv columns write to the same row column for \
+                         layout {layout_id}, `[{csv_column}, {row_column}, {fmt:?}]`"
+                    );
+                }
+            }
+
+            destination_columns.clear();
+        }
     }
 }
 
@@ -134,6 +157,8 @@ impl DbspCircuit {
         let sinks = graph.sink_nodes();
 
         {
+            demands.validate();
+
             let mut validator = Validator::new(graph.layout_cache().clone());
             validator
                 .validate_graph(&graph)
@@ -458,7 +483,7 @@ impl DbspCircuit {
                     let (mut batch, mut buf) = (Vec::new(), StringRecord::new());
                     while csv.read_record(&mut buf).unwrap() {
                         let mut row = UninitRow::new(key_vtable);
-                        unsafe { marshall_csv(row.as_mut_ptr(), &buf as *const StringRecord) };
+                        unsafe { marshall_csv(row.as_mut_ptr(), &buf) };
                         batch.push((unsafe { row.assume_init() }, 1));
                     }
 

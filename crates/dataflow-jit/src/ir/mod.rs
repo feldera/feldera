@@ -30,6 +30,6 @@ pub use layout_cache::RowLayoutCache;
 pub use row_layout::{RowLayout, RowLayoutBuilder};
 pub use terminator::{Branch, Jump, Return, Terminator};
 pub use types::{ColumnType, Signature};
-pub use validate::Validator;
+pub use validate::{ValidationError, ValidationResult, Validator};
 
 pub(crate) use ids::{BlockIdGen, ExprIdGen, NodeIdGen};

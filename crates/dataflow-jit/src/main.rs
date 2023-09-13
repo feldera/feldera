@@ -122,7 +122,7 @@ fn run(program: &Path, config: &Path) -> ExitCode {
         match format {
             InputFormat::Json => {
                 let file = BufReader::new(File::open(file).unwrap());
-                circuit.append_json_input(target, file);
+                circuit.append_json_input(target, file).unwrap();
             }
 
             InputFormat::Csv => circuit.append_csv_input(target, &file),
