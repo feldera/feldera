@@ -27,16 +27,6 @@ ENV LC_ALL en_US.UTF-8
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-# web-console build tools:
-# - nodejs
-RUN mkdir -p /etc/apt/keyrings
-RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-ENV NODE_MAJOR=20
-RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
-RUN apt update --fix-missing && apt install nodejs
-# - yarn
-RUN npm install --global yarn
-RUN npm install --global openapi-typescript-codegen
 
 # Use cargo-chef to produce a recipe.json file
 # to cache the requisite dependencies
@@ -56,6 +46,15 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json --bin=pipeline-manager --no-default-features
 COPY . .
+# web-console build tools:
+# - nodejs
+RUN mkdir -p /etc/apt/keyrings
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+ENV NODE_MAJOR=20
+RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+RUN apt update --fix-missing && apt install nodejs
+# - yarn
+RUN npm install --global yarn openapi-typescript-codegen
 RUN /root/.cargo/bin/cargo build --release --package=pipeline-manager --no-default-features
 
 # Java build can be performed in parallel
