@@ -116,10 +116,10 @@ use serde::Serialize;
 
 mod catalog;
 mod controller;
-mod deinput;
 pub mod format;
 mod seroutput;
 pub mod server;
+pub mod static_compile;
 pub mod transport;
 pub(crate) mod util;
 
@@ -143,12 +143,13 @@ pub use dbsp::DetailedError;
 
 pub use server::{EgressMode, ErrorResponse, PipelineError};
 
-pub use catalog::{Catalog, NeighborhoodQuery, OutputQuery, OutputQueryHandles};
-pub use deinput::{
-    DeCollectionHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
+pub use catalog::{
+    CircuitCatalog, DeCollectionHandle, DeCollectionStream, NeighborhoodQuery, OutputQuery,
+    OutputQueryHandles,
 };
 pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser};
 pub use seroutput::{SerBatch, SerCursor, SerOutputBatchHandle, SerOutputBatchHandleImpl};
+pub use static_compile::catalog::Catalog;
 
 pub use controller::{
     ConfigError, ConnectorConfig, Controller, ControllerError, ControllerStatus, FormatConfig,

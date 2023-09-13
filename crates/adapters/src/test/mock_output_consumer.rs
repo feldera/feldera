@@ -6,6 +6,12 @@ pub struct MockOutputConsumer {
     max_buffer_size_bytes: usize,
 }
 
+impl Default for MockOutputConsumer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockOutputConsumer {
     pub fn new() -> Self {
         Self::with_max_buffer_size_bytes(usize::MAX)

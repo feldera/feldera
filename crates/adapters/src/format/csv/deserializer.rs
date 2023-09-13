@@ -901,8 +901,7 @@ mod tests {
         let got = de_headers::<Bar>(&[], &[]);
         assert_eq!(got.unwrap(), Bar {});
 
-        let got = de_headers::<()>(&[], &[]);
-        assert_eq!(got.unwrap(), ());
+        de_headers::<()>(&[], &[]).unwrap();
     }
 
     #[test]

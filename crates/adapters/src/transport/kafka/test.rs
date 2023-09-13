@@ -101,7 +101,7 @@ outputs:
 
     match Controller::with_config(
         circuit,
-        catalog,
+        Box::new(catalog),
         &config,
         Box::new(|e| panic!("error: {e}")),
     ) {
@@ -173,7 +173,7 @@ outputs:
 
     let controller = Controller::with_config(
         circuit,
-        catalog,
+        Box::new(catalog),
         &config,
         Box::new(move |e| if running_clone.load(Ordering::Acquire) {
             panic!("{test_name_clone}: error: {e}")
@@ -250,7 +250,7 @@ format:
     name: csv
 "#;
 
-    match mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()) {
+    match mock_input_pipeline::<TestStruct>(serde_yaml::from_str(config_str).unwrap()) {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("proptest_kafka_input: Error: {e}"),
     };

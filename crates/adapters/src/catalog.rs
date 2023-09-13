@@ -1,14 +1,7 @@
-use crate::{
-    DeCollectionHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
-    SerOutputBatchHandle, SerOutputBatchHandleImpl,
-};
-use dbsp::{
-    algebra::ZRingValue,
-    operator::{DelayedFeedback, NeighborhoodDescr},
-    CollectionHandle, InputHandle, RootCircuit, Stream, UpsertHandle, ZSet,
-};
+use crate::{static_compile::ErasedDeScalarHandle, ControllerError, SerOutputBatchHandle};
+use anyhow::Error as AnyError;
+use dbsp::InputHandle;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use utoipa::ToSchema;
 
 // This is only here so we can derive `ToSchema` for it without adding
@@ -26,7 +19,7 @@ pub struct NeighborhoodQuery {
 
 // Helper type only used to serialize neighborhoods as a map vs tuple.
 #[derive(Serialize)]
-struct NeighborhoodEntry<KD> {
+pub struct NeighborhoodEntry<KD> {
     index: isize,
     key: KD,
 }
@@ -41,6 +34,124 @@ where
             key: KD::from(key),
         }
     }
+}
+
+/// An input handle that deserializes records before pushing them to a
+/// stream.
+///
+/// A trait for a type that wraps a [`CollectionHandle`](`dbsp::CollectionHandle`) or
+/// an [`UpsertHandle`](`dbsp::UpsertHandle`) and pushes serialized relational data
+/// to the associated input stream record-by-record.  The client passes a
+/// byte array with a serialized data record (e.g., in JSON or CSV format)
+/// to [`insert`](`Self::insert`) and [`delete`](`Self::delete`) methods.
+/// The record gets deserialized into the strongly typed representation
+/// expected by the input stream and gets buffered inside the handle.
+/// The [`flush`](`Self::flush`) method pushes all buffered data to the
+/// underlying [`CollectionHandle`](`dbsp::CollectionHandle`) or
+/// [`UpsertHandle`](`dbsp::UpsertHandle`).
+///
+/// Instances of this trait are created by calling
+/// [`DeCollectionHandle::configure_deserializer`].
+/// The data format accepted by the handle is determined
+/// by the `record_format` argument passed to this method.
+pub trait DeCollectionStream: Send {
+    /// Buffer a new insert update.
+    ///
+    /// Returns an error if deserialization fails, i.e., the serialized
+    /// representation is corrupted or does not match the value type of
+    /// the underlying input stream.
+    fn insert(&mut self, data: &[u8]) -> Result<(), AnyError>;
+
+    /// Buffer a new delete update.
+    ///
+    /// The `data` argument contains a serialized record whose
+    /// type depends on the underlying input stream: streams created by
+    /// [`RootCircuit::add_input_zset`](`dbsp::RootCircuit::add_input_zset`)
+    /// and [`RootCircuit::add_input_set`](`dbsp::RootCircuit::add_input_set`)
+    /// methods support deletion by value, hence the serialized record must
+    /// match the value type of the stream.  Streams created with
+    /// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`)
+    /// support deletion by key, so the serialized record must match the key
+    /// type of the stream.
+    ///
+    /// The record gets deserialized and pushed to the underlying input stream
+    /// handle as a delete update.
+    ///
+    /// Returns an error if deserialization fails, i.e., the serialized
+    /// representation is corrupted or does not match the value or key
+    /// type of the underlying input stream.
+    fn delete(&mut self, data: &[u8]) -> Result<(), AnyError>;
+
+    /// Reserve space for at least `reservation` more updates in the
+    /// internal input buffer.
+    ///
+    /// Reservations are not required but can be used when the number
+    /// of inputs is known ahead of time to reduce reallocations.
+    fn reserve(&mut self, reservation: usize);
+
+    /// Push all buffered updates to the underlying input stream handle.
+    ///
+    /// Flushed updates will be pushed to the stream during the next call
+    /// to [`DBSPHandle::step`](`dbsp::DBSPHandle::step`).  `flush` can
+    /// be called multiple times between two subsequent `step`s.  Every
+    /// `flush` call adds new updates to the previously flushed updates.
+    ///
+    /// Updates queued after the last `flush` remain buffered in the handle
+    /// until the next `flush` or `clear_buffer` call or until the handle
+    /// is destroyed.
+    fn flush(&mut self);
+
+    /// Clear all buffered updates.
+    ///
+    /// Clears updates pushed to the handle after the last `flush`.
+    /// Flushed updates remain queued at the underlying input handle.
+    // TODO: add another method to invoke `CollectionHandle::clear_input`?
+    fn clear_buffer(&mut self);
+
+    /// Create a new deserializer with the same configuration connected to
+    /// the same input stream.
+    fn fork(&self) -> Box<dyn DeCollectionStream>;
+}
+
+/// Descriptor that specifies the format in which records are received
+/// or into which they should be encoded before sending.
+///
+// TODO: Currently we only allows choosing between JSON and CSV formats.
+// In the future, in addition to adding mode formats we can make these two
+// formats configurable (see below).
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq, Eq)]
+pub enum RecordFormat {
+    // TODO: Support different JSON encodings:
+    // * Map - the default encoding
+    // * Array - allow the subset and the order of columns to be configurable
+    // * Raw - Only applicable to single-column tables.  Input records contain
+    // raw encoding of this column only.  This is particularly useful for
+    // tables that store raw JSON or binary data to be parsed using SQL.
+    Json,
+    Csv,
+}
+
+/// A handle to an input collection that can be used to feed serialized data
+/// to the collection.
+pub trait DeCollectionHandle: Send {
+    /// Create a [`DeCollectionStream`] object to parse input data encoded
+    /// using the format specified in `RecordFormat`.
+    fn configure_deserializer(
+        &self,
+        record_format: RecordFormat,
+    ) -> Result<Box<dyn DeCollectionStream>, ControllerError>;
+}
+
+/// A catalog of input and output stream handles of a circuit.
+pub trait CircuitCatalog: Send {
+    /// Look up an input stream handle by name.
+    fn input_collection_handle(&self, name: &str) -> Option<&dyn DeCollectionHandle>;
+
+    /// Look up output stream handles by name.
+    fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles>;
+
+    /// Look up output query handles by stream name and query type.
+    fn output_query_handles(&self, name: &str, query: OutputQuery) -> Option<OutputQueryHandles>;
 }
 
 /// A set of stream handles associated with each output collection.
@@ -82,7 +193,7 @@ pub struct OutputCollectionHandles {
     ///   the previously specified neighborhood if any.  Nothing is written to
     ///   the [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
     ///   stream.
-    pub neighborhood_descr_handle: Box<dyn DeScalarHandle>,
+    pub neighborhood_descr_handle: Box<dyn ErasedDeScalarHandle>,
 
     /// A stream of changes to the neighborhood, computed using the
     /// [`Stream::neighborhood`] operator.
@@ -118,10 +229,10 @@ pub enum OutputQuery {
     /// Query the entire contents of the table (similar to `SELECT * FROM`).
     #[serde(rename = "table")]
     Table,
-    /// Neighborhood query (see [`Stream::neighborhood`]).
+    /// Neighborhood query (see [`Stream::neighborhood`](`dbsp::Stream::neighborhood`)).
     #[serde(rename = "neighborhood")]
     Neighborhood,
-    /// Quantiles query (see `[Stream::stream_key_quantiles]`).
+    /// Quantiles query (see [`Stream::stream_key_quantiles`](`dbsp::Stream::stream_key_quantiles`)).
     #[serde(rename = "quantiles")]
     Quantiles,
 }
@@ -148,197 +259,4 @@ impl Default for OutputQuery {
 pub struct OutputQueryHandles {
     pub delta: Option<Box<dyn SerOutputBatchHandle>>,
     pub snapshot: Option<Box<dyn SerOutputBatchHandle>>,
-}
-
-/// A catalog of input and output stream handles of a circuit.
-///
-/// An instance of this type is created by the user (or auto-generated code)
-/// who constructs the circuit and is used by
-/// [`Controller`](`crate::Controller`) to bind external data sources and sinks
-/// to DBSP streams.
-#[derive(Default)]
-pub struct Catalog {
-    input_collection_handles: BTreeMap<String, Box<dyn DeCollectionHandle>>,
-    output_batch_handles: BTreeMap<String, OutputCollectionHandles>,
-}
-
-impl Catalog {
-    /// Create an empty catalog.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Add an input stream of Z-sets to the catalog.
-    ///
-    /// Adds a `DeCollectionHandle` to the catalog, which will deserialize
-    /// input records into type `D` before converting them to `Z::Key` using
-    /// the `From` trait.
-    pub fn register_input_zset<Z, D>(
-        &mut self,
-        name: &str,
-        stream: Stream<RootCircuit, Z>,
-        handle: CollectionHandle<Z::Key, Z::R>,
-    ) where
-        D: for<'de> Deserialize<'de> + Serialize + From<Z::Key> + Clone + Send + 'static,
-        Z: ZSet + Send + Sync,
-        Z::R: ZRingValue + Into<i64> + Sync,
-        Z::Key: Serialize + Sync + From<D>,
-    {
-        self.register_input_collection_handle(name, <DeZSetHandle<Z::Key, D, Z::R>>::new(handle));
-
-        // Inputs are also outputs.
-        self.register_output_zset(name, stream);
-    }
-
-    pub fn register_input_set<Z, D>(
-        &mut self,
-        name: &str,
-        stream: Stream<RootCircuit, Z>,
-        handle: UpsertHandle<Z::Key, bool>,
-    ) where
-        D: for<'de> Deserialize<'de> + Serialize + From<Z::Key> + Clone + Send + 'static,
-        Z: ZSet + Send + Sync,
-        Z::R: ZRingValue + Into<i64> + Sync,
-        Z::Key: Serialize + Sync + From<D>,
-    {
-        self.register_input_collection_handle(name, <DeSetHandle<Z::Key, D>>::new(handle));
-
-        // Inputs are also outputs.
-        self.register_output_zset(name, stream);
-    }
-
-    /// Add a named input stream handle to the catalog.
-    fn register_input_collection_handle<H>(&mut self, name: &str, handle: H)
-    where
-        H: DeCollectionHandle + 'static,
-    {
-        self.input_collection_handles
-            .insert(name.to_owned(), Box::new(handle));
-    }
-
-    /// Add an output stream of Z-sets to the catalog.
-    pub fn register_output_zset<Z, D>(&mut self, name: &str, stream: Stream<RootCircuit, Z>)
-    where
-        D: for<'de> Deserialize<'de> + Serialize + From<Z::Key> + Clone + Send + 'static,
-        Z: ZSet + Send + Sync,
-        Z::R: ZRingValue + Into<i64> + Sync,
-        Z::Key: Serialize + Sync + From<D>,
-    {
-        let circuit = stream.circuit();
-
-        // Create handle for the stream itself.
-        let delta_handle = stream.output();
-
-        // Improve the odds that `integrate_trace` below reuses the trace of `stream`
-        // if one exists.
-        let stream = stream.try_sharded_version();
-
-        // Create handles for the neighborhood query.
-        let (neighborhood_descr_stream, neighborhood_descr_handle) =
-            circuit.add_input_stream::<(bool, Option<NeighborhoodDescr<D, ()>>)>();
-        let neighborhood_stream = {
-            // Create a feedback loop to latch the latest neighborhood descriptor
-            // when `reset=true`.
-            let feedback =
-                <DelayedFeedback<RootCircuit, Option<NeighborhoodDescr<Z::Key, ()>>>>::new(
-                    stream.circuit(),
-                );
-            let new_neighborhood =
-                feedback
-                    .stream()
-                    .apply2(&neighborhood_descr_stream, |old, (reset, new)| {
-                        if *reset {
-                            // Convert anchor of type `D` into `Z::Key`.
-                            new.clone().map(|new| {
-                                NeighborhoodDescr::new(
-                                    new.anchor.map(From::from),
-                                    (),
-                                    new.before,
-                                    new.after,
-                                )
-                            })
-                        } else {
-                            old.clone()
-                        }
-                    });
-            feedback.connect(&new_neighborhood);
-            stream.neighborhood(&new_neighborhood)
-        };
-
-        // Neighborhood delta stream.
-        let neighborhood_handle = neighborhood_stream.output();
-
-        // Neighborhood snapshot stream.  The integral computation
-        // is essentially free thanks to stream caching.
-        let neighborhood_snapshot_stream = neighborhood_stream.integrate();
-        let neighborhood_snapshot_handle = neighborhood_snapshot_stream
-            .output_guarded(&neighborhood_descr_stream.apply(|(reset, _descr)| *reset));
-
-        // Handle for the quantiles query.
-        let (num_quantiles_stream, num_quantiles_handle) = circuit.add_input_stream::<usize>();
-
-        // Output of the quantiles query, only produced when `num_quantiles>0`.
-        let quantiles_stream = stream
-            .integrate_trace()
-            .stream_key_quantiles(&num_quantiles_stream);
-        let quantiles_handle = quantiles_stream
-            .output_guarded(&num_quantiles_stream.apply(|num_quantiles| *num_quantiles > 0));
-
-        let handles = OutputCollectionHandles {
-            delta_handle: Box::new(<SerOutputBatchHandleImpl<_, D, ()>>::new(delta_handle))
-                as Box<dyn SerOutputBatchHandle>,
-
-            neighborhood_descr_handle: Box::new(DeScalarHandleImpl::new(neighborhood_descr_handle))
-                as Box<dyn DeScalarHandle>,
-            neighborhood_handle: Box::new(
-                <SerOutputBatchHandleImpl<_, NeighborhoodEntry<D>, ()>>::new(neighborhood_handle),
-            ) as Box<dyn SerOutputBatchHandle>,
-            neighborhood_snapshot_handle: Box::new(<SerOutputBatchHandleImpl<
-                _,
-                NeighborhoodEntry<D>,
-                (),
-            >>::new(neighborhood_snapshot_handle))
-                as Box<dyn SerOutputBatchHandle>,
-
-            num_quantiles_handle,
-            quantiles_handle: Box::new(<SerOutputBatchHandleImpl<_, D, ()>>::new(quantiles_handle))
-                as Box<dyn SerOutputBatchHandle>,
-        };
-
-        self.output_batch_handles.insert(name.to_owned(), handles);
-    }
-
-    /// Look up an input stream handle by name.
-    pub fn input_collection_handle(&self, name: &str) -> Option<&dyn DeCollectionHandle> {
-        self.input_collection_handles.get(name).map(|b| &**b)
-    }
-
-    /// Look up output stream handles by name.
-    pub fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles> {
-        self.output_batch_handles.get(name)
-    }
-
-    /// Look up an output query handles by stream name and query type.
-    pub fn output_query_handles(
-        &self,
-        name: &str,
-        query: OutputQuery,
-    ) -> Option<OutputQueryHandles> {
-        self.output_batch_handles
-            .get(name)
-            .map(|handles| match query {
-                OutputQuery::Table => OutputQueryHandles {
-                    delta: Some(handles.delta_handle.fork()),
-                    snapshot: None,
-                },
-                OutputQuery::Neighborhood => OutputQueryHandles {
-                    delta: (Some(handles.neighborhood_handle.fork())),
-                    snapshot: Some(handles.neighborhood_snapshot_handle.fork()),
-                },
-                OutputQuery::Quantiles => OutputQueryHandles {
-                    delta: None,
-                    snapshot: Some(handles.quantiles_handle.fork()),
-                },
-            })
-    }
 }

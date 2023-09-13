@@ -2,12 +2,13 @@
 
 use super::{DebeziumUpdate, InsDelUpdate, JsonUpdateFormat, WeightedUpdate};
 use crate::{
-    format::{InputFormat, ParseError, Parser, RecordFormat},
+    catalog::{DeCollectionStream, RecordFormat},
+    format::{InputFormat, ParseError, Parser},
     util::split_on_newline,
     ControllerError, DeCollectionHandle,
 };
 use actix_web::HttpRequest;
-use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerialize};
+use erased_serde::Serialize as ErasedSerialize;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -52,11 +53,6 @@ pub struct JsonInputFormat;
 /// ```
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 pub struct JsonParserConfig {
-    // We only support one record format at the moment.
-    #[doc(hidden)]
-    #[serde(skip)]
-    #[allow(dead_code)]
-    record_format: RecordFormat,
     /// JSON update format.
     #[serde(default)]
     update_format: JsonUpdateFormat,
@@ -231,6 +227,7 @@ impl InputFormat for JsonInputFormat {
                 &serde_yaml::to_string(&config).unwrap_or_default(),
             )
         })?;
+        let input_stream = input_stream.configure_deserializer(RecordFormat::Json)?;
         Ok(Box::new(JsonParser::new(input_stream, config)) as Box<dyn Parser>)
     }
 
@@ -256,16 +253,16 @@ impl InputFormat for JsonInputFormat {
 
 struct JsonParser {
     /// Input handle to push parsed data to.
-    input_stream: Box<dyn DeCollectionHandle>,
+    input_stream: Box<dyn DeCollectionStream>,
     config: JsonParserConfig,
     leftover: Vec<u8>,
     last_event_number: u64,
 }
 
 impl JsonParser {
-    fn new(input_stream: &dyn DeCollectionHandle, config: JsonParserConfig) -> Self {
+    fn new(input_stream: Box<dyn DeCollectionStream>, config: JsonParserConfig) -> Self {
         Self {
-            input_stream: input_stream.fork(),
+            input_stream,
             config,
             leftover: Vec::new(),
             last_event_number: 0,
@@ -281,9 +278,7 @@ impl JsonParser {
     }
 
     fn delete(&mut self, val: &RawValue) -> Result<(), ParseError> {
-        let mut deserializer = serde_json::Deserializer::from_str(val.get());
-        let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-        self.input_stream.delete(&mut deserializer).map_err(|e| {
+        self.input_stream.delete(val.get().as_bytes()).map_err(|e| {
             ParseError::text_event_error(
                 "failed to deserialize JSON record",
                 e,
@@ -295,9 +290,7 @@ impl JsonParser {
     }
 
     fn insert(&mut self, val: &RawValue) -> Result<(), ParseError> {
-        let mut deserializer = serde_json::Deserializer::from_str(val.get());
-        let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-        self.input_stream.insert(&mut deserializer).map_err(|e| {
+        self.input_stream.insert(val.get().as_bytes()).map_err(|e| {
             ParseError::text_event_error(
                 "failed to deserialize JSON record",
                 e,
@@ -456,7 +449,7 @@ impl Parser for JsonParser {
     }
 
     fn fork(&self) -> Box<dyn Parser> {
-        Box::new(Self::new(&*self.input_stream, self.config.clone()))
+        Box::new(Self::new(self.input_stream.fork(), self.config.clone()))
     }
 }
 
@@ -464,7 +457,7 @@ impl Parser for JsonParser {
 mod test {
     use crate::{
         deserialize_table_record,
-        format::{JsonParserConfig, JsonUpdateFormat, RecordFormat},
+        format::{JsonParserConfig, JsonUpdateFormat},
         test::mock_parser_pipeline,
         transport::InputConsumer,
         FormatConfig, ParseError,
@@ -569,7 +562,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -580,7 +572,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -591,7 +582,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
@@ -602,7 +592,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
@@ -614,7 +603,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -625,7 +613,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -636,7 +623,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
@@ -647,7 +633,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
@@ -659,7 +644,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -671,7 +655,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -683,7 +666,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
@@ -695,7 +677,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
@@ -708,7 +689,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -720,7 +700,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -732,7 +711,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
@@ -744,7 +722,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
@@ -757,7 +734,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -769,7 +745,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
@@ -783,7 +758,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
@@ -796,7 +770,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -810,7 +783,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -824,7 +796,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: true,
                 },
@@ -838,7 +809,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -853,7 +823,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Raw,
                     array: false,
                 },
@@ -872,7 +841,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
@@ -883,7 +851,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
@@ -895,7 +862,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
@@ -906,7 +872,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
@@ -917,7 +882,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
@@ -929,7 +893,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
@@ -942,7 +905,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
@@ -954,7 +916,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
@@ -967,7 +928,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
@@ -979,7 +939,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
@@ -991,7 +950,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
@@ -1007,7 +965,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
@@ -1021,7 +978,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
@@ -1035,7 +991,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: false,
                 },
@@ -1050,7 +1005,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
@@ -1064,7 +1018,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::InsertDelete,
                     array: true,
                 },
@@ -1082,7 +1035,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
@@ -1094,7 +1046,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
@@ -1105,7 +1056,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
@@ -1117,7 +1067,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
@@ -1129,7 +1078,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
@@ -1142,7 +1090,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
@@ -1155,7 +1102,6 @@ mod test {
             TestCase::new(
                 true,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
@@ -1168,7 +1114,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },
@@ -1183,7 +1128,6 @@ mod test {
             TestCase::new(
                 false,
                 JsonParserConfig {
-                    record_format: RecordFormat::Map,
                     update_format: JsonUpdateFormat::Debezium,
                     array: false,
                 },

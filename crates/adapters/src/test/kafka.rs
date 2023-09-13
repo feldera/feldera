@@ -9,12 +9,12 @@ use futures::executor::block_on;
 use log::{error, info};
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
-    client::{DefaultClientContext, Client},
+    client::{Client, DefaultClientContext},
     config::{FromClientConfig, RDKafkaLogLevel},
     consumer::{BaseConsumer, Consumer},
     producer::{BaseRecord, DefaultProducerContext, Producer, ThreadedProducer},
     util::Timeout,
-    ClientConfig, Message, ClientContext,
+    ClientConfig, ClientContext, Message,
 };
 use std::{
     sync::{

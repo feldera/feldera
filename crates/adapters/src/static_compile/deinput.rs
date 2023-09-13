@@ -1,7 +1,72 @@
+use crate::{
+    catalog::{DeCollectionStream, RecordFormat},
+    format::byte_record_deserializer,
+    ControllerError, DeCollectionHandle,
+};
+use anyhow::{anyhow, Result as AnyResult};
 use dbsp::{algebra::ZRingValue, CollectionHandle, DBData, DBWeight, InputHandle, UpsertHandle};
 use erased_serde::{deserialize, Deserializer as ErasedDeserializer, Error as EError};
 use serde::Deserialize;
-use std::marker::PhantomData;
+use std::{collections::VecDeque, marker::PhantomData};
+
+/// A deserializer that parses byte arrays into a strongly typed representation.
+pub trait DeserializerFromBytes {
+    /// Create an instance of a deserializer.
+    fn create() -> Self;
+
+    /// Parse an object of type `T` from `data`.
+    fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
+    where
+        T: for<'de> Deserialize<'de>;
+}
+
+/// Deserializer for CSV-encoded data.
+pub struct CsvDeserializerFromBytes {
+    // CSV deserializer maintains some allocations across invocations,
+    // so we keep an instance here.
+    reader: csv::Reader<VecDeque<u8>>,
+    // Byte record to read CSV records into.
+    record: csv::ByteRecord,
+}
+
+impl DeserializerFromBytes for CsvDeserializerFromBytes {
+    fn create() -> Self {
+        CsvDeserializerFromBytes {
+            reader: csv::ReaderBuilder::new()
+                .has_headers(false)
+                .flexible(true)
+                .from_reader(VecDeque::new()),
+            record: csv::ByteRecord::new(),
+        }
+    }
+    fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        // Push new data to reader.
+        self.reader.get_mut().extend(data.iter());
+        self.reader.read_byte_record(&mut self.record)?;
+
+        T::deserialize(&mut byte_record_deserializer(&self.record, None))
+            .map_err(|e| anyhow!(e.to_string()))
+    }
+}
+
+// Deserializer for JSON-encoded data.
+pub struct JsonDeserializerFromBytes;
+
+impl DeserializerFromBytes for JsonDeserializerFromBytes {
+    fn create() -> Self {
+        JsonDeserializerFromBytes
+    }
+    fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        T::deserialize(&mut serde_json::Deserializer::from_slice(data))
+            .map_err(|e| anyhow!(e.to_string()))
+    }
+}
 
 /// Maximal buffer size reused across clock cycles.
 ///
@@ -32,7 +97,7 @@ const MAX_REUSABLE_CAPACITY: usize = 100_000;
 ///
 /// Note: this trait is useful for feeding scalar values to the circuit.
 /// Use [`DeCollectionHandle`] for relational data.
-pub trait DeScalarHandle: Send {
+pub trait ErasedDeScalarHandle: Send {
     /// Deserialize an input value and push it to the circuit via
     /// [`InputHandle::set_for_worker`].
     ///
@@ -57,7 +122,7 @@ pub trait DeScalarHandle: Send {
     fn clear_for_all(&self);
 
     /// Create a new handle connected to the same input stream.
-    fn fork(&self) -> Box<dyn DeScalarHandle>;
+    fn fork(&self) -> Box<dyn ErasedDeScalarHandle>;
 }
 
 #[derive(Clone)]
@@ -71,7 +136,7 @@ impl<T> DeScalarHandleImpl<T> {
     }
 }
 
-impl<T> DeScalarHandle for DeScalarHandleImpl<T>
+impl<T> ErasedDeScalarHandle for DeScalarHandleImpl<T>
 where
     T: Default + Send + Clone + for<'de> Deserialize<'de> + 'static,
 {
@@ -95,106 +160,44 @@ where
         self.handle.clear_for_all()
     }
 
-    fn fork(&self) -> Box<dyn DeScalarHandle> {
+    fn fork(&self) -> Box<dyn ErasedDeScalarHandle> {
         Box::new(self.clone())
     }
 }
 
-/// An input handle that deserializes records before pushing them to a
-/// stream.
-///
-/// A trait for a type that wraps a [`CollectionHandle`] or
-/// an [`UpsertHandle`] and pushes serialized relational data to the
-/// associated input stream record-by-record.  The client passes a
-/// deserializer object that provides access to a serialized data
-/// record (e.g., in JSON or CSV format) to [`insert`](`Self::insert`)
-/// and [`delete`](`Self::delete`) methods.  The record gets deserialized
-/// into the strongly typed representation expected by the input stream
-/// and gets buffered inside the handle.  The [`flush`](`Self::flush`)
-/// method pushes all buffered data to the underlying
-/// [`CollectionHandle`] or [`UpsertHandle`].
-///
-/// The exact serialized type passed to `insert` and `delete` methods
-/// depends on the underlying handle. See [`DeZSetHandle`], [`DeSetHandle`],
-/// and [`DeMapHandle`] documentation for details.
-///
-/// This trait is object-safe, i.e., it can be converted to
-/// `dyn DeCollectionHandle` and invoked using dynamic dispatch.  This allows
-/// choosing the input format (encapsulated by the deserializer object) at
-/// runtime or even switching between different formats dynamically.  Object
-/// safety is achived by using the `erased_serde` crate that exposes an
-/// object-safe deserializer API ([`erased_serde::Deserializer`]), so that
-/// `DeCollectionHandle` methods don't need to be parameterized by the
-/// deserializer type.
-pub trait DeCollectionHandle: Send {
-    /// Buffer a new insert update.
-    ///
-    /// The `deserializer` argument wraps a single serialized record.
-    /// The value gets deserialized and pushed to the underlying input stream
-    /// handle as an insert update.
-    ///
-    /// Returns an error if deserialization fails, i.e., the serialized
-    /// representation is corrupted or does not match the value type of
-    /// the underlying input stream.
-    ///
-    /// See [`DeZSetHandle`], [`DeSetHandle`], and [`DeMapHandle`]
-    /// documentation for details.
-    fn insert(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError>;
+pub struct DeZSetHandle<K, D, R> {
+    handle: CollectionHandle<K, R>,
+    phantom: PhantomData<D>,
+}
 
-    /// Buffer a new delete update.
-    ///
-    /// The `deserializer` argument wraps a single serialized record whose
-    /// type depends on the underlying input stream: streams created by
-    /// [`RootCircuit::add_input_zset`](`dbsp::RootCircuit::add_input_zset`)
-    /// and [`RootCircuit::add_input_set`](`dbsp::RootCircuit::add_input_set`)
-    /// methods support deletion by value, hence the serialized record must
-    /// match the value type of the stream.  Streams created with
-    /// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`)
-    /// support deletion by key, so the serialized record must match the key
-    /// type of the stream.
-    ///
-    /// The record gets deserialized and pushed to the underlying input stream
-    /// handle as a delete update.
-    ///
-    /// Returns an error if deserialization fails, i.e., the serialized
-    /// representation is corrupted or does not match the value or key
-    /// type of the underlying input stream.
-    ///
-    /// See [`DeZSetHandle`], [`DeSetHandle`], and [`DeMapHandle`]
-    /// documentation for details.
-    fn delete(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError>;
+impl<K, D, R> DeZSetHandle<K, D, R> {
+    pub fn new(handle: CollectionHandle<K, R>) -> Self {
+        Self {
+            handle,
+            phantom: PhantomData,
+        }
+    }
+}
 
-    /// Reserve space for at least `reservation` more updates in the
-    /// internal input buffer.
-    ///
-    /// Reservations are not required but can be used when the number
-    /// of inputs is known ahead of time to reduce reallocations.
-    fn reserve(&mut self, reservation: usize);
-
-    /// Push all buffered updates to the underlying input stream handle.
-    ///
-    /// Flushed updates will be pushed to the stream during the next call
-    /// to [`DBSPHandle::step`](`dbsp::DBSPHandle::step`).  `flush` can
-    /// be called multiple times between two subsequent `step`s.  Every
-    /// `flush` call adds new updates to the previously flushed updates.
-    ///
-    /// Updates queued after the last `flush` remain buffered in the handle
-    /// until the next `flush` or `clear_buffer` call or until the handle
-    /// is destroyed.
-    fn flush(&mut self);
-
-    /// Clear all buffered updates.
-    ///
-    /// Clears updates pushed to the handle after the last `flush`.
-    /// Flushed updates remain queued at the underlying input handle.
-    // TODO: add another method to invoke `CollectionHandle::clear_input`?
-    fn clear_buffer(&mut self);
-
-    /// Create a new handle connected to the same input stream.
-    ///
-    /// The new handle will use its own input buffer, but shares the
-    /// underlying input stream handle with the original handle.
-    fn fork(&self) -> Box<dyn DeCollectionHandle>;
+impl<K, D, R> DeCollectionHandle for DeZSetHandle<K, D, R>
+where
+    K: DBData + From<D>,
+    D: for<'de> Deserialize<'de> + Send + 'static,
+    R: DBWeight + ZRingValue,
+{
+    fn configure_deserializer(
+        &self,
+        record_format: RecordFormat,
+    ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
+        match record_format {
+            RecordFormat::Csv => Ok(Box::new(
+                DeZSetStream::<CsvDeserializerFromBytes, K, D, R>::new(self.handle.clone()),
+            )),
+            RecordFormat::Json => Ok(Box::new(
+                DeZSetStream::<JsonDeserializerFromBytes, K, D, R>::new(self.handle.clone()),
+            )),
+        }
+    }
 }
 
 /// An input handle that wraps a [`CollectionHandle<K, R>`](`CollectionHandle`)
@@ -207,17 +210,22 @@ pub trait DeCollectionHandle: Send {
 ///
 /// The [`delete`](`Self::delete`) method of this handle buffers a `(k, -1)`
 /// update for the underlying `CollectionHandle`.
-pub struct DeZSetHandle<K, D, R> {
+pub struct DeZSetStream<De, K, D, R> {
     updates: Vec<(K, R)>,
     handle: CollectionHandle<K, R>,
+    deserializer: De,
     phantom: PhantomData<D>,
 }
 
-impl<K, D, R> DeZSetHandle<K, D, R> {
+impl<De, K, D, R> DeZSetStream<De, K, D, R>
+where
+    De: DeserializerFromBytes,
+{
     pub fn new(handle: CollectionHandle<K, R>) -> Self {
         Self {
             updates: Vec::new(),
             handle,
+            deserializer: De::create(),
             phantom: PhantomData,
         }
     }
@@ -229,21 +237,22 @@ impl<K, D, R> DeZSetHandle<K, D, R> {
     }
 }
 
-impl<K, D, R> DeCollectionHandle for DeZSetHandle<K, D, R>
+impl<De, K, D, R> DeCollectionStream for DeZSetStream<De, K, D, R>
 where
+    De: DeserializerFromBytes + Send + 'static,
     K: DBData + From<D>,
     D: for<'de> Deserialize<'de> + Send + 'static,
     R: DBWeight + ZRingValue,
 {
-    fn insert(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let key = <K as From<D>>::from(deserialize::<D>(deserializer)?);
+    fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
+        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
         self.updates.push((key, R::one()));
         Ok(())
     }
 
-    fn delete(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let key = <K as From<D>>::from(deserialize::<D>(deserializer)?);
+    fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
+        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
         self.updates.push((key, R::one().neg()));
         Ok(())
@@ -263,8 +272,42 @@ where
         self.clear();
     }
 
-    fn fork(&self) -> Box<dyn DeCollectionHandle> {
+    fn fork(&self) -> Box<dyn DeCollectionStream> {
         Box::new(Self::new(self.handle.clone()))
+    }
+}
+
+pub struct DeSetHandle<K, D> {
+    handle: UpsertHandle<K, bool>,
+    phantom: PhantomData<D>,
+}
+
+impl<K, D> DeSetHandle<K, D> {
+    pub fn new(handle: UpsertHandle<K, bool>) -> Self {
+        Self {
+            handle,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<K, D> DeCollectionHandle for DeSetHandle<K, D>
+where
+    K: DBData + From<D>,
+    D: for<'de> Deserialize<'de> + Send + 'static,
+{
+    fn configure_deserializer(
+        &self,
+        record_format: RecordFormat,
+    ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
+        match record_format {
+            RecordFormat::Csv => Ok(Box::new(
+                DeSetStream::<CsvDeserializerFromBytes, K, D>::new(self.handle.clone()),
+            )),
+            RecordFormat::Json => Ok(Box::new(
+                DeSetStream::<JsonDeserializerFromBytes, K, D>::new(self.handle.clone()),
+            )),
+        }
     }
 }
 
@@ -279,36 +322,42 @@ where
 /// The [`delete`](`Self::delete`) method of this handle deserializes value
 /// `v` type `V` and buffers a `(v, false)` update for the underlying
 /// `UpsertHandle`.
-pub struct DeSetHandle<K, D> {
+pub struct DeSetStream<De, K, D> {
     updates: Vec<(K, bool)>,
     handle: UpsertHandle<K, bool>,
-    phantom: PhantomData<D>,
+    deserializer: De,
+    phantom: PhantomData<fn(D)>,
 }
 
-impl<K, D> DeSetHandle<K, D> {
+impl<De, K, D> DeSetStream<De, K, D>
+where
+    De: DeserializerFromBytes,
+{
     pub fn new(handle: UpsertHandle<K, bool>) -> Self {
         Self {
             updates: Vec::new(),
             handle,
+            deserializer: De::create(),
             phantom: PhantomData,
         }
     }
 }
 
-impl<K, D> DeCollectionHandle for DeSetHandle<K, D>
+impl<De, K, D> DeCollectionStream for DeSetStream<De, K, D>
 where
+    De: DeserializerFromBytes + Send + 'static,
     K: DBData + From<D>,
     D: for<'de> Deserialize<'de> + Send + 'static,
 {
-    fn insert(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let key = <K as From<D>>::from(deserialize::<D>(deserializer)?);
+    fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
+        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
         self.updates.push((key, true));
         Ok(())
     }
 
-    fn delete(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let key = <K as From<D>>::from(deserialize::<D>(deserializer)?);
+    fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
+        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
         self.updates.push((key, false));
         Ok(())
@@ -328,8 +377,46 @@ where
         self.updates.shrink_to(MAX_REUSABLE_CAPACITY);
     }
 
-    fn fork(&self) -> Box<dyn DeCollectionHandle> {
+    fn fork(&self) -> Box<dyn DeCollectionStream> {
         Box::new(Self::new(self.handle.clone()))
+    }
+}
+
+pub struct DeMapHandle<K, V, F> {
+    handle: UpsertHandle<K, Option<V>>,
+    key_func: F,
+}
+
+impl<K, V, F> DeMapHandle<K, V, F> {
+    pub fn new(handle: UpsertHandle<K, Option<V>>, key_func: F) -> Self {
+        Self { handle, key_func }
+    }
+}
+
+impl<K, V, F> DeCollectionHandle for DeMapHandle<K, V, F>
+where
+    K: DBData + for<'de> Deserialize<'de>,
+    V: DBData + for<'de> Deserialize<'de>,
+    F: Fn(&V) -> K + Clone + Send + 'static,
+{
+    fn configure_deserializer(
+        &self,
+        record_format: RecordFormat,
+    ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
+        match record_format {
+            RecordFormat::Csv => Ok(Box::new(
+                DeMapStream::<CsvDeserializerFromBytes, K, V, F>::new(
+                    self.handle.clone(),
+                    self.key_func.clone(),
+                ),
+            )),
+            RecordFormat::Json => Ok(Box::new(
+                DeMapStream::<JsonDeserializerFromBytes, K, V, F>::new(
+                    self.handle.clone(),
+                    self.key_func.clone(),
+                ),
+            )),
+        }
     }
 }
 
@@ -345,38 +432,44 @@ where
 /// The [`delete`](`Self::delete`) method of this handle deserializes value
 /// `k` type `K` and buffers a `(k, None)` update for the underlying
 /// `UpsertHandle`.
-pub struct DeMapHandle<K, V, F> {
+pub struct DeMapStream<De, K, V, F> {
     updates: Vec<(K, Option<V>)>,
     key_func: F,
     handle: UpsertHandle<K, Option<V>>,
+    deserializer: De,
 }
 
-impl<K, V, F> DeMapHandle<K, V, F> {
+impl<De, K, V, F> DeMapStream<De, K, V, F>
+where
+    De: DeserializerFromBytes,
+{
     pub fn new(handle: UpsertHandle<K, Option<V>>, key_func: F) -> Self {
         Self {
             updates: Vec::new(),
             key_func,
             handle,
+            deserializer: De::create(),
         }
     }
 }
 
-impl<K, V, F> DeCollectionHandle for DeMapHandle<K, V, F>
+impl<De, K, V, F> DeCollectionStream for DeMapStream<De, K, V, F>
 where
+    De: DeserializerFromBytes + Send + 'static,
     K: DBData + for<'de> Deserialize<'de>,
     V: DBData + for<'de> Deserialize<'de>,
     F: Fn(&V) -> K + Clone + Send + 'static,
 {
-    fn insert(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let val = deserialize::<V>(deserializer)?;
+    fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
+        let val = self.deserializer.deserialize::<V>(data)?;
         let key = (self.key_func)(&val);
 
         self.updates.push((key, Some(val)));
         Ok(())
     }
 
-    fn delete(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let key = deserialize::<K>(deserializer)?;
+    fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
+        let key = self.deserializer.deserialize::<K>(data)?;
 
         self.updates.push((key, None));
         Ok(())
@@ -396,7 +489,7 @@ where
         self.updates.shrink_to(MAX_REUSABLE_CAPACITY);
     }
 
-    fn fork(&self) -> Box<dyn DeCollectionHandle> {
+    fn fork(&self) -> Box<dyn DeCollectionStream> {
         Box::new(Self::new(self.handle.clone(), self.key_func.clone()))
     }
 }
@@ -404,10 +497,14 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        format::string_record_deserializer, DeCollectionHandle, DeMapHandle, DeScalarHandle,
-        DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
+        catalog::RecordFormat,
+        static_compile::{
+            DeMapHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle, ErasedDeScalarHandle,
+        },
+        DeCollectionHandle,
     };
-    use csv::{Reader as CsvReader, Writer as CsvWriter};
+    use csv::WriterBuilder as CsvWriterBuilder;
+    use csv_core::{ReadRecordResult, Reader as CsvReader};
     use dbsp::{
         algebra::F32, trace::Batch, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
     };
@@ -457,7 +554,7 @@ mod test {
         workers: usize,
     ) -> (
         DBSPHandle,
-        Box<dyn DeScalarHandle>,
+        Box<dyn ErasedDeScalarHandle>,
         OutputHandle<TestStruct>,
     ) {
         let (dbsp, (input_handle, output_handle)) = Runtime::init_circuit(workers, |circuit| {
@@ -563,13 +660,22 @@ mod test {
     // Feed `inputs` in CSV format.
     fn insert_csv(
         dbsp: &mut DBSPHandle,
-        input_handles: &mut InputHandles,
+        input_handles: &InputHandles,
         output_handles: &OutputHandles,
         inputs: &[TestStruct],
     ) {
-        let zset_handle = &mut input_handles.0;
-        let set_handle = &mut input_handles.1;
-        let map_handle = &mut input_handles.2;
+        let mut zset_stream = input_handles
+            .0
+            .configure_deserializer(RecordFormat::Csv)
+            .unwrap();
+        let mut set_stream = input_handles
+            .1
+            .configure_deserializer(RecordFormat::Csv)
+            .unwrap();
+        let mut map_stream = input_handles
+            .2
+            .configure_deserializer(RecordFormat::Csv)
+            .unwrap();
 
         let zset_output = &output_handles.0;
         let set_output = &output_handles.1;
@@ -587,13 +693,15 @@ mod test {
                 .collect::<Vec<_>>(),
         );
 
-        zset_handle.reserve(inputs.len());
-        set_handle.reserve(1);
-        map_handle.reserve(0);
+        zset_stream.reserve(inputs.len());
+        set_stream.reserve(1);
+        map_stream.reserve(0);
 
         // Serialize `inputs` as CSV.
         let mut csv_bytes: Vec<u8> = Vec::new();
-        let mut csv_writer = CsvWriter::from_writer(&mut csv_bytes);
+        let mut csv_writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(&mut csv_bytes);
         for input in inputs.iter() {
             csv_writer.serialize(input).unwrap();
         }
@@ -603,27 +711,32 @@ mod test {
         // println!("csv:\n{}", csv_string);
 
         // CSV reader iterates over CSV records.
-        let mut csv_reader = CsvReader::from_reader(csv_string.as_bytes());
+        let mut csv_reader = CsvReader::new();
+        let mut data = csv_string.as_bytes();
+        let mut output = vec![0; data.len()];
+        let mut ends = [0usize; 10];
 
-        for input in csv_reader.records() {
-            let record = input.unwrap();
-            // Wrap CSV record in erased deserializer.
-            let mut deserializer = string_record_deserializer(&record, None);
-            let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-            zset_handle.insert(&mut deserializer).unwrap();
-
-            let mut deserializer = string_record_deserializer(&record, None);
-            let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-            set_handle.insert(&mut deserializer).unwrap();
-
-            let mut deserializer = string_record_deserializer(&record, None);
-            let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-            map_handle.insert(&mut deserializer).unwrap();
+        // Make sure that providing a record with incorrect number of columns doesn't
+        // prevent subsequent records from parsing correctly (this works thanks to
+        // `CsvReaderBuilder::flexible()`).
+        zset_stream.insert(b"1,x,x,x,x,x,x,x,x\n").unwrap_err();
+        loop {
+            let (result, bytes_read, _, _) = csv_reader.read_record(data, &mut output, &mut ends);
+            match result {
+                ReadRecordResult::End => break,
+                ReadRecordResult::Record => {
+                    zset_stream.insert(&data[0..bytes_read]).unwrap();
+                    set_stream.insert(&data[0..bytes_read]).unwrap();
+                    map_stream.insert(&data[0..bytes_read]).unwrap();
+                    data = &data[bytes_read..];
+                }
+                result => panic!("Unexpected result parsing CSV: {result:?}"),
+            }
         }
 
-        zset_handle.flush();
-        set_handle.flush();
-        map_handle.flush();
+        zset_stream.flush();
+        set_stream.flush();
+        map_stream.flush();
 
         dbsp.step().unwrap();
 
@@ -635,13 +748,22 @@ mod test {
     // Delete `inputs` in JSON format.
     fn delete_json(
         dbsp: &mut DBSPHandle,
-        input_handles: &mut InputHandles,
+        input_handles: &InputHandles,
         output_handles: &OutputHandles,
         inputs: &[TestStruct],
     ) {
-        let zset_input = &mut input_handles.0;
-        let set_input = &mut input_handles.1;
-        let map_input = &mut input_handles.2;
+        let mut zset_input = input_handles
+            .0
+            .configure_deserializer(RecordFormat::Json)
+            .unwrap();
+        let mut set_input = input_handles
+            .1
+            .configure_deserializer(RecordFormat::Json)
+            .unwrap();
+        let mut map_input = input_handles
+            .2
+            .configure_deserializer(RecordFormat::Json)
+            .unwrap();
 
         let zset_output = &output_handles.0;
         let set_output = &output_handles.1;
@@ -663,20 +785,14 @@ mod test {
             let id = input.id;
             let input = to_json_string(input).unwrap();
 
-            let mut deserializer = JsonDeserializer::new(StrRead::new(&input));
-            let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-            zset_input.delete(&mut deserializer).unwrap();
+            zset_input.delete(input.as_bytes()).unwrap();
             zset_input.flush();
 
-            let mut deserializer = JsonDeserializer::new(StrRead::new(&input));
-            let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-            set_input.delete(&mut deserializer).unwrap();
+            set_input.delete(input.as_bytes()).unwrap();
             set_input.flush();
 
             let input_id = to_json_string(&id).unwrap();
-            let mut deserializer = JsonDeserializer::new(StrRead::new(&input_id));
-            let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-            map_input.delete(&mut deserializer).unwrap();
+            map_input.delete(input_id.as_bytes()).unwrap();
             map_input.flush();
         }
 
@@ -689,7 +805,7 @@ mod test {
 
     #[test]
     fn test_collection() {
-        let (mut dbsp, mut input_handles, output_handles) = decollection_test_circuit(NUM_WORKERS);
+        let (mut dbsp, input_handles, output_handles) = decollection_test_circuit(NUM_WORKERS);
 
         let inputs = vec![
             TestStruct {
@@ -712,19 +828,8 @@ mod test {
             },
         ];
 
-        insert_csv(&mut dbsp, &mut input_handles, &output_handles, &inputs);
-
-        let mut input_handles_clone = (
-            input_handles.0.fork(),
-            input_handles.1.fork(),
-            input_handles.2.fork(),
-        );
-        delete_json(
-            &mut dbsp,
-            &mut input_handles_clone,
-            &output_handles,
-            &inputs,
-        );
+        insert_csv(&mut dbsp, &input_handles, &output_handles, &inputs);
+        delete_json(&mut dbsp, &input_handles, &output_handles, &inputs);
 
         dbsp.kill().unwrap();
     }
