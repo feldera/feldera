@@ -1089,6 +1089,7 @@ impl<'a> CodegenCtx<'a> {
         });
     }
 
+    #[allow(dead_code)]
     fn debug_assert_false(&self, is_null: Value, builder: &mut FunctionBuilder<'_>) {
         if self.debug_assertions() {
             debug_assert!(builder.value_type(is_null).is_int());
