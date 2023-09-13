@@ -80,3 +80,8 @@ static-files = "0.2.3"
 
 [package.metadata.cargo-machete]
 ignored = ["static-files"]
+
+[[bin]]
+
+name = "pipeline"
+path = "src/pipeline.rs"

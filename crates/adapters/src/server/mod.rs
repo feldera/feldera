@@ -104,7 +104,7 @@ impl ServerState {
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct Args {
+pub struct ServerArgs {
     /// Pipeline configuration YAML file
     #[arg(short, long)]
     config_file: String,
@@ -146,7 +146,7 @@ pub fn server_main<F>(circuit_factory: F) -> Result<(), ControllerError>
 where
     F: Fn(usize) -> (DBSPHandle, Catalog) + Send + 'static,
 {
-    let args = Args::try_parse().map_err(|e| ControllerError::cli_args_error(&e))?;
+    let args = ServerArgs::try_parse().map_err(|e| ControllerError::cli_args_error(&e))?;
 
     run_server(args, circuit_factory).map_err(|e| {
         // Write to stderror in case the error happened before logging
@@ -157,7 +157,7 @@ where
     })
 }
 
-fn run_server<F>(args: Args, circuit_factory: F) -> Result<(), ControllerError>
+fn run_server<F>(args: ServerArgs, circuit_factory: F) -> Result<(), ControllerError>
 where
     F: Fn(usize) -> (DBSPHandle, Catalog) + Send + 'static,
 {
@@ -245,7 +245,7 @@ fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
 
 // Initialization thread function.
 fn bootstrap<F>(
-    args: Args,
+    args: ServerArgs,
     circuit_factory: F,
     state: WebData<ServerState>,
     loginit_sender: StdSender<()>,
@@ -305,7 +305,7 @@ fn error_handler(state: &Weak<ServerState>, error: ControllerError) {
 }
 
 fn do_bootstrap<F>(
-    args: Args,
+    args: ServerArgs,
     circuit_factory: F,
     state: &WebData<ServerState>,
     loginit_sender: StdSender<()>,
@@ -837,7 +837,7 @@ async fn output_endpoint(
 #[cfg(test)]
 #[cfg(feature = "with-kafka")]
 mod test_with_kafka {
-    use super::{bootstrap, build_app, Args, ServerState};
+    use super::{bootstrap, build_app, ServerArgs, ServerState};
     use crate::{
         controller::MAX_API_CONNECTIONS,
         test::{
@@ -923,7 +923,7 @@ outputs:
         let state = WebData::new(ServerState::new(None));
         let state_clone = state.clone();
 
-        let args = Args {
+        let args = ServerArgs {
             config_file: config_file.path().display().to_string(),
             metadata_file: None,
             bind_address: "127.0.0.1".to_string(),
