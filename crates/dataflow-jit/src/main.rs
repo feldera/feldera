@@ -93,7 +93,10 @@ fn run(program: &Path, config: &Path) -> ExitCode {
     for (name, input) in config.inputs {
         let (node, layout) = source_names[&name];
         let format = match input.kind {
-            InputKind::Json(mappings) => {
+            InputKind::Json(mut mappings) => {
+                // Correct the layout of `mappings`
+                mappings.layout = layout;
+
                 demands.add_json_deserialize(layout, mappings);
                 InputFormat::Json
             }
