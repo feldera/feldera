@@ -17,6 +17,24 @@ use std::mem::{self, align_of};
 pub type DeserializeJsonFn =
     unsafe extern "C" fn(*mut u8, &serde_json::Value, &mut String) -> DeserializeResult;
 
+/// A utility function for invoking jit generated deserialization functions
+///
+/// Takes the deserialization function, a mutable "place" (usually an [`UninitRow`],
+/// a properly sized & aligned stack slot or a properly sized and aligned element
+/// slot within a vector) and the json value being deserialized.
+/// Returns a result, if the result is [`Ok`] then `row_place` will be fully initialized
+/// (meaning that calling [`UninitRow::assume_init()`] or a similar function is sound).
+/// If the result is [`Err`] then it will contain a formatted error containing best-effort
+/// diagnostics
+///
+/// # Safety
+///
+/// `row_place` must be properly sized, aligned and mutable for the row type that
+/// the deserialization function was created for. Any values residing in the place
+/// will not be dropped
+///
+/// [`UninitRow`]: crate::row::UninitRow
+/// [`UninitRow::assume_init()`]: crate::row::UninitRow::assume_init
 pub unsafe fn call_deserialize_fn(
     deserialize_fn: DeserializeJsonFn,
     row_place: *mut u8,
