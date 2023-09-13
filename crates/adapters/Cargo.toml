@@ -64,6 +64,8 @@ psutil = "3.2.2"
 [dev-dependencies]
 actix-test = "0.1.1"
 bstr = { version = "0.2.1", features = ["serde1"] }
+ctor = "0.2.4"
+fdlimit = "0.2.1"
 serde_json = "1.0.89"
 size-of = { version = "0.1.2", features = ["time-std"] }
 tempfile = "3.3.0"

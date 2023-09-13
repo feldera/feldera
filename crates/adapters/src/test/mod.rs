@@ -130,3 +130,19 @@ pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
     })
     .unwrap()
 }
+
+#[cfg(test)]
+mod init {
+    use fdlimit::raise_fd_limit;
+    use ctor::ctor;
+
+    /// The tests run lots of web servers in parallel, which create lots of
+    /// threads and lots of file descriptors, especially on systems with many
+    /// CPU cores.  This can exhaust the default maximum number of file
+    /// descriptors, which is typically a soft limit of 1024 on Linux.  This
+    /// raises the soft limit to the hard limit, which is typically 65535.
+    #[ctor]
+    fn init() {
+        raise_fd_limit();
+    }
+}
