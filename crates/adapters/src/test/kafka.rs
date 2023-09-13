@@ -3,17 +3,18 @@ use crate::{
     transport::kafka::default_redpanda_server,
     InputFormat,
 };
+use anyhow::{anyhow, bail, Result as AnyResult};
 use csv::WriterBuilder as CsvWriterBuilder;
 use futures::executor::block_on;
 use log::{error, info};
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
-    client::DefaultClientContext,
+    client::{DefaultClientContext, Client},
     config::{FromClientConfig, RDKafkaLogLevel},
     consumer::{BaseConsumer, Consumer},
     producer::{BaseRecord, DefaultProducerContext, Producer, ThreadedProducer},
     util::Timeout,
-    ClientConfig, Message,
+    ClientConfig, Message, ClientContext,
 };
 use std::{
     sync::{
@@ -30,6 +31,28 @@ static MAX_TOPIC_PROBE_TIMEOUT: Duration = Duration::from_millis(20_000);
 pub struct KafkaResources {
     admin_client: AdminClient<DefaultClientContext>,
     topics: Vec<String>,
+}
+
+// Checks `consumer` to make sure that all of the topics in `topics` are
+// accessible and have the specified number of partitions.
+fn check_topics<C: ClientContext>(consumer: &Client<C>, topics: &[(&str, i32)]) -> AnyResult<()> {
+    for &(topic, partitions) in topics.iter() {
+        let m = consumer
+            .fetch_metadata(Some(topic), Duration::from_secs(1))
+            .map_err(|e| anyhow!("topic {topic}: {e}"))?;
+        let cur_partitions = m
+            .topics()
+            .get(0)
+            .map(|topic| topic.partitions().len() as i32)
+            .unwrap_or_default();
+        if cur_partitions != partitions {
+            bail!("{topic} only has {cur_partitions} partitions, waiting for {partitions}");
+        }
+        consumer
+            .fetch_watermarks(topic, 0, Duration::from_secs(1))
+            .map_err(|e| anyhow!("topic {topic}: {e}"))?;
+    }
+    Ok(())
 }
 
 /// An object that creates Kafka topics on startup and deletes them
@@ -61,35 +84,20 @@ impl KafkaResources {
 
         block_on(admin_client.create_topics(&new_topics, &AdminOptions::new())).unwrap();
 
-        // Just because `create_topics` succeeded doesn't guarantee the new topics
-        // are avilable (see
-        // https://github.com/confluentinc/confluent-kafka-python/issues/524).
-        // Keep probing until they are.
-        let group_id = format!(
-            "{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-        );
-
-        let kafka_consumer = admin_config
-            .set("group.id", &group_id)
-            .create::<BaseConsumer>()
-            .unwrap();
-
         let start = Instant::now();
-        loop {
-            let res = kafka_consumer.subscribe(&topic_names);
-            if res.is_ok() {
-                break;
-            }
-            let err = res.unwrap_err();
+        let mut backoff = 100;
+        let mut n_retries = 0;
+        while let Err(err) = check_topics(admin_client.inner(), topics) {
             info!("KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, retrying: {err}");
             if start.elapsed() > MAX_TOPIC_PROBE_TIMEOUT {
                 panic!("KafkaResources::create_topics {topic_names:?}: unable to connect to newly created topics, giving up after {}ms: {err}", MAX_TOPIC_PROBE_TIMEOUT.as_millis());
             }
-            sleep(Duration::from_millis(1000));
+            sleep(Duration::from_millis(backoff));
+            backoff = 1000.min(backoff * 2);
+            n_retries += 1;
+        }
+        if n_retries > 0 {
+            info!("KafkaResources::create_topics {topic_names:?}: success after {n_retries} tries");
         }
 
         Self {
