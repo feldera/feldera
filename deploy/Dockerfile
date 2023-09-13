@@ -91,6 +91,7 @@ ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-workin
 FROM ubuntu:22.04 as api-server
 COPY --from=builder /app/target/release/api-server api-server
 ENV BANNER_ADDR localhost
+RUN apt update && apt install libsasl2-dev -y
 ENTRYPOINT ["./api-server", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir"]
 
 # Standalone compiler-server
@@ -106,7 +107,6 @@ COPY crates/adapters database-stream-processor/crates/adapters
 COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
 COPY README.md database-stream-processor/README.md
 RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
-
 # Copy over the rust code and sql-to-dbsp script
 COPY sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
 COPY sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/temp
@@ -117,6 +117,7 @@ ENTRYPOINT ["./compiler-server", "--compiler-working-directory=/working-dir", "-
 
 # Standalone local-runner
 FROM ubuntu:22.04 as local-runner
+RUN apt update && apt install libsasl2-dev -y
 COPY --from=builder /app/target/release/local-runner local-runner
 ENTRYPOINT ["./local-runner", "--runner-working-directory=/working-dir"]
 
