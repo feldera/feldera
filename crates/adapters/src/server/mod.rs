@@ -144,7 +144,7 @@ pub const SERVER_PORT_FILE: &str = "port";
 /// catalog.
 pub fn server_main<F>(circuit_factory: F) -> Result<(), ControllerError>
 where
-    F: Fn(usize) -> (DBSPHandle, Catalog) + Send + 'static,
+    F: Fn(usize) -> Result<(DBSPHandle, Catalog), ControllerError> + Send + 'static,
 {
     let args = ServerArgs::try_parse().map_err(|e| ControllerError::cli_args_error(&e))?;
 
@@ -159,7 +159,7 @@ where
 
 fn run_server<F>(args: ServerArgs, circuit_factory: F) -> Result<(), ControllerError>
 where
-    F: Fn(usize) -> (DBSPHandle, Catalog) + Send + 'static,
+    F: Fn(usize) -> Result<(DBSPHandle, Catalog), ControllerError> + Send + 'static,
 {
     let bind_address = args.bind_address.clone();
     let port = args.default_port.unwrap_or(0);
@@ -250,7 +250,7 @@ fn bootstrap<F>(
     state: WebData<ServerState>,
     loginit_sender: StdSender<()>,
 ) where
-    F: Fn(usize) -> (DBSPHandle, Catalog),
+    F: Fn(usize) -> Result<(DBSPHandle, Catalog), ControllerError>,
 {
     do_bootstrap(args, circuit_factory, &state, loginit_sender).unwrap_or_else(|e| {
         // Store error in `state.phase`, so that it can be
@@ -311,7 +311,7 @@ fn do_bootstrap<F>(
     loginit_sender: StdSender<()>,
 ) -> Result<(), ControllerError>
 where
-    F: Fn(usize) -> (DBSPHandle, Catalog),
+    F: Fn(usize) -> Result<(DBSPHandle, Catalog), ControllerError>,
 {
     // Print error directly to stdout until we've initialized the logger.
     let config = parse_config(&args.config_file).map_err(|e| {
@@ -355,7 +355,7 @@ where
         }
     };
 
-    let (circuit, catalog) = circuit_factory(config.global.workers as usize);
+    let (circuit, catalog) = circuit_factory(config.global.workers as usize)?;
 
     let weak_state_ref = Arc::downgrade(state);
 
@@ -932,7 +932,7 @@ outputs:
         thread::spawn(move || {
             bootstrap(
                 args,
-                test_circuit,
+                |workers| Ok(test_circuit(workers)),
                 state_clone,
                 std::sync::mpsc::channel().0,
             )
