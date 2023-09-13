@@ -1156,16 +1156,38 @@ cast_to_i!(i32);
 cast_to_i!(i64);
 
 #[inline]
+pub fn cast_to_i64_ShortInterval(value: ShortInterval) -> i64 {
+    value.milliseconds()
+}
+
+#[inline]
 pub fn cast_to_i64N_ShortIntervalN(value: Option<ShortInterval>) -> Option<i64> {
-    value.map(|x| x.milliseconds())
+    let value = value?;
+    Some(cast_to_i64_ShortInterval(value))
+}
+
+#[inline]
+pub fn cast_to_i64_LongInterval(value: LongInterval) -> i64 {
+    value.days() as i64
 }
 
 #[inline]
 pub fn cast_to_i64N_LongIntervalN(value: Option<LongInterval>) -> Option<i64> {
-    value.map(|x| x.days() as i64)
+    let value = value?;
+    Some(cast_to_i64_LongInterval(value))
 }
 
 //////// casts to Short interval
+
+#[inline]
+pub fn cast_to_ShortInterval_i16(value: i16) -> ShortInterval {
+    ShortInterval::from(value as i64)
+}
+
+#[inline]
+pub fn cast_to_ShortInterval_i32(value: i32) -> ShortInterval {
+    ShortInterval::from(value as i64)
+}
 
 #[inline]
 pub fn cast_to_ShortInterval_i64(value: i64) -> ShortInterval {

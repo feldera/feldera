@@ -146,6 +146,14 @@ public class RustSqlRuntimeLibrary {
         } else if (ltype.is(DBSPTypeString.class)) {
             map = this.stringFunctions;
         }
+        if (rtype != null && rtype.is(IsDateType.class)) {
+            if (opcode.equals(DBSPOpcode.MUL)) {
+                // e.g., 10 * INTERVAL
+                map = this.dateFunctions;
+                returnType = rtype.setMayBeNull(anyNull);
+            }
+        }
+
         if (opcode.isComparison())
             returnType = new DBSPTypeBool(CalciteObject.EMPTY, false).setMayBeNull(anyNull);
         if (opcode.equals(DBSPOpcode.DIV))

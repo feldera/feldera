@@ -725,6 +725,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return new DBSPBinaryExpression(node, type, DBSPOpcode.SQL_INDEX,
                         ops.get(0), ops.get(1).cast(new DBSPTypeUSize(CalciteObject.EMPTY, false)));
             }
+            case TIMESTAMP_DIFF:
             case TRIM: {
                 return this.compileKeywordFunction(call, node, null, type, ops, 0, 3);
             }

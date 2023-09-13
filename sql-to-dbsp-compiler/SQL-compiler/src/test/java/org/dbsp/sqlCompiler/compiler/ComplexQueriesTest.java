@@ -27,17 +27,53 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
 
 @SuppressWarnings("SpellCheckingInspection")
 public class ComplexQueriesTest extends BaseSQLTests {
+    @Test @Ignore("Waiting for https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-5861")
+    public void testDateDiff() {
+        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 3);
+        String sql = "create table PART_ORDER (\n" +
+                "    id bigint,\n" +
+                "    part bigint,\n" +
+                "    customer bigint,\n" +
+                "    target_date date\n" +
+                ");\n" +
+                "\n" +
+                "create table FULFILLMENT (\n" +
+                "    part_order bigint,\n" +
+                "    fulfillment_date date not null\n" +
+                ");\n" +
+                "\n" +
+                "create view FLAGGED_ORDER as\n" +
+                "select\n" +
+                "    part_order.customer,\n" +
+                "    AVG(DATEDIFF(day, part_order.target_date, fulfillment.fulfillment_date))\n" +
+                "    OVER (PARTITION BY part_order.customer\n" +
+                "          ORDER BY fulfillment.fulfillment_date\n" +
+                "          RANGE BETWEEN INTERVAL 90 days PRECEDING and CURRENT ROW) as avg_delay\n" +
+                "from\n" +
+                "    part_order\n" +
+                "    join\n" +
+                "    fulfillment\n" +
+                "    on part_order.id = fulfillment.part_order";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        Assert.assertFalse(compiler.hasErrors());
+        this.addRustTestCase("ComplexQueriesTest.testDateDiff", compiler, getCircuit(compiler));
+    }
+
     @Test
     public void smallTaxiTest() {
         String ddl = "CREATE TABLE green_tripdata\n" +
@@ -58,7 +94,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         "   -- 1 hour is 3600  seconds\n" +
                         "   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip\n" +
                         "FROM green_tripdata";
-        DBSPCompiler compiler = testCompiler();
+        DBSPCompiler compiler = this.testCompiler();
         query = "CREATE VIEW V AS (" + query + ")";
         compiler.compileStatement(ddl);
         compiler.compileStatement(query);

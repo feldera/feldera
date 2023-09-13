@@ -13,6 +13,7 @@ use std::{
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
     some_existing_operator, some_operator, some_polymorphic_function1,
+    some_polymorphic_function2
 };
 
 /// Similar to a unix timestamp: a positive time interval between Jan 1 1970 and
@@ -420,14 +421,43 @@ some_operator!(neq, Date, Date, bool);
 some_operator!(gte, Date, Date, bool);
 some_operator!(lte, Date, Date, bool);
 
+// right - left
 pub fn minus_Date_Date_LongInterval(left: Date, right: Date) -> LongInterval {
+    // Logic adapted from https://github.com/mysql/mysql-server/blob/ea1efa9822d81044b726aab20c857d5e1b7e046a/sql/item_timefunc.cc
     let ld = left.to_dateTime();
     let rd = right.to_dateTime();
-    let ly = ld.year();
-    let lm = ld.month() as i32;
-    let ry = rd.year();
-    let rm = rd.month() as i32;
-    LongInterval::from((ly - ry) * 12 + lm - rm)
+
+    let (beg, end, neg) = if ld > rd {
+        (rd, ld, 1)
+    } else {
+        (ld, rd, -1)
+    };
+
+    let month_end = end.month() as i32;
+    let month_beg = beg.month() as i32;
+    let day_end = end.day();
+    let day_beg = beg.day();
+
+    // compute years
+    let mut years = end.year() - beg.year();
+    let adjust = month_end < month_beg || (month_end == month_beg && day_end < day_beg);
+    if adjust {
+        years -= 1;
+    }
+
+    // compute months
+    let mut months = 12 * years;
+    if adjust {
+        months += 12 - (month_beg - month_end);
+    } else {
+        months += month_end - month_beg;
+    }
+
+    if day_end < day_beg {
+        months -= 1;
+    }
+
+    LongInterval::from(months * neg)
 }
 
 pub fn minus_DateN_Date_LongIntervaNl(left: Option<Date>, right: Date) -> Option<LongInterval> {
@@ -576,6 +606,12 @@ some_polymorphic_function1!(extract_microsecond, Date, Date, i64);
 some_polymorphic_function1!(extract_second, Date, Date, i64);
 some_polymorphic_function1!(extract_minute, Date, Date, i64);
 some_polymorphic_function1!(extract_hour, Date, Date, i64);
+
+pub fn datediff_day_Date_Date(left: Date, right: Date) -> i32 {
+    left.days() - right.days()
+}
+
+some_polymorphic_function2!(datediff_day, Date, Date, Date, Date, i32);
 
 //////////////////////////// Time
 
