@@ -17,7 +17,7 @@ The compiler supports the following SQL data types:
   digits) and a scale (number of decimal digits after period).  For example,
   23.456 has a precision of 5 and a scale of 3.  If scale is missing it is
   assumed to be 0.
-- `FLOAT`, or `FLOAT4`, or `FLOAT32`, an IEEE 32-bit floating point number
+- `FLOAT`, or `FLOAT4`, or `FLOAT32`, or `REAL`, an IEEE 32-bit floating point number
 - `DOUBLE`, or `FLOAT8`, or `FLOAT32`, an IEEE 64-bit floating point number
 - `VARCHAR(n)`, or `CHARACTER VARYING(n)`, a string value with maximum fixed width
   Trailing spaces are removed when converting a value to one of these types.
@@ -30,10 +30,9 @@ The compiler supports the following SQL data types:
 - `INTERVAL`, a SQL interval.  Two types of intervals are supported:
   long intervals (comprising years and months), and short intervals,
   comprising days, hours, minutes, seconds.
-- `TIME`, the time of the day, with a precision of nanoseconds.
+- `TIME`, time of the day.
 - `TIMESTAMP`, a SQL timestamp without a timezone.  A timestamp
-  represents a value containing a date and a time, with a precision up
-  to a millisecond.
+  represents a value containing a date and a time.
 - `DATE`, a SQL date without a timezone.  A date represents a value
   containing a date (year, month, day).
 - `GEOMETRY`: geographic data type (only rudimentary support at this point)
@@ -84,7 +83,6 @@ sqlTypeName:
   |   REAL
   |   double
   |   FLOAT
-  |   ANY [ precision [, scale] ]
 
 collectionsTypeName:
       ARRAY
