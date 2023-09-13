@@ -23,6 +23,14 @@ The following are legal time units:
 | `MILLISECOND`   | A millisecond within a *minute*, including the number of seconds multiplied by 1000, a number between 0 and 59,999                                                                                      |
 | `MICROSECOND`   | A microsecond within a *minute*, including the number of seconds multiplied by 1,000,000, a number between 0 and 59,999,999                                                                                    |
 | `EPOCH`         | Number of seconds from Unix epoch, i.e., 1970/01/01.                                    |
+| `SQL_TSI_YEAR`  | Same as `YEAR` |
+| `SQL_TSI_QUARTER`  | Same as `QUARTER` |
+| `SQL_TSI_MONTH`  | Same as `MONTH` |
+| `SQL_TSI_WEEK`  | Same as `WEEK` |
+| `SQL_TSI_HOUR`  | Same as `HOUR` |
+| `SQL_TSI_DAY`   | Same as `DAY` |
+| `SQL_TSI_MINUTE`   | Same as `MINUTE` |
+| `SQL_TSI_SECOND`   | Same as `SECOND` |
 
 ## Dates
 
@@ -148,7 +156,10 @@ Values of type `TIMESTAMP` can be compared using `=`, `<>`, `!=`, `<`,
 
 `TIMESTAMPDIFF(<unit>, left, right)` computes the difference between
 two timestamps and expresses the result in the specified time units.
-The result is a 32-bit integer.
+The result is a 32-bit integer.  `DATEDIFF` is a synonym for
+`TIMESTAMPDIFF`.  One month is considered elapsed when the calendar
+month has increased and the calendar day and time is greater than or equal
+to the start. Weeks, quarters, and years follow from that.
 
 ## Time intervals
 

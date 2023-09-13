@@ -863,6 +863,24 @@ pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval
 
 some_polymorphic_function2!(times, ShortInterval, ShortInterval, i64, i64, ShortInterval);
 
+pub fn times_i64_ShortInterval(left: i64, right: ShortInterval) -> ShortInterval {
+    right * left
+}
+
+some_polymorphic_function2!(times, i64, i64, ShortInterval, ShortInterval, ShortInterval);
+
+pub fn times_ShortInterval_i32(left: ShortInterval, right: i32) -> ShortInterval {
+    left * (right as i64)
+}
+
+some_polymorphic_function2!(times, ShortInterval, ShortInterval, i32, i32, ShortInterval);
+
+pub fn times_i32_ShortInterval(left: i32, right: ShortInterval) -> ShortInterval {
+    right * (left as i64)
+}
+
+some_polymorphic_function2!(times, i32, i32, ShortInterval, ShortInterval, ShortInterval);
+
 /***** decimals ***** */
 
 #[inline(always)]

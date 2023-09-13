@@ -64,7 +64,8 @@ public class DBSPTypeDate extends DBSPTypeBaseType implements IsNumericType, IsD
 
     @Override
     public DBSPLiteral getZero() {
-        throw new UnsupportedException(this.getNode());
+        // This matches the actual value represented in the runtime as "0".
+        return new DBSPDateLiteral(CalciteObject.EMPTY, this, 0);
     }
 
     @Override

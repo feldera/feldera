@@ -55,6 +55,7 @@ import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
@@ -912,8 +913,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression orderField = inputRowRefVar.field(orderColumnIndex);
             DBSPType sortType = inputRowType.tupFields[orderColumnIndex];
             if (!sortType.is(DBSPTypeInteger.class) &&
-                    !sortType.is(DBSPTypeTimestamp.class))
-                throw new UnimplementedException("OVER currently requires an integer type for ordering ", node);
+                    !sortType.is(DBSPTypeTimestamp.class) &&
+                    !sortType.is(DBSPTypeDate.class))
+                throw new UnimplementedException("OVER currently requires an integer type for ordering "
+                        + "and cannot handle " + sortType, node);
             if (sortType.mayBeNull)
                 throw new UnimplementedException("OVER currently does not support sorting on nullable column ", node);
 
