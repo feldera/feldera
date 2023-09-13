@@ -31,12 +31,17 @@ use tokio::{sync::Notify, time::timeout};
 /// invokes these methods per pipeline.
 #[async_trait]
 pub trait PipelineExecutor {
+    /// Starts a new pipeline (e.g., brings up a process that runs the pipeline binary)
     async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError>;
 
+    /// Return the hostname:port over which the pipeline's HTTP server should be reachable
+    /// Ok(None) indicates that the pipeline is still initializing
     async fn get_location(&mut self) -> Result<Option<String>, ManagerError>;
 
+    /// Returns whether the pipeline has been shutdown
     async fn check_if_shutdown(&mut self) -> bool;
 
+    /// Initiates pipeline shutdown (e.g., send a SIGTERM successfully to the process)
     async fn shutdown(&mut self) -> Result<(), ManagerError>;
 }
 
@@ -166,6 +171,7 @@ impl <T: PipelineExecutor> PipelineAutomaton<T> {
             if pipeline.current_status == PipelineStatus::Shutdown
                 && pipeline.desired_status != PipelineStatus::Shutdown
             {
+                self.update_pipeline_status(&mut pipeline, PipelineStatus::Provisioning, None).await;
                 let revision = db
                     .get_last_committed_pipeline_revision(self.tenant_id, self.pipeline_id)
                     .await?;
@@ -190,7 +196,6 @@ impl <T: PipelineExecutor> PipelineAutomaton<T> {
                 match self.pipeline_handle.start(execution_desc).await {
                    Ok(_) => {
                         info!("Pipeline {} started (Tenant {})", self.pipeline_id, self.tenant_id);
-                        self.update_pipeline_status(&mut pipeline, PipelineStatus::Provisioning, None).await;
                     }
                     Err(e) => {
                         self.force_kill_pipeline(&mut pipeline, Some(e)).await?;
@@ -262,7 +267,23 @@ impl <T: PipelineExecutor> PipelineAutomaton<T> {
                     .await
                     {
                         Err(e) => {
-                            self.force_kill_pipeline(&mut pipeline, Some(e)).await?;
+                            info!("Could not connect to pipeline {e:?}");
+                            // self.force_kill_pipeline(&mut pipeline, Some(e)).await?;
+                            if Self::timeout_expired(
+                                pipeline.status_since,
+                                Self::INITIALIZATION_TIMEOUT,
+                            ) {
+                                self.force_kill_pipeline(
+                                    &mut pipeline,
+                                    Some(RunnerError::PipelineInitializationTimeout {
+                                        pipeline_id: self.pipeline_id,
+                                        timeout: Self::INITIALIZATION_TIMEOUT,
+                                    }),
+                                )
+                                .await?;
+                            } else {
+                                poll_timeout = Self::INITIALIZATION_POLL_PERIOD;
+                            }
                         }
                         Ok((status, body)) => {
                             if status.is_success() {
@@ -363,6 +384,7 @@ impl <T: PipelineExecutor> PipelineAutomaton<T> {
                 // state.
                 (PipelineStatus::Running, PipelineStatus::Shutdown)
                 | (PipelineStatus::Paused, PipelineStatus::Shutdown) => {
+                    // TODO: replace with direct call to shutdown
                     match pipeline_http_request_json_response(
                         self.pipeline_id,
                         Method::GET,
