@@ -3,7 +3,7 @@ use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use erased_serde::Serialize as ErasedSerialize;
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
@@ -13,7 +13,7 @@ use std::{
     sync::Arc,
 };
 
-mod csv;
+pub(crate) mod csv;
 mod deserializer;
 mod json;
 
@@ -167,7 +167,7 @@ impl Display for ParseErrorInner {
         let invalid_fragment = if let Some(invalid_bytes) = &self.invalid_bytes {
             format!("\nInvalid bytes: {invalid_bytes:?}")
         } else if let Some(invalid_text) = &self.invalid_text {
-            format!("\nInvalid fragment: {invalid_text}")
+            format!("\nInvalid fragment: '{invalid_text}'")
         } else {
             String::new()
         };
@@ -299,37 +299,6 @@ impl ParseErrorInner {
             Some(invalid_bytes),
             suggestion,
         )
-    }
-}
-
-/// Different ways to encode table records in JSON.
-// TODO: we currently only support the `Map` representation.
-// There are other issues with this definition, discussed below.
-#[doc(hidden)]
-#[derive(Clone, Deserialize, Serialize, Debug, PartialEq, Eq)]
-pub enum RecordFormat {
-    // TODO: this is not useful as is.  The default parser will already
-    // happily parse the record encoded as an array of columns (this is just
-    // how serde handles structs, which can be encoded as either maps or
-    // arrays).  To make this useful, the config should specify a subset
-    // of columns in the input stream, encoded in the array.
-    #[serde(rename = "array")]
-    Array,
-    // TODO: this really refers to serde's default way to encode a struct,
-    // which can be an actual map in JSON, a list of values in CSV, etc.
-    // So maybe "Default" would be a better name.
-    #[serde(rename = "map")]
-    Map,
-    // Only applicable to single-column tables.  Input records contain
-    // raw encoding of this column only.  This is particularly useful for
-    // tables that store raw JSON or binary data to be parsed using SQL.
-    #[serde(rename = "raw")]
-    Raw,
-}
-
-impl Default for RecordFormat {
-    fn default() -> Self {
-        Self::Map
     }
 }
 

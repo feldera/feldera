@@ -1,21 +1,21 @@
 use crate::{
+    catalog::{DeCollectionStream, RecordFormat},
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
     util::{split_on_newline, truncate_ellipse},
     ControllerError, DeCollectionHandle, OutputConsumer, SerBatch,
 };
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
-use csv::{
-    Reader as CsvReader, ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder,
-};
-use erased_serde::{Deserializer as ErasedDeserializer, Serialize as ErasedSerialize};
+use csv::WriterBuilder as CsvWriterBuilder;
+use csv_core::{ReadRecordResult, Reader as CsvReader};
+use erased_serde::Serialize as ErasedSerialize;
 use serde::{Deserialize, Serialize};
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, io::Read, mem::take, sync::Arc};
+use std::{borrow::Cow, mem::take, sync::Arc};
 use utoipa::ToSchema;
 
-mod deserializer;
+pub(crate) mod deserializer;
 pub use deserializer::byte_record_deserializer;
 pub use deserializer::string_record_deserializer;
 
@@ -51,69 +51,77 @@ impl InputFormat for CsvInputFormat {
         input_stream: &dyn DeCollectionHandle,
         _config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError> {
+        let input_stream = input_stream.configure_deserializer(RecordFormat::Csv)?;
         Ok(Box::new(CsvParser::new(input_stream)) as Box<dyn Parser>)
     }
 }
 
 struct CsvParser {
     /// Input handle to push parsed data to.
-    input_stream: Box<dyn DeCollectionHandle>,
+    input_stream: Box<dyn DeCollectionStream>,
 
     /// Since we cannot assume that the input buffer ends on line end,
     /// we save the "leftover" part of the buffer after the last new-line
     /// character and prepend it to the next input buffer.
     leftover: Vec<u8>,
 
-    /// Builder used to create a new CSV reader for each received data
-    /// buffer.
-    builder: CsvReaderBuilder,
-
     last_event_number: u64,
 }
 
 impl CsvParser {
-    fn new(input_stream: &dyn DeCollectionHandle) -> Self {
-        let mut builder = CsvReaderBuilder::new();
-        builder.has_headers(false);
-
+    fn new(input_stream: Box<dyn DeCollectionStream>) -> Self {
         Self {
-            input_stream: input_stream.fork(),
+            input_stream,
             leftover: Vec::new(),
-            builder,
             last_event_number: 0,
         }
     }
 
-    fn parse_from_reader<R>(&mut self, mut reader: CsvReader<R>) -> (usize, Vec<ParseError>)
-    where
-        R: Read,
-    {
+    fn parse_from_buffer(&mut self, mut buffer: &[u8]) -> (usize, Vec<ParseError>) {
         let mut errors = Vec::new();
         let mut num_records = 0;
 
-        for record in reader.byte_records() {
-            match record {
-                Err(e) => {
-                    // TODO: extract invalid CSV record from the reader, so we can report it with
-                    // `ParseError::text_event_error`.
-                    errors.push(ParseError::text_event_error(
-                        "failed to deserialize CSV record",
-                        e,
-                        self.last_event_number + 1,
-                        None,
-                        None,
-                    ));
-                }
-                Ok(record) => {
-                    let mut deserializer = byte_record_deserializer(&record, None);
-                    let mut deserializer = <dyn ErasedDeserializer>::erase(&mut deserializer);
-                    match self.input_stream.insert(&mut deserializer) {
+        let mut csv_reader = CsvReader::new();
+
+        // println!("parse_from_buffer:{}", std::str::from_utf8(buffer).unwrap());
+
+        let mut output = vec![0u8; 1024];
+        let mut ends = [0usize; 128];
+
+        let mut total_bytes_read = 0;
+        let mut record_buffer = buffer;
+        loop {
+            let (result, bytes_read, _, _) = csv_reader.read_record(buffer, &mut output, &mut ends);
+            total_bytes_read += bytes_read;
+            match result {
+                ReadRecordResult::End => break,
+                // `InputEmpty` status can be returned when there is no newline character in
+                // the end of the last input record, which isn't really an error.  So we treat
+                // it as success and leave it to the actual record parser to deal with possible
+                // invalid CSV (our job here is simply to establish record boundaries).
+                ReadRecordResult::Record | ReadRecordResult::InputEmpty => {
+                    /*println!(
+                        "record: {}",
+                        std::str::from_utf8(&record_buffer[0..total_bytes_read])
+                            .unwrap_or("invalid utf-8")
+                    );*/
+                    match self
+                        .input_stream
+                        .insert(&record_buffer[0..total_bytes_read])
+                    {
                         Err(e) => {
                             errors.push(ParseError::text_event_error(
                                 "failed to deserialize CSV record",
                                 e,
                                 self.last_event_number + 1,
-                                Some(&format!("{record:?}")),
+                                Some(
+                                    &std::str::from_utf8(&record_buffer[0..total_bytes_read])
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_else(|_| {
+                                            format!("{:?}", &record_buffer[0..total_bytes_read])
+                                        })
+                                        .to_string(),
+                                ),
                                 None,
                             ));
                         }
@@ -121,10 +129,17 @@ impl CsvParser {
                             num_records += 1;
                         }
                     }
+                    record_buffer = &buffer[bytes_read..];
+                    self.last_event_number += 1;
+                    total_bytes_read = 0;
+                    if result == ReadRecordResult::InputEmpty {
+                        break;
+                    }
                 }
+                ReadRecordResult::OutputFull | ReadRecordResult::OutputEndsFull => {}
             }
 
-            self.last_event_number += 1;
+            buffer = &buffer[bytes_read..];
         }
 
         self.input_stream.flush();
@@ -151,11 +166,9 @@ impl Parser for CsvParser {
             (0, Vec::new())
         } else {
             let mut leftover_buf = take(&mut self.leftover);
-            let reader = self
-                .builder
-                .from_reader(Read::chain(leftover_buf.as_slice(), &data[0..leftover]));
+            leftover_buf.extend_from_slice(&data[0..leftover]);
 
-            let res = self.parse_from_reader(reader);
+            let res = self.parse_from_buffer(leftover_buf.as_slice());
             // println!("parse returned: {res:?}");
 
             leftover_buf.clear();
@@ -173,16 +186,14 @@ impl Parser for CsvParser {
 
         // Try to interpret the leftover chunk as a complete CSV line.
         let mut leftover_buf = take(&mut self.leftover);
-        let reader = self.builder.from_reader(leftover_buf.as_slice());
-
-        let res = self.parse_from_reader(reader);
+        let res = self.parse_from_buffer(leftover_buf.as_slice());
         leftover_buf.clear();
         self.leftover = leftover_buf;
         res
     }
 
     fn fork(&self) -> Box<dyn Parser> {
-        Box::new(Self::new(&*self.input_stream))
+        Box::new(Self::new(self.input_stream.fork()))
     }
 }
 

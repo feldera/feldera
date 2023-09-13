@@ -1,7 +1,8 @@
 //! Test framework for the `adapters` crate.
 
 use crate::{
-    controller::InputEndpointConfig, Catalog, FormatConfig, InputEndpoint, InputTransport,
+    controller::InputEndpointConfig, static_compile::catalog::Catalog, FormatConfig, InputEndpoint,
+    InputTransport,
 };
 use anyhow::Result as AnyResult;
 use dbsp::{DBSPHandle, Runtime};
@@ -81,7 +82,7 @@ where
     T: for<'de> Deserialize<'de> + Send + 'static,
 {
     let input_handle = <MockDeZSet<T>>::new();
-    let consumer = MockInputConsumer::from_handle(&input_handle, &config);
+    let consumer = MockInputConsumer::from_handle(&input_handle, config);
     Ok((consumer, input_handle))
 }
 

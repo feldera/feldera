@@ -34,9 +34,9 @@
 //! counters in the controller.
 
 use crate::{
-    Catalog, Encoder, InputConsumer, InputEndpoint, InputFormat, InputTransport, OutputConsumer,
-    OutputEndpoint, OutputFormat, OutputQuery, OutputQueryHandles, OutputTransport, ParseError,
-    Parser, PipelineState, SerBatch,
+    CircuitCatalog, Encoder, InputConsumer, InputEndpoint, InputFormat, InputTransport,
+    OutputConsumer, OutputEndpoint, OutputFormat, OutputQuery, OutputQueryHandles, OutputTransport,
+    ParseError, Parser, PipelineState, SerBatch,
 };
 use anyhow::Error as AnyError;
 use crossbeam::{
@@ -121,7 +121,7 @@ impl Controller {
     /// * One or more of the endpoints fails to initialize.
     pub fn with_config(
         mut circuit: DBSPHandle,
-        catalog: Catalog,
+        catalog: Box<dyn CircuitCatalog>,
         config: &PipelineConfig,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
     ) -> Result<Self, ControllerError> {
@@ -315,7 +315,7 @@ impl Controller {
         &self.inner.status
     }
 
-    pub fn catalog(&self) -> &Arc<Mutex<Catalog>> {
+    pub fn catalog(&self) -> &Arc<Mutex<Box<dyn CircuitCatalog>>> {
         &self.inner.catalog
     }
 
@@ -750,7 +750,7 @@ struct ControllerInner {
     status: Arc<ControllerStatus>,
     num_api_connections: AtomicU64,
     dump_profile_request: AtomicBool,
-    catalog: Arc<Mutex<Catalog>>,
+    catalog: Arc<Mutex<Box<dyn CircuitCatalog>>>,
     inputs: Mutex<BTreeMap<EndpointId, InputEndpointDescr>>,
     outputs: ShardedLock<OutputEndpoints>,
     circuit_thread_unparker: Unparker,
@@ -760,7 +760,7 @@ struct ControllerInner {
 
 impl ControllerInner {
     fn new(
-        catalog: Catalog,
+        catalog: Box<dyn CircuitCatalog>,
         global_config: &RuntimeConfig,
         circuit_thread_unparker: Unparker,
         backpressure_thread_unparker: Unparker,
@@ -1432,7 +1432,7 @@ outputs:
 
             let controller = Controller::with_config(
                 circuit,
-                catalog,
+                Box::new(catalog),
                 &config,
                 Box::new(|e| panic!("error: {e}")),
                 )

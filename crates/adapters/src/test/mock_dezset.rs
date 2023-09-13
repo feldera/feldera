@@ -1,6 +1,11 @@
-use crate::DeCollectionHandle;
-use erased_serde::{deserialize, Deserializer as ErasedDeserializer, Error as EError};
-use serde::Deserialize;
+use crate::{
+    catalog::{DeCollectionStream, RecordFormat},
+    static_compile::deinput::{
+        CsvDeserializerFromBytes, DeserializerFromBytes, JsonDeserializerFromBytes,
+    },
+    ControllerError, DeCollectionHandle,
+};
+use anyhow::Result as AnyResult;
 use std::{
     mem::take,
     sync::{Arc, Mutex, MutexGuard},
@@ -67,34 +72,72 @@ impl<T> MockDeZSet<T> {
 
 impl<T> DeCollectionHandle for MockDeZSet<T>
 where
-    T: for<'de> Deserialize<'de> + Send + 'static,
+    T: for<'de> serde::Deserialize<'de> + Send + 'static,
 {
-    fn insert(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let val = deserialize::<T>(deserializer)?;
-        self.0.lock().unwrap().buffered.push((val, true));
+    fn configure_deserializer(
+        &self,
+        record_format: RecordFormat,
+    ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
+        match record_format {
+            RecordFormat::Csv => Ok(Box::new(
+                MockDeZSetStream::<CsvDeserializerFromBytes, T>::new(self.clone()),
+            )),
+            RecordFormat::Json => Ok(Box::new(
+                MockDeZSetStream::<JsonDeserializerFromBytes, T>::new(self.clone()),
+            )),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct MockDeZSetStream<De, T> {
+    handle: MockDeZSet<T>,
+    deserializer: De,
+}
+
+impl<De, T> MockDeZSetStream<De, T>
+where
+    De: DeserializerFromBytes,
+{
+    pub fn new(handle: MockDeZSet<T>) -> Self {
+        Self {
+            handle,
+            deserializer: De::create(),
+        }
+    }
+}
+
+impl<De, T> DeCollectionStream for MockDeZSetStream<De, T>
+where
+    T: for<'de> serde::Deserialize<'de> + Send + 'static,
+    De: DeserializerFromBytes + Send + 'static,
+{
+    fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
+        let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data)?;
+        self.handle.0.lock().unwrap().buffered.push((val, true));
         Ok(())
     }
 
-    fn delete(&mut self, deserializer: &mut dyn ErasedDeserializer) -> Result<(), EError> {
-        let val = deserialize::<T>(deserializer)?;
-        self.0.lock().unwrap().buffered.push((val, false));
+    fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
+        let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data)?;
+        self.handle.0.lock().unwrap().buffered.push((val, false));
         Ok(())
     }
 
     fn reserve(&mut self, _reservation: usize) {}
 
     fn flush(&mut self) {
-        let mut state = self.0.lock().unwrap();
+        let mut state = self.handle.0.lock().unwrap();
 
         let mut buffered = take(&mut state.buffered);
         state.flushed.append(&mut buffered);
     }
 
     fn clear_buffer(&mut self) {
-        self.0.lock().unwrap().buffered.clear();
+        self.handle.0.lock().unwrap().buffered.clear();
     }
 
-    fn fork(&self) -> Box<dyn DeCollectionHandle> {
-        Box::new(self.clone())
+    fn fork(&self) -> Box<dyn DeCollectionStream> {
+        Box::new(Self::new(self.handle.clone()))
     }
 }

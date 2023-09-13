@@ -15,7 +15,7 @@ pub struct TestHttpReceiver;
 impl TestHttpSender {
     /// Serialize `data` as `csv` and send it as part of HTTP request.
     pub async fn send_stream(req: ClientRequest, data: &[Vec<TestStruct>]) {
-        let data = data.iter().cloned().collect::<Vec<_>>();
+        let data = data.to_vec();
 
         req.send_stream(stream! {
             for batch in data.iter() {
