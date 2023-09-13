@@ -216,7 +216,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
     public VisitDecision preorder(DBSPPartialCircuit circuit) {
         this.builder.append("pub fn ")
                 .append(this.functionName)
-                .append("(workers: usize) -> (DBSPHandle, Catalog) {")
+                .append("(workers: usize) -> Result<(DBSPHandle, Catalog), DBSPError> {")
                 .increase()
                 .newline()
                 .append("let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {")
@@ -256,11 +256,11 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         this.builder.append("Ok(catalog)")
                 .newline()
                 .decrease()
-                .append("}).unwrap();")
+                .append("})?;")
                 .newline();
 
         this.builder
-                .append("(circuit, catalog)")
+                .append("Ok((circuit, catalog))")
                 .newline()
                 .decrease()
                 .append("}")
