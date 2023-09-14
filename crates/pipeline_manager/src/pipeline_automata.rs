@@ -77,7 +77,7 @@ fn to_execution_desc(pr: PipelineRevision, binary_ref: String) -> PipelineExecut
         program_id: pr.program.program_id,
         version: pr.program.version,
         config: pr.config,
-        binary_ref: binary_ref.clone()
+        binary_ref
     }
 }
 
