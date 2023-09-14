@@ -444,7 +444,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         ", COL3 VARCHAR(3)" +
                         ", COL4 VARCHAR(3) ARRAY" +
                         ")",
-                "CREATE VIEW V AS SELECT COL1 FROM T"
+                "CREATE VIEW V AS SELECT COL1 AS \"xCol\" FROM T",
+                "CREATE VIEW V1 (\"yCol\") AS SELECT COL1 FROM T"
         };
         File file = this.createInputScript(statements);
         File json = File.createTempFile("out", ".json", new File("."));
@@ -453,6 +454,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         tmp.deleteOnExit();
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
+        System.out.println(message.toString());
         Assert.assertEquals(message.exitCode, 0);
         ObjectMapper mapper = new ObjectMapper();
         JsonNode parsed = mapper.readTree(json);
@@ -463,18 +465,21 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    \"name\" : \"T\",\n" +
                 "    \"fields\" : [ {\n" +
                 "      \"name\" : \"COL1\",\n" +
+                "      \"case_sensitive\" : false,\n" +
                 "      \"columntype\" : {\n" +
                 "        \"type\" : \"INTEGER\",\n" +
                 "        \"nullable\" : false\n" +
                 "      }\n" +
                 "    }, {\n" +
                 "      \"name\" : \"COL2\",\n" +
+                "      \"case_sensitive\" : false,\n" +
                 "      \"columntype\" : {\n" +
                 "        \"type\" : \"DOUBLE\",\n" +
                 "        \"nullable\" : false\n" +
                 "      }\n" +
                 "    }, {\n" +
                 "      \"name\" : \"COL3\",\n" +
+                "      \"case_sensitive\" : false,\n" +
                 "      \"columntype\" : {\n" +
                 "        \"type\" : \"VARCHAR\",\n" +
                 "        \"nullable\" : true,\n" +
@@ -482,6 +487,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "      }\n" +
                 "    }, {\n" +
                 "      \"name\" : \"COL4\",\n" +
+                "      \"case_sensitive\" : false,\n" +
                 "      \"columntype\" : {\n" +
                 "        \"type\" : \"ARRAY\",\n" +
                 "        \"nullable\" : true,\n" +
@@ -496,7 +502,19 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "  \"outputs\" : [ {\n" +
                 "    \"name\" : \"V\",\n" +
                 "    \"fields\" : [ {\n" +
-                "      \"name\" : \"COL1\",\n" +
+                "      \"name\" : \"xCol\",\n" +
+                // TODO: the following should probably be 'true'
+                "      \"case_sensitive\" : false,\n" +
+                "      \"columntype\" : {\n" +
+                "        \"type\" : \"INTEGER\",\n" +
+                "        \"nullable\" : false\n" +
+                "      }\n" +
+                "    } ]\n" +
+                "  }, {\n" +
+                "    \"name\" : \"V1\",\n" +
+                "    \"fields\" : [ {\n" +
+                "      \"name\" : \"yCol\",\n" +
+                "      \"case_sensitive\" : true,\n" +
                 "      \"columntype\" : {\n" +
                 "        \"type\" : \"INTEGER\",\n" +
                 "        \"nullable\" : false\n" +
