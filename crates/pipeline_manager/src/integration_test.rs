@@ -311,7 +311,10 @@ impl TestConfig {
             let val: Value = resp.json().await.unwrap();
 
             let status = val["status"].clone();
-            if status != json!("CompilingSql") && status != json!("CompilingRust") && status != json!("Pending") {
+            if status != json!("CompilingSql")
+                && status != json!("CompilingRust")
+                && status != json!("Pending")
+            {
                 if status == json!("Success") {
                     break;
                 } else {
@@ -882,7 +885,8 @@ async fn parse_datetime() {
     assert!(req.status().is_success());
 
     let quantiles = config.quantiles_json(&id, "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"D\":\"2024-02-25\",\"T\":\"11:12:33.483221092\",\"TS\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"D\":\"2021-05-20\",\"T\":\"13:22:00\",\"TS\":\"2021-05-20 12:12:33\"}}]");
+    assert_eq!(quantiles.parse::<Value>().unwrap(), 
+               "[{\"insert\":{\"D\":\"2024-02-25\",\"T\":\"11:12:33.483221092\",\"TS\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"D\":\"2021-05-20\",\"T\":\"13:22:00\",\"TS\":\"2021-05-20 12:12:33\"}}]".parse::<Value>().unwrap());
 
     // Shutdown the pipeline
     let resp = config
@@ -920,14 +924,18 @@ async fn quoted_columns() {
                 "/v0/pipelines/{}/ingress/T1?format=json&update_format=raw",
                 id
             ),
-            r#"{"c1": 10, "C2": true, "😁❤": "foo", "αβγ": true, "δθ": false}"#
-                .to_string(),
+            r#"{"c1": 10, "C2": true, "😁❤": "foo", "αβγ": true, "δθ": false}"#.to_string(),
         )
         .await;
     assert!(req.status().is_success());
 
     let quantiles = config.quantiles_json(&id, "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"C2\":true,\"c1\":10,\"ΔΘ\":false,\"αβγ\":true,\"😁❤\":\"foo\"}}]");
+    assert_eq!(
+        quantiles.parse::<Value>().unwrap(),
+        "[{\"insert\":{\"C2\":true,\"c1\":10,\"ΔΘ\":false,\"αβγ\":true,\"😁❤\":\"foo\"}}]"
+            .parse::<Value>()
+            .unwrap()
+    );
 
     // Shutdown the pipeline
     let resp = config
