@@ -1,9 +1,12 @@
 use clap::Parser;
 use dataflow_jit::{
-    codegen::{json::JsonDeserConfig, CodegenConfig},
+    codegen::{
+        json::{JsonDeserConfig, JsonSerConfig},
+        CodegenConfig,
+    },
     dataflow::CompiledDataflow,
     facade::Demands,
-    ir::{GraphExt, Validator},
+    ir::{GraphExt, NodeId, Validator},
     sql_graph::SqlGraph,
     DbspCircuit,
 };
@@ -12,9 +15,9 @@ use jsonschema::paths::PathChunk;
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fs::File,
-    io::{self, BufReader, Read},
+    io::{self, BufReader, BufWriter, Read},
     path::{Path, PathBuf},
     process::ExitCode,
     time::Instant,
@@ -48,6 +51,7 @@ struct Config {
     optimize: bool,
     release: bool,
     inputs: HashMap<String, Input>,
+    outputs: BTreeMap<NodeId, Output>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,7 +66,18 @@ enum InputKind {
     Csv(Vec<(usize, usize, Option<String>)>),
 }
 
-enum InputFormat {
+#[derive(Debug, Deserialize)]
+struct Output {
+    file: PathBuf,
+    kind: OutputKind,
+}
+
+#[derive(Debug, Deserialize)]
+enum OutputKind {
+    Json(JsonSerConfig),
+}
+
+enum Format {
     Json,
     Csv,
 }
@@ -87,8 +102,6 @@ fn run(program: &Path, config: &Path) -> ExitCode {
         })
         .collect();
 
-    let sinks = graph.sink_nodes();
-
     let (mut demands, mut inputs) = (Demands::new(), Vec::with_capacity(config.inputs.len()));
     for (name, input) in config.inputs {
         let (node, layout) = source_names[&name];
@@ -98,15 +111,36 @@ fn run(program: &Path, config: &Path) -> ExitCode {
                 mappings.layout = layout;
 
                 demands.add_json_deserialize(layout, mappings);
-                InputFormat::Json
+                Format::Json
             }
             InputKind::Csv(mappings) => {
                 demands.add_csv_deserialize(layout, mappings);
-                InputFormat::Csv
+                Format::Csv
             }
         };
 
         inputs.push((node, input.file, format));
+    }
+
+    let mut outputs = Vec::with_capacity(config.outputs.len());
+    for (node, output) in config.outputs {
+        let layout = graph.nodes()[&node]
+            .as_sink()
+            .expect("outputs must be sinks")
+            .input_layout()
+            .expect_set("outputs must be zsets");
+
+        let format = match output.kind {
+            OutputKind::Json(mut mappings) => {
+                // Correct the layout of `mappings`
+                mappings.layout = layout;
+
+                demands.add_json_serialize(layout, mappings);
+                Format::Json
+            }
+        };
+
+        outputs.push((node, output.file, format));
     }
 
     let mut circuit = DbspCircuit::new(
@@ -123,12 +157,13 @@ fn run(program: &Path, config: &Path) -> ExitCode {
 
     for (target, file, format) in inputs {
         match format {
-            InputFormat::Json => {
+            Format::Json => {
+                // TODO: Create & append? Make it configurable?
                 let file = BufReader::new(File::open(file).unwrap());
                 circuit.append_json_input(target, file).unwrap();
             }
 
-            InputFormat::Csv => circuit.append_csv_input(target, &file),
+            Format::Csv => circuit.append_csv_input(target, &file),
         }
     }
 
@@ -138,9 +173,18 @@ fn run(program: &Path, config: &Path) -> ExitCode {
     let elapsed = start.elapsed();
     println!("stepped in {elapsed:#?}");
 
-    for (sink, _) in sinks {
-        let output = circuit.consolidate_output(sink);
-        println!("{output:?}");
+    let mut buf = String::new();
+    for (target, file, format) in outputs {
+        match format {
+            Format::Json => {
+                let mut file = BufWriter::new(File::create(file).unwrap());
+                circuit
+                    .consolidate_json_output(target, &mut buf, &mut file)
+                    .unwrap();
+            }
+
+            Format::Csv => unimplemented!(),
+        }
     }
 
     circuit.kill().unwrap();
