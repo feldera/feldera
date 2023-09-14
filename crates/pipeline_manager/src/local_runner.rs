@@ -1,4 +1,3 @@
-use crate::db::{ProgramId, Version};
 /// A local runner that watches for pipeline objects in the API
 /// and instantiates them locally as processes.
 use crate::db_notifier::{DbNotification, Operation};
@@ -7,11 +6,10 @@ use crate::pipeline_automata::{PipelineExecutionDesc, PipelineExecutor};
 use crate::{
     api::ManagerError,
     config::LocalRunnerConfig,
-    db::{storage::Storage, PipelineId, PipelineRevision, ProjectDB},
+    db::{PipelineId, ProjectDB},
     runner::RunnerError,
 };
 use async_trait::async_trait;
-use dbsp_adapters::PipelineConfig;
 use log::trace;
 use std::{
     collections::BTreeMap,
@@ -33,7 +31,6 @@ pub struct ProcessRunner {
     pipeline_id: PipelineId,
     pipeline_process: Option<Child>,
     config: Arc<LocalRunnerConfig>,
-    db: Arc<Mutex<ProjectDB>>,
 }
 
 impl Drop for ProcessRunner {
@@ -184,7 +181,6 @@ async fn reconcile(
                                 pipeline_id,
                                 pipeline_process: None,
                                 config: config.clone(),
-                                db: db.clone(),
                             };
                             spawn(
                                 PipelineAutomaton::new(
