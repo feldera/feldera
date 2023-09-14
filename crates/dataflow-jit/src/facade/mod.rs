@@ -1,8 +1,13 @@
+mod demands;
+mod handle;
 mod tests;
+
+pub use demands::Demands;
+pub use handle::JsonSetHandle;
 
 use crate::{
     codegen::{
-        json::{call_deserialize_fn, DeserializeJsonFn, JsonDeserConfig},
+        json::{call_deserialize_fn, DeserializeJsonFn, SerializeJsonFn},
         CodegenConfig, NativeLayout, NativeLayoutCache, VTable,
     },
     dataflow::{CompiledDataflow, JitHandle, RowInput, RowOutput},
@@ -20,14 +25,14 @@ use cranelift_module::FuncId;
 use csv::StringRecord;
 use dbsp::{
     trace::{BatchReader, Cursor},
-    CollectionHandle, DBSPHandle, Error, Runtime,
+    DBSPHandle, Error, Runtime,
 };
 use rust_decimal::Decimal;
 use serde_json::{Deserializer, Value};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     error,
-    io::Read,
+    io::{self, Read, Write},
     mem::transmute,
     ops::Not,
     path::Path,
@@ -40,91 +45,6 @@ use std::{
 // We also need checks to make sure that the type is being fully initialized, as
 // well as support for parsing maps from csv
 
-pub struct Demands {
-    #[allow(clippy::type_complexity)]
-    csv: BTreeMap<LayoutId, Vec<(usize, usize, Option<String>)>>,
-    json_deser: BTreeMap<LayoutId, JsonDeserConfig>,
-}
-
-impl Demands {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self {
-            csv: BTreeMap::new(),
-            json_deser: BTreeMap::new(),
-        }
-    }
-
-    pub fn add_csv_deserialize(
-        &mut self,
-        layout: LayoutId,
-        column_mappings: Vec<(usize, usize, Option<String>)>,
-    ) {
-        let displaced = self.csv.insert(layout, column_mappings);
-        assert_eq!(displaced, None);
-    }
-
-    pub fn add_json_deserialize(&mut self, layout: LayoutId, mappings: JsonDeserConfig) {
-        let displaced = self.json_deser.insert(layout, mappings);
-        assert_eq!(displaced, None);
-    }
-
-    // TODO: Return result
-    fn validate(&self) {
-        let mut destination_columns = BTreeSet::new();
-        for (&layout_id, csv_columns) in &self.csv {
-            for &(csv_column, row_column, ref fmt) in csv_columns {
-                if !destination_columns.insert(row_column) {
-                    panic!(
-                        "multiple csv columns write to the same row column for \
-                         layout {layout_id}, `[{csv_column}, {row_column}, {fmt:?}]`"
-                    );
-                }
-            }
-
-            destination_columns.clear();
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct JsonSetHandle {
-    handle: CollectionHandle<Row, i32>,
-    deserialize_fn: DeserializeJsonFn,
-    vtable: &'static VTable,
-}
-
-impl JsonSetHandle {
-    pub fn new(
-        handle: CollectionHandle<Row, i32>,
-        deserialize_fn: DeserializeJsonFn,
-        vtable: &'static VTable,
-    ) -> Self {
-        Self {
-            handle,
-            deserialize_fn,
-            vtable,
-        }
-    }
-
-    pub fn push(&self, key: &[u8], weight: i32) -> Result<(), Box<dyn error::Error>> {
-        let value: Value = serde_json::from_slice(key)?;
-        let key = unsafe {
-            let mut uninit = UninitRow::new(self.vtable);
-            call_deserialize_fn(self.deserialize_fn, uninit.as_mut_ptr(), &value)?;
-            uninit.assume_init()
-        };
-
-        self.handle.push(key, weight);
-
-        Ok(())
-    }
-
-    pub fn clear_input(&self) {
-        self.handle.clear_input();
-    }
-}
-
 pub struct DbspCircuit {
     jit: JitHandle,
     runtime: DBSPHandle,
@@ -134,8 +54,9 @@ pub struct DbspCircuit {
     /// The output handles of all sink nodes, will be `None` if the sink is
     /// unreachable
     outputs: BTreeMap<NodeId, (Option<RowOutput>, StreamLayout)>,
-    csv_demands: BTreeMap<LayoutId, FuncId>,
-    json_deser_demands: BTreeMap<LayoutId, FuncId>,
+    deserialize_csv_demands: BTreeMap<LayoutId, FuncId>,
+    deserialize_json_demands: BTreeMap<LayoutId, FuncId>,
+    serialize_json_demands: BTreeMap<LayoutId, FuncId>,
     layout_cache: NativeLayoutCache,
 }
 
@@ -179,10 +100,12 @@ impl DbspCircuit {
             }
         }
 
-        let (mut json_deser_demands, mut csv_demands) = (BTreeMap::new(), BTreeMap::new());
+        let (mut deserialize_json_demands, mut deserialize_csv_demands, mut serialize_json_demands) =
+            (BTreeMap::new(), BTreeMap::new(), BTreeMap::new());
+
         let (dataflow, jit, layout_cache) = CompiledDataflow::new(&graph, config, |codegen| {
-            json_deser_demands = demands
-                .json_deser
+            deserialize_json_demands = demands
+                .deserialize_json
                 .into_iter()
                 .map(|(layout, mappings)| {
                     debug_assert_eq!(layout, mappings.layout);
@@ -191,7 +114,17 @@ impl DbspCircuit {
                 })
                 .collect();
 
-            csv_demands = demands
+            serialize_json_demands = demands
+                .serialize_json
+                .into_iter()
+                .map(|(layout, mappings)| {
+                    debug_assert_eq!(layout, mappings.layout);
+                    let to_json = codegen.serialize_json(&mappings);
+                    (layout, to_json)
+                })
+                .collect();
+
+            deserialize_csv_demands = demands
                 .csv
                 .into_iter()
                 .map(|(layout, mappings)| {
@@ -228,10 +161,24 @@ impl DbspCircuit {
             runtime,
             inputs,
             outputs,
-            csv_demands,
-            json_deser_demands,
+            deserialize_csv_demands,
+            deserialize_json_demands,
+            serialize_json_demands,
             layout_cache,
         }
+    }
+
+    /// Returns the vtable associated with the given layout
+    ///
+    /// # Safety
+    ///
+    /// The returned reference is not truly static, it must
+    /// be dropped before the parent `DbspCircuit` is dropped.
+    /// Usage of the vtable (or the reference to the vtable)
+    /// after dropping the parent `DbspCircuit` will result
+    /// in undefined behavior
+    pub unsafe fn layout_vtable(&self, layout: LayoutId) -> &'static VTable {
+        unsafe { &*self.jit.vtables()[&layout] }
     }
 
     pub fn step(&mut self) -> Result<(), Error> {
@@ -289,7 +236,7 @@ impl DbspCircuit {
             transmute::<_, DeserializeJsonFn>(
                 self.jit
                     .jit
-                    .get_finalized_function(self.json_deser_demands[&layout]),
+                    .get_finalized_function(self.deserialize_json_demands[&layout]),
             )
         };
 
@@ -376,7 +323,7 @@ impl DbspCircuit {
                         transmute::<_, DeserializeJsonFn>(
                             self.jit
                                 .jit
-                                .get_finalized_function(self.json_deser_demands[&key_layout]),
+                                .get_finalized_function(self.deserialize_json_demands[&key_layout]),
                         )
                     };
 
@@ -428,7 +375,7 @@ impl DbspCircuit {
                         transmute::<_, DeserializeJsonFn>(
                             self.jit
                                 .jit
-                                .get_finalized_function(self.json_deser_demands[&key_layout]),
+                                .get_finalized_function(self.deserialize_json_demands[&key_layout]),
                         )
                     };
 
@@ -476,7 +423,7 @@ impl DbspCircuit {
                         transmute::<_, unsafe extern "C" fn(*mut u8, *const StringRecord)>(
                             self.jit
                                 .jit
-                                .get_finalized_function(self.csv_demands[&key_layout]),
+                                .get_finalized_function(self.deserialize_csv_demands[&key_layout]),
                         )
                     };
 
@@ -584,6 +531,67 @@ impl DbspCircuit {
             );
             StreamCollection::empty(*layout)
         }
+    }
+
+    pub fn consolidate_json_output<W>(
+        &mut self,
+        output: NodeId,
+        buffer: &mut String,
+        mut write: W,
+    ) -> io::Result<()>
+    where
+        W: Write,
+    {
+        buffer.clear();
+        let (output, layout) = self.outputs.get(&output).unwrap_or_else(|| {
+            panic!("attempted to consolidate data from {output}, but {output} is not a sink node or doesn't exist");
+        });
+
+        if let Some(output) = output {
+            match output {
+                RowOutput::Set(output) => {
+                    let key_layout = layout.unwrap_set();
+                    let serialize_json = unsafe {
+                        transmute::<_, SerializeJsonFn>(
+                            self.jit
+                                .jit
+                                .get_finalized_function(self.serialize_json_demands[&key_layout]),
+                        )
+                    };
+
+                    // TODO: Consolidate into a buffer
+                    let set = output.consolidate();
+
+                    let mut cursor = set.cursor();
+                    while cursor.key_valid() {
+                        // let diff = cursor.weight();
+                        let key = cursor.key();
+
+                        // Write the row to a single line of text
+                        unsafe { serialize_json(key.as_ptr(), buffer) }
+                        // TODO: Should the newline be configurable?
+                        buffer.push('\n');
+                        write.write_all(buffer.as_bytes())?;
+
+                        // Clear the buffer
+                        buffer.clear();
+
+                        // Step to the next key
+                        cursor.step_key();
+                    }
+                }
+
+                RowOutput::Map(_output) => unimplemented!(),
+            }
+
+        // The output is unreachable so we always return an empty stream
+        } else {
+            tracing::info!(
+                "consolidating json output from an unreachable sink, returning an empty stream",
+            );
+        }
+
+        Ok(())
     }
 }
 

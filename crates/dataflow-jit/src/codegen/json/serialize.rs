@@ -10,12 +10,14 @@ use crate::{
 use cranelift::prelude::FunctionBuilder;
 use cranelift_codegen::ir::{InstBuilder, MemFlags};
 use cranelift_module::{FuncId, Module};
+use serde::Deserialize;
 use std::{mem::align_of, ops::Not};
 
 pub type SerializeJsonFn = unsafe extern "C" fn(*const u8, &mut String);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct JsonSerConfig {
+    #[serde(default)]
     pub layout: LayoutId,
     // TODO: Allow specifying how to serialize things, like skipping nulls
     // TODO: Allow serializing into nested structures
