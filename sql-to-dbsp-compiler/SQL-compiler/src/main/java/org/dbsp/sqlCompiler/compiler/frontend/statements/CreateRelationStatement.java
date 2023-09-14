@@ -46,7 +46,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -132,6 +131,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         for (RelColumnMetadata col: this.columns) {
             ObjectNode column = fields.addObject();
             column.put("name", col.getName());
+            column.put("case_sensitive", col.nameIsQuoted);
             Object object = RelJson.create().withJsonBuilder(new JsonBuilder())
                     .toJson(col.getType());
             try {
