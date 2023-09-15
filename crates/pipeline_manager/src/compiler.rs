@@ -1045,7 +1045,7 @@ mod test {
             if state == super::ProgramStatus::Success {
                 db.lock()
                     .await
-                    .create_compiled_binary_ref(pid, vid, format!("dummy"))
+                    .create_compiled_binary_ref(pid, vid, "dummy".to_string())
                     .await
                     .unwrap();
             }
@@ -1090,7 +1090,7 @@ mod test {
 
         db.lock()
             .await
-            .create_compiled_binary_ref(pid, vid, format!("dummy"))
+            .create_compiled_binary_ref(pid, vid, "dummy".to_string())
             .await
             .unwrap();
 
@@ -1102,7 +1102,7 @@ mod test {
         // Attempt to create a new binary ref to simulate a successful compilation
         db.lock()
             .await
-            .create_compiled_binary_ref(pid, vid, format!("dummy1"))
+            .create_compiled_binary_ref(pid, vid, "dummy1".to_string())
             .await
             .unwrap();
     }

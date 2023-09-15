@@ -648,7 +648,7 @@ mod test {
             provider: Provider::AwsCognito("some-url".to_string()),
             validation,
         };
-        let closure = move |req, bearer_auth| auth::auth_validator(req, bearer_auth);
+        let closure = auth::auth_validator;
         let auth_middleware = HttpAuthentication::with_fn(closure);
 
         let manager_config = ApiServerConfig {
@@ -700,7 +700,7 @@ mod test {
                             vec![ApiPermission::Read, ApiPermission::Write]
                         );
                     }
-                    HttpResponse::build(StatusCode::OK)
+                    HttpResponse::build(StatusCode::OK).await
                 }),
             );
         let app = test::init_service(app).await;
