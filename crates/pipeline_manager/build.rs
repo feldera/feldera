@@ -14,7 +14,8 @@ const EXCLUDE_LIST: [&str; 3] = [
 /// The build script has two modes:
 ///
 /// - if `WEBUI_BUILD_DIR` we use that to serve in the manager
-/// - otherwise we build the web-console from web-console and serve it from the manager
+/// - otherwise we build the web-console from web-console and serve it from the
+///   manager
 ///
 /// The first mode is useful in CI builds to cache the website build so it
 /// doesn't get built many times due to changing rustc flags.

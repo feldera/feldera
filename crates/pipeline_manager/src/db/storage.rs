@@ -87,8 +87,8 @@ pub(crate) trait Storage {
             .await?;
 
         // Do nothing if the program:
-        // * is already pending (we don't want to bump its `status_since` field, which would move
-        //   it to the end of the queue),
+        // * is already pending (we don't want to bump its `status_since` field, which
+        //   would move it to the end of the queue),
         // * if compilation is already in progress,
         // * or if the program has already been compiled
         if descr.status == ProgramStatus::Pending
@@ -408,8 +408,8 @@ pub(crate) trait Storage {
         provider: String,
     ) -> Result<TenantId, DBError>;
 
-    /// Record a URL pointing to a compile. binary Supported URL types are determined by the
-    /// compiler service (e.g. file:///)
+    /// Record a URL pointing to a compile. binary Supported URL types are
+    /// determined by the compiler service (e.g. file:///)
     async fn create_compiled_binary_ref(
         &self,
         program_id: ProgramId,

@@ -322,9 +322,9 @@ fn static_website_scope() -> Scope {
     // Creates a dictionary of static files indexed by file name.
     let generated = generate();
 
-    // Leave this is an empty prefix to load the UI by default. When constructing an app, always
-    // attach other scopes without empty prefixes before this one, or route resolution does
-    // not work correctly.
+    // Leave this is an empty prefix to load the UI by default. When constructing an
+    // app, always attach other scopes without empty prefixes before this one,
+    // or route resolution does not work correctly.
     web::scope("")
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(ResourceFiles::new("/", generated))
@@ -892,7 +892,8 @@ async fn compile_program(
 
 /// Delete a program.
 ///
-/// Deletion fails if there is at least one pipeline associated with the program.
+/// Deletion fails if there is at least one pipeline associated with the
+/// program.
 #[utoipa::path(
     responses(
         (status = OK, description = "Program successfully deleted."),
@@ -1024,9 +1025,11 @@ struct UpdatePipelineRequest {
     name: String,
     /// New pipeline description.
     description: String,
-    /// New program to create a pipeline for. If absent, program will be set to NULL.
+    /// New program to create a pipeline for. If absent, program will be set to
+    /// NULL.
     program_id: Option<ProgramId>,
-    /// New pipeline configuration. If absent, the existing configuration will be kept unmodified.
+    /// New pipeline configuration. If absent, the existing configuration will
+    /// be kept unmodified.
     config: Option<RuntimeConfig>,
     /// Attached connectors.
     ///
@@ -1339,11 +1342,11 @@ async fn pipeline_validate(
 /// state model in the [`PipelineStatus`] documentation).
 ///
 /// The endpoint returns immediately after validating the request and forwarding
-/// it to the pipeline. The requested status change completes asynchronously.  On success,
-/// the pipeline enters the requested desired state.  On error, the pipeline
-/// transitions to the `Failed` state. The user
-/// can monitor the current status of the pipeline by polling the `GET /pipeline`
-/// endpoint.
+/// it to the pipeline. The requested status change completes asynchronously.
+/// On success, the pipeline enters the requested desired state.  On error, the
+/// pipeline transitions to the `Failed` state. The user
+/// can monitor the current status of the pipeline by polling the `GET
+/// /pipeline` endpoint.
 ///
 /// The following values of the `action` argument are accepted by this endpoint:
 ///

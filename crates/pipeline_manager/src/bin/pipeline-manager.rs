@@ -1,4 +1,5 @@
-/// A binary that brings up all three of the api-server, compiler and local runner services.
+/// A binary that brings up all three of the api-server, compiler and local
+/// runner services.
 use clap::{Args, Command, FromArgMatches};
 
 use colored::Colorize;

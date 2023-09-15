@@ -391,7 +391,8 @@ pub struct LocalRunnerConfig {
 impl LocalRunnerConfig {
     /// Convert all directory paths in `self` to absolute paths.
     ///
-    /// Converts `working_directory` fails if any of the paths doesn't exist or isn't readable.
+    /// Converts `working_directory` fails if any of the paths doesn't exist or
+    /// isn't readable.
     pub fn canonicalize(mut self) -> AnyResult<Self> {
         create_dir_all(&self.runner_working_directory).map_err(|e| {
             AnyError::msg(format!(
