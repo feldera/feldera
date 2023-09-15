@@ -439,7 +439,7 @@ mod proptests {
     }
 
     prop_compose! {
-        fn time()(secs in 0..=86_399u32, nanos in 0..=1_999_999_999u32) -> NaiveTime {
+        fn time()(secs in 0..=86_399u32, nanos in 0..=999_999_999u32) -> NaiveTime {
             NaiveTime::from_num_seconds_from_midnight_opt(secs, nanos).unwrap()
         }
     }
