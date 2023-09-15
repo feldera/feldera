@@ -3,7 +3,7 @@ use env_logger::Env;
 use std::io::Write;
 
 pub fn init_logging(name: ColoredString) {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+    let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
         .format(move |buf, record| {
             let t = chrono::Utc::now();
             let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
@@ -16,5 +16,5 @@ pub fn init_logging(name: ColoredString) {
                 record.args()
             )
         })
-        .init();
+        .try_init();
 }
