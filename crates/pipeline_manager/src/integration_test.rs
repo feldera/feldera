@@ -88,14 +88,15 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         .unwrap();
     println!("Completed Compiler::precompile_dependencies().");
 
-    // We cannot reuse the tokio runtime instance created by the test (e.g., the one implicitly
-    // created via [actix_web::test]) to create the compiler, local runner and api futures below.
-    // The reason is that when that first test completes, these futures will get cancelled.
+    // We cannot reuse the tokio runtime instance created by the test (e.g., the one
+    // implicitly created via [actix_web::test]) to create the compiler, local
+    // runner and api futures below. The reason is that when that first test
+    // completes, these futures will get cancelled.
     //
-    // To avoid that problem, and for general integration test hygiene, we force another tokio
-    // runtime to be created here to run the server processes. We obviously can't create one
-    // runtime within another, so the easiest way to work around that is to do so within an
-    // std::thread::spawn().
+    // To avoid that problem, and for general integration test hygiene, we force
+    // another tokio runtime to be created here to run the server processes. We
+    // obviously can't create one runtime within another, so the easiest way to
+    // work around that is to do so within an std::thread::spawn().
     std::thread::spawn(|| {
         tokio::runtime::Runtime::new()
             .unwrap()
@@ -820,7 +821,8 @@ async fn json_ingress() {
         "20,,foo,1\n25,true,,1\n30,,bar,1\n60,true,hello,1\n"
     );
 
-    // Push some CSV data (the second record is invalid, but the other two should get ingested).
+    // Push some CSV data (the second record is invalid, but the other two should
+    // get ingested).
     let mut req = config
         .post_json(
             format!("/v0/pipelines/{}/ingress/T1?format=csv", id),
@@ -870,7 +872,8 @@ async fn parse_datetime() {
         .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
         .await;
 
-    // The parser should trim leading and trailing white space when parsing dates/times.
+    // The parser should trim leading and trailing white space when parsing
+    // dates/times.
     let req = config
         .post_json(
             format!(
@@ -885,7 +888,7 @@ async fn parse_datetime() {
     assert!(req.status().is_success());
 
     let quantiles = config.quantiles_json(&id, "T1").await;
-    assert_eq!(quantiles.parse::<Value>().unwrap(), 
+    assert_eq!(quantiles.parse::<Value>().unwrap(),
                "[{\"insert\":{\"D\":\"2024-02-25\",\"T\":\"11:12:33.483221092\",\"TS\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"D\":\"2021-05-20\",\"T\":\"13:22:00\",\"TS\":\"2021-05-20 12:12:33\"}}]".parse::<Value>().unwrap());
 
     // Shutdown the pipeline

@@ -577,9 +577,9 @@ impl Compiler {
         let programs = db.all_programs().await?;
         for (tenant_id, program) in programs {
             // We have some artifact but the program status has not been updated to Success.
-            // This could indicate a failure between when we began writing the versioned executable
-            // to before we could update the program status. This means, the best solution
-            // is to start over with the compilation
+            // This could indicate a failure between when we began writing the versioned
+            // executable to before we could update the program status. This
+            // means, the best solution is to start over with the compilation
             if program.status == ProgramStatus::CompilingRust
                 && map.contains(&(program.program_id.0, program.version.0))
             {

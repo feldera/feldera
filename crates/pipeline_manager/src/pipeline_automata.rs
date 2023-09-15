@@ -20,38 +20,37 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
-use tokio::{
-    fs,
-    sync::Mutex,
-    time::Duration,
-};
+use tokio::{fs, sync::Mutex, time::Duration};
 use tokio::{sync::Notify, time::timeout};
 
 /// Trait to be implemented by any pipeline runner. The PipelineAutomaton
 /// invokes these methods per pipeline.
 #[async_trait]
 pub trait PipelineExecutor {
-    /// Starts a new pipeline (e.g., brings up a process that runs the pipeline binary)
+    /// Starts a new pipeline (e.g., brings up a process that runs the pipeline
+    /// binary)
     async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError>;
 
-    /// Return the hostname:port over which the pipeline's HTTP server should be reachable
-    /// Ok(None) indicates that the pipeline is still initializing
+    /// Return the hostname:port over which the pipeline's HTTP server should be
+    /// reachable Ok(None) indicates that the pipeline is still initializing
     async fn get_location(&mut self) -> Result<Option<String>, ManagerError>;
 
     /// Returns whether the pipeline has been shutdown
     async fn check_if_shutdown(&mut self) -> bool;
 
-    /// Initiates pipeline shutdown (e.g., send a SIGTERM successfully to the process)
+    /// Initiates pipeline shutdown (e.g., send a SIGTERM successfully to the
+    /// process)
     async fn shutdown(&mut self) -> Result<(), ManagerError>;
 }
-
 
 /// Pipeline automaton monitors the runtime state of a single pipeline
 /// and continually reconciles desired and actual state.
 ///
 /// The automaton runs as a separate tokio task.
 pub struct PipelineAutomaton<T>
-where T: PipelineExecutor {
+where
+    T: PipelineExecutor,
+{
     pipeline_id: PipelineId,
     tenant_id: TenantId,
     pipeline_handle: T,
@@ -67,7 +66,7 @@ pub struct PipelineExecutionDesc {
     pub program_id: ProgramId,
     pub version: Version,
     pub config: PipelineConfig,
-    pub binary_ref: String
+    pub binary_ref: String,
 }
 
 fn to_execution_desc(pr: PipelineRevision, binary_ref: String) -> PipelineExecutionDesc {
@@ -77,11 +76,11 @@ fn to_execution_desc(pr: PipelineRevision, binary_ref: String) -> PipelineExecut
         program_id: pr.program.program_id,
         version: pr.program.version,
         config: pr.config,
-        binary_ref
+        binary_ref,
     }
 }
 
-impl <T: PipelineExecutor> PipelineAutomaton<T> {
+impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// The frequency of polling the pipeline during normal operation
     /// when we don't normally expect its state to change.
     const DEFAULT_PIPELINE_POLL_PERIOD: Duration = Duration::from_millis(10_000);
@@ -171,7 +170,8 @@ impl <T: PipelineExecutor> PipelineAutomaton<T> {
             if pipeline.current_status == PipelineStatus::Shutdown
                 && pipeline.desired_status != PipelineStatus::Shutdown
             {
-                self.update_pipeline_status(&mut pipeline, PipelineStatus::Provisioning, None).await;
+                self.update_pipeline_status(&mut pipeline, PipelineStatus::Provisioning, None)
+                    .await;
                 let revision = db
                     .get_last_committed_pipeline_revision(self.tenant_id, self.pipeline_id)
                     .await?;
@@ -194,8 +194,11 @@ impl <T: PipelineExecutor> PipelineAutomaton<T> {
                 let execution_desc = to_execution_desc(revision, executable_ref.unwrap());
 
                 match self.pipeline_handle.start(execution_desc).await {
-                   Ok(_) => {
-                        info!("Pipeline {} started (Tenant {})", self.pipeline_id, self.tenant_id);
+                    Ok(_) => {
+                        info!(
+                            "Pipeline {} started (Tenant {})",
+                            self.pipeline_id, self.tenant_id
+                        );
                     }
                     Err(e) => {
                         self.force_kill_pipeline(&mut pipeline, Some(e)).await?;
@@ -416,8 +419,7 @@ impl <T: PipelineExecutor> PipelineAutomaton<T> {
                 // Graceful shutdown in progress.  Wait for the pipeline process to self-terminate.
                 // Force-kill the pipeline after a timeout.
                 (PipelineStatus::ShuttingDown, _) => {
-                    if self.pipeline_handle.check_if_shutdown().await
-                    {
+                    if self.pipeline_handle.check_if_shutdown().await {
                         let _ = self.pipeline_handle.shutdown().await;
                         self.update_pipeline_status(&mut pipeline, PipelineStatus::Shutdown, None)
                             .await;
@@ -614,7 +616,6 @@ impl <T: PipelineExecutor> PipelineAutomaton<T> {
         self.update_pipeline_runtime_state(pipeline).await
     }
 
-
     /// Parse `ErrorResponse` from JSON. On error, builds an `ErrorResponse`
     /// with the originaln JSON content.
     fn error_response_from_json(
@@ -680,19 +681,19 @@ pub async fn fetch_binary_ref(
                         .mode(0o760)
                         .open(path.clone())
                         .await
-                        .map_err(|e| 
+                        .map_err(|e|
                             ManagerError::io_error(
                                 format!("File creation failed ({:?}) while saving {pipeline_id} binary fetched from '{}'", path, parsed.path()),
                                 e,
                             )
                         )?;
-                    file.write_all(resp_ref).await.map_err(|e| 
+                    file.write_all(resp_ref).await.map_err(|e|
                             ManagerError::io_error(
                                 format!("File write failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
                                 e,
                             )
                         )?;
-                    file.flush().await.map_err(|e| 
+                    file.flush().await.map_err(|e|
                             ManagerError::io_error(
                                 format!("File flush() failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
                                 e,

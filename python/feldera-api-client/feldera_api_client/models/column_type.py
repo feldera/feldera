@@ -24,7 +24,8 @@ class ColumnType:
                 # Examples
                 - `VARCHAR` sets precision to `-1`.
                 - `VARCHAR(255)` sets precision to `255`.
-                - `BIGINT`, `DATE`, `FLOAT`, `DOUBLE`, `GEOMETRY`, etc. sets precision to None
+                - `BIGINT`, `DATE`, `FLOAT`, `DOUBLE`, `GEOMETRY`, etc. sets precision
+                to None
                 - `TIME`, `TIMESTAMP` set precision to `0`.
             scale (Union[Unset, None, int]): The scale of the type.
 
