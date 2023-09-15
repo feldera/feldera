@@ -2480,12 +2480,7 @@ impl ProjectDB {
             )
             .await?;
 
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_one(&stmt, &[&program_id, &version])
-            .await?;
+        let row = conn.query_one(&stmt, &[&program_id, &version]).await?;
 
         Ok(row.get(0))
     }
