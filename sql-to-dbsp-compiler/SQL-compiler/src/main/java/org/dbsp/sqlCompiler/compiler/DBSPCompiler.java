@@ -33,8 +33,9 @@ import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.backend.jit.JitFileAndSerialization;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitInputDescription;
-import org.dbsp.sqlCompiler.compiler.backend.jit.JitSerializationKind;
+import org.dbsp.sqlCompiler.compiler.backend.jit.JitOutputDescription;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -277,24 +278,38 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     /**
-     * Given a list of files containing the inputs, generate a configuration for the JIT runtime.
+     * Given a list of files containing the inputs and outputs,
+     * generate a configuration for the JIT runtime.
      */
-    public JsonNode getJitInputDescription(JitSerializationKind kind, List<String> files) {
+    public JsonNode getJitInputDescription(
+            List<JitFileAndSerialization> inputFiles,
+            List<JitFileAndSerialization> outputFiles) {
         ObjectMapper objectMapper = jsonFactory();
         ObjectNode result = objectMapper.createObjectNode();
         result.put("workers", 1);
         result.put("optimize", false);
         result.put("release", false);
         ObjectNode inputs = result.putObject("inputs");
-        if (this.inputTables.size() != files.size())
-            throw new CompilationError("Number of input files " + files.size() +
+        if (this.inputTables.size() != inputFiles.size())
+            throw new CompilationError("Number of input files " + inputFiles.size() +
                     " does not match number of inputs: " + this.inputTables.size());
-        for (int i = 0; i < files.size(); i++) {
-            String file = files.get(i);
+        for (int i = 0; i < inputFiles.size(); i++) {
+            JitFileAndSerialization file = inputFiles.get(i);
             InputTableDescription input = this.inputTables.get(i);
-            JitInputDescription description = input.getDescription(kind);
-            JsonNode node = description.asJson(file);
+            JitInputDescription description = input.getJitDescription(file.kind);
+            JsonNode node = description.asJson(file.path);
             inputs.set(input.getName(), node);
+        }
+        ObjectNode outputs = result.putObject("outputs");
+        if (this.outputViews.size() != outputFiles.size())
+            throw new CompilationError("Number of output files " + outputFiles.size() +
+                    " does not match number of views: " + this.outputViews.size());
+        for (int i = 0; i < outputFiles.size(); i++) {
+            JitFileAndSerialization file = outputFiles.get(i);
+            OutputViewDescription output = this.outputViews.get(i);
+            JitOutputDescription description = output.getDescription(file.kind);
+            JsonNode node = description.asJson(file.path);
+            outputs.set(output.getName(), node);
         }
         return result;
     }

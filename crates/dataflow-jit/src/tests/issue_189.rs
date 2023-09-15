@@ -1271,6 +1271,7 @@ const CIRCUIT: &str = r#"{
         "7157": {
             "Sink": {
                 "input": 7154,
+                "view", "V",
                 "comment": "CREATE VIEW V AS SELECT 20 / SUM(1), 20 / SUM(2) FROM T GROUP BY COL1",
                 "input_layout": {
                     "Set": 5

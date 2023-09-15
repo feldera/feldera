@@ -55,14 +55,14 @@ import java.util.List;
  * Base class for CreateTableStatement and CreateViewStatement.
  */
 public abstract class CreateRelationStatement extends FrontEndStatement {
-    public final String tableName;
+    public final String relationName;
     public final List<RelColumnMetadata> columns;
 
     protected CreateRelationStatement(SqlNode node, String statement,
-                                      String tableName, @Nullable String comment,
+                                      String relationName, @Nullable String comment,
                                       List<RelColumnMetadata> columns) {
         super(node, statement, comment);
-        this.tableName = tableName;
+        this.relationName = relationName;
         this.columns = columns;
     }
 
@@ -112,13 +112,13 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
             fields.add(new DBSPTypeStruct.Field(
                     this.getCalciteObject(), col.getName(), col.getName(), fType, col.nameIsQuoted));
         }
-        return new DBSPTypeStruct(this.getCalciteObject(), this.tableName, this.tableName, fields);
+        return new DBSPTypeStruct(this.getCalciteObject(), this.relationName, this.relationName, fields);
     }
 
     @Override
     public String toString() {
         return "CreateRelationStatement{" +
-                "tableName='" + this.tableName + '\'' +
+                "tableName='" + this.relationName + '\'' +
                 ", columns=" + this.columns +
                 '}';
     }
@@ -126,7 +126,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
     public JsonNode getDefinedObjectSchema() {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode result = mapper.createObjectNode();
-        result.put("name", this.tableName);
+        result.put("name", this.relationName);
         ArrayNode fields = result.putArray("fields");
         for (RelColumnMetadata col: this.columns) {
             ObjectNode column = fields.addObject();

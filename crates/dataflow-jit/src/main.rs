@@ -6,7 +6,7 @@ use dataflow_jit::{
     },
     dataflow::CompiledDataflow,
     facade::Demands,
-    ir::{GraphExt, NodeId, Validator},
+    ir::{GraphExt, Validator},
     sql_graph::SqlGraph,
     DbspCircuit,
 };
@@ -51,7 +51,7 @@ struct Config {
     optimize: bool,
     release: bool,
     inputs: HashMap<String, Input>,
-    outputs: BTreeMap<NodeId, Output>,
+    outputs: BTreeMap<String, Output>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,13 +123,19 @@ fn run(program: &Path, config: &Path) -> ExitCode {
     }
 
     let mut outputs = Vec::with_capacity(config.outputs.len());
-    for (node, output) in config.outputs {
-        let layout = graph.nodes()[&node]
-            .as_sink()
-            .expect("outputs must be sinks")
-            .input_layout()
-            .expect_set("outputs must be zsets");
+    let sinks = graph.sink_nodes();
+    let sink_names: HashMap<_, _> = sinks
+        .iter()
+        .filter_map(|&(node, layout)| {
+            graph.nodes()[&node]
+                .as_sink()
+                .and_then(|sink| Some(sink.name()))
+                .map(|sink| (sink.to_owned(), (node, layout.unwrap_set())))
+        })
+        .collect();
 
+    for (name, output) in config.outputs {
+        let (node, layout) = sink_names[&name];
         let format = match output.kind {
             OutputKind::Json(mut mappings) => {
                 // Correct the layout of `mappings`

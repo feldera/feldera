@@ -192,7 +192,7 @@ mod tests {
         graph.source(value);
 
         let empty = graph.empty_set(value);
-        graph.sink(empty, StreamLayout::Set(value));
+        graph.sink(empty, "V", StreamLayout::Set(value));
 
         graph.optimize();
 
@@ -217,7 +217,7 @@ mod tests {
         )));
 
         let sum = graph.add_node(Sum::new(vec![empty, null], StreamLayout::Set(layout)));
-        let sink = graph.sink(sum, StreamLayout::Set(layout));
+        let sink = graph.sink(sum, "sum", StreamLayout::Set(layout));
 
         graph.optimize();
 

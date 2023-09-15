@@ -23,7 +23,7 @@ public class InputTableDescription {
         return this.createTableStatement.getDefinedObjectSchema();
     }
 
-    JitInputDescription getDescription(JitSerializationKind serialization) {
+    JitInputDescription getJitDescription(JitSerializationKind serialization) {
         switch (serialization) {
             default:
             case Json:
@@ -42,6 +42,6 @@ public class InputTableDescription {
     }
 
     public String getName() {
-        return this.createTableStatement.tableName;
+        return this.createTableStatement.relationName;
     }
 }

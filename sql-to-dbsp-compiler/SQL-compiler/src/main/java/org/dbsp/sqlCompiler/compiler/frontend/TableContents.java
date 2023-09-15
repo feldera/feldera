@@ -75,10 +75,10 @@ public class TableContents implements ICompilerComponent {
     public void execute(FrontEndStatement statement) {
         if (statement.is(CreateTableStatement.class)) {
             CreateTableStatement create = statement.to(CreateTableStatement.class);
-            Utilities.putNew(this.tableCreation, create.tableName, create);
-            this.tablesCreated.add(create.tableName);
+            Utilities.putNew(this.tableCreation, create.relationName, create);
+            this.tablesCreated.add(create.relationName);
             if (this.tableContents != null)
-                Utilities.putNew(this.tableContents, create.tableName,
+                Utilities.putNew(this.tableContents, create.relationName,
                         DBSPZSetLiteral.Contents.emptyWithElementType(
                                 create.getRowTypeAsTuple(this.compiler.getTypeCompiler())));
         } else if (statement.is(DropTableStatement.class)) {

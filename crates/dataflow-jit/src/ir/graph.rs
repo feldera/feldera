@@ -137,8 +137,11 @@ pub trait GraphExt {
         self.add_node(SourceMap::new(key_layout, value_layout))
     }
 
-    fn sink(&mut self, input: NodeId, input_layout: StreamLayout) -> NodeId {
-        self.add_node(Sink::new(input, input_layout))
+    fn sink<N>(&mut self, input: NodeId, view: N, input_layout: StreamLayout) -> NodeId
+    where
+        N: Into<Box<str>>,
+    {
+        self.add_node(Sink::new(input, view.into(), input_layout))
     }
 
     fn filter(&mut self, input: NodeId, filter_fn: Function) -> NodeId {
@@ -889,7 +892,7 @@ mod tests {
             },
         );
 
-        let sink = graph.sink(map, StreamLayout::Set(x_layout));
+        let sink = graph.sink(map, "X", StreamLayout::Set(x_layout));
 
         let mut validator = Validator::new(graph.layout_cache().clone());
         validator.validate_graph(&graph).unwrap();

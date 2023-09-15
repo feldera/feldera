@@ -33,6 +33,7 @@ import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.tools.RelRunner;
+import org.dbsp.sqlCompiler.compiler.backend.jit.JitFileAndSerialization;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitSerializationKind;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
@@ -114,20 +115,39 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         File programFile = File.createTempFile("program", ".json", baseDirectory);
         programFile.deleteOnExit();
         Utilities.writeFile(programFile.toPath(), json);
-        List<String> inputFiles = new ArrayList<>();
+
+        List<JitFileAndSerialization> inputFiles = new ArrayList<>();
         for (DBSPZSetLiteral.Contents inputData: data.inputs) {
             File input = File.createTempFile("input", ".csv", baseDirectory);
             input.deleteOnExit();
             ToCsvVisitor.toCsv(compiler, input, new DBSPZSetLiteral(compiler.getWeightTypeImplementation(), inputData));
-            inputFiles.add(input.getAbsolutePath());
+            inputFiles.add(new JitFileAndSerialization(
+                    input.getAbsolutePath(),
+                    JitSerializationKind.Csv));
         }
-        JsonNode jitInputDescription = compiler.getJitInputDescription(JitSerializationKind.Csv, inputFiles);
+
+        List<JitFileAndSerialization> outputFiles = new ArrayList<>();
+        for (DBSPZSetLiteral.Contents outputData: data.outputs) {
+            File output = File.createTempFile("output", ".json", baseDirectory);
+            ToCsvVisitor.toCsv(compiler, output, new DBSPZSetLiteral(compiler.getWeightTypeImplementation(), outputData));
+            outputFiles.add(new JitFileAndSerialization(
+                    output.getAbsolutePath(),
+                    JitSerializationKind.Json));
+            output.delete(); // The program will create this file, we just care about its name
+        }
+
+        JsonNode jitInputDescription = compiler.getJitInputDescription(inputFiles, outputFiles);
         String s = jitInputDescription.toPrettyString();
         File configFile = File.createTempFile("config", ".json", baseDirectory);
         configFile.deleteOnExit();
         Utilities.writeFile(configFile.toPath(), s);
         Utilities.runJIT(BaseSQLTests.projectDirectory, programFile.getAbsolutePath(), configFile.getAbsolutePath());
-        // TODO: capture and validate output
+
+        for (JitFileAndSerialization outFile: outputFiles) {
+            // TODO: validate output
+            File file = new File(outFile.path);
+            file.deleteOnExit();
+        }
     }
 
     @Test

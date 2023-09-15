@@ -8,7 +8,8 @@ import com.fasterxml.jackson.databind.JsonNode;
  */
 public interface JitInputDescription {
     /**
-     * A Json representation of this input, that is destined to be written to the specified file.
+     * A Json representation of this input.
+     * @param file File where input will be read from.
      */
     JsonNode asJson(String file);
 }

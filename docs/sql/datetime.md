@@ -138,9 +138,6 @@ fractional part is optional.  Trailing spaces are not allowed.
 Timestamp literals can only represent 4-digit year positive values.
 Values BC or values greater than 10,000 years are not supported.
 
-The maximum precision of timestaamps is milliseconds, additional digits
-of precision in timestamp literals are rounded to milliseconds.
-
 The following operations are available on timestamps:
 
 ### Operations on timestamps

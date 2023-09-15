@@ -43,6 +43,7 @@ public class JITSinkOperator extends JITOperator {
     public BaseJsonNode asJson() {
         BaseJsonNode result = super.asJson();
         ObjectNode inner = this.getInnerObject(result);
+        inner.put("view", this.viewName);
         this.type.addDescriptionTo(inner, "input_layout");
         return result;
     }

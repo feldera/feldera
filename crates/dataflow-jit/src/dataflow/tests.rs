@@ -89,8 +89,8 @@ fn compiled_dataflow() {
         },
     );
 
-    let mul_sink = graph.sink(mul, StreamLayout::Set(x_layout));
-    let y_squared_sink = graph.sink(y_squared, StreamLayout::Set(x_layout));
+    let mul_sink = graph.sink(mul, "V", StreamLayout::Set(x_layout));
+    let y_squared_sink = graph.sink(y_squared, "W", StreamLayout::Set(x_layout));
 
     // let mut validator = Validator::new();
     // validator.validate_graph(&graph);
@@ -351,7 +351,7 @@ fn bfs() {
         vec![distances, unreachable_nodes],
         StreamLayout::Set(u64x2),
     ));
-    let sink = graph.sink(distances, StreamLayout::Set(u64x2));
+    let sink = graph.sink(distances, "D", StreamLayout::Set(u64x2));
 
     let (dataflow, jit_handle, layout_cache) =
         CompiledDataflow::new(&graph, CodegenConfig::debug(), |_| ());

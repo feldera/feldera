@@ -107,12 +107,10 @@ public class JitCsvInputDescription implements JitInputDescription {
     public JsonNode asJson(String file) {
         ObjectNode result = jsonFactory().createObjectNode();
         result.put("file", file);
-        ObjectNode csv = jsonFactory().createObjectNode();
-        result.set("kind", csv);
-        ArrayNode columns = jsonFactory().createArrayNode();
-        csv.set("Csv", columns);
+        ObjectNode kind = result.putObject("kind");
+        ArrayNode csv = kind.putArray("Csv");
         for (Column column: this.columns)
-            columns.add(column.asJson());
+            csv.add(column.asJson());
         return result;
     }
 }

@@ -699,6 +699,7 @@ const CIRCUIT: &str = r#"{
     "7099": {
       "Sink": {
         "input": 7097,
+        "view": "V",
         "comment": "CREATE VIEW V AS SELECT MAX(T.COL1) FROM T",
         "input_layout": {
           "Set": 4

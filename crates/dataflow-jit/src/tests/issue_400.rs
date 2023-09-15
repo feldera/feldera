@@ -114,6 +114,7 @@ const CIRCUIT: &str = r#"{
     "660": {
       "Sink": {
         "input": 657,
+        "view": "VV",
         "comment": "CREATE VIEW VV AS SELECT f1 FROM DATE_TBL WHERE f1 < '2000-01-01'",
         "input_layout": {
           "Set": 1

@@ -199,6 +199,7 @@ fn time_series_enrich_e2e_2() {
 
     let sink = graph.sink(
         transactions_join_demographics,
+        "transactions_join_demographics",
         StreamLayout::Set(output_layout),
     );
 
