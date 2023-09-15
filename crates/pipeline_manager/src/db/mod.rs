@@ -244,7 +244,8 @@ pub(crate) struct ColumnType {
     /// # Examples
     /// - `VARCHAR` sets precision to `-1`.
     /// - `VARCHAR(255)` sets precision to `255`.
-    /// - `BIGINT`, `DATE`, `FLOAT`, `DOUBLE`, `GEOMETRY`, etc. sets precision to None
+    /// - `BIGINT`, `DATE`, `FLOAT`, `DOUBLE`, `GEOMETRY`, etc. sets precision
+    ///   to None
     /// - `TIME`, `TIMESTAMP` set precision to `0`.
     pub precision: Option<i64>,
     /// The scale of the type.
@@ -312,26 +313,27 @@ pub(crate) struct ProgramDescr {
 
 /// Pipeline status.
 ///
-/// This type represents the state of the pipeline tracked by the pipeline runner and
-/// observed by the API client via the `GET /pipeline` endpoint.
+/// This type represents the state of the pipeline tracked by the pipeline
+/// runner and observed by the API client via the `GET /pipeline` endpoint.
 ///
 /// ### The lifecycle of a pipeline
 ///
-/// The following automaton captures the lifecycle of the pipeline.  Individual states
-/// and transitions of the automaton are described below.
+/// The following automaton captures the lifecycle of the pipeline.  Individual
+/// states and transitions of the automaton are described below.
 ///
-/// * In addition to the transitions shown in the diagram, all states have an implicit
-///   "forced shutdown" transition to the `Shutdown` state.  This transition is triggered
-///   when the pipeline runner is unable to communicate with the pipeline and thereby
-///   forces a shutdown.
+/// * In addition to the transitions shown in the diagram, all states have an
+///   implicit "forced shutdown" transition to the `Shutdown` state.  This
+///   transition is triggered when the pipeline runner is unable to communicate
+///   with the pipeline and thereby forces a shutdown.
 ///
-/// * States labeled with the hourglass symbol (⌛) are **timed** states.  The automaton
-///   stays in timed state until the corresponding operation completes or until the runner
-///   performs a forced shutdown of the pipeline after a pre-defined timeout perioud.
+/// * States labeled with the hourglass symbol (⌛) are **timed** states.  The
+///   automaton stays in timed state until the corresponding operation completes
+///   or until the runner performs a forced shutdown of the pipeline after a
+///   pre-defined timeout perioud.
 ///
-/// * State transitions labeled with API endpoint names (`/deploy`, `/start`, `/pause`,
-///   `/shutdown`) are triggered by invoking corresponding endpoint, e.g.,
-///   `POST /v0/pipelines/{pipeline_id}/start`.
+/// * State transitions labeled with API endpoint names (`/deploy`, `/start`,
+///   `/pause`, `/shutdown`) are triggered by invoking corresponding endpoint,
+///   e.g., `POST /v0/pipelines/{pipeline_id}/start`.
 ///
 /// ```text
 ///                  Shutdown◄────┐
@@ -367,7 +369,6 @@ pub(crate) struct ProgramDescr {
 /// represents the actual state of the pipeline.  The pipeline runner
 /// service continuously monitors both fields and steers the pipeline
 /// towards the desired state specified by the user.
-///
 // Using rustdoc references in the following paragraph upsets `docusaurus`.
 /// Only three of the states in the pipeline automaton above can be
 /// used as desired statuses: `Paused`, `Running`, and `Shutdown`.
@@ -402,14 +403,14 @@ pub enum PipelineStatus {
     /// The user is unable to communicate with the pipeline during this
     /// time.  The pipeline remains in this state until:
     ///
-    /// 1. Its HTTP server is up and running; the pipeline transitions
-    ///    to the [`Initializing`](`Self::Initializing`) state.
+    /// 1. Its HTTP server is up and running; the pipeline transitions to the
+    ///    [`Initializing`](`Self::Initializing`) state.
     /// 2. A pre-defined timeout has passed.  The runner performs forced
     ///    shutdown of the pipeline; returns to the
     ///    [`Shutdown`](`Self::Shutdown`) state.
     /// 3. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-    ///    The manager performs forced shutdown of the pipeline, returns to
-    ///    the [`Shutdown`](`Self::Shutdown`) state.
+    ///    The manager performs forced shutdown of the pipeline, returns to the
+    ///    [`Shutdown`](`Self::Shutdown`) state.
     Provisioning,
 
     /// The pipeline is initializing its internal state and connectors.
@@ -420,11 +421,13 @@ pub enum PipelineStatus {
     ///
     /// The pipeline remains in this state until:
     ///
-    /// 1. Intialization completes successfully; the pipeline transitions
-    ///    to the [`Paused`](`Self::Paused`) state.
-    /// 2. Intialization fails; transitions to the [`Failed`](`Self::Failed`) state.
-    /// 3. A pre-defined timeout has passed.  The runner performs forced shutdown of
-    ///    the pipeline; returns to the [`Shutdown`](`Self::Shutdown`) state.
+    /// 1. Intialization completes successfully; the pipeline transitions to the
+    ///    [`Paused`](`Self::Paused`) state.
+    /// 2. Intialization fails; transitions to the [`Failed`](`Self::Failed`)
+    ///    state.
+    /// 3. A pre-defined timeout has passed.  The runner performs forced
+    ///    shutdown of the pipeline; returns to the
+    ///    [`Shutdown`](`Self::Shutdown`) state.
     /// 4. The user cancels the pipeline by invoking the `/shutdown` endpoint.
     ///    The manager performs forced shutdown of the pipeline, returns to the
     ///    [`Shutdown`](`Self::Shutdown`) state.
@@ -434,43 +437,49 @@ pub enum PipelineStatus {
     ///
     /// The pipeline remains in this state until:
     ///
-    /// 1. The user starts the pipeline by invoking the `/start` endpoint.
-    ///    The manager passes the request to the pipeline; transitions to the
+    /// 1. The user starts the pipeline by invoking the `/start` endpoint. The
+    ///    manager passes the request to the pipeline; transitions to the
     ///    [`Running`](`Self::Running`) state.
     /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-    ///    The manager passes the shutdown request to the pipeline to perform a graceful
-    ///    shutdown; transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
-    /// 3. An unexpected runtime error renders the pipeline [`Failed`](`Self::Failed`).
+    ///    The manager passes the shutdown request to the pipeline to perform a
+    ///    graceful shutdown; transitions to the
+    ///    [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected runtime error renders the pipeline
+    ///    [`Failed`](`Self::Failed`).
     Paused,
 
     /// The pipeline is processing data.
     ///
     /// The pipeline remains in this state until:
     ///
-    /// 1. The user pauses the pipeline by invoking the `/pause` endpoint.
-    ///    The manager passes the request to the pipeline; transitions to the
+    /// 1. The user pauses the pipeline by invoking the `/pause` endpoint. The
+    ///    manager passes the request to the pipeline; transitions to the
     ///    [`Paused`](`Self::Paused`) state.
     /// 2. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-    ///    The runner passes the shutdown request to the pipeline to perform a graceful
-    ///    shutdown; transitions to the [`ShuttingDown`](`Self::ShuttingDown`) state.
-    /// 3. An unexpected runtime error renders the pipeline [`Failed`](`Self::Failed`).
+    ///    The runner passes the shutdown request to the pipeline to perform a
+    ///    graceful shutdown; transitions to the
+    ///    [`ShuttingDown`](`Self::ShuttingDown`) state.
+    /// 3. An unexpected runtime error renders the pipeline
+    ///    [`Failed`](`Self::Failed`).
     Running,
 
     /// Graceful shutdown in progress.
     ///
     /// In this state, the pipeline finishes any ongoing data processing,
-    /// produces final outputs, shuts down input/output connectors and terminates.
+    /// produces final outputs, shuts down input/output connectors and
+    /// terminates.
     ///
     /// The pipeline remains in this state until:
     ///
     /// 1. Shutdown completes successfully; transitions to the
     ///    [`Shutdown`](`Self::Shutdown`) state.
-    /// 2. A pre-defined timeout has passed.  The manager performs forced shutdown of
-    ///    the pipeline; returns to the [`Shutdown`](`Self::Shutdown`) state.
+    /// 2. A pre-defined timeout has passed.  The manager performs forced
+    ///    shutdown of the pipeline; returns to the
+    ///    [`Shutdown`](`Self::Shutdown`) state.
     ShuttingDown,
 
-    /// The pipeline remains in this state until the users acknowledges the error
-    /// by issuing a `/shutdown` request; transitions to the
+    /// The pipeline remains in this state until the users acknowledges the
+    /// error by issuing a `/shutdown` request; transitions to the
     /// [`Shutdown`](`Self::Shutdown`) state.
     Failed,
 }
@@ -841,17 +850,15 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         with_code: bool,
     ) -> Result<Vec<ProgramDescr>, DBError> {
-        let rows = self
-            .pool
-            .get()
-            .await?
-            .query(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 r#"SELECT id, name, description, version, status, error, schema,
                 CASE WHEN $2 IS TRUE THEN code ELSE null END
                 FROM program WHERE tenant_id = $1"#,
-                &[&tenant_id.0, &with_code],
             )
             .await?;
+        let rows = manager.query(&stmt, &[&tenant_id.0, &with_code]).await?;
 
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
@@ -887,14 +894,29 @@ impl Storage for ProjectDB {
         program_code: &str,
     ) -> Result<(ProgramId, Version), DBError> {
         debug!("new_program {program_name} {program_description} {program_code}");
-        self.pool.get().await?.execute(
-                    "INSERT INTO program (id, version, tenant_id, name, description, code, schema, status, error, status_since)
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
+                "INSERT INTO program (id, version, tenant_id, name, description, code, schema, status, error, status_since)
                         VALUES($1, 1, $2, $3, $4, $5, NULL, NULL, NULL, now());",
-                &[&id, &tenant_id.0, &program_name, &program_description, &program_code]
+            )
+            .await?;
+        manager
+            .execute(
+                &stmt,
+                &[
+                    &id,
+                    &tenant_id.0,
+                    &program_name,
+                    &program_description,
+                    &program_code,
+                ],
             )
             .await
             .map_err(ProjectDB::maybe_unique_violation)
-            .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None))?;
+            .map_err(|e| {
+                ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None)
+            })?;
 
         Ok((ProgramId(id), Version(1)))
     }
@@ -911,38 +933,56 @@ impl Storage for ProjectDB {
     ) -> Result<Version, DBError> {
         let row = match program_code {
             Some(code) => {
+                let manager = self.pool.get().await?;
                 // Only increment `version` if new code actually differs from the
                 // current version.
-                self.pool.get().await?
-                    .query_opt(
+                let stmt = manager
+                    .prepare_cached(
                         "UPDATE program
-                            SET
-                                version = (CASE WHEN code = $3 THEN version ELSE version + 1 END),
-                                name = $1,
-                                description = $2,
-                                code = $3,
-                                status = (CASE WHEN code = $3 THEN status ELSE NULL END),
-                                error = (CASE WHEN code = $3 THEN error ELSE NULL END),
-                                schema = (CASE WHEN code = $3 THEN schema ELSE NULL END)
-                        WHERE id = $4 AND tenant_id = $5
-                        RETURNING version
-                    ",
+                        SET
+                            version = (CASE WHEN code = $3 THEN version ELSE version + 1 END),
+                            name = $1,
+                            description = $2,
+                            code = $3,
+                            status = (CASE WHEN code = $3 THEN status ELSE NULL END),
+                            error = (CASE WHEN code = $3 THEN error ELSE NULL END),
+                            schema = (CASE WHEN code = $3 THEN schema ELSE NULL END)
+                    WHERE id = $4 AND tenant_id = $5
+                    RETURNING version
+                ",
+                    )
+                    .await?;
+
+                manager
+                    .query_opt(
+                        &stmt,
                         &[
                             &program_name,
                             &program_description,
                             &code,
                             &program_id.0,
-                            &tenant_id.0
+                            &tenant_id.0,
                         ],
                     )
                     .await
                     .map_err(ProjectDB::maybe_unique_violation)?
             }
             _ => {
-                self.pool.get().await?
-                    .query_opt(
+                let manager = self.pool.get().await?;
+                let stmt = manager
+                    .prepare_cached(
                         "UPDATE program SET name = $1, description = $2 WHERE id = $3 AND tenant_id = $4 RETURNING version",
-                        &[&program_name, &program_description, &program_id.0, &tenant_id.0],
+                    )
+                    .await?;
+                manager
+                    .query_opt(
+                        &stmt,
+                        &[
+                            &program_name,
+                            &program_description,
+                            &program_id.0,
+                            &tenant_id.0,
+                        ],
                     )
                     .await
                     .map_err(ProjectDB::maybe_unique_violation)?
@@ -965,16 +1005,16 @@ impl Storage for ProjectDB {
         program_id: ProgramId,
         with_code: bool,
     ) -> Result<Option<ProgramDescr>, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT name, description, version, status, error, schema,
                 CASE WHEN $3 IS TRUE THEN code ELSE null END
                 FROM program WHERE id = $1 AND tenant_id = $2",
-                &[&program_id.0, &tenant_id.0, &with_code],
             )
+            .await?;
+        let row = manager
+            .query_opt(&stmt, &[&program_id.0, &tenant_id.0, &with_code])
             .await?;
 
         if let Some(row) = row {
@@ -1012,16 +1052,16 @@ impl Storage for ProjectDB {
         program_name: &str,
         with_code: bool,
     ) -> Result<Option<ProgramDescr>, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT id, description, version, status, error, schema, tenant_id,
                  CASE WHEN $3 IS TRUE THEN code ELSE null END
                  FROM program WHERE name = $1 AND tenant_id = $2",
-                &[&program_name, &tenant_id.0, &with_code],
             )
+            .await?;
+        let row = manager
+            .query_opt(&stmt, &[&program_name, &tenant_id.0, &with_code])
             .await?;
 
         if let Some(row) = row {
@@ -1060,10 +1100,9 @@ impl Storage for ProjectDB {
         status: ProgramStatus,
     ) -> Result<(), DBError> {
         let (status, error) = status.to_columns();
-        self.pool
-            .get()
-            .await?
-            .execute(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "UPDATE program SET
                  status = (CASE WHEN version = $4 THEN $1 ELSE status END),
                  error = (CASE WHEN version = $4 THEN $2 ELSE error END),
@@ -1071,6 +1110,12 @@ impl Storage for ProjectDB {
                                  ELSE status_since END),
                  schema = (CASE WHEN version = $4 THEN NULL ELSE schema END)
                  WHERE id = $3 AND tenant_id = $5",
+            )
+            .await?;
+
+        manager
+            .execute(
+                &stmt,
                 &[
                     &status,
                     &error,
@@ -1092,20 +1137,24 @@ impl Storage for ProjectDB {
         status: ProgramStatus,
     ) -> Result<(), DBError> {
         let (status, error) = status.to_columns();
+        let manager = self.pool.get().await?;
         // We could perform the guard in the WHERE clause, but that does not
         // tell us whether the ID existed or not.
         // Instead, we use a case statement for the guard.
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let stmt = manager
+            .prepare_cached(
                 "UPDATE program SET
                  status = (CASE WHEN version = $4 THEN $1 ELSE status END),
                  error = (CASE WHEN version = $4 THEN $2 ELSE error END),
                  status_since = (CASE WHEN version = $4 THEN now()
                                  ELSE status_since END)
                  WHERE id = $3 AND tenant_id = $5 RETURNING id",
+            )
+            .await?;
+
+        let row = manager
+            .query_opt(
+                &stmt,
                 &[
                     &status,
                     &error,
@@ -1133,13 +1182,12 @@ impl Storage for ProjectDB {
                 "Error serializing program schema '{schema:?}'.\nError: {e}"
             ))
         })?;
-        self.pool
-            .get()
-            .await?
-            .execute(
-                "UPDATE program SET schema = $1 WHERE id = $2 AND tenant_id = $3",
-                &[&schema, &program_id.0, &tenant_id.0],
-            )
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("UPDATE program SET schema = $1 WHERE id = $2 AND tenant_id = $3")
+            .await?;
+        manager
+            .execute(&stmt, &[&schema, &program_id.0, &tenant_id.0])
             .await?;
 
         Ok(())
@@ -1150,14 +1198,12 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         program_id: ProgramId,
     ) -> Result<(), DBError> {
-        let res = self
-            .pool
-            .get()
-            .await?
-            .execute(
-                "DELETE FROM program WHERE id = $1 AND tenant_id = $2",
-                &[&program_id.0, &tenant_id.0],
-            )
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("DELETE FROM program WHERE id = $1 AND tenant_id = $2")
+            .await?;
+        let res = manager
+            .execute(&stmt, &[&program_id.0, &tenant_id.0])
             .await
             .map_err(|e| {
                 ProjectDB::maybe_program_id_in_use_foreign_key_constraint_err(
@@ -1173,16 +1219,14 @@ impl Storage for ProjectDB {
     }
 
     async fn all_programs(&self) -> Result<Vec<(TenantId, ProgramDescr)>, DBError> {
-        let rows = self
-            .pool
-            .get()
-            .await?
-            .query(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 r#"SELECT id, name, description, version, status, error, schema, tenant_id
-                FROM program"#,
-                &[],
+                   FROM program"#,
             )
             .await?;
+        let rows = manager.query(&stmt, &[]).await?;
 
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
@@ -1211,17 +1255,16 @@ impl Storage for ProjectDB {
         }
         Ok(result)
     }
+
     async fn all_pipelines(&self) -> Result<Vec<(TenantId, PipelineId)>, DBError> {
-        let rows = self
-            .pool
-            .get()
-            .await?
-            .query(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 r#"SELECT tenant_id, id
                 FROM pipeline"#,
-                &[],
             )
             .await?;
+        let rows = manager.query(&stmt, &[]).await?;
 
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
@@ -1233,9 +1276,14 @@ impl Storage for ProjectDB {
     }
 
     async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version)>, DBError> {
+        let manager = self.pool.get().await?;
         // Find the oldest pending project.
-        let res = self.pool.get().await?.query("SELECT id, version, tenant_id FROM program WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM program WHERE status = 'pending')", &[])
+        let stmt = manager
+            .prepare_cached(
+                "SELECT id, version, tenant_id FROM program WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM program WHERE status = 'pending')"
+            )
             .await?;
+        let res = manager.query(&stmt, &[]).await?;
 
         if let Some(row) = res.get(0) {
             let program_id: ProgramId = ProgramId(row.get(0));
@@ -1259,23 +1307,15 @@ impl Storage for ProjectDB {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
 
-        // Find the revision number
-        let revision_data = txn
-            .query_opt(
+        // Finds the revision number
+        let find_revision_number = txn
+            .prepare_cached(
                 "SELECT last_revision FROM pipeline WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
-                &[&pipeline_id.0, &tenant_id.0],
             )
             .await?;
-        let prev_revision = revision_data.and_then(|row: Row| row.get::<_, Option<Uuid>>(0));
-
-        // Check if we actually changed something before writing a new revision
-        //
-        // Note: What fields are checked is ultimately determined by whatever is
-        // used by the pipeline configuration, e.g., what the `start` function
-        // uses in `runner.rs` to write the config/metadata:
-        if prev_revision.is_some() {
-            // Take a diff between the pipeline definition and its corresponding revision
-            let change = txn.query_one(
+        // Takes a diff between the pipeline definition and its corresponding revision
+        let compute_revision_current_diff = txn
+            .prepare_cached(
                 "WITH ph_entry AS (
                     SELECT progh.code, ch.config, ach.name, ach.config, ach.is_input, ph.config
                                         FROM pipeline_history ph
@@ -1298,10 +1338,52 @@ impl Storage for ProjectDB {
                 diff_2 AS (
                     SELECT * FROM p_entry EXCEPT SELECT * FROM ph_entry
                 )
-                SELECT COUNT(*) FROM (SELECT * FROM diff_1 UNION ALL SELECT * FROM diff_2) as x",
-                &[&pipeline_id.0, &prev_revision],
+                SELECT COUNT(*) FROM (SELECT * FROM diff_1 UNION ALL SELECT * FROM diff_2) as x"
             )
             .await?;
+        let insert_program_history = txn
+            .prepare_cached(
+                "INSERT INTO program_history SELECT $1 as revision, * FROM program p WHERE id = $2",
+            )
+            .await?;
+        let insert_pipeline_history = txn
+            .prepare_cached(
+                "INSERT INTO pipeline_history SELECT $1 as revision, * FROM pipeline p WHERE id = $2",
+            )
+            .await?;
+        let insert_connector_history = txn
+            .prepare_cached(
+                "INSERT INTO connector_history SELECT $1 as revision, c.* FROM connector c, attached_connector ac WHERE ac.pipeline_id = $2 AND ac.connector_id = c.id",
+            )
+            .await?;
+        let insert_attached_connector_history = txn
+            .prepare_cached(
+                "INSERT INTO attached_connector_history SELECT $1 as revision, * FROM attached_connector ac WHERE ac.pipeline_id = $2",
+            )
+            .await?;
+        let update_revision = txn
+            .prepare_cached(
+                "UPDATE pipeline SET last_revision = $1 WHERE id = $2 AND tenant_id = $3",
+            )
+            .await?;
+
+        let revision_data = txn
+            .query_opt(&find_revision_number, &[&pipeline_id.0, &tenant_id.0])
+            .await?;
+        let prev_revision = revision_data.and_then(|row: Row| row.get::<_, Option<Uuid>>(0));
+
+        // Check if we actually changed something before writing a new revision
+        //
+        // Note: What fields are checked is ultimately determined by whatever is
+        // used by the pipeline configuration, e.g., what the `start` function
+        // uses in `runner.rs` to write the config/metadata:
+        if prev_revision.is_some() {
+            let change = txn
+                .query_one(
+                    &compute_revision_current_diff,
+                    &[&pipeline_id.0, &prev_revision],
+                )
+                .await?;
 
             let nothing_changed = change.get::<_, i64>(0) == 0;
             if nothing_changed {
@@ -1322,32 +1404,21 @@ impl Storage for ProjectDB {
         // TODO(performance): In theory the following inserts could all run in
         // parallel with async but I couldn't figure out how to make it work
         // with the args :/
+        txn.execute(&insert_program_history, &[&revision, &program.program_id.0])
+            .await?;
+        txn.execute(&insert_pipeline_history, &[&revision, &pipeline_id.0])
+            .await?;
+        txn.execute(&insert_connector_history, &[&revision, &pipeline_id.0])
+            .await?;
         txn.execute(
-            "INSERT INTO program_history SELECT $1 as revision, * FROM program p WHERE id = $2",
-            &[&revision, &program.program_id.0],
-        )
-        .await?;
-        txn.execute(
-            "INSERT INTO pipeline_history SELECT $1 as revision, * FROM pipeline p WHERE id = $2",
+            &insert_attached_connector_history,
             &[&revision, &pipeline_id.0],
         )
         .await?;
-        txn.execute(
-            "INSERT INTO connector_history SELECT $1 as revision, c.* FROM connector c, attached_connector ac WHERE ac.pipeline_id = $2 AND ac.connector_id = c.id",
-            &[&revision, &pipeline_id.0],
-        )
-        .await?;
-        txn.execute(
-            "INSERT INTO attached_connector_history SELECT $1 as revision, * FROM attached_connector ac WHERE ac.pipeline_id = $2",
-            &[&revision, &pipeline_id.0],
-        ).await?;
 
         // Update the revision of the pipeline object
-        txn.execute(
-            "UPDATE pipeline SET last_revision = $1 WHERE id = $2 AND tenant_id = $3",
-            &[&revision, &pipeline_id.0, &tenant_id.0],
-        )
-        .await?;
+        txn.execute(&update_revision, &[&revision, &pipeline_id.0, &tenant_id.0])
+            .await?;
 
         txn.commit().await?;
 
@@ -1359,14 +1430,12 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<PipelineRevision, DBError> {
-        let row: Option<Row> = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
-                "SELECT last_revision FROM pipeline WHERE id = $1 AND tenant_id = $2",
-                &[&pipeline_id.0, &tenant_id.0],
-            )
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("SELECT last_revision FROM pipeline WHERE id = $1 AND tenant_id = $2")
+            .await?;
+        let row: Option<Row> = manager
+            .query_opt(&stmt, &[&pipeline_id.0, &tenant_id.0])
             .await?;
 
         if let Some(row) = row {
@@ -1397,27 +1466,28 @@ impl Storage for ProjectDB {
     }
 
     async fn list_pipelines(&self, tenant_id: TenantId) -> Result<Vec<Pipeline>, DBError> {
-        let rows: Vec<Row> = self
-            .pool
-            .get()
-            .await?
-            // For every pipeline, produce a JSON representation of all connectors
-            .query(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT p.id, version, p.name, description, p.config, program_id,
-                COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', connector_id,
-                                                    'config', ac.config,
-                                                    'is_input', is_input))
-                                FILTER (WHERE ac.name IS NOT NULL),
-                        '[]'),
-                rt.location, rt.desired_status, rt.current_status, rt.status_since, rt.error, rt.created
-                FROM pipeline p
-                INNER JOIN pipeline_runtime_state rt on p.id = rt.id
-                LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
-                WHERE p.tenant_id = $1
-                GROUP BY p.id, rt.id;",
-                &[&tenant_id.0],
+            COALESCE(json_agg(json_build_object('name', ac.name,
+                                                'connector_id', connector_id,
+                                                'config', ac.config,
+                                                'is_input', is_input))
+                            FILTER (WHERE ac.name IS NOT NULL),
+                    '[]'),
+            rt.location, rt.desired_status, rt.current_status, rt.status_since, rt.error, rt.created
+            FROM pipeline p
+            INNER JOIN pipeline_runtime_state rt on p.id = rt.id
+            LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+            WHERE p.tenant_id = $1
+            GROUP BY p.id, rt.id;",
             )
+            .await?;
+
+        let rows: Vec<Row> = manager
+            // For every pipeline, produce a JSON representation of all connectors
+            .query(&stmt, &[&tenant_id.0])
             .await?;
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
@@ -1432,11 +1502,9 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<Pipeline, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT p.id, version, p.name as cname, description, p.config, program_id,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
@@ -1451,8 +1519,11 @@ impl Storage for ProjectDB {
                 WHERE p.id = $1 AND p.tenant_id = $2
                 GROUP BY p.id, rt.id
                 ",
-                &[&pipeline_id.0, &tenant_id.0],
             )
+            .await?;
+
+        let row = manager
+            .query_opt(&stmt, &[&pipeline_id.0, &tenant_id.0])
             .await?
             .ok_or(DBError::UnknownPipeline { pipeline_id })?;
 
@@ -1464,11 +1535,9 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<PipelineDescr, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT p.id, version, p.name as cname, description, p.config, program_id,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
@@ -1481,8 +1550,11 @@ impl Storage for ProjectDB {
                 WHERE p.id = $1 AND p.tenant_id = $2
                 GROUP BY p.id
                 ",
-                &[&pipeline_id.0, &tenant_id.0],
             )
+            .await?;
+
+        let row = manager
+            .query_opt(&stmt, &[&pipeline_id.0, &tenant_id.0])
             .await?
             .ok_or(DBError::UnknownPipeline { pipeline_id })?;
 
@@ -1494,16 +1566,17 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<PipelineRuntimeState, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT location, desired_status, current_status, status_since, error, created
                 FROM pipeline_runtime_state
                 WHERE id = $1 AND tenant_id = $2",
-                &[&pipeline_id.0, &tenant_id.0],
             )
+            .await?;
+
+        let row = manager
+            .query_opt(&stmt, &[&pipeline_id.0, &tenant_id.0])
             .await?;
 
         self.row_to_pipeline_runtime_state(pipeline_id, &row).await
@@ -1514,11 +1587,9 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         name: String,
     ) -> Result<PipelineDescr, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT p.id, version, p.name as cname, description, p.config, program_id,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
@@ -1531,8 +1602,11 @@ impl Storage for ProjectDB {
                 WHERE p.name = $1 AND p.tenant_id = $2
                 GROUP BY p.id
                 ",
-                &[&name, &tenant_id.0],
             )
+            .await?;
+
+        let row = manager
+            .query_opt(&stmt, &[&name, &tenant_id.0])
             .await?
             .ok_or(DBError::UnknownName { name })?;
 
@@ -1544,11 +1618,9 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         name: String,
     ) -> Result<Pipeline, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT p.id, version, p.name as cname, description, p.config, program_id,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
@@ -1563,8 +1635,11 @@ impl Storage for ProjectDB {
                 WHERE p.name = $1 AND p.tenant_id = $2
                 GROUP BY p.id, rt.id
                 ",
-                &[&name, &tenant_id.0],
             )
+            .await?;
+
+        let row = manager
+            .query_opt(&stmt, &[&name, &tenant_id.0])
             .await?
             .ok_or(DBError::UnknownName { name })?;
 
@@ -1584,22 +1659,41 @@ impl Storage for ProjectDB {
     ) -> Result<(PipelineId, Version), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
+        let new_pipeline = txn
+            .prepare_cached(
+                "INSERT INTO pipeline (id, program_id, version, name, description, config, tenant_id) VALUES($1, $2, 1, $3, $4, $5, $6)")
+            .await?;
+        let new_runtime_state = txn
+            .prepare_cached(
+                "INSERT INTO pipeline_runtime_state (id, tenant_id, desired_status, current_status, status_since, created) VALUES($1, $2, 'shutdown', 'shutdown', extract(epoch from now()), extract(epoch from now()))")
+            .await?;
+
         let config_str = RuntimeConfig::to_yaml(config);
         txn.execute(
-            "INSERT INTO pipeline (id, program_id, version, name, description, config, tenant_id) VALUES($1, $2, 1, $3, $4, $5, $6)",
-            &[&id, &program_id.map(|id| id.0),
-            &pipline_name,
-            &pipeline_description,
-            &config_str,
-            &tenant_id.0])
-            .await
-            .map_err(ProjectDB::maybe_unique_violation)
-            .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, program_id.map(|e| e.0)))
-            .map_err(|e| ProjectDB::maybe_program_id_not_found_foreign_key_constraint_err(e, program_id))?;
+            &new_pipeline,
+            &[
+                &id,
+                &program_id.map(|id| id.0),
+                &pipline_name,
+                &pipeline_description,
+                &config_str,
+                &tenant_id.0,
+            ],
+        )
+        .await
+        .map_err(ProjectDB::maybe_unique_violation)
+        .map_err(|e| {
+            ProjectDB::maybe_tenant_id_foreign_key_constraint_err(
+                e,
+                tenant_id,
+                program_id.map(|e| e.0),
+            )
+        })
+        .map_err(|e| {
+            ProjectDB::maybe_program_id_not_found_foreign_key_constraint_err(e, program_id)
+        })?;
 
-        txn.execute(
-            "INSERT INTO pipeline_runtime_state (id, tenant_id, desired_status, current_status, status_since, created) VALUES($1, $2, 'shutdown', 'shutdown', extract(epoch from now()), extract(epoch from now()))",
-            &[&id, &tenant_id.0])
+        txn.execute(&new_runtime_state, &[&id, &tenant_id.0])
             .await?;
 
         let pipeline_id = PipelineId(id);
@@ -1640,25 +1734,32 @@ impl Storage for ProjectDB {
         );
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
+        let find_pipeline_id = txn
+            .prepare_cached("SELECT id FROM pipeline WHERE id = $1 AND tenant_id = $2")
+            .await?;
+        let delete_ac = txn
+            .prepare_cached(
+                "DELETE FROM attached_connector WHERE pipeline_id = $1 AND tenant_id = $2",
+            )
+            .await?;
+        let update_pipeline = txn
+            .prepare_cached(
+                "UPDATE pipeline SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), program_id = $4 WHERE id = $5 AND tenant_id = $6 RETURNING version",
+            )
+            .await?;
 
         // First check whether the pipeline exists. Without this check, subsequent
         // calls will fail.
         let row = txn
-            .query_opt(
-                "SELECT id FROM pipeline WHERE id = $1 AND tenant_id = $2",
-                &[&pipeline_id.0, &tenant_id.0],
-            )
+            .query_opt(&find_pipeline_id, &[&pipeline_id.0, &tenant_id.0])
             .await?;
         if row.is_none() {
             return Err(DBError::UnknownPipeline { pipeline_id });
         }
         if let Some(connectors) = connectors {
             // Delete all existing attached connectors.
-            txn.execute(
-                "DELETE FROM attached_connector WHERE pipeline_id = $1 AND tenant_id = $2",
-                &[&pipeline_id.0, &tenant_id.0],
-            )
-            .await?;
+            txn.execute(&delete_ac, &[&pipeline_id.0, &tenant_id.0])
+                .await?;
 
             // Rewrite the new set of connectors.
             for ac in connectors {
@@ -1667,11 +1768,23 @@ impl Storage for ProjectDB {
             }
         }
         let config = config.as_ref().map(RuntimeConfig::to_yaml);
-        let row = txn.query_opt("UPDATE pipeline SET version = version + 1, name = $1, description = $2, config = COALESCE($3, config), program_id = $4 WHERE id = $5 AND tenant_id = $6 RETURNING version",
-            &[&pipline_name, &pipeline_description, &config, &program_id.map(|id| id.0), &pipeline_id.0, &tenant_id.0])
+        let row = txn
+            .query_opt(
+                &update_pipeline,
+                &[
+                    &pipline_name,
+                    &pipeline_description,
+                    &config,
+                    &program_id.map(|id| id.0),
+                    &pipeline_id.0,
+                    &tenant_id.0,
+                ],
+            )
             .await
             .map_err(ProjectDB::maybe_unique_violation)
-            .map_err(|e| ProjectDB::maybe_program_id_not_found_foreign_key_constraint_err(e, program_id))?;
+            .map_err(|e| {
+                ProjectDB::maybe_program_id_not_found_foreign_key_constraint_err(e, program_id)
+            })?;
         txn.commit().await?;
         match row {
             Some(row) => Ok(Version(row.get(0))),
@@ -1691,12 +1804,9 @@ impl Storage for ProjectDB {
         state: &PipelineRuntimeState,
     ) -> Result<(), DBError> {
         let current_status: &'static str = state.current_status.into();
-
-        let modified_rows = self
-            .pool
-            .get()
-            .await?
-            .execute(
+        let manager = self.pool.get().await?;
+        let update_runtime_state = manager
+            .prepare_cached(
                 "UPDATE pipeline_runtime_state
                 SET location = $3,
                     current_status = $4,
@@ -1705,6 +1815,12 @@ impl Storage for ProjectDB {
                     error = $7
                 WHERE id = $1 AND tenant_id = $2
                 ",
+            )
+            .await?;
+
+        let modified_rows = manager
+            .execute(
+                &update_runtime_state,
                 &[
                     &pipeline_id.0,
                     &tenant_id.0,
@@ -1734,18 +1850,18 @@ impl Storage for ProjectDB {
         desired_status: PipelineStatus,
     ) -> Result<(), DBError> {
         let desired_status: &'static str = desired_status.into();
-
-        let modified_rows = self
-            .pool
-            .get()
-            .await?
-            .execute(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "UPDATE pipeline_runtime_state
                 SET desired_status = $3
                 WHERE tenant_id = $1 AND id = $2
                 ",
-                &[&tenant_id.0, &pipeline_id.0, &desired_status],
             )
+            .await?;
+
+        let modified_rows = manager
+            .execute(&stmt, &[&tenant_id.0, &pipeline_id.0, &desired_status])
             .await?;
 
         if modified_rows == 0 {
@@ -1759,14 +1875,12 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<(), DBError> {
-        let res = self
-            .pool
-            .get()
-            .await?
-            .execute(
-                "DELETE FROM pipeline WHERE id = $1 AND tenant_id = $2",
-                &[&pipeline_id.0, &tenant_id.0],
-            )
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("DELETE FROM pipeline WHERE id = $1 AND tenant_id = $2")
+            .await?;
+        let res = manager
+            .execute(&stmt, &[&pipeline_id.0, &tenant_id.0])
             .await?;
         if res > 0 {
             Ok(())
@@ -1782,14 +1896,12 @@ impl Storage for ProjectDB {
         pipeline_id: PipelineId,
         name: &str,
     ) -> Result<bool, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
-                "SELECT is_input FROM attached_connector WHERE name = $1 AND pipeline_id = $2 AND tenant_id = $3",
-                &[&name, &pipeline_id.0, &tenant_id.0],
-            )
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("SELECT is_input FROM attached_connector WHERE name = $1 AND pipeline_id = $2 AND tenant_id = $3")
+            .await?;
+        let row = manager
+            .query_opt(&stmt, &[&name, &pipeline_id.0, &tenant_id.0])
             .await?;
 
         match row {
@@ -1806,14 +1918,12 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<bool, DBError> {
-        let res = self
-            .pool
-            .get()
-            .await?
-            .execute(
-                "DELETE FROM pipeline WHERE id = $1 AND tenant_id = $2",
-                &[&pipeline_id.0, &tenant_id.0],
-            )
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("DELETE FROM pipeline WHERE id = $1 AND tenant_id = $2")
+            .await?;
+        let res = manager
+            .execute(&stmt, &[&pipeline_id.0, &tenant_id.0])
             .await?;
         Ok(res > 0)
     }
@@ -1827,29 +1937,31 @@ impl Storage for ProjectDB {
         config: &ConnectorConfig,
     ) -> Result<ConnectorId, DBError> {
         debug!("new_connector {name} {description} {config:?}");
-        self.pool
-            .get()
-            .await?
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("INSERT INTO connector (id, name, description, config, tenant_id) VALUES($1, $2, $3, $4, $5)")
+            .await?;
+        manager
             .execute(
-                "INSERT INTO connector (id, name, description, config, tenant_id) VALUES($1, $2, $3, $4, $5)",
+                &stmt,
                 &[&id, &name, &description, &config.to_yaml(), &tenant_id.0],
             )
             .await
             .map_err(ProjectDB::maybe_unique_violation)
-            .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None))?;
+            .map_err(|e| {
+                ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None)
+            })?;
         Ok(ConnectorId(id))
     }
 
     async fn list_connectors(&self, tenant_id: TenantId) -> Result<Vec<ConnectorDescr>, DBError> {
-        let rows = self
-            .pool
-            .get()
-            .await?
-            .query(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT id, name, description, config FROM connector WHERE tenant_id = $1",
-                &[&tenant_id.0],
             )
             .await?;
+        let rows = manager.query(&stmt, &[&tenant_id.0]).await?;
 
         let mut result = Vec::with_capacity(rows.len());
 
@@ -1870,15 +1982,13 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         name: String,
     ) -> Result<ConnectorDescr, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT id, description, config FROM connector WHERE name = $1 AND tenant_id = $2",
-                &[&name, &tenant_id.0],
             )
             .await?;
+        let row = manager.query_opt(&stmt, &[&name, &tenant_id.0]).await?;
 
         if let Some(row) = row {
             let connector_id: ConnectorId = ConnectorId(row.get(0));
@@ -1901,14 +2011,15 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         connector_id: ConnectorId,
     ) -> Result<ConnectorDescr, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT name, description, config FROM connector WHERE id = $1 AND tenant_id = $2",
-                &[&connector_id.0, &tenant_id.0],
             )
+            .await?;
+
+        let row = manager
+            .query_opt(&stmt, &[&connector_id.0, &tenant_id.0])
             .await?;
 
         if let Some(row) = row {
@@ -1938,12 +2049,16 @@ impl Storage for ProjectDB {
     ) -> Result<(), DBError> {
         let descr = self.get_connector_by_id(tenant_id, connector_id).await?;
         let config = config.clone().unwrap_or(descr.config);
-
-        self.pool
-            .get()
-            .await?
-            .execute(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "UPDATE connector SET name = $1, description = $2, config = $3 WHERE id = $4",
+            )
+            .await?;
+
+        manager
+            .execute(
+                &stmt,
                 &[
                     &connector_name,
                     &description,
@@ -1962,14 +2077,12 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         connector_id: ConnectorId,
     ) -> Result<(), DBError> {
-        let res = self
-            .pool
-            .get()
-            .await?
-            .execute(
-                "DELETE FROM connector WHERE id = $1 AND tenant_id = $2",
-                &[&connector_id.0, &tenant_id.0],
-            )
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("DELETE FROM connector WHERE id = $1 AND tenant_id = $2")
+            .await?;
+        let res = manager
+            .execute(&stmt, &[&connector_id.0, &tenant_id.0])
             .await?;
 
         if res > 0 {
@@ -1988,12 +2101,13 @@ impl Storage for ProjectDB {
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
-        let res = self
-            .pool
-            .get()
-            .await?
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("INSERT INTO api_key (hash, tenant_id, scopes) VALUES ($1, $2, $3)")
+            .await?;
+        let res = manager
             .execute(
-                "INSERT INTO api_key (hash, tenant_id, scopes) VALUES ($1, $2, $3)",
+                &stmt,
                 &[
                     &hash,
                     &tenant_id.0,
@@ -2025,14 +2139,12 @@ impl Storage for ProjectDB {
         let mut hasher = sha::Sha256::new();
         hasher.update(api_key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
-        let res = self
-            .pool
-            .get()
-            .await?
-            .query_one(
-                "SELECT tenant_id, scopes FROM api_key WHERE hash = $1",
-                &[&hash],
-            )
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("SELECT tenant_id, scopes FROM api_key WHERE hash = $1")
+            .await?;
+        let res = manager
+            .query_one(&stmt, &[&hash])
             .await
             .map_err(|_| DBError::InvalidKey)?;
         let tenant_id = TenantId(res.get(0));
@@ -2055,13 +2167,12 @@ impl Storage for ProjectDB {
         tenant_name: String,
         provider: String,
     ) -> Result<TenantId, DBError> {
-        let conn = self.pool.get().await?;
-        let res = conn
-            .query_opt(
-                "SELECT id FROM tenant WHERE tenant = $1 AND provider = $2",
-                &[&tenant_name, &provider],
-            )
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("SELECT id FROM tenant WHERE tenant = $1 AND provider = $2")
             .await?;
+
+        let res = manager.query_opt(&stmt, &[&tenant_name, &provider]).await?;
         match res {
             Some(row) => Ok(TenantId(row.get(0))),
             None => {
@@ -2077,17 +2188,18 @@ impl Storage for ProjectDB {
         tenant_name: String,
         provider: String,
     ) -> Result<TenantId, DBError> {
-        let conn = self.pool.get().await?;
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("INSERT INTO tenant (id, tenant, provider) VALUES ($1, $2, $3) ON CONFLICT (tenant, provider) DO UPDATE SET tenant = excluded.tenant, provider = excluded.provider RETURNING id")
+            .await?;
+
         // Unfortunately, doing a read-if-exists-else-insert is not very ergonomic. To
         // do so in a single query requires us to do a redundant UPDATE on conflict,
         // where we set the tenant and provider values to their existing values
         // (excluded.{tenant, provider})
-        let res = conn
-                    .query_one(
-                        "INSERT INTO tenant (id, tenant, provider) VALUES ($1, $2, $3) ON CONFLICT (tenant, provider) DO UPDATE SET tenant = excluded.tenant, provider = excluded.provider RETURNING id",
-                        &[&tenant_id, &tenant_name, &provider],
-                    )
-                    .await?;
+        let res = manager
+            .query_one(&stmt, &[&tenant_id, &tenant_name, &provider])
+            .await?;
         Ok(TenantId(res.get(0)))
     }
 
@@ -2098,11 +2210,12 @@ impl Storage for ProjectDB {
         url: String,
     ) -> Result<(), DBError> {
         let conn = self.pool.get().await?;
+        let stmt = conn
+            .prepare_cached("INSERT INTO compiled_binary VALUES ($1, $2, $3)")
+            .await?;
+
         let _res = conn
-            .execute(
-                "INSERT INTO compiled_binary VALUES ($1, $2, $3)",
-                &[&program_id.0, &version.0, &url],
-            )
+            .execute(&stmt, &[&program_id.0, &version.0, &url])
             .await?;
         Ok(())
     }
@@ -2113,12 +2226,12 @@ impl Storage for ProjectDB {
         version: Version,
     ) -> Result<Option<String>, DBError> {
         let conn = self.pool.get().await?;
-        let res = conn
-            .query_opt(
+        let stmt = conn
+            .prepare_cached(
                 "SELECT url FROM compiled_binary WHERE program_id = $1 AND version = $2",
-                &[&program_id.0, &version.0],
             )
             .await?;
+        let res = conn.query_opt(&stmt, &[&program_id.0, &version.0]).await?;
         Ok(res.map(|e| e.get(0)))
     }
 
@@ -2128,12 +2241,10 @@ impl Storage for ProjectDB {
         version: Version,
     ) -> Result<(), DBError> {
         let conn = self.pool.get().await?;
-        let _res = conn
-            .execute(
-                "DELETE FROM compiled_binary WHERE program_id = $1 AND version = $2",
-                &[&program_id.0, &version.0],
-            )
+        let stmt = conn
+            .prepare_cached("DELETE FROM compiled_binary WHERE program_id = $1 AND version = $2")
             .await?;
+        let _res = conn.execute(&stmt, &[&program_id.0, &version.0]).await?;
         Ok(())
     }
 }
@@ -2354,22 +2465,26 @@ impl ProjectDB {
         program_id: Uuid,
         version: i64,
     ) -> Result<bool, DBError> {
+        let conn = self.pool.get().await?;
+        let stmt = conn
+            .prepare_cached(
+                "SELECT EXISTS(SELECT 1 FROM program prog
+                WHERE prog.id = $1
+                AND prog.version = $2)
+            OR
+            EXISTS(SELECT 1 FROM pipeline p, pipeline_history ph, program_history progh
+                WHERE ph.program_id = $1
+                AND ph.revision = p.last_revision
+                AND ph.program_id = progh.id
+                AND progh.version = $2)",
+            )
+            .await?;
+
         let row = self
             .pool
             .get()
             .await?
-            .query_one(
-                "SELECT EXISTS(SELECT 1 FROM program prog
-                    WHERE prog.id = $1
-                    AND prog.version = $2)
-                OR
-                EXISTS(SELECT 1 FROM pipeline p, pipeline_history ph, program_history progh
-                    WHERE ph.program_id = $1
-                    AND ph.revision = p.last_revision
-                    AND ph.program_id = progh.id
-                    AND progh.version = $2)",
-                &[&program_id, &version],
-            )
+            .query_one(&stmt, &[&program_id, &version])
             .await?;
 
         Ok(row.get(0))
@@ -2413,16 +2528,16 @@ impl ProjectDB {
         program_id: ProgramId,
         revision: Revision,
     ) -> Result<ProgramDescr, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT
                 name, description, version, status, error, schema, code
                 FROM program_history WHERE id = $1 AND tenant_id = $2 AND revision = $3",
-                &[&program_id.0, &tenant_id.0, &revision.0],
             )
+            .await?;
+        let row = manager
+            .query_opt(&stmt, &[&program_id.0, &tenant_id.0, &revision.0])
             .await?;
 
         if let Some(row) = row {
@@ -2458,11 +2573,9 @@ impl ProjectDB {
         pipeline_id: PipelineId,
         revision: Revision,
     ) -> Result<PipelineDescr, DBError> {
-        let row = self
-            .pool
-            .get()
-            .await?
-            .query_opt(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT p.id, version, p.name as cname, description, p.config, program_id,
                 COALESCE(json_agg(json_build_object('name', ach.name,
                                                     'connector_id', connector_id,
@@ -2474,11 +2587,12 @@ impl ProjectDB {
                 LEFT JOIN attached_connector_history ach on p.id = ach.pipeline_id AND ach.revision = $3
                 WHERE p.id = $1 AND p.tenant_id = $2 AND p.revision = $3
                 GROUP BY p.id, p.version, p.name, p.description, p.config, p.program_id
-                ",
-                &[&pipeline_id.0, &tenant_id.0, &revision.0],
-            )
+                ")
+            .await?;
+        let row = manager
+            .query_opt(&stmt, &[&pipeline_id.0, &tenant_id.0, &revision.0])
             .await?
-            .ok_or(DBError::UnknownPipeline {pipeline_id})?;
+            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
 
         self.row_to_pipeline_descr(&row).await
     }
@@ -2489,16 +2603,16 @@ impl ProjectDB {
         pipeline_id: PipelineId,
         revision: Revision,
     ) -> Result<Vec<ConnectorDescr>, DBError> {
-        let rows = self
-            .pool
-            .get()
-            .await?
-            .query(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT ch.id, ch.name, ch.description, ch.config
             FROM connector_history ch, attached_connector_history ach
-            WHERE ach.pipeline_id = $1 AND ach.connector_id = ch.id AND ch.tenant_id = $2 AND ch.revision = $3",
-                &[&pipeline_id.0, &tenant_id.0, &revision.0],
-            )
+            WHERE ach.pipeline_id = $1 AND ach.connector_id = ch.id AND ch.tenant_id = $2 AND ch.revision = $3")
+            .await?;
+
+        let rows = manager
+            .query(&stmt, &[&pipeline_id.0, &tenant_id.0, &revision.0])
             .await?;
 
         Ok(rows
@@ -2525,18 +2639,19 @@ impl ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<Vec<ConnectorDescr>, DBError> {
-        let rows = self
-            .pool
-            .get()
-            .await?
-            .query(
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached(
                 "SELECT c.id, c.name, c.description, c.config
             FROM connector c, attached_connector ac
             WHERE ac.pipeline_id = $1
             AND ac.connector_id = c.id
             AND c.tenant_id = $2",
-                &[&pipeline_id.0, &tenant_id.0],
             )
+            .await?;
+
+        let rows = manager
+            .query(&stmt, &[&pipeline_id.0, &tenant_id.0])
             .await?;
 
         Ok(rows
@@ -2568,12 +2683,14 @@ impl ProjectDB {
         pipeline_id: PipelineId,
         ac: &AttachedConnector,
     ) -> Result<(), DBError> {
+        let stmt = txn.prepare_cached("INSERT INTO attached_connector (name, pipeline_id, connector_id, is_input, config, tenant_id)
+            SELECT $2, $3, id, $5, $6, tenant_id
+            FROM connector
+            WHERE tenant_id = $1 AND id = $4")
+        .await?;
         let rows = txn
             .execute(
-                "INSERT INTO attached_connector (name, pipeline_id, connector_id, is_input, config, tenant_id)
-                 SELECT $2, $3, id, $5, $6, tenant_id
-                 FROM connector
-                 WHERE tenant_id = $1 AND id = $4",
+                &stmt,
                 &[
                     &tenant_id.0,
                     &ac.name,
