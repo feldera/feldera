@@ -120,7 +120,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
                     crate::local_runner::run(db_clone, &local_runner_config.clone()).await;
                 });
                 // The api-server blocks forever
-                let _api_server = crate::api::run(db, api_config).await.unwrap();
+                crate::api::run(db, api_config).await.unwrap();
             })
     });
     tokio::time::sleep(Duration::from_millis(3000)).await;
@@ -464,7 +464,7 @@ async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> S
 #[serial]
 async fn lists_at_initialization_are_empty() {
     let config = setup().await;
-    for endpoint in vec!["/v0/pipelines", "/v0/programs", "/v0/connectors"] {
+    for endpoint in &["/v0/pipelines", "/v0/programs", "/v0/connectors"] {
         let mut req = config.get(endpoint).await;
         let ret: Value = req.json().await.unwrap();
         assert_eq!(ret, json!([]));

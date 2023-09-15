@@ -698,7 +698,7 @@ async fn versioning() {
         .set_program_status_guarded(tenant_id, program_id, Version(1), ProgramStatus::Success)
         .await
         .unwrap();
-    let _r = handle
+    handle
         .db
         .set_program_schema(
             tenant_id,
@@ -777,7 +777,7 @@ async fn versioning() {
         .set_program_status_guarded(tenant_id, program_id, Version(2), ProgramStatus::Success)
         .await
         .unwrap();
-    let _r = handle
+    handle
         .db
         .set_program_schema(
             tenant_id,
@@ -809,7 +809,7 @@ async fn versioning() {
         .set_program_status_guarded(tenant_id, program_id, new_version, ProgramStatus::Success)
         .await
         .unwrap();
-    let _r = handle
+    handle
         .db
         .set_program_schema(
             tenant_id,
