@@ -24,7 +24,6 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
@@ -63,7 +62,8 @@ public class BaseSQLTests {
         }
     };
 
-    public static final String rustDirectory = "../temp/src";
+    public static final String projectDirectory = "..";
+    public static final String rustDirectory = projectDirectory + "/temp/src";
     public static final String testFilePath = rustDirectory + "/lib.rs";
 
     public static int testsExecuted = 0;

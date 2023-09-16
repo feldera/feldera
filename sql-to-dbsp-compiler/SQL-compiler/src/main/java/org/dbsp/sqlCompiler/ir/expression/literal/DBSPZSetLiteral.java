@@ -187,6 +187,10 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
             }
             return builder;
         }
+
+        public boolean isEmpty() {
+            return this.data.isEmpty();
+        }
     }
 
     public final DBSPTypeZSet zsetType;

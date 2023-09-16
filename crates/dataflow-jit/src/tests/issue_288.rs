@@ -50,6 +50,7 @@ const CIRCUIT: &str = r#"{
         },
         "2": {
             "Sink": {
+                "view": "V",
                 "input": 1,
                 "input_layout": {
                     "Set": 1

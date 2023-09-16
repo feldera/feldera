@@ -264,7 +264,7 @@ mod tests {
             StreamLayout::Set(i32),
         )));
 
-        let sink = graph.sink(flat_map, StreamLayout::Set(i32));
+        let sink = graph.sink(flat_map, "S", StreamLayout::Set(i32));
 
         let graph = SqlGraph::from(graph);
         let json_graph = serde_json::to_string_pretty(&graph).unwrap();
@@ -365,7 +365,7 @@ mod tests {
             i32,
         )));
 
-        graph.sink(filter_map, StreamLayout::Set(i32));
+        graph.sink(filter_map, "S", StreamLayout::Set(i32));
 
         let graph = SqlGraph::from(graph);
         let json_graph = serde_json::to_string_pretty(&graph).unwrap();

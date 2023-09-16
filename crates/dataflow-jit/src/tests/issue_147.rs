@@ -702,6 +702,7 @@ const CIRCUIT: &str = r#"{
     "14739": {
       "Sink": {
         "input": 14737,
+        "view": "V",
         "comment": "CREATE VIEW V AS SELECT SUM(T.COL5) FROM T",
         "input_layout": {
           "Set": 2

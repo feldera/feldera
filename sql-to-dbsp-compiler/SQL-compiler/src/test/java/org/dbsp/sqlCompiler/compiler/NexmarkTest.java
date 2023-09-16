@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.compiler;
 
 import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.junit.Assert;
 
 /**

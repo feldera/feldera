@@ -2542,6 +2542,7 @@
                 "input_layout": {
                     "Set": 9
                 },
+                "view": "TRANSACTIONS_WITH_DEMOGRAPHICS",
                 "query": "CREATE VIEW `TRANSACTIONS_WITH_DEMOGRAPHICS` AS\r\nSELECT `TRANSACTIONS`.`TRANS_DATE_TRANS_TIME`, `TRANSACTIONS`.`CC_NUM`, `DEMOGRAPHICS`.`FIRST`, `DEMOGRAPHICS`.`CITY`\r\nFROM `TRANSACTIONS`\r\nINNER JOIN `DEMOGRAPHICS` ON `TRANSACTIONS`.`CC_NUM` = `DEMOGRAPHICS`.`CC_NUM`"
             }
         }

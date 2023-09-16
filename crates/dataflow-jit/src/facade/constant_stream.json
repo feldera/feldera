@@ -31,6 +31,7 @@
         "2": {
             "Sink": {
                 "input": 1,
+                "view": "V",
                 "input_layout": {
                     "Set": 1
                 }

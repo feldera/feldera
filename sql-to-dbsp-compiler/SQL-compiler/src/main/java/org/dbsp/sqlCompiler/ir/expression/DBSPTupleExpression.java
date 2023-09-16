@@ -34,6 +34,7 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -121,8 +122,15 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
         DBSPTupleExpression o = other.as(DBSPTupleExpression.class);
         if (o == null)
             return false;
-        return Linq.same(this.fields, o.fields) &&
-                this.hasSameType(o);
+        if (!this.hasSameType(o))
+            return false;
+        for (int index = 0; index < this.size(); index++) {
+            DBSPExpression field = this.get(index);
+            DBSPExpression oField = o.get(index);
+            if (!field.equals(oField))
+                return false;
+        }
+        return true;
     }
 
     @Override
@@ -132,5 +140,16 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
                 .append("::new(")
                 .join(", ", this.fields)
                 .append(")");
+    }
+
+    // In general, we don't want to compare expressions for equality.
+    // This function is only used for testing, when constant tuples
+    // are compared for equality to validate the test results.
+    @Override
+    public boolean equals(@Nullable Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPTupleExpression that = (DBSPTupleExpression) o;
+        return this.sameFields(that);
     }
 }

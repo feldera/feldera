@@ -80,4 +80,9 @@ public class DBSPStrLiteral extends DBSPLiteral {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(Utilities.doubleQuote(this.value));
     }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), this.value);
+    }
 }

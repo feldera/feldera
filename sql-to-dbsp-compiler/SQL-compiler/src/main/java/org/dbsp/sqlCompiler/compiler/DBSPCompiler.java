@@ -21,8 +21,9 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.compiler.backend;
+package org.dbsp.sqlCompiler.compiler;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -32,9 +33,8 @@ import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.backend.jit.JitFileAndSerialization;
+import org.dbsp.sqlCompiler.compiler.backend.jit.JitIODescription;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -62,6 +62,7 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode.jsonFactory;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
 
@@ -79,6 +80,9 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
  * The contents after insertions can be obtained using getTableContents().
  */
 public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorReporter {
+    /**
+     * Where does the compiled program come from?
+     */
     enum InputSource {
         /**
          * No data source set yet.
@@ -115,9 +119,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public final CompilerMessages messages;
     public final SourceFileContents sources;
     public InputSource inputSources = InputSource.None;
-    final @Nullable ArrayNode inputs;
-    final @Nullable ArrayNode outputs;
-    public final @Nullable ObjectNode ios;
+    public final List<InputTableDescription> inputTables;
+    public final List<OutputViewDescription> outputViews;
+
     public final TypeCompiler typeCompiler;
     public boolean hasWarnings;
 
@@ -135,18 +139,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.sources = new SourceFileContents();
         this.circuit = null;
         this.typeCompiler = new TypeCompiler(this);
+        this.inputTables = new ArrayList<>();
+        this.outputViews = new ArrayList<>();
 
-        if (options.ioOptions.emitJsonSchema != null) {
-            this.inputs = this.mapper.createArrayNode();
-            this.outputs = this.mapper.createArrayNode();
-            this.ios = this.mapper.createObjectNode();
-            this.ios.set("inputs", this.inputs);
-            this.ios.set("outputs", this.outputs);
-        } else {
-            this.inputs = null;
-            this.outputs = null;
-            this.ios = null;
-        }
         if (options.ioOptions.jit) {
             // The JIT has hardwired I32 for the weight type.
             this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false);
@@ -238,7 +233,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         .append(node.toString())
                         .newline();
                 FrontEndStatement fe = this.frontend.compile(
-                        node.toString(), node, comment, this.inputs, this.outputs);
+                        node.toString(), node, comment, this.inputTables, this.outputViews);
                 this.midend.compile(fe);
             }
         } catch (SqlParseException e) {
@@ -266,6 +261,68 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 throw e;
             }
         }
+    }
+
+    public ObjectNode getIOMetadataAsJson() {
+        ArrayNode inputs = this.mapper.createArrayNode();
+        for (InputTableDescription input: this.inputTables)
+            inputs.add(input.asJson());
+        ArrayNode outputs = this.mapper.createArrayNode();
+        for (OutputViewDescription output: this.outputViews)
+            outputs.add(output.asJson());
+        ObjectNode ios = this.mapper.createObjectNode();
+        ios.set("inputs", inputs);
+        ios.set("outputs", outputs);
+        return ios;
+    }
+
+    public List<JitIODescription> getInputDescriptions(List<JitFileAndSerialization> inputFiles) {
+        if (this.inputTables.size() != inputFiles.size())
+            throw new CompilationError("Number of input files " + inputFiles.size() +
+                    " does not match number of inputs: " + this.inputTables.size());
+        List<JitIODescription> result = new ArrayList<>();
+        for (int i = 0; i < inputFiles.size(); i++) {
+            JitFileAndSerialization file = inputFiles.get(i);
+            InputTableDescription input = this.inputTables.get(i);
+            JitIODescription description = input.getJitDescription(file);
+            result.add(description);
+        }
+        return result;
+    }
+
+    public List<JitIODescription> getOutputDescriptions(List<JitFileAndSerialization> outputFiles) {
+        List<JitIODescription> result = new ArrayList<>();
+        if (this.outputViews.size() != outputFiles.size())
+            throw new CompilationError("Number of output files " + outputFiles.size() +
+                    " does not match number of views: " + this.outputViews.size());
+        for (int i = 0; i < outputFiles.size(); i++) {
+            JitFileAndSerialization file = outputFiles.get(i);
+            OutputViewDescription output = this.outputViews.get(i);
+            JitIODescription description = output.getDescription(file);
+            result.add(description);
+        }
+        return result;
+    }
+
+    /**
+     * Given a list of files containing the inputs and outputs,
+     * generate a configuration for the JIT runtime.
+     */
+    public JsonNode createJitRuntimeConfig(
+            List<JitIODescription> inputFiles,
+            List<JitIODescription> outputFiles) {
+        ObjectMapper objectMapper = jsonFactory();
+        ObjectNode result = objectMapper.createObjectNode();
+        result.put("workers", 1);
+        result.put("optimize", false);
+        result.put("release", false);
+        ObjectNode inputs = result.putObject("inputs");
+        for (JitIODescription description: inputFiles)
+            inputs.set(description.relation, description.asJson());
+        ObjectNode outputs = result.putObject("outputs");
+        for (JitIODescription description: outputFiles)
+            outputs.set(description.relation, description.asJson());
+        return result;
     }
 
     public void compileStatement(String statement, @Nullable String comment) {

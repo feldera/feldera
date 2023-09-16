@@ -30,6 +30,7 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import javax.annotation.Nullable;
+import java.util.Objects;
 
 /**
  * SQL contains a large number of keywords that appear in various places.
@@ -96,5 +97,10 @@ public class DBSPKeywordLiteral extends DBSPLiteral {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.keyword);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), this.keyword);
     }
 }

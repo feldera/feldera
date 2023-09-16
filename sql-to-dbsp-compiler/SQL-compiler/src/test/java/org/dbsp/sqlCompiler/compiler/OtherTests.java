@@ -33,11 +33,15 @@ import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.tools.RelRunner;
+import org.dbsp.sqlCompiler.compiler.backend.jit.JitFileAndSerialization;
+import org.dbsp.sqlCompiler.compiler.backend.jit.JitIODescription;
+import org.dbsp.sqlCompiler.compiler.backend.jit.JitSerializationKind;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
@@ -94,6 +98,74 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
         compiler.compileStatement(ddl);
         return compiler;
+    }
+
+    // Test using the JIT executor as a service.
+    @Test
+    public void runJitServiceTest() throws IOException, InterruptedException {
+        // Input query
+        String query = "CREATE VIEW V AS SELECT T.COL2 FROM T";
+        // Input test data
+        InputOutputPair data = new InputOutputPair(
+                new DBSPZSetLiteral.Contents(EndToEndTests.e0, EndToEndTests.e1),
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(new DBSPDoubleLiteral(12)),
+                        new DBSPTupleExpression(new DBSPDoubleLiteral(1))));
+        // Compile query, generate circuit.
+        // TODO: options should specify JIT target
+        DBSPCompiler compiler = this.compileDef();
+        compiler.compileStatements(query);
+        DBSPCircuit circuit = getCircuit(compiler);
+        // Serialize circuit as JSON for the JIT executor
+        JITProgram program = ToJitVisitor.circuitToJIT(compiler, circuit);
+        String json = program.asJson().toPrettyString();
+        File baseDirectory = new File(BaseSQLTests.rustDirectory);
+        File programFile = File.createTempFile("program", ".json", baseDirectory);
+        programFile.deleteOnExit();
+        Utilities.writeFile(programFile.toPath(), json);
+
+        // Prepare input files for the JIT runtime
+        List<JitFileAndSerialization> inputFiles = new ArrayList<>();
+        for (DBSPZSetLiteral.Contents inputData: data.inputs) {
+            File input = File.createTempFile("input", ".csv", baseDirectory);
+            input.deleteOnExit();
+            ToCsvVisitor.toCsv(compiler, input, new DBSPZSetLiteral(compiler.getWeightTypeImplementation(), inputData));
+            inputFiles.add(new JitFileAndSerialization(
+                    input.getAbsolutePath(),
+                    JitSerializationKind.Csv));
+        }
+        List<JitIODescription> inputDescriptions = compiler.getInputDescriptions(inputFiles);
+
+        // Allocate output files
+        List<JitFileAndSerialization> outputFiles = new ArrayList<>();
+        for (DBSPZSetLiteral.Contents outputData: data.outputs) {
+            File output = File.createTempFile("output", ".json", baseDirectory);
+            ToCsvVisitor.toCsv(compiler, output, new DBSPZSetLiteral(compiler.getWeightTypeImplementation(), outputData));
+            outputFiles.add(new JitFileAndSerialization(
+                    output.getAbsolutePath(),
+                    JitSerializationKind.Json));
+            boolean ignored = output.delete(); // The program will create this file, we just care about its name
+        }
+        List<JitIODescription> outputDescriptions = compiler.getOutputDescriptions(outputFiles);
+
+        // Invoke the JIT runtime with the program and the configuration file describing inputs and outputs
+        JsonNode jitInputDescription = compiler.createJitRuntimeConfig(inputDescriptions, outputDescriptions);
+        String s = jitInputDescription.toPrettyString();
+        File configFile = File.createTempFile("config", ".json", baseDirectory);
+        configFile.deleteOnExit();
+        Utilities.writeFile(configFile.toPath(), s);
+        Utilities.runJIT(BaseSQLTests.projectDirectory, programFile.getAbsolutePath(), configFile.getAbsolutePath());
+
+        // Validate outputs and delete them
+        for (int i = 0; i < data.outputs.length; i++) {
+            DBSPZSetLiteral.Contents expected = data.outputs[i];
+            JitIODescription outFile = outputDescriptions.get(i);
+            File file = new File(outFile.path);
+            DBSPZSetLiteral.Contents actual = outFile.parse(expected.getElementType());
+            DBSPZSetLiteral.Contents diff = expected.minus(actual);
+            Assert.assertTrue(diff.isEmpty());
+            file.deleteOnExit();
+        }
     }
 
     @Test
@@ -179,52 +251,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testJoin() throws IOException, InterruptedException {
-        String statement0 = "CREATE TABLE demographics (\n" +
-                "    cc_num FLOAT64,\n" +
-                "    first STRING,\n" +
-                "    gender STRING,\n" +
-                "    street STRING,\n" +
-                "    city STRING,\n" +
-                "    state STRING,\n" +
-                "    zip INTEGER,\n" +
-                "    lat FLOAT64,\n" +
-                "    long FLOAT64,\n" +
-                "    city_pop INTEGER,\n" +
-                "    job STRING,\n" +
-                "    dob DATE\n" +
-                ")\n";
-        String statement1 =
-                "CREATE TABLE transactions (\n" +
-                "    trans_date_trans_time TIMESTAMP NOT NULL,\n" +
-                "    cc_num FLOAT64,\n" +
-                "    merchant STRING,\n" +
-                "    category STRING,\n" +
-                "    amt FLOAT64,\n" +
-                "    trans_num STRING,\n" +
-                "    unix_time INTEGER,\n" +
-                "    merch_lat FLOAT64,\n" +
-                "    merch_long FLOAT64,\n" +
-                "    is_fraud INTEGER\n" +
-                ")\n";
-        String statement2 =
-                "CREATE VIEW transactions_with_demographics as \n" +
-                "    SELECT transactions.*, demographics.first, demographics.city\n" +
-                "    FROM\n" +
-                "        transactions JOIN demographics\n" +
-                "        ON transactions.cc_num = demographics.cc_num";
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement(statement0);
-        compiler.compileStatement(statement1);
-        compiler.compileStatement(statement2);
-        DBSPCircuit circuit = getCircuit(compiler);
-        RustFileWriter writer = new RustFileWriter(compiler, testFilePath);
-        writer.add(circuit);
-        writer.writeAndClose();
-        Utilities.compileAndTestRust(rustDirectory, true);
-    }
-
-    @Test
     public void toCsvTest() {
         DBSPCompiler compiler = testCompiler();
         DBSPZSetLiteral s = new DBSPZSetLiteral(new DBSPTypeWeight(), EndToEndTests.e0, EndToEndTests.e1);
@@ -247,7 +273,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         file.deleteOnExit();
         ToCsvVisitor.toCsv(compiler, file, data);
         List<DBSPStatement> list = new ArrayList<>();
-        // let src = csv_source::<Tuple3<bool, Option<String>, Option<u32>>, isize>("src/test.csv");
         DBSPLetStatement src = new DBSPLetStatement("src",
                 new DBSPApplyExpression("read_csv", data.getType(),
                         new DBSPStrLiteral(file.getAbsolutePath())));
@@ -454,7 +479,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         tmp.deleteOnExit();
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
-        System.out.println(message.toString());
         Assert.assertEquals(message.exitCode, 0);
         ObjectMapper mapper = new ObjectMapper();
         JsonNode parsed = mapper.readTree(json);

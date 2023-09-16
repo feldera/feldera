@@ -249,6 +249,7 @@ pub struct SourceMap {
 #[derive(Debug, Clone)]
 pub struct Sink {
     pub input: NodeId,
+    pub view: String,
     pub layout: StreamLayout,
 }
 

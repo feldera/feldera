@@ -45,7 +45,7 @@ import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.*;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -1133,14 +1133,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPType originalRowType = this.convertType(view.getRelNode().getRowType(), true);
                 DBSPTypeStruct struct = originalRowType.to(DBSPTypeStruct.class);
                 o = new DBSPSinkOperator(
-                        view.getCalciteObject(), view.tableName, view.statement,
+                        view.getCalciteObject(), view.relationName, view.statement,
                         struct, statement.comment, op);
             } else {
                 // We may already have a node for this output
-                DBSPOperator previous = this.circuit.getOperator(view.tableName);
+                DBSPOperator previous = this.circuit.getOperator(view.relationName);
                 if (previous != null)
                     return previous;
-                o = new DBSPNoopOperator(view.getCalciteObject(), op, statement.comment, view.tableName);
+                o = new DBSPNoopOperator(view.getCalciteObject(), op, statement.comment, view.relationName);
             }
             this.circuit.addOperator(o);
             return o;
@@ -1153,7 +1153,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 // could be created by visiting LogicalTableScan, but if a table
                 // is *not* used in a view, it won't have a corresponding input
                 // in the circuit.
-                String tableName = create.tableName;
+                String tableName = create.relationName;
                 CreateTableStatement def = this.tableContents.getTableDefinition(tableName);
                 DBSPType rowType = def.getRowTypeAsTuple(this.compiler.getTypeCompiler());
                 DBSPTypeStruct originalRowType = def.getRowTypeAsStruct(this.compiler.getTypeCompiler());

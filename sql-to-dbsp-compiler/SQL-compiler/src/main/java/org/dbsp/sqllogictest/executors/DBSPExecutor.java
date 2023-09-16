@@ -33,6 +33,7 @@ import net.hydromatic.sqllogictest.TestStatistics;
 import net.hydromatic.sqllogictest.executors.SqlSltTestExecutor;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.*;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ToRustJitLiteral;
@@ -400,7 +401,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         if (this.compilerOptions.ioOptions.jit) {
             result = createJitTesterCode(compiler,
               "tester" + suffix, dbsp, compiler.getTableContents(),
-              expectedOutput, testQuery.outputDescription);
+              Objects.requireNonNull(expectedOutput), testQuery.outputDescription);
         } else {
             result = createTesterCode(
                     "tester" + suffix, dbsp,

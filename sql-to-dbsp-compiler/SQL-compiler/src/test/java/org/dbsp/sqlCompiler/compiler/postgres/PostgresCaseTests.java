@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.junit.Test;
 
 // https://github.com/postgres/postgres/blob/master/src/test/regress/expected/case.out

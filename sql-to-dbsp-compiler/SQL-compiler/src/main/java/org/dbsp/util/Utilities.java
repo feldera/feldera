@@ -25,7 +25,6 @@
 
 package org.dbsp.util;
 
-import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
@@ -116,6 +115,12 @@ public class Utilities {
     public static String readFile(Path filename) throws IOException {
         List<String> lines = Files.readAllLines(filename);
         return String.join(System.lineSeparator(), lines);
+    }
+
+    public static void writeFile(Path filename, String contents) throws IOException {
+        try (FileWriter writer = new FileWriter(filename.toFile())) {
+            writer.write(contents);
+        }
     }
 
     /**
@@ -217,6 +222,13 @@ public class Utilities {
             runProcess(directory, "cargo", "clean");
             compile(directory, quiet, extraArgs);
         }
+    }
+
+    public static void runJIT(String directory, String program, String config)
+            throws IOException, InterruptedException {
+        Utilities.runProcess(directory,
+                "cargo", "run", "-p", "dataflow-jit", "--bin", "dataflow-jit",
+                "--features", "binary", "--", "run", program, config);
     }
 
     public static <T> T last(List<T> data) {

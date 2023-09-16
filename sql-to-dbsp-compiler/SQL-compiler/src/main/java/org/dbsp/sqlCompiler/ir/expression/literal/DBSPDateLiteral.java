@@ -98,4 +98,9 @@ public class DBSPDateLiteral extends DBSPLiteral {
         else
             return builder.append(DateString.fromDaysSinceEpoch(this.value).toString());
     }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), this.value);
+    }
 }

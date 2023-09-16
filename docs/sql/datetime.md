@@ -81,8 +81,17 @@ Values of type `DATE` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 ## Times
 
 A time represents the time of day, a value between 0 and 24 hours
-(excluding the latter).  Times are stored with a precision of
-nanoseconds.
+(excluding the latter).
+
+The `TIME` data type can specify an optional precision, e.g.,
+`TIME(2)`.  The precision is the number of sub-second digits
+supported.  So `TIME(3)` is a time with a precision of milliseconds.
+
+The default precision is 3.
+
+Currently the maximum supported precision is 3 (milliseconds).  Larger
+precisions are accepted, but internally only up to 3 digits of
+precision are maintained.
 
 ### Time literals
 
@@ -113,6 +122,13 @@ Values of type `TIME` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 
 ## Timestamps
 
+The `TIMESTAMP` data type represents values composed of a `DATE` and a
+`TIME`.  `TIMESTAMP` support an optional precision specification,
+e.g.: `TIMESTAMP(3)`.  The precision applies to the `TIME` component
+of the `TIMESTAMP`.  The maximum precision supported for timestamps is
+3.  The default precision for timestamps (used when no precision is
+specified), is also 3.
+
 ### Timestamp literals
 
 A timestamp contains both a date and a time.  `TIMESTAMP` literals
@@ -121,9 +137,6 @@ fractional part is optional.  Trailing spaces are not allowed.
 
 Timestamp literals can only represent 4-digit year positive values.
 Values BC or values greater than 10,000 years are not supported.
-
-The precision of timestamps is milliseconds, additional digits of
-precision in timestamp literals are rounded to milliseconds.
 
 The following operations are available on timestamps:
 

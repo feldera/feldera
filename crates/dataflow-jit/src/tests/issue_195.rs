@@ -97,7 +97,7 @@ fn issue_195() {
         },
     );
 
-    let _sink = graph.sink(printed, StreamLayout::Set(layout));
+    let _sink = graph.sink(printed, "V", StreamLayout::Set(layout));
 
     let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
 

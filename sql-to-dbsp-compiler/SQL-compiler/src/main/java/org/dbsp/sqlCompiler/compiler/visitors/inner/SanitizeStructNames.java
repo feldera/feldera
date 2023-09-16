@@ -19,7 +19,7 @@ import java.util.Map;
  */
 public class SanitizeStructNames extends InnerRewriteVisitor {
     protected FreshName nameGenerator;
-    protected Map<String, String> remapped;
+    protected final Map<String, String> remapped;
     /**
      * If true force new names.
      */

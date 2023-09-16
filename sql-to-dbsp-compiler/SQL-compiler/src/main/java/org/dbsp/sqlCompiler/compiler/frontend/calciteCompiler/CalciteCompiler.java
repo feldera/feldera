@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.*;
 import org.apache.calcite.jdbc.CalciteSchema;
@@ -68,6 +67,8 @@ import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.circuit.ForeignKeyReference;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.InputTableDescription;
+import org.dbsp.sqlCompiler.compiler.OutputViewDescription;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
@@ -390,6 +391,7 @@ public class CalciteCompiler implements IWritesLogs {
             return Linq.list();
 
         HepProgram constantFold = createProgram(
+                CoreRules.COERCE_INPUTS,
                 CoreRules.FILTER_REDUCE_EXPRESSIONS,
                 CoreRules.PROJECT_REDUCE_EXPRESSIONS,
                 CoreRules.JOIN_REDUCE_EXPRESSIONS,
@@ -663,8 +665,8 @@ public class CalciteCompiler implements IWritesLogs {
             String sqlStatement,
             SqlNode node,
             @Nullable String comment,
-            @Nullable ArrayNode inputs,
-            @Nullable ArrayNode outputs) {
+            List<InputTableDescription> inputs,
+            List<OutputViewDescription> outputs) {
         CalciteObject object = new CalciteObject(node);
         if (SqlKind.DDL.contains(node.getKind())) {
             if (node.getKind().equals(SqlKind.DROP_TABLE)) {
@@ -693,8 +695,7 @@ public class CalciteCompiler implements IWritesLogs {
                 }
                 CreateTableStatement table = new CreateTableStatement(node, sqlStatement, tableName, comment, cols);
                 this.catalog.addTable(tableName, table.getEmulatedTable());
-                if (inputs != null)
-                    inputs.add(table.getDefinedObjectSchema());
+                inputs.add(new InputTableDescription(table));
                 return table;
             }
 
@@ -721,8 +722,7 @@ public class CalciteCompiler implements IWritesLogs {
                         columns, cv.query, relRoot);
                 // From Calcite's point of view we treat this view just as another table.
                 this.catalog.addTable(viewName, view.getEmulatedTable());
-                if (outputs != null)
-                    outputs.add(view.getDefinedObjectSchema());
+                outputs.add(new OutputViewDescription(view));
                 return view;
             }
         }

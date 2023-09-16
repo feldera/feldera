@@ -204,9 +204,9 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
      */
     final List<JITBlock> blocks;
     /**
-     * Maps each expression to the values that it produces.
+     * Maps each expression id to the values that the expression produces.
      */
-    final Map<DBSPExpression, JITInstructionPair> expressionToValues;
+    final Map<Long, JITInstructionPair> expressionToValues;
     /**
      * A context for each block expression.
      */
@@ -285,11 +285,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 .append(" to ")
                 .append(pair.toString())
                 .newline();
-        Utilities.putNew(this.expressionToValues, expression, pair);
+        Utilities.putNew(this.expressionToValues, expression.id, pair);
     }
 
     JITInstructionPair getExpressionValues(DBSPExpression expression) {
-        return Utilities.getExists(this.expressionToValues, expression);
+        return Utilities.getExists(this.expressionToValues, expression.id);
     }
 
     JITInstructionPair accept(DBSPExpression expression) {
@@ -575,7 +575,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
 
     public VisitDecision preorder(DBSPBorrowExpression expression) {
         JITInstructionPair sourceId = this.accept(expression.expression);
-        Utilities.putNew(this.expressionToValues, expression, sourceId);
+        Utilities.putNew(this.expressionToValues, expression.id, sourceId);
         return VisitDecision.STOP;
     }
 
@@ -1122,7 +1122,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         JITInstructionPair pair = this.resolve(expression.variable);
         // may already be there, but this may be a new variable with the same name,
         // and then we overwrite with the new definition.
-        this.expressionToValues.put(expression, pair);
+        this.expressionToValues.put(expression.id, pair);
         return VisitDecision.STOP;
     }
 

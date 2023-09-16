@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.foodmart;
 
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.postgres.PostgresBaseTest;
 import org.dbsp.util.Logger;

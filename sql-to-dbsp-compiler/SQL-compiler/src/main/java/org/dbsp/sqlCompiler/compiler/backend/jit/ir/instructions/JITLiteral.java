@@ -24,7 +24,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions;
 
 import com.fasterxml.jackson.databind.node.BaseJsonNode;
-import com.fasterxml.jackson.databind.node.BigIntegerNode;
 import com.fasterxml.jackson.databind.node.BooleanNode;
 import com.fasterxml.jackson.databind.node.DecimalNode;
 import com.fasterxml.jackson.databind.node.DoubleNode;
@@ -49,8 +48,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-
-import java.math.BigInteger;
 
 public class JITLiteral extends JITValue {
     public final DBSPLiteral literal;

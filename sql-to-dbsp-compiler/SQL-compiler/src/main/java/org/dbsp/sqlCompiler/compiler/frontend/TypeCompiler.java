@@ -27,7 +27,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
@@ -122,7 +122,6 @@ public class TypeCompiler implements ICompilerComponent {
                 case VARCHAR: {
                     int precision = dt.getPrecision();
                     if (precision == RelDataType.PRECISION_NOT_SPECIFIED)
-                        //noinspection ReassignedVariable
                         precision = DBSPTypeString.UNLIMITED_PRECISION;
                     return new DBSPTypeString(node, precision, tn.equals(SqlTypeName.CHAR), nullable);
                 }

@@ -78,10 +78,6 @@ public class Main {
             a.addAll(files);
             args = a.toArray(new String[0]);
         }
-        /*
-        Logger.INSTANCE.setDebugLevel(DBSPExecutor.class, 3);
-        Logger.INSTANCE.setDebugLevel(CalciteCompiler.class, 3);
-         */
         System.out.println(Arrays.toString(args));
         OptionsParser parser = new OptionsParser(true, System.out, System.err);
         DBSPExecutor.register(parser);

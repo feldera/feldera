@@ -992,6 +992,7 @@ const CIRCUIT: &str = r#"{
     "7227": {
       "Sink": {
         "input": 7224,
+        "view": "V",
         "input_layout": {
           "Set": 4
         }

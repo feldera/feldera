@@ -298,19 +298,29 @@ where
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Sink {
     input: NodeId,
+    view: Box<str>,
     input_layout: StreamLayout,
 }
 
 impl Sink {
-    pub fn new(input: NodeId, input_layout: StreamLayout) -> Self {
+    pub fn new(input: NodeId, view: Box<str>, input_layout: StreamLayout) -> Self {
         Self {
             input,
+            view,
             input_layout,
         }
     }
 
     pub const fn input(&self) -> NodeId {
         self.input
+    }
+
+    pub const fn view(&self) -> &str {
+        &self.view
+    }
+
+    pub const fn name(&self) -> &str {
+        &self.view
     }
 
     pub const fn input_layout(&self) -> StreamLayout {

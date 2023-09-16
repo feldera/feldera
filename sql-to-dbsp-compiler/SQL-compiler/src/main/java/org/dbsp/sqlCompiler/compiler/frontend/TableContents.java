@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
-import org.dbsp.sqlCompiler.compiler.backend.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
@@ -75,10 +75,10 @@ public class TableContents implements ICompilerComponent {
     public void execute(FrontEndStatement statement) {
         if (statement.is(CreateTableStatement.class)) {
             CreateTableStatement create = statement.to(CreateTableStatement.class);
-            Utilities.putNew(this.tableCreation, create.tableName, create);
-            this.tablesCreated.add(create.tableName);
+            Utilities.putNew(this.tableCreation, create.relationName, create);
+            this.tablesCreated.add(create.relationName);
             if (this.tableContents != null)
-                Utilities.putNew(this.tableContents, create.tableName,
+                Utilities.putNew(this.tableContents, create.relationName,
                         DBSPZSetLiteral.Contents.emptyWithElementType(
                                 create.getRowTypeAsTuple(this.compiler.getTypeCompiler())));
         } else if (statement.is(DropTableStatement.class)) {
