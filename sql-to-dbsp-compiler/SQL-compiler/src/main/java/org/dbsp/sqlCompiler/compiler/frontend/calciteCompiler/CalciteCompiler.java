@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.*;
 import org.apache.calcite.jdbc.CalciteSchema;

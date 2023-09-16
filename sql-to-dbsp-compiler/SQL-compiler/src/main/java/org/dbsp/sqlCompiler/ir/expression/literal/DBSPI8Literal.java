@@ -65,4 +65,9 @@ public class DBSPI8Literal extends DBSPIntLiteral {
         else
             return builder.append(this.value.toString());
     }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), this.value);
+    }
 }

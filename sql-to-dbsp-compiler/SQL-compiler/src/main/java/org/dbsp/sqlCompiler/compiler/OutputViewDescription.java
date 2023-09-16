@@ -1,9 +1,9 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.jit.JitFileAndSerialization;
+import org.dbsp.sqlCompiler.compiler.backend.jit.JitIODescription;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitJsonOutputDescription;
-import org.dbsp.sqlCompiler.compiler.backend.jit.JitOutputDescription;
-import org.dbsp.sqlCompiler.compiler.backend.jit.JitSerializationKind;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
@@ -18,10 +18,10 @@ public class OutputViewDescription {
         this.view = view;
     }
 
-    public JitOutputDescription getDescription(JitSerializationKind kind) {
-        switch (kind) {
+    public JitIODescription getDescription(JitFileAndSerialization fas) {
+        switch (fas.kind) {
             case Json: {
-                JitJsonOutputDescription result = new JitJsonOutputDescription();
+                JitJsonOutputDescription result = new JitJsonOutputDescription(this.getName(), fas.path);
                 for (RelColumnMetadata column: this.view.columns)
                     result.addColumn(column.getName());
                 return result;

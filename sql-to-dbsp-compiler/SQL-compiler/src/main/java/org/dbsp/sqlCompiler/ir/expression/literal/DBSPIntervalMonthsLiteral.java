@@ -86,4 +86,9 @@ public class DBSPIntervalMonthsLiteral extends DBSPLiteral {
             return builder.append(this.value.toString());
         return builder.append("null");
     }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), this.value);
+    }
 }

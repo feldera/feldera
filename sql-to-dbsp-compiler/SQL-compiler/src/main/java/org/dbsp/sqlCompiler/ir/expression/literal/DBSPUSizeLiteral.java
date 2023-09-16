@@ -84,4 +84,9 @@ public class DBSPUSizeLiteral extends DBSPLiteral {
         else
             return builder.append(this.value.toString());
     }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), this.value);
+    }
 }

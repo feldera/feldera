@@ -26,6 +26,8 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
+import java.util.Arrays;
+
 public abstract class DBSPBaseTupleExpression extends DBSPExpression {
     public final DBSPExpression[] fields;
 
@@ -38,5 +40,10 @@ public abstract class DBSPBaseTupleExpression extends DBSPExpression {
 
     public DBSPExpression get(int index) {
         return this.fields[index];
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(fields);
     }
 }

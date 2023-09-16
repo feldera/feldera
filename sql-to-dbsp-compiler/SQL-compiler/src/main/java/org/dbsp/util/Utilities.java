@@ -25,7 +25,6 @@
 
 package org.dbsp.util;
 
-import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;

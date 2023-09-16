@@ -401,7 +401,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         if (this.compilerOptions.ioOptions.jit) {
             result = createJitTesterCode(compiler,
               "tester" + suffix, dbsp, compiler.getTableContents(),
-              expectedOutput, testQuery.outputDescription);
+              Objects.requireNonNull(expectedOutput), testQuery.outputDescription);
         } else {
             result = createTesterCode(
                     "tester" + suffix, dbsp,

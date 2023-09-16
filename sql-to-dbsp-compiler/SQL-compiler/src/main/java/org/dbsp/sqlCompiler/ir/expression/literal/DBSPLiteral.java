@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -62,7 +63,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
         super(node, type);
         this.isNull = isNull;
         if (this.isNull && !type.mayBeNull && !type.is(DBSPTypeAny.class))
-            throw new InternalCompilerError("Type " + type + " cannot represent null", this);
+            throw new UnsupportedException("Type " + type + " cannot represent null", node);
     }
 
     /**
@@ -160,5 +161,18 @@ public abstract class DBSPLiteral extends DBSPExpression {
         if (o == null)
             return false;
         return this.sameValue(o) && this.hasSameType(o);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPLiteral that = (DBSPLiteral) o;
+        return this.sameValue(that);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(isNull);
     }
 }

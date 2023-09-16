@@ -13,7 +13,7 @@ import java.util.List;
 
 import static org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode.jsonFactory;
 
-public class JitCsvInputDescription implements JitInputDescription {
+public class JitCsvInputDescription extends JitIODescription {
     public static class Column {
         public final int position;
         public final int remappedPosition;
@@ -96,7 +96,8 @@ public class JitCsvInputDescription implements JitInputDescription {
 
     final List<Column> columns;
 
-    public JitCsvInputDescription() {
+    public JitCsvInputDescription(String relation, String path) {
+        super(relation, path);
         this.columns = new ArrayList<>();
     }
 
@@ -104,9 +105,9 @@ public class JitCsvInputDescription implements JitInputDescription {
         this.columns.add(column);
     }
 
-    public JsonNode asJson(String file) {
+    public JsonNode asJson() {
         ObjectNode result = jsonFactory().createObjectNode();
-        result.put("file", file);
+        result.put("file", this.path);
         ObjectNode kind = result.putObject("kind");
         ArrayNode csv = kind.putArray("Csv");
         for (Column column: this.columns)

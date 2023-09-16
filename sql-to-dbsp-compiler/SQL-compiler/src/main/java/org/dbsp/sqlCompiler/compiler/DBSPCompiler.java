@@ -34,8 +34,7 @@ import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitFileAndSerialization;
-import org.dbsp.sqlCompiler.compiler.backend.jit.JitInputDescription;
-import org.dbsp.sqlCompiler.compiler.backend.jit.JitOutputDescription;
+import org.dbsp.sqlCompiler.compiler.backend.jit.JitIODescription;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -277,40 +276,52 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return ios;
     }
 
-    /**
-     * Given a list of files containing the inputs and outputs,
-     * generate a configuration for the JIT runtime.
-     */
-    public JsonNode getJitInputDescription(
-            List<JitFileAndSerialization> inputFiles,
-            List<JitFileAndSerialization> outputFiles) {
-        ObjectMapper objectMapper = jsonFactory();
-        ObjectNode result = objectMapper.createObjectNode();
-        result.put("workers", 1);
-        result.put("optimize", false);
-        result.put("release", false);
-        ObjectNode inputs = result.putObject("inputs");
+    public List<JitIODescription> getInputDescriptions(List<JitFileAndSerialization> inputFiles) {
         if (this.inputTables.size() != inputFiles.size())
             throw new CompilationError("Number of input files " + inputFiles.size() +
                     " does not match number of inputs: " + this.inputTables.size());
+        List<JitIODescription> result = new ArrayList<>();
         for (int i = 0; i < inputFiles.size(); i++) {
             JitFileAndSerialization file = inputFiles.get(i);
             InputTableDescription input = this.inputTables.get(i);
-            JitInputDescription description = input.getJitDescription(file.kind);
-            JsonNode node = description.asJson(file.path);
-            inputs.set(input.getName(), node);
+            JitIODescription description = input.getJitDescription(file);
+            result.add(description);
         }
-        ObjectNode outputs = result.putObject("outputs");
+        return result;
+    }
+
+    public List<JitIODescription> getOutputDescriptions(List<JitFileAndSerialization> outputFiles) {
+        List<JitIODescription> result = new ArrayList<>();
         if (this.outputViews.size() != outputFiles.size())
             throw new CompilationError("Number of output files " + outputFiles.size() +
                     " does not match number of views: " + this.outputViews.size());
         for (int i = 0; i < outputFiles.size(); i++) {
             JitFileAndSerialization file = outputFiles.get(i);
             OutputViewDescription output = this.outputViews.get(i);
-            JitOutputDescription description = output.getDescription(file.kind);
-            JsonNode node = description.asJson(file.path);
-            outputs.set(output.getName(), node);
+            JitIODescription description = output.getDescription(file);
+            result.add(description);
         }
+        return result;
+    }
+
+    /**
+     * Given a list of files containing the inputs and outputs,
+     * generate a configuration for the JIT runtime.
+     */
+    public JsonNode createJitRuntimeConfig(
+            List<JitIODescription> inputFiles,
+            List<JitIODescription> outputFiles) {
+        ObjectMapper objectMapper = jsonFactory();
+        ObjectNode result = objectMapper.createObjectNode();
+        result.put("workers", 1);
+        result.put("optimize", false);
+        result.put("release", false);
+        ObjectNode inputs = result.putObject("inputs");
+        for (JitIODescription description: inputFiles)
+            inputs.set(description.relation, description.asJson());
+        ObjectNode outputs = result.putObject("outputs");
+        for (JitIODescription description: outputFiles)
+            outputs.set(description.relation, description.asJson());
         return result;
     }
 

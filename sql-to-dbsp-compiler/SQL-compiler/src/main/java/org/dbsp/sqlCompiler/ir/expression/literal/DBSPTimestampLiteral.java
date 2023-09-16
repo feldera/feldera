@@ -104,4 +104,9 @@ public class DBSPTimestampLiteral extends DBSPLiteral {
         else
             return builder.append(TimestampString.fromMillisSinceEpoch(this.value).toString());
     }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), this.value);
+    }
 }

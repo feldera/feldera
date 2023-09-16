@@ -118,6 +118,6 @@ public abstract class DBSPExpression
     }
 
     public boolean hasSameType(DBSPExpression other) {
-        return this.type == other.type;
+        return this.type.sameType(other.type);
     }
 }

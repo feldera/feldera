@@ -4,6 +4,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 
+import java.util.Objects;
+
 /**
  * Base class for all integer literal.
  */

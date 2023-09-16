@@ -91,4 +91,9 @@ public class DBSPGeoPointLiteral extends DBSPLiteral {
             builder.append("null");
         return builder.append(")");
     }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), this.left, this.right);
+    }
 }
