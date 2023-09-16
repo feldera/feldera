@@ -117,7 +117,6 @@ use serde::Serialize;
 mod catalog;
 mod controller;
 pub mod format;
-mod seroutput;
 pub mod server;
 pub mod static_compile;
 pub mod transport;
@@ -145,10 +144,9 @@ pub use server::{EgressMode, ErrorResponse, PipelineError};
 
 pub use catalog::{
     CircuitCatalog, DeCollectionHandle, DeCollectionStream, NeighborhoodQuery, OutputQuery,
-    OutputQueryHandles,
+    OutputQueryHandles, SerBatch,
 };
 pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser};
-pub use seroutput::{SerBatch, SerCursor, SerOutputBatchHandle, SerOutputBatchHandleImpl};
 pub use static_compile::catalog::Catalog;
 
 pub use controller::{

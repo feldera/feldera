@@ -34,9 +34,9 @@
 //! counters in the controller.
 
 use crate::{
-    CircuitCatalog, Encoder, InputConsumer, InputEndpoint, InputFormat, InputTransport,
-    OutputConsumer, OutputEndpoint, OutputFormat, OutputQuery, OutputQueryHandles, OutputTransport,
-    ParseError, Parser, PipelineState, SerBatch,
+    catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, InputEndpoint, InputFormat,
+    InputTransport, OutputConsumer, OutputEndpoint, OutputFormat, OutputQuery, OutputQueryHandles,
+    OutputTransport, ParseError, Parser, PipelineState,
 };
 use anyhow::Error as AnyError;
 use crossbeam::{

@@ -1,4 +1,4 @@
-use crate::{ControllerError, DeCollectionHandle, SerBatch};
+use crate::{catalog::SerBatch, ControllerError, DeCollectionHandle};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use erased_serde::Serialize as ErasedSerialize;
