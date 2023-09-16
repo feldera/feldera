@@ -32,7 +32,6 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -75,6 +74,9 @@ public class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
                 .append(")");
     }
 
+    // In general, we don't want to compare expressions for equality.
+    // This function is only used for testing, when constant tuples
+    // are compared for equality to validate the test results.
     @Override
     public boolean equals(@Nullable Object o) {
         if (this == o) return true;

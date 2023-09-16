@@ -142,6 +142,9 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
                 .append(")");
     }
 
+    // In general, we don't want to compare expressions for equality.
+    // This function is only used for testing, when constant tuples
+    // are compared for equality to validate the test results.
     @Override
     public boolean equals(@Nullable Object o) {
         if (this == o) return true;

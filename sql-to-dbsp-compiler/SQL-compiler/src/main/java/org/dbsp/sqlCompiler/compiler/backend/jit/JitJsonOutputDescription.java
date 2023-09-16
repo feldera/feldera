@@ -142,7 +142,7 @@ public class JitJsonOutputDescription extends JitIODescription {
 
     DBSPExpression parseLine(ObjectMapper objectMapper, long lineNumber, String line, DBSPTypeTuple elementType)
             throws JsonProcessingException {
-        // TODO: this will have to change when the JSOn format will support weights
+        // TODO: this will have to change when the JSON format will support weights
         JsonNode jsonNode = objectMapper.readTree(line);
         if (!jsonNode.isObject()) {
             throw this.parseError(lineNumber, line,
