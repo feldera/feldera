@@ -1,6 +1,7 @@
-use super::InsDelUpdate;
 use crate::{
-    util::truncate_ellipse, ControllerError, Encoder, OutputConsumer, OutputFormat, SerBatch,
+    catalog::{RecordFormat, SerBatch},
+    util::truncate_ellipse,
+    ControllerError, Encoder, OutputConsumer, OutputFormat,
 };
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
@@ -113,15 +114,17 @@ impl Encoder for JsonEncoder {
 
         let mut num_records = 0;
         for batch in batches.iter() {
-            let mut cursor = batch.cursor();
+            let mut cursor = batch.cursor(RecordFormat::Json)?;
 
             while cursor.key_valid() {
                 let mut w = cursor.weight();
 
                 if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
+                    let mut key_str = String::new();
+                    let _ = cursor.serialize_key(unsafe { key_str.as_mut_vec() });
                     bail!(
                         "Unable to output record '{}' with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.",
-                        serde_json::to_string(cursor.key()).unwrap_or_default()
+                        &key_str
                     );
                 }
 
@@ -137,12 +140,20 @@ impl Encoder for JsonEncoder {
                     } else if num_records > 0 {
                         buffer.push(b'\n');
                     }
-                    let update = InsDelUpdate {
-                        table: None,
-                        insert: if w > 0 { Some(cursor.key()) } else { None },
-                        delete: if w < 0 { Some(cursor.key()) } else { None },
-                    };
-                    serde_json::to_writer(&mut buffer, &update)?;
+                    // FIXME: an alternative to building JSON manually is to create an
+                    // `InsDelUpdate` instance and serialize that, but it would require
+                    // packaging the serialized key as `serde_json::RawValue`, which is
+                    // not supported by the `RawValue` API.  So we need a custom
+                    // implementation of `RawValue`. If we ever decide to build one,
+                    // check out the "$serde_json::private::RawValue" magic string in
+                    // crate `serde_json`.
+                    if w > 0 {
+                        buffer.extend_from_slice(br#"{"insert":"#);
+                    } else {
+                        buffer.extend_from_slice(br#"{"delete":"#);
+                    }
+                    cursor.serialize_key(&mut buffer)?;
+                    buffer.push(b'}');
 
                     // Drop the last encoded record if it exceeds max_buffer_size.
                     // The record will be included in the next buffer.
@@ -204,10 +215,10 @@ impl Encoder for JsonEncoder {
 mod test {
     use super::{JsonEncoder, JsonEncoderConfig};
     use crate::{
+        catalog::SerBatch,
         format::{json::InsDelUpdate, Encoder},
-        seroutput::SerBatchImpl,
+        static_compile::seroutput::SerBatchImpl,
         test::{MockOutputConsumer, TestStruct},
-        SerBatch,
     };
     use dbsp::{trace::Batch, IndexedZSet, OrdZSet};
     use log::trace;

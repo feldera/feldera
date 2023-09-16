@@ -1,12 +1,11 @@
 use crate::{
-    catalog::{DeCollectionStream, RecordFormat},
+    catalog::{DeCollectionStream, RecordFormat, SerBatch},
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
     util::{split_on_newline, truncate_ellipse},
-    ControllerError, DeCollectionHandle, OutputConsumer, SerBatch,
+    ControllerError, DeCollectionHandle, OutputConsumer,
 };
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
-use csv::WriterBuilder as CsvWriterBuilder;
 use csv_core::{ReadRecordResult, Reader as CsvReader};
 use erased_serde::Serialize as ErasedSerialize;
 use serde::{Deserialize, Serialize};
@@ -249,9 +248,6 @@ struct CsvEncoder {
     /// Input handle to push serialized data to.
     output_consumer: Box<dyn OutputConsumer>,
 
-    /// Builder used to create a new CSV writer for each received data
-    /// buffer.
-    builder: CsvWriterBuilder,
     config: CsvEncoderConfig,
     buffer: Vec<u8>,
     max_buffer_size: usize,
@@ -259,13 +255,10 @@ struct CsvEncoder {
 
 impl CsvEncoder {
     fn new(output_consumer: Box<dyn OutputConsumer>, config: CsvEncoderConfig) -> Self {
-        let mut builder = CsvWriterBuilder::new();
-        builder.has_headers(false);
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
 
         Self {
             output_consumer,
-            builder,
             config,
             buffer: Vec::new(),
             max_buffer_size,
@@ -279,27 +272,26 @@ impl Encoder for CsvEncoder {
     }
 
     fn encode(&mut self, batches: &[Arc<dyn SerBatch>]) -> AnyResult<()> {
-        let buffer = take(&mut self.buffer);
-        let mut writer = self.builder.from_writer(buffer);
+        let mut buffer = take(&mut self.buffer);
+        //let mut writer = self.builder.from_writer(buffer);
         let mut num_records = 0;
 
         for batch in batches.iter() {
-            let mut cursor = batch.cursor();
+            let mut cursor = batch.cursor(RecordFormat::Csv)?;
 
             while cursor.key_valid() {
-                let prev_len = writer.get_ref().len();
+                let prev_len = buffer.len();
 
-                let w = cursor.weight();
-                writer.serialize((cursor.key(), w))?;
-                let _ = writer.flush();
+                // `serialize_key_weight`
+                cursor.serialize_key_weight(&mut buffer)?;
 
                 // Drop the last encoded record if it exceeds max_buffer_size.
                 // The record will be included in the next buffer.
-                let new_len = writer.get_ref().len();
+                let new_len = buffer.len();
                 let overflow = if new_len > self.max_buffer_size {
                     if num_records == 0 {
-                        let record = std::str::from_utf8(&writer.get_ref()[prev_len..new_len])
-                            .unwrap_or_default();
+                        let record =
+                            std::str::from_utf8(&buffer[prev_len..new_len]).unwrap_or_default();
                         // We should be able to fit at least one record in the buffer.
                         bail!("CSV record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
                               self.max_buffer_size,
@@ -313,7 +305,6 @@ impl Encoder for CsvEncoder {
                 };
 
                 if num_records >= self.config.buffer_size_records || overflow {
-                    let mut buffer = writer.into_inner()?;
                     if overflow {
                         buffer.truncate(prev_len);
                     }
@@ -321,7 +312,6 @@ impl Encoder for CsvEncoder {
                     self.output_consumer.push_buffer(&buffer);
                     buffer.clear();
                     num_records = 0;
-                    writer = self.builder.from_writer(buffer);
                 }
 
                 if !overflow {
@@ -329,8 +319,6 @@ impl Encoder for CsvEncoder {
                 }
             }
         }
-
-        let mut buffer = writer.into_inner()?;
 
         if num_records > 0 {
             self.output_consumer.push_buffer(&buffer);

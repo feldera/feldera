@@ -1,8 +1,28 @@
-use crate::{static_compile::ErasedDeScalarHandle, ControllerError, SerOutputBatchHandle};
-use anyhow::Error as AnyError;
+use std::sync::Arc;
+
+use crate::{static_compile::ErasedDeScalarHandle, ControllerError};
+use anyhow::Result as AnyResult;
 use dbsp::InputHandle;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+/// Descriptor that specifies the format in which records are received
+/// or into which they should be encoded before sending.
+///
+// TODO: Currently we only allows choosing between JSON and CSV formats.
+// In the future, in addition to adding mode formats we can make these two
+// formats configurable (see below).
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq, Eq)]
+pub enum RecordFormat {
+    // TODO: Support different JSON encodings:
+    // * Map - the default encoding
+    // * Array - allow the subset and the order of columns to be configurable
+    // * Raw - Only applicable to single-column tables.  Input records contain
+    // raw encoding of this column only.  This is particularly useful for
+    // tables that store raw JSON or binary data to be parsed using SQL.
+    Json,
+    Csv,
+}
 
 // This is only here so we can derive `ToSchema` for it without adding
 // a `utoipa` dependency to the `dbsp` crate to derive ToSchema for
@@ -60,7 +80,7 @@ pub trait DeCollectionStream: Send {
     /// Returns an error if deserialization fails, i.e., the serialized
     /// representation is corrupted or does not match the value type of
     /// the underlying input stream.
-    fn insert(&mut self, data: &[u8]) -> Result<(), AnyError>;
+    fn insert(&mut self, data: &[u8]) -> AnyResult<()>;
 
     /// Buffer a new delete update.
     ///
@@ -80,7 +100,7 @@ pub trait DeCollectionStream: Send {
     /// Returns an error if deserialization fails, i.e., the serialized
     /// representation is corrupted or does not match the value or key
     /// type of the underlying input stream.
-    fn delete(&mut self, data: &[u8]) -> Result<(), AnyError>;
+    fn delete(&mut self, data: &[u8]) -> AnyResult<()>;
 
     /// Reserve space for at least `reservation` more updates in the
     /// internal input buffer.
@@ -113,24 +133,6 @@ pub trait DeCollectionStream: Send {
     fn fork(&self) -> Box<dyn DeCollectionStream>;
 }
 
-/// Descriptor that specifies the format in which records are received
-/// or into which they should be encoded before sending.
-///
-// TODO: Currently we only allows choosing between JSON and CSV formats.
-// In the future, in addition to adding mode formats we can make these two
-// formats configurable (see below).
-#[derive(Clone, Deserialize, Serialize, Debug, PartialEq, Eq)]
-pub enum RecordFormat {
-    // TODO: Support different JSON encodings:
-    // * Map - the default encoding
-    // * Array - allow the subset and the order of columns to be configurable
-    // * Raw - Only applicable to single-column tables.  Input records contain
-    // raw encoding of this column only.  This is particularly useful for
-    // tables that store raw JSON or binary data to be parsed using SQL.
-    Json,
-    Csv,
-}
-
 /// A handle to an input collection that can be used to feed serialized data
 /// to the collection.
 pub trait DeCollectionHandle: Send {
@@ -140,6 +142,98 @@ pub trait DeCollectionHandle: Send {
         &self,
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError>;
+}
+
+/// A type-erased batch whose contents can be serialized.
+///
+/// This is a wrapper around the DBSP `Batch` trait that returns a cursor that
+/// yields `erased_serde::Serialize` trait objects that can be used to serialize
+/// the contents of the batch without knowing its key and value types.
+pub trait SerBatch: Send + Sync {
+    /// Number of keys in the batch.
+    fn key_count(&self) -> usize;
+
+    /// Number of tuples in the batch.
+    fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Create a cursor over the batch that yields record
+    /// formatted using the specified format.
+    fn cursor<'a>(
+        &'a self,
+        record_format: RecordFormat,
+    ) -> Result<Box<dyn SerCursor + 'a>, ControllerError>;
+}
+
+/// Cursor that allows serializing the contents of a type-erased batch.
+///
+/// This is a wrapper around the DBSP `Cursor` trait that yields keys and values
+/// of the underlying batch as `erased_serde::Serialize` trait objects.
+pub trait SerCursor {
+    /// Indicates if the current key is valid.
+    ///
+    /// A value of `false` indicates that the cursor has exhausted all keys.
+    fn key_valid(&self) -> bool;
+
+    /// Indicates if the current value is valid.
+    ///
+    /// A value of `false` indicates that the cursor has exhausted all values
+    /// for this key.
+    fn val_valid(&self) -> bool;
+
+    /// Serialize current key. Panics if invalid.
+    fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
+
+    /// Serialize the `(key, weight)` tuple.
+    ///
+    /// FIXME: This only exists to support the CSV serializer, which outputs
+    /// key and weight in the same CSV record.  This should be eliminated once
+    /// we have a better idea about the common denominator between JIT and
+    /// serde serializers.
+    fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
+
+    /// Serialize current value. Panics if invalid.
+    fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
+
+    /// Returns the weight associated with the current key/value pair.
+    fn weight(&mut self) -> i64;
+
+    /// Advances the cursor to the next key.
+    fn step_key(&mut self);
+
+    /// Advances the cursor to the next value.
+    fn step_val(&mut self);
+
+    /// Rewinds the cursor to the first key.
+    fn rewind_keys(&mut self);
+
+    /// Rewinds the cursor to the first value for current key.
+    fn rewind_vals(&mut self);
+}
+
+/// A handle to an output stream of a circuit that yields type-erased
+/// output batches.
+///
+/// A trait for a type that wraps around an [`OutputHandle<Batch>`] and
+/// yields output batches produced by the circuit as [`SerBatch`]s.
+pub trait SerCollectionHandle: Send + Sync {
+    /// Like [`OutputHandle::take_from_worker`], but returns output batch as a
+    /// [`SerBatch`] trait object.
+    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatch>>;
+
+    /// Like [`OutputHandle::take_from_all`], but returns output batches as
+    /// [`SerBatch`] trait objects.
+    fn take_from_all(&self) -> Vec<Arc<dyn SerBatch>>;
+
+    /// Like [`OutputHandle::consolidate`], but returns the output batch as a
+    /// [`SerBatch`] trait object.
+    fn consolidate(&self) -> Box<dyn SerBatch>;
+
+    /// Returns an alias to `self`.
+    fn fork(&self) -> Box<dyn SerCollectionHandle>;
 }
 
 /// A catalog of input and output stream handles of a circuit.
@@ -157,7 +251,7 @@ pub trait CircuitCatalog: Send {
 /// A set of stream handles associated with each output collection.
 pub struct OutputCollectionHandles {
     /// A stream of changes to the collection.
-    pub delta_handle: Box<dyn SerOutputBatchHandle>,
+    pub delta_handle: Box<dyn SerCollectionHandle>,
 
     /// Input stream used to submit neighborhood queries.
     ///
@@ -197,11 +291,11 @@ pub struct OutputCollectionHandles {
 
     /// A stream of changes to the neighborhood, computed using the
     /// [`Stream::neighborhood`] operator.
-    pub neighborhood_handle: Box<dyn SerOutputBatchHandle>,
+    pub neighborhood_handle: Box<dyn SerCollectionHandle>,
 
     /// A stream that contains the full snapshot of the neighborhood.  Only produces
     /// an output whenever the `neighborhood_descr_handle` input is set to `Some(..)`.
-    pub neighborhood_snapshot_handle: Box<dyn SerOutputBatchHandle>,
+    pub neighborhood_snapshot_handle: Box<dyn SerCollectionHandle>,
 
     /// Input stream used to submit the quantiles query.
     ///
@@ -217,7 +311,7 @@ pub struct OutputCollectionHandles {
     /// When the `num_quantiles_handle` input is set to `N`, `N>0`, this stream
     /// outputs up to `N` quantiles of the input collection, computed using
     /// the [`Stream::stream_key_quantiles`] operator.
-    pub quantiles_handle: Box<dyn SerOutputBatchHandle>,
+    pub quantiles_handle: Box<dyn SerCollectionHandle>,
 }
 
 /// A query over an output stream.
@@ -257,6 +351,6 @@ impl Default for OutputQuery {
 /// query based on previously received inputs, and then listen to the delta
 /// stream for incremental updates triggered by new inputs.
 pub struct OutputQueryHandles {
-    pub delta: Option<Box<dyn SerOutputBatchHandle>>,
-    pub snapshot: Option<Box<dyn SerOutputBatchHandle>>,
+    pub delta: Option<Box<dyn SerCollectionHandle>>,
+    pub snapshot: Option<Box<dyn SerCollectionHandle>>,
 }

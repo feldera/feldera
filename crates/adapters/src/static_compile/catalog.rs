@@ -1,8 +1,9 @@
 use crate::{
-    catalog::{DeCollectionHandle, NeighborhoodEntry, OutputCollectionHandles},
+    catalog::{
+        DeCollectionHandle, NeighborhoodEntry, OutputCollectionHandles, SerCollectionHandle,
+    },
     static_compile::{DeScalarHandleImpl, ErasedDeScalarHandle},
-    CircuitCatalog, OutputQuery, OutputQueryHandles, SerOutputBatchHandle,
-    SerOutputBatchHandleImpl,
+    CircuitCatalog, OutputQuery, OutputQueryHandles,
 };
 use dbsp::{
     algebra::ZRingValue,
@@ -12,7 +13,7 @@ use dbsp::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use super::{DeSetHandle, DeZSetHandle};
+use super::{DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
 
 /// A catalog of input and output stream handles of a circuit.
 ///
@@ -149,24 +150,24 @@ impl Catalog {
             .output_guarded(&num_quantiles_stream.apply(|num_quantiles| *num_quantiles > 0));
 
         let handles = OutputCollectionHandles {
-            delta_handle: Box::new(<SerOutputBatchHandleImpl<_, D, ()>>::new(delta_handle))
-                as Box<dyn SerOutputBatchHandle>,
+            delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
+                as Box<dyn SerCollectionHandle>,
 
             neighborhood_descr_handle: Box::new(DeScalarHandleImpl::new(neighborhood_descr_handle))
                 as Box<dyn ErasedDeScalarHandle>,
             neighborhood_handle: Box::new(
-                <SerOutputBatchHandleImpl<_, NeighborhoodEntry<D>, ()>>::new(neighborhood_handle),
-            ) as Box<dyn SerOutputBatchHandle>,
-            neighborhood_snapshot_handle: Box::new(<SerOutputBatchHandleImpl<
+                <SerCollectionHandleImpl<_, NeighborhoodEntry<D>, ()>>::new(neighborhood_handle),
+            ) as Box<dyn SerCollectionHandle>,
+            neighborhood_snapshot_handle: Box::new(<SerCollectionHandleImpl<
                 _,
                 NeighborhoodEntry<D>,
                 (),
             >>::new(neighborhood_snapshot_handle))
-                as Box<dyn SerOutputBatchHandle>,
+                as Box<dyn SerCollectionHandle>,
 
             num_quantiles_handle,
-            quantiles_handle: Box::new(<SerOutputBatchHandleImpl<_, D, ()>>::new(quantiles_handle))
-                as Box<dyn SerOutputBatchHandle>,
+            quantiles_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(quantiles_handle))
+                as Box<dyn SerCollectionHandle>,
         };
 
         self.output_batch_handles.insert(name.to_owned(), handles);
