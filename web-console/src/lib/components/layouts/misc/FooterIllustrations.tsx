@@ -25,7 +25,7 @@ const FooterIllustrations = () => {
   if (!hidden) {
     return (
       <Fragment>
-        <MaskImg alt='mask' src={mask} />
+        <MaskImg alt='mask' src={mask} priority />
       </Fragment>
     )
   } else {

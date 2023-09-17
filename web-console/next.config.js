@@ -5,7 +5,7 @@ const path = require('path')
 module.exports = {
   output: 'export', // https://nextjs.org/docs/app/building-your-application/deploying/static-exports
   distDir: 'out', // Optional, default: `out`
-  trailingSlash: false,
+  trailingSlash: true,
   reactStrictMode: true,
   compiler: {
   },

@@ -8,14 +8,6 @@ import { Settings } from 'src/@core/context/settingsTypes'
 import Box, { BoxProps } from '@mui/material/Box'
 import { styled } from '@mui/material/styles'
 
-interface Props {
-  hidden: boolean
-  settings: Settings
-  toggleNavVisibility: () => void
-  saveSettings: (values: Settings) => void
-  verticalNavMenuBranding?: (props?: any) => ReactNode
-}
-
 const MenuHeaderWrapper = styled(Box)<BoxProps>(({ theme }) => ({
   display: 'flex',
   alignItems: 'center',
@@ -31,7 +23,13 @@ const StyledLink = styled(Link)({
   textDecoration: 'none'
 })
 
-const VerticalNavHeader = (props: Props) => {
+const VerticalNavHeader = (props: {
+  hidden: boolean
+  settings: Settings
+  toggleNavVisibility: () => void
+  saveSettings: (values: Settings) => void
+  verticalNavMenuBranding?: (props?: any) => ReactNode
+}) => {
   const { verticalNavMenuBranding: userVerticalNavMenuBranding } = props
   const logo = props.settings.mode === 'dark' ? darkLogo : lightLogo
 
@@ -41,7 +39,7 @@ const VerticalNavHeader = (props: Props) => {
         userVerticalNavMenuBranding(props)
       ) : (
         <StyledLink href='/' passHref>
-          <Image src={logo} alt='Logo' width={130} height={70} />
+          <Image src={logo} priority alt='Logo' width={130} height={70} />
         </StyledLink>
       )}
     </MenuHeaderWrapper>

@@ -5,7 +5,7 @@ import 'src/styles/globals.css'
 /** @jsxImportSource react */
 import themeConfig from '$lib/functions/configs/themeConfig'
 import { Public_Sans } from 'next/font/google'
-import { ReactNode } from 'react'
+import { ReactNode, Suspense } from 'react'
 
 const publicSans = Public_Sans({
   weight: ['300', '400', '500', '600', '700'],
@@ -36,7 +36,12 @@ export default (props: { children: ReactNode }) => {
         <link rel='apple-touch-icon' sizes='180x180' href='/favicon.svg' />
         <link rel='shortcut icon' href='/favicon.svg' />
       </head>
-      <body>{props.children}</body>
+      <body>
+        {/* <Suspense> resolves the warning of
+        https://nextjs.org/docs/messages/deopted-into-client-rendering
+        caused by the next layout in the hierarchy being Client Component */}
+        <Suspense>{props.children}</Suspense>
+      </body>
     </html>
   )
 }
