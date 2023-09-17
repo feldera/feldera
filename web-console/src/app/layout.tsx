@@ -4,14 +4,7 @@ import 'src/styles/globals.css'
 
 /** @jsxImportSource react */
 import themeConfig from '$lib/functions/configs/themeConfig'
-import { Public_Sans } from 'next/font/google'
 import { ReactNode, Suspense } from 'react'
-
-const publicSans = Public_Sans({
-  weight: ['300', '400', '500', '600', '700'],
-  style: ['normal', 'italic'],
-  subsets: ['latin']
-})
 
 export const metadata = {
   description: `${themeConfig.templateName} – Web Console.`,
@@ -21,7 +14,7 @@ export const metadata = {
 
 export default (props: { children: ReactNode }) => {
   return (
-    <html lang='en' className={publicSans.className}>
+    <html lang='en'>
       <head>
         <title>{`${themeConfig.templateName} - Web Console`}</title>
         {false && (process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'preview') && (

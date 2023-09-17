@@ -31,9 +31,6 @@ const GlobalStyles = (theme: Theme) => {
           }
         }
       }
-    },
-    html: {
-      fontFamily: 'var(--font-public-sans)'
     }
   }
 }
