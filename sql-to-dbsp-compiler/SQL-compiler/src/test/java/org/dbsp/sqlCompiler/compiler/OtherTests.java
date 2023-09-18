@@ -433,6 +433,50 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
+    public void testErrorMessage() {
+        // TODO: this test may become invalid once we add support, so we need
+        // here some truly invalid SQL.
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.compileStatements("create table PART_ORDER (\n" +
+                "    id bigint,\n" +
+                "    part bigint,\n" +
+                "    customer bigint,\n" +
+                "    target_date date\n" +
+                ");\n" +
+                "\n" +
+                "create table FULFILLMENT (\n" +
+                "    part_order bigint,\n" +
+                "    fulfillment_date date\n" +
+                ");\n" +
+                "\n" +
+                "create view FLAGGED_ORDER as\n" +
+                "select\n" +
+                "    part_order.customer,\n" +
+                "    AVG(DATEDIFF(day, part_order.target_date, fulfillment.fulfillment_date))\n" +
+                "    OVER (PARTITION BY part_order.customer\n" +
+                "          ORDER BY fulfillment.fulfillment_date\n" +
+                "          RANGE BETWEEN INTERVAL 90 days PRECEDING and CURRENT ROW) as avg_delay\n" +
+                "from\n" +
+                "    part_order\n" +
+                "    join\n" +
+                "    fulfillment\n" +
+                "    on part_order.id = fulfillment.part_order;\n");
+        String errors = compiler.messages.toString();
+        Assert.assertTrue(errors.contains("Not yet implemented: OVER currently does not support sorting on nullable column"));
+    }
+
+    @Test
+    public void testTypeErrorMessage() {
+        // TODO: this test may become invalid once we add support
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.compileStatements("CREATE VIEW V AS SELECT ROW(2, 2);\n");
+        String errors = compiler.messages.toString();
+        Assert.assertTrue(errors.contains("error: Not yet implemented: ROW(2, 2)"));
+    }
+
+    @Test
     public void duplicateColumnTest() {
         DBSPCompiler compiler = this.testCompiler();
         // allow multiple errors to be reported

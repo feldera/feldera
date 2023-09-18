@@ -60,8 +60,7 @@ public class UnimplementedException extends BaseCompilerException {
     }
 
     public UnimplementedException(CalciteObject object) {
-        this(object.getClass().getSimpleName() + ":" + object,
-                null, object);
+        this(object.toString(), null, object);
     }
 
     public UnimplementedException(String message, IDBSPNode node) {
@@ -70,7 +69,7 @@ public class UnimplementedException extends BaseCompilerException {
     }
 
     public UnimplementedException(String message, CalciteObject node) {
-        this(message + " " + node.getClass().getSimpleName() + ":" + node,
+        this(message + " " + node,
                 null, node);
     }
 

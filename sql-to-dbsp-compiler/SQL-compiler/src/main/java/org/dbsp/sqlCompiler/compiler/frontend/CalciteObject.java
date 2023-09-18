@@ -1,8 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.rel2sql.RelToSqlConverter;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperator;
@@ -78,9 +80,31 @@ public class CalciteObject {
     public String toString() {
         if (this.operator != null)
             return this.operator.toString();
-        else if (this.relNode != null)
+        else if (this.relNode != null) {
+            try {
+                RelToSqlConverter converter =
+                        new RelToSqlConverter(SqlDialect.DatabaseProduct.UNKNOWN.getDialect());
+                SqlNode node = converter.visitRoot(this.relNode).asStatement();
+                return node.toString();
+            } catch (Exception ex) {
+                // Sometimes Calcite crashes when converting rel to SQL
+                return this.relNode.toString();
+            }
+        } else if (this.sqlNode != null)
+            return this.sqlNode.toString();
+        else if (this.relType != null)
+            return this.relType.toString();
+        else if (this.rexNode != null)
+            return this.rexNode.toString();
+        return "";
+    }
+
+    public String toInternalString() {
+        if (this.operator != null)
+            return this.operator.toString();
+        else if (this.relNode != null) {
             return this.relNode.toString();
-        else if (this.sqlNode != null)
+        } else if (this.sqlNode != null)
             return this.sqlNode.toString();
         else if (this.relType != null)
             return this.relType.toString();
