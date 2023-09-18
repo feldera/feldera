@@ -88,7 +88,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     void generateOperator(DBSPOperator operator) {
-        String str = operator.getNode().toString();
+        String str = operator.getNode().toInternalString();
         this.writeComments(str);
         operator.accept(this);
         this.builder.newline();

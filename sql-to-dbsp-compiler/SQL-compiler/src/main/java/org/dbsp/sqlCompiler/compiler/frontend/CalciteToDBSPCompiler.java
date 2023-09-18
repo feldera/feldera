@@ -917,8 +917,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     !sortType.is(DBSPTypeDate.class))
                 throw new UnimplementedException("OVER currently requires an integer type for ordering "
                         + "and cannot handle " + sortType, node);
-            if (sortType.mayBeNull)
-                throw new UnimplementedException("OVER currently does not support sorting on nullable column ", node);
+            if (sortType.mayBeNull) {
+                RelDataTypeField relDataTypeField = inputNode.getRowType().getFieldList().get(orderColumnIndex);
+                throw new UnimplementedException("OVER currently does not support sorting on nullable column " +
+                        Utilities.singleQuote(relDataTypeField.getName()) + ":", node);
+            }
 
             // Create window description
             DBSPExpression lb = this.compileWindowBound(group.lowerBound, sortType, eComp);
