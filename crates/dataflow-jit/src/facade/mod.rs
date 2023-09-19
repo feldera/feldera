@@ -3,7 +3,7 @@ mod handle;
 mod tests;
 
 pub use demands::Demands;
-pub use handle::JsonSetHandle;
+pub use handle::{DeCollectionStream, JsonZSetHandle};
 
 use crate::{
     codegen::{
@@ -220,7 +220,7 @@ impl DbspCircuit {
     // and arc and handles should hold a reference to that (maybe even a weak ref).
     // Alternatively we could use lifetimes, but I'm not 100% sure how that would
     // interact with consumers
-    pub unsafe fn json_input_set(&mut self, target: NodeId) -> Option<JsonSetHandle> {
+    pub unsafe fn json_input_set(&mut self, target: NodeId) -> Option<JsonZSetHandle> {
         let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
             panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
         });
@@ -240,7 +240,7 @@ impl DbspCircuit {
             )
         };
 
-        Some(JsonSetHandle::new(handle, deserialize_fn, vtable))
+        Some(JsonZSetHandle::new(handle, deserialize_fn, vtable))
     }
 
     pub fn append_input(&mut self, target: NodeId, data: &StreamCollection) {
