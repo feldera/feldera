@@ -32,6 +32,7 @@ use serde_json::{Deserializer, Value};
 use std::{
     collections::BTreeMap,
     error,
+    fmt::Write as _,
     io::{self, Read, Write},
     mem::transmute,
     ops::Not,
@@ -572,11 +573,18 @@ impl DbspCircuit {
 
                     let mut cursor = set.cursor();
                     while cursor.key_valid() {
-                        // let diff = cursor.weight();
+                        let weight = cursor.weight();
                         let key = cursor.key();
+
+                        buffer.push_str("{\"data\":");
 
                         // Write the row to a single line of text
                         unsafe { serialize_json(key.as_ptr(), buffer) }
+
+                        // Tack the weight onto the end
+                        buffer.push_str(",\"weight\":");
+                        write!(buffer, "{weight}}}").expect("writing to a string is infallible");
+
                         // TODO: Should the newline be configurable?
                         buffer.push('\n');
                         write.write_all(buffer.as_bytes())?;
