@@ -140,24 +140,36 @@ public class JitJsonOutputDescription extends JitIODescription {
         throw this.parseError(lineNumber, line, "Unexpected type " + type);
     }
 
-    DBSPExpression parseLine(ObjectMapper objectMapper, long lineNumber, String line, DBSPTypeTuple elementType)
+    static class ExpressionAndWeight {
+        public final DBSPExpression expression;
+        public final long weight;
+
+        ExpressionAndWeight(DBSPExpression expression, long weight) {
+            this.expression = expression;
+            this.weight = weight;
+        }
+    }
+
+    ExpressionAndWeight
+    parseLine(ObjectMapper objectMapper, long lineNumber, String line, DBSPTypeTuple elementType)
             throws JsonProcessingException {
-        // TODO: this will have to change when the JSON format will support weights
         JsonNode jsonNode = objectMapper.readTree(line);
         if (!jsonNode.isObject()) {
             throw this.parseError(lineNumber, line,
                     "Expected an object for each row");
         }
         ObjectNode node = (ObjectNode) jsonNode;
+        long weight = node.get("weight").longValue();
+        ObjectNode row = (ObjectNode) node.get("data");
         DBSPExpression[] fields = new DBSPExpression[elementType.size()];
         int index = 0;
         for (String column: this.columns) {
             DBSPType type = elementType.getFieldType(index);
-            DBSPExpression expression = this.deserialize(lineNumber, line, node, column, type);
+            DBSPExpression expression = this.deserialize(lineNumber, line, row, column, type);
             fields[index] = expression;
             index++;
         }
-        return new DBSPTupleExpression(fields);
+        return new ExpressionAndWeight(new DBSPTupleExpression(fields), weight);
     }
 
     @Override
@@ -169,8 +181,8 @@ public class JitJsonOutputDescription extends JitIODescription {
         ObjectMapper objectMapper = jsonFactory();
         long lineNumber = 0;
         for (String line: lines) {
-            DBSPExpression expression = this.parseLine(objectMapper, lineNumber, line, tuple);
-            result.add(expression);
+            ExpressionAndWeight ew = this.parseLine(objectMapper, lineNumber, line, tuple);
+            result.add(ew.expression, ew.weight);
         }
         return result;
     }

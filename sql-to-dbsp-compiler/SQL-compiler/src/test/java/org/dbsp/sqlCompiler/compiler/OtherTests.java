@@ -112,7 +112,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         new DBSPTupleExpression(new DBSPDoubleLiteral(12)),
                         new DBSPTupleExpression(new DBSPDoubleLiteral(1))));
         // Compile query, generate circuit.
-        // TODO: options should specify JIT target
+        // TODO: compiler options should specify JIT as a target
         DBSPCompiler compiler = this.compileDef();
         compiler.compileStatements(query);
         DBSPCircuit circuit = getCircuit(compiler);
