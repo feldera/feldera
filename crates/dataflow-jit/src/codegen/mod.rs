@@ -263,7 +263,6 @@ impl Codegen {
 
         let options = &[
             ("opt_level", "speed"),
-            ("enable_simd", "true"),
             ("unwind_info", "true"),
             ("enable_verifier", "true"),
             ("enable_jump_tables", "true"),
