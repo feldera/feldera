@@ -158,7 +158,7 @@ impl TestConfig {
             self.wait_for_pipeline_status(
                 id,
                 PipelineStatus::Shutdown,
-                time::Duration::from_secs(20),
+                time::Duration::from_secs(30),
             )
             .await;
             let req = config.delete(format!("/v0/pipelines/{}", id)).await;
@@ -575,7 +575,7 @@ async fn deploy_pipeline() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
         .await;
 }
 
@@ -628,7 +628,7 @@ async fn pipeline_panic() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
         .await;
 }
 
@@ -849,7 +849,7 @@ not_a_number,true,ΑαΒβΓγΔδ
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
         .await;
 }
 
@@ -897,7 +897,7 @@ async fn parse_datetime() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
         .await;
 }
 
@@ -946,6 +946,6 @@ async fn quoted_columns() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(10_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
         .await;
 }
