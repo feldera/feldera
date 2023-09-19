@@ -61,7 +61,7 @@ FROM base as javabuild
 RUN apt install maven -y
 RUN mkdir sql
 COPY sql-to-dbsp-compiler /sql/sql-to-dbsp-compiler
-RUN cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -DskipTests package
+RUN cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -ntp -DskipTests package
 
 # Minimal image for running the pipeline manager
 from base as release
