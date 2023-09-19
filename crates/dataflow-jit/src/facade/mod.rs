@@ -35,7 +35,7 @@ use std::{
     io::{self, Read, Write},
     mem::transmute,
     ops::Not,
-    path::Path,
+    path::{Path, PathBuf},
     thread,
     time::Instant,
 };
@@ -179,6 +179,14 @@ impl DbspCircuit {
     /// in undefined behavior
     pub unsafe fn layout_vtable(&self, layout: LayoutId) -> &'static VTable {
         unsafe { &*self.jit.vtables()[&layout] }
+    }
+
+    pub fn enable_cpu_profiler(&mut self) -> Result<(), Error> {
+        self.runtime.enable_cpu_profiler()
+    }
+
+    pub fn dump_profile<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<PathBuf, Error> {
+        self.runtime.dump_profile(dir_path)
     }
 
     pub fn step(&mut self) -> Result<(), Error> {

@@ -7,6 +7,7 @@ use crate::{
     ir::{ColumnType, LayoutId},
     utils::HashMap,
 };
+use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use cranelift::prelude::FunctionBuilder;
 use cranelift_codegen::ir::{types, Block, InstBuilder, MemFlags, Type, Value};
 use cranelift_module::{FuncId, Module};
@@ -39,7 +40,7 @@ pub unsafe fn call_deserialize_fn(
     deserialize_fn: DeserializeJsonFn,
     row_place: *mut u8,
     value: &serde_json::Value,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AnyResult<()> {
     let mut error = String::new();
     let result = deserialize_fn(row_place, value, &mut error);
 
@@ -51,8 +52,8 @@ pub unsafe fn call_deserialize_fn(
     } else {
         #[inline(never)]
         #[cold]
-        fn deserialize_error(error: String) -> Box<dyn std::error::Error> {
-            format!("an error occurred while parsing the key {error}").into()
+        fn deserialize_error(error: String) -> AnyError {
+            anyhow!("an error occurred while parsing the key {error}")
         }
 
         Err(deserialize_error(error))

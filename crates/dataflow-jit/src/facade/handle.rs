@@ -5,9 +5,9 @@ use crate::{
     },
     row::{Row, UninitRow},
 };
+use anyhow::Result as AnyResult;
 use dbsp::CollectionHandle;
 use serde_json::Value;
-use std::error;
 
 /// Maximal buffer size reused across input batches.
 const MAX_REUSABLE_CAPACITY: usize = 100_000;
@@ -21,11 +21,11 @@ pub trait DeCollectionStream: Send + Clone {
     /// Returns an error if deserialization fails, i.e., the serialized
     /// representation is corrupted or does not match the value type of
     /// the underlying input stream.
-    fn push(&mut self, data: &[u8], weight: i32) -> Result<(), Box<dyn error::Error>>;
+    fn push(&mut self, data: &[u8], weight: i32) -> AnyResult<()>;
 
     /// Reserve space for at least `reservation` more updates in the
     /// internal input buffer.
-    fn reserve(&mut self, reservation: usize);
+    fn reserve(&mut self, additional: usize);
 
     /// Push all buffered updates to the underlying input stream handle.
     ///
@@ -69,14 +69,13 @@ impl JsonZSetHandle {
     }
 
     fn clear(&mut self) {
-        if self.updates.capacity() > MAX_REUSABLE_CAPACITY {
-            self.updates = Vec::new();
-        }
+        self.updates.clear();
+        self.updates.shrink_to(MAX_REUSABLE_CAPACITY);
     }
 }
 
 impl DeCollectionStream for JsonZSetHandle {
-    fn push(&mut self, key: &[u8], weight: i32) -> Result<(), Box<dyn error::Error>> {
+    fn push(&mut self, key: &[u8], weight: i32) -> AnyResult<()> {
         let value: Value = serde_json::from_slice(key)?;
         let key = unsafe {
             let mut uninit = UninitRow::new(self.vtable);
@@ -89,8 +88,8 @@ impl DeCollectionStream for JsonZSetHandle {
         Ok(())
     }
 
-    fn reserve(&mut self, reservation: usize) {
-        self.updates.reserve(reservation);
+    fn reserve(&mut self, additional: usize) {
+        self.updates.reserve(additional);
     }
 
     fn flush(&mut self) {
@@ -99,7 +98,6 @@ impl DeCollectionStream for JsonZSetHandle {
     }
 
     fn clear_buffer(&mut self) {
-        self.updates.clear();
         self.clear();
     }
 }
