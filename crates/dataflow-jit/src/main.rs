@@ -6,7 +6,7 @@ use dataflow_jit::{
     },
     dataflow::CompiledDataflow,
     facade::Demands,
-    ir::{GraphExt, Validator},
+    ir::{DemandId, GraphExt, Validator},
     sql_graph::SqlGraph,
     DbspCircuit,
 };
@@ -78,8 +78,8 @@ enum OutputKind {
 }
 
 enum Format {
-    Json,
-    Csv,
+    Json(DemandId),
+    Csv(DemandId),
 }
 
 fn run(program: &Path, config: &Path) -> ExitCode {
@@ -109,14 +109,9 @@ fn run(program: &Path, config: &Path) -> ExitCode {
             InputKind::Json(mut mappings) => {
                 // Correct the layout of `mappings`
                 mappings.layout = layout;
-
-                demands.add_json_deserialize(layout, mappings);
-                Format::Json
+                Format::Json(demands.add_json_deserialize(mappings))
             }
-            InputKind::Csv(mappings) => {
-                demands.add_csv_deserialize(layout, mappings);
-                Format::Csv
-            }
+            InputKind::Csv(mappings) => Format::Csv(demands.add_csv_deserialize(layout, mappings)),
         };
 
         inputs.push((node, input.file, format));
@@ -140,9 +135,7 @@ fn run(program: &Path, config: &Path) -> ExitCode {
             OutputKind::Json(mut mappings) => {
                 // Correct the layout of `mappings`
                 mappings.layout = layout;
-
-                demands.add_json_serialize(layout, mappings);
-                Format::Json
+                Format::Json(demands.add_json_serialize(mappings))
             }
         };
 
@@ -163,13 +156,13 @@ fn run(program: &Path, config: &Path) -> ExitCode {
 
     for (target, file, format) in inputs {
         match format {
-            Format::Json => {
+            Format::Json(demand) => {
                 // TODO: Create & append? Make it configurable?
                 let file = BufReader::new(File::open(file).unwrap());
-                circuit.append_json_input(target, file).unwrap();
+                circuit.append_json_input(target, demand, file).unwrap();
             }
 
-            Format::Csv => circuit.append_csv_input(target, &file),
+            Format::Csv(demand) => circuit.append_csv_input(target, demand, &file),
         }
     }
 
@@ -179,17 +172,17 @@ fn run(program: &Path, config: &Path) -> ExitCode {
     let elapsed = start.elapsed();
     println!("stepped in {elapsed:#?}");
 
-    let mut buf = String::new();
+    let mut buf = Vec::new();
     for (target, file, format) in outputs {
         match format {
-            Format::Json => {
+            Format::Json(demand) => {
                 let mut file = BufWriter::new(File::create(file).unwrap());
                 circuit
-                    .consolidate_json_output(target, &mut buf, &mut file)
+                    .consolidate_json_output(target, demand, &mut buf, &mut file)
                     .unwrap();
             }
 
-            Format::Csv => unimplemented!(),
+            Format::Csv(_demand) => unimplemented!(),
         }
     }
 
