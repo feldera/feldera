@@ -5,17 +5,18 @@ import { useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNod
 import { useHashPart } from '$lib/compositions/useHashPart'
 import { inUnion } from '$lib/functions/common/array'
 import { randomString } from '$lib/functions/common/string'
+import { tuple } from '$lib/functions/common/tuple'
 import {
   connectorDescrToType,
   connectorTypeToDirection,
   connectorTypeToIcon,
   connectorTypeToTitle
 } from '$lib/functions/connectors'
+import { showOnHashPart } from '$lib/functions/urlHash'
 import { AttachedConnector, ConnectorDescr } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import { Fragment, useEffect, useState } from 'react'
-import { tuple } from 'src/lib/functions/common/tuple'
 
 import { Icon } from '@iconify/react'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
@@ -88,6 +89,7 @@ const shouldDisplayConnector = (direction: Direction, connectorType: ConnectorTy
 
 const SideBarAddIo = () => {
   const [hash, setHash] = useHashPart()
+  const showOnHash = showOnHashPart([hash, setHash])
 
   const [nodeType, connectorType] = (([nodeType, connectorType]) =>
     tuple(
@@ -193,9 +195,9 @@ const SideBarAddIo = () => {
         tuple(ConnectorType.KAFKA_IN, KafkaInputConnectorDialog),
         tuple(ConnectorType.KAFKA_OUT, KafkaOutputConnectorDialog),
         tuple(ConnectorType.URL, UrlConnectorDialog)
-      ].map(([type, dialog]) => (
+      ].map(([type, Dialog]) => (
         <Fragment key={type}>
-          {dialog({ show: hash === type, setShow: () => setHash(''), onSuccess: onAddClick })}
+          <Dialog {...showOnHash(type)} onSuccess={onAddClick} />
         </Fragment>
       ))}
     </Drawer>

@@ -3,17 +3,16 @@
 // It just has an editor for the YAML config.
 'use client'
 
-import { connectorTypeToIcon, parseEditorSchema } from '$lib/functions/connectors'
+import { parseEditorSchema } from '$lib/functions/connectors'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
-import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
-import { ConnectorDescr, ConnectorId, NewConnectorRequest, UpdateConnectorRequest } from '$lib/services/manager'
-import { ConnectorType } from '$lib/types/connectors'
+import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
-import { Controller, useForm } from 'react-hook-form'
-import * as yup from 'yup'
+import { Controller } from 'react-hook-form'
+import { FormContainer, TextFieldElement, useFormContext } from 'react-hook-form-mui'
+import * as va from 'valibot'
 
-import { yupResolver } from '@hookform/resolvers/yup'
+import { valibotResolver } from '@hookform/resolvers/valibot'
 import { Icon } from '@iconify/react'
 import { Editor } from '@monaco-editor/react'
 import { useTheme } from '@mui/material'
@@ -29,22 +28,17 @@ import IconButton from '@mui/material/IconButton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 
-import { AddConnectorCard } from './AddConnectorCard'
-import Transition from './tabs/Transition'
+import Transition from './common/Transition'
 
-const schema = yup
-  .object({
-    name: yup.string().required(),
-    description: yup.string().default(''),
-    config: yup.string().required()
-  })
-  .required()
+const schema = va.object({
+  name: va.nonOptional(va.string([va.minLength(2)])),
+  description: va.optional(va.string(), ''),
+  config: va.nonOptional(va.string())
+})
 
-export type EditorSchema = yup.InferType<typeof schema>
+export type EditorSchema = va.Input<typeof schema>
 
 export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
-  const theme = useTheme()
-  const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
   const [curValues, setCurValues] = useState<EditorSchema | undefined>(undefined)
 
   // Initialize the form either with default or values from the passed in connector
@@ -54,70 +48,33 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
     }
   }, [props.connector])
 
-  const {
-    control,
-    reset,
-    handleSubmit,
-    formState: { errors }
-  } = useForm<EditorSchema>({
-    resolver: yupResolver(schema),
-    defaultValues: {
-      name: '',
-      description: '',
-      config: JSON.stringify(
-        {
-          transport: {
-            name: 'transport-name',
-            config: {
-              property: 'value'
-            }
-          },
-          format: {
-            name: 'csv'
+  const defaultValues: EditorSchema = {
+    name: '',
+    description: '',
+    config: JSON.stringify(
+      {
+        transport: {
+          name: 'transport-name',
+          config: {
+            property: 'value'
           }
         },
-        null,
-        2
-      )
-    },
-    values: curValues
-  })
+        format: {
+          name: 'csv'
+        }
+      },
+      null,
+      2
+    )
+  }
 
   const handleClose = () => {
-    reset()
     props.setShow(false)
   }
-  const onFormSubmitted = (connector: ConnectorDescr | undefined) => {
-    handleClose()
-    if (connector !== undefined && props.onSuccess !== undefined) {
-      props.onSuccess(connector)
-    }
-  }
-
   // Define what should happen when the form is submitted
-  const genericRequest = (
-    data: EditorSchema,
-    connector_id?: string
-  ): [ConnectorId | undefined, NewConnectorRequest | UpdateConnectorRequest] => {
-    return [
-      connector_id,
-      {
-        name: data.name,
-        description: data.description,
-        config: JSON.parse(data.config)
-      }
-    ]
-  }
-  const newRequest = (data: EditorSchema): [undefined, NewConnectorRequest] => {
-    return genericRequest(data) as [undefined, NewConnectorRequest]
-  }
-  const updateRequest = (data: EditorSchema): [ConnectorId, UpdateConnectorRequest] => {
-    return genericRequest(data, props.connector?.connector_id) as [ConnectorId, UpdateConnectorRequest]
-  }
-  const onSubmit =
-    props.connector === undefined
-      ? ConnectorFormNewRequest<EditorSchema>(onFormSubmitted, newRequest)
-      : ConnectorFormUpdateRequest<EditorSchema>(onFormSubmitted, updateRequest)
+  const prepareData = (data: EditorSchema) => ({ ...data, config: JSON.parse(data.config) })
+
+  const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
 
   return (
     <Dialog
@@ -129,7 +86,13 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
       TransitionComponent={Transition}
     >
       {/* id is referenced by webui-tester */}
-      <form id='generic-connector-form' onSubmit={handleSubmit(onSubmit)}>
+      <FormContainer
+        resolver={valibotResolver(schema)}
+        values={curValues}
+        defaultValues={defaultValues}
+        FormProps={{ id: 'generic-connector-form' }}
+        onSuccess={onSubmit}
+      >
         <DialogContent sx={{ pb: 8, px: { xs: 8, sm: 15 }, pt: { xs: 8, sm: 12.5 }, position: 'relative' }}>
           <IconButton
             size='small'
@@ -144,69 +107,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
             </Typography>
             {props.connector === undefined && <Typography variant='body2'>Write a custom connector config</Typography>}
           </Box>
-          <Grid container spacing={6}>
-            <Grid item sm={4} xs={12}>
-              <FormControl fullWidth>
-                <Controller
-                  name='name'
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      id='connector-name' // referenced by webui-tester
-                      label='Datasource Name'
-                      placeholder={PLACEHOLDER_VALUES['connector_name']}
-                      error={Boolean(errors.name)}
-                      aria-describedby='validation-name'
-                      {...field}
-                    />
-                  )}
-                />
-                {errors.name && (
-                  <FormHelperText sx={{ color: 'error.main' }} id='validation-name'>
-                    {errors.name.message}
-                  </FormHelperText>
-                )}
-              </FormControl>
-            </Grid>
-            <Grid item sm={8} xs={12}>
-              <FormControl fullWidth>
-                <Controller
-                  name='description'
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      fullWidth
-                      id='connector-description' // referenced by webui-tester
-                      label='Description'
-                      placeholder={PLACEHOLDER_VALUES['connector_description']}
-                      error={Boolean(errors.description)}
-                      aria-describedby='validation-description'
-                      {...field}
-                    />
-                  )}
-                />
-                {errors.description && (
-                  <FormHelperText sx={{ color: 'error.main' }} id='validation-description'>
-                    {errors.description.message}
-                  </FormHelperText>
-                )}
-              </FormControl>
-            </Grid>
-            <Grid item sm={12} xs={12}>
-              <FormControl fullWidth>
-                <Controller
-                  name='config'
-                  control={control}
-                  render={({ field }) => <Editor height='20vh' theme={vscodeTheme} defaultLanguage='yaml' {...field} />}
-                />
-                {errors.config && (
-                  <FormHelperText sx={{ color: 'error.main' }} id='validation-config'>
-                    {errors.config.message}
-                  </FormHelperText>
-                )}
-              </FormControl>
-            </Grid>
-          </Grid>
+          <GenericEditorForm></GenericEditorForm>
         </DialogContent>
         <DialogActions sx={{ pb: { xs: 8, sm: 12.5 }, justifyContent: 'center' }}>
           <Button
@@ -223,19 +124,56 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
             Cancel
           </Button>
         </DialogActions>
-      </form>
+      </FormContainer>
     </Dialog>
   )
 }
 
-export const AddGenericConnectorCard = () => {
-  // id is referenced by webui-tester
+const GenericEditorForm = () => {
+  const theme = useTheme()
+  const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
+  const ctx = useFormContext()
   return (
-    <AddConnectorCard
-      id='generic-connector'
-      icon={connectorTypeToIcon(ConnectorType.UNKNOWN)}
-      title='A generic connector'
-      dialog={ConfigEditorDialog}
-    />
+    <Grid container spacing={4}>
+      <Grid item sm={4} xs={12}>
+        <TextFieldElement
+          name='name'
+          label='Datasource Name'
+          size='small'
+          fullWidth
+          id='connector-name' // referenced by webui-tester
+          placeholder={PLACEHOLDER_VALUES['connector_name']}
+          aria-describedby='validation-name'
+        />
+      </Grid>
+      <Grid item sm={8} xs={12}>
+        <TextField
+          name='description'
+          label='Description'
+          size='small'
+          fullWidth
+          id='connector-description' // referenced by webui-tester
+          placeholder={PLACEHOLDER_VALUES['connector_description']}
+          aria-describedby='validation-description'
+        />
+      </Grid>
+      <Grid item sm={12} xs={12}>
+        <FormControl fullWidth>
+          <Controller
+            name='config'
+            control={ctx.control}
+            render={({ field: { ref, ...field } }) => (
+              void ref, (<Editor height='20vh' theme={vscodeTheme} defaultLanguage='yaml' {...field} />)
+            )}
+          />
+          {(e =>
+            e && (
+              <FormHelperText sx={{ color: 'error.main' }} id='validation-config'>
+                {e.message}
+              </FormHelperText>
+            ))(ctx.getFieldState('config').error)}
+        </FormControl>
+      </Grid>
+    </Grid>
   )
 }
