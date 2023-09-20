@@ -27,6 +27,11 @@ public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContaine
     }
 
     @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPIndexedZSetLiteral(this.getNode(), this.type);
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);

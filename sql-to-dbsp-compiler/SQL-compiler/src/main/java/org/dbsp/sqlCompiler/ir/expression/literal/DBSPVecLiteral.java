@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -145,6 +146,12 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
                 .increase()
                 .intercalateI(System.lineSeparator(), this.data)
                 .append(")");
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPVecLiteral(this.getNode(), this.getType(),
+                this.data != null ? Linq.map(this.data, DBSPExpression::deepCopy) : null);
     }
 
     // TODO: implement equals and hashcode

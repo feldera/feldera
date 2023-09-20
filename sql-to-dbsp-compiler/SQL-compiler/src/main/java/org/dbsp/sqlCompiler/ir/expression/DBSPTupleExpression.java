@@ -152,4 +152,12 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
         DBSPTupleExpression that = (DBSPTupleExpression) o;
         return this.sameFields(that);
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        if (this.isNull)
+            return new DBSPTupleExpression(this.getType().to(DBSPTypeTuple.class));
+        return new DBSPTupleExpression(this.getNode(), this.getType().mayBeNull,
+                Linq.map(this.fields, DBSPExpression::deepCopy, DBSPExpression.class));
+    }
 }

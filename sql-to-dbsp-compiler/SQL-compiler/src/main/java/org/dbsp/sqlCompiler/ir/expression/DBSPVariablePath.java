@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -81,5 +82,10 @@ public class DBSPVariablePath extends DBSPExpression {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.variable);
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPVariablePath(this.variable, this.type);
     }
 }

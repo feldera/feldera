@@ -40,6 +40,11 @@ public class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     }
 
     @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPNoComparatorExpression(this.getNode(), this.tupleType);
+    }
+
+    @Override
     public DBSPType tupleType() {
         return this.tupleType;
     }

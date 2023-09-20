@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.IIndentStream;
@@ -54,6 +55,11 @@ public class DBSPBoolLiteral extends DBSPLiteral {
         this(CalciteObject.EMPTY, new DBSPTypeBool(CalciteObject.EMPTY, nullable), b);
         if (b == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPBoolLiteral(this.getNode(), this.type, this.value);
     }
 
     @Override

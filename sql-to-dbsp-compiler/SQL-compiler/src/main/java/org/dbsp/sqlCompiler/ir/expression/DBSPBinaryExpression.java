@@ -74,4 +74,10 @@ public class DBSPBinaryExpression extends DBSPExpression {
                 .append(" ")
                 .append(this.right);
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPBinaryExpression(this.getNode(), this.getType(), this.operation,
+                this.left.deepCopy(), this.right.deepCopy());
+    }
 }

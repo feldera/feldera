@@ -72,4 +72,9 @@ public class DBSPUnaryExpression extends DBSPExpression {
                 .append(this.source)
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPUnaryExpression(this.getNode(), this.getType(), this.operation, this.source.deepCopy());
+    }
 }

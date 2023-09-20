@@ -63,4 +63,9 @@ public class DBSPDerefExpression extends DBSPExpression {
                 .append(this.expression)
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPDerefExpression(this.expression.deepCopy());
+    }
 }

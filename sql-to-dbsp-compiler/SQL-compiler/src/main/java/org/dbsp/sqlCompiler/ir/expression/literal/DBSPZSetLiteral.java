@@ -191,6 +191,14 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
         public boolean isEmpty() {
             return this.data.isEmpty();
         }
+
+        public Contents deepCopy() {
+            Map<DBSPExpression, Long> newData = new HashMap<>();
+            for (Map.Entry<DBSPExpression, Long> d: this.data.entrySet()) {
+                newData.put(d.getKey().deepCopy(), d.getValue());
+            }
+            return new Contents(newData, this.elementType);
+        }
     }
 
     public final DBSPTypeZSet zsetType;
@@ -200,6 +208,11 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
         super(node, type, false);
         this.data = contents;
         this.zsetType = this.getType().to(DBSPTypeZSet.class);
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPZSetLiteral(this.getNode(), this.type, this.data.deepCopy());
     }
 
     public DBSPZSetLiteral(DBSPType zsetType) {

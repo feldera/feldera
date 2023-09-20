@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
@@ -83,5 +84,11 @@ public class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
         if (o == null || getClass() != o.getClass()) return false;
         DBSPRawTupleExpression that = (DBSPRawTupleExpression) o;
         return this.sameFields(that);
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPRawTupleExpression(
+                Linq.map(this.fields, DBSPExpression::deepCopy, DBSPExpression.class));
     }
 }

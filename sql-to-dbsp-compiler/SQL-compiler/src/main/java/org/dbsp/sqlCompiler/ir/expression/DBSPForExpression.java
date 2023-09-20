@@ -74,4 +74,10 @@ public class DBSPForExpression extends DBSPExpression {
                 .append(" ")
                 .append(this.block);
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPForExpression(this.pattern, this.iterated.deepCopy(),
+                this.block.deepCopy().to(DBSPBlockExpression.class));
+    }
 }

@@ -44,4 +44,9 @@ public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
         parts = Linq.map(parts, p -> "// " + p, String.class);
         return builder.intercalate("\n", parts);
     }
+
+    @Override
+    public DBSPStatement deepCopy() {
+        return new DBSPComment(this.comment);
+    }
 }

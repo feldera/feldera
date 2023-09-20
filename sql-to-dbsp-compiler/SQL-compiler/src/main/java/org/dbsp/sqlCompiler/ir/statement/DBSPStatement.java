@@ -33,4 +33,7 @@ public abstract class DBSPStatement
     protected DBSPStatement(CalciteObject node) {
         super(node);
     }
+
+    /** Create a deep copy of this statement. */
+    public abstract DBSPStatement deepCopy();
 }

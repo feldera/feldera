@@ -43,4 +43,9 @@ public class DBSPSomeExpression extends DBSPExpression {
                 .append(this.expression)
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPSomeExpression(this.getNode(), this.expression.deepCopy());
+    }
 }

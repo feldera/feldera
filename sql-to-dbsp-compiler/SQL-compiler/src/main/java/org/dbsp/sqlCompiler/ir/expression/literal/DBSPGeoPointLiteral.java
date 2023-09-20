@@ -54,6 +54,13 @@ public class DBSPGeoPointLiteral extends DBSPLiteral {
     }
 
     @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPGeoPointLiteral(this.getNode(),
+                DBSPExpression.nullableDeepCopy(this.left), DBSPExpression.nullableDeepCopy(this.right),
+                this.type.mayBeNull);
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);

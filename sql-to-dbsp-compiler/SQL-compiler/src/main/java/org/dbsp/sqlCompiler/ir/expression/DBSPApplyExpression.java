@@ -106,4 +106,10 @@ public class DBSPApplyExpression extends DBSPExpression {
                 .join(", ", this.arguments)
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPApplyExpression(this.function.deepCopy(), this.getType(),
+                Linq.map(this.arguments, DBSPExpression::deepCopy, DBSPExpression.class));
+    }
 }

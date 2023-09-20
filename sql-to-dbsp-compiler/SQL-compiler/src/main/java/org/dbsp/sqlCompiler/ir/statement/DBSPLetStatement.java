@@ -49,6 +49,14 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
         this.mutable = mutable;
     }
 
+    @Override
+    public DBSPStatement deepCopy() {
+        if (this.initializer != null)
+            return new DBSPLetStatement(this.variable, this.initializer.deepCopy(), this.mutable);
+        else
+            return new DBSPLetStatement(this.variable, this.type, this.mutable);
+    }
+
     public DBSPLetStatement(String variable, DBSPType type, boolean mutable) {
         super(type.getNode());
         this.variable = variable;

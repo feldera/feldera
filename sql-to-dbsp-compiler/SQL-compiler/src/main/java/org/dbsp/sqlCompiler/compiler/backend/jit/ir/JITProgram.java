@@ -93,4 +93,9 @@ public class JITProgram extends JITNode {
         }
         return result;
     }
+
+    @Override
+    public String toString() {
+        return this.toAssembly();
+    }
 }

@@ -28,6 +28,11 @@ public class DBSPConstItem extends DBSPItem implements IHasType {
     }
 
     @Override
+    public DBSPStatement deepCopy() {
+        return new DBSPConstItem(this.name, this.type, DBSPExpression.nullableDeepCopy(this.expression));
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);

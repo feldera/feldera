@@ -60,4 +60,9 @@ public class DBSPPathExpression extends DBSPExpression {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.path);
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPPathExpression(this.getType(), this.path);
+    }
 }

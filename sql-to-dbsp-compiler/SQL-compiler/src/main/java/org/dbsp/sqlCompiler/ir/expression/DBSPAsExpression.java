@@ -65,4 +65,9 @@ public class DBSPAsExpression extends DBSPExpression {
                 .append(this.source)
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPAsExpression(this.source.deepCopy(), this.getType());
+    }
 }

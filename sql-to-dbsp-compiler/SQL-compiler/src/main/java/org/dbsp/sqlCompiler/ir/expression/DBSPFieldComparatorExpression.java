@@ -79,4 +79,11 @@ public class DBSPFieldComparatorExpression extends DBSPComparatorExpression {
                 .append(this.fieldNo)
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPFieldComparatorExpression(
+                this.getNode(), this.source.deepCopy().to(DBSPComparatorExpression.class),
+                this.fieldNo, this.ascending);
+    }
 }

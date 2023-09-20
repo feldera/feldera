@@ -84,4 +84,11 @@ public class DBSPBlockExpression extends DBSPExpression {
                 .decrease()
                 .append("}");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPBlockExpression(
+                Linq.map(this.contents, DBSPStatement::deepCopy),
+                DBSPApplyExpression.nullableDeepCopy(this.lastExpression));
+    }
 }

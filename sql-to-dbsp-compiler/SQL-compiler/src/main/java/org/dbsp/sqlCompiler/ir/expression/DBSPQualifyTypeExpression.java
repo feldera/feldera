@@ -71,4 +71,9 @@ public class DBSPQualifyTypeExpression extends DBSPExpression {
         return builder.append(this.expression)
                 .intercalateI("::", this.types);
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPQualifyTypeExpression(this.expression.deepCopy(), this.types);
+    }
 }

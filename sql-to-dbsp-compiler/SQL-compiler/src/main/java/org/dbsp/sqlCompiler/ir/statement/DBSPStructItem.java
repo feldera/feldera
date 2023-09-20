@@ -45,4 +45,9 @@ public class DBSPStructItem extends DBSPItem implements IHasType {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.type);
     }
+
+    @Override
+    public DBSPStatement deepCopy() {
+        return new DBSPStructItem(this.type);
+    }
 }
