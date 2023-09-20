@@ -1,4 +1,5 @@
 // Browse tables and views & insert data into tables.
+'use client'
 
 import { BreadcrumbSelect } from '$lib/components/common/Breadcrumbs'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
@@ -7,7 +8,7 @@ import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
 import { Pipeline, PipelineId, PipelineStatus } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
-import { useRouter } from 'next/router'
+import { useSearchParams } from 'next/navigation'
 import { SyntheticEvent, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 
@@ -94,7 +95,6 @@ const ViewDataTable = (props: { pipeline: Pipeline; relation: string }) => {
 const IntrospectInputOutput = () => {
   const [pipelineId, setPipelineId] = useState<PipelineId | undefined>(undefined)
   const [relation, setRelation] = useState<string | undefined>(undefined)
-  const router = useRouter()
   const [tab, setTab] = useState<'browse' | 'insert'>('browse')
   const [tables, setTables] = useState<string[] | undefined>(undefined)
   const [views, setViews] = useState<string[] | undefined>(undefined)
@@ -104,12 +104,10 @@ const IntrospectInputOutput = () => {
   }
 
   // Parse config, view, tab arguments from router query
+  const query = Object.fromEntries(useSearchParams().entries())
   useEffect(() => {
-    if (!router.isReady) {
-      return
-    }
-    const { pipeline_id, relation, tab } = router.query
-    if (typeof tab === 'string' && (tab == 'browse' || tab == 'insert')) {
+    const { pipeline_id, relation, tab } = query
+    if (typeof tab === 'string' && (tab === 'browse' || tab === 'insert')) {
       setTab(tab)
     }
     if (typeof pipeline_id === 'string') {
@@ -118,7 +116,7 @@ const IntrospectInputOutput = () => {
     if (typeof relation === 'string') {
       setRelation(relation)
     }
-  }, [pipelineId, setPipelineId, setRelation, router])
+  }, [query, pipelineId, setPipelineId, setRelation])
 
   // Load the pipeline
   const [pipeline, setPipeline] = useState<Pipeline | undefined>(undefined)

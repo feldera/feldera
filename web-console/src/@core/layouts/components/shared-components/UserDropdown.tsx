@@ -1,7 +1,7 @@
 import AccountOutline from 'mdi-material-ui/AccountOutline'
 import CogOutline from 'mdi-material-ui/CogOutline'
 import LogoutVariant from 'mdi-material-ui/LogoutVariant'
-import { useRouter } from 'next/router'
+import { useRouter } from 'next/navigation'
 import { Fragment, SyntheticEvent, useState } from 'react'
 
 import Avatar from '@mui/material/Avatar'

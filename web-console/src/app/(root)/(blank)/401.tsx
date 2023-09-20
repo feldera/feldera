@@ -1,7 +1,7 @@
+'use client'
+
 import FooterIllustrations from '$lib/components/layouts/misc/FooterIllustrations'
 import Link from 'next/link'
-import { ReactNode } from 'react'
-import BlankLayout from 'src/@core/layouts/BlankLayout'
 
 import Box, { BoxProps } from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -14,16 +14,16 @@ const BoxWrapper = styled(Box)<BoxProps>(({ theme }) => ({
   }
 }))
 
-const Error404 = () => {
+const Error401 = () => {
   return (
     <Box className='content-center'>
       <Box sx={{ p: 5, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
         <BoxWrapper sx={{ p: 10 }}>
-          <Typography variant='h1'>404</Typography>
+          <Typography variant='h1'>401</Typography>
           <Typography variant='h5' sx={{ mb: 1, fontSize: '1.5rem !important' }}>
-            Page Not Found ⚠️
+            You are not authorized! 🔐
           </Typography>
-          <Typography variant='body2'>We couldn&prime;t find the page you are looking for.</Typography>
+          <Typography variant='body2'>You don&prime;t have permission to access this page.</Typography>
         </BoxWrapper>
         <Button component={Link} href='/' variant='contained' sx={{ px: 5.5 }}>
           Back to Home
@@ -34,6 +34,4 @@ const Error404 = () => {
   )
 }
 
-Error404.getLayout = (page: ReactNode) => <BlankLayout>{page}</BlankLayout>
-
-export default Error404
+export default Error401

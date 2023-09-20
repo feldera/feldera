@@ -1,3 +1,5 @@
+'use client'
+
 import Health from '$lib/components/home/Health'
 import Pipelines from '$lib/components/home/Pipelines'
 import { WelcomeTile } from '$lib/components/home/WelcomeCard'

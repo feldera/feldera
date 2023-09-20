@@ -1,6 +1,7 @@
 // Table showing the list of pipelines for a user.
 //
 // The rows of the table can be expanded for even more details.
+'use client'
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
@@ -37,7 +38,7 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import { format } from 'd3-format'
 import dayjs from 'dayjs'
 import Link from 'next/link'
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { Fragment, useCallback, useEffect, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
 
@@ -640,42 +641,42 @@ const PipelineActions = (params: { row: Pipeline }) => {
 
   const actions = {
     pause: () => (
-      <Tooltip title='Pause Pipeline'>
+      <Tooltip title='Pause Pipeline' key='pause'>
         <IconButton className='pauseButton' size='small' onClick={() => pausePipelineClick(pipeline.pipeline_id)}>
           <Icon icon='bx:pause-circle' fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     start: () => (
-      <Tooltip title='Start Pipeline'>
+      <Tooltip title='Start Pipeline' key='start'>
         <IconButton className='startButton' size='small' onClick={() => startPipelineClick(pipeline.pipeline_id)}>
           <Icon icon='bx:play-circle' fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     spinner: () => (
-      <Tooltip title={state[0]}>
+      <Tooltip title={state[0]} key='spinner'>
         <IconButton size='small'>
           <Icon icon='svg-spinners:270-ring-with-bg' fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     shutdown: () => (
-      <Tooltip title='Shutdown Pipeline'>
+      <Tooltip title='Shutdown Pipeline' key='shutdown'>
         <IconButton className='shutdownButton' size='small' onClick={() => shutdownPipelineClick(pipeline.pipeline_id)}>
           <Icon icon='bx:stop-circle' fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     inspect: () => (
-      <Tooltip title='Inspect'>
+      <Tooltip title='Inspect' key='inspect'>
         <IconButton size='small' component={Link} href='#'>
           <Icon icon='bx:show' fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     edit: () => (
-      <Tooltip title='Edit Pipeline'>
+      <Tooltip title='Edit Pipeline' key='edit'>
         <IconButton
           className='editButton'
           size='small'
@@ -686,7 +687,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
       </Tooltip>
     ),
     delete: () => (
-      <Tooltip title='Delete Pipeline'>
+      <Tooltip title='Delete Pipeline' key='delete'>
         <IconButton className='deleteButton' size='small' onClick={() => deletePipelineClick(pipeline.pipeline_id)}>
           <Icon icon='bx:trash-alt' fontSize={20} />
         </IconButton>

@@ -1,3 +1,5 @@
+'use client'
+
 // Layout of the status snackbar component.
 //
 // The message can be clicked away or it will disappear after a few seconds.

@@ -1,4 +1,5 @@
-import { Settings } from 'src/@core/context/settingsContext'
+import { Public_Sans } from 'next/font/google'
+import { Settings } from 'src/@core/context/settingsTypes'
 
 import { ThemeOptions } from '@mui/material'
 import { deepmerge } from '@mui/utils'
@@ -8,26 +9,19 @@ import palette from './palette'
 import shadows from './shadows'
 import spacing from './spacing'
 
+const publicSans = Public_Sans({
+  weight: ['300', '400', '500', '600', '700'],
+  style: ['normal'],
+  subsets: ['latin']
+})
+
 const themeOptions = (settings: Settings): ThemeOptions => {
   const { mode, themeColor } = settings
 
   const themeConfig = {
     palette: palette(mode, themeColor),
     typography: {
-      fontFamily: [
-        'Public Sans',
-        'sans-serif',
-        '-apple-system',
-        'BlinkMacSystemFont',
-        '"Segoe UI"',
-        'Roboto',
-        '"Helvetica Neue"',
-        'Arial',
-        'sans-serif',
-        '"Apple Color Emoji"',
-        '"Segoe UI Emoji"',
-        '"Segoe UI Symbol"'
-      ].join(',')
+      fontFamily: publicSans.style.fontFamily
     },
     shadows: shadows(mode),
     ...spacing,

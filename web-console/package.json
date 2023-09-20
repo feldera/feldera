@@ -18,9 +18,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "export": "next export",
-    "export-to-out": "next export -o $OUT_DIR",
+    "start": "npx serve@latest out",
     "lint": "eslint --max-warnings 0 --fix \"src/**/*.{js,jsx,ts,tsx}\"",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
@@ -62,6 +60,7 @@
     "mdi-material-ui": "^7.7.0",
     "monaco-editor": "^0.41.0",
     "next": "13.4.8-canary.9",
+    "next13-progressbar": "^1.0.3",
     "nprogress": "^0.2.0",
     "papaparse": "^5.4.1",
     "react": "^18.2.0",

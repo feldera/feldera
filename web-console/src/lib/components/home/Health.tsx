@@ -28,7 +28,7 @@ import { useQuery } from '@tanstack/react-query'
 
 const ProgramLink = ({ program }: { program: ProgramDescr }) => (
   <Link href={`/analytics/editor/?program_id=${program.program_id}`} target='_blank' rel='noreferrer'>
-    @ {program.name}
+    {program.name || 'Unnamed program'}
   </Link>
 )
 
@@ -46,7 +46,9 @@ const programErrors = (program: ProgramDescr) =>
               ...e,
               source: (
                 <>
-                  SQL Error <ProgramLink program={program} />
+                  SQL Error
+                  <br />
+                  <ProgramLink program={program} />
                   <br />
                   {program.program_id}
                 </>
@@ -67,7 +69,9 @@ const programErrors = (program: ProgramDescr) =>
         cause: {
           source: (
             <>
-              System Error <ProgramLink program={program} />
+              System Error
+              <br />
+              <ProgramLink program={program} />
               <br />
               {program.program_id}
             </>
@@ -87,7 +91,9 @@ const programErrors = (program: ProgramDescr) =>
         cause: {
           source: (
             <>
-              System Error <ProgramLink program={program} />
+              System Error
+              <br />
+              <ProgramLink program={program} />
               <br />
               {program.program_id}
             </>
@@ -113,9 +119,10 @@ const pipelineErrors = (p: Pipeline) =>
             ...p.state.error,
             source: (
               <>
-                Pipeline Error{' '}
+                Pipeline Error
+                <br />
                 <Link href={`/streaming/management/#${p.descriptor.pipeline_id}`} target='_blank' rel='noreferrer'>
-                  @ {p.descriptor.name}
+                  {p.descriptor.name || 'Unnamed pipeline'}
                 </Link>
                 <br />
                 {p.descriptor.pipeline_id}
@@ -155,7 +162,7 @@ const CopyButton = (props: IconButtonProps) => {
       }}
     >
       <IconButton size='small' {...props}>
-        <Icon icon='bx:copy' fontSize={24}></Icon>
+        <Icon icon='bx:copy' fontSize={16}></Icon>
       </IconButton>
     </Box>
   )
@@ -226,6 +233,7 @@ const Health = () => {
                           sx={{
                             p: 2,
                             overflow: 'scroll',
+                            paddingTop: '3rem',
                             minHeight: '4rem',
                             maxHeight: '10rem',
                             width: '100%',

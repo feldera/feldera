@@ -1,7 +1,7 @@
+'use client'
+
 import FooterIllustrations from '$lib/components/layouts/misc/FooterIllustrations'
 import Link from 'next/link'
-import { ReactNode } from 'react'
-import BlankLayout from 'src/@core/layouts/BlankLayout'
 
 import Box, { BoxProps } from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -33,7 +33,5 @@ const Error500 = () => {
     </Box>
   )
 }
-
-Error500.getLayout = (page: ReactNode) => <BlankLayout>{page}</BlankLayout>
 
 export default Error500

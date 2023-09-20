@@ -2,6 +2,7 @@
 //
 // It is used to display a list of entities in a table. It's the generic version
 // of a table we use to display programs, pipelines, etc.
+'use client'
 
 import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
 import DataGridSearch from '$lib/components/common/table/DataGridSearch'
@@ -64,7 +65,7 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
 
   const { isLoading, isError, data, error } = fetchRows
 
-  if (addActions) {
+  if (addActions && tableProps.columns.at(-1)?.field !== 'actions') {
     tableProps.columns.push({
       flex: 0.1,
       minWidth: 90,

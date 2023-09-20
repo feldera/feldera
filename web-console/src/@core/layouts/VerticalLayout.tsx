@@ -1,3 +1,5 @@
+'use client'
+
 import themeConfig from '$lib/functions/configs/themeConfig'
 import ArrowUp from 'mdi-material-ui/ArrowUp'
 import { useState } from 'react'
@@ -6,7 +8,7 @@ import { LayoutProps } from 'src/@core/layouts/types'
 
 import Box, { BoxProps } from '@mui/material/Box'
 import Fab from '@mui/material/Fab'
-import { styled } from '@mui/material/styles'
+import { styled, useTheme } from '@mui/material/styles'
 
 import Footer from './components/shared-components/footer'
 import AppBar from './components/vertical/appBar'
@@ -43,6 +45,7 @@ const VerticalLayout = (props: LayoutProps) => {
   const navWidth = themeConfig.navigationSize
 
   const [navVisible, setNavVisible] = useState<boolean>(false)
+  const theme = useTheme()
 
   const toggleNavVisibility = () => setNavVisible(!navVisible)
 
@@ -57,7 +60,10 @@ const VerticalLayout = (props: LayoutProps) => {
           toggleNavVisibility={toggleNavVisibility}
           {...props}
         />
-        <MainContentWrapper className='layout-content-wrapper'>
+        <MainContentWrapper
+          className='layout-content-wrapper'
+          sx={{ backgroundColor: theme.palette.background.default }}
+        >
           {/* AppBar Component */}
           <AppBar toggleNavVisibility={toggleNavVisibility} {...props} />
 

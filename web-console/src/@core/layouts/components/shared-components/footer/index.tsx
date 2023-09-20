@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import { Settings } from 'src/@core/context/settingsContext'
+import { Settings } from 'src/@core/context/settingsTypes'
 
 import Box from '@mui/material/Box'
 import { useTheme } from '@mui/material/styles'

@@ -94,7 +94,6 @@ build-webui:
 
     RUN cd web-console && yarn format:check
     RUN cd web-console && yarn build
-    RUN cd web-console && yarn export
     SAVE ARTIFACT ./web-console/out
 
 prepare-cache:

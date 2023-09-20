@@ -1,6 +1,7 @@
 // A create/update dialog window for a untyped/unknown connector.
 //
 // It just has an editor for the YAML config.
+'use client'
 
 import { connectorTypeToIcon, parseEditorSchema } from '$lib/functions/connectors'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'

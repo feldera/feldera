@@ -1,6 +1,6 @@
 // This is the top bar that decides whether to show the hamburger menu or not it
 import Menu from 'mdi-material-ui/Menu'
-import { Settings } from 'src/@core/context/settingsContext'
+import { Settings } from 'src/@core/context/settingsTypes'
 import ModeToggler from 'src/@core/layouts/components/shared-components/ModeToggler'
 
 // also has the search bar and the user dropdown and the notification dropdown.

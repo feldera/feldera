@@ -2,6 +2,7 @@
 //
 // Table allows to edit the name and description in the table directly and can
 // delete/edit individual connectors.
+'use client'
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import EntityTable from '$lib/components/common/table/EntityTable'

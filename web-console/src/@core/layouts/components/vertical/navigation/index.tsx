@@ -1,6 +1,6 @@
 import { ReactNode, useRef, useState } from 'react'
 import PerfectScrollbar from 'react-perfect-scrollbar'
-import { Settings } from 'src/@core/context/settingsContext'
+import { Settings } from 'src/@core/context/settingsTypes'
 import { VerticalNavItemsType } from 'src/@core/layouts/types'
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
 
