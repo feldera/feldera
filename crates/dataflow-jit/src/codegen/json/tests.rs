@@ -3,7 +3,7 @@
 use crate::{
     codegen::{
         json::{
-            call_deserialize_fn, DeserializeJsonFn, JsonDeserConfig, JsonSerConfig, SerializeJsonFn,
+            call_deserialize_fn, DeserializeJsonFn, JsonDeserConfig, JsonSerConfig, SerializeFn,
         },
         Codegen, CodegenConfig,
     },
@@ -84,7 +84,7 @@ fn deserialize_json_smoke() {
         let (deserialize_json, serialize_json) = unsafe {
             (
                 transmute::<_, DeserializeJsonFn>(jit.get_finalized_function(deserialize_json)),
-                transmute::<_, SerializeJsonFn>(jit.get_finalized_function(serialize_json)),
+                transmute::<_, SerializeFn>(jit.get_finalized_function(serialize_json)),
             )
         };
 

@@ -7,7 +7,7 @@ pub use handle::{DeCollectionStream, JsonZSetHandle};
 
 use crate::{
     codegen::{
-        json::{call_deserialize_fn, DeserializeJsonFn, SerializeJsonFn},
+        json::{call_deserialize_fn, DeserializeJsonFn, SerializeFn},
         CodegenConfig, NativeLayout, NativeLayoutCache, VTable,
     },
     dataflow::{CompiledDataflow, JitHandle, RowInput, RowOutput},
@@ -54,7 +54,7 @@ pub struct DbspCircuit {
     inputs: BTreeMap<NodeId, (Option<RowInput>, StreamLayout)>,
     /// The output handles of all sink nodes, will be `None` if the sink is
     /// unreachable
-    outputs: BTreeMap<NodeId, (Option<RowOutput>, StreamLayout)>,
+    pub outputs: BTreeMap<NodeId, (Option<RowOutput>, StreamLayout)>,
     deserialize_csv_demands: BTreeMap<LayoutId, FuncId>,
     deserialize_json_demands: BTreeMap<LayoutId, FuncId>,
     serialize_json_demands: BTreeMap<LayoutId, FuncId>,
@@ -216,9 +216,9 @@ impl DbspCircuit {
         result
     }
 
-    /// Creates a new [`JsonSetHandle`] for ingesting json
+    /// Creates a new [`JsonZSetHandle`] for ingesting json
     ///
-    /// Returns [`None`] if the target source node is unreachable
+    /// Returns `None` if the target source node is unreachable
     ///
     /// # Safety
     ///
@@ -250,6 +250,22 @@ impl DbspCircuit {
         };
 
         Some(JsonZSetHandle::new(handle, deserialize_fn, vtable))
+    }
+
+    /// Return a function to serialize records in the format specified by `layout_id`
+    /// to JSON.
+    ///
+    /// Returns `None` if a corresponding demand hasn't been specified via the [`Demands`]
+    /// mechanism before compiling the circuit.
+    ///
+    /// # Safety
+    ///
+    /// The produced function pointer must be dropped before the [`DbspCircuit`]
+    /// that created it.
+    pub unsafe fn json_ser_function(&mut self, layout_id: LayoutId) -> Option<SerializeFn> {
+        self.serialize_json_demands.get(&layout_id).map(|func_id| {
+            transmute::<_, SerializeFn>(self.jit.jit.get_finalized_function(*func_id))
+        })
     }
 
     pub fn append_input(&mut self, target: NodeId, data: &StreamCollection) {
@@ -561,7 +577,7 @@ impl DbspCircuit {
                 RowOutput::Set(output) => {
                     let key_layout = layout.unwrap_set();
                     let serialize_json = unsafe {
-                        transmute::<_, SerializeJsonFn>(
+                        transmute::<_, SerializeFn>(
                             self.jit
                                 .jit
                                 .get_finalized_function(self.serialize_json_demands[&key_layout]),
