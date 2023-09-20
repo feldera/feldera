@@ -15,7 +15,7 @@ use crate::{
         literal::{NullableConstant, RowLiteral, StreamCollection},
         nodes::StreamLayout,
         pretty::{Arena, Pretty, DEFAULT_WIDTH},
-        ColumnType, Constant, Graph, GraphExt, LayoutId, NodeId, RowLayout, Validator,
+        ColumnType, Constant, DemandId, Graph, GraphExt, LayoutId, NodeId, RowLayout, Validator,
     },
     row::{row_from_literal, Row, UninitRow},
     thin_str::ThinStrRef,
@@ -33,7 +33,6 @@ use std::{
     collections::BTreeMap,
     error,
     io::{self, Read, Write},
-    mem::transmute,
     ops::Not,
     path::{Path, PathBuf},
     thread,
@@ -54,9 +53,10 @@ pub struct DbspCircuit {
     /// The output handles of all sink nodes, will be `None` if the sink is
     /// unreachable
     pub outputs: BTreeMap<NodeId, (Option<RowOutput>, StreamLayout)>,
-    deserialize_csv_demands: BTreeMap<LayoutId, FuncId>,
-    deserialize_json_demands: BTreeMap<LayoutId, FuncId>,
-    serialize_json_demands: BTreeMap<LayoutId, FuncId>,
+    /// Holds all serialization and deserialization demands
+    demands: BTreeMap<DemandId, FuncId>,
+    /// A map of demands and the layout they were created for
+    demand_layouts: BTreeMap<DemandId, LayoutId>,
     layout_cache: NativeLayoutCache,
 }
 
@@ -100,38 +100,27 @@ impl DbspCircuit {
             }
         }
 
-        let (mut deserialize_json_demands, mut deserialize_csv_demands, mut serialize_json_demands) =
-            (BTreeMap::new(), BTreeMap::new(), BTreeMap::new());
+        let mut demand_functions = BTreeMap::new();
 
         let (dataflow, jit, layout_cache) = CompiledDataflow::new(&graph, config, |codegen| {
-            deserialize_json_demands = demands
-                .deserialize_json
-                .into_iter()
-                .map(|(layout, mappings)| {
-                    debug_assert_eq!(layout, mappings.layout);
+            demand_functions.extend(demands.deserialize_json.into_iter().map(
+                |(demand, mappings)| {
                     let from_json = codegen.deserialize_json(&mappings);
-                    (layout, from_json)
-                })
-                .collect();
+                    (demand, from_json)
+                },
+            ));
 
-            serialize_json_demands = demands
-                .serialize_json
-                .into_iter()
-                .map(|(layout, mappings)| {
-                    debug_assert_eq!(layout, mappings.layout);
+            demand_functions.extend(demands.serialize_json.into_iter().map(
+                |(demand, mappings)| {
                     let to_json = codegen.serialize_json(&mappings);
-                    (layout, to_json)
-                })
-                .collect();
+                    (demand, to_json)
+                },
+            ));
 
-            deserialize_csv_demands = demands
-                .csv
-                .into_iter()
-                .map(|(layout, mappings)| {
-                    let from_csv = codegen.codegen_layout_from_csv(layout, &mappings);
-                    (layout, from_csv)
-                })
-                .collect();
+            demand_functions.extend(demands.csv.into_iter().map(|(demand, (layout, mappings))| {
+                let from_csv = codegen.codegen_layout_from_csv(layout, &mappings);
+                (demand, from_csv)
+            }));
         });
 
         let (runtime, (inputs, outputs)) =
@@ -161,9 +150,8 @@ impl DbspCircuit {
             runtime,
             inputs,
             outputs,
-            deserialize_csv_demands,
-            deserialize_json_demands,
-            serialize_json_demands,
+            demands: demand_functions,
+            demand_layouts: demands.demand_layouts,
             layout_cache,
         }
     }
@@ -214,59 +202,34 @@ impl DbspCircuit {
 
         result
     }
+}
 
-    /// Creates a new [`JsonZSetHandle`] for ingesting json
-    ///
-    /// Returns `None` if the target source node is unreachable
-    ///
-    /// # Safety
-    ///
-    /// The produced `JsonSetHandle` must be dropped before the [`DbspCircuit`]
-    /// that created it, using the handle after the parent circuit has shut down
-    /// is undefined behavior
-    // TODO: We should probably wrap the innards of `DbspCircuit` in a struct
-    // and arc and handles should hold a reference to that (maybe even a weak ref).
-    // Alternatively we could use lifetimes, but I'm not 100% sure how that would
-    // interact with consumers
-    pub unsafe fn json_input_set(&mut self, target: NodeId) -> Option<JsonZSetHandle> {
-        let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
-            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
-        });
-        let layout = layout.as_set().unwrap_or_else(|| {
-            panic!(
-                "called `DbspCircuit::json_input_set()` on node {target} which is a map, not a set",
-            )
-        });
+/// Fetches a demand function and turns it into a function
+/// pointer of the specified type
+///
+/// # Safety
+///
+/// `$type` must be the correct type for the generated demand function.
+/// The produced function pointer must be dropped before the parent `DbspCircuit`
+macro_rules! demand_function {
+    ($self:ident, $demand:ident, $layout:expr, $type:ty $(,)?) => {{
+        let (demand, layout): (DemandId, LayoutId) = ($demand, $layout);
 
-        let handle = input.as_ref()?.as_set().unwrap().clone();
-        let vtable = unsafe { &*self.jit.vtables()[&layout] };
-        let deserialize_fn = unsafe {
-            transmute::<_, DeserializeJsonFn>(
-                self.jit
-                    .jit
-                    .get_finalized_function(self.deserialize_json_demands[&layout]),
-            )
-        };
+        let expected_layout = $self.demand_layouts[&demand];
+        assert_eq!(
+            expected_layout, layout,
+            "incorrect demand, demand {} is associated with \
+             layout {} but it was requested with layout {}",
+            demand, expected_layout, layout,
+        );
 
-        Some(JsonZSetHandle::new(handle, deserialize_fn, vtable))
-    }
+        ::std::mem::transmute::<*const u8, $type>(
+            $self.jit.jit.get_finalized_function($self.demands[&demand]),
+        )
+    }};
+}
 
-    /// Return a function to serialize records in the format specified by `layout_id`
-    /// to JSON.
-    ///
-    /// Returns `None` if a corresponding demand hasn't been specified via the [`Demands`]
-    /// mechanism before compiling the circuit.
-    ///
-    /// # Safety
-    ///
-    /// The produced function pointer must be dropped before the [`DbspCircuit`]
-    /// that created it.
-    pub unsafe fn json_ser_function(&mut self, layout_id: LayoutId) -> Option<SerializeFn> {
-        self.serialize_json_demands.get(&layout_id).map(|func_id| {
-            transmute::<_, SerializeFn>(self.jit.jit.get_finalized_function(*func_id))
-        })
-    }
-
+impl DbspCircuit {
     pub fn append_input(&mut self, target: NodeId, data: &StreamCollection) {
         let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
             panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
@@ -323,11 +286,46 @@ impl DbspCircuit {
         }
     }
 
+    /// Creates a new [`JsonSetHandle`] for ingesting json
+    ///
+    /// Returns [`None`] if the target source node is unreachable
+    ///
+    /// # Safety
+    ///
+    /// The produced `JsonSetHandle` must be dropped before the [`DbspCircuit`]
+    /// that created it, using the handle after the parent circuit has shut down
+    /// is undefined behavior
+    // TODO: We should probably wrap the innards of `DbspCircuit` in a struct
+    // and arc and handles should hold a reference to that (maybe even a weak ref).
+    // Alternatively we could use lifetimes, but I'm not 100% sure how that would
+    // interact with consumers
+    pub unsafe fn json_input_set(
+        &mut self,
+        target: NodeId,
+        demand: DemandId,
+    ) -> Option<JsonZSetHandle> {
+        let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
+        let layout = layout.as_set().unwrap_or_else(|| {
+            panic!(
+                "called `DbspCircuit::json_input_set()` on node {target} which is a map, not a set",
+            )
+        });
+
+        let handle = input.as_ref()?.as_set().unwrap().clone();
+        let vtable = unsafe { &*self.jit.vtables()[&layout] };
+        let deserialize_fn = unsafe { demand_function!(self, demand, layout, DeserializeJsonFn) };
+
+        Some(JsonZSetHandle::new(handle, deserialize_fn, vtable))
+    }
+
     // TODO: We probably want other ways to ingest json, e.g. `&[u8]`, `R: Read`,
     // etc.
     pub fn append_json_input<R>(
         &mut self,
         target: NodeId,
+        demand: DemandId,
         json: R,
     ) -> Result<(), Box<dyn error::Error>>
     where
@@ -343,13 +341,8 @@ impl DbspCircuit {
             let records = match *layout {
                 StreamLayout::Set(key_layout) => {
                     let key_vtable = unsafe { &*self.jit.vtables()[&key_layout] };
-                    let deserialize_json = unsafe {
-                        transmute::<_, DeserializeJsonFn>(
-                            self.jit
-                                .jit
-                                .get_finalized_function(self.deserialize_json_demands[&key_layout]),
-                        )
-                    };
+                    let deserialize_json =
+                        unsafe { demand_function!(self, demand, key_layout, DeserializeJsonFn) };
 
                     let mut batch = Vec::new();
                     let stream = Deserializer::from_reader(json).into_iter::<Value>();
@@ -383,6 +376,7 @@ impl DbspCircuit {
     pub fn append_json_record(
         &mut self,
         target: NodeId,
+        demand: DemandId,
         record: &[u8],
     ) -> Result<(), Box<dyn error::Error>> {
         let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
@@ -395,13 +389,8 @@ impl DbspCircuit {
             match *layout {
                 StreamLayout::Set(key_layout) => {
                     let key_vtable = unsafe { &*self.jit.vtables()[&key_layout] };
-                    let deserialize_json = unsafe {
-                        transmute::<_, DeserializeJsonFn>(
-                            self.jit
-                                .jit
-                                .get_finalized_function(self.deserialize_json_demands[&key_layout]),
-                        )
-                    };
+                    let deserialize_json =
+                        unsafe { demand_function!(self, demand, key_layout, DeserializeJsonFn) };
 
                     let value = serde_json::from_slice::<Value>(record)?;
                     let mut row = UninitRow::new(key_vtable);
@@ -427,7 +416,7 @@ impl DbspCircuit {
         Ok(())
     }
 
-    pub fn append_csv_input(&mut self, target: NodeId, path: &Path) {
+    pub fn append_csv_input(&mut self, target: NodeId, demand: DemandId, path: &Path) {
         let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
             panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
         });
@@ -444,10 +433,11 @@ impl DbspCircuit {
                 StreamLayout::Set(key_layout) => {
                     let key_vtable = unsafe { &*self.jit.vtables()[&key_layout] };
                     let marshall_csv = unsafe {
-                        transmute::<_, unsafe extern "C" fn(*mut u8, *const StringRecord)>(
-                            self.jit
-                                .jit
-                                .get_finalized_function(self.deserialize_csv_demands[&key_layout]),
+                        demand_function!(
+                            self,
+                            demand,
+                            key_layout,
+                            unsafe extern "C" fn(*mut u8, *const StringRecord),
                         )
                     };
 
@@ -560,6 +550,7 @@ impl DbspCircuit {
     pub fn consolidate_json_output<W>(
         &mut self,
         output: NodeId,
+        demand: DemandId,
         buffer: &mut Vec<u8>,
         mut write: W,
     ) -> io::Result<()>
@@ -574,14 +565,8 @@ impl DbspCircuit {
         if let Some(output) = output {
             match output {
                 RowOutput::Set(output) => {
-                    let key_layout = layout.unwrap_set();
-                    let serialize_json = unsafe {
-                        transmute::<_, SerializeFn>(
-                            self.jit
-                                .jit
-                                .get_finalized_function(self.serialize_json_demands[&key_layout]),
-                        )
-                    };
+                    let serialize_json =
+                        unsafe { demand_function!(self, demand, layout.unwrap_set(), SerializeFn) };
 
                     // TODO: Consolidate into a buffer
                     let set = output.consolidate();

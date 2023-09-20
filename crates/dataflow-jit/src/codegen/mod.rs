@@ -2448,8 +2448,14 @@ impl<'a> CodegenCtx<'a> {
                     | ColumnType::Ptr
                     | ColumnType::Date
                     | ColumnType::Timestamp
-                    | ColumnType::Decimal
                     | ColumnType::String => builder.ins().iconst(ty, 0),
+
+                    // 128 bit values can't be constructed directly in cranelift
+                    ColumnType::Decimal => {
+                        let zero = builder.ins().iconst(types::I64, 0);
+                        builder.ins().iconcat(zero, zero)
+                    }
+
                     ColumnType::F32 => builder.ins().f32const(0.0),
                     ColumnType::F64 => builder.ins().f64const(0.0),
                     // Unit types shouldn't reach codegen

@@ -25,11 +25,11 @@ pub use exprs::{
 };
 pub use function::{Function, FunctionBuilder, InputFlags};
 pub use graph::{Graph, GraphExt};
-pub use ids::{BlockId, ExprId, LayoutId, NodeId};
+pub use ids::{BlockId, DemandId, ExprId, LayoutId, NodeId};
 pub use layout_cache::RowLayoutCache;
 pub use row_layout::{RowLayout, RowLayoutBuilder};
 pub use terminator::{Branch, Jump, Return, Terminator};
 pub use types::{ColumnType, Signature};
 pub use validate::{ValidationError, ValidationResult, Validator};
 
-pub(crate) use ids::{BlockIdGen, ExprIdGen, NodeIdGen};
+pub(crate) use ids::{BlockIdGen, DemandIdGen, ExprIdGen, NodeIdGen};

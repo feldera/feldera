@@ -32,8 +32,10 @@ fn time_series_enrich_e2e() {
         .layout();
 
     let mut demands = Demands::new();
-    demands.add_csv_deserialize(transactions_layout, transaction_mappings());
-    demands.add_csv_deserialize(demographics_layout, demographic_mappings());
+    let transactions_demand =
+        demands.add_csv_deserialize(transactions_layout, transaction_mappings());
+    let demographics_demand =
+        demands.add_csv_deserialize(demographics_layout, demographic_mappings());
 
     // Create the circuit
     let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), demands);
@@ -41,9 +43,14 @@ fn time_series_enrich_e2e() {
     // Ingest data
     circuit.append_csv_input(
         TRANSACTIONS_ID,
+        transactions_demand,
         &Path::new(PATH).join("transactions_20K.csv"),
     );
-    circuit.append_csv_input(DEMOGRAPHICS_ID, &Path::new(PATH).join("demographics.csv"));
+    circuit.append_csv_input(
+        DEMOGRAPHICS_ID,
+        demographics_demand,
+        &Path::new(PATH).join("demographics.csv"),
+    );
 
     // Step the circuit
     circuit.step().unwrap();
@@ -204,8 +211,10 @@ fn time_series_enrich_e2e_2() {
     );
 
     let mut demands = Demands::new();
-    demands.add_csv_deserialize(transactions_layout, transaction_mappings());
-    demands.add_csv_deserialize(demographics_layout, demographic_mappings());
+    let transactions_demand =
+        demands.add_csv_deserialize(transactions_layout, transaction_mappings());
+    let demographics_demand =
+        demands.add_csv_deserialize(demographics_layout, demographic_mappings());
 
     // Create the circuit
     let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), demands);
@@ -213,9 +222,14 @@ fn time_series_enrich_e2e_2() {
     // Ingest data
     circuit.append_csv_input(
         transactions_src,
+        transactions_demand,
         &Path::new(PATH).join("transactions_20K.csv"),
     );
-    circuit.append_csv_input(demographics_src, &Path::new(PATH).join("demographics.csv"));
+    circuit.append_csv_input(
+        demographics_src,
+        demographics_demand,
+        &Path::new(PATH).join("demographics.csv"),
+    );
 
     // Step the circuit
     circuit.step().unwrap();
