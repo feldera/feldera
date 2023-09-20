@@ -1,16 +1,15 @@
-import { PageHeaderProps } from '$lib/types/layouts/pageHeader'
+import { ReactNode } from 'react'
 
-import { Typography } from '@mui/material'
-import Grid from '@mui/material/Grid'
+import { Box, Typography } from '@mui/material'
 
-const PageHeader = (props: PageHeaderProps) => {
+const PageHeader = (props: { title: ReactNode; subtitle?: ReactNode }) => {
   const { title, subtitle } = props
 
   return (
-    <Grid item xs={12}>
+    <Box sx={{ mt: '-3rem', pl: { xs: '5rem', lg: '2rem' } }}>
       {typeof title === 'string' ? <Typography variant='h5'>{title}</Typography> : title}
       {<Typography variant='body2'>{subtitle}</Typography>}
-    </Grid>
+    </Box>
   )
 }
 

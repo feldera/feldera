@@ -19,14 +19,17 @@ const AppBarContent = (props: Props) => {
   return (
     <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 4 }}>
-        <Box className='actions-left' sx={{ display: 'flex', alignItems: 'top', gap: 4 }}>
+        <Box className='actions-left' sx={{ display: 'flex', alignItems: 'top', gap: 4, pointerEvents: 'auto' }}>
           {hidden ? (
             <IconButton color='inherit' onClick={toggleNavVisibility} sx={{ mb: 'auto' }}>
               <Menu />
             </IconButton>
           ) : null}
         </Box>
-        <Box className='actions-right' sx={{ display: 'flex', alignItems: 'center', mb: 'auto' }}>
+        <Box
+          className='actions-right'
+          sx={{ display: 'flex', alignItems: 'center', mb: 'auto', pointerEvents: 'auto' }}
+        >
           <ModeToggler settings={settings} saveSettings={saveSettings} />
         </Box>
       </Box>
