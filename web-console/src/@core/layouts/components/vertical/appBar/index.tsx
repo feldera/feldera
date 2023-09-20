@@ -49,7 +49,8 @@ const LayoutAppBar = (props: Props) => {
         sx={{
           ...(contentWidth === 'boxed' && {
             '@media (min-width:1440px)': { maxWidth: `calc(1440px - ${theme.spacing(6)} * 2)` }
-          })
+          }),
+          pointerEvents: 'none'
         }}
       >
         {(userVerticalAppBarContent && userVerticalAppBarContent(props)) || null}

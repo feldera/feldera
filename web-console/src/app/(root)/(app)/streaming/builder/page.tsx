@@ -1,5 +1,6 @@
 'use client'
 
+import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
 import Metadata from '$lib/components/streaming/builder/Metadata'
@@ -30,7 +31,7 @@ import { ReactFlowProvider, useReactFlow } from 'reactflow'
 import { match } from 'ts-pattern'
 import { useDebouncedCallback } from 'use-debounce'
 
-import { Card, CardContent } from '@mui/material'
+import { Card, CardContent, Link } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -328,7 +329,11 @@ const PipelineWithProvider = (props: {
 
   return (
     <>
-      <Grid container spacing={6} className='match-height' id='pipeline-builder-content'>
+      <BreadcrumbsHeader>
+        <Link href={`/streaming/management`}>Pipelines</Link>
+        <Link href={`/streaming/builder/?pipeline_id=${pipelineId}`}>{name}</Link>
+      </BreadcrumbsHeader>
+      <Grid container spacing={6} className='match-height' id='pipeline-builder-content' sx={{ pl: 6, pt: 6 }}>
         <Grid item xs={12}>
           {/* id referenced by webui-tester */}
           <Card>

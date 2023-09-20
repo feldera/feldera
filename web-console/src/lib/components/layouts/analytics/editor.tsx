@@ -1,6 +1,7 @@
 // Editor for SQL programs. This is the main component for the editor page.
 // It is responsible for loading the program, compiling it, and saving it.
 
+import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
 import CompileIndicator from '$lib/components/layouts/analytics/CompileIndicator'
@@ -25,7 +26,7 @@ import { match, P } from 'ts-pattern'
 import { useDebouncedCallback } from 'use-debounce'
 
 import Editor, { useMonaco } from '@monaco-editor/react'
-import { Card, CardContent, CardHeader, FormHelperText, useTheme } from '@mui/material'
+import { Card, CardContent, CardHeader, FormHelperText, Link, useTheme } from '@mui/material'
 import Divider from '@mui/material/Divider'
 import FormControl from '@mui/material/FormControl'
 import Grid from '@mui/material/Grid'
@@ -499,7 +500,11 @@ const Editors = (props: { programId: string | null }) => {
   useDisplayCompilerErrorsInEditor(project, editorRef)
 
   return (programId !== null && loaded) || programId == null ? (
-    <Grid container spacing={6}>
+    <>
+      <BreadcrumbsHeader>
+        <Link href={`/analytics/programs`}>SQL Programs</Link>
+        <Link href={`/analytics/editor?program_id=${programId}`}>{project.name}</Link>
+      </BreadcrumbsHeader>
       <Grid item xs={12}>
         <Card>
           <CardHeader title='SQL Code'></CardHeader>
@@ -527,7 +532,7 @@ const Editors = (props: { programId: string | null }) => {
           <Divider sx={{ m: '0 !important' }} />
         </Card>
       </Grid>
-    </Grid>
+    </>
   ) : (
     <>Loading...</>
   )

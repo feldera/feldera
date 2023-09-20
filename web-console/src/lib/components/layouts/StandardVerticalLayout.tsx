@@ -5,6 +5,7 @@ import { ReactNode } from 'react'
 import { useSettings } from 'src/@core/hooks/useSettings'
 import VerticalLayout from 'src/@core/layouts/VerticalLayout'
 
+import { Grid } from '@mui/material'
 import { Theme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
 
@@ -43,7 +44,9 @@ const StandardVerticalLayout = ({ children }: Props) => {
         />
       )}
     >
-      {children}
+      <Grid container spacing={6} className='match-height'>
+        {children}
+      </Grid>
     </VerticalLayout>
   )
 }

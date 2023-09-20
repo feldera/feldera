@@ -1,9 +1,8 @@
 // Browse tables and views & insert data into tables.
 'use client'
 
-import { BreadcrumbSelect } from '$lib/components/common/Breadcrumbs'
+import { BreadcrumbSelect } from '$lib/components/common/BreadcrumbSelect'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
-import PageHeader from '$lib/components/layouts/pageHeader'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
 import { Pipeline, PipelineId, PipelineStatus } from '$lib/services/manager'
@@ -11,12 +10,12 @@ import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { useSearchParams } from 'next/navigation'
 import { SyntheticEvent, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
+import { BreadcrumbsHeader } from 'src/lib/components/common/BreadcrumbsHeader'
 
-import { Icon } from '@iconify/react'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
-import { Alert, AlertTitle, Breadcrumbs, Link, ListSubheader, MenuItem } from '@mui/material'
+import { Alert, AlertTitle, Link, ListSubheader, MenuItem } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
@@ -161,24 +160,21 @@ const IntrospectInputOutput = () => {
     !pipelineRevisionQuery.isLoading &&
     !pipelineRevisionQuery.isError &&
     relationValid ? (
-    <Grid container spacing={6} className='match-height'>
-      <PageHeader
-        title={
-          <Breadcrumbs separator={<Icon icon='bx:chevron-right' fontSize={20} />} aria-label='breadcrumb'>
-            <Link href={`/streaming/management/?pipeline_id=${pipeline.descriptor.pipeline_id}`}>
-              {pipeline.descriptor.name}
-            </Link>
-            <TablesBreadcrumb pipeline={pipeline} relation={relation} tables={tables} views={views}></TablesBreadcrumb>
-          </Breadcrumbs>
-        }
-      />
+    <>
+      <BreadcrumbsHeader>
+        <Link href={`/streaming/management`}>Pipelines</Link>
+        <Link href={`/streaming/management/#${pipeline.descriptor.pipeline_id}`}>
+          {pipeline.descriptor.name}
+        </Link>
+        <TablesBreadcrumb pipeline={pipeline} relation={relation} tables={tables} views={views}></TablesBreadcrumb>
+      </BreadcrumbsHeader>
       <Grid item xs={12}>
         {tables.includes(relation) && (
           <TableWithInsertTab pipeline={pipeline} handleChange={handleChange} tab={tab} relation={relation} />
         )}
         {views.includes(relation) && <ViewDataTable pipeline={pipeline} relation={relation} />}
       </Grid>
-    </Grid>
+    </>
   ) : (
     relation && tables && views && !(tables.includes(relation) || views.includes(relation)) && (
       <Alert severity='error'>
