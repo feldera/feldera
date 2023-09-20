@@ -3,8 +3,8 @@ use crate::{
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
-    CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpoint, InputEndpointConfig,
-    OutputEndpoint, OutputEndpointConfig, OutputQuery, PipelineConfig,
+    CircuitCatalog, Controller, ControllerError, DbspCircuitHandle, FormatConfig, InputEndpoint,
+    InputEndpointConfig, OutputEndpoint, OutputEndpointConfig, OutputQuery, PipelineConfig,
 };
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
@@ -17,7 +17,7 @@ use actix_web::{
 use actix_web_static_files::ResourceFiles;
 use clap::Parser;
 use colored::Colorize;
-use dbsp::{operator::sample::MAX_QUANTILES, DBSPHandle};
+use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
 use erased_serde::Deserializer as ErasedDeserializer;
 use log::{debug, error, info, warn};
@@ -144,7 +144,12 @@ pub const SERVER_PORT_FILE: &str = "port";
 /// catalog.
 pub fn server_main<F>(circuit_factory: F) -> Result<(), ControllerError>
 where
-    F: Fn(usize) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError> + Send + 'static,
+    F: FnOnce(
+            usize,
+        )
+            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+        + Send
+        + 'static,
 {
     let args = ServerArgs::try_parse().map_err(|e| ControllerError::cli_args_error(&e))?;
 
@@ -157,9 +162,14 @@ where
     })
 }
 
-fn run_server<F>(args: ServerArgs, circuit_factory: F) -> Result<(), ControllerError>
+pub fn run_server<F>(args: ServerArgs, circuit_factory: F) -> Result<(), ControllerError>
 where
-    F: Fn(usize) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError> + Send + 'static,
+    F: FnOnce(
+            usize,
+        )
+            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+        + Send
+        + 'static,
 {
     let bind_address = args.bind_address.clone();
     let port = args.default_port.unwrap_or(0);
@@ -250,7 +260,12 @@ fn bootstrap<F>(
     state: WebData<ServerState>,
     loginit_sender: StdSender<()>,
 ) where
-    F: Fn(usize) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
+    F: FnOnce(
+            usize,
+        )
+            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+        + Send
+        + 'static,
 {
     do_bootstrap(args, circuit_factory, &state, loginit_sender).unwrap_or_else(|e| {
         // Store error in `state.phase`, so that it can be
@@ -311,7 +326,12 @@ fn do_bootstrap<F>(
     loginit_sender: StdSender<()>,
 ) -> Result<(), ControllerError>
 where
-    F: Fn(usize) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
+    F: FnOnce(
+            usize,
+        )
+            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+        + Send
+        + 'static,
 {
     // Print error directly to stdout until we've initialized the logger.
     let config = parse_config(&args.config_file).map_err(|e| {
@@ -355,13 +375,10 @@ where
         }
     };
 
-    let (circuit, catalog) = circuit_factory(config.global.workers as usize)?;
-
     let weak_state_ref = Arc::downgrade(state);
 
     let controller = Controller::with_config(
-        circuit,
-        catalog,
+        circuit_factory,
         &config,
         Box::new(move |e| error_handler(&weak_state_ref, e))
             as Box<dyn Fn(ControllerError) + Send + Sync>,
@@ -799,6 +816,8 @@ async fn output_endpoint(
                         // validated by `add_output_endpoint`.
                         .unwrap()
                         .neighborhood_descr_handle
+                        .as_ref()
+                        .ok_or_else(|| PipelineError::NeighborhoodNotSupported)?
                         .set_for_all(&mut <dyn ErasedDeserializer>::erase(json!([
                             json!(true),
                             body
@@ -822,6 +841,8 @@ async fn output_endpoint(
                         .output_handles(&config.stream)
                         .unwrap()
                         .num_quantiles_handle
+                        .as_ref()
+                        .ok_or(PipelineError::QuantilesNotSupported)?
                         .set_for_all(args.quantiles as usize);
                     controller.request_step();
                 }
@@ -932,10 +953,7 @@ outputs:
         thread::spawn(move || {
             bootstrap(
                 args,
-                |workers| {
-                    let (circuit, catalog) = test_circuit(workers);
-                    Ok((circuit, Box::new(catalog)))
-                },
+                |workers| Ok(test_circuit(workers)),
                 state_clone,
                 std::sync::mpsc::channel().0,
             )

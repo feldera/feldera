@@ -115,8 +115,10 @@ use num_derive::FromPrimitive;
 use serde::Serialize;
 
 mod catalog;
+mod circuit_handle;
 mod controller;
 pub mod format;
+pub mod jit;
 pub mod server;
 pub mod static_compile;
 pub mod transport;
@@ -140,14 +142,15 @@ pub enum PipelineState {
 // Re-export `DetailedError`.
 pub use dbsp::DetailedError;
 
+pub use circuit_handle::DbspCircuitHandle;
+
 pub use server::{EgressMode, ErrorResponse, PipelineError};
 
 pub use catalog::{
-    CircuitCatalog, DeCollectionHandle, DeCollectionStream, NeighborhoodQuery, OutputQuery,
-    OutputQueryHandles, SerBatch,
+    Catalog, CircuitCatalog, DeCollectionHandle, DeCollectionStream, NeighborhoodQuery,
+    OutputQuery, OutputQueryHandles, SerBatch, SerCollectionHandle,
 };
 pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser};
-pub use static_compile::catalog::Catalog;
 
 pub use controller::{
     ConfigError, ConnectorConfig, Controller, ControllerError, ControllerStatus, FormatConfig,

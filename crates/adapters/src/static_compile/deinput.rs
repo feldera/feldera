@@ -68,10 +68,10 @@ impl DeserializerFromBytes for JsonDeserializerFromBytes {
     }
 }
 
-/// Maximal buffer size reused across clock cycles.
+/// Maximal buffer size reused across buffer flushes.
 ///
 /// Input handles in this module use an internal buffer for input records.
-/// We want to reuse the allocation across clock cycles, but we
+/// We want to reuse the allocation across batches, but we
 /// limit the max amount of capacity we reuse so that a very large
 /// transaction does not leave a huge unused memory buffer.
 const MAX_REUSABLE_CAPACITY: usize = 100_000;

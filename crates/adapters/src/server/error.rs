@@ -168,11 +168,13 @@ pub enum PipelineError {
     NumQuantilesOutOfRange {
         quantiles: u32,
     },
+    QuantilesNotSupported,
     MissingNeighborhoodSpec,
     InvalidNeighborhoodSpec {
         spec: JsonValue,
         parse_error: String,
     },
+    NeighborhoodNotSupported,
     ControllerError {
         // Fold `ControllerError` directly into `PipelineError` to simplify
         // the error hierarchy from the user's pespective.
@@ -219,6 +221,9 @@ impl Display for PipelineError {
             Self::QuantileStreamingNotSupported => {
                 f.write_str("Continuous monitoring is not supported for quantiles. Use '?mode=snapshot' to retrieve a single set of quantiles.")
             }
+            Self::QuantilesNotSupported => {
+                f.write_str("Quantiles queries are not supported for this table.")
+            }
             Self::TableSnapshotNotImplemented => {
                 f.write_str("Taking a snapshot of a table or view is not yet supported.")
             }
@@ -230,6 +235,9 @@ impl Display for PipelineError {
             }
             Self::InvalidNeighborhoodSpec{spec, parse_error} => {
                 write!(f, "Unable to parse neighborhood descriptor '{spec}'. Error returned by the parser: '{parse_error}'.")
+            }
+            Self::NeighborhoodNotSupported => {
+                f.write_str("Neighborhood queries are not supported for this table.")
             }
             Self::ControllerError{ error } => {
                 error.fmt(f)
@@ -263,8 +271,10 @@ impl DetailedError for PipelineError {
             Self::MissingUrlEncodedParam { .. } => Cow::from("MissingUrlEncodedParam"),
             Self::ApiConnectionLimit => Cow::from("ApiConnectionLimit"),
             Self::QuantileStreamingNotSupported => Cow::from("QuantileStreamingNotSupported"),
+            Self::QuantilesNotSupported => Cow::from("QuantilesNotSupported"),
             Self::TableSnapshotNotImplemented => Cow::from("TableSnapshotNotImplemented"),
             Self::MissingNeighborhoodSpec => Cow::from("MissingNeighborhoodSpec"),
+            Self::NeighborhoodNotSupported => Cow::from("NeighborhoodNotSupported"),
             Self::NumQuantilesOutOfRange { .. } => Cow::from("NumQuantilesOutOfRange"),
             Self::InvalidNeighborhoodSpec { .. } => Cow::from("InvalidNeighborhoodSpec"),
             Self::ParseErrors { .. } => Cow::from("ParseErrors"),
@@ -314,8 +324,10 @@ impl ResponseError for PipelineError {
             Self::MissingUrlEncodedParam { .. } => StatusCode::BAD_REQUEST,
             Self::ApiConnectionLimit => StatusCode::TOO_MANY_REQUESTS,
             Self::QuantileStreamingNotSupported => StatusCode::METHOD_NOT_ALLOWED,
+            Self::QuantilesNotSupported => StatusCode::METHOD_NOT_ALLOWED,
             Self::TableSnapshotNotImplemented => StatusCode::NOT_IMPLEMENTED,
             Self::MissingNeighborhoodSpec => StatusCode::BAD_REQUEST,
+            Self::NeighborhoodNotSupported => StatusCode::METHOD_NOT_ALLOWED,
             Self::NumQuantilesOutOfRange { .. } => StatusCode::RANGE_NOT_SATISFIABLE,
             Self::InvalidNeighborhoodSpec { .. } => StatusCode::BAD_REQUEST,
             Self::ParseErrors { .. } => StatusCode::BAD_REQUEST,

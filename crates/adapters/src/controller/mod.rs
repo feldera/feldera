@@ -33,17 +33,18 @@
 //! of transmitted bytes and records and updating respective performance
 //! counters in the controller.
 
+use crate::DbspCircuitHandle;
 use crate::{
-    catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, InputEndpoint, InputFormat,
+    catalog::SerBatch, Catalog, CircuitCatalog, Encoder, InputConsumer, InputEndpoint, InputFormat,
     InputTransport, OutputConsumer, OutputEndpoint, OutputFormat, OutputQuery, OutputQueryHandles,
     OutputTransport, ParseError, Parser, PipelineState,
 };
 use anyhow::Error as AnyError;
+use crossbeam::channel::{self, Sender};
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
 };
-use dbsp::DBSPHandle;
 use log::{debug, error, info};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
@@ -119,12 +120,19 @@ impl Controller {
     ///   transport or data format.
     ///
     /// * One or more of the endpoints fails to initialize.
-    pub fn with_config(
-        mut circuit: DBSPHandle,
-        catalog: Box<dyn CircuitCatalog>,
+    pub fn with_config<F>(
+        circuit_factory: F,
         config: &PipelineConfig,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
-    ) -> Result<Self, ControllerError> {
+    ) -> Result<Self, ControllerError>
+    where
+        F: FnOnce(
+                usize,
+            )
+                -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+            + Send
+            + 'static,
+    {
         let circuit_thread_parker = Parker::new();
         let circuit_thread_unparker = circuit_thread_parker.unparker().clone();
 
@@ -132,18 +140,11 @@ impl Controller {
         let backpressure_thread_unparker = backpressure_thread_parker.unparker().clone();
 
         let inner = Arc::new(ControllerInner::new(
-            catalog,
             &config.global,
             circuit_thread_unparker,
             backpressure_thread_unparker,
             error_cb,
         ));
-
-        if config.global.cpu_profiler {
-            circuit
-                .enable_cpu_profiler()
-                .map_err(ControllerError::dbsp_error)?;
-        }
 
         let backpressure_thread_handle = {
             let inner = inner.clone();
@@ -152,7 +153,28 @@ impl Controller {
 
         let circuit_thread_handle = {
             let inner = inner.clone();
-            spawn(move || Self::circuit_thread(circuit, inner, circuit_thread_parker))
+
+            // A channel to communicate circuit initialization status.
+            // The `citcuit_factory` closure must be invoked in the context of
+            // the circuit thread, because the circuit handle it returns doesn't
+            // implement `Send`.  So we need this channel to communicate circuit
+            // initialization status back to this thread.
+            let (init_status_sender, init_status_receiver) =
+                channel::bounded::<Result<(), ControllerError>>(0);
+            let handle = spawn(move || {
+                Self::circuit_thread(
+                    circuit_factory,
+                    inner,
+                    circuit_thread_parker,
+                    init_status_sender,
+                )
+            });
+            // If `recv` fails, it indicates that the circuit thread panicked
+            // during initialization, mostly likely in JIT compilation.
+            init_status_receiver
+                .recv()
+                .map_err(|_| ControllerError::dbsp_panic())??;
+            handle
         };
 
         for (input_name, input_config) in config.inputs.iter() {
@@ -356,12 +378,39 @@ impl Controller {
     /// Circuit thread function: holds the handle to the circuit, calls `step`
     /// on it whenever input data is available, pushes output batches
     /// produced by the circuit to output pipelines.
-    fn circuit_thread(
-        mut circuit: DBSPHandle,
+    fn circuit_thread<F>(
+        circuit_factory: F,
         controller: Arc<ControllerInner>,
         parker: Parker,
-    ) -> Result<(), ControllerError> {
+        init_status_sender: Sender<Result<(), ControllerError>>,
+    ) -> Result<(), ControllerError>
+    where
+        F: FnOnce(
+            usize,
+        )
+            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>,
+    {
         let mut start: Option<Instant> = None;
+
+        let mut circuit = match circuit_factory(controller.status.global_config.workers as usize) {
+            Ok((circuit, catalog)) => {
+                // Complete initialization before sending back the confirmation to
+                // prevent a race.
+                *controller.catalog.lock().unwrap() = catalog;
+                let _ = init_status_sender.send(Ok(()));
+                circuit
+            }
+            Err(e) => {
+                let _ = init_status_sender.send(Err(e));
+                return Ok(());
+            }
+        };
+
+        if controller.status.global_config.cpu_profiler {
+            circuit.enable_cpu_profiler().unwrap_or_else(|e| {
+                error!("Failed to enable CPU profiler: {e}");
+            });
+        }
 
         let max_buffering_delay =
             Duration::from_micros(controller.status.global_config.max_buffering_delay_usecs);
@@ -421,9 +470,7 @@ impl Controller {
                         // backpressure.
                         controller.unpark_backpressure();
                         debug!("circuit thread: calling 'circuit.step'");
-                        circuit
-                            .step()
-                            .unwrap_or_else(|e| controller.error(ControllerError::dbsp_error(e)));
+                        circuit.step().unwrap_or_else(|e| controller.error(e));
                         debug!("circuit thread: 'circuit.step' returned");
 
                         controller
@@ -760,7 +807,6 @@ struct ControllerInner {
 
 impl ControllerInner {
     fn new(
-        catalog: Box<dyn CircuitCatalog>,
         global_config: &RuntimeConfig,
         circuit_thread_unparker: Unparker,
         backpressure_thread_unparker: Unparker,
@@ -773,7 +819,7 @@ impl ControllerInner {
             status,
             num_api_connections: AtomicU64::new(0),
             dump_profile_request,
-            catalog: Arc::new(Mutex::new(catalog)),
+            catalog: Arc::new(Mutex::new(Box::new(Catalog::new()))),
             inputs: Mutex::new(BTreeMap::new()),
             outputs: ShardedLock::new(OutputEndpoints::new()),
             circuit_thread_unparker,
@@ -1387,8 +1433,6 @@ mod test {
             input_buffer_size_bytes in 1..1000usize,
             output_buffer_size_records in 1..100usize)
         {
-            let (circuit, catalog) = test_circuit(4);
-
             let temp_input_file = NamedTempFile::new().unwrap();
             let temp_output_path = NamedTempFile::new().unwrap().into_temp_path();
             let output_path = temp_output_path.to_str().unwrap().to_string();
@@ -1399,6 +1443,7 @@ mod test {
 min_batch_size_records: {min_batch_size_records}
 max_buffering_delay_usecs: {max_buffering_delay_usecs}
 name: test
+workers: 4
 inputs:
     test_input1:
         stream: test_input1
@@ -1431,8 +1476,7 @@ outputs:
             let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
             let controller = Controller::with_config(
-                circuit,
-                Box::new(catalog),
+                |workers| Ok(test_circuit(workers)),
                 &config,
                 Box::new(|e| panic!("error: {e}")),
                 )
