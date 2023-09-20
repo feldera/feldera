@@ -140,7 +140,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         List<JitFileAndSerialization> outputFiles = new ArrayList<>();
         for (DBSPZSetLiteral.Contents outputData: data.outputs) {
             File output = File.createTempFile("output", ".json", baseDirectory);
-            ToCsvVisitor.toCsv(compiler, output, new DBSPZSetLiteral(compiler.getWeightTypeImplementation(), outputData));
             outputFiles.add(new JitFileAndSerialization(
                     output.getAbsolutePath(),
                     JitSerializationKind.Json));

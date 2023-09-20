@@ -104,6 +104,8 @@ fn run(program: &Path, config: &Path) -> ExitCode {
 
     let (mut demands, mut inputs) = (Demands::new(), Vec::with_capacity(config.inputs.len()));
     for (name, input) in config.inputs {
+        // Allow JIT file to specify unused inputs
+        if !source_names.contains_key(&name) { continue; }
         let (node, layout) = source_names[&name];
         let format = match input.kind {
             InputKind::Json(mut mappings) => {

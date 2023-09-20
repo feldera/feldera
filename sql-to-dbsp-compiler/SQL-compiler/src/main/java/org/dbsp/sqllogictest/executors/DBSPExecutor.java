@@ -35,22 +35,14 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.*;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ToRustJitLiteral;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.JITSourceOperator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPasses;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
-import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
-import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
@@ -309,7 +301,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     /**
      * Convert a description of the data in the SLT format to a ZSet.
      */
-    @Nullable DBSPZSetLiteral convert(@Nullable List<String> data, DBSPTypeZSet outputType) {
+    @Nullable public static DBSPZSetLiteral convert(@Nullable List<String> data, DBSPTypeZSet outputType) {
         if (data == null)
             return null;
         DBSPZSetLiteral result;
@@ -390,113 +382,18 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             throw new RuntimeException(
                     "Didn't expect a query to have " + dbsp.getOutputCount() + " outputs");
         DBSPTypeZSet outputType = dbsp.getOutputType(0).to(DBSPTypeZSet.class);
-        DBSPZSetLiteral expectedOutput = this.convert(
+        DBSPZSetLiteral expectedOutput = DBSPExecutor.convert(
                 testQuery.outputDescription.getQueryResults(), outputType);
         if (expectedOutput == null) {
             if (testQuery.outputDescription.hash == null)
                 throw new RuntimeException("No hash or outputs specified");
         }
 
-        ProgramAndTester result;
-        if (this.compilerOptions.ioOptions.jit) {
-            result = createJitTesterCode(compiler,
-              "tester" + suffix, dbsp, compiler.getTableContents(),
-              Objects.requireNonNull(expectedOutput), testQuery.outputDescription);
-        } else {
-            result = createTesterCode(
+        return createTesterCode(
                     "tester" + suffix, dbsp,
                     inputGeneratingFunction,
                     compiler.getTableContents(),
                     expectedOutput, testQuery.outputDescription);
-        }
-        return result;
-    }
-
-    static ProgramAndTester createJitTesterCode(
-            DBSPCompiler compiler,
-            String name, DBSPCircuit dbsp,
-            TableContents tableContents, DBSPZSetLiteral expectedOutput,
-            SqlTestQueryOutputDescription outputDescription) {
-        // TODO: avoid duplicating this code with TestCase.
-        List<DBSPStatement> list = new ArrayList<>();
-        JITProgram program = ToJitVisitor.circuitToJIT(compiler, dbsp);
-        DBSPComment comment = new DBSPComment(program.toAssembly());
-        list.add(comment);
-
-        String json = program.asJson().toPrettyString();
-        DBSPStrLiteral value = new DBSPStrLiteral(json, false, true);
-        DBSPConstItem item = new DBSPConstItem("CIRCUIT", new DBSPTypeStr(CalciteObject.EMPTY,false).ref(), value);
-        list.add(item);
-        DBSPExpression read = new DBSPApplyMethodExpression("rematerialize", DBSPTypeAny.getDefault(),
-                new DBSPApplyExpression("serde_json::from_str::<SqlGraph>",
-                        DBSPTypeAny.getDefault(), item.getVariable()).unwrap());
-        DBSPLetStatement graph = new DBSPLetStatement("graph", read);
-        list.add(graph);
-
-        DBSPLetStatement graphNodes = new DBSPLetStatement("graph_nodes",
-                new DBSPApplyMethodExpression("nodes", DBSPTypeAny.getDefault(),
-                        graph.getVarReference()));
-        list.add(graphNodes);
-
-        DBSPLetStatement demands = new DBSPLetStatement("demands",
-                new DBSPConstructorExpression(
-                        new DBSPPath("Demands", "new").toExpression(),
-                        DBSPTypeAny.getDefault()), true);
-        list.add(demands);
-
-        List<JITSourceOperator> tables = program.getSources();
-        for (JITSourceOperator source : tables) {
-            String table = source.table;
-            long index = source.id;
-            DBSPExpression nodeId = new DBSPConstructorExpression(
-                    new DBSPPath("NodeId", "new").toExpression(),
-                    DBSPTypeAny.getDefault(),
-                    new DBSPU32Literal((int) index));
-            DBSPLetStatement id = new DBSPLetStatement(table + "_id", nodeId);
-            list.add(id);
-
-            DBSPExpression indexExpr = new DBSPBinaryExpression(CalciteObject.EMPTY, DBSPTypeAny.getDefault(),
-                    DBSPOpcode.RUST_INDEX, graphNodes.getVarReference(), id.getVarReference().borrow());
-            DBSPExpression layout = new DBSPApplyMethodExpression(
-                    "layout", DBSPTypeAny.getDefault(),
-                    new DBSPApplyMethodExpression("unwrap_source", DBSPTypeAny.getDefault(),
-                            indexExpr.applyClone()));
-            DBSPLetStatement stat = new DBSPLetStatement(table + "_layout", layout);
-            list.add(stat);
-        }
-
-        DBSPExpression debug = new DBSPConstructorExpression(
-                new DBSPPath("CodegenConfig", "debug").toExpression(),
-                DBSPTypeAny.getDefault());
-        DBSPExpression allocateCircuit = new DBSPConstructorExpression(
-                new DBSPPath("DbspCircuit", "new").toExpression(),
-                DBSPTypeAny.getDefault(),
-                graph.getVarReference(),
-                new DBSPBoolLiteral(true),
-                new DBSPUSizeLiteral(1),
-                debug,
-                demands.getVarReference());
-        DBSPLetStatement circuit = new DBSPLetStatement("circuit", allocateCircuit, true);
-        list.add(circuit);
-
-        InnerPasses converter = new InnerPasses();
-        converter.add(new Simplify(compiler));
-        converter.add(new ToRustJitLiteral(compiler));
-        // TODO: feed inputs, check outputs.
-
-        DBSPExpressionStatement step = new DBSPExpressionStatement(
-                new DBSPApplyMethodExpression("step", DBSPTypeAny.getDefault(),
-                        circuit.getVarReference()).unwrap());
-        list.add(step);
-        DBSPStatement kill = new DBSPExpressionStatement(
-                new DBSPApplyMethodExpression(
-                        "kill", DBSPTypeAny.getDefault(), circuit.getVarReference()).unwrap());
-        list.add(kill);
-
-        DBSPExpression body = new DBSPBlockExpression(list, null);
-        DBSPFunction function = new DBSPFunction(name, new ArrayList<>(),
-                new DBSPTypeVoid(), body, Linq.list("#[test]"));
-        return new ProgramAndTester(null, function);
     }
 
     void cleanupFilesystem() {
@@ -753,14 +650,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     }
 
     public static void register(OptionsParser parser) {
-        AtomicReference<Boolean> jit = new AtomicReference<>();
-        jit.set(false);
         AtomicReference<Boolean> incremental = new AtomicReference<>();
         incremental.set(false);
-        parser.registerOption("-j", null, "Emit JIT code", o-> {
-                    jit.set(true);
-                    return true;
-                });
         parser.registerOption("-inc", null, "Incremental validation", o -> {
             incremental.set(true);
             return true;
@@ -770,7 +661,6 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             try {
                 CompilerOptions compilerOptions = new CompilerOptions();
                 compilerOptions.optimizerOptions.incrementalize = incremental.get();
-                compilerOptions.ioOptions.jit = jit.get();
                 compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
                 DBSPExecutor result = new DBSPExecutor(options, compilerOptions, "csv");
                 Set<String> bugs = options.readBugsFile();

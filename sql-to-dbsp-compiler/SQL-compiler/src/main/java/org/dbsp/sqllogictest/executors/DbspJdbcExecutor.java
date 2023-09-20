@@ -80,8 +80,12 @@ public class DbspJdbcExecutor extends DBSPExecutor {
     }
 
     public DBSPZSetLiteral getTableContents(String table) throws SQLException {
+        return getTableContents(this.getStatementExecutorConnection(), table);
+    }
+
+    public static DBSPZSetLiteral getTableContents(Connection connection, String table) throws SQLException {
         List<DBSPExpression> rows = new ArrayList<>();
-        try (Statement stmt1 = this.getStatementExecutorConnection().createStatement()) {
+        try (Statement stmt1 = connection.createStatement()) {
             ResultSet rs = stmt1.executeQuery("SELECT * FROM " + table);
             ResultSetMetaData meta = rs.getMetaData();
             DBSPType[] colTypes = new DBSPType[meta.getColumnCount()];
@@ -161,10 +165,10 @@ public class DbspJdbcExecutor extends DBSPExecutor {
         return result;
     }
 
-    static final String regexCreate = "create\\s+table\\s+(\\w+)";
-    static final Pattern patCreate = Pattern.compile(regexCreate);
-    static final String regexDrop = "drop\\s+table\\s+(\\w+)";
-    static final Pattern patDrop = Pattern.compile(regexDrop);
+    public static final String regexCreate = "create\\s+table\\s+(\\w+)";
+    public static final Pattern patCreate = Pattern.compile(regexCreate);
+    public static final String regexDrop = "drop\\s+table\\s+(\\w+)";
+    public static final Pattern patDrop = Pattern.compile(regexDrop);
 
     /*
      Calcite cannot parse DDL statements in all dialects.
@@ -175,13 +179,13 @@ public class DbspJdbcExecutor extends DBSPExecutor {
      in a Calcite-friendly syntax.  This implementation does not
      preserve primary keys, but this does not seem important right now.
      */
-    public String generateCreateStatement(String table) throws SQLException {
+    public static String generateCreateStatement(Connection connection, String table) throws SQLException {
         StringBuilder builder = new StringBuilder();
         builder.append("CREATE TABLE ");
         builder.append(table);
         builder.append("(");
 
-        try (Statement stmt = this.getStatementExecutorConnection().createStatement()) {
+        try (Statement stmt = connection.createStatement()) {
             ResultSet rs = stmt.executeQuery("SELECT * FROM " + table + " WHERE 1 = 0");
             ResultSetMetaData meta = rs.getMetaData();
             for (int i = 0; i < meta.getColumnCount(); i++) {
@@ -232,7 +236,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
             return null;
         String tableName = m.group(1);
         this.tablesCreated.add(tableName);
-        return this.generateCreateStatement(tableName);
+        return DbspJdbcExecutor.generateCreateStatement(this.getStatementExecutorConnection(), tableName);
     }
 
     public boolean statement(SltSqlStatement statement) throws SQLException {
