@@ -193,6 +193,8 @@ create_ids! {
     BlockId  = "bb",
     /// The id of a layout
     LayoutId = "layout",
+    /// The id of a (de)serialization demand
+    DemandId = "demand",
 }
 
 impl<'a, D, A> Pretty<'a, D, A> for NodeId

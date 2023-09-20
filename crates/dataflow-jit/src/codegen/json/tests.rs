@@ -88,7 +88,7 @@ fn deserialize_json_smoke() {
             )
         };
 
-        let mut serialize_buffer = String::new();
+        let mut serialize_buffer = Vec::new();
         for (&json, expected) in json_snippets.iter().zip(expected) {
             let json_value = serde_json::from_str(json).unwrap();
             let mut uninit = UninitRow::new(unsafe { &*vtable });
@@ -112,7 +112,7 @@ fn deserialize_json_smoke() {
             //     json_value,
             //     serde_json::from_str::<serde_json::Value>(&serialize_buffer).unwrap(),
             // );
-            println!("{serialize_buffer}");
+            println!("{}", std::str::from_utf8(&serialize_buffer).unwrap());
             serialize_buffer.clear();
         }
     }
