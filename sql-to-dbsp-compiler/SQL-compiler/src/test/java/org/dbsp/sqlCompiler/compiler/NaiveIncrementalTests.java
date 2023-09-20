@@ -120,7 +120,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
 
     @Test @Override
     public void countDistinctTest() {
-        String query = "SELECT 100 + COUNT(DISTINCT - T.COL2) FROM T";
+        String query = "SELECT 100 + COUNT(DISTINCT - T.COL5) FROM T";
         this.testAggregate(query,
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(
