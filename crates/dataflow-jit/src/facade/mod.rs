@@ -320,6 +320,33 @@ impl DbspCircuit {
         Some(JsonZSetHandle::new(handle, deserialize_fn, vtable))
     }
 
+    /// Fetches a serialization function and turns it into a function
+    /// pointer of the specified type
+    ///
+    /// # Safety
+    ///
+    /// `demand` must refer to a function of type `SerializeFn`.
+    /// The produced function pointer must be dropped before the parent `DbspCircuit`
+    pub unsafe fn serialization_function(
+        &self,
+        demand: DemandId,
+        layout: LayoutId,
+    ) -> Option<SerializeFn> {
+        let expected_layout = self.demand_layouts.get(&demand)?;
+        assert_eq!(
+            *expected_layout, layout,
+            "incorrect demand, demand {} is associated with \
+             layout {} but it was requested with layout {}",
+            demand, expected_layout, layout,
+        );
+
+        Some(::std::mem::transmute::<*const u8, SerializeFn>(
+            self.jit
+                .jit
+                .get_finalized_function(*self.demands.get(&demand)?),
+        ))
+    }
+
     // TODO: We probably want other ways to ingest json, e.g. `&[u8]`, `R: Read`,
     // etc.
     pub fn append_json_input<R>(
