@@ -26,6 +26,7 @@
 package org.dbsp.sqllogictest;
 
 import net.hydromatic.sqllogictest.OptionsParser;
+import net.hydromatic.sqllogictest.TestStatistics;
 import org.dbsp.sqllogictest.executors.DBSPExecutor;
 import org.dbsp.sqllogictest.executors.DbspJdbcExecutor;
 import org.dbsp.sqllogictest.executors.JitDbspExecutor;
@@ -83,6 +84,7 @@ public class Main {
         DBSPExecutor.register(parser);
         DbspJdbcExecutor.register(parser);
         JitDbspExecutor.register(parser);
-        net.hydromatic.sqllogictest.Main.execute(parser, args);
+        TestStatistics results = net.hydromatic.sqllogictest.Main.execute(parser, args);
+        results.printStatistics(System.out);
     }
 }

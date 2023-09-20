@@ -104,9 +104,12 @@ fn run(program: &Path, config: &Path) -> ExitCode {
 
     let (mut demands, mut inputs) = (Demands::new(), Vec::with_capacity(config.inputs.len()));
     for (name, input) in config.inputs {
-        // Allow JIT file to specify unused inputs
-        if !source_names.contains_key(&name) { continue; }
-        let (node, layout) = source_names[&name];
+        let (node, layout) = if let Some((node, layout)) = source_names.get(&name) {
+            (node, *layout)
+        } else {
+            // Allow specifying unused inputs
+            continue;
+        };
         let format = match input.kind {
             InputKind::Json(mut mappings) => {
                 // Correct the layout of `mappings`
@@ -162,10 +165,10 @@ fn run(program: &Path, config: &Path) -> ExitCode {
             Format::Json(demand) => {
                 // TODO: Create & append? Make it configurable?
                 let file = BufReader::new(File::open(file).unwrap());
-                circuit.append_json_input(target, demand, file).unwrap();
+                circuit.append_json_input(*target, demand, file).unwrap();
             }
 
-            Format::Csv(demand) => circuit.append_csv_input(target, demand, &file),
+            Format::Csv(demand) => circuit.append_csv_input(*target, demand, &file),
         }
     }
 

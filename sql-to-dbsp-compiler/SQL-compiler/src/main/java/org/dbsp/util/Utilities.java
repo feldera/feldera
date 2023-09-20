@@ -227,7 +227,7 @@ public class Utilities {
     public static void runJIT(String directory, String program, String config)
             throws IOException, InterruptedException {
         Utilities.runProcess(directory,
-                "cargo", "run", "-p", "dataflow-jit", "--bin", "dataflow-jit",
+                "cargo", "run", "--release", "-p", "dataflow-jit", "--bin", "dataflow-jit",
                 "--features", "binary", "--", "run", program, config);
     }
 

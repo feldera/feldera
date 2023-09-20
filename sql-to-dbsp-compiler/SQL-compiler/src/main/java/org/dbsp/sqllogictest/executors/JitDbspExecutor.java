@@ -13,7 +13,9 @@ import net.hydromatic.sqllogictest.executors.SqlSltTestExecutor;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.ToSqlVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitFileAndSerialization;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitIODescription;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitSerializationKind;
@@ -140,7 +142,8 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         return new File(Paths.get(rustDirectory, name).toUri());
     }
 
-    boolean query(SqlTestQuery query, TestStatistics statistics) throws IOException, InterruptedException, NoSuchAlgorithmException, SQLException {
+    boolean query(SqlTestQuery query, TestStatistics statistics, int queryNo)
+            throws IOException, InterruptedException, NoSuchAlgorithmException, SQLException {
         if (this.buggyOperations.contains(query.getQuery())
                 || this.options.doNotExecute) {
             statistics.incIgnored();
@@ -153,7 +156,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         String dbspQuery = query.getQuery();
         if (!dbspQuery.toLowerCase().contains("create view"))
             dbspQuery = "CREATE VIEW V AS (" + dbspQuery + ")";
-        this.options.message("Query:\n"
+        this.options.message("Query " + queryNo + ":\n"
                 + dbspQuery + "\n", 2);
         compiler.generateOutputForNextView(false);
         for (SltSqlStatement view: viewPreparation.definitions()) {
@@ -216,12 +219,12 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         JitIODescription outFile = outputDescriptions.get(0);
         DBSPZSetLiteral.Contents actual = outFile.parse(outputType.to(DBSPTypeZSet.class).getElementType());
 
+        boolean result = this.validateOutput(query, queryNo, actual, query.outputDescription, statistics);
         for (File file: toDelete) {
             // This point won't be reached if the program fails with an exception.
             boolean success = file.delete();
         }
-
-        return this.validateOutput(query, actual, query.outputDescription, statistics);
+        return result;
     }
 
     // These should be reused from JdbcExecutor, but are not public there.
@@ -297,7 +300,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                     break;
                 case VALUE:
                     this.allRows = net.hydromatic.sqllogictest.util.Utilities.flatMap(this.allRows,
-                            r -> net.hydromatic.sqllogictest.util.Utilities.map(r.values,
+                            r -> Linq.map(r.values,
                                     r0 -> {
                                         Row res = new Row();
                                         res.add(r0);
@@ -309,10 +312,19 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         }
     }
 
-    boolean validateOutput(SqlTestQuery query,
+    static final IErrorReporter errorReporter = (range, warning, errorType, message)
+            -> System.err.println(range + ": ERROR " + errorType + ": " + message);
+
+    /**
+     * Validate output.  Return 'true' if we need to stop executing.
+     * Reports errors on validation failures.
+     */
+    boolean validateOutput(SqlTestQuery query, int queryNo,
                            DBSPZSetLiteral.Contents actual,
                            SqlTestQueryOutputDescription description,
                            TestStatistics statistics) throws NoSuchAlgorithmException {
+        StringBuilder builder = new StringBuilder();
+        ToSqlVisitor visitor = new ToSqlVisitor(errorReporter, builder);
         Rows rows = new Rows();
         for (Map.Entry<DBSPExpression, Long> entry: actual.data.entrySet()) {
             if (entry.getValue() <= 0)
@@ -323,7 +335,11 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 DBSPTupleExpression tuple = entry.getKey().to(DBSPTupleExpression.class);
                 Row row = new Row();
                 for (int j = 0; j < tuple.size(); j++) {
-                    row.add(tuple.get(j).toString());
+                    DBSPExpression expr = tuple.get(j);
+                    // clear builder
+                    builder.setLength(0);
+                    expr.accept(visitor);
+                    row.add(builder.toString());
                 }
                 rows.add(row);
             }
@@ -345,7 +361,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
             if (!r.equals(q)) {
                 return statistics.addFailure(
                         new TestStatistics.FailedTestDescription(query,
-                                "Output differs from expected value",
+                                "#" + queryNo + " Output differs from expected value",
                                 "computed" + System.lineSeparator()
                                         + r + System.lineSeparator()
                                         + "Expected:" + System.lineSeparator()
@@ -369,7 +385,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                                         + "computed: " + hash + System.lineSeparator(), null));
             }
         }
-        return true;
+        return false;
     }
 
     @Override
@@ -381,6 +397,8 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         TestStatistics result = new TestStatistics(
                 options.stopAtFirstError, options.verbosity);
         result.incFiles();
+        int queryNo = 0;
+        int skip = 0;  // used only for debugging
         for (ISqlTestOperation operation : testFile.fileContents) {
             SltSqlStatement stat = operation.as(SltSqlStatement.class);
             if (stat != null) {
@@ -402,12 +420,15 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 }
             } else {
                 SqlTestQuery query = operation.to(options.err, SqlTestQuery.class);
-                boolean stop;
+                boolean stop = false;
                 try {
-                    stop = this.query(query, result);
+                    if (queryNo >= skip) {
+                        stop = this.query(query, result, queryNo);
+                    }
+                    queryNo++;
                 } catch (Throwable ex) {
                     // Need to catch Throwable to handle assertion failures too
-                    options.message("Exception during query: " + query.getQuery() +
+                    options.message("Exception during query: " + query.getQuery() + queryNo +
                             ": " + ex.getMessage(), 1);
                     stop = result.addFailure(
                             new TestStatistics.FailedTestDescription(query,
@@ -421,7 +442,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         this.statementExecutor.dropAllViews();
         this.statementExecutor.dropAllTables();
         this.getStatementExecutorConnection().close();
-        options.message(this.elapsedTime(testFile.getTestCount()), 1);
+        options.message(this.elapsedTime(queryNo), 1);
         return result;
     }
 
@@ -432,6 +453,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 JdbcExecutor inner = Objects.requireNonNull(options.getExecutorByName("hsql"))
                         .as(JdbcExecutor.class);
                 CompilerOptions compilerOptions = new CompilerOptions();
+                compilerOptions.ioOptions.jit = true;
                 compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
                 JitDbspExecutor result = new JitDbspExecutor(
                         Objects.requireNonNull(inner), options, compilerOptions);
