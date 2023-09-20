@@ -1,8 +1,11 @@
 import { EditorSchema, KafkaInputSchema, KafkaOutputSchema, UrlSchema } from '$lib/components/connectors/dialogs'
+import { assertUnion } from '$lib/functions/common/array'
 import { ConnectorDescr } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import assert from 'assert'
 import { match, P } from 'ts-pattern'
+
+import { parseAuthParams } from './kafka/authParamsSchema'
 
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
@@ -28,16 +31,19 @@ export const parseKafkaInputSchema = (connector: ConnectorDescr): KafkaInputSche
   const config = connector.config
   assert(config.transport.config)
 
+  const authConfig = parseAuthParams(config.transport.config)
+
   return {
     name: connector.name,
     description: connector.description,
-    host: config.transport.config['bootstrap.servers'],
-    auto_offset: config.transport.config['auto.offset.reset'],
+    bootstrap_servers: config.transport.config['bootstrap.servers'],
+    auto_offset_reset: config.transport.config['auto.offset.reset'],
     group_id: config.transport.config['group.id'] || '',
     topics: config.transport.config.topics,
-    format_name: config.format.name,
+    format_name: assertUnion(['json', 'csv'] as const, config.format.name),
     json_update_format: config.format.config?.update_format || 'raw',
-    json_array: config.format.config?.array || false
+    json_array: config.format.config?.array || false,
+    ...authConfig
   }
 }
 
@@ -48,13 +54,16 @@ export const parseKafkaOutputSchema = (connector: ConnectorDescr): KafkaOutputSc
   const config = connector.config
   assert(config.transport.config)
 
+  const authConfig = parseAuthParams(config.transport.config)
+
   return {
     name: connector.name,
     description: connector.description,
-    host: config.transport.config['bootstrap.servers'],
+    bootstrap_servers: config.transport.config['bootstrap.servers'],
     topic: config.transport.config.topic,
-    format_name: config.format.name,
-    json_array: config.format.config?.array || false
+    format_name: assertUnion(['json', 'csv'] as const, config.format.name),
+    json_array: config.format.config?.array || false,
+    ...authConfig
   }
 }
 
@@ -64,12 +73,12 @@ export const parseUrlSchema = (connector: ConnectorDescr): UrlSchema => {
   assert(connectorDescrToType(connector) === ConnectorType.URL)
   const config = connector.config
   assert(config.transport.config)
-  assert(config.format.name == 'json' || config.format.name == 'csv')
+
   return {
     name: connector.name,
     description: connector.description,
     url: config.transport.config.path,
-    format_name: config.format.name,
+    format_name: assertUnion(['json', 'csv'] as const, config.format.name),
     json_update_format: config.format.config?.update_format || 'raw',
     json_array: config.format.config?.array || false
   }

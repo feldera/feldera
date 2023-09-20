@@ -1,25 +1,26 @@
 // A create/update dialog for a Kafka output connector.
 'use client'
 
-import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
-import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/tabs/TabKafkaNameAndDesc'
-import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
-import { connectorTypeToConfig, connectorTypeToIcon, parseKafkaOutputSchema } from '$lib/functions/connectors'
-import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
+import TabFooter from '$lib/components/connectors/dialogs/common/TabFooter'
+import TabLabel from '$lib/components/connectors/dialogs/common/TabLabel'
+import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/kafka/TabKafkaNameAndDesc'
+import { connectorTypeToConfig, parseKafkaOutputSchema } from '$lib/functions/connectors'
 import {
-  ConnectorDescr,
-  ConnectorId,
-  FormatConfig,
-  NewConnectorRequest,
-  UpdateConnectorRequest
-} from '$lib/services/manager'
+  authFields,
+  authParamsSchema,
+  defaultUiAuthParams,
+  prepareAuthData
+} from '$lib/functions/kafka/authParamsSchema'
+import { intersection } from '$lib/functions/valibot'
+import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { ConnectorType } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
-import * as yup from 'yup'
+import { FieldErrors } from 'react-hook-form'
+import { FormContainer } from 'react-hook-form-mui'
+import * as va from 'valibot'
 
-import { yupResolver } from '@hookform/resolvers/yup'
+import { valibotResolver } from '@hookform/resolvers/valibot'
 import { Icon } from '@iconify/react'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
@@ -31,23 +32,24 @@ import IconButton from '@mui/material/IconButton'
 import Tab from '@mui/material/Tab'
 import Typography from '@mui/material/Typography'
 
-import { AddConnectorCard } from './AddConnectorCard'
-import TabkafkaOutputDetails from './tabs/TabKafkaOutputDetails'
-import TabOutputFormatDetails from './tabs/TabOutputFormatDetails'
-import Transition from './tabs/Transition'
+import TabOutputFormatDetails from './common/TabOutputFormatDetails'
+import Transition from './common/Transition'
+import { TabKafkaAuth } from './kafka/TabKafkaAuth'
+import TabkafkaOutputDetails from './kafka/TabKafkaOutputDetails'
 
-const schema = yup
-  .object({
-    name: yup.string().required(),
-    description: yup.string().default(''),
-    host: yup.string().required(),
-    topic: yup.string().default(''),
-    format_name: yup.string().required().oneOf(['json', 'csv']),
-    json_array: yup.bool().required()
-  })
-  .required()
+const schema = intersection([
+  va.object({
+    name: va.nonOptional(va.string()),
+    description: va.optional(va.string(), ''),
+    bootstrap_servers: va.nonOptional(va.string()),
+    topic: va.optional(va.string(), ''),
+    format_name: va.nonOptional(va.enumType(['json', 'csv'])),
+    json_array: va.nonOptional(va.boolean())
+  }),
+  authParamsSchema
+])
 
-export type KafkaOutputSchema = yup.InferType<typeof schema>
+export type KafkaOutputSchema = va.Input<typeof schema>
 
 export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const [activeTab, setActiveTab] = useState<string>('detailsTab')
@@ -60,96 +62,73 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
     }
   }, [props.connector])
 
-  const {
-    control,
-    handleSubmit,
-    watch,
-    reset,
-    formState: { errors }
-  } = useForm<KafkaOutputSchema>({
-    resolver: yupResolver(schema),
-    defaultValues: {
-      name: '',
-      description: '',
-      host: '',
-      topic: '',
-      format_name: 'json',
-      json_array: false
-    },
-    values: curValues
-  })
+  const defaultValues: KafkaOutputSchema = {
+    name: '',
+    description: '',
+    bootstrap_servers: '',
+    topic: '',
+    format_name: 'json',
+    json_array: false,
+    ...defaultUiAuthParams
+  }
 
   const handleClose = () => {
-    reset()
-    setActiveTab('detailsTab')
+    setActiveTab(tabList[0])
     props.setShow(false)
   }
 
-  const onFormSubmitted = (connector: ConnectorDescr | undefined) => {
-    handleClose()
-    console.log('onFormSubmitted', connector)
-    if (connector !== undefined && props.onSuccess !== undefined) {
-      props.onSuccess(connector)
-    }
-  }
-
   // Define what should happen when the form is submitted
-  const genericRequest = (
-    data: KafkaOutputSchema,
-    connector_id?: string
-  ): [ConnectorId | undefined, NewConnectorRequest | UpdateConnectorRequest] => {
-    const format: FormatConfig = {
-      name: data.format_name,
-      config:
-        data.format_name === 'json'
-          ? {
-              array: data.json_array
-            }
-          : {}
-    }
-    return [
-      connector_id,
-      {
-        name: data.name,
-        description: data.description,
+  const prepareData = (data: KafkaOutputSchema) => ({
+    name: data.name,
+    description: data.description,
+    config: {
+      transport: {
+        name: connectorTypeToConfig(ConnectorType.KAFKA_OUT),
         config: {
-          transport: {
-            name: connectorTypeToConfig(ConnectorType.KAFKA_OUT),
-            config: {
-              'bootstrap.servers': data.host,
-              topic: data.topic
-            }
-          },
-          format: format
+          'bootstrap.servers': data.bootstrap_servers,
+          topic: data.topic,
+          ...prepareAuthData(data)
         }
+      },
+      format: {
+        name: data.format_name,
+        config:
+          data.format_name === 'json'
+            ? {
+                array: data.json_array
+              }
+            : {}
       }
-    ]
-  }
+    }
+  })
 
-  const newRequest = (data: KafkaOutputSchema): [undefined, NewConnectorRequest] => {
-    return genericRequest(data) as [undefined, NewConnectorRequest]
-  }
-  const updateRequest = (data: KafkaOutputSchema): [ConnectorId, UpdateConnectorRequest] => {
-    return genericRequest(data, props.connector?.connector_id) as [ConnectorId, UpdateConnectorRequest]
-  }
-
-  const onSubmit =
-    props.connector === undefined
-      ? ConnectorFormNewRequest<KafkaOutputSchema>(onFormSubmitted, newRequest)
-      : ConnectorFormUpdateRequest<KafkaOutputSchema>(onFormSubmitted, updateRequest)
+  const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
 
   // If there is an error, switch to the earliest tab with an error
-  useEffect(() => {
-    if ((errors?.name || errors?.description) && props.show) {
+  const handleErrors = (errors: FieldErrors<KafkaOutputSchema>) => {
+    if (!props.show) {
+      return
+    }
+    if (errors?.name || errors?.description) {
       setActiveTab('detailsTab')
-    } else if ((errors?.host || errors?.topic) && props.show) {
+    } else if (errors?.bootstrap_servers || errors?.topic) {
       setActiveTab('sourceTab')
-    } else if ((errors?.format_name || errors?.json_array) && props.show) {
+    } else if (authFields.some(f => f in errors)) {
+      setActiveTab('authTab')
+    } else if (errors?.format_name || errors?.json_array) {
       setActiveTab('formatTab')
     }
-  }, [props.show, errors])
+  }
 
-  const tabList = ['detailsTab', 'sourceTab', 'formatTab']
+  const tabList = ['detailsTab', 'sourceTab', 'authTab', 'formatTab']
+  const tabFooter = (
+    <TabFooter
+      isUpdate={props.connector !== undefined}
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+      tabsArr={tabList}
+    />
+  )
 
   return (
     <Dialog
@@ -160,7 +139,13 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
       onClose={handleClose}
       TransitionComponent={Transition}
     >
-      <form id='create-kafka' onSubmit={handleSubmit(onSubmit)}>
+      <FormContainer
+        resolver={valibotResolver(schema)}
+        values={curValues}
+        defaultValues={defaultValues}
+        onSuccess={onSubmit}
+        onError={handleErrors}
+      >
         <DialogContent
           sx={{
             pt: { xs: 8, sm: 12.5 },
@@ -223,6 +208,18 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                 />
                 <Tab
                   disableRipple
+                  value='authTab'
+                  label={
+                    <TabLabel
+                      title='Security'
+                      subtitle='Authentication protocol'
+                      active={activeTab === 'authTab'}
+                      icon={<Icon icon='bx:lock-open' />}
+                    />
+                  }
+                />
+                <Tab
+                  disableRipple
                   value='formatTab'
                   label={
                     <TabLabel
@@ -238,56 +235,31 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                 value='detailsTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                {/* @ts-ignore: TODO: This type mismatch seems like a bug in hook-form and/or resolvers */}
-                <TabKafkaNameAndDesc control={control} errors={errors} />
-                <TabFooter
-                  isUpdate={props.connector !== undefined}
-                  activeTab={activeTab}
-                  setActiveTab={setActiveTab}
-                  formId='create-kafka'
-                  tabsArr={tabList}
-                />
+                <TabKafkaNameAndDesc />
+                {tabFooter}
               </TabPanel>
               <TabPanel
                 value='sourceTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <TabkafkaOutputDetails control={control} errors={errors} />
-                <TabFooter
-                  isUpdate={props.connector !== undefined}
-                  activeTab={activeTab}
-                  setActiveTab={setActiveTab}
-                  formId='create-kafka'
-                  tabsArr={tabList}
-                />
+                <TabkafkaOutputDetails />
+                {tabFooter}
+              </TabPanel>
+              <TabPanel value='authTab' sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}>
+                <TabKafkaAuth />
+                {tabFooter}
               </TabPanel>
               <TabPanel
                 value='formatTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <TabOutputFormatDetails control={control} errors={errors} watch={watch} />
-                <TabFooter
-                  isUpdate={props.connector !== undefined}
-                  activeTab={activeTab}
-                  setActiveTab={setActiveTab}
-                  formId='create-kafka'
-                  tabsArr={tabList}
-                />
+                <TabOutputFormatDetails />
+                {tabFooter}
               </TabPanel>
             </TabContext>
           </Box>
         </DialogContent>
-      </form>
+      </FormContainer>
     </Dialog>
-  )
-}
-
-export const AddKafkaOutputConnectorCard = () => {
-  return (
-    <AddConnectorCard
-      icon={connectorTypeToIcon(ConnectorType.KAFKA_OUT)}
-      title='Add a Kafka Output.'
-      dialog={KafkaOutputConnectorDialog}
-    />
   )
 }

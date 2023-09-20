@@ -1,30 +1,24 @@
 // A create/update dialog for a Kafka input connector.
 'use client'
 
-import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
-import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
-import { connectorTypeToConfig, connectorTypeToIcon, parseUrlSchema } from '$lib/functions/connectors'
+import TabFooter from '$lib/components/connectors/dialogs/common/TabFooter'
+import TabLabel from '$lib/components/connectors/dialogs/common/TabLabel'
+import { connectorTypeToConfig, parseUrlSchema } from '$lib/functions/connectors'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
-import { ConnectorFormNewRequest, ConnectorFormUpdateRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
-import {
-  ConnectorDescr,
-  ConnectorId,
-  FormatConfig,
-  NewConnectorRequest,
-  UpdateConnectorRequest
-} from '$lib/services/manager'
+import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { ConnectorType } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
-import { Controller, useForm } from 'react-hook-form'
-import * as yup from 'yup'
+import { FieldErrors } from 'react-hook-form'
+import { FormContainer, TextFieldElement } from 'react-hook-form-mui'
+import * as va from 'valibot'
 
-import { yupResolver } from '@hookform/resolvers/yup'
+import { valibotResolver } from '@hookform/resolvers/valibot'
 import { Icon } from '@iconify/react'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
-import { FormControl, FormHelperText, Grid, TextField } from '@mui/material'
+import { Grid } from '@mui/material'
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
@@ -32,20 +26,19 @@ import IconButton from '@mui/material/IconButton'
 import Tab from '@mui/material/Tab'
 import Typography from '@mui/material/Typography'
 
-import { AddConnectorCard } from './AddConnectorCard'
-import TabInputFormatDetails from './tabs/TabInputFormatDetails'
-import Transition from './tabs/Transition'
+import TabInputFormatDetails from './common/TabInputFormatDetails'
+import Transition from './common/Transition'
 
-const schema = yup.object().shape({
-  name: yup.string().required(),
-  description: yup.string().default(''),
-  url: yup.string().required(),
-  format_name: yup.string().required().oneOf(['json', 'csv']),
-  json_update_format: yup.string().oneOf(['raw', 'insert_delete']).default('raw'),
-  json_array: yup.bool().required()
+const schema = va.object({
+  name: va.nonOptional(va.string()),
+  description: va.optional(va.string(), ''),
+  url: va.nonOptional(va.string()),
+  format_name: va.nonOptional(va.enumType(['json', 'csv'])),
+  json_update_format: va.optional(va.enumType(['raw', 'insert_delete']), 'raw'),
+  json_array: va.nonOptional(va.boolean())
 })
 
-export type UrlSchema = yup.InferType<typeof schema>
+export type UrlSchema = va.Input<typeof schema>
 
 export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
   const [activeTab, setActiveTab] = useState<string>('detailsTab')
@@ -58,94 +51,67 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
     }
   }, [props.connector])
 
-  const {
-    control,
-    reset,
-    watch,
-    handleSubmit,
-    formState: { errors }
-  } = useForm<UrlSchema>({
-    resolver: yupResolver(schema),
-    defaultValues: {
-      name: '',
-      description: '',
-      url: '',
-      format_name: 'json',
-      json_update_format: 'raw',
-      json_array: false
-    },
-    values: curValues
-  })
+  const defaultValues: UrlSchema = {
+    name: '',
+    description: '',
+    url: '',
+    format_name: 'json',
+    json_update_format: 'raw',
+    json_array: false
+  }
 
   const handleClose = () => {
-    reset()
-    setActiveTab('detailsTab')
+    setActiveTab(tabList[0])
     props.setShow(false)
   }
 
-  const onFormSubmitted = (connector: ConnectorDescr | undefined) => {
-    handleClose()
-    if (connector !== undefined && props.onSuccess !== undefined) {
-      props.onSuccess(connector)
-    }
-  }
-
   // Define what should happen when the form is submitted
-  const genericRequest = (
-    data: UrlSchema,
-    connector_id?: string
-  ): [ConnectorId | undefined, NewConnectorRequest | UpdateConnectorRequest] => {
-    const format: FormatConfig = {
-      name: data.format_name,
-      config:
-        data.format_name === 'json'
-          ? {
-              update_format: data.json_update_format,
-              array: data.json_array
-            }
-          : {}
-    }
-
-    return [
-      connector_id,
-      {
-        name: data.name,
-        description: data.description,
+  const prepareData = (data: UrlSchema) => ({
+    name: data.name,
+    description: data.description,
+    config: {
+      transport: {
+        name: connectorTypeToConfig(ConnectorType.URL),
         config: {
-          transport: {
-            name: connectorTypeToConfig(ConnectorType.URL),
-            config: {
-              path: data.url
-            }
-          },
-          format: format
+          path: data.url
         }
+      },
+      format: {
+        name: data.format_name,
+        config:
+          data.format_name === 'json'
+            ? {
+                update_format: data.json_update_format,
+                array: data.json_array
+              }
+            : {}
       }
-    ]
-  }
+    }
+  })
 
-  const newRequest = (data: UrlSchema): [undefined, NewConnectorRequest] => {
-    return genericRequest(data) as [undefined, NewConnectorRequest]
-  }
-  const updateRequest = (data: UrlSchema): [ConnectorId, UpdateConnectorRequest] => {
-    return genericRequest(data, props.connector?.connector_id) as [ConnectorId, UpdateConnectorRequest]
-  }
-
-  const onSubmit =
-    props.connector === undefined
-      ? ConnectorFormNewRequest<UrlSchema>(onFormSubmitted, newRequest)
-      : ConnectorFormUpdateRequest<UrlSchema>(onFormSubmitted, updateRequest)
+  const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
 
   // If there is an error, switch to the earliest tab with an error
-  useEffect(() => {
-    if ((errors?.name || errors?.description || errors?.url) && props.show) {
+  const handleErrors = (errors: FieldErrors<UrlSchema>) => {
+    if (!props.show) {
+      return
+    }
+    if (errors?.name || errors?.description || errors?.url) {
       setActiveTab('detailsTab')
-    } else if ((errors?.format_name || errors?.json_array || errors?.json_update_format) && props.show) {
+    } else if (errors?.format_name || errors?.json_array || errors?.json_update_format) {
       setActiveTab('formatTab')
     }
-  }, [props.show, errors])
+  }
 
   const tabList = ['detailsTab', 'formatTab']
+  const tabFooter = (
+    <TabFooter
+      isUpdate={props.connector !== undefined}
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+      tabsArr={tabList}
+    />
+  )
   return (
     <Dialog
       fullWidth
@@ -155,7 +121,13 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
       onClose={handleClose}
       TransitionComponent={Transition}
     >
-      <form id='create-url-resource' onSubmit={handleSubmit(onSubmit)}>
+      <FormContainer
+        resolver={valibotResolver(schema)}
+        values={curValues}
+        defaultValues={defaultValues}
+        onSuccess={onSubmit}
+        onError={handleErrors}
+      >
         <DialogContent
           sx={{
             pt: { xs: 8, sm: 12.5 },
@@ -221,113 +193,53 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                 value='detailsTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <Grid container spacing={6}>
+                <Grid container spacing={4}>
                   <Grid item sm={4} xs={12}>
-                    <FormControl fullWidth>
-                      <Controller
-                        name='name'
-                        control={control}
-                        render={({ field }) => (
-                          <TextField
-                            label='Datasource Name'
-                            placeholder={PLACEHOLDER_VALUES['connector_name']}
-                            error={Boolean(errors.name)}
-                            aria-describedby='validation-name'
-                            {...field}
-                          />
-                        )}
-                      />
-                      {errors.name && (
-                        <FormHelperText sx={{ color: 'error.main' }} id='validation-name'>
-                          {errors.name.message}
-                        </FormHelperText>
-                      )}
-                    </FormControl>
+                    <TextFieldElement
+                      name='name'
+                      label='Datasource Name'
+                      size='small'
+                      fullWidth
+                      placeholder={PLACEHOLDER_VALUES['connector_name']}
+                      aria-describedby='validation-name'
+                    />
                   </Grid>
                   <Grid item sm={8} xs={12}>
-                    <FormControl fullWidth>
-                      <Controller
-                        name='description'
-                        control={control}
-                        render={({ field }) => (
-                          <TextField
-                            fullWidth
-                            label='Description'
-                            placeholder={PLACEHOLDER_VALUES['connector_description']}
-                            error={Boolean(errors.description)}
-                            aria-describedby='validation-description'
-                            {...field}
-                          />
-                        )}
-                      />
-                      {errors.description && (
-                        <FormHelperText sx={{ color: 'error.main' }} id='validation-description'>
-                          {errors.description.message}
-                        </FormHelperText>
-                      )}
-                    </FormControl>
+                    <TextFieldElement
+                      name='description'
+                      label='Description'
+                      size='small'
+                      fullWidth
+                      placeholder={PLACEHOLDER_VALUES['connector_description']}
+                      aria-describedby='validation-description'
+                    />
                   </Grid>
                   <Grid item sm={12} xs={12}>
-                    <FormControl fullWidth>
-                      <Controller
-                        name='url'
-                        control={control}
-                        render={({ field }) => (
-                          <TextField
-                            fullWidth
-                            label='URL'
-                            placeholder='https://gist.githubusercontent.com/...'
-                            error={Boolean(errors.description)}
-                            aria-describedby='validation-description'
-                            {...field}
-                          />
-                        )}
-                      />
-                      {errors.url && (
-                        <FormHelperText sx={{ color: 'error.main' }} id='validation-description'>
-                          {errors.url.message}
-                        </FormHelperText>
-                      )}
-                    </FormControl>
+                    <TextFieldElement
+                      name='url'
+                      label='URL'
+                      size='small'
+                      fullWidth
+                      placeholder='https://gist.githubusercontent.com/...'
+                      aria-describedby='validation-description'
+                    />
                   </Grid>
                 </Grid>
 
-                <TabFooter
-                  isUpdate={props.connector !== undefined}
-                  activeTab={activeTab}
-                  setActiveTab={setActiveTab}
-                  formId='create-url-resource'
-                  tabsArr={tabList}
-                />
+                {tabFooter}
               </TabPanel>
               <TabPanel
                 value='formatTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
                 {/* @ts-ignore: TODO: This type mismatch seems like a bug in hook-form and/or resolvers */}
-                <TabInputFormatDetails control={control} errors={errors} watch={watch} />
-                <TabFooter
-                  isUpdate={props.connector !== undefined}
-                  activeTab={activeTab}
-                  setActiveTab={setActiveTab}
-                  formId='create-url-resource'
-                  tabsArr={tabList}
-                />
+                <TabInputFormatDetails />
+                {tabFooter}
               </TabPanel>
             </TabContext>
           </Box>
         </DialogContent>
-      </form>
+      </FormContainer>
     </Dialog>
-  )
-}
-
-export const AddUrlConnectorCard = () => {
-  return (
-    <AddConnectorCard
-      icon={connectorTypeToIcon(ConnectorType.URL)}
-      title='Load Data from an HTTP URL.'
-      dialog={UrlConnectorDialog}
-    />
   )
 }

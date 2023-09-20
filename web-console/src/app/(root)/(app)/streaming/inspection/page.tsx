@@ -2,6 +2,7 @@
 'use client'
 
 import { BreadcrumbSelect } from '$lib/components/common/BreadcrumbSelect'
+import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
@@ -10,7 +11,6 @@ import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { useSearchParams } from 'next/navigation'
 import { SyntheticEvent, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
-import { BreadcrumbsHeader } from 'src/lib/components/common/BreadcrumbsHeader'
 
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
