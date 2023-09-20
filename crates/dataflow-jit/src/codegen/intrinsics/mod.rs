@@ -3,8 +3,9 @@ mod serialize;
 
 use self::{
     deserialize::{
-        deserialize_json_bool, deserialize_json_f32, deserialize_json_f64, deserialize_json_i32,
-        deserialize_json_i64, deserialize_json_string,
+        deserialize_json_bool, deserialize_json_date, deserialize_json_f32, deserialize_json_f64,
+        deserialize_json_i32, deserialize_json_i64, deserialize_json_string,
+        deserialize_json_timestamp,
     },
     serialize::{
         byte_vec_push, byte_vec_reserve, write_date_to_byte_vec, write_decimal_to_byte_vec,
@@ -618,6 +619,8 @@ intrinsics! {
     deserialize_json_i64 = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_f32 = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_f64 = fn(ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_date = fn(ptr, ptr, ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_timestamp = fn(ptr, ptr, ptr, ptr, usize, ptr) -> bool,
 
     byte_vec_push = fn(ptr, ptr, usize),
     byte_vec_reserve = fn(ptr, usize),
@@ -631,8 +634,8 @@ intrinsics! {
     write_i64_to_byte_vec = fn(ptr, i64),
     write_f32_to_byte_vec = fn(ptr, f32),
     write_f64_to_byte_vec = fn(ptr, f64),
-    write_date_to_byte_vec = fn(ptr, date),
-    write_timestamp_to_byte_vec = fn(ptr, timestamp),
+    write_date_to_byte_vec = fn(ptr, ptr, ptr, date),
+    write_timestamp_to_byte_vec = fn(ptr, ptr, ptr, timestamp),
     write_decimal_to_byte_vec = fn(ptr, u64, u64),
     write_escaped_string_to_byte_vec = fn(ptr, ptr, usize),
 
@@ -1735,7 +1738,7 @@ unsafe extern "C" fn write_decimal_to_std_string(buffer: &mut String, lo: u64, h
 }
 
 unsafe extern "C" fn write_date_to_std_string(buffer: &mut String, date: i32) {
-    let date = NaiveDate::from_num_days_from_ce_opt(date).unwrap();
+    let date = Utc.timestamp_opt(date as i64 * 86400, 0).unwrap();
     write!(buffer, "{}", date.format("%Y-%m-%d")).unwrap();
 }
 

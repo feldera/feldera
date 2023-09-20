@@ -210,7 +210,8 @@ impl DbspCircuit {
 /// # Safety
 ///
 /// `$type` must be the correct type for the generated demand function.
-/// The produced function pointer must be dropped before the parent `DbspCircuit`
+/// The produced function pointer must be dropped before the parent
+/// `DbspCircuit`
 macro_rules! demand_function {
     ($self:ident, $demand:ident, $layout:expr, $type:ty $(,)?) => {{
         let (demand, layout): (DemandId, LayoutId) = ($demand, $layout);
@@ -574,6 +575,7 @@ impl DbspCircuit {
         }
     }
 
+    #[tracing::instrument(skip(self, write))]
     pub fn consolidate_json_output<W>(
         &mut self,
         output: NodeId,
@@ -597,6 +599,7 @@ impl DbspCircuit {
 
                     // TODO: Consolidate into a buffer
                     let set = output.consolidate();
+                    tracing::debug!("serializing {} rows", set.len());
 
                     let mut cursor = set.cursor();
                     while cursor.key_valid() {

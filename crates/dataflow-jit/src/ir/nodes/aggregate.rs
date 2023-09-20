@@ -262,11 +262,7 @@ impl DataflowNode for Fold {
         ))
     }
 
-    fn validate(&self, inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
-        assert_eq!(inputs.len(), 1);
-        assert!(inputs[0].is_map());
-        assert_eq!(inputs[0].unwrap_map().1, self.step_layout);
-
+    fn validate(&self, _inputs: &[StreamLayout], layout_cache: &RowLayoutCache) {
         // Step function
         {
             assert_eq!(self.step_fn.args().len(), 3);

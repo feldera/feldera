@@ -1,4 +1,5 @@
 use crate::{codegen::utils::str_from_raw_parts, ThinStr};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use serde_json::Value;
 use std::mem::MaybeUninit;
 
@@ -157,4 +158,74 @@ pub(super) extern "C" fn deserialize_json_f32(
 
     // Otherwise the value couldn't be found and is considered null
     true
+}
+
+pub(super) extern "C" fn deserialize_json_date(
+    place: &mut MaybeUninit<i32>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    format_ptr: *const u8,
+    format_len: usize,
+    map: &Value,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
+
+    if let Some(date) = map
+        .pointer(json_pointer)
+        .and_then(Value::as_str)
+        .and_then(|string| match NaiveDate::parse_from_str(string, format) {
+            Ok(date) => {
+                let date = date.and_time(NaiveTime::MIN);
+                let days = date.timestamp_millis() / (86400 * 1000);
+                Some(days as i32)
+            }
+            Err(error) => {
+                tracing::error!("failed parsing date from json: {error}");
+                None
+            }
+        })
+    {
+        place.write(date);
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
+pub(super) extern "C" fn deserialize_json_timestamp(
+    place: &mut MaybeUninit<i64>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    format_ptr: *const u8,
+    format_len: usize,
+    map: &Value,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
+
+    if let Some(date) = map
+        .pointer(json_pointer)
+        .and_then(Value::as_str)
+        .and_then(
+            |string| match NaiveDateTime::parse_from_str(string, format) {
+                Ok(timestamp) => Some(timestamp.timestamp_millis()),
+                Err(error) => {
+                    tracing::error!("failed parsing date from json: {error}");
+                    None
+                }
+            },
+        )
+    {
+        place.write(date);
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
 }

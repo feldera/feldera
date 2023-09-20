@@ -185,6 +185,7 @@ impl Validator {
                     self.function_validator.validate_function(fold.step_fn())?;
                     self.function_validator
                         .validate_function(fold.finish_fn())?;
+                    fold.validate(&[], self.layout_cache());
                 }
 
                 _ => {}
