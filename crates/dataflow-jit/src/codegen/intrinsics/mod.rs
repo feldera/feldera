@@ -1,5 +1,19 @@
 mod deserialize;
+mod serialize;
 
+use self::{
+    deserialize::{
+        deserialize_json_bool, deserialize_json_f32, deserialize_json_f64, deserialize_json_i32,
+        deserialize_json_i64, deserialize_json_string,
+    },
+    serialize::{
+        byte_vec_push, byte_vec_reserve, write_date_to_byte_vec, write_decimal_to_byte_vec,
+        write_escaped_string_to_byte_vec, write_f32_to_byte_vec, write_f64_to_byte_vec,
+        write_i16_to_byte_vec, write_i32_to_byte_vec, write_i64_to_byte_vec, write_i8_to_byte_vec,
+        write_timestamp_to_byte_vec, write_u16_to_byte_vec, write_u32_to_byte_vec,
+        write_u64_to_byte_vec, write_u8_to_byte_vec,
+    },
+};
 use crate::{
     codegen::{
         pretty_clif::CommentWriter,
@@ -22,10 +36,6 @@ use cranelift::{
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use csv::StringRecord;
-use deserialize::{
-    deserialize_json_bool, deserialize_json_f32, deserialize_json_f64, deserialize_json_i32,
-    deserialize_json_i64, deserialize_json_string,
-};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use std::{
     alloc::Layout,
@@ -608,6 +618,23 @@ intrinsics! {
     deserialize_json_i64 = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_f32 = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_f64 = fn(ptr, ptr, usize, ptr) -> bool,
+
+    byte_vec_push = fn(ptr, ptr, usize),
+    byte_vec_reserve = fn(ptr, usize),
+    write_i8_to_byte_vec = fn(ptr, i8),
+    write_u8_to_byte_vec = fn(ptr, u8),
+    write_u16_to_byte_vec = fn(ptr, u16),
+    write_i16_to_byte_vec = fn(ptr, i16),
+    write_u32_to_byte_vec = fn(ptr, u32),
+    write_i32_to_byte_vec = fn(ptr, i32),
+    write_u64_to_byte_vec = fn(ptr, u64),
+    write_i64_to_byte_vec = fn(ptr, i64),
+    write_f32_to_byte_vec = fn(ptr, f32),
+    write_f64_to_byte_vec = fn(ptr, f64),
+    write_date_to_byte_vec = fn(ptr, date),
+    write_timestamp_to_byte_vec = fn(ptr, timestamp),
+    write_decimal_to_byte_vec = fn(ptr, u64, u64),
+    write_escaped_string_to_byte_vec = fn(ptr, ptr, usize),
 
     // `std::string::String::push_str()`
     // fn(buffer: &mut String, ptr: *const u8, len: usize)

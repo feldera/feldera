@@ -13,7 +13,7 @@ use cranelift_module::{FuncId, Module};
 use serde::Deserialize;
 use std::{mem::align_of, ops::Not};
 
-pub type SerializeFn = unsafe extern "C" fn(*const u8, &mut String);
+pub type SerializeFn = unsafe extern "C" fn(*const u8, &mut Vec<u8>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct JsonSerConfig {
@@ -34,14 +34,14 @@ impl Codegen {
             self.layout_cache.row_layout(layout_id),
         );
 
-        // fn(row: *mut u8, buffer: &mut String)
+        // fn(row: *mut u8, buffer: &mut Vec<u8>)
         let ptr_ty = self.module.isa().pointer_type();
         let func_id = self.create_function([ptr_ty; 2], None);
 
         self.set_comment_writer(
             &format!("serialize_json_{layout_id}"),
             &format!(
-                "fn(row: *mut {}, buffer: &mut String)",
+                "fn(row: *mut {}, buffer: &mut Vec<u8>)",
                 self.layout_cache.row_layout(layout_id),
             ),
         );
@@ -69,7 +69,7 @@ impl Codegen {
             // Ensure that the row pointer is well formed
             ctx.debug_assert_ptr_valid(place, layout.align(), &mut builder);
             // Ensure that the string pointer is well formed
-            ctx.debug_assert_ptr_valid(buffer, align_of::<String>() as u32, &mut builder);
+            ctx.debug_assert_ptr_valid(buffer, align_of::<Vec<u8>>() as u32, &mut builder);
 
             // TODO: We can infer/calculate the structure of the json from the information
             // avaliable, like if a column is stored in `/foo/bar/baz` and
@@ -94,17 +94,17 @@ impl Codegen {
 
                 let reserve = ctx
                     .imports
-                    .get("std_string_reserve", ctx.module, builder.func);
+                    .get("byte_vec_reserve", ctx.module, builder.func);
                 builder.ins().call(reserve, &[buffer, estimated_capacity]);
             }
 
-            let push_str = ctx.imports.get("std_string_push", ctx.module, builder.func);
+            let push_bytes = ctx.imports.get("byte_vec_push", ctx.module, builder.func);
 
             // Push the starting bracket to the buffer
             let (bracket_ptr, bracket_len) = ctx.import_string("{", &mut builder);
             builder
                 .ins()
-                .call(push_str, &[buffer, bracket_ptr, bracket_len]);
+                .call(push_bytes, &[buffer, bracket_ptr, bracket_len]);
 
             let last_idx = row_layout
                 .iter()
@@ -139,7 +139,7 @@ impl Codegen {
                     ctx.import_string(format!("\"{json_key}\":"), &mut builder);
 
                 // Push the key to the buffer
-                builder.ins().call(push_str, &[buffer, key_ptr, key_len]);
+                builder.ins().call(push_bytes, &[buffer, key_ptr, key_len]);
 
                 if nullable {
                     let non_null = column_non_null(column_idx, place, &layout, &mut builder, true);
@@ -158,7 +158,9 @@ impl Codegen {
                         builder.switch_to_block(write_null);
 
                         let (null_ptr, null_len) = ctx.import_string("null", &mut builder);
-                        builder.ins().call(push_str, &[buffer, null_ptr, null_len]);
+                        builder
+                            .ins()
+                            .call(push_bytes, &[buffer, null_ptr, null_len]);
 
                         builder.ins().jump(after_serialize, &[]);
                         builder.seal_current();
@@ -184,7 +186,7 @@ impl Codegen {
                         let ptr = builder.ins().select(value, true_ptr, false_ptr);
                         let len = builder.ins().select(value, true_len, false_len);
 
-                        builder.ins().call(push_str, &[buffer, ptr, len]);
+                        builder.ins().call(push_bytes, &[buffer, ptr, len]);
                     }
 
                     ColumnType::String => {
@@ -201,19 +203,19 @@ impl Codegen {
 
                     ty if ty.is_int() || ty.is_float() || ty.is_date() || ty.is_timestamp() => {
                         let intrinsic = match ty {
-                            ColumnType::I8 => "write_i8_to_std_string",
-                            ColumnType::U8 => "write_u8_to_std_string",
-                            ColumnType::U16 => "write_u16_to_std_string",
-                            ColumnType::I16 => "write_i16_to_std_string",
-                            ColumnType::U32 => "write_u32_to_std_string",
-                            ColumnType::I32 => "write_i32_to_std_string",
-                            ColumnType::U64 => "write_u64_to_std_string",
-                            ColumnType::I64 => "write_i64_to_std_string",
-                            ColumnType::F32 => "write_f32_to_std_string",
-                            ColumnType::F64 => "write_f64_to_std_string",
+                            ColumnType::I8 => "write_i8_to_byte_vec",
+                            ColumnType::U8 => "write_u8_to_byte_vec",
+                            ColumnType::U16 => "write_u16_to_byte_vec",
+                            ColumnType::I16 => "write_i16_to_byte_vec",
+                            ColumnType::U32 => "write_u32_to_byte_vec",
+                            ColumnType::I32 => "write_i32_to_byte_vec",
+                            ColumnType::U64 => "write_u64_to_byte_vec",
+                            ColumnType::I64 => "write_i64_to_byte_vec",
+                            ColumnType::F32 => "write_f32_to_byte_vec",
+                            ColumnType::F64 => "write_f64_to_byte_vec",
                             // TODO: Allow specifying date & timestamp formats
-                            ColumnType::Date => "write_date_to_std_string",
-                            ColumnType::Timestamp => "write_timestamp_to_std_string",
+                            ColumnType::Date => "write_date_to_byte_vec",
+                            ColumnType::Timestamp => "write_timestamp_to_byte_vec",
                             _ => unreachable!(),
                         };
                         let intrinsic = ctx.imports.get(intrinsic, ctx.module, builder.func);
@@ -222,11 +224,9 @@ impl Codegen {
                     }
 
                     ColumnType::Decimal => {
-                        let intrinsic = ctx.imports.get(
-                            "write_decimal_to_std_string",
-                            ctx.module,
-                            builder.func,
-                        );
+                        let intrinsic =
+                            ctx.imports
+                                .get("write_decimal_to_byte_vec", ctx.module, builder.func);
 
                         let (lo, hi) = builder.ins().isplit(value);
                         builder.ins().call(intrinsic, &[buffer, lo, hi]);
@@ -249,7 +249,7 @@ impl Codegen {
                     let (comma_ptr, comma_len) = ctx.import_string(",", &mut builder);
                     builder
                         .ins()
-                        .call(push_str, &[buffer, comma_ptr, comma_len]);
+                        .call(push_bytes, &[buffer, comma_ptr, comma_len]);
                 }
             }
 
@@ -257,7 +257,7 @@ impl Codegen {
             let (bracket_ptr, bracket_len) = ctx.import_string("}", &mut builder);
             builder
                 .ins()
-                .call(push_str, &[buffer, bracket_ptr, bracket_len]);
+                .call(push_bytes, &[buffer, bracket_ptr, bracket_len]);
 
             builder.ins().return_(&[]);
 
