@@ -12,7 +12,7 @@ use crate::{
     utils, DbspCircuit,
 };
 
-const CIRCUIT: &str = r#"{
+static CIRCUIT: &str = r#"{
     "nodes": {
         "6766": {
             "Source": {

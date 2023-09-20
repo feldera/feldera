@@ -1,6 +1,6 @@
 use crate::{
     codegen::{
-        json::ColumnIdx,
+        json::{ColumnIdx, JsonColumn},
         utils::{set_column_null, FunctionBuilderExt},
         Codegen, CodegenCtx,
     },
@@ -20,19 +20,19 @@ pub type DeserializeJsonFn =
 
 /// A utility function for invoking jit generated deserialization functions
 ///
-/// Takes the deserialization function, a mutable "place" (usually an [`UninitRow`],
-/// a properly sized & aligned stack slot or a properly sized and aligned element
-/// slot within a vector) and the json value being deserialized.
-/// Returns a result, if the result is [`Ok`] then `row_place` will be fully initialized
-/// (meaning that calling [`UninitRow::assume_init()`] or a similar function is sound).
-/// If the result is [`Err`] then it will contain a formatted error containing best-effort
-/// diagnostics
+/// Takes the deserialization function, a mutable "place" (usually an
+/// [`UninitRow`], a properly sized & aligned stack slot or a properly sized and
+/// aligned element slot within a vector) and the json value being deserialized.
+/// Returns a result, if the result is [`Ok`] then `row_place` will be fully
+/// initialized (meaning that calling [`UninitRow::assume_init()`] or a similar
+/// function is sound). If the result is [`Err`] then it will contain a
+/// formatted error containing best-effort diagnostics
 ///
 /// # Safety
 ///
-/// `row_place` must be properly sized, aligned and mutable for the row type that
-/// the deserialization function was created for. Any values residing in the place
-/// will not be dropped
+/// `row_place` must be properly sized, aligned and mutable for the row type
+/// that the deserialization function was created for. Any values residing in
+/// the place will not be dropped
 ///
 /// [`UninitRow`]: crate::row::UninitRow
 /// [`UninitRow::assume_init()`]: crate::row::UninitRow::assume_init
@@ -96,7 +96,7 @@ pub struct JsonDeserConfig {
     // with parsing, e.g. whether we allow parsing an `f64` from a float,
     // an integer, a string or a combination of them
     // TODO: Allow specifying date & timestamp formats
-    pub mappings: HashMap<ColumnIdx, String>,
+    pub mappings: HashMap<ColumnIdx, JsonColumn>,
 }
 
 impl Codegen {
@@ -107,14 +107,13 @@ impl Codegen {
             self.layout_cache.row_layout(layout_id),
         );
 
-        // fn(*mut u8, *const serde_json::Value)
         let ptr_ty = self.module.isa().pointer_type();
         let func_id = self.create_function([ptr_ty; 3], Some(types::I8));
 
         self.set_comment_writer(
             &format!("deserialize_json_{layout_id}"),
             &format!(
-                "fn(*mut {}, *const serde_json::Value, error: &mut String) -> DeserializeResult",
+                "fn(*mut {}, &serde_json::Value, error: &mut String) -> DeserializeResult",
                 self.layout_cache.row_layout(layout_id),
             ),
         );
@@ -159,7 +158,8 @@ impl Codegen {
                 // we don't have to do path traversal
                 // TODO: We can also pre-process path traversals, splitting at `/`s
                 // during compile time
-                let json_pointer = &*mappings.mappings[&column_idx];
+                let json_column = &mappings.mappings[&column_idx];
+                let json_pointer = json_column.key();
                 assert!(
                     !json_pointer.is_empty(),
                     "json pointers cannot be empty (column {column_idx} of {layout_id})",
@@ -224,7 +224,8 @@ impl Codegen {
                                 &mut builder,
                             );
 
-                        // Otherwise return an error if deserialization fails or the field is null
+                        // Otherwise return an error if deserialization fails or
+                        // the field is null
                         } else {
                             let after = builder.create_block();
                             builder.ins().brif(
@@ -239,7 +240,59 @@ impl Codegen {
                         }
                     }
 
-                    ty => unreachable!("unhandled type in json deserialization: {ty}"),
+                    ty @ (ColumnType::Date | ColumnType::Timestamp) => {
+                        let intrinsic = match ty {
+                            ColumnType::Date => "deserialize_json_date",
+                            ColumnType::Timestamp => "deserialize_json_timestamp",
+                            _ => unreachable!(),
+                        };
+                        let deserialize = ctx.imports.get(intrinsic, ctx.module, builder.func);
+
+                        let format = json_column
+                            .format()
+                            .expect("dates require a format specification");
+                        let (format_ptr, format_len) = ctx.import_string(format, &mut builder);
+
+                        let value_is_null = builder.call_fn(
+                            deserialize,
+                            &[
+                                column_place,
+                                json_pointer,
+                                json_pointer_len,
+                                format_ptr,
+                                format_len,
+                                json_map,
+                            ],
+                        );
+
+                        // If the column is nullable, set its nullness
+                        if nullable {
+                            set_column_null(
+                                value_is_null,
+                                column_idx,
+                                place,
+                                MemFlags::trusted(),
+                                &layout,
+                                &mut builder,
+                            );
+
+                        // Otherwise return an error if deserialization fails or
+                        // the field is null
+                        } else {
+                            let after = builder.create_block();
+                            builder.ins().brif(
+                                value_is_null,
+                                return_error,
+                                &[json_pointer, json_pointer_len],
+                                after,
+                                &[],
+                            );
+
+                            builder.switch_to_block(after);
+                        }
+                    }
+
+                    ty => unimplemented!("unhandled type in json deserialization: {ty}"),
                 }
             }
 

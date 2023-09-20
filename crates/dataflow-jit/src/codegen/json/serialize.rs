@@ -1,6 +1,6 @@
 use crate::{
     codegen::{
-        json::ColumnIdx,
+        json::{ColumnIdx, JsonColumn},
         utils::{column_non_null, FunctionBuilderExt},
         Codegen, CodegenCtx,
     },
@@ -22,7 +22,7 @@ pub struct JsonSerConfig {
     // TODO: Allow specifying how to serialize things, like skipping nulls
     // TODO: Allow serializing into nested structures
     // TODO: Allow specifying date & timestamp formats
-    pub mappings: HashMap<ColumnIdx, String>,
+    pub mappings: HashMap<ColumnIdx, JsonColumn>,
 }
 
 impl Codegen {
@@ -85,7 +85,7 @@ impl Codegen {
                 estimated_capacity += mappings
                     .mappings
                     .values()
-                    .map(|key| key.len() + 4)
+                    .map(|column| column.key().len() + 4)
                     .sum::<usize>();
                 // TODO: We could look at all the column types in the row and estimate their
                 // sizes, e.g. `log10()` for integers or `"false".len()` for booleans
@@ -129,7 +129,14 @@ impl Codegen {
 
                 let mut after_serialize = None;
 
-                let json_key = &*mappings.mappings[&column_idx];
+                let json_column = if let Some(column) = mappings.mappings.get(&column_idx) {
+                    column
+
+                // We don't have to serialize every column in the row
+                } else {
+                    continue;
+                };
+                let json_key = json_column.key();
                 assert!(
                     !json_key.is_empty(),
                     "json pointers cannot be empty (column {column_idx} of {layout_id})",
@@ -201,7 +208,7 @@ impl Codegen {
                         builder.ins().call(intrinsic, &[buffer, ptr, len]);
                     }
 
-                    ty if ty.is_int() || ty.is_float() || ty.is_date() || ty.is_timestamp() => {
+                    ty if ty.is_int() || ty.is_float() => {
                         let intrinsic = match ty {
                             ColumnType::I8 => "write_i8_to_byte_vec",
                             ColumnType::U8 => "write_u8_to_byte_vec",
@@ -213,9 +220,6 @@ impl Codegen {
                             ColumnType::I64 => "write_i64_to_byte_vec",
                             ColumnType::F32 => "write_f32_to_byte_vec",
                             ColumnType::F64 => "write_f64_to_byte_vec",
-                            // TODO: Allow specifying date & timestamp formats
-                            ColumnType::Date => "write_date_to_byte_vec",
-                            ColumnType::Timestamp => "write_timestamp_to_byte_vec",
                             _ => unreachable!(),
                         };
                         let intrinsic = ctx.imports.get(intrinsic, ctx.module, builder.func);
@@ -230,6 +234,24 @@ impl Codegen {
 
                         let (lo, hi) = builder.ins().isplit(value);
                         builder.ins().call(intrinsic, &[buffer, lo, hi]);
+                    }
+
+                    ty @ (ColumnType::Date | ColumnType::Timestamp) => {
+                        let intrinsic = match ty {
+                            ColumnType::Date => "write_date_to_byte_vec",
+                            ColumnType::Timestamp => "write_timestamp_to_byte_vec",
+                            _ => unreachable!(),
+                        };
+                        let intrinsic = ctx.imports.get(intrinsic, ctx.module, builder.func);
+
+                        let format = json_column
+                            .format()
+                            .expect("dates and timestamps are required to specify a parse format");
+                        let (format_ptr, format_len) = ctx.import_string(format, &mut builder);
+
+                        builder
+                            .ins()
+                            .call(intrinsic, &[buffer, format_ptr, format_len, value]);
                     }
 
                     ColumnType::Unit => unreachable!("unit values shouldn't reach here"),

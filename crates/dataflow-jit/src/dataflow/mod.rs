@@ -66,6 +66,8 @@ impl JitHandle {
     /// Cannot call this while any vtable or function pointers are still live or
     /// in use, any attempt to use them after calling this function is UB
     pub unsafe fn free_memory(mut self) {
+        tracing::info!("freeing jit memory");
+
         for &vtable in self.vtables.values() {
             drop(Box::from_raw(vtable));
         }

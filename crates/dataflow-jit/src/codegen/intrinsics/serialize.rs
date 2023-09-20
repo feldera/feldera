@@ -1,5 +1,5 @@
 use crate::codegen::{intrinsics::decimal_from_parts, utils::str_from_raw_parts};
-use chrono::{NaiveDate, TimeZone, Utc};
+use chrono::{TimeZone, Utc};
 use std::{io::Write, slice};
 
 pub(super) unsafe extern "C" fn byte_vec_push(buffer: &mut Vec<u8>, ptr: *const u8, len: usize) {
@@ -25,14 +25,26 @@ pub(super) unsafe extern "C" fn write_decimal_to_byte_vec(buffer: &mut Vec<u8>, 
     write!(buffer, "{decimal}").unwrap();
 }
 
-pub(super) unsafe extern "C" fn write_date_to_byte_vec(buffer: &mut Vec<u8>, date: i32) {
-    let date = NaiveDate::from_num_days_from_ce_opt(date).unwrap();
-    write!(buffer, "{}", date.format("%Y-%m-%d")).unwrap();
+pub(super) unsafe extern "C" fn write_date_to_byte_vec(
+    buffer: &mut Vec<u8>,
+    format_ptr: *const u8,
+    format_len: usize,
+    date: i32,
+) {
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
+    let date = Utc.timestamp_opt(date as i64 * 86400, 0).unwrap();
+    write!(buffer, "\"{}\"", date.format(format)).unwrap();
 }
 
-pub(super) unsafe extern "C" fn write_timestamp_to_byte_vec(buffer: &mut Vec<u8>, timestamp: i64) {
+pub(super) unsafe extern "C" fn write_timestamp_to_byte_vec(
+    buffer: &mut Vec<u8>,
+    format_ptr: *const u8,
+    format_len: usize,
+    timestamp: i64,
+) {
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
     let timestamp = Utc.timestamp_millis_opt(timestamp).unwrap();
-    write!(buffer, "{}", timestamp.format("%+")).unwrap();
+    write!(buffer, "\"{}\"", timestamp.format(format)).unwrap();
 }
 
 macro_rules! write_primitives_to_byte_vec {

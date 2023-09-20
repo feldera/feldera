@@ -12,7 +12,7 @@ use crate::{
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
-const CIRCUIT: &str = r#"{
+static CIRCUIT: &str = r#"{
   "nodes": {
     "168": {
       "Source": {
