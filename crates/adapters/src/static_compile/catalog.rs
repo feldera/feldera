@@ -1,9 +1,7 @@
 use crate::{
-    catalog::{
-        DeCollectionHandle, NeighborhoodEntry, OutputCollectionHandles, SerCollectionHandle,
-    },
+    catalog::{NeighborhoodEntry, OutputCollectionHandles, SerCollectionHandle},
     static_compile::{DeScalarHandleImpl, ErasedDeScalarHandle},
-    CircuitCatalog, OutputQuery, OutputQueryHandles,
+    Catalog,
 };
 use dbsp::{
     algebra::ZRingValue,
@@ -11,28 +9,10 @@ use dbsp::{
     CollectionHandle, RootCircuit, Stream, UpsertHandle, ZSet,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 use super::{DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
 
-/// A catalog of input and output stream handles of a circuit.
-///
-/// An instance of this type is created by the user (or auto-generated code)
-/// who constructs the circuit and is used by
-/// [`Controller`](`crate::Controller`) to bind external data sources and sinks
-/// to DBSP streams.
-#[derive(Default)]
-pub struct Catalog {
-    input_collection_handles: BTreeMap<String, Box<dyn DeCollectionHandle>>,
-    output_batch_handles: BTreeMap<String, OutputCollectionHandles>,
-}
-
 impl Catalog {
-    /// Create an empty catalog.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Add an input stream of Z-sets to the catalog.
     ///
     /// Adds a `DeCollectionHandle` to the catalog, which will deserialize
@@ -70,15 +50,6 @@ impl Catalog {
 
         // Inputs are also outputs.
         self.register_output_zset(name, stream);
-    }
-
-    /// Add a named input stream handle to the catalog.
-    fn register_input_collection_handle<H>(&mut self, name: &str, handle: H)
-    where
-        H: DeCollectionHandle + 'static,
-    {
-        self.input_collection_handles
-            .insert(name.to_owned(), Box::new(handle));
     }
 
     /// Add an output stream of Z-sets to the catalog.
@@ -153,57 +124,26 @@ impl Catalog {
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
 
-            neighborhood_descr_handle: Box::new(DeScalarHandleImpl::new(neighborhood_descr_handle))
-                as Box<dyn ErasedDeScalarHandle>,
-            neighborhood_handle: Box::new(
+            neighborhood_descr_handle: Some(Box::new(DeScalarHandleImpl::new(
+                neighborhood_descr_handle,
+            )) as Box<dyn ErasedDeScalarHandle>),
+            neighborhood_handle: Some(Box::new(
                 <SerCollectionHandleImpl<_, NeighborhoodEntry<D>, ()>>::new(neighborhood_handle),
-            ) as Box<dyn SerCollectionHandle>,
-            neighborhood_snapshot_handle: Box::new(<SerCollectionHandleImpl<
+            ) as Box<dyn SerCollectionHandle>),
+            neighborhood_snapshot_handle: Some(Box::new(<SerCollectionHandleImpl<
                 _,
                 NeighborhoodEntry<D>,
                 (),
-            >>::new(neighborhood_snapshot_handle))
-                as Box<dyn SerCollectionHandle>,
+            >>::new(
+                neighborhood_snapshot_handle
+            )) as Box<dyn SerCollectionHandle>),
 
-            num_quantiles_handle,
-            quantiles_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(quantiles_handle))
-                as Box<dyn SerCollectionHandle>,
+            num_quantiles_handle: Some(num_quantiles_handle),
+            quantiles_handle: Some(Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(
+                quantiles_handle,
+            )) as Box<dyn SerCollectionHandle>),
         };
 
         self.output_batch_handles.insert(name.to_owned(), handles);
-    }
-}
-
-impl CircuitCatalog for Catalog {
-    /// Look up an input stream handle by name.
-    fn input_collection_handle(&self, name: &str) -> Option<&dyn DeCollectionHandle> {
-        self.input_collection_handles
-            .get(name)
-            .map(|b| &**b as &dyn DeCollectionHandle)
-    }
-
-    /// Look up output stream handles by name.
-    fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles> {
-        self.output_batch_handles.get(name)
-    }
-
-    /// Look up an output query handles by stream name and query type.
-    fn output_query_handles(&self, name: &str, query: OutputQuery) -> Option<OutputQueryHandles> {
-        self.output_batch_handles
-            .get(name)
-            .map(|handles| match query {
-                OutputQuery::Table => OutputQueryHandles {
-                    delta: Some(handles.delta_handle.fork()),
-                    snapshot: None,
-                },
-                OutputQuery::Neighborhood => OutputQueryHandles {
-                    delta: (Some(handles.neighborhood_handle.fork())),
-                    snapshot: Some(handles.neighborhood_snapshot_handle.fork()),
-                },
-                OutputQuery::Quantiles => OutputQueryHandles {
-                    delta: None,
-                    snapshot: Some(handles.quantiles_handle.fork()),
-                },
-            })
     }
 }

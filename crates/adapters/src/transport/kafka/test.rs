@@ -79,6 +79,7 @@ fn test_kafka_output_errors() {
 
     let config_str = r#"
 name: test
+workers: 4
 inputs:
 outputs:
     test_output:
@@ -94,14 +95,12 @@ outputs:
 "#;
 
     info!("test_kafka_output_errors: Creating circuit");
-    let (circuit, catalog) = test_circuit(4);
 
     info!("test_kafka_output_errors: Starting controller");
     let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
 
     match Controller::with_config(
-        circuit,
-        Box::new(catalog),
+        |workers| Ok(test_circuit(workers)),
         &config,
         Box::new(|e| panic!("error: {e}")),
     ) {
@@ -133,6 +132,7 @@ fn kafka_end_to_end_test(
     let config_str = format!(
         r#"
 name: test
+workers: 4
 inputs:
     test_input1:
         stream: test_input1
@@ -162,7 +162,6 @@ outputs:
     );
 
     info!("{test_name}: Creating circuit. Config {config_str}");
-    let (circuit, catalog) = test_circuit(4);
 
     info!("{test_name}: Starting controller");
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
@@ -172,8 +171,7 @@ outputs:
     let test_name_clone = test_name.to_string();
 
     let controller = Controller::with_config(
-        circuit,
-        Box::new(catalog),
+        |workers| Ok(test_circuit(workers)),
         &config,
         Box::new(move |e| if running_clone.load(Ordering::Acquire) {
             panic!("{test_name_clone}: error: {e}")

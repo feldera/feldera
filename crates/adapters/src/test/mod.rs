@@ -1,11 +1,11 @@
 //! Test framework for the `adapters` crate.
 
 use crate::{
-    controller::InputEndpointConfig, static_compile::catalog::Catalog, FormatConfig, InputEndpoint,
-    InputTransport,
+    controller::InputEndpointConfig, Catalog, CircuitCatalog, DbspCircuitHandle, FormatConfig,
+    InputEndpoint, InputTransport,
 };
 use anyhow::Result as AnyResult;
-use dbsp::{DBSPHandle, Runtime};
+use dbsp::Runtime;
 use log::{Log, Metadata, Record};
 use serde::Deserialize;
 use std::{
@@ -119,8 +119,8 @@ where
 /// Create a simple test circuit that passes the input stream right through to
 /// the output.
 // TODO: parameterize with the number (and types?) of input and output streams.
-pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
-    Runtime::init_circuit(workers, |circuit| {
+pub fn test_circuit(workers: usize) -> (Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>) {
+    let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {
         let mut catalog = Catalog::new();
         let (input, hinput) = circuit.add_input_zset::<TestStruct, i32>();
 
@@ -129,5 +129,6 @@ pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
 
         Ok(catalog)
     })
-    .unwrap()
+    .unwrap();
+    (Box::new(circuit), Box::new(catalog))
 }

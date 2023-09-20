@@ -302,7 +302,7 @@ impl DbspCircuit {
         }
     }
 
-    /// Creates a new [`JsonSetHandle`] for ingesting json
+    /// Creates a new [`JsonZSetHandle`] for ingesting json
     ///
     /// Returns [`None`] if the target source node is unreachable
     ///

@@ -272,6 +272,15 @@ pub enum ControllerError {
         backtrace: Backtrace,
     },
 
+    /// Error parsing program schema.
+    SchemaParseError { error: String },
+
+    /// Error validating program schema.
+    SchemaValidationError { error: String },
+
+    /// Error parsing program IR file.
+    IrParseError { error: String },
+
     /// Error parsing CLI arguments.
     CliArgsError { error: String },
 
@@ -317,6 +326,10 @@ pub enum ControllerError {
 
     /// Error evaluating the DBSP circuit.
     DbspError { error: DBSPError },
+
+    /// JIT compiler errors.
+    // TODO: use actual JIT error type.
+    JitError { error: String },
 
     /// Error inside the Prometheus module.
     PrometheusError { error: String },
@@ -400,6 +413,9 @@ impl DetailedError for ControllerError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::IoError { .. } => Cow::from("ControllerIOError"),
+            Self::SchemaParseError { .. } => Cow::from("SchemaParseError"),
+            Self::SchemaValidationError { .. } => Cow::from("SchemaParseError"),
+            Self::IrParseError { .. } => Cow::from("IrParseError"),
             Self::CliArgsError { .. } => Cow::from("ControllerCliArgsError"),
             Self::Config { config_error } => {
                 Cow::from(format!("ConfigError.{}", config_error.error_code()))
@@ -410,6 +426,7 @@ impl DetailedError for ControllerError {
             Self::OutputTransportError { .. } => Cow::from("OutputTransportError"),
             Self::PrometheusError { .. } => Cow::from("PrometheusError"),
             Self::DbspError { error } => error.error_code(),
+            Self::JitError { .. } => Cow::from("JitCompilerError"),
             Self::DbspPanic => Cow::from("DbspPanic"),
             Self::ControllerPanic => Cow::from("ControllerPanic"),
         }
@@ -425,6 +442,15 @@ impl Display for ControllerError {
                 context, io_error, ..
             } => {
                 write!(f, "I/O error {context}: {io_error}")
+            }
+            Self::SchemaParseError { error } => {
+                write!(f, "Error parsing program schema: {error}")
+            }
+            Self::SchemaValidationError { error } => {
+                write!(f, "Error validating program schema: {error}")
+            }
+            Self::IrParseError { error } => {
+                write!(f, "Error parsing program IR: {error}")
             }
             Self::CliArgsError { error } => {
                 write!(f, "Error parsing command line arguments: {error}")
@@ -478,6 +504,9 @@ impl Display for ControllerError {
             Self::DbspError { error } => {
                 write!(f, "DBSP error: {error}")
             }
+            Self::JitError { error } => {
+                write!(f, "JIT compiler error: {error}")
+            }
             Self::DbspPanic => {
                 write!(f, "Panic inside the DBSP runtime")
             }
@@ -494,6 +523,24 @@ impl ControllerError {
             context,
             io_error,
             backtrace: Backtrace::capture(),
+        }
+    }
+
+    pub fn schema_parse_error(error: &str) -> Self {
+        Self::SchemaParseError {
+            error: error.to_string(),
+        }
+    }
+
+    pub fn schema_validation_error(error: &str) -> Self {
+        Self::SchemaValidationError {
+            error: error.to_string(),
+        }
+    }
+
+    pub fn ir_parse_error(error: &str) -> Self {
+        Self::IrParseError {
+            error: error.to_string(),
         }
     }
 
@@ -616,6 +663,12 @@ impl ControllerError {
         E: ToString,
     {
         Self::PrometheusError {
+            error: error.to_string(),
+        }
+    }
+
+    pub fn jit_error(error: &str) -> Self {
+        Self::JitError {
             error: error.to_string(),
         }
     }

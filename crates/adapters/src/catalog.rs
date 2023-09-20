@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{static_compile::ErasedDeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
@@ -217,19 +217,19 @@ pub trait SerCursor {
 /// A handle to an output stream of a circuit that yields type-erased
 /// output batches.
 ///
-/// A trait for a type that wraps around an [`OutputHandle<Batch>`] and
-/// yields output batches produced by the circuit as [`SerBatch`]s.
+/// A trait for a type that wraps around an [`OutputHandle`](`dbsp::OutputHandle`)
+/// and yields output batches produced by the circuit as [`SerBatch`]s.
 pub trait SerCollectionHandle: Send + Sync {
-    /// Like [`OutputHandle::take_from_worker`], but returns output batch as a
-    /// [`SerBatch`] trait object.
+    /// Like [`OutputHandle::take_from_worker`](`dbsp::OutputHandle::take_from_worker`),
+    ///  but returns output batch as a [`SerBatch`] trait object.
     fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatch>>;
 
-    /// Like [`OutputHandle::take_from_all`], but returns output batches as
-    /// [`SerBatch`] trait objects.
+    /// Like [`OutputHandle::take_from_all`](`dbsp::OutputHandle::take_from_all`),
+    /// but returns output batches as [`SerBatch`] trait objects.
     fn take_from_all(&self) -> Vec<Arc<dyn SerBatch>>;
 
-    /// Like [`OutputHandle::consolidate`], but returns the output batch as a
-    /// [`SerBatch`] trait object.
+    /// Like [`OutputHandle::consolidate`](`dbsp::OutputHandle::consolidate`), but
+    /// returns the output batch as a [`SerBatch`] trait object.
     fn consolidate(&self) -> Box<dyn SerBatch>;
 
     /// Returns an alias to `self`.
@@ -245,7 +245,77 @@ pub trait CircuitCatalog: Send {
     fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles>;
 
     /// Look up output query handles by stream name and query type.
-    fn output_query_handles(&self, name: &str, query: OutputQuery) -> Option<OutputQueryHandles>;
+    fn output_query_handles(&self, name: &str, query: OutputQuery) -> Option<OutputQueryHandles> {
+        self.output_handles(name).map(|handles| match query {
+            OutputQuery::Table => OutputQueryHandles {
+                delta: Some(handles.delta_handle.fork()),
+                snapshot: None,
+            },
+            OutputQuery::Neighborhood => OutputQueryHandles {
+                delta: handles
+                    .neighborhood_handle
+                    .as_ref()
+                    .map(|handle| handle.fork()),
+                snapshot: handles
+                    .neighborhood_snapshot_handle
+                    .as_ref()
+                    .map(|handle| handle.fork()),
+            },
+            OutputQuery::Quantiles => OutputQueryHandles {
+                delta: None,
+                snapshot: handles
+                    .quantiles_handle
+                    .as_ref()
+                    .map(|handle| handle.fork()),
+            },
+        })
+    }
+}
+
+/// Circuit catalog implementation.
+// For now, we use a common `CircuitCatalog` implementation for JIT and
+// statically compiled circuits (with each module adding its own impls
+// to this type).
+pub struct Catalog {
+    pub(crate) input_collection_handles: BTreeMap<String, Box<dyn DeCollectionHandle>>,
+    pub(crate) output_batch_handles: BTreeMap<String, OutputCollectionHandles>,
+}
+
+impl Default for Catalog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Catalog {
+    pub fn new() -> Self {
+        Self {
+            input_collection_handles: BTreeMap::new(),
+            output_batch_handles: BTreeMap::new(),
+        }
+    }
+
+    pub fn register_input_collection_handle<H>(&mut self, name: &str, handle: H)
+    where
+        H: DeCollectionHandle + 'static,
+    {
+        self.input_collection_handles
+            .insert(name.to_owned(), Box::new(handle));
+    }
+}
+
+impl CircuitCatalog for Catalog {
+    /// Look up an input stream handle by name.
+    fn input_collection_handle(&self, name: &str) -> Option<&dyn DeCollectionHandle> {
+        self.input_collection_handles
+            .get(name)
+            .map(|b| &**b as &dyn DeCollectionHandle)
+    }
+
+    /// Look up output stream handles by name.
+    fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles> {
+        self.output_batch_handles.get(name)
+    }
 }
 
 /// A set of stream handles associated with each output collection.
@@ -287,15 +357,15 @@ pub struct OutputCollectionHandles {
     ///   the previously specified neighborhood if any.  Nothing is written to
     ///   the [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
     ///   stream.
-    pub neighborhood_descr_handle: Box<dyn ErasedDeScalarHandle>,
+    pub neighborhood_descr_handle: Option<Box<dyn ErasedDeScalarHandle>>,
 
     /// A stream of changes to the neighborhood, computed using the
     /// [`Stream::neighborhood`] operator.
-    pub neighborhood_handle: Box<dyn SerCollectionHandle>,
+    pub neighborhood_handle: Option<Box<dyn SerCollectionHandle>>,
 
     /// A stream that contains the full snapshot of the neighborhood.  Only produces
     /// an output whenever the `neighborhood_descr_handle` input is set to `Some(..)`.
-    pub neighborhood_snapshot_handle: Box<dyn SerCollectionHandle>,
+    pub neighborhood_snapshot_handle: Option<Box<dyn SerCollectionHandle>>,
 
     /// Input stream used to submit the quantiles query.
     ///
@@ -304,14 +374,14 @@ pub struct OutputCollectionHandles {
     /// computation.  The result is output to the
     /// [`quantiles_handle`](`Self::quantiles_handle`) stream at the
     /// end of the current clock cycle.
-    pub num_quantiles_handle: InputHandle<usize>,
+    pub num_quantiles_handle: Option<InputHandle<usize>>,
 
     /// Quantiles stream.
     ///
     /// When the `num_quantiles_handle` input is set to `N`, `N>0`, this stream
     /// outputs up to `N` quantiles of the input collection, computed using
     /// the [`Stream::stream_key_quantiles`] operator.
-    pub quantiles_handle: Box<dyn SerCollectionHandle>,
+    pub quantiles_handle: Option<Box<dyn SerCollectionHandle>>,
 }
 
 /// A query over an output stream.

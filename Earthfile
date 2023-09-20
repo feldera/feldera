@@ -242,39 +242,11 @@ build-dbsp:
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
 
-build-adapters:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    RUN rm -rf crates/adapters
-    COPY --keep-ts --dir crates/adapters crates/adapters
-
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_adapters
-    RUN cd crates/adapters && cargo +$RUST_TOOLCHAIN machete
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_adapters -- -D warnings
-    ENV RUST_BACKTRACE=1
-
-    # We keep the test binary around so we can run integration tests later. This incantation is used to find the
-    # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
-    RUN cp `cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE  --no-run --package dbsp_adapters --message-format=json | jq -r 'select(.target.kind[0] == "lib") | .executable' | grep -v null` test_binary
-    SAVE ARTIFACT --keep-ts test_binary
-
-build-adapters-test-image:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +install-deps
-
-    COPY +build-adapters/test_binary ./test_binary
-    ENTRYPOINT ["bash", "-c", "sleep 5 && ./test_binary --nocapture"]
-    SAVE IMAGE adapters:latest
-
 build-dataflow-jit:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
-    FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
 
     RUN rm -rf crates/dataflow-jit
     COPY --keep-ts --dir crates/dataflow-jit crates/dataflow-jit
@@ -283,30 +255,6 @@ build-dataflow-jit:
     RUN cd crates/dataflow-jit && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dataflow-jit --no-run
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dataflow-jit -- -D warnings
-
-build-manager:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    # For some reason if this ENV before the FROM line it gets invalidated
-    ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
-    COPY ( +build-webui/out ) ./web-console/out
-
-    RUN rm -rf crates/pipeline_manager
-    COPY --keep-ts --dir crates/pipeline_manager crates/pipeline_manager
-
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline-manager
-    RUN cd crates/pipeline_manager && cargo +$RUST_TOOLCHAIN machete
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline-manager -- -D warnings
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager --no-run
-
-    IF [ -f ./target/debug/pipeline-manager ]
-        SAVE ARTIFACT --keep-ts ./target/debug/pipeline-manager pipeline-manager
-    END
-    IF [ -f ./target/release/pipeline-manager ]
-        SAVE ARTIFACT --keep-ts ./target/release/pipeline-manager pipeline-manager
-    END
 
 build-sql:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -329,11 +277,50 @@ build-sql:
     SAVE ARTIFACT sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies.jar
     SAVE ARTIFACT sql-to-dbsp-compiler
 
+build-adapters:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
+
+    # Adapter integration tests use the SQL compiler.
+    FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    RUN rm -rf crates/adapters
+    COPY --keep-ts --dir crates/adapters crates/adapters
+
+    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_adapters
+    RUN cd crates/adapters && cargo +$RUST_TOOLCHAIN machete
+    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_adapters -- -D warnings
+    ENV RUST_BACKTRACE=1
+
+build-manager:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
+
+    FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    # For some reason if this ENV before the FROM line it gets invalidated
+    ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
+    COPY ( +build-webui/out ) ./web-console/out
+
+    RUN rm -rf crates/pipeline_manager
+    COPY --keep-ts --dir crates/pipeline_manager crates/pipeline_manager
+
+    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline-manager
+    RUN cd crates/pipeline_manager && cargo +$RUST_TOOLCHAIN machete
+    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline-manager -- -D warnings
+    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager --no-run
+
+    IF [ -f ./target/debug/pipeline-manager ]
+        SAVE ARTIFACT --keep-ts ./target/debug/pipeline-manager pipeline-manager
+    END
+    IF [ -f ./target/release/pipeline-manager ]
+        SAVE ARTIFACT --keep-ts ./target/release/pipeline-manager pipeline-manager
+    END
+
 test-sql:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
-    FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    # SQL-generated code imports adapters crate.
+    FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package --no-transfer-progress
 
 build-nexmark:
@@ -395,16 +382,15 @@ test-dataflow-jit:
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dataflow-jit
 
 test-adapters:
-    WORKDIR /
-    FROM earthly/dind:alpine-3.18
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-    COPY deploy/docker-compose.yml .
-    COPY deploy/docker-compose-test.yml .
 
-    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
-                --load test:latest=+build-adapters-test-image
-        RUN COMPOSE_HTTP_TIMEOUT=120 docker-compose -f docker-compose.yml -f docker-compose-test.yml --profile demo up redpanda test --force-recreate --exit-code-from test
+    FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3
+        RUN docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+            redpanda start --smp 2  && \
+            sleep 5 && \
+            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters
     END
 
 test-manager:
