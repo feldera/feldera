@@ -13,7 +13,7 @@ use cranelift_module::{FuncId, Module};
 use serde::Deserialize;
 use std::{mem::align_of, ops::Not};
 
-pub type SerializeJsonFn = unsafe extern "C" fn(*const u8, &mut String);
+pub type SerializeFn = unsafe extern "C" fn(*const u8, &mut String);
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct JsonSerConfig {
