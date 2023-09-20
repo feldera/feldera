@@ -163,9 +163,7 @@ const IntrospectInputOutput = () => {
     <>
       <BreadcrumbsHeader>
         <Link href={`/streaming/management`}>Pipelines</Link>
-        <Link href={`/streaming/management/#${pipeline.descriptor.pipeline_id}`}>
-          {pipeline.descriptor.name}
-        </Link>
+        <Link href={`/streaming/management/#${pipeline.descriptor.pipeline_id}`}>{pipeline.descriptor.name}</Link>
         <TablesBreadcrumb pipeline={pipeline} relation={relation} tables={tables} views={views}></TablesBreadcrumb>
       </BreadcrumbsHeader>
       <Grid item xs={12}>
