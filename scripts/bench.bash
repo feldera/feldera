@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Usage (to test): $ SMOKE=true CI_MACHINE_TYPE='skylake-2x' bash scripts/ci.bash
+# Usage (to test): $ SMOKE=true CI_MACHINE_TYPE='skylake-2x' bash scripts/bench.bash
 # For CI env: Don't set `SMOKE`
 #
 set -ex
@@ -31,7 +31,7 @@ if [ "$SMOKE" != "" ]; then
   EVENT_RATE=10000000
   MAX_EVENTS=1000000
 fi
-numactl --cpunodebind=1 cargo bench --bench nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES}  --num-event-generators ${GENERATORS} --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE}
+cargo bench --bench nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES}  --num-event-generators ${GENERATORS} --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE}
 
 # Run galen benchmark
 cargo bench --bench galen --features="with-csv" -- --workers 10 --csv ${GALEN_CSV_FILE}

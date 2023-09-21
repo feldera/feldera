@@ -1,0 +1,108 @@
+# .github/workflows/ci.yml
+
+name: Benchmark DBSP
+
+on:
+  push:
+    paths:
+        - './crates/dbsp/**'
+        - './crates/nexmark/**'
+        - './crates/dataflow-jit/**'
+        - './crates/adapters/**'
+  pull_request:
+    paths:
+      - './crates/dbsp/**'
+      - './crates/nexmark/**'
+      - './crates/dataflow-jit/**'
+      - './crates/adapters/**'
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+  CI_MACHINE_TYPE: "skylake-2x"
+  PR_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  pre_job:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@master
+        with:
+          concurrent_skipping: "same_content_newer"
+          cancel_others: "true"
+          skip_after_successful_duplicate: "true"
+          do_not_skip: '["workflow_dispatch", "schedule"]'
+  benchmark:
+    permissions:
+      contents: read
+      packages: write
+    runs-on: [self-hosted, skylake40]
+    needs: [pre_job]
+    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: earthly/actions/setup-earthly@v1
+        with:
+          version: v0.7.17
+      - uses: actions/checkout@v3
+        # By default a merge commit is checked out. If you look at the SHA that
+        # is checked out, it doesn't match your local commit SHA. Rather it's
+        # the SHA of a merge commit (your branch + base branch). So for
+        # pull_request actions it won't match the commit ID on the branch. This
+        # is confusing for storing benchmark results because the commit ID we
+        # find during `git rev-parse` exists nowhere in the history. Since we
+        # don't do merge commits anyways, we make sure we check out the head
+        # commit (which will exist in the history).
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          submodules: true
+
+      - name: MUIX license
+        run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-console/.env && cat web-console/.env
+        env:
+          muix_license: ${{ secrets.muix_license }}
+
+      - name: Integration test .env
+        run: echo ${itest_config} > deploy/.env
+        env:
+          itest_config: ${{ secrets.itest_config }}
+
+      - name: Earthly version
+        run: earthly --version
+
+      # Find the PR associated with this push, if there is one. Note that this
+      # is needed because `${{ github.event.pull_request.number }}` does not get
+      # set on push requests.
+      - uses: jwalton/gh-find-current-pr@v1
+        id: findPr
+        with:
+          state: open
+
+      - name: Run Benchmarks
+        run: earthly --verbose -P --ci +benchmarks
+
+      # Find comment with benchmark info if it exists
+      - name: Find Comment
+        uses: peter-evans/find-comment@v2
+        # This action fails when not running on a PR.
+        if: ${{ steps.findPr.outputs.pr != '' }}
+        id: fc
+        with:
+          issue-number: ${{ steps.findPr.outputs.pr }}
+          comment-author: 'github-actions[bot]'
+          body-includes: Benchmark results
+
+      - name: Create or update comment
+        uses: peter-evans/create-or-update-comment@v2
+        if: ${{ steps.findPr.outputs.pr != '' }}
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ steps.findPr.outputs.pr }}
+          body-file: nexmark_comment.txt
+          edit-mode: replace
