@@ -11,10 +11,21 @@ const TabOutputFormatDetails = () => {
   return (
     <Grid container spacing={4}>
       <GridItems xs={12}>
-        <SelectElement name='format_name' label='Data Format' size='small'>
-          <MenuItem value='json'>JSON</MenuItem>
-          <MenuItem value='csv'>CSV</MenuItem>
-        </SelectElement>
+        <SelectElement
+          name='format_name'
+          label='Data Format'
+          size='small'
+          options={[
+            {
+              id: 'json',
+              label: 'JSON'
+            },
+            {
+              id: 'csv',
+              label: 'CSV'
+            }
+          ]}
+        ></SelectElement>
 
         {selectedFormat === 'json' && (
           <SwitchElement name='json_array' label='Wrap records in an array' defaultValue='false' />
