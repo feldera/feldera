@@ -130,16 +130,17 @@ fn run(program: &Path, config: &Path) -> ExitCode {
         .collect();
 
     for (name, output) in config.outputs {
-        let (node, layout) = sink_names[&name];
-        let format = match output.kind {
-            OutputKind::Json(mut mappings) => {
-                // Correct the layout of `mappings`
-                mappings.layout = layout;
-                Format::Json(demands.add_json_serialize(mappings))
-            }
-        };
+        if let Some(&(node, layout)) = sink_names.get(&name) {
+            let format = match output.kind {
+                OutputKind::Json(mut mappings) => {
+                    // Correct the layout of `mappings`
+                    mappings.layout = layout;
+                    Format::Json(demands.add_json_serialize(mappings))
+                }
+            };
 
-        outputs.push((node, output.file, format));
+            outputs.push((node, output.file, format));
+        }
     }
 
     let mut circuit = DbspCircuit::new(

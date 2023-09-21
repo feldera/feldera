@@ -39,6 +39,7 @@ use std::{
     iter,
     mem::{transmute, ManuallyDrop, MaybeUninit},
     ptr::{self, NonNull},
+    time::Instant,
 };
 
 pub use relations::{
@@ -92,6 +93,8 @@ impl CompiledDataflow {
     where
         F: FnOnce(&mut Codegen),
     {
+        let start = Instant::now();
+
         let mut node_kinds = BTreeMap::new();
         let mut node_streams: BTreeMap<NodeId, Option<_>> = BTreeMap::new();
 
@@ -187,6 +190,9 @@ impl CompiledDataflow {
             &native_layout_cache,
         );
 
+        let elapsed = start.elapsed();
+        tracing::info!("creating compiled dataflow took {elapsed:#?}");
+
         (
             Self {
                 nodes,
@@ -198,6 +204,8 @@ impl CompiledDataflow {
     }
 
     pub fn construct(mut self, circuit: &mut RootCircuit) -> AnyResult<(Inputs, Outputs)> {
+        let start = Instant::now();
+
         let mut streams = BTreeMap::<NodeId, RowStream<RootCircuit>>::new();
 
         let mut inputs = BTreeMap::new();
@@ -604,6 +612,12 @@ impl CompiledDataflow {
                 DataflowNode::Noop(_) => {}
             }
         }
+
+        let elapsed = start.elapsed();
+        tracing::info!(
+            thread = ?std::thread::current().id(),
+            "dataflow construction took {elapsed:#?}",
+        );
 
         Ok((inputs, outputs))
     }

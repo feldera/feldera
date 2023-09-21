@@ -5,6 +5,7 @@ mod passthrough_sums;
 mod shake;
 
 use crate::ir::{Graph, GraphExt};
+use std::time::Instant;
 
 // TODO: Pull distincts behind filters where possible
 // TODO: Fuse filters, maps and filter maps together
@@ -15,6 +16,8 @@ use crate::ir::{Graph, GraphExt};
 // TODO: Deduplicate nodes with identical functions & inputs,
 // e.g. deduplicating two different `delta0(x)`s
 pub(super) fn optimize_graph(graph: &mut Graph) {
+    let start = Instant::now();
+
     let graph = graph.graph_mut();
 
     for _ in 0..5 {
@@ -26,4 +29,7 @@ pub(super) fn optimize_graph(graph: &mut Graph) {
         graph.passthrough_sums();
         graph.shake_dead_nodes();
     }
+
+    let elapsed = start.elapsed();
+    tracing::info!("graph optimization took {elapsed:#?}");
 }

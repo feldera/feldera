@@ -26,6 +26,10 @@ impl Demands {
         }
     }
 
+    pub fn total_demands(&self) -> usize {
+        self.csv.len() + self.deserialize_json.len() + self.serialize_json.len()
+    }
+
     fn next_demand(&mut self, layout: LayoutId) -> DemandId {
         let id = self.ids.next();
         self.demand_layouts.insert(id, layout);

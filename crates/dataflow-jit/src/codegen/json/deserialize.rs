@@ -41,14 +41,25 @@ pub unsafe fn call_deserialize_fn(
     row_place: *mut u8,
     value: &serde_json::Value,
 ) -> AnyResult<()> {
+    // FIXME: This sucks but is required for the current architecture
+    // to address https://github.com/feldera/feldera/issues/718
+    let value: serde_json::Value = value
+        .as_object()
+        .unwrap()
+        .into_iter()
+        .map(|(key, value)| (key.to_uppercase(), value.to_owned()))
+        .collect();
+
     let mut error = String::new();
-    let result = deserialize_fn(row_place, value, &mut error);
+    let result = deserialize_fn(row_place, &value, &mut error);
 
     if result.is_ok() {
-        // The error string will always be empty so we don't need to drop it
+        // The error string will always be empty so we don't need to drop it,
+        // this should help the happy path be a little faster
         mem::forget(error);
-
         Ok(())
+
+    // Otherwise emit an error on the cold path
     } else {
         #[inline(never)]
         #[cold]
@@ -159,7 +170,8 @@ impl Codegen {
                 // TODO: We can also pre-process path traversals, splitting at `/`s
                 // during compile time
                 let json_column = &mappings.mappings[&column_idx];
-                let json_pointer = json_column.key();
+                // FIXME: Hack for case insensitivity
+                let json_pointer = json_column.key().to_uppercase();
                 assert!(
                     !json_pointer.is_empty(),
                     "json pointers cannot be empty (column {column_idx} of {layout_id})",
