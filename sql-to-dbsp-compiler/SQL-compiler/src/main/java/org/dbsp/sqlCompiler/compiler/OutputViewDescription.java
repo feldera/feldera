@@ -23,7 +23,7 @@ public class OutputViewDescription {
             case Json: {
                 JitJsonOutputDescription result = new JitJsonOutputDescription(this.getName(), fas.path);
                 for (RelColumnMetadata column: this.view.columns)
-                    result.addColumn(column.getName());
+                    result.addColumn(column.getName(), column.getType());
                 return result;
             }
             default:

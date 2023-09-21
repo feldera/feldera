@@ -4,7 +4,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.util.TimeString;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -28,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -37,15 +41,99 @@ import java.util.List;
 import static org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode.jsonFactory;
 
 public class JitJsonOutputDescription extends JitIODescription {
-    final List<String> columns;
+    static class ColumnDescription {
+        final String name;
+        final RelDataType type;
+
+        ColumnDescription(String name, RelDataType type) {
+            this.name = name;
+            this.type = type;
+        }
+
+        JsonNode asJson() {
+            ObjectNode result = jsonFactory().createObjectNode();
+            String label = "Normal";
+            @Nullable String format = null;
+            switch (this.type.getSqlTypeName()) {
+                case BOOLEAN:
+                case TINYINT:
+                case SMALLINT:
+                case INTEGER:
+                case BIGINT:
+                case DECIMAL:
+                case FLOAT:
+                case REAL:
+                case DOUBLE:
+                case CHAR:
+                case VARCHAR:
+                    break;
+                case DATE:
+                    label = "Date";
+                    format = "%F";
+                    break;
+                case TIME:
+                    label = "Time";
+                    format = "%F";
+                    break;
+                case TIME_WITH_LOCAL_TIME_ZONE:
+                case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+                case BINARY:
+                case VARBINARY:
+                case ARRAY:
+                case NULL:
+                case ROW:
+                    throw new UnimplementedException(new CalciteObject(this.type));
+                case INTERVAL_YEAR:
+                case INTERVAL_YEAR_MONTH:
+                case INTERVAL_MONTH:
+                case INTERVAL_DAY:
+                case INTERVAL_DAY_HOUR:
+                case INTERVAL_DAY_MINUTE:
+                case INTERVAL_DAY_SECOND:
+                case INTERVAL_HOUR:
+                case INTERVAL_HOUR_MINUTE:
+                case INTERVAL_HOUR_SECOND:
+                case INTERVAL_MINUTE:
+                case INTERVAL_MINUTE_SECOND:
+                case INTERVAL_SECOND:
+                    throw new UnimplementedException(new CalciteObject(this.type));
+                case TIMESTAMP:
+                    label = "Timestamp";
+                    format = "%F %T";
+                    break;
+                case UNKNOWN:
+                case ANY:
+                case SYMBOL:
+                case MULTISET:
+                case MAP:
+                case DISTINCT:
+                case STRUCTURED:
+                case OTHER:
+                case CURSOR:
+                case COLUMN_LIST:
+                case DYNAMIC_STAR:
+                case GEOMETRY:
+                case MEASURE:
+                case SARG:
+                    throw new UnsupportedException(new CalciteObject(this.type));
+            }
+            ObjectNode obj = result.putObject(label);
+            obj.put("key", this.name);
+            if (format != null)
+                obj.put("format", format);
+            return result;
+        }
+    }
+
+    final List<ColumnDescription> columns;
 
     public JitJsonOutputDescription(String relation, String path) {
         super(relation, path);
         this.columns = new ArrayList<>();
     }
 
-    public void addColumn(String column) {
-        this.columns.add(column);
+    public void addColumn(String column, RelDataType type) {
+        this.columns.add(new ColumnDescription(column, type));
     }
 
     public JsonNode asJson() {
@@ -55,7 +143,7 @@ public class JitJsonOutputDescription extends JitIODescription {
         ObjectNode json = kind.putObject("Json");
         ObjectNode mappings = json.putObject("mappings");
         for (int i = 0; i < this.columns.size(); i++)
-            mappings.put(Integer.toString(i), this.columns.get(i));
+            mappings.put(Integer.toString(i), this.columns.get(i).asJson());
         return result;
     }
 
@@ -163,9 +251,9 @@ public class JitJsonOutputDescription extends JitIODescription {
         ObjectNode row = (ObjectNode) node.get("data");
         DBSPExpression[] fields = new DBSPExpression[elementType.size()];
         int index = 0;
-        for (String column: this.columns) {
+        for (ColumnDescription column: this.columns) {
             DBSPType type = elementType.getFieldType(index);
-            DBSPExpression expression = this.deserialize(lineNumber, line, row, column, type);
+            DBSPExpression expression = this.deserialize(lineNumber, line, row, column.name, type);
             fields[index] = expression;
             index++;
         }
