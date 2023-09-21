@@ -1263,15 +1263,13 @@ impl InputProbe {
             backpressure_thread_unparker,
         }
     }
-}
 
-/// `InputConsumer` interface exposed to the transport endpoint.
-impl InputConsumer for InputProbe {
-    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
-        // println!("input consumer {} bytes", data.len());
-        // Pass input buffer to the parser.
-        let (num_records, errors) = self.parser.input_fragment(data);
-
+    fn input_common(
+        &mut self,
+        data: &[u8],
+        num_records: usize,
+        errors: Vec<ParseError>,
+    ) -> Vec<ParseError> {
         for error in errors.iter() {
             self.controller
                 .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
@@ -1287,24 +1285,18 @@ impl InputConsumer for InputProbe {
 
         errors
     }
+}
+
+/// `InputConsumer` interface exposed to the transport endpoint.
+impl InputConsumer for InputProbe {
+    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
+        let (num_records, errors) = self.parser.input_fragment(data);
+        self.input_common(data, num_records, errors)
+    }
 
     fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
         let (num_records, errors) = self.parser.input_chunk(data);
-
-        for error in errors.iter() {
-            self.controller
-                .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
-        }
-        self.controller.status.input_batch(
-            self.endpoint_id,
-            data.len(),
-            num_records,
-            &self.controller.status.global_config,
-            &self.circuit_thread_unparker,
-            &self.backpressure_thread_unparker,
-        );
-
-        errors
+        self.input_common(data, num_records, errors)
     }
 
     fn eoi(&mut self) -> Vec<ParseError> {
