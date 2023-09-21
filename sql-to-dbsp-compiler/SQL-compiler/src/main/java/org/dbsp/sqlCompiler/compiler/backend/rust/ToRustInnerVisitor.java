@@ -137,8 +137,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("Extract::new(move |r: &");
         expression.tupleType().accept(this);
         this.builder.append("| r.")
-                .append(expression.fieldNo)
-                .append(")");
+                .append(expression.fieldNo);
+        if (!expression.tupleType().to(DBSPTypeTuple.class).getFieldType(expression.fieldNo).hasCopy())
+            this.builder.append(".clone()");
+        this.builder.append(")");
         if (!expression.ascending)
             this.builder.append(".rev()");
         if (hasSource)
