@@ -141,7 +141,7 @@ pub fn cast_to_DateN_s(value: String) -> Option<Date> {
 }
 
 #[inline]
-pub fn cast_to_DateN_date(value: Date) -> Option<Date> {
+pub fn cast_to_DateN_Date(value: Date) -> Option<Date> {
     Some(value)
 }
 

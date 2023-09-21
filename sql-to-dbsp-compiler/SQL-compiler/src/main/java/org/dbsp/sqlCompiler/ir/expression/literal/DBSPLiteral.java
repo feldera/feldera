@@ -50,6 +50,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import javax.annotation.Nullable;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 /**
@@ -101,7 +102,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
         } else if (type.is(DBSPTypeMonthsInterval.class)) {
             return new DBSPIntervalMonthsLiteral();
         } else if (type.is(DBSPTypeString.class)) {
-            return new DBSPStringLiteral();
+            return new DBSPStringLiteral(CalciteObject.EMPTY, type, null, StandardCharsets.UTF_8);
         } else if (type.is(DBSPTypeTime.class)) {
             return new DBSPTimeLiteral();
         } else if (type.is(DBSPTypeVec.class)) {

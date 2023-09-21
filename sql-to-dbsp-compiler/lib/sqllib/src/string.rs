@@ -68,7 +68,12 @@ pub fn like2__(value: String, pattern: String) -> bool {
     Like::<false>::like(value.as_str(), pattern.as_str()).unwrap()
 }
 
-some_function2!(like2, String, String, bool);
+pub fn like2N_(value: Option<String>, pattern: String) -> bool {
+    match value {
+        None => false,
+        Some(value) => like2__(value, pattern),
+    }
+}
 
 pub fn rlike__(value: String, pattern: String) -> bool {
     // TODO: the regex should not be created for each row.
@@ -76,7 +81,12 @@ pub fn rlike__(value: String, pattern: String) -> bool {
     re.map_or_else(|_| false, |re| re.is_match(&value))
 }
 
-some_function2!(rlike, String, String, bool);
+pub fn rlikeN_(value: Option<String>, pattern: String) -> bool {
+    match value {
+        None => false,
+        Some(value) => rlike__(value, pattern),
+    }
+}
 
 pub fn like3___(value: String, pattern: String, escape: String) -> bool {
     let escaped = pattern.as_str().escape(escape.as_str()).unwrap();
