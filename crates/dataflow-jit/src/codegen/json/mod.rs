@@ -13,22 +13,22 @@ type ColumnIdx = usize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub enum JsonColumn {
-    Normal { key: String },
-    DateTime { key: String, format: String },
+    Normal { key: Box<str> },
+    DateTime { key: Box<str>, format: Box<str> },
 }
 
 impl JsonColumn {
     pub fn normal<K>(key: K) -> Self
     where
-        K: Into<String>,
+        K: Into<Box<str>>,
     {
         Self::Normal { key: key.into() }
     }
 
     pub fn datetime<K, F>(key: K, format: F) -> Self
     where
-        K: Into<String>,
-        F: Into<String>,
+        K: Into<Box<str>>,
+        F: Into<Box<str>>,
     {
         Self::DateTime {
             key: key.into(),

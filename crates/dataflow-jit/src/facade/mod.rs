@@ -68,6 +68,15 @@ impl DbspCircuit {
         config: CodegenConfig,
         demands: Demands,
     ) -> Self {
+        tracing::info!(
+            ?optimize,
+            ?workers,
+            ?config,
+            total_demands = demands.total_demands(),
+            "creating a new jit'd circuit",
+        );
+        let start = Instant::now();
+
         let arena = Arena::<()>::new();
         tracing::trace!(
             "created circuit from graph:\n{}",
@@ -145,6 +154,9 @@ impl DbspCircuit {
             outputs.entry(sink).or_insert((None, layout));
         }
 
+        let elapsed = start.elapsed();
+        tracing::info!("creating jit'd circuit took {elapsed:#?}");
+
         Self {
             jit,
             runtime,
@@ -170,11 +182,14 @@ impl DbspCircuit {
     }
 
     pub fn enable_cpu_profiler(&mut self) -> Result<(), Error> {
+        tracing::info!("enabling cpu profiler");
         self.runtime.enable_cpu_profiler()
     }
 
     pub fn dump_profile<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<PathBuf, Error> {
-        self.runtime.dump_profile(dir_path)
+        let path = dir_path.as_ref();
+        tracing::info!("dumping profile to {}", path.display());
+        self.runtime.dump_profile(path)
     }
 
     pub fn step(&mut self) -> Result<(), Error> {
@@ -391,10 +406,12 @@ impl DbspCircuit {
             };
 
             let elapsed = start.elapsed();
+            // TODO: Log the source's name
             tracing::info!("ingested {records} records for {target} in {elapsed:#?}");
 
         // If the source is unused, do nothing
         } else {
+            // TODO: Log the source's name
             tracing::info!("appended json to source {target} which is unused, doing nothing");
         }
 
@@ -434,10 +451,12 @@ impl DbspCircuit {
             }
 
             let elapsed = start.elapsed();
+            // TODO: Log the source's name
             tracing::info!("ingested 1 record for {target} in {elapsed:#?}");
 
         // If the source is unused, do nothing
         } else {
+            // TODO: Log the source's name
             tracing::info!("appended json to source {target} which is unused, doing nothing");
         }
 
@@ -485,10 +504,12 @@ impl DbspCircuit {
             };
 
             let elapsed = start.elapsed();
+            // TODO: Log the source's name
             tracing::info!("ingested {records} records for {target} in {elapsed:#?}");
 
         // If the source is unused, do nothing
         } else {
+            // TODO: Log the source's name
             tracing::info!("appended csv file to source {target} which is unused, doing nothing");
         }
     }
@@ -568,6 +589,7 @@ impl DbspCircuit {
 
         // The output is unreachable so we always return an empty stream
         } else {
+            // TODO: Log the sink's name
             tracing::info!(
                 "consolidating output from an unreachable sink, returning an empty stream",
             );
@@ -632,6 +654,7 @@ impl DbspCircuit {
 
         // The output is unreachable so we always return an empty stream
         } else {
+            // TODO: Log the sink's name
             tracing::info!(
                 "consolidating json output from an unreachable sink, returning an empty stream",
             );
