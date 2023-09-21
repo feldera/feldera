@@ -3,7 +3,6 @@ import { KafkaOutputSchema } from '$lib/components/connectors/dialogs'
 import { SelectElement, SwitchElement, useFormContext } from 'react-hook-form-mui'
 
 import Grid from '@mui/material/Grid'
-import MenuItem from '@mui/material/MenuItem'
 
 const TabOutputFormatDetails = () => {
   const selectedFormat = useFormContext<KafkaOutputSchema>().watch('format_name')
