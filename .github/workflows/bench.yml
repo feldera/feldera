@@ -85,7 +85,10 @@ jobs:
           state: open
 
       - name: Run Benchmarks
-        run: earthly --verbose -P --ci +benchmarks
+        run: earthly --verbose -P --ci +benchmark
+
+      - name: Publish results
+        run: bash ./scripts/bench-publish.sh
 
       # Find comment with benchmark info if it exists
       - name: Find Comment

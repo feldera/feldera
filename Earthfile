@@ -575,6 +575,22 @@ integration-tests:
         RUN sleep 5 && docker run --env-file .env --network default_default itest:latest
     END
 
+benchmark:
+    ARG RUST_TOOLCHAIN=$RUST_VERSION
+    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
+
+    FROM +build-nexmark --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    ENV SMOKE=1
+    ENV CI_MACHINE_TYPE=''
+    COPY scripts/bench.bash scripts/bench.bash
+
+    RUN bash scripts/bench.bash
+    SAVE ARTIFACT crates/nexmark/nexmark_results.csv AS LOCAL .
+    SAVE ARTIFACT crates/nexmark/dram_nexmark_results.csv AS LOCAL .
+    SAVE ARTIFACT crates/nexmark/persistence_nexmark_results.csv AS LOCAL .
+    SAVE ARTIFACT crates/dbsp/galen_results.csv AS LOCAL .
+    SAVE ARTIFACT crates/dbsp/ldbc_results.csv AS LOCAL .
+
 all-tests:
     BUILD +test-rust
     BUILD +test-python
