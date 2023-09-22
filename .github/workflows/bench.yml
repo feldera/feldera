@@ -13,7 +13,6 @@ env:
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
   CI_MACHINE_TYPE: "skylake-2x"
-  PR_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
   FORCE_COLOR: 1
 
 jobs:
@@ -29,17 +28,6 @@ jobs:
         with:
           version: v0.7.17
       - uses: actions/checkout@v3
-        # By default a merge commit is checked out. If you look at the SHA that
-        # is checked out, it doesn't match your local commit SHA. Rather it's
-        # the SHA of a merge commit (your branch + base branch). So for
-        # pull_request actions it won't match the commit ID on the branch. This
-        # is confusing for storing benchmark results because the commit ID we
-        # find during `git rev-parse` exists nowhere in the history. Since we
-        # don't do merge commits anyways, we make sure we check out the head
-        # commit (which will exist in the history).
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          submodules: true
 
       - name: MUIX license
         run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-console/.env && cat web-console/.env
