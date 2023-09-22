@@ -6,7 +6,7 @@ export enum ConnectorType {
 }
 
 export enum Direction {
-  INPUT,
-  OUTPUT,
-  INPUT_OUTPUT
+  INPUT = 'input',
+  OUTPUT = 'output',
+  INPUT_OUTPUT = 'input_output'
 }

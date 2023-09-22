@@ -53,7 +53,6 @@ export const parseKafkaOutputSchema = (connector: ConnectorDescr): KafkaOutputSc
   assert(connectorDescrToType(connector) === ConnectorType.KAFKA_OUT)
   const config = connector.config
   assert(config.transport.config)
-
   const authConfig = parseAuthParams(config.transport.config)
 
   return {

@@ -19,12 +19,10 @@ import EmotionRootStyleRegistry from './EmotionRootStyleRegistry'
 LicenseInfo.setLicenseKey(process.env.NEXT_PUBLIC_MUIX_PRO_KEY || 'unset')
 OpenAPI.BASE =
   ('window' in globalThis && window.location.origin
-    ? window.location.origin.endsWith(':3000')
-      ? // If we're running locally with `yarn dev` on port 3000, we point to the
-        // backend server running on port 8080
-        window.location.origin.replace(':3000', ':8080')
-      : // Otherwise the API and UI URL will be the same
-        window.location.origin
+    ? // If we're running locally with `yarn dev` on port 3000, we point to the
+      // backend server running on port 8080
+      // Otherwise the API and UI URL will be the same
+      window.location.origin.replace(/:(300[0-9])$/, ':8080')
     : '') + '/v0'
 
 // provide the default query function to your app with defaultOptions

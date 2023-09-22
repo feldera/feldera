@@ -221,6 +221,10 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
 
   const [rowSelectionModel, setRowSelectionModel] = useState<GridRowSelectionModel>([])
 
+  const isReadonly =
+    !!pipelineRevisionQuery.data &&
+    (pipelineRevisionQuery.data.program.schema?.outputs.some(r => r.name === relation?.name) ?? false)
+
   return relation ? (
     <Card>
       <DataGridPro
@@ -288,7 +292,8 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
             },
             pipelineId: pipeline.descriptor.pipeline_id,
             status: pipeline.state.current_status,
-            relation: relation.name
+            relation: relation.name,
+            isReadonly
           }
         }}
         loading={isLoading}
@@ -300,7 +305,7 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
         pageSizeOptions={[PAGE_SIZE]}
         onPaginationModelChange={model => handlePaginationModelChange(model)}
         paginationModel={paginationModel}
-        checkboxSelection
+        checkboxSelection={!isReadonly}
         onRowSelectionModelChange={newRowSelectionModel => {
           setRowSelectionModel(newRowSelectionModel)
         }}

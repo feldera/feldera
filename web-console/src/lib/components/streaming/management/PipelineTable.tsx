@@ -191,6 +191,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               <IconButton
                 size='small'
                 href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}`}
+                target='_blank'
+                rel='noreferrer'
               >
                 <Icon icon='bx:show' fontSize={20} />
               </IconButton>
@@ -200,6 +202,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                 <IconButton
                   size='small'
                   href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}&tab=insert`}
+                  target='_blank'
+                  rel='noreferrer'
                 >
                   <Icon icon='bx:upload' fontSize={20} />
                 </IconButton>
@@ -441,11 +445,6 @@ export default function PipelineTable() {
     return PipelinesService.updatePipeline(args.pipeline_id, args.request)
   })
   const onUpdateRow = (newRow: Pipeline, oldRow: Pipeline) => {
-    console.log('onUpdateRow;;', {
-      name: newRow.descriptor.name,
-      description: newRow.descriptor.description,
-      program_id: newRow.descriptor.program_id
-    })
     mutation.mutate(
       {
         pipeline_id: newRow.descriptor.pipeline_id,

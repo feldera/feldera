@@ -4,9 +4,10 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import { Button, ButtonProps, Dialog, DialogActions, DialogTitle } from '@mui/material'
 import { GridRowId, GridValidRowModel, useGridApiContext } from '@mui/x-data-grid-pro'
 
-export const RowDeleteButton = (
-  props: ButtonProps & { onDeleteRows: (rows: Map<GridRowId, GridValidRowModel>) => void }
-) => {
+export const RowDeleteButton = ({
+  onDeleteRows,
+  ...props
+}: ButtonProps & { onDeleteRows: (rows: Map<GridRowId, GridValidRowModel>) => void }) => {
   const { current: ref } = useGridApiContext()
   const rows = ref.getSelectedRows()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -33,7 +34,7 @@ export const RowDeleteButton = (
           <Button
             onClick={() => {
               setDialogOpen.bind(null, false)()
-              props.onDeleteRows(rows)
+              onDeleteRows(rows)
             }}
           >
             Delete

@@ -26,13 +26,17 @@ const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables:
       <ListSubheader>Tables</ListSubheader>
       {props.tables.map(item => (
         <MenuItem key={item} value={item}>
-          <Link href={`?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item}`}>{item}</Link>
+          <Link href={`?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item}`} sx={{ width: '100%' }}>
+            {item}
+          </Link>
         </MenuItem>
       ))}
       <ListSubheader>Views</ListSubheader>
       {props.views.map(item => (
         <MenuItem key={item} value={item}>
-          <Link href={`?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item}`}>{item}</Link>
+          <Link href={`?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item}`} sx={{ width: '100%' }}>
+            {item}
+          </Link>
         </MenuItem>
       ))}
     </BreadcrumbSelect>

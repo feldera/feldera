@@ -1,11 +1,12 @@
 // The drawer component that opens when the user wants to add a connector in the
 // pipeline builder.
 
+import { KafkaInputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaInputConnector'
+import { KafkaOutputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
+import { UrlConnectorDialog } from '$lib/components/connectors/dialogs/UrlConnector'
 import { useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
 import { useHashPart } from '$lib/compositions/useHashPart'
-import { inUnion } from '$lib/functions/common/array'
 import { randomString } from '$lib/functions/common/string'
-import { tuple } from '$lib/functions/common/tuple'
 import {
   connectorDescrToType,
   connectorTypeToDirection,
@@ -28,9 +29,6 @@ import { styled } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 import { useQuery } from '@tanstack/react-query'
 
-import { KafkaInputConnectorDialog } from '../dialogs/KafkaInputConnector'
-import { KafkaOutputConnectorDialog } from '../dialogs/KafkaOutputConnector'
-import { UrlConnectorDialog } from '../dialogs/UrlConnector'
 import SelectSourceTable from './SelectSourceTable'
 
 const Header = styled(Box)<BoxProps>(({ theme }) => ({
@@ -80,25 +78,21 @@ const IoSelectBox = (props: { icon: string; howMany: number; onNew: string; onSe
   )
 }
 
-const shouldDisplayConnector = (direction: Direction, connectorType: ConnectorType) => {
-  return (
-    connectorTypeToDirection(connectorType) == Direction.INPUT_OUTPUT ||
-    direction === connectorTypeToDirection(connectorType)
-  )
-}
+const shouldDisplayConnector = (direction: Direction, connectorType: ConnectorType) =>
+  (d => d === Direction.INPUT_OUTPUT || d === direction)(connectorTypeToDirection(connectorType))
 
 const SideBarAddIo = () => {
   const [hash, setHash] = useHashPart()
   const showOnHash = showOnHashPart([hash, setHash])
 
-  const [nodeType, connectorType] = (([nodeType, connectorType]) =>
-    tuple(
-      inUnion(['add_input', 'add_output'] as const, nodeType) ? nodeType : undefined,
-      connectorType ? (connectorType as ConnectorType) : undefined
-    ))(hash.split('/'))
-
-  const drawerTitle = nodeType === 'add_input' ? 'Add Input Source' : 'Add Output Destination'
-  const direction = nodeType === 'add_input' ? Direction.INPUT : Direction.OUTPUT
+  const drawer = (path =>
+    path
+      ? (([nodeType, connectorType]) => ({
+          nodeType: nodeType as 'add_input' | 'add_output',
+          direction: nodeType === 'add_input' ? Direction.INPUT : Direction.OUTPUT,
+          connectorType: connectorType as ConnectorType | undefined
+        }))(path)
+      : undefined)(/(add_input|add_output)(\/?\w+)?/.exec(hash)?.[0].split('/'))
 
   const [sourceCounts, setSourceCounts] = useState<{ [key in ConnectorType]: number }>({
     [ConnectorType.KAFKA_IN]: 0,
@@ -129,17 +123,17 @@ const SideBarAddIo = () => {
   }, [data, isLoading, isError])
 
   const openSelectTable = (ioTable: ConnectorType | undefined) => {
-    setHash(`${nodeType}/${ioTable ?? ''}`)
+    setHash(`${drawer!.nodeType}/${ioTable ?? ''}`)
   }
 
   const addConnector = useAddConnector()
-  const onAddClick = (connector: ConnectorDescr) => {
+  const onAddClick = (direction: Direction) => (connector: ConnectorDescr) => {
     setHash('')
     const ac: AttachedConnector = {
       name: randomString(),
       connector_id: connector.connector_id,
       relation_name: '',
-      is_input: nodeType === 'add_input'
+      is_input: direction === Direction.INPUT
     }
     addConnector(connector, ac)
   }
@@ -147,7 +141,7 @@ const SideBarAddIo = () => {
   return (
     <Drawer
       id='connector-drawer' // referenced by webui-tester
-      open={!!nodeType}
+      open={!!drawer}
       anchor='right'
       variant='temporary'
       onClose={() => setHash('')}
@@ -156,50 +150,60 @@ const SideBarAddIo = () => {
     >
       <Header>
         <Typography variant='h6'>
-          <Breadcrumbs aria-label='breadcrumb' separator={<NavigateNextIcon fontSize='small' />}>
-            <Link underline='hover' color='inherit' href={`#${nodeType}`}>
-              {drawerTitle}
-            </Link>
-            {connectorType && <Typography color='text.primary'>{connectorTypeToTitle(connectorType)}</Typography>}
-          </Breadcrumbs>
+          {!!drawer && (
+            <Breadcrumbs aria-label='breadcrumb' separator={<NavigateNextIcon fontSize='small' />}>
+              <Link underline='hover' color='inherit' href={`#${drawer.nodeType}`}>
+                {drawer.nodeType === 'add_input' ? 'Add Input Source' : 'Add Output Destination'}
+              </Link>
+              <Typography color='text.primary'>
+                {drawer.connectorType && connectorTypeToTitle(drawer.connectorType)}
+              </Typography>
+            </Breadcrumbs>
+          )}
         </Typography>
 
         <IconButton size='small' href='#' sx={{ color: 'text.primary' }}>
           <Icon icon='bx:x' fontSize={20} />
         </IconButton>
       </Header>
-      {!connectorType && (
+      {drawer && !drawer.connectorType && (
         <Grid container spacing={3}>
           {[ConnectorType.KAFKA_IN, ConnectorType.KAFKA_OUT, ConnectorType.URL].map(
             type =>
-              shouldDisplayConnector(direction, type) && (
+              shouldDisplayConnector(drawer.direction, type) && (
                 <IoSelectBox
                   key={type}
                   icon={connectorTypeToIcon(type)}
                   howMany={sourceCounts[type]}
-                  onNew={type}
+                  onNew={`new/connector/${drawer.direction}/${type}`}
                   onSelect={() => openSelectTable(type)}
                 />
               )
           )}
         </Grid>
       )}
-      {connectorType && (
-        <Grid container spacing={3}>
-          <Grid item xs={12}>
-            <SelectSourceTable direction={direction} typ={connectorType} onAddClick={onAddClick} />
+      {!!drawer?.connectorType &&
+        (direction => (
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <SelectSourceTable direction={direction} typ={drawer.connectorType} onAddClick={onAddClick(direction)} />
+            </Grid>
           </Grid>
-        </Grid>
-      )}
-      {[
-        tuple(ConnectorType.KAFKA_IN, KafkaInputConnectorDialog),
-        tuple(ConnectorType.KAFKA_OUT, KafkaOutputConnectorDialog),
-        tuple(ConnectorType.URL, UrlConnectorDialog)
-      ].map(([type, Dialog]) => (
-        <Fragment key={type}>
-          <Dialog {...showOnHash(type)} onSuccess={onAddClick} />
-        </Fragment>
-      ))}
+        ))(connectorTypeToDirection(drawer.connectorType!))}
+      {(() => {
+        const dialogs = {
+          [ConnectorType.KAFKA_IN]: KafkaInputConnectorDialog,
+          [ConnectorType.KAFKA_OUT]: KafkaOutputConnectorDialog,
+          [ConnectorType.URL]: UrlConnectorDialog
+        }
+        const res = /new\/connector\/(\w+)\/(\w+)/.exec(hash)
+        if (!res) {
+          return <></>
+        }
+        const [, direction, type] = res
+        const Dialog = dialogs[type as keyof typeof dialogs]
+        return <Dialog {...showOnHash('new/connector/')} onSuccess={onAddClick(direction as Direction)} />
+      })()}
     </Drawer>
   )
 }
