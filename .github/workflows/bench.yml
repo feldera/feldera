@@ -22,12 +22,25 @@ jobs:
       issues: write
       pull-requests: write
     runs-on: [self-hosted, skylake40, benchmark-machine]
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '/benchmark') || github.event_name == 'push'
+    if: >
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/benchmark') &&
+      contains('["gz","lsuresh","ryzhyk","mihaibudiu","blp","Kixiron","Karakatiza666","mohsinbeg"]', github.event.comment.user.login) || github.event_name == 'push'
     steps:
+      - uses: xt0rted/pull-request-comment-branch@v2
+        id: comment-branch
+
+      - uses: actions/checkout@v3
+        if: success()
+        with:
+          ref: ${{ steps.comment-branch.outputs.head_ref }}
+
+      - uses: actions/checkout@v3
+        if: failure()
+
       - uses: earthly/actions/setup-earthly@v1
         with:
           version: v0.7.17
-      - uses: actions/checkout@v3
 
       - name: MUIX license
         run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-console/.env && cat web-console/.env
