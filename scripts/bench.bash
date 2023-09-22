@@ -1,7 +1,8 @@
 #!/bin/bash
 #
 # Usage (to test): $ SMOKE=true bash scripts/bench.bash
-# `SMOKE`: Run benchmarks quickly but not representative
+#
+# - `SMOKE`: Run benchmarks quickly but not representative
 #
 set -ex
 
@@ -15,7 +16,6 @@ NEXMARK_PERSISTENCE_CSV_FILE='persistence_nexmark_results.csv'
 GALEN_CSV_FILE='galen_results.csv'
 LDBC_CSV_FILE='ldbc_results.csv'
 rm -f crates/nexmark/${NEXMARK_CSV_FILE} crates/dbsp/${GALEN_CSV_FILE} crates/dbsp/${LDBC_CSV_FILE} crates/nexmark/${NEXMARK_DRAM_CSV_FILE} crates/nexmark/${NEXMARK_PERSISTENCE_CSV_FILE}
-rm -f nexmark_comment.txt
 
 # Run nexmark benchmark
 EVENT_RATE=10000000
