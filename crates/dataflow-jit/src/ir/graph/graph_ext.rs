@@ -244,6 +244,12 @@ pub struct GraphStats {
     pub max_subgraph_nesting: usize,
 }
 
+impl Default for GraphStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GraphStats {
     pub fn new() -> Self {
         Self {
