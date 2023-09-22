@@ -1,5 +1,3 @@
-# .github/workflows/ci.yml
-
 name: Benchmark DBSP
 
 on:
@@ -23,7 +21,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    runs-on: [self-hosted, skylake40]
+    runs-on: [self-hosted, skylake40, benchmark-machine]
     if: github.event.issue.pull_request && contains(github.event.comment.body, '/benchmark') || github.event_name == 'push'
     steps:
       - uses: earthly/actions/setup-earthly@v1
@@ -62,7 +60,7 @@ jobs:
         run: earthly --verbose -P --ci +benchmark
 
       - name: Publish results
-        run: bash ./scripts/bench-publish.sh
+        run: bash ./scripts/bench-publish.bash
 
       # Find comment with benchmark info if it exists
       - name: Find Comment
