@@ -20,7 +20,8 @@ jobs:
   benchmark:
     permissions:
       contents: read
-      packages: write
+      issues: write
+      pull-requests: write
     runs-on: [self-hosted, skylake40, benchmark-machine]
     if: github.event.issue.pull_request && contains(github.event.comment.body, '/benchmark') || github.event_name == 'push'
     steps:
