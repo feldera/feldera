@@ -580,8 +580,6 @@ benchmark:
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
     FROM +build-nexmark --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    ENV SMOKE=1
-    ENV CI_MACHINE_TYPE=''
     COPY scripts/bench.bash scripts/bench.bash
 
     RUN bash scripts/bench.bash
