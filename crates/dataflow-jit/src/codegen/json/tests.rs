@@ -130,7 +130,7 @@ fn deserialize_json_smoke() {
 }
 
 #[test]
-#[should_panic = "an error occurred while parsing the key \"/foo\""]
+#[should_panic = "an error occurred while parsing the key \"/FOO\""]
 fn deserialize_invalid_json() {
     utils::test_logger();
 
