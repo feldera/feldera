@@ -3,15 +3,18 @@
 import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
+import { UnknownConnectorDialog } from '$lib/components/connectors/dialogs/UnknownConnector'
 import Metadata from '$lib/components/streaming/builder/Metadata'
 import MissingSchemaDialog from '$lib/components/streaming/builder/NoSchemaDialog'
 import PipelineGraph from '$lib/components/streaming/builder/PipelineBuilder'
 import { connectorConnects, useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
 import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
+import { useHashPart } from '$lib/compositions/useHashPart'
 import { partition } from '$lib/functions/common/array'
 import { removePrefix } from '$lib/functions/common/string'
 import { setQueryData } from '$lib/functions/common/tanstack'
+import { showOnHashPart } from '$lib/functions/urlHash'
 import {
   ApiError,
   AttachedConnector,
@@ -60,6 +63,8 @@ const PipelineWithProvider = (props: {
   pipelineId: PipelineId | undefined
   setPipelineId: Dispatch<SetStateAction<PipelineId | undefined>>
 }) => {
+  const [hash, setHash] = useHashPart()
+  const showOnHash = showOnHashPart([hash, setHash])
   const queryClient = useQueryClient()
   const [missingSchemaDialog, setMissingSchemaDialog] = useState(false)
 
@@ -134,7 +139,6 @@ const PipelineWithProvider = (props: {
     setSaveState('isUpToDate')
 
     const attachedConnectors = descriptor.attached_connectors
-    console.log(attachedConnectors)
 
     // We don't set so `setSaveState` here because we don't want to override
     // the saveState every time the backend returns some result. Because it
@@ -146,8 +150,6 @@ const PipelineWithProvider = (props: {
       : (() => {
           setMissingSchemaDialog(!project.schema)
 
-          console.log(project.schema)
-          console.log(attachedConnectors)
           const [validConnections, invalidConnections] = partition(attachedConnectors, connector =>
             connectorConnects(project.schema, connector)
           )
@@ -358,6 +360,9 @@ const PipelineWithProvider = (props: {
         setOpen={setMissingSchemaDialog}
         program_id={project?.program_id}
       />
+      {(id => id && <UnknownConnectorDialog {...showOnHash('edit/connector')} connectorId={id} />)(
+        /edit\/connector\/([\w-]+)/.exec(hash)?.[1]
+      )}
     </>
   )
 }

@@ -6,7 +6,7 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import EntityTable from '$lib/components/common/table/EntityTable'
-import { ConnectorDialog } from '$lib/components/connectors/ConnectorDialog'
+import { AnyConnectorDialog } from '$lib/components/connectors/dialogs/AnyConnector'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { connectorDescrToType, getStatusObj } from '$lib/functions/connectors'
 import {
@@ -191,7 +191,7 @@ const DataSourceTable = () => {
         />
       </Card>
 
-      {connector && <ConnectorDialog show={showDialog} setShow={setShowDialog} connector={connector} />}
+      {connector && <AnyConnectorDialog show={showDialog} setShow={setShowDialog} connector={connector} />}
     </>
   )
 }

@@ -1,18 +1,18 @@
 // InputNodes are on the left and connect to tables of the program.
 
+import { Handle, Node } from '$lib/components/streaming/builder/NodeTypes'
 import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
 import { connectorDescrToType, connectorTypeToIcon } from '$lib/functions/connectors'
+import { ConnectorDescr } from '$lib/services/manager'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
 
 import { Icon } from '@iconify/react'
-import { Box } from '@mui/material'
+import { Box, Link } from '@mui/material'
 import Avatar from '@mui/material/Avatar'
 import CardHeader from '@mui/material/CardHeader'
 import IconButton from '@mui/material/IconButton'
 
-import { Handle, Node } from '../NodeTypes'
-
-const InputNode = ({ id, data }: NodeProps) => {
+const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
   const { getNode, getEdges, deleteElements } = useReactFlow()
   const onDelete = useNodeDelete(id)
 
@@ -44,25 +44,28 @@ const InputNode = ({ id, data }: NodeProps) => {
 
   return (
     <Node>
-      <CardHeader
-        title={data.connector.name}
-        subheader={data.connector.description}
-        sx={{ py: 5, alignItems: 'flex-start' }}
-        titleTypographyProps={{ variant: 'h5' }}
-        subheaderTypographyProps={{ variant: 'body1', sx: { color: 'text.disabled' } }}
-        avatar={
-          <Avatar sx={{ mt: 1.5, width: 42, height: 42 }}>
-            <Icon icon={connectorTypeToIcon(connectorDescrToType(data.connector))} />
-          </Avatar>
-        }
-        action={
-          <Box sx={{ display: 'flex', alignItems: 'center', mt: -4, mr: -4 }} className='nodrag nopan'>
-            <IconButton size='small' aria-label='close' sx={{ color: 'text.secondary' }} onClick={() => onDelete()}>
-              <Icon icon='bx:x' fontSize={20} />
-            </IconButton>
-          </Box>
-        }
-      />
+      <Link href={`#edit/connector/${data.connector.connector_id}`}>
+        <CardHeader
+          title={data.connector.name}
+          subheader={data.connector.description}
+          sx={{ py: 5, pr: 12, alignItems: 'flex-start' }}
+          titleTypographyProps={{ variant: 'h5' }}
+          subheaderTypographyProps={{ variant: 'body1', sx: { color: 'text.disabled' } }}
+          avatar={
+            <Avatar sx={{ mt: 1.5, width: 42, height: 42 }}>
+              <Icon icon={connectorTypeToIcon(connectorDescrToType(data.connector))} />
+            </Avatar>
+          }
+        />
+      </Link>
+      <Box
+        sx={{ display: 'flex', alignItems: 'center', position: 'absolute', top: 4, right: 4 }}
+        className='nodrag nopan'
+      >
+        <IconButton size='small' aria-label='close' sx={{ color: 'text.secondary' }} onClick={() => onDelete()}>
+          <Icon icon='bx:x' fontSize={20} />
+        </IconButton>
+      </Box>
       {/* The .inputHandle is referenced by webui-tester */}
       <Handle
         className='inputHandle'

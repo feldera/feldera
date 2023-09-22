@@ -70,6 +70,12 @@ const TabKafkaInputDetails = () => {
                 onChange={(event, item) => {
                   onChange(item)
                 }}
+                ChipProps={{
+                  sx: {
+                    fontSize: '1rem',
+                    '& .MuiChip-label': { textTransform: 'none' }
+                  }
+                }}
                 renderInput={params => (
                   <TextField {...params} inputRef={ref} label='topics' placeholder='Add topic, press Enter to add...' />
                 )}

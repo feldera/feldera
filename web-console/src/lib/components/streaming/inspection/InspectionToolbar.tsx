@@ -16,7 +16,7 @@ import {
 import { RowDeleteButton } from './RowDeleteButton'
 
 export const InspectionToolbar = (
-  props: GridToolbarProps & { pipelineId: string; status: PipelineStatus; relation: string }
+  props: GridToolbarProps & { pipelineId: string; status: PipelineStatus; relation: string; isReadonly: boolean }
 ) => {
   const { csvOptions, printOptions, excelOptions } = props
   const gridRef = useGridApiContext()
@@ -44,7 +44,7 @@ export const InspectionToolbar = (
           excelOptions
         }}
       />
-      <RowDeleteButton onDeleteRows={onDeleteRows}></RowDeleteButton>
+      {!props.isReadonly && <RowDeleteButton onDeleteRows={onDeleteRows}></RowDeleteButton>}
     </GridToolbarContainer>
   )
 }

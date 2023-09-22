@@ -11,7 +11,7 @@ import { Dispatch, SetStateAction } from 'react'
 import { match } from 'ts-pattern'
 
 // Given a connector return the right dialog component for updating it.
-export const ConnectorDialog = (props: {
+export const AnyConnectorDialog = (props: {
   show: boolean
   setShow: Dispatch<SetStateAction<boolean>>
   connector: ConnectorDescr
