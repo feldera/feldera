@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::value::RawValue;
 
 mod input;
 mod output;
@@ -71,6 +70,8 @@ pub enum DebeziumOp {
     Delete,
     #[serde(rename = "u")]
     Update,
+    #[serde(rename = "r")]
+    Read,
 }
 
 /// Debezium CDC source specification describes the origin of the record,
@@ -85,24 +86,20 @@ pub struct DebeziumSource {
 ///
 /// Only the `payload` field is currently supported; other fields are ignored.
 #[derive(Debug, Deserialize)]
-pub struct DebeziumUpdate<'a> {
-    #[serde(borrow)]
-    payload: DebeziumPayload<'a>,
+pub struct DebeziumUpdate<T> {
+    payload: DebeziumPayload<T>,
 }
 
 /// Schema of the `payload` field of a Debezium data change event.
 #[derive(Debug, Deserialize)]
-pub struct DebeziumPayload<'a> {
-    #[allow(dead_code)]
-    source: Option<DebeziumSource>,
+pub struct DebeziumPayload<T> {
+    // source: Option<DebeziumSource>,
     #[allow(dead_code)]
     op: DebeziumOp,
     /// When present and not `null`, this field specifies a record to be deleted from the table.
-    #[serde(borrow)]
-    before: Option<&'a RawValue>,
+    before: Option<T>,
     /// When present and not `null`, this field specifies a record to be inserted to the table.
-    #[serde(borrow)]
-    after: Option<&'a RawValue>,
+    after: Option<T>,
 }
 
 /// A data change event in the insert/delete format.

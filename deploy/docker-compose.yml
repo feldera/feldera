@@ -37,7 +37,7 @@ services:
 
 
   redpanda:
-    profiles: ["demo"]
+    profiles: ["demo", "debezium"]
     command:
       - redpanda
       - start

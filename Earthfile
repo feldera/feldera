@@ -535,6 +535,21 @@ test-docker-compose:
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
+test-debezium:
+    FROM earthly/dind:alpine
+    COPY deploy/docker-compose.yml .
+    COPY deploy/docker-compose-debezium.yml .
+    ENV FELDERA_VERSION=latest
+    WITH DOCKER --pull postgres \
+                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+                --pull debezium/connect:2.3 \
+                --pull debezium/example-mysql:2.3 \
+                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+                --load ghcr.io/feldera/demo-container:latest=+build-demo-container
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml -f docker-compose-debezium.yml --profile debezium up --force-recreate --exit-code-from debezium-demo
+    END
+
+
 # Fetches the test binary from test-manager, and produces a container image out of it
 integration-test-container:
     FROM +install-deps
@@ -582,5 +597,6 @@ all-tests:
     BUILD +python-bindings-checker
     BUILD +test-sql
     BUILD +test-docker-compose
+    BUILD +test-debezium
     BUILD +integration-tests
 

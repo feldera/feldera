@@ -1,0 +1,56 @@
+# Additional services needed to test/demo Debezium integration
+
+services:
+  # Kafka connect.
+  # TODO: add a healthcheck to this container.
+  connect:
+    image: debezium/connect:2.3
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: "redpanda:9092"
+      GROUP_ID: "1"
+      CONFIG_STORAGE_TOPIC: "inventory.configs"
+      OFFSET_STORAGE_TOPIC: "inventory.offset"
+      STATUS_STORAGE_TOPIC: "inventory.status"
+
+  # MySQL container with a toy database used in the Debezium
+  # MySQL tutorial (based on MySQL 8.0).
+  mysql:
+    image: debezium/example-mysql:2.3
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: debezium
+      MYSQL_USER: mysqluser
+      MYSQL_PASSWORD: mysqlpw
+    healthcheck:
+      test: ["CMD", "mysqladmin" , "-u", "$$MYSQL_USER",  "-p$$MYSQL_PASSWORD" ,"ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 20s
+      # MySQL can be _very_ slow to start.
+      retries: 40
+
+  # Feldera demo container that creates a Debezium MySQL connector to
+  # sync the MySQL database with Feldera.
+  debezium-demo:
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+      connect:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.1.3}
+    environment:
+      RUST_BACKTRACE: "1"
+      REDPANDA_BROKERS: "redpanda:9092"
+      RUST_LOG: "info"
+      KAFKA_CONNECT_SERVER: "http://connect:8083"
+    command:
+      - bash
+      - -c
+      - "sleep 5 && cd demo/project_demo05-DebeziumMySQL/ && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile run"
