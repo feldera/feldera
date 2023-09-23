@@ -83,10 +83,10 @@ enum Format {
 }
 
 fn run(program: &Path, config: &Path) -> ExitCode {
-    let config = File::open(config).unwrap();
+    let config = File::open(config).expect(&format!("File not found: {}", config.display()));
     let config: Config = serde_json::from_reader(BufReader::new(config)).unwrap();
 
-    let graph = File::open(program).unwrap();
+    let graph = File::open(program).expect(&format!("File not found: {}", program.display()));
     let graph = serde_json::from_reader::<_, SqlGraph>(BufReader::new(graph))
         .unwrap()
         .rematerialize();

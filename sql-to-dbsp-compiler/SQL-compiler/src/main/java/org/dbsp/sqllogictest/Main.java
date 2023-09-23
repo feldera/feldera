@@ -68,7 +68,7 @@ public class Main {
         );
 
         String[] args = {
-                "-v", "-x",
+                "-v", "-v", "-x",
                 "-e", "jit",      // executor
         };
         if (argv.length > 0) {

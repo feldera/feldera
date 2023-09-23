@@ -81,6 +81,9 @@ import org.dbsp.util.*;
 import javax.annotation.Nullable;
 import java.util.*;
 
+import static org.apache.calcite.sql.type.OperandTypes.family;
+import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
+
 /**
  * The calcite compiler compiles SQL into Calcite RelNode representations.
  * It is stateful.
@@ -182,6 +185,26 @@ public class CalciteCompiler implements IWritesLogs {
             return false;
         }
     }
+
+    /**
+     * WRITELOG(format, arg) returns its argument 'arg' unchanged but also logs
+     * its value to stdout.  Used for debugging. */
+    public static class WriteLogFunction extends SqlFunction {
+        public WriteLogFunction() {
+            super("WRITELOG",
+                    SqlKind.OTHER_FUNCTION,
+                    ARG1,
+                    null,
+                    family(SqlTypeFamily.CHARACTER, SqlTypeFamily.ANY),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION);
+        }
+
+        @Override
+        public boolean isDeterministic() {
+            return false;
+        }
+    }
+
 
     static class RlikeFunction extends SqlFunction {
         public RlikeFunction() {
@@ -307,7 +330,7 @@ public class CalciteCompiler implements IWritesLogs {
                                 SqlLibrary.BIG_QUERY,
                                 SqlLibrary.SPARK,
                                 SqlLibrary.SPATIAL)),
-                SqlOperatorTables.of(new SqlDivideFunction(), new RlikeFunction())
+                SqlOperatorTables.of(new SqlDivideFunction(), new RlikeFunction(), new WriteLogFunction())
         );
 
         SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT

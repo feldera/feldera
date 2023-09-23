@@ -705,6 +705,22 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void writeLogTest() {
+        String query = "SELECT WRITELOG('Hello %% message\n', COL1) FROM (SELECT DISTINCT T.COL1 FROM T)";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(10))));
+    }
+
+    @Test
+    public void testDistinct() {
+        String query = "SELECT DISTINCT T.COL1 FROM T";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(10))));
+    }
+
+    @Test
     public void aggregateDistinctTest() {
         String query = "SELECT SUM(DISTINCT T.COL1), SUM(T.COL2) FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(

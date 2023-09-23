@@ -285,3 +285,10 @@ pub fn array_to_string3Nvec___(value: Vec<Option<String>>, separator: String, nu
 }
 
 some_function3!(array_to_string3Nvec, Vec<Option<String>>, String, String, String);
+
+pub fn writelog<T: std::fmt::Display>(format: String, argument: T) -> T {
+    let format_arg = format!("{}", argument);
+    let formatted = format.replace("%%", &format_arg);
+    print!("{}", formatted);
+    argument
+}

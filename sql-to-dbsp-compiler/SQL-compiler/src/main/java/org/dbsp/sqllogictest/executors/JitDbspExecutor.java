@@ -223,6 +223,8 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         for (File file: toDelete) {
             // This point won't be reached if the program fails with an exception.
             boolean success = file.delete();
+            if (!success)
+                System.err.println("Failed to delete " + file);
         }
         return result;
     }
@@ -345,7 +347,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
             }
         }
         if (description.getValueCount()
-                != rows.size() * description.columnTypes.length()) {
+                != rows.size() * Objects.requireNonNull(description.columnTypes).length()) {
             return statistics.addFailure(
                     new TestStatistics.FailedTestDescription(query,
                             "Expected " + description.getValueCount() + " rows, got "
@@ -398,7 +400,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 options.stopAtFirstError, options.verbosity);
         result.incFiles();
         int queryNo = 0;
-        int skip = 0;  // used only for debugging
+        int skip = 38;  // used only for debugging
         for (ISqlTestOperation operation : testFile.fileContents) {
             SltSqlStatement stat = operation.as(SltSqlStatement.class);
             if (stat != null) {

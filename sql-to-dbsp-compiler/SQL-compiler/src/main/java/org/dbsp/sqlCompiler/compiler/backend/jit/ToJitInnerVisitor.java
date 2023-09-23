@@ -210,7 +210,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     /**
      * A context for each block expression.
      */
-    public final List<Context> declarations;
+    final List<Context> declarations;
 
     @Nullable
     JITBlock currentBlock;
@@ -531,6 +531,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         put("extract_century_Date", new FT("dbsp.date.century", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_millennium_Date", new FT("dbsp.date.millennium", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_epoch_Date", new FT("dbsp.date.epoch", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("print", new FT("dbsp.io.str.print", new DBSPTypeVoid()));
     }};
 
     @Override
@@ -1101,8 +1102,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             case INDICATOR: {
                 if (!source.hasNull())
                     throw new InternalCompilerError("indicator called on non-nullable expression", expression);
+                // indicator(v) = v.is_null() ? 0 : 1, i.e., !v.is_null().
+                JITInstructionRef not = this.insertUnary(
+                        JITUnaryInstruction.Operation.NOT, source.isNull, JITBoolType.INSTANCE);
                 JITInstructionRef value = this.insertCast(
-                    source.isNull, JITBoolType.INSTANCE, JITI64Type.INSTANCE, "");
+                    not, JITBoolType.INSTANCE, JITI64Type.INSTANCE, "");
                 this.map(expression, new JITInstructionPair(value));
                 return VisitDecision.STOP;
             }

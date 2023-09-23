@@ -175,25 +175,33 @@ public class Utilities {
         return Utilities.arraySlice(data, start, data.length);
     }
 
-    public static void runProcess(String directory, String... commands) throws IOException, InterruptedException {
+    public static void runProcess(String directory, Map<String, String> environment, String[] commands)
+            throws IOException, InterruptedException {
         File out = File.createTempFile("out", ".tmp", new File("."));
         out.deleteOnExit();
         ProcessBuilder processBuilder = new ProcessBuilder()
                 .command(commands)
+                .directory(new File(directory))
                 // If this is called from a JUNIT test the output
                 // of the process interferes with the surefire plugin communication,
                 // so we need to redirect the output.
-                .directory(new File(directory))
                 .redirectOutput(out)
                 .redirectError(out);
+        Map<String, String> env = processBuilder.environment();
+        env.putAll(environment);
         Process process = processBuilder.start();
         int exitCode = process.waitFor();
-        if (exitCode != 0) {
+        if (true || exitCode != 0) {
             List<String> strings = Files.readAllLines(out.toPath());
             for (String s: strings)
                 System.out.println(s);
-            throw new RuntimeException("Process failed with exit code " + exitCode);
         }
+        if (exitCode != 0)
+            throw new RuntimeException("Process failed with exit code " + exitCode);
+    }
+
+    public static void runProcess(String directory, String... commands) throws IOException, InterruptedException {
+        runProcess(directory, new HashMap<>(), commands);
     }
 
     static void compile(String directory, boolean quiet, String... extraArgs) throws IOException, InterruptedException {
@@ -226,9 +234,14 @@ public class Utilities {
 
     public static void runJIT(String directory, String program, String config)
             throws IOException, InterruptedException {
-        Utilities.runProcess(directory,
-                "cargo", "run", "--release", "-p", "dataflow-jit", "--bin", "dataflow-jit",
-                "--features", "binary", "--", "run", program, config);
+        Map<String, String> env = new HashMap<>();
+        env.put("DATAFLOW_JIT_LOG", "trace,cranelift_codegen=off,dataflow_jit::codegen=off," +
+                "cranelift_jit=off,dataflow_jit::ir::function::passes=off");
+        Utilities.runProcess(directory, env,
+                new String[] {
+                        "cargo", "run", // "--release",
+                        "-p", "dataflow-jit", "--bin", "dataflow-jit",
+                        "--features", "binary", "--", "run", program, config });
     }
 
     public static <T> T last(List<T> data) {
