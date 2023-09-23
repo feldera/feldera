@@ -4,8 +4,7 @@ on:
   push:
     branches:
       - main
-  issue_comment:
-    types: [created, edited, deleted]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,21 +21,8 @@ jobs:
       issues: write
       pull-requests: write
     runs-on: [self-hosted, skylake40, benchmark-machine]
-    if: >
-      github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/benchmark') &&
-      contains('["gz","lsuresh","ryzhyk","mihaibudiu","blp","Kixiron","Karakatiza666","mohsinbeg"]', github.event.comment.user.login) || github.event_name == 'push'
     steps:
-      - uses: xt0rted/pull-request-comment-branch@v2
-        id: comment-branch
-
       - uses: actions/checkout@v3
-        if: success()
-        with:
-          ref: ${{ steps.comment-branch.outputs.head_ref }}
-
-      - uses: actions/checkout@v3
-        if: failure()
 
       - uses: earthly/actions/setup-earthly@v1
         with:
@@ -57,21 +43,9 @@ jobs:
         run: bash ./scripts/bench-publish.bash
 
       # Find comment with benchmark info if it exists
-      - name: Find Comment
-        uses: peter-evans/find-comment@v2
-        # This action fails when not running on a PR.
-        if: ${{ github.event.issue.number != '' }}
-        id: fc
-        with:
-          issue-number: ${{ github.event.issue.number }}
-          comment-author: 'github-actions[bot]'
-          body-includes: Benchmark results
-
-      - name: Create or update comment
+      - name: Create comment
         uses: peter-evans/create-or-update-comment@v2
-        if: ${{ github.event.issue.number != '' }}
         with:
-          comment-id: ${{ steps.fc.outputs.comment-id }}
-          issue-number: ${{ github.event.issue.number }}
+          issue-number: ${{ github.event.client_payload.github.payload.issue.number }}
           body-file: nexmark_comment.txt
           edit-mode: replace
