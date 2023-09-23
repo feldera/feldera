@@ -98,4 +98,10 @@ public class DBSPIfExpression extends DBSPExpression {
         }
         return builder;
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPIfExpression(this.getNode(), this.condition.deepCopy(),
+                this.positive.deepCopy(), this.negative.deepCopy());
+    }
 }

@@ -120,4 +120,15 @@ public abstract class DBSPExpression
     public boolean hasSameType(DBSPExpression other) {
         return this.type.sameType(other.type);
     }
+
+    /**
+     * Make a deep copy of this expression.
+     */
+    public abstract DBSPExpression deepCopy();
+
+    public static @Nullable DBSPExpression nullableDeepCopy(@Nullable DBSPExpression expression) {
+        if (expression == null)
+            return null;
+        return expression.deepCopy();
+    }
 }

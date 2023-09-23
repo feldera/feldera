@@ -64,4 +64,9 @@ public class DBSPCloneExpression extends DBSPExpression {
                 .append(".clone()")
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPCloneExpression(this.getNode(), this.expression.deepCopy());
+    }
 }

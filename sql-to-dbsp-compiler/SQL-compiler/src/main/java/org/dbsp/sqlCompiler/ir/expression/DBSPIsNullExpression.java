@@ -67,4 +67,9 @@ public class DBSPIsNullExpression extends DBSPExpression {
         return builder.append(this.expression)
                 .append(".is_null()");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPIsNullExpression(this.getNode(), this.expression.deepCopy());
+    }
 }

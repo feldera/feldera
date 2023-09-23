@@ -98,4 +98,9 @@ public class DBSPFieldExpression extends DBSPExpression {
                 .append(this.fieldNo)
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPFieldExpression(this.getNode(), this.expression.deepCopy(), this.fieldNo);
+    }
 }

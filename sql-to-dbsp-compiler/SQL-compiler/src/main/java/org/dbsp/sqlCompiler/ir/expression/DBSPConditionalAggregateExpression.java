@@ -36,6 +36,12 @@ public class DBSPConditionalAggregateExpression extends DBSPExpression {
     }
 
     @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPConditionalAggregateExpression(this.getNode(), this.opcode, this.getType(),
+                this.left.deepCopy(), this.right.deepCopy(), DBSPExpression.nullableDeepCopy(condition));
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);

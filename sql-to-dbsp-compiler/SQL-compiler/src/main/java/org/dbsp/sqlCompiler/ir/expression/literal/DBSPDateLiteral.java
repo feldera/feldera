@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.apache.calcite.util.DateString;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.util.IIndentStream;
@@ -39,6 +40,11 @@ public class DBSPDateLiteral extends DBSPLiteral {
     public DBSPDateLiteral(CalciteObject node, DBSPType type, @Nullable Integer value) {
         super(node, type, value == null);
         this.value = value;
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPDateLiteral(this.getNode(), this.type, this.value);
     }
 
     public DBSPDateLiteral(CalciteObject node, DBSPType type, DateString value) {

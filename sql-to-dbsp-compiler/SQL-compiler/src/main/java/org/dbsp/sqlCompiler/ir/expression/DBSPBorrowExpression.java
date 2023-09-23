@@ -74,4 +74,9 @@ public class DBSPBorrowExpression extends DBSPExpression {
                 .append(this.mut ? "mut " : "")
                 .append(this.expression);
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPBorrowExpression(this.expression.deepCopy(), this.mut);
+    }
 }

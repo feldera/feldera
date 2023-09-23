@@ -84,4 +84,10 @@ public class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
         DBSPRawTupleExpression that = (DBSPRawTupleExpression) o;
         return this.sameFields(that);
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPRawTupleExpression(
+                Linq.map(this.fields, DBSPExpression::deepCopy, DBSPExpression.class));
+    }
 }

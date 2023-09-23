@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
@@ -33,6 +34,11 @@ public class DBSPI16Literal extends DBSPIntLiteral {
         this(CalciteObject.EMPTY, new DBSPTypeInteger(CalciteObject.EMPTY, INT16, 16, true, nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPI16Literal(this.getNode(), this.type, this.value);
     }
 
     @Override

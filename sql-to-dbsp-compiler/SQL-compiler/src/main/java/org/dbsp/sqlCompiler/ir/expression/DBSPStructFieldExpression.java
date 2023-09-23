@@ -71,4 +71,9 @@ public class DBSPStructFieldExpression extends DBSPExpression {
                 .append(this.fieldName)
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPStructFieldExpression(this.expression.deepCopy(), this.fieldName);
+    }
 }

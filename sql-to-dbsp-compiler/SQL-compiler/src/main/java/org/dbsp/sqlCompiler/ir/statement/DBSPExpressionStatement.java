@@ -57,4 +57,9 @@ public class DBSPExpressionStatement extends DBSPStatement {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.expression);
     }
+
+    @Override
+    public DBSPStatement deepCopy() {
+        return new DBSPExpressionStatement(this.expression.deepCopy());
+    }
 }

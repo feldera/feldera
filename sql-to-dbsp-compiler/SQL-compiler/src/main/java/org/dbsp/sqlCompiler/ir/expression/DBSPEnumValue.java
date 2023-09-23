@@ -70,4 +70,9 @@ public class DBSPEnumValue extends DBSPExpression {
                 .append("::")
                 .append(this.constructor);
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPEnumValue(this.enumName, this.constructor);
+    }
 }

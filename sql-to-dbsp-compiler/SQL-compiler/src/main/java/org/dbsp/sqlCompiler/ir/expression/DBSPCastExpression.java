@@ -68,4 +68,9 @@ public class DBSPCastExpression extends DBSPExpression {
                 .append(this.source)
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPCastExpression(this.getNode(), this.source.deepCopy(), this.getType());
+    }
 }

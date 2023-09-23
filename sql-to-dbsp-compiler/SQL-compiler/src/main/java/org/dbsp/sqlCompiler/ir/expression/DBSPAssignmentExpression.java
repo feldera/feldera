@@ -65,4 +65,9 @@ public class DBSPAssignmentExpression extends DBSPExpression {
                 .append(" = ")
                 .append(this.right);
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPAssignmentExpression(this.left.deepCopy(), this.right.deepCopy());
+    }
 }

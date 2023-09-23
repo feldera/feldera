@@ -71,4 +71,11 @@ public class DBSPConstructorExpression extends DBSPExpression {
                 .join(", ", this.arguments)
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPConstructorExpression(
+                this.function.deepCopy(), this.type,
+                Linq.map(this.arguments, DBSPExpression::deepCopy, DBSPExpression.class));
+    }
 }

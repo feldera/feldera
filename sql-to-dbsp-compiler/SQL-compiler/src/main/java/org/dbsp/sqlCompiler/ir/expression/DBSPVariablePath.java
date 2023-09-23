@@ -82,4 +82,9 @@ public class DBSPVariablePath extends DBSPExpression {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.variable);
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPVariablePath(this.variable, this.type);
+    }
 }

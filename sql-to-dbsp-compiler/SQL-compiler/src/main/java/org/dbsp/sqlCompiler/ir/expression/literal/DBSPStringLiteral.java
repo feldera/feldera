@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.util.IIndentStream;
@@ -58,6 +59,11 @@ public class DBSPStringLiteral extends DBSPLiteral {
         super(node, type, value == null);
         this.charset = charset;
         this.value = value;
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPStringLiteral(this.getNode(), this.type, this.value, this.charset);
     }
 
     @Override

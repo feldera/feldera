@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
@@ -64,6 +65,11 @@ public class DBSPU64Literal extends DBSPIntLiteral {
 
     public DBSPU64Literal(@Nullable Long value, boolean nullable) {
         this(CalciteObject.EMPTY, value, nullable);
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPU64Literal(this.getNode(), this.type, this.value);
     }
 
     @Override

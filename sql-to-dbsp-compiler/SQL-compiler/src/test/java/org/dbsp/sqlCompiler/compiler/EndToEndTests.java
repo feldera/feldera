@@ -697,6 +697,14 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void countDistinctTest() {
+        String query = "SELECT 100 + COUNT(DISTINCT - T.COL5) FROM T";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI64Literal(101))));
+    }
+
+    @Test
     public void aggregateDistinctTest() {
         String query = "SELECT SUM(DISTINCT T.COL1), SUM(T.COL2) FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(

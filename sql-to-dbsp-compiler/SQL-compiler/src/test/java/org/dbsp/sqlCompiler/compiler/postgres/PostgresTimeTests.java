@@ -151,4 +151,13 @@ public class PostgresTimeTests extends PostgresBaseTest {
                 "      13\n" +
                 "(1 row)");
     }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6015")
+    public void illegalUnits() {
+        this.shouldFail("SELECT EXTRACT(DAY FROM TIME '13:30:25.575401')", "??");
+        // Following don't work in Calcite
+        // SELECT EXTRACT(FORTNIGHT FROM TIME '13:30:25.575401')
+        // SELECT EXTRACT(TIMEZONE FROM TIME '13:30:25.575401')
+        this.shouldFail("SELECT EXTRACT(EPOCH FROM TIME '2020-05-26 13:30:25.575401')", "");
+    }
 }

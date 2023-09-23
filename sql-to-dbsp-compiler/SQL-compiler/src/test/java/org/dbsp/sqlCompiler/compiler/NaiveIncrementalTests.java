@@ -119,6 +119,16 @@ public class NaiveIncrementalTests extends EndToEndTests {
     }
 
     @Test @Override
+    public void countDistinctTest() {
+        String query = "SELECT 100 + COUNT(DISTINCT - T.COL5) FROM T";
+        this.testAggregate(query,
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(
+                                new DBSPI64Literal(101))),
+                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPI64Literal(100))));
+    }
+
+    @Test @Override
     public void inTest() {
         String query = "SELECT 3 in (SELECT COL5 FROM T)";
         this.testAggregate(query,

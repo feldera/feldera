@@ -60,6 +60,11 @@ public class DBSPClosureExpression extends DBSPExpression {
         this(CalciteObject.EMPTY, body, variables);
     }
 
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPClosureExpression(this.getNode(), this.body.deepCopy(), this.parameters);
+    }
+
     public DBSPExpression call(DBSPExpression... arguments) {
         if (arguments.length != this.parameters.length)
             throw new InternalCompilerError("Received " + arguments.length + " but need " + this.parameters.length, this);

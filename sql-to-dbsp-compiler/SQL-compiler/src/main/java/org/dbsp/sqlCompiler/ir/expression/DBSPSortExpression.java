@@ -81,4 +81,10 @@ public class DBSPSortExpression extends DBSPExpression {
                 .append(this.comparator)
                 .append(")");
     }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPSortExpression(this.getNode(), this.elementType,
+                this.comparator.deepCopy().to(DBSPComparatorExpression.class));
+    }
 }

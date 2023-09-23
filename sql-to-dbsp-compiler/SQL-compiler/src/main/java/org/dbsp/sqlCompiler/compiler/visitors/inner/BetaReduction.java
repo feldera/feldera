@@ -35,7 +35,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
  * I.e., replace an application of a closure with the closure
  * body with arguments substituted.
  * This code makes some simplifying assumptions:
- * - all parameter are simple path patterns
  * - arguments do not have side effects.
  */
 public class BetaReduction extends InnerRewriteVisitor {
@@ -76,7 +75,7 @@ public class BetaReduction extends InnerRewriteVisitor {
     @Override
     public VisitDecision preorder(DBSPVariablePath variable) {
         DBSPExpression replacement = this.context.lookup(variable);
-        this.map(variable, replacement);
+        this.map(variable, replacement.deepCopy());
         return VisitDecision.STOP;
     }
 

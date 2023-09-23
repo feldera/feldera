@@ -83,6 +83,13 @@ public class DBSPFlatmap extends DBSPExpression {
     }
 
     @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPFlatmap(this.getNode(),
+                this.inputElementType, this.collectionFieldIndex,
+                this.outputFieldIndexes, this.indexType);
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         if (visitor.preorder(this).stop()) return;
         visitor.push(this);

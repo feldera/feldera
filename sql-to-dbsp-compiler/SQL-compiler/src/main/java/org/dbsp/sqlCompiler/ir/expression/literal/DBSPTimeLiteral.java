@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.util.IIndentStream;
@@ -39,6 +40,11 @@ public class DBSPTimeLiteral extends DBSPLiteral {
     public DBSPTimeLiteral(CalciteObject node, DBSPType type, @Nullable TimeString value) {
         super(node, type, value == null);
         this.value = value;
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPTimeLiteral(this.getNode(), this.type, this.value);
     }
 
     public DBSPTimeLiteral() {

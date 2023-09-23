@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
@@ -62,6 +63,11 @@ public class DBSPU32Literal extends DBSPIntLiteral {
             throw new InternalCompilerError("Null value with non-nullable type", this);
         if (value != null && value < 0)
             throw new InternalCompilerError("Negative value for unsigned literal", this);
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPU32Literal(this.getNode(), this.type, this.value);
     }
 
     @Override
