@@ -210,6 +210,8 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                 return JITStringType.INSTANCE;
             case DATE:
                 return JITDateType.INSTANCE;
+            case TIME:
+                return JITTimeType.INSTANCE;
             case TIMESTAMP:
                 return JITTimestampType.INSTANCE;
             case USIZE:

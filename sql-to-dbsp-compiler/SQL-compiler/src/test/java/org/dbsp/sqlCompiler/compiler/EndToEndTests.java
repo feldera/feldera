@@ -200,6 +200,13 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(lit, lit));
     }
 
+    @Test
+    public void testCast() {
+        String query = "SELECT CAST(T.COL1 AS VARCHAR) FROM T";
+        DBSPExpression lit = new DBSPTupleExpression(new DBSPStringLiteral("10"));
+        this.testQuery(query, new DBSPZSetLiteral.Contents(lit, lit));
+    }
+
     @Test @Ignore("Fails with overflow.  What should the result be?")
     public void testOverflow() {
         String query = "SELECT " + Integer.MIN_VALUE + "/ -1";

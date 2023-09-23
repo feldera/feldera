@@ -6,7 +6,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
-import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -57,7 +56,7 @@ public class ExpandWritelog extends InnerRewriteVisitor {
                 DBSPExpression print = new DBSPApplyExpression(
                         expression.getNode(), "print", new DBSPTypeVoid(), castToStr);
                 statements.add(new DBSPExpressionStatement(print));
-                result = new DBSPBlockExpression(statements, arguments[1]);
+                result = new DBSPBlockExpression(statements, arguments[1].deepCopy());
             }
         }
 

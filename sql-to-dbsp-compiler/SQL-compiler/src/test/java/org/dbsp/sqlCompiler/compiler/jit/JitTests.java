@@ -6,12 +6,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -23,14 +18,6 @@ public class JitTests extends EndToEndTests {
     public DBSPCompiler testCompiler() {
         CompilerOptions options = this.testOptions(false, true, true);
         return new DBSPCompiler(options);
-    }
-
-    @Test
-    public void writeLogTest() {
-        String query = "SELECT WRITELOG('Hello %% message\n', COL1) FROM (SELECT DISTINCT T.COL1 FROM T)";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(10))));
     }
 
     // All the @Ignore-ed tests below should eventually pass.
