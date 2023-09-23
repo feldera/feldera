@@ -4,8 +4,7 @@ on:
   push:
     branches:
       - main
-  issue_comment:
-    types: [created, edited, deleted]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,57 +20,42 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-    runs-on: [self-hosted, skylake40, benchmark-machine]
-    if: >
-      github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/benchmark') &&
-      contains('["gz","lsuresh","ryzhyk","mihaibudiu","blp","Kixiron","Karakatiza666","mohsinbeg"]', github.event.comment.user.login) || github.event_name == 'push'
+    #runs-on: [self-hosted, skylake40, benchmark-machine]
+    runs-on: ubuntu-latest
     steps:
-      - uses: xt0rted/pull-request-comment-branch@v2
-        id: comment-branch
-
       - uses: actions/checkout@v3
-        if: success()
-        with:
-          ref: ${{ steps.comment-branch.outputs.head_ref }}
 
-      - uses: actions/checkout@v3
-        if: failure()
+      #- uses: earthly/actions/setup-earthly@v1
+      #  with:
+      #    version: v0.7.17
 
-      - uses: earthly/actions/setup-earthly@v1
-        with:
-          version: v0.7.17
+      #- name: MUIX license
+      #  run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-console/.env && cat web-console/.env
+      #  env:
+      #    muix_license: ${{ secrets.muix_license }}
 
-      - name: MUIX license
-        run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-console/.env && cat web-console/.env
-        env:
-          muix_license: ${{ secrets.muix_license }}
+      #- name: Earthly version
+      #  run: earthly --version
 
-      - name: Earthly version
-        run: earthly --version
+      #- name: Run Benchmarks
+      #  run: earthly --verbose -P +benchmark
 
-      - name: Run Benchmarks
-        run: earthly --verbose -P +benchmark
+      #- name: Publish results
+      #  run: bash ./scripts/bench-publish.bash
 
-      - name: Publish results
-        run: bash ./scripts/bench-publish.bash
+      - name: Print the revision
+        run: echo "Revision ${{ github.sha }}"
+
+      - name: Print the branch
+        run: echo "Branch ${{ github.ref }}"
 
       # Find comment with benchmark info if it exists
-      - name: Find Comment
-        uses: peter-evans/find-comment@v2
-        # This action fails when not running on a PR.
-        if: ${{ github.event.issue.number != '' }}
-        id: fc
-        with:
-          issue-number: ${{ github.event.issue.number }}
-          comment-author: 'github-actions[bot]'
-          body-includes: Benchmark results
-
-      - name: Create or update comment
+      - name: Create comment
         uses: peter-evans/create-or-update-comment@v2
-        if: ${{ github.event.issue.number != '' }}
         with:
-          comment-id: ${{ steps.fc.outputs.comment-id }}
-          issue-number: ${{ github.event.issue.number }}
-          body-file: nexmark_comment.txt
+          token: ${{ secrets.PAT }}
+          repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
+          issue-number: ${{ github.event.client_payload.github.payload.issue.number }}
+          #body-file: nexmark_comment.txt
+          body: blah blah blah
           edit-mode: replace
