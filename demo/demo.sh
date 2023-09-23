@@ -4,11 +4,13 @@ THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 ROOT="${THIS_DIR}/../"
 SERVER_DIR="${ROOT}/crates/pipeline_manager/"
 
-export REDPANDA_BROKERS=localhost:9092
+# docker kill redpanda
+# docker rm redpanda
+# docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 || { echo 'Failed to start RedPanda container' ; exit 1; }
 
-docker kill redpanda
-docker rm redpanda
-docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 || { echo 'Failed to start RedPanda container' ; exit 1; }
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-debezium.yml up redpanda connect mysql -d --force-recreate -V
+
+export REDPANDA_BROKERS=localhost:19092
 
 # Kill the entire process group (including processes spawned by prepare_demo_data.sh) on shutdown.
 trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT

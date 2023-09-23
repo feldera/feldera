@@ -110,7 +110,7 @@ impl<'a> UpdateFormat for InsDelUpdate<&'a RawValue> {
     }
 }
 
-impl<'de> UpdateFormat for DebeziumUpdate<'de> {
+impl<'a> UpdateFormat for DebeziumUpdate<&'a RawValue> {
     fn error() -> &'static str {
         "error deserializing JSON string as a Debezium CDC event"
     }
@@ -391,7 +391,7 @@ impl JsonParser {
                     self.apply_update::<InsDelUpdate<_>>(update, &mut errors)
                 }
                 JsonUpdateFormat::Debezium => {
-                    self.apply_update::<DebeziumUpdate>(update, &mut errors)
+                    self.apply_update::<DebeziumUpdate<_>>(update, &mut errors)
                 }
                 JsonUpdateFormat::Weighted => {
                     self.apply_update::<WeightedUpdate<_>>(update, &mut errors)
