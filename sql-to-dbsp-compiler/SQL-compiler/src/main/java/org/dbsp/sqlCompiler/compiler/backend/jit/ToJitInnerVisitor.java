@@ -420,11 +420,18 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
 
             next = nextBlock.createDestination();
             this.setCurrentBlock(onNullBlock);
-            DBSPLiteral defaultValue = resultType
-                    .setMayBeNull(false)
-                    .to(DBSPTypeBaseType.class)
-                    .defaultValue();
-            JITInstructionPair defJitValue = this.accept(defaultValue);
+            JITInstructionPair defJitValue;
+            if (resultType.code != VOID) {
+                DBSPExpression defaultValue = resultType
+                        .setMayBeNull(false)
+                        .to(DBSPTypeBaseType.class)
+                        .defaultValue();
+                defJitValue = this.accept(defaultValue);
+            } else {
+                defJitValue = new JITConstantInstruction(
+                        this.nextInstructionId(), expression.type, literal, true);
+                this.add(defJitValue);
+            }
             next.addArgument(defJitValue.value);
             terminator = new JITJumpTerminator(next);
             onNullBlock.terminate(terminator);
