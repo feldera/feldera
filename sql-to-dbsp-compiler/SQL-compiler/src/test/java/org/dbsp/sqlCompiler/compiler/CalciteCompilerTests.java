@@ -172,6 +172,19 @@ public class CalciteCompilerTests {
     }
 
     @Test
+    public void primaryKeyTest0() throws SqlParseException {
+        // standard syntax for primary keys
+        String query =
+                "create table git_commit (\n" +
+                        "    git_commit_id bigint not null," +
+                        "    PRIMARY KEY (git_commit_id)\n" +
+                        ")";
+        CalciteCompiler calcite = this.getCompiler();
+        SqlNode node = calcite.parseStatements(query);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
     public void foreignKeyTest() throws SqlParseException {
         // MYSQL syntax for FOREIGN KEY
         String query = "-- Commit inside a Git repo.\n" +
