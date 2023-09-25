@@ -191,7 +191,8 @@ public class Utilities {
         env.putAll(environment);
         Process process = processBuilder.start();
         int exitCode = process.waitFor();
-        if (true || exitCode != 0) {
+        if (exitCode != 0) {
+            // Only print process output if an error occurred.
             List<String> strings = Files.readAllLines(out.toPath());
             for (String s: strings)
                 System.out.println(s);

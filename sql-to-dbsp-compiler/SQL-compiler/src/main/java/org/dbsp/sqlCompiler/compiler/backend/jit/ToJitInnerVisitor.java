@@ -428,9 +428,12 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                         .defaultValue();
                 defJitValue = this.accept(defaultValue);
             } else {
-                defJitValue = new JITConstantInstruction(
-                        this.nextInstructionId(), expression.type, literal, true);
-                this.add(defJitValue);
+                DBSPLiteral literal = new DBSPUnitLiteral(CalciteObject.EMPTY, new DBSPTypeTuple(), false);
+                JITLiteral jitLiteral = new JITLiteral(literal, JITUnitType.INSTANCE);
+                JITInstruction nil = new JITConstantInstruction(
+                        this.nextInstructionId(), JITUnitType.INSTANCE, jitLiteral, true);
+                this.add(nil);
+                defJitValue = new JITInstructionPair(nil);
             }
             next.addArgument(defJitValue.value);
             terminator = new JITJumpTerminator(next);

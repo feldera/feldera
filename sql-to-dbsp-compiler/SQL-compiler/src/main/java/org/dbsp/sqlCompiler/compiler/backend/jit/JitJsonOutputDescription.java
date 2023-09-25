@@ -143,7 +143,7 @@ public class JitJsonOutputDescription extends JitIODescription {
         ObjectNode json = kind.putObject("Json");
         ObjectNode mappings = json.putObject("mappings");
         for (int i = 0; i < this.columns.size(); i++)
-            mappings.put(Integer.toString(i), this.columns.get(i).asJson());
+            mappings.set(Integer.toString(i), this.columns.get(i).asJson());
         return result;
     }
 
