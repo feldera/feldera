@@ -8,4 +8,9 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 public interface IErrorReporter {
     void reportError(SourcePositionRange range, boolean warning,
                      String errorType, String message);
+
+    /**
+     * True if any error (but not a warning) has been reported.
+     */
+    boolean hasErrors();
 }

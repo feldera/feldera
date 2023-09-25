@@ -10,6 +10,7 @@ import net.hydromatic.sqllogictest.SqlTestQueryOutputDescription;
 import net.hydromatic.sqllogictest.TestStatistics;
 import net.hydromatic.sqllogictest.executors.JdbcExecutor;
 import net.hydromatic.sqllogictest.executors.SqlSltTestExecutor;
+import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -314,8 +315,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         }
     }
 
-    static final IErrorReporter errorReporter = (range, warning, errorType, message)
-            -> System.err.println(range + ": ERROR " + errorType + ": " + message);
+    static final IErrorReporter errorReporter = new StderrErrorReporter();
 
     /**
      * Validate output.  Return 'true' if we need to stop executing.
