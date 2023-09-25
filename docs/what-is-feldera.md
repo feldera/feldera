@@ -16,7 +16,7 @@ site explains the concepts behind Feldera Platform and how to use it
 through its user interface and API.
 
 Feldera Platform's implementation is based on a streaming algebra called "DataBase
-Stream Processor", [DBSP](/spec.pdf).
+Stream Processor", [DBSP](https://www.feldera.com/vldb23.pdf).
 
 ## Concepts
 
