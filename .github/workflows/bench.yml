@@ -45,6 +45,7 @@ jobs:
       # Find comment with benchmark info if it exists
       - name: Create comment
         uses: peter-evans/create-or-update-comment@v2
+        if: ${{ github.event.client_payload.github.payload.issue.number != '' }}
         with:
           issue-number: ${{ github.event.client_payload.github.payload.issue.number }}
           body-file: nexmark_comment.txt
