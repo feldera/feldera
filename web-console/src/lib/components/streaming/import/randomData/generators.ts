@@ -108,7 +108,6 @@ const getDefaultRngMethodName = (sqlType: ColumnType): string =>
     .with({ type: 'TIME' }, () => 'Uniform')
     .with({ type: 'TIMESTAMP' }, () => 'Uniform')
     .with({ type: 'DATE' }, () => 'Uniform')
-    .with({ type: 'GEOMETRY' }, () => 'Uniform')
     .with({ type: 'ARRAY' }, () => {
       assert(sqlType.component !== null && sqlType.component !== undefined, 'Array type must have a component type')
       return getDefaultRngMethodName(sqlType.component)
@@ -191,11 +190,27 @@ export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
         assert(type.component !== undefined && type.component !== null)
         return transformToArrayGenerator(type, columnTypeToRngOptions(type.component))
       })
-      .otherwise(() => {
-        throw new Error('unsupported type for RNG')
-      })
+      .otherwise(() => UNSUPPORTED_TYPE_GENERATORS)
   )
 }
+
+const UNSUPPORTED_TYPE_GENERATORS: IRngGenMethod[] = [
+  {
+    title: 'Constant',
+    category: Categories.DEFAULT,
+    generator: (ct, settings) => '',
+    form_fields: field => [
+      {
+        sm: 4,
+        component: TextField,
+        props: {
+          name: FieldNames.VALUE,
+          type: 'string'
+        }
+      }
+    ]
+  }
+]
 
 // Generators for boolean.
 const BOOLEAN_GENERATORS: IRngGenMethod[] = [
