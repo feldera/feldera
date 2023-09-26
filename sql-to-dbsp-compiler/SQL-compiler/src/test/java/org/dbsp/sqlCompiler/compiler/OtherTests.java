@@ -29,6 +29,8 @@ import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.schema.SchemaPlus;
+import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
@@ -140,7 +142,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         List<JitFileAndSerialization> outputFiles = new ArrayList<>();
         for (DBSPZSetLiteral.Contents outputData: data.outputs) {
             File output = File.createTempFile("output", ".json", baseDirectory);
-            ToCsvVisitor.toCsv(compiler, output, new DBSPZSetLiteral(compiler.getWeightTypeImplementation(), outputData));
             outputFiles.add(new JitFileAndSerialization(
                     output.getAbsolutePath(),
                     JitSerializationKind.Json));
@@ -343,8 +344,60 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
+    public void validateKey() {
+        String ddl =    "create table git_commit (\n" +
+                        "    git_commit_id bigint not null,\n" +
+                        "    PRIMARY KEY (unknown)\n" +
+                        ")";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.compileStatement(ddl);
+        CompilerMessages messages = compiler.messages;
+        Assert.assertTrue(messages.toString().contains("does not correspond to a column"));
+    }
+
+    @Test
+    public void duplicatedKey() {
+        String ddl =    "create table git_commit (\n" +
+                "    git_commit_id bigint not null PRIMARY KEY,\n" +
+                "    PRIMARY KEY (git_commit_id)\n" +
+                ")";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.compileStatement(ddl);
+        CompilerMessages messages = compiler.messages;
+        Assert.assertTrue(messages.toString().contains("in table with another PRIMARY KEY constraint"));
+    }
+
+    @Test
+    public void duplicatedKey0() {
+        String ddl =    "create table git_commit (\n" +
+                "    git_commit_id bigint not null,\n" +
+                "    PRIMARY KEY (git_commit_id, git_commit_id)\n" +
+                ")";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.compileStatement(ddl);
+        CompilerMessages messages = compiler.messages;
+        Assert.assertTrue(messages.toString().contains("already declared as key"));
+    }
+
+    @Test
+    public void emptyPrimaryKey() {
+        String ddl =    "create table git_commit (\n" +
+                "    git_commit_id bigint not null,\n" +
+                "    PRIMARY KEY ()\n" +
+                ")";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.compileStatement(ddl);
+        CompilerMessages messages = compiler.messages;
+        Assert.assertTrue(messages.toString().contains("Error parsing SQL"));
+    }
+
+    @Test
     public void rustCsvTest2() throws IOException, InterruptedException {
-        DBSPCompiler compiler = testCompiler();
+        DBSPCompiler compiler = this.testCompiler();
         DBSPZSetLiteral data = new DBSPZSetLiteral(
                 new DBSPTypeWeight(),
                 new DBSPTupleExpression(new DBSPI32Literal(1, true)),

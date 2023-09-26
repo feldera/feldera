@@ -83,10 +83,10 @@ enum Format {
 }
 
 fn run(program: &Path, config: &Path) -> ExitCode {
-    let config = File::open(config).unwrap();
+    let config = File::open(config).expect(&format!("File not found: {}", config.display()));
     let config: Config = serde_json::from_reader(BufReader::new(config)).unwrap();
 
-    let graph = File::open(program).unwrap();
+    let graph = File::open(program).expect(&format!("File not found: {}", program.display()));
     let graph = serde_json::from_reader::<_, SqlGraph>(BufReader::new(graph))
         .unwrap()
         .rematerialize();
@@ -104,7 +104,12 @@ fn run(program: &Path, config: &Path) -> ExitCode {
 
     let (mut demands, mut inputs) = (Demands::new(), Vec::with_capacity(config.inputs.len()));
     for (name, input) in config.inputs {
-        let (node, layout) = source_names[&name];
+        let (node, layout) = if let Some((node, layout)) = source_names.get(&name) {
+            (node, *layout)
+        } else {
+            // Allow specifying unused inputs
+            continue;
+        };
         let format = match input.kind {
             InputKind::Json(mut mappings) => {
                 // Correct the layout of `mappings`
@@ -160,10 +165,10 @@ fn run(program: &Path, config: &Path) -> ExitCode {
             Format::Json(demand) => {
                 // TODO: Create & append? Make it configurable?
                 let file = BufReader::new(File::open(file).unwrap());
-                circuit.append_json_input(target, demand, file).unwrap();
+                circuit.append_json_input(*target, demand, file).unwrap();
             }
 
-            Format::Csv(demand) => circuit.append_csv_input(target, demand, &file),
+            Format::Csv(demand) => circuit.append_csv_input(*target, demand, &file),
         }
     }
 

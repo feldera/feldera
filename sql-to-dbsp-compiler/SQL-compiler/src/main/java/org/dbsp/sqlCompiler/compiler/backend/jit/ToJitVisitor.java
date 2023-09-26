@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.*;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
@@ -31,10 +32,6 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITFunction;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITParameter;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITParameterMapping;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.cfg.JITBlock;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITTupleLiteral;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITZSetLiteral;
@@ -213,6 +210,8 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                 return JITStringType.INSTANCE;
             case DATE:
                 return JITDateType.INSTANCE;
+            case TIME:
+                return JITTimeType.INSTANCE;
             case TIMESTAMP:
                 return JITTimestampType.INSTANCE;
             case USIZE:
@@ -221,6 +220,8 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                 return JITISizeType.INSTANCE;
             case DECIMAL:
                 return JITDecimalType.INSTANCE;
+            case VOID:
+                return JITUnitType.INSTANCE;
             default:
                 break;
         }
@@ -543,6 +544,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
 
     public static JITProgram circuitToJIT(DBSPCompiler compiler, DBSPCircuit circuit) {
         Passes rewriter = new Passes(compiler);
+        rewriter.add(new ExpandWritelog(compiler));
         rewriter.add(new BlockClosures(compiler));
         rewriter.add(new ResolveWeightType(compiler, compiler.getWeightTypeImplementation()).circuitRewriter());
         rewriter.add(new EliminateMulWeight(compiler).circuitRewriter());

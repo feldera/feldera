@@ -200,6 +200,13 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(lit, lit));
     }
 
+    @Test
+    public void testCast() {
+        String query = "SELECT CAST(T.COL1 AS VARCHAR) FROM T";
+        DBSPExpression lit = new DBSPTupleExpression(new DBSPStringLiteral("10"));
+        this.testQuery(query, new DBSPZSetLiteral.Contents(lit, lit));
+    }
+
     @Test @Ignore("Fails with overflow.  What should the result be?")
     public void testOverflow() {
         String query = "SELECT " + Integer.MIN_VALUE + "/ -1";
@@ -702,6 +709,31 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
                         new DBSPI64Literal(101))));
+    }
+
+    @Test
+    public void writeLogTest() {
+        String query = "SELECT WRITELOG('Hello %% message\n', COL1) FROM (SELECT DISTINCT T.COL1 FROM T)";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(10))));
+    }
+
+    @Test
+    public void distinctTest() {
+        String query = "SELECT DISTINCT T.COL1 FROM T";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(10))));
+    }
+
+    @Test
+    public void nullDistinctTest() {
+        String query = "SELECT DISTINCT 0 + NULL, T.COL1 FROM T";
+        DBSPI32Literal ten = new DBSPI32Literal(10);
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(DBSPLiteral.none(ten.getType().setMayBeNull(true)),
+                        ten)));
     }
 
     @Test

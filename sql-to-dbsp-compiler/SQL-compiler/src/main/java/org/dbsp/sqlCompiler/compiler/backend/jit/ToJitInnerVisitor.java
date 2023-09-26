@@ -47,15 +47,7 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITSetNullInstr
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITStoreInstruction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITUnaryInstruction;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITUninitInstruction;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITBoolType;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITDateType;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITI64Type;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITRowType;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITScalarType;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITStringType;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITTimestampType;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITUnitType;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.*;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -78,7 +70,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.*;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.*;
 
 /**
  * Generate code for the JIT compiler.
@@ -210,7 +202,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     /**
      * A context for each block expression.
      */
-    public final List<Context> declarations;
+    final List<Context> declarations;
 
     @Nullable
     JITBlock currentBlock;
@@ -419,21 +411,29 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             Objects.requireNonNull(nextBlock);
             Objects.requireNonNull(onNonNullBlock);
             Objects.requireNonNull(onNullBlock);
-            JITInstructionRef param = this.addParameter(nextBlock, jitResultType);
 
             JITBlockDestination next = nextBlock.createDestination();
-            next.addArgument(call.getInstructionReference());
+            JITInstructionRef param;
+            if (resultType.code != VOID) {
+                param = this.addParameter(nextBlock, jitResultType);
+                next.addArgument(call.getInstructionReference());
+            } else {
+                param = JITInstructionRef.INVALID;
+            }
             JITJumpTerminator terminator = new JITJumpTerminator(next);
             onNonNullBlock.terminate(terminator);
 
             next = nextBlock.createDestination();
             this.setCurrentBlock(onNullBlock);
-            DBSPLiteral defaultValue = resultType
-                    .setMayBeNull(false)
-                    .to(DBSPTypeBaseType.class)
-                    .defaultValue();
-            JITInstructionPair defJitValue = this.accept(defaultValue);
-            next.addArgument(defJitValue.value);
+            JITInstructionPair defJitValue;
+            if (resultType.code != VOID) {
+                DBSPExpression defaultValue = resultType
+                        .setMayBeNull(false)
+                        .to(DBSPTypeBaseType.class)
+                        .defaultValue();
+                defJitValue = this.accept(defaultValue);
+                next.addArgument(defJitValue.value);
+            }
             terminator = new JITJumpTerminator(next);
             onNullBlock.terminate(terminator);
 
@@ -531,6 +531,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         put("extract_century_Date", new FT("dbsp.date.century", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_millennium_Date", new FT("dbsp.date.millennium", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_epoch_Date", new FT("dbsp.date.epoch", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("print", new FT("dbsp.io.str.print", new DBSPTypeVoid()));
     }};
 
     @Override
@@ -583,8 +584,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     public VisitDecision preorder(DBSPCastExpression expression) {
         JITScalarType sourceType = convertScalarType(expression.source);
         JITScalarType destinationType = convertScalarType(expression);
-        if (destinationType.is(JITStringType.class) &&
-                (sourceType.is(JITDateType.class) || sourceType.is(JITTimestampType.class))) {
+        if (destinationType.is(JITStringType.class)) {
             // These are implemented using function calls.
             DBSPExpression empty = new DBSPStringLiteral("").applyClone();
             // Write appends the argument to the supplied string
@@ -595,14 +595,24 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         }
         if (sourceType.is(JITStringType.class) && !destinationType.is(JITStringType.class)) {
             JITInstructionPair result;
-            if (destinationType.is(JITTimestampType.class) ||
-                destinationType.is(JITDateType.class)) {
+            if (destinationType.code == TIMESTAMP ||
+                    destinationType.code == DATE ||
+                    destinationType.code == TIME) {
                 // two arguments needed.
                 String format;
-                if (destinationType.is(JITTimestampType.class))
-                    format = "%Y-%m-%d %H:%M:%S%.f";
-                else
-                    format = "%Y-%m-%d";
+                switch (destinationType.code) {
+                    case TIME:
+                        format = "%H:%M:%S%.f";
+                        break;
+                    case TIMESTAMP:
+                        format = "%Y-%m-%d %H:%M:%S%.f";
+                        break;
+                    case DATE:
+                        format = "%Y-%m-%d";
+                        break;
+                    default:
+                        throw new InternalCompilerError("Should be unreachable");
+                }
                 DBSPLiteral lit = new DBSPStringLiteral(format);
                 result = this.createFunctionCall("dbsp.str.parse", expression,
                         // format seems to come second
@@ -1101,8 +1111,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             case INDICATOR: {
                 if (!source.hasNull())
                     throw new InternalCompilerError("indicator called on non-nullable expression", expression);
+                // indicator(v) = v.is_null() ? 0 : 1, i.e., !v.is_null().
+                JITInstructionRef not = this.insertUnary(
+                        JITUnaryInstruction.Operation.NOT, source.isNull, JITBoolType.INSTANCE);
                 JITInstructionRef value = this.insertCast(
-                    source.isNull, JITBoolType.INSTANCE, JITI64Type.INSTANCE, "");
+                    not, JITBoolType.INSTANCE, JITI64Type.INSTANCE, "");
                 this.map(expression, new JITInstructionPair(value));
                 return VisitDecision.STOP;
             }

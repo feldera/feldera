@@ -641,6 +641,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                             name += "N";
                         return new DBSPApplyExpression(node, name, type, ops.get(0));
                     }
+                    case "writelog":
+                        return new DBSPApplyExpression(node, opName, type, ops.get(0), ops.get(1));
                     case "repeat":
                     case "left":
                         return this.compileFunction(call, node, type, ops, 2);

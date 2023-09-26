@@ -47,6 +47,7 @@ import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.ddl.SqlCreateView;
 import org.apache.calcite.sql.ddl.SqlDropTable;
+import org.apache.calcite.sql.ddl.SqlKeyConstraint;
 import org.apache.calcite.sql.fun.SqlLibrary;
 import org.apache.calcite.sql.fun.SqlLibraryOperatorTableFactory;
 import org.apache.calcite.sql.parser.SqlParseException;
@@ -70,6 +71,7 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputTableDescription;
 import org.dbsp.sqlCompiler.compiler.OutputViewDescription;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -80,6 +82,9 @@ import org.dbsp.util.*;
 
 import javax.annotation.Nullable;
 import java.util.*;
+
+import static org.apache.calcite.sql.type.OperandTypes.family;
+import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
 
 /**
  * The calcite compiler compiles SQL into Calcite RelNode representations.
@@ -182,6 +187,26 @@ public class CalciteCompiler implements IWritesLogs {
             return false;
         }
     }
+
+    /**
+     * WRITELOG(format, arg) returns its argument 'arg' unchanged but also logs
+     * its value to stdout.  Used for debugging. */
+    public static class WriteLogFunction extends SqlFunction {
+        public WriteLogFunction() {
+            super("WRITELOG",
+                    SqlKind.OTHER_FUNCTION,
+                    ARG1,
+                    null,
+                    family(SqlTypeFamily.CHARACTER, SqlTypeFamily.ANY),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION);
+        }
+
+        @Override
+        public boolean isDeterministic() {
+            return false;
+        }
+    }
+
 
     static class RlikeFunction extends SqlFunction {
         public RlikeFunction() {
@@ -307,7 +332,7 @@ public class CalciteCompiler implements IWritesLogs {
                                 SqlLibrary.BIG_QUERY,
                                 SqlLibrary.SPARK,
                                 SqlLibrary.SPATIAL)),
-                SqlOperatorTables.of(new SqlDivideFunction(), new RlikeFunction())
+                SqlOperatorTables.of(new SqlDivideFunction(), new RlikeFunction(), new WriteLogFunction())
         );
 
         SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT
@@ -574,9 +599,49 @@ public class CalciteCompiler implements IWritesLogs {
 
     List<RelColumnMetadata> createColumnsMetadata(SqlNodeList list) {
         List<RelColumnMetadata> result = new ArrayList<>();
-        boolean error = false;
         int index = 0;
         Map<String, SqlNode> columnDefinition = new HashMap<>();
+        SqlKeyConstraint key = null;
+        Map<String, SqlIdentifier> primaryKeys = new HashMap<>();
+
+        // First scan for standard style PRIMARY KEY constraints.
+        for (SqlNode col: Objects.requireNonNull(list)) {
+            if (col instanceof SqlKeyConstraint) {
+                if (key != null) {
+                    this.errorReporter.reportError(new SourcePositionRange(col.getParserPosition()), false,
+                            "Duplicate key", "PRIMARY KEY already declared");
+                    this.errorReporter.reportError(new SourcePositionRange(key.getParserPosition()), false,
+                            "Duplicate key", "Previous declaration");
+                    break;
+                }
+                key = (SqlKeyConstraint) col;
+                if (key.operandCount() != 2) {
+                    throw new InternalCompilerError("Expected 2 operands", new CalciteObject(key));
+                }
+                SqlNode operand = key.operand(1);
+                if (! (operand instanceof SqlNodeList)) {
+                    throw new InternalCompilerError("Expected a list of columns", new CalciteObject(operand));
+                }
+                for (SqlNode keyColumn : (SqlNodeList) operand) {
+                    if (!(keyColumn instanceof SqlIdentifier)) {
+                        throw new InternalCompilerError("Expected an identifier",
+                                new CalciteObject(keyColumn));
+                    }
+                    SqlIdentifier identifier = (SqlIdentifier) keyColumn;
+                    String name = identifier.getSimple();
+                    if (primaryKeys.containsKey(name)) {
+                        this.errorReporter.reportError(new SourcePositionRange(identifier.getParserPosition()), false,
+                                "Duplicate key column", "Column " + Utilities.singleQuote(name) +
+                                " already declared as key");
+                        this.errorReporter.reportError(new SourcePositionRange(primaryKeys.get(name).getParserPosition()),
+                                false, "Duplicate key column", "Previous declaration");
+                    }
+                    primaryKeys.put(name, identifier);
+                }
+            }
+        }
+
+        // Scan again the rest of the columns.
         for (SqlNode col: Objects.requireNonNull(list)) {
             SqlIdentifier name;
             SqlDataTypeSpec typeSpec;
@@ -591,14 +656,28 @@ public class CalciteCompiler implements IWritesLogs {
                 SqlExtendedColumnDeclaration cd = (SqlExtendedColumnDeclaration) col;
                 name = cd.name;
                 typeSpec = cd.dataType;
-                isPrimaryKey = cd.primaryKey;
+                if (cd.primaryKey && key != null) {
+                    this.errorReporter.reportError(new SourcePositionRange(col.getParserPosition()), false,
+                            "Duplicate key",
+                            "Column " + Utilities.singleQuote(name.getSimple()) +
+                                    " declared PRIMARY KEY in table with another PRIMARY KEY constraint");
+                    this.errorReporter.reportError(new SourcePositionRange(key.getParserPosition()), false,
+                            "Duplicate key", "PRIMARY KEYS declared as constraint");
+                }
+                boolean declaredPrimary = primaryKeys.containsKey(name.getSimple());
+                isPrimaryKey = cd.primaryKey || declaredPrimary;
+                if (declaredPrimary)
+                    primaryKeys.remove(name.getSimple());
                 if (cd.lateness != null)
                     lateness = this.converter.convertExpression(cd.lateness);
                 if (cd.foreignKeyTable != null && cd.foreignKeyColumn != null)
                     fks = new ForeignKeyReference(cd.foreignKeyTable.getSimple(), cd.foreignKeyColumn.getSimple());
+            } else if (col instanceof SqlKeyConstraint) {
+                continue;
             } else {
                 throw new UnimplementedException(new CalciteObject(col));
             }
+
             String colName = Catalog.identifierToString(name);
             SqlNode previousColumn = columnDefinition.get(colName);
             if (previousColumn != null) {
@@ -608,7 +687,6 @@ public class CalciteCompiler implements IWritesLogs {
                 this.errorReporter.reportError(new SourcePositionRange(previousColumn.getParserPosition()),
                         false, "Duplicate name",
                         "Previous definition");
-                error = true;
             } else {
                 columnDefinition.put(colName, col);
             }
@@ -619,7 +697,16 @@ public class CalciteCompiler implements IWritesLogs {
                     lateness, fks);
             result.add(meta);
         }
-        if (error)
+
+        if (!primaryKeys.isEmpty()) {
+            for (SqlIdentifier s: primaryKeys.values()) {
+                this.errorReporter.reportError(new SourcePositionRange(s.getParserPosition()), false,
+                        "No such column", "Key field " + Utilities.singleQuote(s.toString()) +
+                                " does not correspond to a column");
+            }
+        }
+
+        if (this.errorReporter.hasErrors())
             throw new CompilationError("aborting.");
         return result;
     }

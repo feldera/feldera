@@ -26,8 +26,10 @@
 package org.dbsp.sqllogictest;
 
 import net.hydromatic.sqllogictest.OptionsParser;
+import net.hydromatic.sqllogictest.TestStatistics;
 import org.dbsp.sqllogictest.executors.DBSPExecutor;
 import org.dbsp.sqllogictest.executors.DbspJdbcExecutor;
+import org.dbsp.sqllogictest.executors.JitDbspExecutor;
 import org.dbsp.util.Linq;
 
 import java.io.*;
@@ -66,9 +68,8 @@ public class Main {
         );
 
         String[] args = {
-                "-v", "-x", "-j",
-                "-e", "hybrid",      // executor
-                "-inc",              // incremental (streaming) testing
+                "-v", "-v", "-x",
+                "-e", "jit",      // executor
         };
         if (argv.length > 0) {
             args = argv;
@@ -82,6 +83,8 @@ public class Main {
         OptionsParser parser = new OptionsParser(true, System.out, System.err);
         DBSPExecutor.register(parser);
         DbspJdbcExecutor.register(parser);
-        net.hydromatic.sqllogictest.Main.execute(parser, args);
+        JitDbspExecutor.register(parser);
+        TestStatistics results = net.hydromatic.sqllogictest.Main.execute(parser, args);
+        results.printStatistics(System.out);
     }
 }

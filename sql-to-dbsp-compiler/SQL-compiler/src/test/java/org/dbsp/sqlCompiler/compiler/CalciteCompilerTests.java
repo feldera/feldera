@@ -37,8 +37,7 @@ import org.junit.Test;
  */
 public class CalciteCompilerTests {
     static final CompilerOptions options = new CompilerOptions();
-    static final IErrorReporter errorReporter = (range, warning, errorType, message)
-            -> System.err.println(range + ": ERROR " + errorType + ": " + message);
+    static final IErrorReporter errorReporter = new StderrErrorReporter();
 
     CalciteCompiler getCompiler() {
         return new CalciteCompiler(options, errorReporter);
