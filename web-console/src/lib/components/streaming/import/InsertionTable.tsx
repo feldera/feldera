@@ -6,7 +6,7 @@
 import { getValueFormatter, Row, sqlTypeToDataGridType } from '$lib/functions/ddl'
 import { Field, Pipeline, PipelineRevision, Relation } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
-import { useEffect, useState } from 'react'
+import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 
 import Card from '@mui/material/Card'
 import {
@@ -21,38 +21,50 @@ import { useQuery } from '@tanstack/react-query'
 
 import ImportToolbar from './ImportToolbar'
 
-export type InspectionTableProps = {
+export type { Row } from '$lib/functions/ddl'
+
+export const InsertionTable = (props: {
   pipeline: Pipeline
   name: string
-}
-
-export const InsertionTable = ({ pipeline, name }: InspectionTableProps) => {
+  insert: { rows: Row[]; setRows: Dispatch<SetStateAction<Row[]>> }
+}) => {
   const [pipelineRevision, setPipelineRevision] = useState<PipelineRevision | undefined>(undefined)
   const [relation, setRelation] = useState<Relation | undefined>(undefined)
-  const [rows, setRows] = useState<Row[]>([])
   const [isLoading, setLoading] = useState<boolean>(false)
   const apiRef = useGridApiRef()
 
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline?.descriptor.pipeline_id))
+  const pipelineRevisionQuery = useQuery(
+    PipelineManagerQuery.pipelineLastRevision(props.pipeline?.descriptor.pipeline_id)
+  )
 
   // If a revision is loaded, find the requested relation that we want to insert
   // data into. We use it to display the table headers etc.
   useEffect(() => {
-    if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
-      setRows([])
-
-      const pipelineRevision = pipelineRevisionQuery.data
-      const program = pipelineRevision.program
-      const tables = program.schema?.inputs.find(v => v.name === name)
-      const views = program.schema?.outputs.find(v => v.name === name)
-      const relation = tables || views // name is unique in the schema
-      if (!relation) {
-        return
-      }
-      setPipelineRevision(pipelineRevision)
-      setRelation(relation)
+    if (pipelineRevisionQuery.isLoading || pipelineRevisionQuery.isError || !pipelineRevisionQuery.data) {
+      return
     }
-  }, [pipelineRevisionQuery.isLoading, pipelineRevisionQuery.isError, pipelineRevisionQuery.data, name])
+    const newPipelineRevision = pipelineRevisionQuery.data
+    if (pipelineRevision && pipelineRevision.revision !== newPipelineRevision.revision) {
+      props.insert.setRows([])
+    }
+
+    const program = newPipelineRevision.program
+    const tables = program.schema?.inputs.find(v => v.name === props.name)
+    const views = program.schema?.outputs.find(v => v.name === props.name)
+    const relation = tables || views // name is unique in the schema
+    if (!relation) {
+      return
+    }
+    setPipelineRevision(newPipelineRevision)
+    setRelation(relation)
+  }, [
+    pipelineRevisionQuery.isLoading,
+    pipelineRevisionQuery.isError,
+    pipelineRevisionQuery.data,
+    props.name,
+    pipelineRevision,
+    props.insert
+  ])
 
   return relation ? (
     <Card>
@@ -62,7 +74,7 @@ export const InsertionTable = ({ pipeline, name }: InspectionTableProps) => {
         editMode='cell'
         density='compact'
         loading={isLoading}
-        rows={rows}
+        rows={props.insert.rows}
         disableColumnFilter
         initialState={{
           columns: {
@@ -136,11 +148,10 @@ export const InsertionTable = ({ pipeline, name }: InspectionTableProps) => {
         slotProps={{
           toolbar: {
             relation,
-            setRows,
             pipelineRevision,
             setLoading,
             apiRef,
-            rows
+            ...props.insert
           }
         }}
         //getCellClassName={(params: GridCellParams) =>
