@@ -2,6 +2,8 @@ use proptest::{collection, prelude::*};
 use proptest_derive::Arbitrary;
 use size_of::SizeOf;
 
+use crate::deserialize_without_context;
+
 #[derive(
     Debug,
     PartialEq,
@@ -24,6 +26,8 @@ pub struct TestStruct {
     pub i: Option<i64>,
     pub s: String,
 }
+
+deserialize_without_context!(TestStruct);
 
 /// Generate a batch of records no larger that `size`.
 ///

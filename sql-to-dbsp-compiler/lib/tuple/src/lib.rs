@@ -16,6 +16,8 @@ macro_rules! declare_tuples {
             #[derive(Default, Eq, Ord, Clone, Hash, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, SizeOf, Add, Neg, AddAssign, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
             pub struct $tuple_name<$($element,)*>($(pub $element,)*);
 
+            dbsp_adapters::deserialize_without_context!($tuple_name, $($element),*);
+
             /*
             Expands to:
             impl<T0, T1> Tuple2<T0, T1> {

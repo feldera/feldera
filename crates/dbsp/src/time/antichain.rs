@@ -495,14 +495,7 @@ where
 impl<'a, T: 'a> Clone for AntichainRef<'a, T> {
     #[inline]
     fn clone(&self) -> Self {
-        Self {
-            frontier: self.frontier,
-        }
-    }
-
-    #[inline]
-    fn clone_from(&mut self, source: &Self) {
-        self.frontier = source.frontier;
+        *self
     }
 }
 

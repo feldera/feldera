@@ -1,13 +1,12 @@
 //! Test framework for the `adapters` crate.
 
 use crate::{
-    controller::InputEndpointConfig, Catalog, CircuitCatalog, DbspCircuitHandle, FormatConfig,
-    InputEndpoint, InputTransport,
+    controller::InputEndpointConfig, Catalog, CircuitCatalog, DbspCircuitHandle,
+    DeserializeWithContext, FormatConfig, InputEndpoint, InputTransport, SqlDeserializerConfig,
 };
 use anyhow::Result as AnyResult;
 use dbsp::Runtime;
 use log::{Log, Metadata, Record};
-use serde::Deserialize;
 use std::{
     thread::sleep,
     time::{Duration, Instant},
@@ -79,7 +78,7 @@ pub fn mock_parser_pipeline<T>(
     config: &FormatConfig,
 ) -> AnyResult<(MockInputConsumer, MockDeZSet<T>)>
 where
-    T: for<'de> Deserialize<'de> + Send + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig> + Send + 'static,
 {
     let input_handle = <MockDeZSet<T>>::new();
     let consumer = MockInputConsumer::from_handle(&input_handle, config);
@@ -102,7 +101,7 @@ pub fn mock_input_pipeline<T>(
     config: InputEndpointConfig,
 ) -> AnyResult<(Box<dyn InputEndpoint>, MockInputConsumer, MockDeZSet<T>)>
 where
-    T: for<'de> Deserialize<'de> + Send + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig> + Send + 'static,
 {
     let (consumer, input_handle) = mock_parser_pipeline(&config.connector_config.format)?;
 

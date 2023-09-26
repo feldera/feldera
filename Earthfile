@@ -390,7 +390,7 @@ test-adapters:
         RUN docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
             redpanda start --smp 2  && \
             sleep 5 && \
-            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters
+            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --package sqllib
     END
 
 test-manager:

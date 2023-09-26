@@ -1,4 +1,5 @@
 use crate::{
+    catalog::{JsonFlavor, RecordFormat},
     controller::ConnectorConfig,
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
@@ -19,7 +20,6 @@ use clap::Parser;
 use colored::Colorize;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
-use erased_serde::Deserializer as ErasedDeserializer;
 use log::{debug, error, info, warn};
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
@@ -812,7 +812,14 @@ async fn output_endpoint(
             match args.query {
                 // Send reset signal to produce a complete neighborhood snapshot.
                 OutputQuery::Neighborhood => {
-                    let body = body.unwrap();
+                    let body = body.unwrap().into_inner();
+
+                    let json = serde_json::to_string(&json!([json!(true), body])).map_err(|e| {
+                        PipelineError::InvalidNeighborhoodSpec {
+                            spec: body.clone(),
+                            parse_error: e.to_string(),
+                        }
+                    })?;
 
                     if let Err(e) = controller
                         .catalog()
@@ -825,15 +832,13 @@ async fn output_endpoint(
                         .neighborhood_descr_handle
                         .as_ref()
                         .ok_or_else(|| PipelineError::NeighborhoodNotSupported)?
-                        .set_for_all(&mut <dyn ErasedDeserializer>::erase(json!([
-                            json!(true),
-                            body
-                        ])))
+                        .configure_deserializer(RecordFormat::Json(JsonFlavor::Default))?
+                        .set_for_all(json.as_bytes())
                     {
                         // Dropping `response` triggers the finalizer closure, which will
                         // disconnect this endpoint.
                         return Err(PipelineError::InvalidNeighborhoodSpec {
-                            spec: body.into_inner(),
+                            spec: body,
                             parse_error: e.to_string(),
                         });
                     }

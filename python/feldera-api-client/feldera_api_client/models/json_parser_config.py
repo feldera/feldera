@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Type, TypeVar, Union
 
 from attrs import define, field
 
+from ..models.json_flavor import JsonFlavor
 from ..models.json_update_format import JsonUpdateFormat
 from ..types import UNSET, Unset
 
@@ -51,6 +52,7 @@ class JsonParserConfig:
                 ```json
                 [{"b": true, "i": 0},{"b": false, "i": 100, "s": "foo"}]
                 ```
+            json_flavor (Union[Unset, JsonFlavor]): Specifies JSON encoding used of table records.
             update_format (Union[Unset, JsonUpdateFormat]): Supported JSON data change event formats.
 
                 Each element in a JSON-formatted input stream specifies
@@ -59,11 +61,16 @@ class JsonParserConfig:
     """
 
     array: Union[Unset, bool] = UNSET
+    json_flavor: Union[Unset, JsonFlavor] = UNSET
     update_format: Union[Unset, JsonUpdateFormat] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         array = self.array
+        json_flavor: Union[Unset, str] = UNSET
+        if not isinstance(self.json_flavor, Unset):
+            json_flavor = self.json_flavor.value
+
         update_format: Union[Unset, str] = UNSET
         if not isinstance(self.update_format, Unset):
             update_format = self.update_format.value
@@ -73,6 +80,8 @@ class JsonParserConfig:
         field_dict.update({})
         if array is not UNSET:
             field_dict["array"] = array
+        if json_flavor is not UNSET:
+            field_dict["json_flavor"] = json_flavor
         if update_format is not UNSET:
             field_dict["update_format"] = update_format
 
@@ -83,6 +92,13 @@ class JsonParserConfig:
         d = src_dict.copy()
         array = d.pop("array", UNSET)
 
+        _json_flavor = d.pop("json_flavor", UNSET)
+        json_flavor: Union[Unset, JsonFlavor]
+        if isinstance(_json_flavor, Unset):
+            json_flavor = UNSET
+        else:
+            json_flavor = JsonFlavor(_json_flavor)
+
         _update_format = d.pop("update_format", UNSET)
         update_format: Union[Unset, JsonUpdateFormat]
         if isinstance(_update_format, Unset):
@@ -92,6 +108,7 @@ class JsonParserConfig:
 
         json_parser_config = cls(
             array=array,
+            json_flavor=json_flavor,
             update_format=update_format,
         )
 

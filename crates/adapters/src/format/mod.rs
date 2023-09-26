@@ -1,4 +1,4 @@
-use crate::{catalog::SerBatch, ControllerError, DeCollectionHandle};
+use crate::{catalog::SerBatch, ControllerError, DeCollectionHandle, FieldParseError};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use erased_serde::Serialize as ErasedSerialize;
@@ -14,20 +14,19 @@ use std::{
 };
 
 pub(crate) mod csv;
-mod deserializer;
 mod json;
 
 pub use self::{
     csv::{
         byte_record_deserializer, string_record_deserializer, CsvEncoderConfig, CsvParserConfig,
     },
-    deserializer::FieldParseError,
     json::{JsonEncoderConfig, JsonParserConfig, JsonUpdateFormat},
 };
 use self::{
     csv::{CsvInputFormat, CsvOutputFormat},
     json::{JsonInputFormat, JsonOutputFormat},
 };
+pub use crate::catalog::JsonFlavor;
 
 /// Error parsing input data.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]

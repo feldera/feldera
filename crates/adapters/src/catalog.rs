@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::{static_compile::ErasedDeScalarHandle, ControllerError};
+use crate::{static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
 use dbsp::InputHandle;
 use serde::{Deserialize, Serialize};
@@ -8,10 +8,6 @@ use utoipa::ToSchema;
 
 /// Descriptor that specifies the format in which records are received
 /// or into which they should be encoded before sending.
-///
-// TODO: Currently we only allows choosing between JSON and CSV formats.
-// In the future, in addition to adding mode formats we can make these two
-// formats configurable (see below).
 #[derive(Clone, Deserialize, Serialize, Debug, PartialEq, Eq)]
 pub enum RecordFormat {
     // TODO: Support different JSON encodings:
@@ -20,8 +16,21 @@ pub enum RecordFormat {
     // * Raw - Only applicable to single-column tables.  Input records contain
     // raw encoding of this column only.  This is particularly useful for
     // tables that store raw JSON or binary data to be parsed using SQL.
-    Json,
+    Json(JsonFlavor),
     Csv,
+}
+
+/// Specifies JSON encoding used of table records.
+#[derive(Clone, Default, Deserialize, Serialize, Debug, PartialEq, Eq, ToSchema)]
+pub enum JsonFlavor {
+    /// Default encoding used by Feldera, documented
+    /// [here](https://www.feldera.com/docs/api/json#types).
+    #[default]
+    Default,
+    /// Debezium MySQL JSON produced by the default configuration of the Debezium
+    /// [Kafka Connect connector](https://debezium.io/documentation/reference/stable/connectors/mysql.html#mysql-data-types).
+    #[serde(rename = "debezium_mysql")]
+    DebeziumMySql,
 }
 
 // This is only here so we can derive `ToSchema` for it without adding
@@ -357,7 +366,7 @@ pub struct OutputCollectionHandles {
     ///   the previously specified neighborhood if any.  Nothing is written to
     ///   the [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
     ///   stream.
-    pub neighborhood_descr_handle: Option<Box<dyn ErasedDeScalarHandle>>,
+    pub neighborhood_descr_handle: Option<Box<dyn DeScalarHandle>>,
 
     /// A stream of changes to the neighborhood, computed using the
     /// [`Stream::neighborhood`] operator.

@@ -19,6 +19,7 @@ from .format_config import FormatConfig
 from .format_config_config import FormatConfigConfig
 from .input_endpoint_config import InputEndpointConfig
 from .json_encoder_config import JsonEncoderConfig
+from .json_flavor import JsonFlavor
 from .json_parser_config import JsonParserConfig
 from .json_update_format import JsonUpdateFormat
 from .kafka_input_config import KafkaInputConfig
@@ -88,6 +89,7 @@ __all__ = (
     "FormatConfigConfig",
     "InputEndpointConfig",
     "JsonEncoderConfig",
+    "JsonFlavor",
     "JsonParserConfig",
     "JsonUpdateFormat",
     "KafkaInputConfig",

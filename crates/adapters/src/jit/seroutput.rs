@@ -42,7 +42,10 @@ impl SerBatch for SerZSet {
     ) -> Result<Box<dyn SerCursor + 'a>, ControllerError> {
         match record_format {
             RecordFormat::Csv => todo!(),
-            RecordFormat::Json => Ok(Box::new(SerZSetCursor::new(self.zset.cursor(), self.json))),
+            // TODO: flavor-specific encoders.
+            RecordFormat::Json(_) => {
+                Ok(Box::new(SerZSetCursor::new(self.zset.cursor(), self.json)))
+            }
         }
     }
 }
