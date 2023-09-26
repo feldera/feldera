@@ -20,6 +20,8 @@ import Grid from '@mui/material/Grid'
 import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
 
+import type { Row } from '$lib/components/streaming/import/InsertionTable'
+
 const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
   return (
     <BreadcrumbSelect label='Relation' value={props.relation}>
@@ -52,6 +54,7 @@ const TableWithInsertTab = (props: {
   const logError = (error: Error) => {
     console.error('InspectionTable error: ', error)
   }
+  const [rows, setRows] = useState<Row[]>([])
 
   const { pipeline, handleChange, tab, relation } = props
   return (
@@ -66,7 +69,7 @@ const TableWithInsertTab = (props: {
       <TabPanel value='insert'>
         {pipeline.state.current_status === PipelineStatus.RUNNING ? (
           <ErrorBoundary FallbackComponent={ErrorOverlay} onError={logError} key={location.pathname}>
-            <InsertionTable pipeline={pipeline} name={relation} />
+            <InsertionTable pipeline={pipeline} name={relation} insert={{ rows, setRows }} />
           </ErrorBoundary>
         ) : (
           <Alert severity='info'>

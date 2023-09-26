@@ -198,8 +198,8 @@ const UNSUPPORTED_TYPE_GENERATORS: IRngGenMethod[] = [
   {
     title: 'Constant',
     category: Categories.DEFAULT,
-    generator: (ct, settings) => '',
-    form_fields: field => [
+    generator: () => '',
+    form_fields: () => [
       {
         sm: 4,
         component: TextField,
