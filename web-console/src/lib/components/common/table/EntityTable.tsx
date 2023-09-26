@@ -39,7 +39,7 @@ export type EntityTableProps<TData extends GridValidRowModel> = {
   onUpdateRow?: (newRow: TData, oldRow: TData) => TData
   onDeleteRow?: Dispatch<TData>
   onDuplicateClicked?: Dispatch<TData>
-  onEditClicked?: Dispatch<TData>
+  editRowBtnProps?: { onClick?: Dispatch<TData>; href?: (value: TData) => string }
   hasSearch?: boolean
   hasFilter?: boolean
   addActions?: boolean
@@ -59,7 +59,7 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
     page: 0
   })
 
-  const { setRows, fetchRows, onUpdateRow, onDeleteRow, onEditClicked, tableProps, addActions } = props
+  const { setRows, fetchRows, onUpdateRow, onDeleteRow, editRowBtnProps, tableProps, addActions } = props
 
   const [filteredData, setFilteredData] = useState<TData[]>([])
 
@@ -75,14 +75,14 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
       renderCell: (params: GridRenderCellParams) => {
         return (
           <>
-            {onEditClicked && (
+            {editRowBtnProps && (
               <Tooltip title='Edit'>
                 <IconButton
                   size='small'
-                  onClick={e => {
-                    e.preventDefault()
-                    onEditClicked(params.row)
-                  }}
+                  href={(href => (href ? href(params.row) : ''))(editRowBtnProps?.href)}
+                  onClick={(onClick => (onClick ? () => onClick(params.row) : undefined))(editRowBtnProps?.onClick)}
+                  target='_blank'
+                  rel='noreferrer'
                 >
                   <Icon icon='bx:pencil' fontSize={20} />
                 </IconButton>

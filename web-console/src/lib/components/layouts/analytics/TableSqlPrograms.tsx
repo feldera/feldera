@@ -17,7 +17,6 @@ import {
   UpdateProgramResponse
 } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
-import { useRouter } from 'next/navigation'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
@@ -58,8 +57,6 @@ const getStatusObj = (status: ProgramStatus) =>
     .exhaustive()
 
 const TableSqlPrograms = () => {
-  const router = useRouter()
-
   const [rows, setRows] = useState<ProgramDescr[]>([])
   const fetchQuery = useQuery(PipelineManagerQuery.program())
   const { pushMessage } = useStatusNotification()
@@ -194,7 +191,7 @@ const TableSqlPrograms = () => {
         fetchRows={fetchQuery}
         onUpdateRow={processRowUpdate}
         onDeleteRow={deleteProject}
-        onEditClicked={row => router.push(`/analytics/editor?program_id=${row.program_id}`)}
+        editRowBtnProps={{ href: row => `/analytics/editor?program_id=${row.program_id}` }}
         apiRef={apiRef}
         toolbarChildren={[btnAdd, <GridToolbarFilterButton key='1' />, <div style={{ marginLeft: 'auto' }} key='2' />]}
         footerChildren={btnAdd}
