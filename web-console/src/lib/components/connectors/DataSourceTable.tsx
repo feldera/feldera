@@ -178,7 +178,7 @@ const DataSourceTable = () => {
           fetchRows={fetchQuery}
           onUpdateRow={processRowUpdate}
           onDeleteRow={deleteSource}
-          onEditClicked={editConnector}
+          editRowBtnProps={{ onClick: editConnector }}
           hasSearch
           hasFilter
           addActions
