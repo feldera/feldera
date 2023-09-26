@@ -43,6 +43,7 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -92,7 +93,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
 
     @Nullable
     String rewriteCreateTable(String command) throws SQLException {
-        Matcher m = DbspJdbcExecutor.patCreate.matcher(command);
+        Matcher m = DbspJdbcExecutor.PAT_CREATE.matcher(command);
         if (!m.find())
             return null;
         String tableName = m.group(1);
@@ -115,7 +116,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 statement = new SltSqlStatement(create, statement.shouldPass);
                 this.tablePreparation.add(statement);
             } else {
-                Matcher m = DbspJdbcExecutor.patDrop.matcher(command);
+                Matcher m = DbspJdbcExecutor.PAT_DROP.matcher(command);
                 String tableName = m.group(1);
                 this.tablesCreated.remove(tableName);
             }
@@ -139,9 +140,11 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         return result;
     }
 
-    File createFile(String name) {
+    File fileFromName(String name) {
         return new File(Paths.get(rustDirectory, name).toUri());
     }
+
+    static DBSPExecutor.TableValue[] previousValues = new DBSPExecutor.TableValue[0];
 
     boolean query(SqlTestQuery query, TestStatistics statistics, int queryNo)
             throws IOException, InterruptedException, NoSuchAlgorithmException, SQLException {
@@ -176,41 +179,43 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         String json = program.asJson().toPrettyString();
 
         List<File> toDelete = new ArrayList<>();
-        File programFile = this.createFile("program.json");
+        File programFile = this.fileFromName("program.json");
         toDelete.add(programFile);
 
         Utilities.writeFile(programFile.toPath(), json);
 
         // Prepare input files for the JIT runtime
+        boolean sameFiles = Arrays.equals(previousValues, inputSets);
         List<JitFileAndSerialization> inputFiles = new ArrayList<>();
         int index = 0;
-        for (DBSPExecutor.TableValue inputData: inputSets) {
-            File input = this.createFile("input" + index++ + ".csv");
-            toDelete.add(input);
-            ToCsvVisitor.toCsv(compiler, input, new DBSPZSetLiteral(
-                    compiler.getWeightTypeImplementation(), inputData.contents.data));
+        for (DBSPExecutor.TableValue inputData : inputSets) {
+            File input = this.fileFromName("input" + index++ + ".csv");
+            if (!sameFiles) {
+                ToCsvVisitor.toCsv(compiler, input, new DBSPZSetLiteral(
+                        compiler.getWeightTypeImplementation(), inputData.contents.data));
+            }
             inputFiles.add(new JitFileAndSerialization(
                     input.getAbsolutePath(),
                     JitSerializationKind.Csv));
         }
+        previousValues = inputSets;
         List<JitIODescription> inputDescriptions = compiler.getInputDescriptions(inputFiles);
 
         // Allocate output files
         List<JitFileAndSerialization> outputFiles = new ArrayList<>();
         if (circuit.getOutputCount() != 1)
             throw new RuntimeException("Expected a single output");
-        File output = this.createFile("output.json");
+        File output = this.fileFromName("output.json");
         toDelete.add(output);
         outputFiles.add(new JitFileAndSerialization(
                 output.getAbsolutePath(),
                 JitSerializationKind.Json));
-        toDelete.add(output);
         List<JitIODescription> outputDescriptions = compiler.getOutputDescriptions(outputFiles);
 
         // Invoke the JIT runtime with the program and the configuration file describing inputs and outputs
         JsonNode jitInputDescription = compiler.createJitRuntimeConfig(inputDescriptions, outputDescriptions);
         String s = jitInputDescription.toPrettyString();
-        File configFile = this.createFile("config.json");
+        File configFile = this.fileFromName("config.json");
         toDelete.add(configFile);
         Utilities.writeFile(configFile.toPath(), s);
         Utilities.runJIT(projectDirectory, programFile.getAbsolutePath(), configFile.getAbsolutePath());
@@ -350,7 +355,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 != rows.size() * Objects.requireNonNull(description.columnTypes).length()) {
             return statistics.addFailure(
                     new TestStatistics.FailedTestDescription(query,
-                            "Expected " + description.getValueCount() + " rows, got "
+                            "Expected " + description.getValueCount() + " values, got "
                                     + rows.size() * description.columnTypes.length(),
                             "",
                             null));
@@ -400,7 +405,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 options.stopAtFirstError, options.verbosity);
         result.incFiles();
         int queryNo = 0;
-        int skip = 38;  // used only for debugging
+        int skip = 146;  // used only for debugging
         for (ISqlTestOperation operation : testFile.fileContents) {
             SltSqlStatement stat = operation.as(SltSqlStatement.class);
             if (stat != null) {

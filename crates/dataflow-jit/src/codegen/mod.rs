@@ -565,6 +565,9 @@ impl<'a> CodegenCtx<'a> {
     /// Get the value of an expression
     #[track_caller]
     fn value(&self, expr_id: ExprId) -> Value {
+        if !self.exprs.contains_key(&expr_id) {
+            panic!("Instruction {} referenced does not exist", expr_id);
+        }
         self.exprs[&expr_id]
     }
 

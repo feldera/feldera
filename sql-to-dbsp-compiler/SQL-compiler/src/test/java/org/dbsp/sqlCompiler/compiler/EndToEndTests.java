@@ -720,11 +720,20 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
-    public void testDistinct() {
+    public void distinctTest() {
         String query = "SELECT DISTINCT T.COL1 FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
                         new DBSPI32Literal(10))));
+    }
+
+    @Test
+    public void nullDistinctTest() {
+        String query = "SELECT DISTINCT 0 + NULL, T.COL1 FROM T";
+        DBSPI32Literal ten = new DBSPI32Literal(10);
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(DBSPLiteral.none(ten.getType().setMayBeNull(true)),
+                        ten)));
     }
 
     @Test

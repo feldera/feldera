@@ -411,10 +411,15 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             Objects.requireNonNull(nextBlock);
             Objects.requireNonNull(onNonNullBlock);
             Objects.requireNonNull(onNullBlock);
-            JITInstructionRef param = this.addParameter(nextBlock, jitResultType);
 
             JITBlockDestination next = nextBlock.createDestination();
-            next.addArgument(call.getInstructionReference());
+            JITInstructionRef param;
+            if (resultType.code != VOID) {
+                param = this.addParameter(nextBlock, jitResultType);
+                next.addArgument(call.getInstructionReference());
+            } else {
+                param = JITInstructionRef.INVALID;
+            }
             JITJumpTerminator terminator = new JITJumpTerminator(next);
             onNonNullBlock.terminate(terminator);
 
@@ -427,15 +432,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                         .to(DBSPTypeBaseType.class)
                         .defaultValue();
                 defJitValue = this.accept(defaultValue);
-            } else {
-                DBSPLiteral literal = new DBSPUnitLiteral(CalciteObject.EMPTY, new DBSPTypeTuple(), false);
-                JITLiteral jitLiteral = new JITLiteral(literal, JITUnitType.INSTANCE);
-                JITInstruction nil = new JITConstantInstruction(
-                        this.nextInstructionId(), JITUnitType.INSTANCE, jitLiteral, true);
-                this.add(nil);
-                defJitValue = new JITInstructionPair(nil);
+                next.addArgument(defJitValue.value);
             }
-            next.addArgument(defJitValue.value);
             terminator = new JITJumpTerminator(next);
             onNullBlock.terminate(terminator);
 

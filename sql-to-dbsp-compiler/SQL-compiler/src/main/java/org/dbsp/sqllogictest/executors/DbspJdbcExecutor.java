@@ -165,10 +165,10 @@ public class DbspJdbcExecutor extends DBSPExecutor {
         return result;
     }
 
-    public static final String regexCreate = "create\\s+table\\s+(\\w+)";
-    public static final Pattern patCreate = Pattern.compile(regexCreate);
-    public static final String regexDrop = "drop\\s+table\\s+(\\w+)";
-    public static final Pattern patDrop = Pattern.compile(regexDrop);
+    public static final String REGEX_CREATE = "create\\s+table\\s+(\\w+)";
+    public static final Pattern PAT_CREATE = Pattern.compile(REGEX_CREATE);
+    public static final String REGEX_DROP = "drop\\s+table\\s+(\\w+)";
+    public static final Pattern PAT_DROP = Pattern.compile(REGEX_DROP);
 
     /*
      Calcite cannot parse DDL statements in all dialects.
@@ -231,7 +231,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
 
     @Nullable
     String rewriteCreateTable(String command) throws SQLException {
-        Matcher m = patCreate.matcher(command);
+        Matcher m = PAT_CREATE.matcher(command);
         if (!m.find())
             return null;
         String tableName = m.group(1);
@@ -252,7 +252,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                 command.contains("create view") ||
                 command.contains("drop view")) {
             super.statement(statement);
-            Matcher m = patDrop.matcher(command);
+            Matcher m = PAT_DROP.matcher(command);
             if (m.find()) {
                 String tableName = m.group(1);
                 this.tablesCreated.remove(tableName);

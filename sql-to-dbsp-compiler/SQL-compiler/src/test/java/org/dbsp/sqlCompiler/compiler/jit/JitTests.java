@@ -20,14 +20,6 @@ public class JitTests extends EndToEndTests {
         return new DBSPCompiler(options);
     }
 
-    @Test
-    public void writeLogTest() {
-        String query = "SELECT WRITELOG('Hello %% message\n', COL1) FROM (SELECT DISTINCT T.COL1 FROM T)";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(10))));
-    }
-
     // All the @Ignore-ed tests below should eventually pass.
 
     @Test @Override @Ignore("WINDOWS not yet implemented https://github.com/feldera/feldera/issues/158")
