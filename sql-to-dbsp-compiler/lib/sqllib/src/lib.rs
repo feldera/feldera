@@ -640,14 +640,22 @@ pub fn agg_max_conditional__<T>(left: T, right: T, predicate: bool) -> T
 where
     T: Ord + Copy,
 {
-    if predicate { left.max(right) } else { left }
+    if predicate {
+        left.max(right)
+    } else {
+        left
+    }
 }
 
 pub fn agg_min_conditional__<T>(left: T, right: T, predicate: bool) -> T
 where
     T: Ord + Copy,
 {
-    if predicate { left.min(right) } else { left }
+    if predicate {
+        left.min(right)
+    } else {
+        left
+    }
 }
 
 pub fn agg_plus_conditional_N_N<T>(left: Option<T>, right: Option<T>, predicate: bool) -> Option<T>
@@ -688,7 +696,11 @@ pub fn agg_plus_conditional__<T>(left: T, right: T, predicate: bool) -> T
 where
     T: Add<T, Output = T> + Copy,
 {
-    if predicate { left + right } else { left }
+    if predicate {
+        left + right
+    } else {
+        left
+    }
 }
 
 #[inline(always)]
@@ -1082,29 +1094,33 @@ pub fn cardinalityN<T>(value: Option<Vec<T>>) -> Option<i32> {
 }
 
 pub fn index__<T>(value: &Vec<T>, index: usize) -> T
-    where T: Clone
+where
+    T: Clone,
 {
     (*value.index(index)).clone()
 }
 
 pub fn index__N<T>(value: &Vec<T>, index: Option<usize>) -> T
-    where T: Clone
+where
+    T: Clone,
 {
     index__(value, index.unwrap())
 }
 
 pub fn index_N_<T>(value: &Option<Vec<T>>, index: usize) -> Option<T>
-    where T: Clone
+where
+    T: Clone,
 {
     value.as_ref().map(|value| index__(value, index))
 }
 
 pub fn index_N_N<T>(value: &Option<Vec<T>>, index: Option<usize>) -> Option<T>
-    where T: Clone
+where
+    T: Clone,
 {
     value.as_ref().map(|value| index__N(value, index))
 }
 
 pub fn array<T>() -> Vec<T> {
-    vec!()
+    vec![]
 }

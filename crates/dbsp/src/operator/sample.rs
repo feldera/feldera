@@ -281,7 +281,7 @@ mod test {
                 let mut all_keys = Vec::new();
                 let mut cursor = batch.cursor();
                 while cursor.key_valid() {
-                    all_keys.push(cursor.key().clone());
+                    all_keys.push(*cursor.key());
                     cursor.step_key();
                 }
                 let all_keys_set = all_keys.iter().cloned().collect::<BTreeSet<_>>();

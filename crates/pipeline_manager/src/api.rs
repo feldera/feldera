@@ -186,6 +186,7 @@ request is rejected."
         dbsp_adapters::format::CsvParserConfig,
         dbsp_adapters::format::JsonEncoderConfig,
         dbsp_adapters::format::JsonParserConfig,
+        dbsp_adapters::format::JsonFlavor,
         dbsp_adapters::format::JsonUpdateFormat,
         TenantId,
         ProgramId,
@@ -1510,7 +1511,7 @@ async fn list_connectors(
 
 /// Request to create a new connector.
 #[derive(Deserialize, ToSchema)]
-pub(self) struct NewConnectorRequest {
+struct NewConnectorRequest {
     /// Connector name.
     name: String,
     /// Connector description.

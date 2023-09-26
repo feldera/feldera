@@ -1,16 +1,16 @@
 use crate::{
     catalog::{NeighborhoodEntry, OutputCollectionHandles, SerCollectionHandle},
-    static_compile::{DeScalarHandleImpl, ErasedDeScalarHandle},
-    Catalog,
+    static_compile::{DeScalarHandle, DeScalarHandleImpl},
+    Catalog, DeserializeWithContext,
 };
 use dbsp::{
     algebra::ZRingValue,
     operator::{DelayedFeedback, NeighborhoodDescr},
     CollectionHandle, RootCircuit, Stream, UpsertHandle, ZSet,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-use super::{DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
+use super::{DeSetHandle, DeZSetHandle, SerCollectionHandleImpl, SqlDeserializerConfig};
 
 impl Catalog {
     /// Add an input stream of Z-sets to the catalog.
@@ -24,7 +24,12 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         handle: CollectionHandle<Z::Key, Z::R>,
     ) where
-        D: for<'de> Deserialize<'de> + Serialize + From<Z::Key> + Clone + Send + 'static,
+        D: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
+            + Serialize
+            + From<Z::Key>
+            + Clone
+            + Send
+            + 'static,
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Serialize + Sync + From<D>,
@@ -41,7 +46,12 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         handle: UpsertHandle<Z::Key, bool>,
     ) where
-        D: for<'de> Deserialize<'de> + Serialize + From<Z::Key> + Clone + Send + 'static,
+        D: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
+            + Serialize
+            + From<Z::Key>
+            + Clone
+            + Send
+            + 'static,
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Serialize + Sync + From<D>,
@@ -55,7 +65,12 @@ impl Catalog {
     /// Add an output stream of Z-sets to the catalog.
     pub fn register_output_zset<Z, D>(&mut self, name: &str, stream: Stream<RootCircuit, Z>)
     where
-        D: for<'de> Deserialize<'de> + Serialize + From<Z::Key> + Clone + Send + 'static,
+        D: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
+            + Serialize
+            + From<Z::Key>
+            + Clone
+            + Send
+            + 'static,
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Serialize + Sync + From<D>,
@@ -126,7 +141,7 @@ impl Catalog {
 
             neighborhood_descr_handle: Some(Box::new(DeScalarHandleImpl::new(
                 neighborhood_descr_handle,
-            )) as Box<dyn ErasedDeScalarHandle>),
+            )) as Box<dyn DeScalarHandle>),
             neighborhood_handle: Some(Box::new(
                 <SerCollectionHandleImpl<_, NeighborhoodEntry<D>, ()>>::new(neighborhood_handle),
             ) as Box<dyn SerCollectionHandle>),

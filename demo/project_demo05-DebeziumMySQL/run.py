@@ -120,7 +120,9 @@ def make_config(project):
                 "auto.offset.reset": "earliest",
             }
         ),
-        format=JsonInputFormatConfig(update_format="debezium"),
+        format=JsonInputFormatConfig(
+            update_format="debezium", json_flavor="debezium_mysql"
+        ),
     )
 
     config.add_kafka_input(
@@ -132,7 +134,9 @@ def make_config(project):
                 "auto.offset.reset": "earliest",
             }
         ),
-        format=JsonInputFormatConfig(update_format="debezium"),
+        format=JsonInputFormatConfig(
+            update_format="debezium", json_flavor="debezium_mysql"
+        ),
     )
 
     config.add_kafka_input(
@@ -144,7 +148,9 @@ def make_config(project):
                 "auto.offset.reset": "earliest",
             }
         ),
-        format=JsonInputFormatConfig(update_format="debezium"),
+        format=JsonInputFormatConfig(
+            update_format="debezium", json_flavor="debezium_mysql"
+        ),
     )
 
     config.add_kafka_input(
@@ -156,7 +162,9 @@ def make_config(project):
                 "auto.offset.reset": "earliest",
             }
         ),
-        format=JsonInputFormatConfig(update_format="debezium"),
+        format=JsonInputFormatConfig(
+            update_format="debezium", json_flavor="debezium_mysql"
+        ),
     )
 
     config.add_kafka_input(
@@ -168,7 +176,9 @@ def make_config(project):
                 "auto.offset.reset": "earliest",
             }
         ),
-        format=JsonInputFormatConfig(update_format="debezium"),
+        format=JsonInputFormatConfig(
+            update_format="debezium", json_flavor="debezium_mysql"
+        ),
     )
 
     config.save()

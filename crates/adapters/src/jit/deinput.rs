@@ -49,7 +49,8 @@ impl DeCollectionHandle for DeZSetHandles {
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
-            RecordFormat::Json => Ok(Box::new(self.json.clone())),
+            // TODO: generate flavor-specific deserializers.
+            RecordFormat::Json(_) => Ok(Box::new(self.json.clone())),
             RecordFormat::Csv => {
                 todo!()
             }

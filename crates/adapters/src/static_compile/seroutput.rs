@@ -201,7 +201,8 @@ where
             RecordFormat::Csv => Box::new(<SerCursorImpl<'a, CsvSerializer, B, KD, VD>>::new(
                 &self.batch,
             )),
-            RecordFormat::Json => Box::new(<SerCursorImpl<'a, JsonSerializer, B, KD, VD>>::new(
+            // TODO: configurable serializers.
+            RecordFormat::Json(_) => Box::new(<SerCursorImpl<'a, JsonSerializer, B, KD, VD>>::new(
                 &self.batch,
             )),
         })

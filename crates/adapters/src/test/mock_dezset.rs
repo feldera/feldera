@@ -3,7 +3,7 @@ use crate::{
     static_compile::deinput::{
         CsvDeserializerFromBytes, DeserializerFromBytes, JsonDeserializerFromBytes,
     },
-    ControllerError, DeCollectionHandle,
+    ControllerError, DeCollectionHandle, DeserializeWithContext, SqlDeserializerConfig,
 };
 use anyhow::Result as AnyResult;
 use std::{
@@ -72,7 +72,7 @@ impl<T> MockDeZSet<T> {
 
 impl<T> DeCollectionHandle for MockDeZSet<T>
 where
-    T: for<'de> serde::Deserialize<'de> + Send + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig> + Send + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -80,11 +80,18 @@ where
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
             RecordFormat::Csv => Ok(Box::new(
-                MockDeZSetStream::<CsvDeserializerFromBytes, T>::new(self.clone()),
+                MockDeZSetStream::<CsvDeserializerFromBytes<_>, T>::new(
+                    self.clone(),
+                    SqlDeserializerConfig::default(),
+                ),
             )),
-            RecordFormat::Json => Ok(Box::new(
-                MockDeZSetStream::<JsonDeserializerFromBytes, T>::new(self.clone()),
-            )),
+            RecordFormat::Json(flavor) => Ok(Box::new(MockDeZSetStream::<
+                JsonDeserializerFromBytes<SqlDeserializerConfig>,
+                T,
+            >::new(
+                self.clone(),
+                SqlDeserializerConfig::from(flavor),
+            ))),
         }
     }
 }
@@ -93,24 +100,26 @@ where
 pub struct MockDeZSetStream<De, T> {
     handle: MockDeZSet<T>,
     deserializer: De,
+    config: SqlDeserializerConfig,
 }
 
 impl<De, T> MockDeZSetStream<De, T>
 where
-    De: DeserializerFromBytes,
+    De: DeserializerFromBytes<SqlDeserializerConfig>,
 {
-    pub fn new(handle: MockDeZSet<T>) -> Self {
+    pub fn new(handle: MockDeZSet<T>, config: SqlDeserializerConfig) -> Self {
         Self {
             handle,
-            deserializer: De::create(),
+            deserializer: De::create(config.clone()),
+            config,
         }
     }
 }
 
 impl<De, T> DeCollectionStream for MockDeZSetStream<De, T>
 where
-    T: for<'de> serde::Deserialize<'de> + Send + 'static,
-    De: DeserializerFromBytes + Send + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig> + Send + 'static,
+    De: DeserializerFromBytes<SqlDeserializerConfig> + Send + 'static,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data)?;
@@ -138,6 +147,6 @@ where
     }
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
-        Box::new(Self::new(self.handle.clone()))
+        Box::new(Self::new(self.handle.clone(), self.config.clone()))
     }
 }

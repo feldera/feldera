@@ -1,5 +1,5 @@
 use crate::{
-    catalog::{RecordFormat, SerBatch},
+    catalog::{JsonFlavor, RecordFormat, SerBatch},
     util::truncate_ellipse,
     ControllerError, Encoder, OutputConsumer, OutputFormat,
 };
@@ -114,7 +114,8 @@ impl Encoder for JsonEncoder {
 
         let mut num_records = 0;
         for batch in batches.iter() {
-            let mut cursor = batch.cursor(RecordFormat::Json)?;
+            // TODO: configurable serializer.
+            let mut cursor = batch.cursor(RecordFormat::Json(JsonFlavor::Default))?;
 
             while cursor.key_valid() {
                 let mut w = cursor.weight();

@@ -249,7 +249,10 @@ impl OutputEndpoint for FileOutputEndpoint {
 
 #[cfg(test)]
 mod test {
-    use crate::test::{mock_input_pipeline, wait};
+    use crate::{
+        deserialize_without_context,
+        test::{mock_input_pipeline, wait},
+    };
     use csv::WriterBuilder as CsvWriterBuilder;
     use serde::{Deserialize, Serialize};
     use std::{io::Write, thread::sleep, time::Duration};
@@ -261,6 +264,8 @@ mod test {
         b: bool,
         i: i64,
     }
+
+    deserialize_without_context!(TestStruct);
 
     impl TestStruct {
         fn new(s: String, b: bool, i: i64) -> Self {

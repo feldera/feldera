@@ -160,3 +160,8 @@ pub use transport::{
     AsyncErrorCallback, FileInputTransport, InputConsumer, InputEndpoint, InputTransport,
     OutputEndpoint, OutputTransport,
 };
+
+pub use static_compile::{
+    DateFormat, DeserializationContext, DeserializeWithContext, FieldParseError,
+    SqlDeserializerConfig, TimeFormat, TimestampFormat,
+};

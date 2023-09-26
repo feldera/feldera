@@ -2,6 +2,9 @@
 
 use crate::interval::{LongInterval, ShortInterval};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
+use dbsp_adapters::{
+    DateFormat, DeserializeWithContext, SqlDeserializerConfig, TimeFormat, TimestampFormat,
+};
 use serde::{de::Error as _, ser::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use size_of::SizeOf;
 use std::{
@@ -12,8 +15,7 @@ use std::{
 
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
-    some_existing_operator, some_operator, some_polymorphic_function1,
-    some_polymorphic_function2
+    some_existing_operator, some_operator, some_polymorphic_function1, some_polymorphic_function2,
 };
 
 /// Similar to a unix timestamp: a positive time interval between Jan 1 1970 and
@@ -76,20 +78,28 @@ impl Serialize for Timestamp {
 ///   represent timestamps as numbers (which is how they are stored inside the
 ///   DB), so in the future we may need a smarter implementation that supports
 ///   all these variants.
-impl<'de> Deserialize<'de> for Timestamp {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+impl<'de> DeserializeWithContext<'de, SqlDeserializerConfig> for Timestamp {
+    fn deserialize_with_context<D>(
+        deserializer: D,
+        config: &'de SqlDeserializerConfig,
+    ) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        // `timestamp_str: &'de` doesn't work for JSON, which escapes strings
-        // and can only deserialize into an owned string.
-        let timestamp_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        match config.timestamp_format {
+            TimestampFormat::String(format) => {
+                // `timestamp_str: &'de` doesn't work for JSON, which escapes strings
+                // and can only deserialize into an owned string.
+                let timestamp_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
 
-        let timestamp = NaiveDateTime::parse_from_str(&timestamp_str.trim(), "%F %T%.f").map_err(|e| {
-            D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
-        })?;
+                let timestamp = NaiveDateTime::parse_from_str(timestamp_str.trim(), format)
+                    .map_err(|e| {
+                        D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
+                    })?;
 
-        Ok(Self::new(timestamp.timestamp_millis()))
+                Ok(Self::new(timestamp.timestamp_millis()))
+            }
+        }
     }
 }
 
@@ -400,17 +410,27 @@ impl Serialize for Date {
 }
 
 /// Deserialize date from the `YYYY-MM-DD` format.
-impl<'de> Deserialize<'de> for Date {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+impl<'de> DeserializeWithContext<'de, SqlDeserializerConfig> for Date {
+    fn deserialize_with_context<D>(
+        deserializer: D,
+        config: &'de SqlDeserializerConfig,
+    ) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let str: &'de str = Deserialize::deserialize(deserializer)?;
-        let date = NaiveDate::parse_from_str(str.trim(), "%Y-%m-%d")
-            .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
-        Ok(Self::new(
-            (date.and_time(NaiveTime::default()).timestamp() / 86400) as i32,
-        ))
+        match config.date_format {
+            DateFormat::String(format) => {
+                let str: &'de str = Deserialize::deserialize(deserializer)?;
+                let date = NaiveDate::parse_from_str(str.trim(), format)
+                    .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
+                Ok(Self::new(
+                    (date.and_time(NaiveTime::default()).timestamp() / 86400) as i32,
+                ))
+            }
+            DateFormat::DaysSinceEpoch => Ok(Self {
+                days: i32::deserialize(deserializer)?,
+            }),
+        }
     }
 }
 
@@ -427,11 +447,7 @@ pub fn minus_Date_Date_LongInterval(left: Date, right: Date) -> LongInterval {
     let ld = left.to_dateTime();
     let rd = right.to_dateTime();
 
-    let (beg, end, neg) = if ld > rd {
-        (rd, ld, 1)
-    } else {
-        (ld, rd, -1)
-    };
+    let (beg, end, neg) = if ld > rd { (rd, ld, 1) } else { (ld, rd, -1) };
 
     let month_end = end.month() as i32;
     let month_beg = beg.month() as i32;
@@ -678,15 +694,25 @@ impl Serialize for Time {
     }
 }
 
-impl<'de> Deserialize<'de> for Time {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+impl<'de> DeserializeWithContext<'de, SqlDeserializerConfig> for Time {
+    fn deserialize_with_context<D>(
+        deserializer: D,
+        config: &'de SqlDeserializerConfig,
+    ) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let str: &'de str = Deserialize::deserialize(deserializer)?;
-        let time = NaiveTime::parse_from_str(str.trim(), "%H:%M:%S%.f")
-            .map_err(|e| D::Error::custom(format!("invalid time string '{str}': {e}")))?;
-        Ok(Self::from_time(time))
+        match config.time_format {
+            TimeFormat::String(format) => {
+                let str: &'de str = Deserialize::deserialize(deserializer)?;
+                let time = NaiveTime::parse_from_str(str.trim(), format)
+                    .map_err(|e| D::Error::custom(format!("invalid time string '{str}': {e}")))?;
+                Ok(Self::from_time(time))
+            }
+            TimeFormat::Micros => Ok(Self {
+                nanoseconds: u64::deserialize(deserializer)? * 1_000,
+            }),
+        }
     }
 }
 
@@ -720,4 +746,83 @@ pub fn extract_minute_Time(value: Time) -> i64 {
 pub fn extract_hour_Time(value: Time) -> i64 {
     let time = value.to_time();
     time.hour().into()
+}
+
+#[cfg(test)]
+mod test {
+    use super::{Date, Time, Timestamp};
+    use dbsp_adapters::{
+        deserialize_table_record, format::JsonFlavor, DeserializeWithContext, SqlDeserializerConfig,
+    };
+    use lazy_static::lazy_static;
+
+    #[derive(Debug, Eq, PartialEq)]
+    #[allow(non_snake_case)]
+    struct TestStruct {
+        date: Date,
+        time: Time,
+        timestamp: Timestamp,
+    }
+
+    deserialize_table_record!(TestStruct["TestStruct", 3] {
+        (date, "DATE", false, Date, None),
+        (time, "TIME", false, Time, None),
+        (timestamp, "TIMESTAMP", false, Timestamp, None)
+    });
+
+    lazy_static! {
+        static ref DEFAULT_CONFIG: SqlDeserializerConfig = SqlDeserializerConfig::default();
+        static ref DEBEZIUM_CONFIG: SqlDeserializerConfig =
+            SqlDeserializerConfig::from(JsonFlavor::DebeziumMySql);
+    }
+
+    fn deserialize_with_default_config<'de, T>(json: &'de str) -> Result<T, serde_json::Error>
+    where
+        T: DeserializeWithContext<'de, SqlDeserializerConfig>,
+    {
+        T::deserialize_with_context(
+            &mut serde_json::Deserializer::from_str(json),
+            &DEFAULT_CONFIG,
+        )
+    }
+
+    fn deserialize_with_debezium_config<'de, T>(json: &'de str) -> Result<T, serde_json::Error>
+    where
+        T: DeserializeWithContext<'de, SqlDeserializerConfig>,
+    {
+        T::deserialize_with_context(
+            &mut serde_json::Deserializer::from_str(json),
+            &DEBEZIUM_CONFIG,
+        )
+    }
+
+    #[test]
+    fn debezium() {
+        assert_eq!(
+            deserialize_with_debezium_config::<TestStruct>(
+                r#"{"date": 16816, "time": 10800000000, "timestamp": "2018-06-20T13:37:03Z"}"#
+            )
+            .unwrap(),
+            TestStruct {
+                date: Date::new(16816),
+                time: Time::new(10800000000000),
+                timestamp: Timestamp::new(1529501823000),
+            }
+        );
+    }
+
+    #[test]
+    fn default_json() {
+        assert_eq!(
+            deserialize_with_default_config::<TestStruct>(
+                r#"{"date": "2023-09-28", "time": "23:21:15.123", "timestamp": "2018-06-20 13:37:03"}"#
+            )
+            .unwrap(),
+            TestStruct {
+                date: Date::new(19628),
+                time: Time::new(84075123000000),
+                timestamp: Timestamp::new(1529501823000),
+            }
+        );
+    }
 }

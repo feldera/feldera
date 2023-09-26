@@ -2,7 +2,7 @@
 
 use super::{DebeziumUpdate, InsDelUpdate, JsonUpdateFormat, WeightedUpdate};
 use crate::{
-    catalog::{DeCollectionStream, RecordFormat},
+    catalog::{DeCollectionStream, JsonFlavor, RecordFormat},
     format::{InputFormat, ParseError, Parser},
     util::split_on_newline,
     ControllerError, DeCollectionHandle,
@@ -56,6 +56,10 @@ pub struct JsonParserConfig {
     /// JSON update format.
     #[serde(default)]
     update_format: JsonUpdateFormat,
+
+    /// Specifies JSON encoding used for individual table records.
+    #[serde(default)]
+    json_flavor: JsonFlavor,
 
     /// Set to `true` if updates in this stream are packaged into JSON arrays.
     ///
@@ -227,7 +231,8 @@ impl InputFormat for JsonInputFormat {
                 &serde_yaml::to_string(&config).unwrap_or_default(),
             )
         })?;
-        let input_stream = input_stream.configure_deserializer(RecordFormat::Json)?;
+        let input_stream =
+            input_stream.configure_deserializer(RecordFormat::Json(config.json_flavor.clone()))?;
         Ok(Box::new(JsonParser::new(input_stream, config)) as Box<dyn Parser>)
     }
 
@@ -456,14 +461,14 @@ impl Parser for JsonParser {
 #[cfg(test)]
 mod test {
     use crate::{
+        catalog::JsonFlavor,
         deserialize_table_record,
         format::{JsonParserConfig, JsonUpdateFormat},
         test::mock_parser_pipeline,
         transport::InputConsumer,
-        FormatConfig, ParseError,
+        DeserializeWithContext, FormatConfig, ParseError, SqlDeserializerConfig,
     };
     use log::trace;
-    use serde::Deserialize;
     use std::{borrow::Cow, fmt::Debug};
 
     #[derive(PartialEq, Debug, Eq)]
@@ -510,7 +515,11 @@ mod test {
 
     fn run_test_cases<T>(test_cases: Vec<TestCase<T>>)
     where
-        T: Debug + Eq + for<'de> Deserialize<'de> + Send + 'static,
+        T: Debug
+            + Eq
+            + for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
+            + Send
+            + 'static,
     {
         for test in test_cases {
             trace!("test: {test:?}");
@@ -563,6 +572,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![(r#"{"b": true, "i": 0}"#.to_string(), Vec::new())],
@@ -573,6 +583,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![(r#"[true, 0, "a"]"#.to_string(), Vec::new())],
@@ -583,6 +594,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![(r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())],
@@ -593,6 +605,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![(r#"[[true, 0, "b"]]"#.to_string(), Vec::new())],
@@ -604,6 +617,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![(r#"{"b": true, "i": 0}{"b": false, "i": 100, "s": "foo"}"#.to_string(), Vec::new())],
@@ -614,6 +628,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![(r#"[true, 0, "c"][false, 100, "foo"]"#.to_string(), Vec::new())],
@@ -624,6 +639,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![(r#"[{"b": true, "i": 0},{"b": false, "i": 100, "s": "foo"}]"#.to_string(), Vec::new())],
@@ -634,6 +650,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![(r#"[[true, 0, "d"],[false, 100, "foo"]]"#.to_string(), Vec::new())],
@@ -645,6 +662,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
@@ -656,6 +674,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"[true, 0, "e"]"#.to_string(), Vec::new())
@@ -667,6 +686,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
@@ -678,6 +698,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[[true, 0, "e"]]"#.to_string(), Vec::new())
@@ -690,6 +711,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
@@ -701,6 +723,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"[true, 0, "f"]"#.to_string(), Vec::new())
@@ -712,6 +735,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
@@ -723,6 +747,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[[true, 0, "g"]]"#.to_string(), Vec::new())
@@ -735,6 +760,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
@@ -746,6 +772,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
@@ -759,6 +786,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[[true, 0, "h"]]"#.to_string(), Vec::new())
@@ -771,6 +799,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
@@ -784,6 +813,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"[true, 0, "i"]"#.to_string(), Vec::new())
@@ -797,6 +827,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
@@ -810,6 +841,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
@@ -824,6 +856,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
@@ -842,6 +875,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![(r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())],
@@ -852,6 +886,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![(r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())],
@@ -863,6 +898,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![(r#"{"insert": {"b": true, "i": 0}}{"delete": {"b": false, "i": 100, "s": "foo"}}"#.to_string(), Vec::new())],
@@ -873,6 +909,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![(r#"[{"insert": {"b": true, "i": 0}}, {"delete": {"b": false, "i": 100, "s": "foo"}}]"#.to_string(), Vec::new())],
@@ -883,6 +920,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![(r#"[{"insert": [true, 0, "a"]}, {"delete": {"b": false, "i": 100, "s": "foo"}}]"#.to_string(), Vec::new())],
@@ -894,6 +932,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
@@ -906,6 +945,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
@@ -917,6 +957,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
@@ -929,6 +970,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
@@ -940,6 +982,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
@@ -951,6 +994,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
@@ -966,6 +1010,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
@@ -979,6 +1024,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
@@ -992,6 +1038,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
@@ -1006,6 +1053,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
@@ -1019,6 +1067,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
                     array: true,
                 },
                 vec![ (r#"[{"insert": [true, 0, "a"]}]"#.to_string(), Vec::new())
@@ -1036,6 +1085,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![(r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())],
@@ -1047,6 +1097,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![(r#"{"payload": {"op": "u", "before": {"b": true, "i": 123}, "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())],
@@ -1057,6 +1108,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![(r#"{"payload": {"op": "u", "before": [true, 123, "abc"], "after": [true, 0, "def"]}}"#.to_string(), Vec::new())],
@@ -1068,6 +1120,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![(r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}{"payload": {"op": "d", "before": {"b": false, "i": 100, "s": "foo"}}}"#.to_string(), Vec::new())],
@@ -1079,6 +1132,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
@@ -1091,6 +1145,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
@@ -1103,6 +1158,7 @@ mod test {
                 true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
@@ -1115,6 +1171,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
@@ -1129,6 +1186,7 @@ mod test {
                 false,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
+                    json_flavor: JsonFlavor::Default,
                     array: false,
                 },
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())

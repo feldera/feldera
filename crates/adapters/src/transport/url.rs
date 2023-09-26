@@ -254,6 +254,7 @@ fn rustls_config() -> Arc<ClientConfig> {
 #[cfg(test)]
 mod test {
     use crate::{
+        deserialize_without_context,
         test::{mock_input_pipeline, wait, MockDeZSet, MockInputConsumer},
         InputEndpoint,
     };
@@ -285,6 +286,8 @@ mod test {
             Self { s, b, i }
         }
     }
+
+    deserialize_without_context!(TestStruct);
 
     fn n_recs(zset: &MockDeZSet<TestStruct>) -> usize {
         zset.state().flushed.len()
