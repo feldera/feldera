@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2023-09-26
+
+Milestone [v0.1.4](https://github.com/feldera/feldera/milestone/1)
+
+### Added
+
+- WebConsole: Add Kafka Authentication options for connectors
+  ([#614](https://github.com/feldera/feldera/issues/614))
+- WebConsole: Add breadcrumbs for all pages
+  ([#622](https://github.com/feldera/feldera/issues/622))
+- WebConsole: Add ability to edit connectors from Pipeline Builder
+  ([#664](https://github.com/feldera/feldera/issues/664))
+
 ## [0.1.3] - 2023-09-11
 
 ### Fixed
@@ -23,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WebConsole: Improved error reporting: added the ability to open new github issues
   in the Health dashboard on the Home screen
   ([#531](https://github.com/feldera/feldera/issues/531)).
-  
+
 ## [0.1.2] - 2023-09-07
 
 ### Fixed
