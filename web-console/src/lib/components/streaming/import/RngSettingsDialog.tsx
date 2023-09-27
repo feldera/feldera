@@ -33,7 +33,8 @@ const RNG_SUPPORTED_TYPES = [
   'TIME',
   'DATE',
   'TIMESTAMP',
-  'ARRAY'
+  'ARRAY',
+  'GEOMETRY'
 ]
 
 // The state for a RNG method stored in local storage.
