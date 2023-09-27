@@ -86,7 +86,8 @@ views                                           V
 
 ## Using the compiler
 
-See the [documentation](https://www.feldera.com/docs/sql/intro)
+See the documentation in `docs/contributors/compiler.md` in this repo,
+or [online](https://www.feldera.com/docs/contributors/compiler).
 
 ## Compiler architecture
 
