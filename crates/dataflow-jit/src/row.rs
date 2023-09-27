@@ -76,7 +76,7 @@ impl UninitRow {
         let layout =
             unsafe { Layout::from_size_align_unchecked(vtable.size_of, vtable.align_of.get()) };
 
-        match NonNull::new(unsafe { std::alloc::alloc(layout) }) {
+        match NonNull::new(unsafe { std::alloc::alloc_zeroed(layout) }) {
             Some(ptr) => ptr,
             None => std::alloc::handle_alloc_error(layout),
         }
