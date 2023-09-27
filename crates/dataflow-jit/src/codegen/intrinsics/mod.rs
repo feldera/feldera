@@ -673,7 +673,7 @@ unsafe extern "C" fn alloc(size: usize, align: usize) -> *mut u8 {
     let layout = unsafe { Layout::from_size_align_unchecked(size, align) };
     debug_assert!(Layout::from_size_align(size, align).is_ok());
 
-    let ptr = unsafe { std::alloc::alloc(layout) };
+    let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
     if ptr.is_null() {
         std::alloc::handle_alloc_error(layout);
     }

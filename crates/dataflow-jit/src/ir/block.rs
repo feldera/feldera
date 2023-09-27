@@ -54,6 +54,11 @@ impl Block {
         &mut self.body
     }
 
+    #[inline]
+    pub(crate) fn body_vec_mut(&mut self) -> &mut Vec<(ExprId, Expr)> {
+        &mut self.body
+    }
+
     /// Removes all expressions within the current block's body for which the
     /// predicate returns `false`
     #[inline]

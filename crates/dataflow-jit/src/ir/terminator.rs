@@ -103,6 +103,12 @@ impl Terminator {
     }
 }
 
+impl Default for Terminator {
+    fn default() -> Self {
+        Self::Unreachable
+    }
+}
+
 impl<'a, D, A> Pretty<'a, D, A> for &Terminator
 where
     A: 'a,

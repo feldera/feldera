@@ -1,3 +1,4 @@
+mod redundant_jump;
 mod unit_ops;
 
 use crate::ir::{
@@ -33,6 +34,7 @@ impl Function {
         self.remove_unit_memory_operations(layout_cache);
         self.deduplicate_input_loads();
         self.simplify_branches();
+        // redundant_jump::eliminate_redundant_jumps(self);
         self.truncate_zero();
         self.concat_empty_strings();
         self.dce();
