@@ -90,7 +90,8 @@ impl CsvParser {
         let mut total_bytes_read = 0;
         let mut record_buffer = buffer;
         loop {
-            let (result, bytes_read, _, _) = csv_reader.read_record(buffer, &mut output, &mut ends);
+            let (result, mut bytes_read, _, _) =
+                csv_reader.read_record(buffer, &mut output, &mut ends);
             total_bytes_read += bytes_read;
             match result {
                 ReadRecordResult::End => break,
@@ -100,9 +101,10 @@ impl CsvParser {
                 // invalid CSV (our job here is simply to establish record boundaries).
                 ReadRecordResult::Record | ReadRecordResult::InputEmpty => {
                     /*println!(
-                        "record: {}",
+                        "result: {result:?}, record: '{}', bytes: {:?}",
                         std::str::from_utf8(&record_buffer[0..total_bytes_read])
-                            .unwrap_or("invalid utf-8")
+                            .unwrap_or("invalid utf-8"),
+                        &record_buffer[0..total_bytes_read],
                     );*/
                     match self
                         .input_stream
@@ -128,6 +130,12 @@ impl CsvParser {
                             num_records += 1;
                         }
                     }
+                    // Lines ending in "\r\n" get broken up after `\r` by the parser.
+                    // Consume the remaining `\n`; otherwise it gets prepended to the
+                    // next buffer.
+                    if buffer.len() > bytes_read && buffer[bytes_read] == b'\n' {
+                        bytes_read += 1;
+                    }
                     record_buffer = &buffer[bytes_read..];
                     self.last_event_number += 1;
                     total_bytes_read = 0;
@@ -148,10 +156,13 @@ impl CsvParser {
 
 impl Parser for CsvParser {
     fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
-        // println!("input {} bytes:\n{}\nself.leftover:\n{}", data.len(),
-        //    std::str::from_utf8(data).map(|s| s.to_string()).unwrap_or_else(|e|
-        // format!("invalid csv: {e}")),    std::str::from_utf8(&self.leftover).
-        // map(|s| s.to_string()).unwrap_or_else(|e| format!("invalid csv: {e}")));
+        /*println!(
+            "input bytes:{} data:\n{}",
+            data.len(),
+            std::str::from_utf8(data)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|e| format!("invalid csv: {e}"))
+        );*/
 
         let leftover = split_on_newline(data);
 
