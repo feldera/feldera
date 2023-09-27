@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2023-09-27
+
+### Fixed
+
+- Fixes a regression in the CSV parser
+  ([#801](https://github.com/feldera/feldera/pull/801))
+
 ## [0.1.4] - 2023-09-26
 
 Milestone [v0.1.4](https://github.com/feldera/feldera/milestone/1)
