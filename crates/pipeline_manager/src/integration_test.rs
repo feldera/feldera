@@ -547,6 +547,15 @@ async fn deploy_pipeline() {
         .await;
     assert!(req.status().is_success());
 
+    // Push more data without Windows-style newlines.
+    let req = config
+        .post_csv(
+            format!("/v0/pipelines/{}/ingress/T1", id),
+            "4\r\n5\r\n6".to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
     // Pause a pipeline after it is started
     let resp = config
         .post_no_body(format!("/v0/pipelines/{}/pause", id))
@@ -558,7 +567,7 @@ async fn deploy_pipeline() {
 
     // Querying quantiles should work in paused state.
     let quantiles = config.quantiles_csv(&id, "T1").await;
-    assert_eq!(&quantiles, "1,1\n2,1\n3,1\n");
+    assert_eq!(&quantiles, "1,1\n2,1\n3,1\n4,1\n5,1\n6,1\n");
 
     // Start the pipeline
     let resp = config
