@@ -198,7 +198,7 @@ const UNSUPPORTED_TYPE_GENERATORS: IRngGenMethod[] = [
   {
     title: 'Constant',
     category: Categories.DEFAULT,
-    generator: () => '',
+    generator: (ct, settings) => settings?.value ?? '',
     form_fields: () => [
       {
         sm: 4,
@@ -208,7 +208,12 @@ const UNSUPPORTED_TYPE_GENERATORS: IRngGenMethod[] = [
           type: 'string'
         }
       }
-    ]
+    ],
+    validationSchema: () => {
+      return yup.object().shape({
+        value: yup.string()
+      })
+    }
   }
 ]
 
