@@ -5,6 +5,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 // https://github.com/postgres/postgres/blob/03734a7fed7d924679770adb78a7db8a37d14188/src/test/regress/expected/time.out
+// This test seems complete (convering all test cases from Postgres).
 public class PostgresTimeTests extends PostgresBaseTest {
     @Override
     public void prepareData(DBSPCompiler compiler) {
@@ -159,5 +160,31 @@ public class PostgresTimeTests extends PostgresBaseTest {
         // SELECT EXTRACT(FORTNIGHT FROM TIME '13:30:25.575401')
         // SELECT EXTRACT(TIMEZONE FROM TIME '13:30:25.575401')
         this.shouldFail("SELECT EXTRACT(EPOCH FROM TIME '2020-05-26 13:30:25.575401')", "");
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6030")
+    public void testDatePart() {
+        this.qs("SELECT date_part(microsecond, TIME '13:30:25.575401');\n" +
+                " date_part \n" +
+                "-----------\n" +
+                "  25575401\n" +
+                "(1 row)" +
+                "\n" +
+                "SELECT date_part('millisecond', TIME '13:30:25.575401');\n" +
+                " date_part \n" +
+                "-----------\n" +
+                " 25575.401\n" +
+                "(1 row)\n" +
+                "\n" +
+                "SELECT date_part('second',      TIME '13:30:25.575401');\n" +
+                " date_part \n" +
+                "-----------\n" +
+                " 25.575401\n" +
+                "(1 row)\n" +
+                "\n" +
+                "SELECT date_part('epoch',       TIME '13:30:25.575401');\n" +
+                "  date_part   \n" +
+                "--------------\n" +
+                " 48625.575401");
     }
 }
