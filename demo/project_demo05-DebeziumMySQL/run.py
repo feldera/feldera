@@ -44,6 +44,7 @@ def prepare(args=[]):
             "schema.history.internal.kafka.topic": "schema-changes.inventory.internal",
             "schema.history.internal.kafka.bootstrap.servers": "redpanda:9092",
             "include.schema.changes": "true",
+            "decimal.handling.mode": "string",
         },
     }
     response = requests.post(

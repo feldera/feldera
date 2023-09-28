@@ -539,6 +539,8 @@ mod test {
 
     use dbsp::algebra::F64;
     use lazy_static::lazy_static;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use crate::{
         format::string_record_deserializer, DeserializeWithContext, SqlDeserializerConfig,
@@ -585,32 +587,65 @@ mod test {
         CC_NUM: F64,
         #[allow(non_snake_case)]
         FIRST: Option<String>,
+        #[allow(non_snake_case)]
+        DEC: Decimal,
     }
-    deserialize_table_record!(Struct2["Table.Name", 2] {(CC_NUM, "CC_NUM", false, F64, None), (FIRST, "FIRST", false, Option<String>, Some(None)) });
+    deserialize_table_record!(Struct2["Table.Name", 3] {(CC_NUM, "CC_NUM", false, F64, None), (FIRST, "FIRST", false, Option<String>, Some(None)), (DEC, "DEC", false, Decimal, None)});
 
     #[test]
     fn deserialize_struct2() {
         assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"{"cc_num": 100}"#).unwrap(),
-            Struct2 {
-                CC_NUM: F64::from(100),
-                FIRST: None
-            }
-        );
-        assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"{"CC_NUM": 100, "first": null}"#)
+            deserialize_with_default_context::<Struct2>(r#"{"cc_num": 100, "dec": "0.123"}"#)
                 .unwrap(),
             Struct2 {
                 CC_NUM: F64::from(100),
-                FIRST: None
+                FIRST: None,
+                DEC: dec!(0.123),
             }
         );
         assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"{"CC_NUM": 100, "first": "foo"}"#)
+            deserialize_with_default_context::<Struct2>(r#"{"cc_num": 100, "dec": 0.123}"#)
                 .unwrap(),
             Struct2 {
                 CC_NUM: F64::from(100),
-                FIRST: Some("foo".to_string())
+                FIRST: None,
+                DEC: dec!(0.123),
+            }
+        );
+
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(
+                r#"{"CC_NUM": 100, "first": null, "dec": "-1.40"}"#
+            )
+            .unwrap(),
+            Struct2 {
+                CC_NUM: F64::from(100),
+                FIRST: None,
+                DEC: dec!(-1.40),
+            }
+        );
+
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(
+                r#"{"CC_NUM": 100, "first": null, "dec": -1.40}"#
+            )
+            .unwrap(),
+            Struct2 {
+                CC_NUM: F64::from(100),
+                FIRST: None,
+                DEC: dec!(-1.40),
+            }
+        );
+
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(
+                r#"{"CC_NUM": 100, "first": "foo", "dec": "1e20"}"#
+            )
+            .unwrap(),
+            Struct2 {
+                CC_NUM: F64::from(100),
+                FIRST: Some("foo".to_string()),
+                DEC: dec!(1e20),
             }
         );
         assert_eq!(
@@ -619,24 +654,35 @@ mod test {
             Err(r#"missing field `CC_NUM` at line 1 column 16"#.to_string())
         );
         assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"[100, "foo"]"#).unwrap(),
+            deserialize_with_default_context::<Struct2>(r#"[100, "foo", "-1e20"]"#).unwrap(),
             Struct2 {
                 CC_NUM: F64::from(100),
-                FIRST: Some("foo".to_string())
+                FIRST: Some("foo".to_string()),
+                DEC: dec!(-1e20),
             }
         );
         assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"[100, null]"#).unwrap(),
+            deserialize_with_default_context::<Struct2>(r#"[100, null, "2e-5"]"#).unwrap(),
             Struct2 {
                 CC_NUM: F64::from(100),
-                FIRST: None
+                FIRST: None,
+                DEC: dec!(0.00002),
             }
         );
         assert_eq!(
-            deserialize_with_default_context::<Struct2>(r#"[100, null, "bar"]"#).unwrap(),
+            deserialize_with_default_context::<Struct2>(r#"[100, null, "-3e-5"]"#).unwrap(),
             Struct2 {
                 CC_NUM: F64::from(100),
-                FIRST: None
+                FIRST: None,
+                DEC: dec!(-3e-5),
+            }
+        );
+        assert_eq!(
+            deserialize_with_default_context::<Struct2>(r#"[100, null, -3e-5]"#).unwrap(),
+            Struct2 {
+                CC_NUM: F64::from(100),
+                FIRST: None,
+                DEC: dec!(-3e-5),
             }
         );
     }

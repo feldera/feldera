@@ -73,17 +73,17 @@ the JSON encoding of a row would look like this:
 
 ## Types
 
-| Type                                    | Example                                         |
-|-----------------------------------------|-------------------------------------------------|
-| BOOLEAN                                 | `true`, `false`                                 |
-| TINYINT,SMALLINT, INTEGER, BIGINT       |  `1`, `-9`                                      |
-| FLOAT, DOUBLE, DECIMAL                  | `-1.40`, `12.53`, `1e20`                        |
-| VARCHAR, CHAR, STRING                   | `abc`                                           |
-| TIME                                    | `12:12:33`, `23:59:29.483`, `23:59:09.483221092`|
-| TIMESTAMP                               | `2024-02-25 12:12:33`                           |
-| DATE                                    | `2024-02-25`                                    |
-| BIGINT ARRAY                            | `[1, 2]`                                        |
-| VARCHAR ARRAY ARRAY                     | `[[ 'abc', '123'], ['c', 'sql']]`               |
+| Type                                    | Example                                                 |
+|-----------------------------------------|---------------------------------------------------------|
+| BOOLEAN                                 | `true`, `false`                                         |
+| TINYINT,SMALLINT, INTEGER, BIGINT       |  `1`, `-9`                                              |
+| FLOAT, DOUBLE, DECIMAL                  | `-1.40`, `"-1.40"`, `12.53`, `"12.53"`, `1e20`, `"1e20"`|
+| VARCHAR, CHAR, STRING                   | `abc`                                                   |
+| TIME                                    | `12:12:33`, `23:59:29.483`, `23:59:09.483221092`        |
+| TIMESTAMP                               | `2024-02-25 12:12:33`                                   |
+| DATE                                    | `2024-02-25`                                            |
+| BIGINT ARRAY                            | `[1, 2]`                                                |
+| VARCHAR ARRAY ARRAY                     | `[[ 'abc', '123'], ['c', 'sql']]`                       |
 
 ### `BOOLEAN`
 
@@ -97,8 +97,11 @@ Types](../sql/types.md)), otherwise an error is returned on ingress.
 ### Decimals (`DECIMAL` / `NUMERIC`)
 
 Both the scientific notation (e.g., `3e234`) and standard floating point numbers
-(`1.23`) are valid. The value must fit within the specified range or
-precision, otherwise an error is returned.
+(`1.23`) are valid. The parser will accept decimals formatted as JSON numbers
+(`1.234`) or strings (`"1.234"`).  The latter representation is more robust as it
+avoids loss of precision during parsing (the Rust JSON parser we use represents all
+fractional numbers as 64-bit floating point numbers internally,  which can cause loss
+of precision for decimal numbers that cannot be accurately represented in that way).
 
 ### Floating point numbers (`FLOAT`, `DOUBLE`)
 
@@ -207,7 +210,7 @@ format
 {"part": 1, "vendor": 2, "price": 30000}
 ```
 
-is equivalent to 
+is equivalent to
 
 ```json
 {"insert": {"part": 1, "vendor": 2, "price": 30000}}
