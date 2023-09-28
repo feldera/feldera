@@ -503,7 +503,7 @@ const Editors = (props: { programId: string | null }) => {
     <>
       <BreadcrumbsHeader>
         <Link href={`/analytics/programs`}>SQL Programs</Link>
-        <Link href={`/analytics/editor?program_id=${programId}`}>{project.name}</Link>
+        <Link href={`/analytics/editor/?program_id=${programId}`}>{project.name}</Link>
       </BreadcrumbsHeader>
       <Grid item xs={12}>
         <Card>

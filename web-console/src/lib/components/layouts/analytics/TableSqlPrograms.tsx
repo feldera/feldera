@@ -191,7 +191,7 @@ const TableSqlPrograms = () => {
         fetchRows={fetchQuery}
         onUpdateRow={processRowUpdate}
         onDeleteRow={deleteProject}
-        editRowBtnProps={{ href: row => `/analytics/editor?program_id=${row.program_id}` }}
+        editRowBtnProps={{ href: row => `/analytics/editor/?program_id=${row.program_id}` }}
         apiRef={apiRef}
         toolbarChildren={[btnAdd, <GridToolbarFilterButton key='1' />, <div style={{ marginLeft: 'auto' }} key='2' />]}
         footerChildren={btnAdd}
