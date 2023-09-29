@@ -1,19 +1,48 @@
 'use client'
 
 import VerticalNavItems from '$lib/functions/navigation/vertical'
-import { ReactNode } from 'react'
+import { ReactNode, useState } from 'react'
 import { useSettings } from 'src/@core/hooks/useSettings'
 import VerticalLayout from 'src/@core/layouts/VerticalLayout'
+import { useAuthentication } from 'src/lib/compositions/useAuth'
 
-import { Grid } from '@mui/material'
+import { ClickAwayListener } from '@mui/base'
+import { Box, Collapse, Grid, Typography } from '@mui/material'
 import { Theme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
 
+import { AccountButton } from './AccountButton'
+import { AccountPanel } from './AccountPanel'
 import { GlobalDialog } from './GlobalDialog'
 import VerticalAppBarContent from './vertical/AppBarContent'
 
 interface Props {
   children: ReactNode
+}
+
+const AccountGroup = () => {
+  const [expand, setExpand] = useState(false)
+  const user = useAuthentication()
+  if (!user)
+    return (
+      <>
+        <Typography sx={{ color: 'GrayText', textAlign: 'center' }}>not authenticated</Typography>
+      </>
+    )
+  return (
+    <ClickAwayListener
+      onClickAway={() => {
+        setExpand(false)
+      }}
+    >
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+        <Collapse in={expand} sx={{ width: '100%' }}>
+          <AccountPanel></AccountPanel>
+        </Collapse>
+        <AccountButton onClick={() => setExpand(!expand)}></AccountButton>
+      </Box>
+    </ClickAwayListener>
+  )
 }
 
 const StandardVerticalLayout = ({ children }: Props) => {
@@ -34,6 +63,7 @@ const StandardVerticalLayout = ({ children }: Props) => {
       settings={settings}
       saveSettings={saveSettings}
       verticalNavItems={VerticalNavItems()} // Navigation Items
+      afterVerticalNavMenuContent={AccountGroup}
       verticalAppBarContent={(
         props // AppBar Content
       ) => (

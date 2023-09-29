@@ -1,13 +1,19 @@
 'use client'
 /** @jsxImportSource @emotion/react */
 
+import '@aws-amplify/ui-react/styles.css'
+
 import StatusSnackBar from '$lib/components/common/errors/StatusSnackBar'
 import { OpenAPI } from '$lib/services/manager'
 import { Next13ProgressBar as NextProgressBar } from 'next13-progressbar'
 import { ReactNode } from 'react'
 import { SettingsConsumer, SettingsProvider } from 'src/@core/context/settingsContext'
 import ThemeComponent from 'src/@core/theme/ThemeComponent'
+import { useAuthentication } from 'src/lib/compositions/useAuth'
+import { awsAmplifyConfig } from 'src/lib/functions/aws/awsExports'
 
+import { Amplify } from '@aws-amplify/core'
+import { Authenticator } from '@aws-amplify/ui-react'
 import { useTheme } from '@mui/material/styles'
 import { LocalizationProvider } from '@mui/x-date-pickers'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
@@ -28,32 +34,41 @@ OpenAPI.BASE =
 // provide the default query function to your app with defaultOptions
 const queryClient = new QueryClient({})
 
-export default (props: { children: ReactNode }) => {
+Amplify.configure(awsAmplifyConfig)
+
+const Layout = (props: { children: ReactNode }) => {
   const theme = useTheme()
+  const auth = useAuthentication()
+  OpenAPI.TOKEN = auth?.bearer
+  return (
+    <>
+      <NextProgressBar height='3px' color={theme.palette.primary.main} options={{ showSpinner: false }} showOnShallow />
+      {props.children}
+      <StatusSnackBar />
+    </>
+  )
+}
+
+export default (props: { children: ReactNode }) => {
   return (
     <EmotionRootStyleRegistry>
-      <SettingsProvider>
-        <SettingsConsumer>
-          {({ settings }) => {
-            return (
-              <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale='en-gb'>
-                <ThemeComponent settings={settings}>
-                  <QueryClientProvider client={queryClient}>
-                    <NextProgressBar
-                      height='3px'
-                      color={theme.palette.primary.main}
-                      options={{ showSpinner: false }}
-                      showOnShallow
-                    />
-                    {props.children}
-                    <StatusSnackBar />
-                  </QueryClientProvider>
-                </ThemeComponent>
-              </LocalizationProvider>
-            )
-          }}
-        </SettingsConsumer>
-      </SettingsProvider>
+      <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale='en-gb'>
+        <QueryClientProvider client={queryClient}>
+          <Authenticator.Provider>
+            <SettingsProvider>
+              <SettingsConsumer>
+                {({ settings }) => {
+                  return (
+                    <ThemeComponent settings={settings}>
+                      <Layout>{props.children}</Layout>
+                    </ThemeComponent>
+                  )
+                }}
+              </SettingsConsumer>
+            </SettingsProvider>
+          </Authenticator.Provider>
+        </QueryClientProvider>
+      </LocalizationProvider>
     </EmotionRootStyleRegistry>
   )
 }

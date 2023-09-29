@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add Debezium MySQL input connector
   ([#813](https://github.com/feldera/feldera/issues/813))
 
+### Added
+
+- WebConsole: Add AWS Cognito authentication to authorize requests to Pipeline Manager
+  ([#787](https://github.com/feldera/feldera/issues/787))
+
 ### Fixed
 
 - Fixes a regression in the CSV parser where it rejected the last row as an invalid row if `\r\n` was used for line-endings

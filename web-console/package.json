@@ -80,12 +80,15 @@
     "zustand": "^4.4.1"
   },
   "devDependencies": {
-    "@iconify/tools": "^3.0.5",
+    "@aws-amplify/ui-react": "^5.3.1",
     "@types/node": "^20.4.9",
     "@types/nprogress": "^0.2.0",
     "@types/react": "^18.2.20",
     "@typescript-eslint/eslint-plugin": "^6.3.0",
     "@typescript-eslint/parser": "^6.3.0",
+    "aws-amplify": "^5.3.11",
+    "aws-crt": "^1.18.0",
+    "encoding": "^0.1.13",
     "eslint": "^8.46.0",
     "eslint-config-next": "^13.4.13",
     "eslint-config-prettier": "^9.0.0",

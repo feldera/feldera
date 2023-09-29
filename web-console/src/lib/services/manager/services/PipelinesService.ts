@@ -338,11 +338,11 @@ export class PipelinesService {
    * state model in the [`PipelineStatus`] documentation).
    *
    * The endpoint returns immediately after validating the request and forwarding
-   * it to the pipeline. The requested status change completes asynchronously.  On success,
-   * the pipeline enters the requested desired state.  On error, the pipeline
-   * transitions to the `Failed` state. The user
-   * can monitor the current status of the pipeline by polling the `GET /pipeline`
-   * endpoint.
+   * it to the pipeline. The requested status change completes asynchronously.
+   * On success, the pipeline enters the requested desired state.  On error, the
+   * pipeline transitions to the `Failed` state. The user
+   * can monitor the current status of the pipeline by polling the `GET
+   * /pipeline` endpoint.
    *
    * The following values of the `action` argument are accepted by this endpoint:
    *

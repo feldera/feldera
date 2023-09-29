@@ -95,7 +95,8 @@ export class ProgramsService {
    * Delete a program.
    * Delete a program.
    *
-   * Deletion fails if there is at least one pipeline associated with the program.
+   * Deletion fails if there is at least one pipeline associated with the
+   * program.
    * @param programId Unique program identifier
    * @returns any Program successfully deleted.
    * @throws ApiError
