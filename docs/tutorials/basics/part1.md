@@ -21,6 +21,22 @@ Make sure that you have Feldera up and running by following the [Getting
 Started](/intro.md) guide.  Open the Feldera Web Console on
 [localhost:8080](http://localhost:8080).
 
+:::tip For the impatient
+
+If you started Feldera using the demo profile as described in the [Getting
+Started](/intro.md) guide, it has created a couple of SQL programs and
+pipelines.  One of these programs, called
+"Feldera Basics Tutorial" and the associated pipeline
+"Feldera Basics Tutorial Pipeline" are identical to the ones
+we will manually create in this three-part tutorial.
+
+We recommend that you follow the tutorial and build your own Feldera
+pipeline, but if you'd like to accelerate the journey, feel free
+to skim the tutorial and explore the resulting pipeline without
+going through all the steps.
+
+:::
+
 ## Step 1. Declare input tables
 
 We start with modeling input data as SQL tables.  In the Feldera Web Console,

@@ -22,10 +22,24 @@ def prepare(args=[]):
     else:
         num_pipelines = "-1"
 
+    # Create output topic before running the simulator, which will never return.
+    from plumbum.cmd import rpk
+
+    rpk["topic", "delete", "secops_vulnerability_stats"]()
+    rpk[
+        "topic",
+        "create",
+        "secops_vulnerability_stats",
+        "-c",
+        "retention.ms=-1",
+        "-c",
+        "retention.bytes=100000000",
+    ]()
+
     if which("cargo") is None:
         # Expect a pre-built binary in simulator/secops_simulator. Used
         # by the Docker container workflow where we don't want to use cargo run.
-        cmd = ["./secops_simulator",  "%s" % num_pipelines]
+        cmd = ["./secops_simulator", "%s" % num_pipelines]
         subprocess.run(cmd, cwd=os.path.join(SCRIPT_DIR, "simulator"))
     else:
         cmd = ["cargo", "run", "--release", "--", "%s" % num_pipelines]
@@ -35,10 +49,7 @@ def prepare(args=[]):
         new_env = os.environ.copy()
         new_env["RUST_LOG"] = "debug"
         subprocess.run(cmd, cwd=os.path.join(SCRIPT_DIR, "simulator"), env=new_env)
-    from plumbum.cmd import rpk
-    rpk['topic', 'delete', 'secops_vulnerability_stats']()
-    rpk['topic', 'create', 'secops_vulnerability_stats',
-        '-c', 'retention.ms=-1', '-c', 'retention.bytes=100000000']()
+
 
 def make_config(project):
     config = DBSPPipelineConfig(project, 8, "SecOps Pipeline")
@@ -49,15 +60,21 @@ def make_config(project):
         config=KafkaInputConfig.from_dict(
             {"topics": ["secops_pipeline"], "auto.offset.reset": "earliest"}
         ),
-        format=JsonInputFormatConfig(update_format = "insert_delete"),
+        format=JsonInputFormatConfig(update_format="insert_delete"),
     )
     config.add_kafka_input(
         name="secops_pipeline_sources",
         stream="PIPELINE_SOURCES",
         config=KafkaInputConfig.from_dict(
-            {"topics": ["secops_pipeline_sources"], "auto.offset.reset": "earliest", "group.id": "secops_pipeline_sources", "enable.auto.commit": "true", "enable.auto.offset.store": "true"}
+            {
+                "topics": ["secops_pipeline_sources"],
+                "auto.offset.reset": "earliest",
+                "group.id": "secops_pipeline_sources",
+                "enable.auto.commit": "true",
+                "enable.auto.offset.store": "true",
+            }
         ),
-        format=JsonInputFormatConfig(update_format = "insert_delete"),
+        format=JsonInputFormatConfig(update_format="insert_delete"),
     )
     config.add_kafka_input(
         name="secops_artifact",
@@ -65,7 +82,7 @@ def make_config(project):
         config=KafkaInputConfig.from_dict(
             {"topics": ["secops_artifact"], "auto.offset.reset": "earliest"}
         ),
-        format=JsonInputFormatConfig(update_format = "insert_delete"),
+        format=JsonInputFormatConfig(update_format="insert_delete"),
     )
     config.add_kafka_input(
         name="secops_vulnerability",
@@ -73,7 +90,7 @@ def make_config(project):
         config=KafkaInputConfig.from_dict(
             {"topics": ["secops_vulnerability"], "auto.offset.reset": "earliest"}
         ),
-        format=JsonInputFormatConfig(update_format = "insert_delete"),
+        format=JsonInputFormatConfig(update_format="insert_delete"),
     )
     config.add_kafka_input(
         name="secops_cluster",
@@ -81,7 +98,7 @@ def make_config(project):
         config=KafkaInputConfig.from_dict(
             {"topics": ["secops_cluster"], "auto.offset.reset": "earliest"}
         ),
-        format=JsonInputFormatConfig(update_format = "insert_delete"),
+        format=JsonInputFormatConfig(update_format="insert_delete"),
     )
     config.add_kafka_input(
         name="secops_k8sobject",
@@ -89,13 +106,12 @@ def make_config(project):
         config=KafkaInputConfig.from_dict(
             {"topics": ["secops_k8sobject"], "auto.offset.reset": "earliest"}
         ),
-        format=JsonInputFormatConfig(update_format = "insert_delete"),
+        format=JsonInputFormatConfig(update_format="insert_delete"),
     )
     config.add_kafka_output(
-        name='secops_vulnerability_stats',
-        stream='K8SCLUSTER_VULNERABILITY_STATS',
-        config=KafkaOutputConfig.from_dict(
-                {'topic': 'secops_vulnerability_stats'}),
+        name="secops_vulnerability_stats",
+        stream="K8SCLUSTER_VULNERABILITY_STATS",
+        config=KafkaOutputConfig.from_dict({"topic": "secops_vulnerability_stats"}),
         format=JsonOutputFormatConfig(),
     )
 

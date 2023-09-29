@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a demo based on the "Feldera: The Basics" tutorial.  People who don't
+  want to manually complete all steps in the tutorial can instead play with the
+  pre-built pipeline.
+  ([#822](https://github.com/feldera/feldera/pull/822))
+
 ## [0.1.5] - 2023-10-10
 
 ### Added
 
-- Add Debezium input connector
+- Add Debezium MySQL input connector
   ([#813](https://github.com/feldera/feldera/issues/813))
 
 ### Fixed

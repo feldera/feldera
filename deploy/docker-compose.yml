@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_PASSWORD: postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -16,8 +16,8 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-     db:
-       condition: service_healthy
+      db:
+        condition: service_healthy
     stop_grace_period: 0s
     environment:
       - RUST_BACKTRACE=1
@@ -30,14 +30,17 @@ services:
       - --use-auth=${USE_AUTH:-false}
     healthcheck:
       # TODO: add `/status` endpoint.
-      test: ["CMD-SHELL", "curl --fail --request GET --url http://localhost:8080/v0/pipelines"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl --fail --request GET --url http://localhost:8080/v0/pipelines"
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
 
-
   redpanda:
-    profiles: ["demo", "debezium"]
+    profiles: [ "demo", "debezium" ]
     command:
       - redpanda
       - start
@@ -70,16 +73,22 @@ services:
       - 19092:19092
       - 19644:9644
     healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"
+        ]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 5s
 
   demo:
-    profiles: ["demo"]
+    profiles: [ "demo" ]
     depends_on:
       pipeline-manager:
+        condition: service_healthy
+      redpanda:
         condition: service_healthy
     image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.1.6}
     environment:
@@ -87,8 +96,26 @@ services:
       - REDPANDA_BROKERS=redpanda:9092
       - SECOPS_DEMO_ARGS
       - RUST_LOG=info
+
+    # Run the demos after giving the service some time to initialize
+    # Start the two demos in parallel.  Compilation will still happen serially, but
+    # this way the user will see the two programs and pipelines straight away.
+    # Make sure the script returns an error if one of the demo scripts fails.
     command:
       - bash
       - -c
-      # Run the SecOps demo after giving the service some time to initialize
-      - "sleep 5 && cd demo/project_demo00-SecOps && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile $${SECOPS_DEMO_ARGS}"
+      - |
+        sleep 1
+        (cd demo/project_demo00-SecOps && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile $${SECOPS_DEMO_ARGS})&
+        pid1=$$!
+        echo pid1 $$pid1
+        (cd demo/project_demo06-SupplyChainTutorial && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile)&
+        pid2=$$!
+        wait $$pid1
+        status1=$$?
+        echo SecOps demo script exited with status $$status1
+        wait $$pid2
+        status2=$$?
+        echo SupplyChainTutorial demo script exited with status $$status2
+        if [ $$status1 -ne 0 ]; then exit $$status1; fi
+        if [ $$status2 -ne 0 ]; then exit $$status2; fi
