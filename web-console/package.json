@@ -80,6 +80,7 @@
     "zustand": "^4.4.1"
   },
   "devDependencies": {
+    "@iconify/tools": "^3.0.5",
     "@types/node": "^20.4.9",
     "@types/nprogress": "^0.2.0",
     "@types/react": "^18.2.20",

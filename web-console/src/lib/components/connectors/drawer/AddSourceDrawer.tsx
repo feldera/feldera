@@ -1,6 +1,8 @@
 // The drawer component that opens when the user wants to add a connector in the
 // pipeline builder.
 
+import { AnyIcon } from '$lib/components/common/AnyIcon'
+import { DebeziumInputConnectorDialog } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
 import { KafkaInputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaInputConnector'
 import { KafkaOutputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
 import { UrlConnectorDialog } from '$lib/components/connectors/dialogs/UrlConnector'
@@ -10,18 +12,18 @@ import { randomString } from '$lib/functions/common/string'
 import {
   connectorDescrToType,
   connectorTypeToDirection,
-  connectorTypeToIcon,
+  connectorTypeToLogo,
   connectorTypeToTitle
 } from '$lib/functions/connectors'
 import { showOnHashPart } from '$lib/functions/urlHash'
 import { AttachedConnector, ConnectorDescr } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ConnectorType, Direction } from '$lib/types/connectors'
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Icon } from '@iconify/react'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
-import { Breadcrumbs, Button, Card, CardContent, CardHeader, Chip, Grid, Link } from '@mui/material'
+import { Breadcrumbs, Button, Card, CardContent, Chip, Grid, Link } from '@mui/material'
 import Box, { BoxProps } from '@mui/material/Box'
 import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
@@ -48,21 +50,23 @@ const IoSelectBox = (props: { icon: string; howMany: number; onNew: string; onSe
         <Card
           sx={{
             color: 'secondary.main',
-            m: 5,
             display: 'flex',
             textAlign: 'center',
             alignItems: 'center',
             flexDirection: 'column'
           }}
         >
-          <CardHeader avatar={<Icon icon={props.icon} fontSize='3rem' />} />
-          <CardContent>
-            <Button fullWidth sx={{ mb: 1 }} variant='outlined' color='secondary' href={`#${props.onNew}`}>
+          <CardContent sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+            <AnyIcon
+              icon={props.icon}
+              fontSize='3rem'
+              style={{ height: 64, objectFit: 'cover', width: 'fit-content' }}
+            />
+            <Button fullWidth variant='outlined' color='secondary' href={`#${props.onNew}`}>
               New
             </Button>
             <Button
               fullWidth
-              sx={{ mb: 1 }}
               variant='outlined'
               color='secondary'
               disabled={props.howMany === 0}
@@ -94,32 +98,20 @@ const SideBarAddIo = () => {
         }))(path)
       : undefined)(/(add_input|add_output)(\/?\w+)?/.exec(hash)?.[0].split('/'))
 
-  const [sourceCounts, setSourceCounts] = useState<{ [key in ConnectorType]: number }>({
-    [ConnectorType.KAFKA_IN]: 0,
-    [ConnectorType.KAFKA_OUT]: 0,
-    [ConnectorType.URL]: 0,
-    [ConnectorType.UNKNOWN]: 0
-  })
+  const [sourceCounts, setSourceCounts] = useState<{ [key in ConnectorType]?: number }>({})
   const { data, isLoading, isError } = useQuery(PipelineManagerQuery.connector())
   useEffect(() => {
-    if (!isLoading && !isError) {
-      const counts = data
-        .map(s => connectorDescrToType(s))
-        .reduce(
-          (acc: { [Key in ConnectorType]: number }, typ: ConnectorType) => {
-            acc[typ] += 1
-            return acc
-          },
-          {
-            [ConnectorType.KAFKA_IN]: 0,
-            [ConnectorType.KAFKA_OUT]: 0,
-            [ConnectorType.URL]: 0,
-            [ConnectorType.UNKNOWN]: 0
-          }
-        )
-
-      setSourceCounts(counts)
+    if (isLoading || isError) {
+      return
     }
+    const counts = data
+      .map(s => connectorDescrToType(s))
+      .reduce((acc: typeof sourceCounts, typ: ConnectorType) => {
+        acc[typ] = (acc[typ] ?? 0) + 1
+        return acc
+      }, {})
+
+    setSourceCounts(counts)
   }, [data, isLoading, isError])
 
   const openSelectTable = (ioTable: ConnectorType | undefined) => {
@@ -167,14 +159,14 @@ const SideBarAddIo = () => {
         </IconButton>
       </Header>
       {drawer && !drawer.connectorType && (
-        <Grid container spacing={3}>
-          {[ConnectorType.KAFKA_IN, ConnectorType.KAFKA_OUT, ConnectorType.URL].map(
+        <Grid container spacing={6} sx={{ p: 6 }}>
+          {[ConnectorType.KAFKA_IN, ConnectorType.KAFKA_OUT, ConnectorType.DEBEZIUM_IN, ConnectorType.URL].map(
             type =>
               shouldDisplayConnector(drawer.direction, type) && (
                 <IoSelectBox
                   key={type}
-                  icon={connectorTypeToIcon(type)}
-                  howMany={sourceCounts[type]}
+                  icon={connectorTypeToLogo(type)}
+                  howMany={sourceCounts[type] ?? 0}
                   onNew={`new/connector/${drawer.direction}/${type}`}
                   onSelect={() => openSelectTable(type)}
                 />
@@ -194,6 +186,7 @@ const SideBarAddIo = () => {
         const dialogs = {
           [ConnectorType.KAFKA_IN]: KafkaInputConnectorDialog,
           [ConnectorType.KAFKA_OUT]: KafkaOutputConnectorDialog,
+          [ConnectorType.DEBEZIUM_IN]: DebeziumInputConnectorDialog,
           [ConnectorType.URL]: UrlConnectorDialog
         }
         const res = /new\/connector\/(\w+)\/(\w+)/.exec(hash)

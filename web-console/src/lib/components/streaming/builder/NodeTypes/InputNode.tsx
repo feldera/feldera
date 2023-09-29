@@ -1,5 +1,6 @@
 // InputNodes are on the left and connect to tables of the program.
 
+import { AnyIcon } from '$lib/components/common/AnyIcon'
 import { Handle, Node } from '$lib/components/streaming/builder/NodeTypes'
 import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
 import { connectorDescrToType, connectorTypeToIcon } from '$lib/functions/connectors'
@@ -52,8 +53,11 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
           titleTypographyProps={{ variant: 'h5' }}
           subheaderTypographyProps={{ variant: 'body1', sx: { color: 'text.disabled' } }}
           avatar={
-            <Avatar sx={{ mt: 1.5, width: 42, height: 42 }}>
-              <Icon icon={connectorTypeToIcon(connectorDescrToType(data.connector))} />
+            <Avatar variant='rounded' sx={{ mt: 1.5, width: 42, height: 42 }}>
+              <AnyIcon
+                icon={connectorTypeToIcon(connectorDescrToType(data.connector))}
+                style={{ width: '90%', height: '90%' }}
+              />
             </Avatar>
           }
         />

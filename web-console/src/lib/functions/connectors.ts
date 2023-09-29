@@ -1,8 +1,11 @@
 import { EditorSchema, KafkaInputSchema, KafkaOutputSchema, UrlSchema } from '$lib/components/connectors/dialogs'
+import { DebeziumInputSchema } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
 import { assertUnion } from '$lib/functions/common/array'
 import { ConnectorDescr } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import assert from 'assert'
+import debeziumIcon from 'public/icons/vendors/debezium-icon-color.svg'
+import debeziumLogo from 'public/icons/vendors/debezium-logo-color.svg'
 import { match, P } from 'ts-pattern'
 
 import { parseAuthParams } from './kafka/authParamsSchema'
@@ -10,6 +13,12 @@ import { parseAuthParams } from './kafka/authParamsSchema'
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
   return match(cd.config)
+    .with(
+      { transport: { name: 'kafka', config: { topics: P._ } }, format: { config: { update_format: 'debezium' } } },
+      () => {
+        return ConnectorType.DEBEZIUM_IN
+      }
+    )
     .with({ transport: { name: 'kafka', config: { topics: P._ } } }, () => {
       return ConnectorType.KAFKA_IN
     })
@@ -41,7 +50,7 @@ export const parseKafkaInputSchema = (connector: ConnectorDescr): KafkaInputSche
     group_id: config.transport.config['group.id'] || '',
     topics: config.transport.config.topics,
     format_name: assertUnion(['json', 'csv'] as const, config.format.name),
-    json_update_format: config.format.config?.update_format || 'raw',
+    update_format: config.format.config?.update_format || 'raw',
     json_array: config.format.config?.array || false,
     ...authConfig
   }
@@ -66,6 +75,29 @@ export const parseKafkaOutputSchema = (connector: ConnectorDescr): KafkaOutputSc
   }
 }
 
+// Given an existing ConnectorDescr return the DebeziumInputSchema
+// if connector is of type DEBEZIUM_IN.
+export const parseDebeziumInputSchema = (connector: ConnectorDescr): DebeziumInputSchema => {
+  assert(connectorDescrToType(connector) === ConnectorType.DEBEZIUM_IN)
+  const config = connector.config
+  assert(config.transport.config)
+
+  const authConfig = parseAuthParams(config.transport.config)
+
+  return {
+    name: connector.name,
+    description: connector.description,
+    bootstrap_servers: config.transport.config['bootstrap.servers'],
+    auto_offset_reset: config.transport.config['auto.offset.reset'],
+    group_id: config.transport.config['group.id'] || '',
+    topics: config.transport.config.topics,
+    format_name: assertUnion(['json'] as const, config.format.name),
+    update_format: assertUnion(['debezium'] as const, config.format!.config!.update_format),
+    json_flavor: assertUnion(['debezium_mysql'] as const, config.format!.config!.json_flavor),
+    ...authConfig
+  }
+}
+
 // Given an existing ConnectorDescr return the CsvFileSchema
 // if connector is of type FILE.
 export const parseUrlSchema = (connector: ConnectorDescr): UrlSchema => {
@@ -78,7 +110,7 @@ export const parseUrlSchema = (connector: ConnectorDescr): UrlSchema => {
     description: connector.description,
     url: config.transport.config.path,
     format_name: assertUnion(['json', 'csv'] as const, config.format.name),
-    json_update_format: config.format.config?.update_format || 'raw',
+    update_format: config.format.config?.update_format || 'raw',
     json_array: config.format.config?.array || false
   }
 }
@@ -103,6 +135,9 @@ export const connectorTypeToDirection = (status: ConnectorType) =>
     .with(ConnectorType.KAFKA_OUT, () => {
       return Direction.OUTPUT
     })
+    .with(ConnectorType.DEBEZIUM_IN, () => {
+      return Direction.INPUT
+    })
     .with(ConnectorType.URL, () => {
       return Direction.INPUT
     })
@@ -112,12 +147,15 @@ export const connectorTypeToDirection = (status: ConnectorType) =>
     .exhaustive()
 
 /// Given a connector type return to which name in the config it corresponds to.
-export const connectorTypeToConfig = (status: ConnectorType) =>
+export const connectorTransportName = (status: ConnectorType) =>
   match(status)
     .with(ConnectorType.KAFKA_IN, () => {
       return 'kafka'
     })
     .with(ConnectorType.KAFKA_OUT, () => {
+      return 'kafka'
+    })
+    .with(ConnectorType.DEBEZIUM_IN, () => {
       return 'kafka'
     })
     .with(ConnectorType.URL, () => {
@@ -137,6 +175,9 @@ export const connectorTypeToTitle = (status: ConnectorType) =>
     .with(ConnectorType.KAFKA_OUT, () => {
       return 'Kafka Output'
     })
+    .with(ConnectorType.DEBEZIUM_IN, () => {
+      return 'Debezium Input'
+    })
     .with(ConnectorType.URL, () => {
       return 'HTTP URL'
     })
@@ -146,13 +187,36 @@ export const connectorTypeToTitle = (status: ConnectorType) =>
     .exhaustive()
 
 // Return the icon of a connector (for display in components).
-export const connectorTypeToIcon = (status: ConnectorType) =>
+export const connectorTypeToLogo = (status: ConnectorType) =>
   match(status)
     .with(ConnectorType.KAFKA_IN, () => {
       return 'logos:kafka'
     })
     .with(ConnectorType.KAFKA_OUT, () => {
       return 'logos:kafka'
+    })
+    .with(ConnectorType.DEBEZIUM_IN, () => {
+      return debeziumLogo
+    })
+    .with(ConnectorType.URL, () => {
+      return 'tabler:http-get'
+    })
+    .with(ConnectorType.UNKNOWN, () => {
+      return 'file-icons:test-generic'
+    })
+    .exhaustive()
+
+// Return the icon of a connector (for display in components).
+export const connectorTypeToIcon = (status: ConnectorType) =>
+  match(status)
+    .with(ConnectorType.KAFKA_IN, () => {
+      return 'logos:kafka-icon'
+    })
+    .with(ConnectorType.KAFKA_OUT, () => {
+      return 'logos:kafka-icon'
+    })
+    .with(ConnectorType.DEBEZIUM_IN, () => {
+      return debeziumIcon
     })
     .with(ConnectorType.URL, () => {
       return 'tabler:http-get'
@@ -170,6 +234,9 @@ export const getStatusObj = (status: ConnectorType) =>
     })
     .with(ConnectorType.KAFKA_OUT, () => {
       return { title: 'Kafka Out', color: 'secondary' as const }
+    })
+    .with(ConnectorType.DEBEZIUM_IN, () => {
+      return { title: 'Debezium In', color: 'secondary' as const }
     })
     .with(ConnectorType.URL, () => {
       return { title: 'HTTP GET', color: 'secondary' as const }

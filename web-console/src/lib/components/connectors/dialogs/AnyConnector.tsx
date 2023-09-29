@@ -10,6 +10,8 @@ import { ConnectorType } from '$lib/types/connectors'
 import { Dispatch, SetStateAction } from 'react'
 import { match } from 'ts-pattern'
 
+import { DebeziumInputConnectorDialog } from './DebeziumInputConnector'
+
 // Given a connector return the right dialog component for updating it.
 export const AnyConnectorDialog = (props: {
   show: boolean
@@ -22,6 +24,9 @@ export const AnyConnectorDialog = (props: {
     })
     .with(ConnectorType.KAFKA_OUT, () => {
       return <KafkaOutputConnectorDialog {...props} />
+    })
+    .with(ConnectorType.DEBEZIUM_IN, () => {
+      return <DebeziumInputConnectorDialog {...props} />
     })
     .with(ConnectorType.URL, () => {
       return <UrlConnectorDialog {...props} />

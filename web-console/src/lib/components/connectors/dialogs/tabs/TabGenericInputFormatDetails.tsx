@@ -3,7 +3,7 @@ import { SelectElement, SwitchElement, useWatch } from 'react-hook-form-mui'
 
 import Grid from '@mui/material/Grid'
 
-const TabInputFormatDetails = () => {
+const TabGenericInputFormatDetails = () => {
   const watch = useWatch()
   const selectedFormat = watch['format_name']
 
@@ -30,7 +30,7 @@ const TabInputFormatDetails = () => {
         {selectedFormat === 'json' && (
           <>
             <SelectElement
-              name='json_update_format'
+              name='update_format'
               label='Update Format'
               size='small'
               options={[
@@ -52,4 +52,4 @@ const TabInputFormatDetails = () => {
   )
 }
 
-export default TabInputFormatDetails
+export default TabGenericInputFormatDetails

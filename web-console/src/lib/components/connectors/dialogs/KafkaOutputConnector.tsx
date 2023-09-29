@@ -1,10 +1,10 @@
 // A create/update dialog for a Kafka output connector.
 'use client'
 
-import TabFooter from '$lib/components/connectors/dialogs/common/TabFooter'
-import TabLabel from '$lib/components/connectors/dialogs/common/TabLabel'
-import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/kafka/TabKafkaNameAndDesc'
-import { connectorTypeToConfig, parseKafkaOutputSchema } from '$lib/functions/connectors'
+import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaNameAndDesc'
+import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
+import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
+import { connectorTransportName, parseKafkaOutputSchema } from '$lib/functions/connectors'
 import {
   authFields,
   authParamsSchema,
@@ -13,7 +13,7 @@ import {
 } from '$lib/functions/kafka/authParamsSchema'
 import { intersection } from '$lib/functions/valibot'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
-import { ConnectorType } from '$lib/types/connectors'
+import { ConnectorType, Direction } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
@@ -32,10 +32,10 @@ import IconButton from '@mui/material/IconButton'
 import Tab from '@mui/material/Tab'
 import Typography from '@mui/material/Typography'
 
-import TabOutputFormatDetails from './common/TabOutputFormatDetails'
-import Transition from './common/Transition'
-import { TabKafkaAuth } from './kafka/TabKafkaAuth'
-import TabkafkaOutputDetails from './kafka/TabKafkaOutputDetails'
+import { TabKafkaAuth } from './tabs/kafka/TabKafkaAuth'
+import TabkafkaOutputDetails from './tabs/kafka/TabKafkaOutputDetails'
+import TabOutputFormatDetails from './tabs/TabOutputFormatDetails'
+import Transition from './tabs/Transition'
 
 const schema = intersection([
   va.object({
@@ -83,7 +83,7 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
     description: data.description,
     config: {
       transport: {
-        name: connectorTypeToConfig(ConnectorType.KAFKA_OUT),
+        name: connectorTransportName(ConnectorType.KAFKA_OUT),
         config: {
           'bootstrap.servers': data.bootstrap_servers,
           topic: data.topic,
@@ -201,7 +201,7 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                     <TabLabel
                       title='Server'
                       active={activeTab === 'sourceTab'}
-                      subtitle='Source details'
+                      subtitle='Sink details'
                       icon={<Icon icon='bx:data' />}
                     />
                   }
@@ -235,7 +235,7 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                 value='detailsTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <TabKafkaNameAndDesc />
+                <TabKafkaNameAndDesc direction={Direction.OUTPUT} />
                 {tabFooter}
               </TabPanel>
               <TabPanel
