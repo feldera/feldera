@@ -20,6 +20,12 @@ const EXCLUDE_LIST: [&str; 3] = [
 /// The first mode is useful in CI builds to cache the website build so it
 /// doesn't get built many times due to changing rustc flags.
 fn main() {
+    if env::var("SKIP_BUILD_WEBCONSOLE").is_ok() {
+        // Create a new directory called empty
+        std::fs::create_dir_all("./empty").unwrap();
+        return resource_dir("./empty").build().unwrap();
+    }
+
     if let Ok(webui_out_folder) = env::var("WEBUI_BUILD_DIR") {
         ChangeDetection::path(&webui_out_folder)
             .path("build.rs")
