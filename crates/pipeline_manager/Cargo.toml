@@ -53,6 +53,7 @@ url = {version = "2.4.0"}
 
 [features]
 integration-test = []
+no-web-ui = []
 
 [build-dependencies]
 change-detection = "1.2"

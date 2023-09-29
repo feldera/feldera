@@ -38,6 +38,7 @@ use actix_web::{
     App, HttpRequest, HttpResponse, HttpServer,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
+#[cfg(not(feature = "no-web-ui"))]
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use dbsp_adapters::{
@@ -315,19 +316,24 @@ Documentation: https://www.feldera.com/docs/
 }
 
 // `static_files` magic.
+#[cfg(not(feature = "no-web-ui"))]
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
 fn static_website_scope() -> Scope {
     let openapi = ApiDoc::openapi();
     // Creates a dictionary of static files indexed by file name.
-    let generated = generate();
-
-    // Leave this is an empty prefix to load the UI by default. When constructing an
+    let app = web::scope("")
+        .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi));
+    // Leave this an empty prefix to load the UI by default. When constructing an
     // app, always attach other scopes without empty prefixes before this one,
     // or route resolution does not work correctly.
-    web::scope("")
-        .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
-        .service(ResourceFiles::new("/", generated))
+    #[cfg(not(feature = "no-web-ui"))]
+    {
+        let generated = generate();
+        app.service(ResourceFiles::new("/", generated))
+    }
+    #[cfg(feature = "no-web-ui")]
+    app
 }
 
 fn api_scope() -> Scope {
