@@ -1,9 +1,9 @@
 // A create/update dialog for a Kafka input connector.
 'use client'
 
-import TabFooter from '$lib/components/connectors/dialogs/common/TabFooter'
-import TabLabel from '$lib/components/connectors/dialogs/common/TabLabel'
-import { connectorTypeToConfig, parseUrlSchema } from '$lib/functions/connectors'
+import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
+import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
+import { connectorTransportName, parseUrlSchema } from '$lib/functions/connectors'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { ConnectorType } from '$lib/types/connectors'
@@ -26,15 +26,15 @@ import IconButton from '@mui/material/IconButton'
 import Tab from '@mui/material/Tab'
 import Typography from '@mui/material/Typography'
 
-import TabInputFormatDetails from './common/TabInputFormatDetails'
-import Transition from './common/Transition'
+import TabGenericInputFormatDetails from './tabs/TabGenericInputFormatDetails'
+import Transition from './tabs/Transition'
 
 const schema = va.object({
   name: va.nonOptional(va.string()),
   description: va.optional(va.string(), ''),
   url: va.nonOptional(va.string()),
   format_name: va.nonOptional(va.enumType(['json', 'csv'])),
-  json_update_format: va.optional(va.enumType(['raw', 'insert_delete']), 'raw'),
+  update_format: va.optional(va.enumType(['raw', 'insert_delete']), 'raw'),
   json_array: va.nonOptional(va.boolean())
 })
 
@@ -56,7 +56,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
     description: '',
     url: '',
     format_name: 'json',
-    json_update_format: 'raw',
+    update_format: 'raw',
     json_array: false
   }
 
@@ -71,7 +71,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
     description: data.description,
     config: {
       transport: {
-        name: connectorTypeToConfig(ConnectorType.URL),
+        name: connectorTransportName(ConnectorType.URL),
         config: {
           path: data.url
         }
@@ -81,7 +81,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
         config:
           data.format_name === 'json'
             ? {
-                update_format: data.json_update_format,
+                update_format: data.update_format,
                 array: data.json_array
               }
             : {}
@@ -98,7 +98,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
     }
     if (errors?.name || errors?.description || errors?.url) {
       setActiveTab('detailsTab')
-    } else if (errors?.format_name || errors?.json_array || errors?.json_update_format) {
+    } else if (errors?.format_name || errors?.json_array || errors?.update_format) {
       setActiveTab('formatTab')
     }
   }
@@ -197,7 +197,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                   <Grid item sm={4} xs={12}>
                     <TextFieldElement
                       name='name'
-                      label='Datasource Name'
+                      label='Data Source Name'
                       size='small'
                       fullWidth
                       placeholder={PLACEHOLDER_VALUES['connector_name']}
@@ -233,7 +233,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
                 {/* @ts-ignore: TODO: This type mismatch seems like a bug in hook-form and/or resolvers */}
-                <TabInputFormatDetails />
+                <TabGenericInputFormatDetails />
                 {tabFooter}
               </TabPanel>
             </TabContext>

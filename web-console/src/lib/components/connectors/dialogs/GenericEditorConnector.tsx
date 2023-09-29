@@ -28,7 +28,7 @@ import IconButton from '@mui/material/IconButton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 
-import Transition from './common/Transition'
+import Transition from './tabs/Transition'
 
 const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(2)])),
@@ -138,7 +138,7 @@ const GenericEditorForm = () => {
       <Grid item sm={4} xs={12}>
         <TextFieldElement
           name='name'
-          label='Datasource Name'
+          label='Data Source Name'
           size='small'
           fullWidth
           id='connector-name' // referenced by webui-tester

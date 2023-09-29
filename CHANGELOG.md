@@ -7,12 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.5] - 2023-09-27
+## [0.1.5] - 2023-10-10
+
+### Added
+
+- Add Debezium input connector
+  ([#813](https://github.com/feldera/feldera/issues/813))
 
 ### Fixed
 
-- Fixes a regression in the CSV parser
+- Fixes a regression in the CSV parser where it rejected the last row as an invalid row if `\r\n` was used for line-endings
   ([#801](https://github.com/feldera/feldera/pull/801))
+- Clarify some label names for output connectors
+  ([#802](https://github.com/feldera/feldera/issues/802))
+
+### Enhanced
+- Made connector type icons look nicer in Pipeline Builder
 
 ## [0.1.4] - 2023-09-26
 
