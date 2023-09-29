@@ -15,6 +15,7 @@ from feldera_api_client.models.kafka_input_config import KafkaInputConfig
 from feldera_api_client.models.kafka_output_config import KafkaOutputConfig
 from feldera_api_client.models.file_input_config import FileInputConfig
 from feldera_api_client.models.file_output_config import FileOutputConfig
+from feldera_api_client.models.url_input_config import UrlInputConfig
 from feldera_api_client.models.new_pipeline_request import NewPipelineRequest
 from feldera_api_client.models.update_pipeline_request import UpdatePipelineRequest
 from feldera_api_client.models.attached_connector import AttachedConnector
@@ -38,13 +39,19 @@ class DBSPPipelineConfig:
     """Pipeline configuration specified by the user when creating
     a new pipeline instance."""
 
-    def __init__(self, project: DBSPProgram, workers: int, name: str = '<anon>', description: str = ''):
+    def __init__(
+        self,
+        project: DBSPProgram,
+        workers: int,
+        name: str = "<anon>",
+        description: str = "",
+    ):
         self.project = project
         self.api_client = self.project.api_client
         self.pipeline_config = PipelineConfig(
             workers=workers,
             inputs=PipelineConfigInputs(),
-            outputs=PipelineConfigOutputs()
+            outputs=PipelineConfigOutputs(),
         )
         self.pipeline_id = None
         self.pipeline_version = None
@@ -61,14 +68,39 @@ class DBSPPipelineConfig:
         """
         connector.save()
 
-        self.attached_connectors.append(AttachedConnector(
-            connector_id=connector.connector_id,
-            is_input=True,
-            name=uuid.uuid4().hex if name is None else name,
-            relation_name=stream,
-        ))
+        self.attached_connectors.append(
+            AttachedConnector(
+                connector_id=connector.connector_id,
+                is_input=True,
+                name=uuid.uuid4().hex if name is None else name,
+                relation_name=stream,
+            )
+        )
 
-    def add_kafka_input(self, name: str, stream: str, config: KafkaInputConfig, format: FormatConfig):
+    def add_url_input(
+        self, name: str, stream: str, config: UrlInputConfig, format: FormatConfig
+    ):
+        """Add an input connector that reads data from a URL.
+
+        Args:
+            name (str): Name of the input connector.
+            stream (str): The table name to connect to.
+            config (UrlInputConfig): Config for the new URL connector.
+            format (FormatConfig): Data format specification, e.g., CsvInputFormatConfig().
+        """
+        self.add_input(
+            stream,
+            DBSPConnector(
+                self.api_client,
+                name,
+                TransportConfig(name="url", config=config),
+                format=format,
+            ),
+        )
+
+    def add_kafka_input(
+        self, name: str, stream: str, config: KafkaInputConfig, format: FormatConfig
+    ):
         """Add an input connector that reads data from Kafka to the pipeline configuration.
 
         Args:
@@ -79,9 +111,13 @@ class DBSPPipelineConfig:
         """
         self.add_input(
             stream,
-            DBSPConnector(self.api_client, name, TransportConfig(
-                name="kafka",
-                config=config), format=format))
+            DBSPConnector(
+                self.api_client,
+                name,
+                TransportConfig(name="kafka", config=config),
+                format=format,
+            ),
+        )
 
     def add_http_input(self, stream: str, name: str, format: FormatConfig):
         """Add an HTTP input endpoint
@@ -92,11 +128,15 @@ class DBSPPipelineConfig:
         """
         self.add_input(
             stream,
-            DBSPConnector(self.api_client, name, TransportConfig(
-                name="http"), format=format),
-            name = name)
+            DBSPConnector(
+                self.api_client, name, TransportConfig(name="http"), format=format
+            ),
+            name=name,
+        )
 
-    def add_kafka_output(self, name: str, stream: str, config: KafkaOutputConfig, format: FormatConfig):
+    def add_kafka_output(
+        self, name: str, stream: str, config: KafkaOutputConfig, format: FormatConfig
+    ):
         """Add a Kafka output connector to the pipeline configuration.
 
         Args:
@@ -107,9 +147,13 @@ class DBSPPipelineConfig:
         """
         self.add_output(
             stream,
-            DBSPConnector(self.api_client, name, TransportConfig(
-                name="kafka",
-                config=config), format=format))
+            DBSPConnector(
+                self.api_client,
+                name,
+                TransportConfig(name="kafka", config=config),
+                format=format,
+            ),
+        )
 
     def add_output(self, stream: str, connector: DBSPConnector, name: str = None):
         """Add an output connector to the pipeline configuration.
@@ -120,12 +164,14 @@ class DBSPPipelineConfig:
         """
         connector.save()
 
-        self.attached_connectors.append(AttachedConnector(
-            connector_id=connector.connector_id,
-            is_input=False,
-            name=uuid.uuid4().hex if name is None else name,
-            relation_name=stream,
-        ))
+        self.attached_connectors.append(
+            AttachedConnector(
+                connector_id=connector.connector_id,
+                is_input=False,
+                name=uuid.uuid4().hex if name is None else name,
+                relation_name=stream,
+            )
+        )
 
     def add_file_input(self, stream: str, filepath: str, format: FormatConfig):
         """Add an input connector that reads data from a file to the pipeline configuration.
@@ -137,9 +183,16 @@ class DBSPPipelineConfig:
         """
         self.add_input(
             stream,
-            DBSPConnector(self.api_client, filepath, TransportConfig(
-                name="file",
-                config=FileInputConfig.from_dict(dict({'path': filepath}))), format=format))
+            DBSPConnector(
+                self.api_client,
+                filepath,
+                TransportConfig(
+                    name="file",
+                    config=FileInputConfig.from_dict(dict({"path": filepath})),
+                ),
+                format=format,
+            ),
+        )
 
     def add_file_output(self, stream: str, filepath: str, format: FormatConfig):
         """Add an output connector that reads data from a file to the pipeline configuration.
@@ -151,9 +204,16 @@ class DBSPPipelineConfig:
         """
         self.add_output(
             stream,
-            DBSPConnector(self.api_client, filepath, TransportConfig(
-                name="file",
-                config=FileOutputConfig.from_dict(dict({'path': filepath}))), format=format))
+            DBSPConnector(
+                self.api_client,
+                filepath,
+                TransportConfig(
+                    name="file",
+                    config=FileOutputConfig.from_dict(dict({"path": filepath})),
+                ),
+                format=format,
+            ),
+        )
 
     def add_http_output(self, stream: str, name: str, format: FormatConfig):
         """Add an HTTP output endpoint
@@ -164,23 +224,26 @@ class DBSPPipelineConfig:
         """
         self.add_output(
             stream,
-            DBSPConnector(self.api_client, name, TransportConfig(
-                name="http"), format=format),
-            name)
+            DBSPConnector(
+                self.api_client, name, TransportConfig(name="http"), format=format
+            ),
+            name,
+        )
 
     def runtime_config(self) -> str:
         """Produce a pipeline configuration object."""
         config = self.pipeline_config.to_dict().copy()
-        del config['inputs']
-        del config['outputs']
+        del config["inputs"]
+        del config["outputs"]
         return RuntimeConfig.from_dict(config)
 
     def save(self):
         "Save the pipeline configuration to DBSP."
-        resp = list_pipelines.sync_detailed(
-            client=self.api_client, name=self.name)
+        resp = list_pipelines.sync_detailed(client=self.api_client, name=self.name)
         if resp.status_code == HTTPStatus.OK:
-            self.pipeline_id = resp.unwrap("Failed to unwrap pipeline %s" % (self.name))[0].descriptor.pipeline_id
+            self.pipeline_id = resp.unwrap(
+                "Failed to unwrap pipeline %s" % (self.name)
+            )[0].descriptor.pipeline_id
 
         if self.pipeline_id == None:
             body = NewPipelineRequest(
@@ -190,8 +253,9 @@ class DBSPPipelineConfig:
                 config=self.runtime_config(),
                 connectors=self.attached_connectors,
             )
-            response = new_pipeline.sync_detailed(client=self.api_client, json_body=body).unwrap(
-                "Failed to create pipeline config")
+            response = new_pipeline.sync_detailed(
+                client=self.api_client, json_body=body
+            ).unwrap("Failed to create pipeline config")
             self.pipeline_id = response.pipeline_id
             self.pipeline_version = response.version
         else:
@@ -203,7 +267,8 @@ class DBSPPipelineConfig:
                 connectors=self.attached_connectors,
             )
             response = update_pipeline.sync_detailed(
-                pipeline_id=self.pipeline_id, client=self.api_client, json_body=body).unwrap("Failed to update pipeline config")
+                pipeline_id=self.pipeline_id, client=self.api_client, json_body=body
+            ).unwrap("Failed to update pipeline config")
             self.pipeline_version = response.version
 
     def run(self):
@@ -217,7 +282,8 @@ class DBSPPipelineConfig:
         """
         self.save()
         pipeline_action.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id, action='start').unwrap("Failed to start pipeline")
+            client=self.api_client, pipeline_id=self.pipeline_id, action="start"
+        ).unwrap("Failed to start pipeline")
         self.wait_for_status(PipelineStatus.RUNNING, 60.0)
 
     def pause(self):
@@ -228,7 +294,8 @@ class DBSPPipelineConfig:
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
         pipeline_action.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id, action='pause').unwrap("Failed to pause pipeline")
+            client=self.api_client, pipeline_id=self.pipeline_id, action="pause"
+        ).unwrap("Failed to pause pipeline")
 
     def start(self):
         """Resume a paused pipeline.
@@ -238,7 +305,8 @@ class DBSPPipelineConfig:
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
         pipeline_action.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id, action='start').unwrap("Failed to start pipeline")
+            client=self.api_client, pipeline_id=self.pipeline_id, action="start"
+        ).unwrap("Failed to start pipeline")
 
     def wait(self, timeout: float = sys.maxsize):
         """Wait for the pipeline to process all inputs to completion.
@@ -253,12 +321,12 @@ class DBSPPipelineConfig:
         start = time.time()
         while time.time() - start < timeout:
             status = self.stats()
-            if status['global_metrics']['pipeline_complete'] == True:
+            if status["global_metrics"]["pipeline_complete"] == True:
                 return
             time.sleep(0.5)
         raise TimeoutException(
-            "Timeout waiting for the pipeline to complete after " + str(timeout) + "s")
-
+            "Timeout waiting for the pipeline to complete after " + str(timeout) + "s"
+        )
 
     def run_to_completion(self, timeout: float = sys.maxsize):
         """Launch a new pipeline, wait for it to run to completion, and delete the pipeline.
@@ -285,18 +353,27 @@ class DBSPPipelineConfig:
             httpx.TimeoutException: If the request takes longer than Client.timeout.
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
-        status = get_pipeline.sync_detailed(client=self.api_client, pipeline_id=self.pipeline_id).unwrap(
-            "Failed to retrieve pipeline status")
+        status = get_pipeline.sync_detailed(
+            client=self.api_client, pipeline_id=self.pipeline_id
+        ).unwrap("Failed to retrieve pipeline status")
         return status
 
-    def wait_for_status(self, expected_status: PipelineStatus, timeout: float = sys.maxsize):
-        start = time.time();
+    def wait_for_status(
+        self, expected_status: PipelineStatus, timeout: float = sys.maxsize
+    ):
+        start = time.time()
         while True:
-            status = self.status().state.current_status;
+            status = self.status().state.current_status
             if status == expected_status:
                 break
             if time.time() - start > timeout:
-                raise TimeoutException("Timeout waiting for the pipeline to reach expected status " + str(expected_status) + ".  Current status is" + str(status) + ".")
+                raise TimeoutException(
+                    "Timeout waiting for the pipeline to reach expected status "
+                    + str(expected_status)
+                    + ".  Current status is"
+                    + str(status)
+                    + "."
+                )
             time.sleep(0.5)
 
     def stats(self) -> Dict[str, Any]:
@@ -307,7 +384,8 @@ class DBSPPipelineConfig:
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
         status = pipeline_stats.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id).unwrap("Failed to retrieve pipeline status")
+            client=self.api_client, pipeline_id=self.pipeline_id
+        ).unwrap("Failed to retrieve pipeline status")
         return status.additional_properties
 
     def delete(self):
@@ -322,11 +400,13 @@ class DBSPPipelineConfig:
         """
 
         pipeline_action.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id, action='shutdown').unwrap("Failed to pause pipeline")
+            client=self.api_client, pipeline_id=self.pipeline_id, action="shutdown"
+        ).unwrap("Failed to pause pipeline")
         self.wait_for_status(PipelineStatus.SHUTDOWN, 60.0)
 
         pipeline_delete.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id).unwrap("Failed to delete pipeline")
+            client=self.api_client, pipeline_id=self.pipeline_id
+        ).unwrap("Failed to delete pipeline")
 
         time.sleep(1.0)
         self.pipeline_id = None

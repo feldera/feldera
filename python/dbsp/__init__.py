@@ -13,6 +13,7 @@ from .connector import JsonInputFormatConfig
 from .connector import JsonOutputFormatConfig
 from .connector import JsonParserConfig
 from .connector import JsonEncoderConfig
+from .connector import UrlInputConfig
 from .connector import KafkaInputConfig
 from .connector import KafkaOutputConfig
 from .connector import FileInputConfig

@@ -178,6 +178,7 @@ request is rejected."
         dbsp_adapters::FormatConfig,
         dbsp_adapters::transport::FileInputConfig,
         dbsp_adapters::transport::FileOutputConfig,
+        dbsp_adapters::transport::UrlInputConfig,
         dbsp_adapters::transport::KafkaInputConfig,
         dbsp_adapters::transport::KafkaOutputConfig,
         dbsp_adapters::transport::KafkaLogLevel,

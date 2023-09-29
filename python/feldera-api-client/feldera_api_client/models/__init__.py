@@ -68,6 +68,7 @@ from .update_pipeline_request import UpdatePipelineRequest
 from .update_pipeline_response import UpdatePipelineResponse
 from .update_program_request import UpdateProgramRequest
 from .update_program_response import UpdateProgramResponse
+from .url_input_config import UrlInputConfig
 
 __all__ = (
     "AttachedConnector",
@@ -138,4 +139,5 @@ __all__ = (
     "UpdatePipelineResponse",
     "UpdateProgramRequest",
     "UpdateProgramResponse",
+    "UrlInputConfig",
 )

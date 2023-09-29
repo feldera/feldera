@@ -106,6 +106,8 @@ rpk -X brokers=127.0.0.1:19092 cluster metadata
 
 ### Create input/output topics
 
+
+
 Create a pair of Redpanda topics that will be used to send input updates
 to the `PRICE` table and receive output changes from the `PREFERRED_VENDOR` view.
 
