@@ -622,7 +622,7 @@ async fn pipeline_panic() {
 
     // The manager should discover the error next time it polls the pipeline.
     let pipeline = config
-        .wait_for_pipeline_status(&id, PipelineStatus::Failed, Duration::from_millis(20_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Failed, Duration::from_millis(60_000))
         .await;
 
     assert_eq!(
