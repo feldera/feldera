@@ -1049,16 +1049,15 @@ mod test {
     ) -> AnyResult<InputHandle<OrdZSet<usize, isize>>> {
         let (stream, handle) = circuit.add_input_stream::<OrdZSet<usize, isize>>();
 
-        let mut expected_batches = input_batches()
-            .into_iter()
-            .chain(input_batches().into_iter())
-            .chain(input_batches().into_iter().map(move |batch| {
+        let mut expected_batches = input_batches().into_iter().chain(input_batches()).chain(
+            input_batches().into_iter().map(move |batch| {
                 let mut result = batch.clone();
                 for _ in 1..nworkers {
                     result += batch.clone();
                 }
                 result
-            }));
+            }),
+        );
         stream.gather(0).inspect(move |batch| {
             if Runtime::worker_index() == 0 {
                 assert_eq!(batch, &expected_batches.next().unwrap())
@@ -1127,7 +1126,7 @@ mod test {
 
         let mut expected_batches = input_batches()
             .into_iter()
-            .chain(input_batches().into_iter())
+            .chain(input_batches())
             .chain(once(zset! {}));
         stream.gather(0).inspect(move |batch| {
             if Runtime::worker_index() == 0 {
@@ -1235,7 +1234,7 @@ mod test {
 
         let mut expected_batches = input_indexed_batches()
             .into_iter()
-            .chain(input_indexed_batches().into_iter());
+            .chain(input_indexed_batches());
         stream.gather(0).inspect(move |batch| {
             if Runtime::worker_index() == 0 {
                 assert_eq!(batch, &expected_batches.next().unwrap())

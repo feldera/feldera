@@ -6,6 +6,7 @@ use crate::deserialize_without_context;
 
 #[derive(
     Debug,
+    Default,
     PartialEq,
     Eq,
     PartialOrd,

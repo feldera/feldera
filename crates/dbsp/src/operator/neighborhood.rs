@@ -68,7 +68,7 @@ pub type Neighborhood<K, V, R> = OrdZSet<(isize, (K, V)), R>;
 ///
 /// The `anchor` value of `None` is equivalent to specifying the
 /// smallest value of type `K`.
-#[derive(Clone, Debug, Deserialize, PartialOrd, Ord, PartialEq, Eq, Hash, SizeOf)]
+#[derive(Clone, Debug, Default, Deserialize, PartialOrd, Ord, PartialEq, Eq, Hash, SizeOf)]
 pub struct NeighborhoodDescr<K, V> {
     pub anchor: Option<K>,
     #[serde(default)]
