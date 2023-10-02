@@ -8,7 +8,7 @@ use crate::{
 };
 use cranelift::prelude::{types, FloatCC, FunctionBuilder, InstBuilder, IntCC, MemFlags};
 use cranelift_module::{FuncId, Module};
-use std::{cmp::Ordering, num::NonZeroU8};
+use std::cmp::Ordering;
 
 // TODO: gt, le, ge functions
 impl Codegen {
@@ -59,7 +59,8 @@ impl Codegen {
                 builder.true_byte()
 
             // If there's any strings then comparisons are non-trivial
-            } else if row_layout.columns().iter().any(ColumnType::is_string) {
+            } else {
+                // if row_layout.columns().iter().any(ColumnType::is_string) {
                 let return_block = builder.create_block();
                 builder.append_block_params_for_function_returns(return_block);
 
@@ -242,22 +243,22 @@ impl Codegen {
 
                 builder.switch_to_block(return_block);
                 builder.block_params(return_block)[0]
-
-            // Otherwise we emit a memcmp
-            // TODO: Is this valid in the presence of padding?
-            } else {
-                let align = NonZeroU8::new(layout.align() as u8).unwrap();
-                builder.emit_small_memory_compare(
-                    self.module.isa().frontend_config(),
-                    IntCC::Equal,
-                    lhs,
-                    rhs,
-                    layout.size() as u64,
-                    align,
-                    align,
-                    MemFlags::trusted().with_readonly(),
-                )
             };
+            // Otherwise we emit a memcmp
+            // FIXME: This isn't valid in the presence of padding
+            // else {
+            //     let align = NonZeroU8::new(layout.align() as u8).unwrap();
+            //     builder.emit_small_memory_compare(
+            //         self.module.isa().frontend_config(),
+            //         IntCC::Equal,
+            //         lhs,
+            //         rhs,
+            //         layout.size() as u64,
+            //         align,
+            //         align,
+            //         MemFlags::trusted().with_readonly(),
+            //     )
+            // };
 
             builder.ins().return_(&[are_equal]);
 
