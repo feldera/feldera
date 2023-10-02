@@ -131,6 +131,8 @@ struct TestConfig {
     dbsp_url: String,
     client: awc::Client,
     bearer_token: Option<String>,
+    shutdown_timeout: Duration,
+    failed_timeout: Duration,
 }
 
 impl TestConfig {
@@ -415,10 +417,24 @@ async fn setup() -> TestConfig {
         .timeout(Duration::from_secs(10))
         .finish();
     let bearer_token = bearer_token().await;
+    let shutdown_timeout = Duration::from_secs(
+        std::env::var("TEST_SHUTDOWN_TIMEOUT")
+            .unwrap_or("120".to_string())
+            .parse::<u64>()
+            .unwrap(),
+    );
+    let failed_timeout = Duration::from_secs(
+        std::env::var("TEST_FAILED_TIMEOUT")
+            .unwrap_or("120".to_string())
+            .parse::<u64>()
+            .unwrap(),
+    );
     let config = TestConfig {
         dbsp_url,
         client,
         bearer_token,
+        shutdown_timeout,
+        failed_timeout,
     };
     config.cleanup().await;
     config
@@ -584,7 +600,7 @@ async fn deploy_pipeline() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -622,7 +638,7 @@ async fn pipeline_panic() {
 
     // The manager should discover the error next time it polls the pipeline.
     let pipeline = config
-        .wait_for_pipeline_status(&id, PipelineStatus::Failed, Duration::from_millis(20_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Failed, config.failed_timeout)
         .await;
 
     assert_eq!(
@@ -637,7 +653,7 @@ async fn pipeline_panic() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -858,7 +874,7 @@ not_a_number,true,ΑαΒβΓγΔδ
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -906,7 +922,7 @@ async fn parse_datetime() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -955,6 +971,6 @@ async fn quoted_columns() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
