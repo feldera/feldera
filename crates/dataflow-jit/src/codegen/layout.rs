@@ -437,8 +437,11 @@ impl NativeLayout {
     /// Panics if `column` isn't nullable
     pub fn nullability_of(&self, column: usize) -> (BitSetType, u32, u8) {
         self.bitsets[column].unwrap_or_else(|| {
-	    panic!("{:?}: checking nullability of non-nullable column {:?}",
-		   self.bitsets, column)
+	    panic!(
+		"{:?}: checking nullability of non-nullable column {:?}",
+		self.bitsets,
+		column
+	    )
 	})
     }
 
