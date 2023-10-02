@@ -244,15 +244,22 @@ pub fn array_to_string2_vec__(value: Vec<String>, separator: String) -> String {
 some_function2!(array_to_string2_vec, Vec<String>, String, String);
 
 pub fn array_to_string2Nvec__(value: Vec<Option<String>>, separator: String) -> String {
-    let capacity = value.iter().map(|s| s.as_ref().map_or(0, |s| s.len())).sum();
+    let capacity = value
+        .iter()
+        .map(|s| s.as_ref().map_or(0, |s| s.len()))
+        .sum();
     let mut result = String::with_capacity(capacity);
     let mut first = true;
     for word in value {
         let append = match word.as_ref() {
-            None => { continue; }
-            Some(r) => { r }
+            None => {
+                continue;
+            }
+            Some(r) => r,
         };
-        if !first { result.push_str(&separator) }
+        if !first {
+            result.push_str(&separator)
+        }
         first = false;
         result.push_str(append.as_str());
     }
@@ -261,30 +268,49 @@ pub fn array_to_string2Nvec__(value: Vec<Option<String>>, separator: String) -> 
 
 some_function2!(array_to_string2Nvec, Vec<Option<String>>, String, String);
 
-pub fn array_to_string3_vec___(value: Vec<String>, separator: String, _null_value: String) -> String {
+pub fn array_to_string3_vec___(
+    value: Vec<String>,
+    separator: String,
+    _null_value: String,
+) -> String {
     array_to_string2_vec__(value, separator)
 }
 
 some_function3!(array_to_string3_vec, Vec<String>, String, String, String);
 
-pub fn array_to_string3Nvec___(value: Vec<Option<String>>, separator: String, null_value: String) -> String {
+pub fn array_to_string3Nvec___(
+    value: Vec<Option<String>>,
+    separator: String,
+    null_value: String,
+) -> String {
     let null_size = null_value.len();
-    let capacity = value.iter().map(|s| s.as_ref().map_or(null_size, |s| s.len())).sum();
+    let capacity = value
+        .iter()
+        .map(|s| s.as_ref().map_or(null_size, |s| s.len()))
+        .sum();
     let mut result = String::with_capacity(capacity);
     let mut first = true;
     for word in value {
         let append = match word.as_ref() {
-            None => { null_value.as_str() }
-            Some(r) => { r }
+            None => null_value.as_str(),
+            Some(r) => r,
         };
-        if !first { result.push_str(&separator) }
+        if !first {
+            result.push_str(&separator)
+        }
         first = false;
         result.push_str(append);
     }
     result
 }
 
-some_function3!(array_to_string3Nvec, Vec<Option<String>>, String, String, String);
+some_function3!(
+    array_to_string3Nvec,
+    Vec<Option<String>>,
+    String,
+    String,
+    String
+);
 
 pub fn writelog<T: std::fmt::Display>(format: String, argument: T) -> T {
     let format_arg = format!("{}", argument);
