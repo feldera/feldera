@@ -4975,6 +4975,7 @@ dependencies = [
  "async-std",
  "csv",
  "dbsp",
+ "dbsp_adapters",
  "derive_more",
  "paste",
  "rkyv",
