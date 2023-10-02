@@ -12,11 +12,11 @@ mod tests;
 mod trace;
 
 /// A single value with many time and weight tuples.
-type ValueTimeWeights<V, T, R> = (V, Vec<(T, R)>);
+type ValueTimeWeights<T, R> = Vec<(T, R)>;
 
 /// A collection of values with time and weight tuples, this is the type that we
 /// persist in RocksDB under values.
-type Values<V, T, R> = Vec<ValueTimeWeights<V, T, R>>;
+type Values<T, R> = ValueTimeWeights<T, R>;
 
 /// The cursor for the persistent trace.
 pub use cursor::PersistentTraceCursor;

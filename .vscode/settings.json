@@ -6,6 +6,7 @@
         "avaliable"
     ],
     "rust-analyzer.cargo.features": [
+        "persistence",
         "pg-embed",
         "integration-test"
     ],

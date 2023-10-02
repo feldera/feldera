@@ -279,14 +279,13 @@ where
 
 /// The data-type that is persisted as the value in RocksDB.
 #[derive(Debug, Archive, Serialize, Deserialize)]
-pub(super) enum PersistedValue<V, T, R>
+pub(super) enum PersistedValue<T, R>
 where
-    V: DBData,
     T: DBTimestamp,
     R: DBWeight,
 {
     /// Values with key-weight pairs.
-    Values(Values<V, T, R>),
+    Values(Values<T, R>),
     /// A tombstone for a key which had its values deleted (during merges).
     ///
     /// It signifies that the key shouldn't exist anymore. See also
@@ -297,16 +296,15 @@ where
 /// A merge-op is what [`PersistentTrace`] supplies to the RocksDB instance to
 /// indicate how to update the values.
 #[derive(Clone, Debug, Archive, Serialize, Deserialize)]
-enum MergeOp<V, T, R>
+enum MergeOp<T, R>
 where
-    V: DBData,
     T: DBTimestamp,
     R: DBWeight,
 {
     /// A recede-to command to reset times of values.
     RecedeTo(T),
     /// An insertion of a new value or update of an existing value.
-    Insert(Values<V, T, R>),
+    Insert(Values<T, R>),
 }
 
 /// The implementation of the merge operator for the RocksDB instance.
@@ -319,7 +317,7 @@ where
 /// several times when we probably can be smarter etc. -- not clear it matters
 /// without benchmarking though.
 fn rocksdb_concat_merge<K, V, R, T>(
-    new_key: &[u8],
+    _new_key: &[u8],
     existing_val: Option<&[u8]>,
     operands: &MergeOperands,
 ) -> Option<Vec<u8>>
@@ -329,10 +327,10 @@ where
     R: DBWeight,
     T: DBTimestamp,
 {
-    let _key: K = unaligned_deserialize(new_key);
+    //let (_key, _value): (K, V) = unaligned_deserialize(new_key);
 
-    let mut vals: Values<V, T, R> = if let Some(val) = existing_val {
-        let decoded_val: PersistedValue<V, T, R> = unaligned_deserialize(val);
+    let mut vals: Values<T, R> = if let Some(val) = existing_val {
+        let decoded_val: PersistedValue<T, R> = unaligned_deserialize(val);
         match decoded_val {
             PersistedValue::Values(vals) => vals,
             PersistedValue::Tombstone => Vec::new(),
@@ -342,81 +340,58 @@ where
     };
 
     for op in operands {
-        let decoded_update: MergeOp<V, T, R> = unaligned_deserialize(op);
+        let decoded_update: MergeOp<T, R> = unaligned_deserialize(op);
         match decoded_update {
-            MergeOp::Insert(new_vals) => {
-                for (v, tws) in new_vals {
-                    if let Some((_, ref mut existing_tw)) = vals.iter_mut().find(|(ev, _)| ev == &v)
-                    {
-                        for (t, w) in &tws {
-                            if let Some((_, ref mut existing_w)) =
-                                existing_tw.iter_mut().find(|(et, _)| et == t)
-                            {
-                                existing_w.add_assign_by_ref(w);
-                                if existing_w.is_zero() {
-                                    existing_tw.retain(|(_, w)| !w.is_zero());
-                                }
-                            } else {
-                                existing_tw.push((t.clone(), w.clone()));
-                                // TODO: May be better if push (above) inserts at the
-                                // right place instead of paying the cost of sorting
-                                // everything:
-                                existing_tw.sort_unstable_by(|(t1, _), (t2, _)| t1.cmp(t2));
-                                break;
-                            }
+            MergeOp::Insert(tws) => {
+                for (t, w) in &tws {
+                    if let Some((_, ref mut existing_w)) = vals.iter_mut().find(|(et, _)| et == t) {
+                        existing_w.add_assign_by_ref(w);
+                        if existing_w.is_zero() {
+                            vals.retain(|(_, w)| !w.is_zero());
                         }
-                        // Delete values which ended up with zero weights
-                        vals.retain(|(_ret_v, ret_tws)| {
-                            ret_tws
-                                .iter()
-                                .filter(|(_ret_t, ret_w)| !ret_w.is_zero())
-                                .count()
-                                != 0
-                        });
                     } else {
-                        vals.push((v, tws));
+                        vals.push((t.clone(), w.clone()));
+                        // TODO: May be better if push (above) inserts at the
+                        // right place instead of paying the cost of sorting
+                        // everything:
+                        vals.sort_unstable_by(|(t1, _), (t2, _)| t1.cmp(t2));
+                        break;
                     }
                 }
+                // Delete values which ended up with zero weights
+                vals.retain(|(_t, ret_w)| !ret_w.is_zero());
             }
             MergeOp::RecedeTo(frontier) => {
-                for (_existing_v, ref mut existing_tw) in vals.iter_mut() {
-                    let mut modified_t = false;
-                    for (ref mut existing_t, _existing_w) in existing_tw.iter_mut() {
-                        // I think due to this being sorted by Ord we have to
-                        // walk all of them (see also `map_batches_through`):
-                        if !existing_t.less_equal(&frontier) {
-                            // example: times [1,2,3,4], frontier 3 -> [1,2,3,3]
-                            *existing_t = existing_t.meet(&frontier);
-                            modified_t = true;
-                        }
+                let mut modified_t = false;
+                for (existing_t, _existing_w) in vals.iter_mut() {
+                    // I think due to this being sorted by Ord we have to
+                    // walk all of them (see also `map_batches_through`):
+                    if !existing_t.less_equal(&frontier) {
+                        // example: times [1,2,3,4], frontier 3 -> [1,2,3,3]
+                        *existing_t = existing_t.meet(&frontier);
+                        modified_t = true;
                     }
-
-                    if modified_t {
-                        // I think due to this being sorted by `Ord` we can't
-                        // rely on `recede_to(x)` having only affected
-                        // consecutive elements, so we create a new (t, w)
-                        // vector with a hashmap that we sort again.
-                        let mut new_tw = HashMap::with_capacity(existing_tw.len());
-                        for (cur_t, cur_w) in &*existing_tw {
-                            new_tw
-                                .entry(cur_t.clone())
-                                .and_modify(|w: &mut R| w.add_assign_by_ref(cur_w))
-                                .or_insert_with(|| cur_w.clone());
-                        }
-                        let new_tw_vec: Vec<(T, R)> = new_tw.into_iter().collect();
-                        *existing_tw = new_tw_vec;
-                    }
-                    existing_tw.sort_unstable_by(|(t1, _), (t2, _)| t1.cmp(t2));
                 }
 
+                if modified_t {
+                    // I think due to this being sorted by `Ord` we can't
+                    // rely on `recede_to(x)` having only affected
+                    // consecutive elements, so we create a new (t, w)
+                    // vector with a hashmap that we sort again.
+                    let mut new_tw = HashMap::with_capacity(vals.len());
+                    for (cur_t, cur_w) in &*vals {
+                        new_tw
+                            .entry(cur_t.clone())
+                            .and_modify(|w: &mut R| w.add_assign_by_ref(cur_w))
+                            .or_insert_with(|| cur_w.clone());
+                    }
+                    let new_tw_vec: Vec<(T, R)> = new_tw.into_iter().collect();
+                    vals = new_tw_vec;
+                }
+                vals.sort_unstable_by(|(t1, _), (t2, _)| t1.cmp(t2));
+
                 // Delete values which ended up with zero weights
-                vals.retain(|(_ret_v, ret_tws)| {
-                    ret_tws
-                        .iter()
-                        .filter(|(_ret_t, ret_w)| !ret_w.is_zero())
-                        .count()
-                        != 0
-                });
+                vals.retain(|(_ret_t, ret_w)| !ret_w.is_zero());
             }
         }
     }
@@ -443,8 +418,8 @@ where
     T: DBTimestamp,
 {
     // TODO: Ideally we shouldn't have to pay the price of decoding the whole
-    // Vec<(V, Vec<(T, R)>)> as we only care about what the enum variant is.
-    let decoded_val: PersistedValue<V, T, R> = unaligned_deserialize(val);
+    // Vec<(T, R)> as we only care about what the enum variant is.
+    let decoded_val: PersistedValue<T, R> = unaligned_deserialize(val);
     match decoded_val {
         PersistedValue::Values(_vals) => Decision::Keep,
         PersistedValue::Tombstone => Decision::Remove,
@@ -510,15 +485,16 @@ where
     fn recede_to(&mut self, frontier: &B::Time) {
         let mut cursor = self.cursor();
         while cursor.key_valid() {
-            let key = cursor.key();
-            let encoded_key = to_bytes(key).expect("Can't encode `key`");
+            let kv = (cursor.key().clone(), cursor.val().clone());
+            let encoded_key = to_bytes(&kv).expect("Can't encode `key`");
 
-            let update: MergeOp<B::Val, B::Time, B::R> = MergeOp::RecedeTo(frontier.clone());
+            let update: MergeOp<B::Time, B::R> = MergeOp::RecedeTo(frontier.clone());
             let encoded_update = to_bytes(&update).expect("Can't encode `vals`");
 
             ROCKS_DB_INSTANCE
                 .merge_cf(&self.cf, encoded_key, encoded_update)
                 .expect("Can't merge recede update");
+            // XXX: cursor.step_val();
             cursor.step_key();
         }
     }
@@ -599,17 +575,23 @@ where
     B: Batch,
 {
     fn add_batch_to_cf(&mut self, batch: B) {
-        use crate::trace::cursor::CursorDebug;
-
         let mut sstable = WriteBatch::default();
         let mut batch_cursor = batch.cursor();
         while batch_cursor.key_valid() {
-            let key = batch_cursor.key();
-            let encoded_key = to_bytes(key).expect("Can't encode `key`");
-            let vals: Values<B::Val, B::Time, B::R> = batch_cursor.val_to_vec();
-            self.approximate_len += vals.len();
-            let encoded_vals = to_bytes(&MergeOp::Insert(vals)).expect("Can't encode `vals`");
-            sstable.merge_cf(&self.cf, encoded_key, encoded_vals);
+            while batch_cursor.val_valid() {
+                let kv = (batch_cursor.key().clone(), batch_cursor.val().clone());
+
+                let mut weights = Vec::new();
+                batch_cursor.map_times(|ts, r| {
+                    weights.push((ts.clone(), r.clone()));
+                });
+                let encoded_vals = to_bytes(&MergeOp::Insert(weights)).expect("Can't encode `val`");
+
+                let encoded_key = to_bytes(&kv).expect("Can't encode `key--value`");
+                sstable.merge_cf(&self.cf, encoded_key, encoded_vals);
+                batch_cursor.step_val();
+                self.approximate_len += 1;
+            }
 
             batch_cursor.step_key();
         }

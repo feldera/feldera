@@ -23,22 +23,19 @@ enum Direction {
 pub struct PersistentTraceCursor<'s, B: Batch + 's> {
     /// Iterator of the underlying RocksDB instance.
     db_iter: DBRawIterator<'s>,
-
-    /// Current key this will always be Some(key) if the iterator is valid.
+    /// Current key and value this will always be Some(x) if the iterator is valid.
     ///
-    /// Once we reached the end (or seeked to the end) will be set to None.
+    /// Once we reached the end (or seeked to the end) it will be set to None.
     cur_key: Option<B::Key>,
-    /// Values for the `cur_key`.
+    /// Current value.
     ///
-    /// This will always be `Some(values)` if `cur_key` is something/valid or
+    /// Once we reached the end (or seeked to the end) it will be set to None.
+    cur_val: Option<B::Val>,
+    /// Time/weight pairs for the `cur_key`.
+    ///
+    /// This will always be `Some(x)` if `cur_key` is `Some(y)` or
     /// `None` otherwise.
-    cur_vals: Option<Values<B::Val, B::Time, B::R>>,
-    /// Current index of iterator in `cur_vals`.
-    ///
-    /// Value will be `-1 <= val_idx <= cur_vals.len()`.
-    /// `-1` and `cur_vals.len()` represent invalid cursor that rolled
-    /// over the left/right end of the vector.
-    val_idx: isize,
+    cur_diffs: Option<Values<B::Time, B::R>>,
 
     /// Lower key bound: the cursor must not expose keys below this bound.
     lower_key_bound: &'s Option<B::Key>,
@@ -48,23 +45,25 @@ impl<'s, B> PersistentTraceCursor<'s, B>
 where
     B: Batch + 's,
 {
-    /// Loads the current key and its values from RocksDB and stores them in the
+    /// Loads the current key&value and its weights from RocksDB and stores them in the
     /// [`PersistentTraceCursor`] struct.
     ///
     /// # Panics
     /// - In case the `db_iter` is invalid.
     fn update_current_key_weight(&mut self, direction: Direction) {
         assert!(self.db_iter.valid());
-        let (key, values) =
-            PersistentTraceCursor::<'s, B>::read_key_val_weights(&mut self.db_iter, direction);
+        let (key, value, diffs) =
+            PersistentTraceCursor::<'s, B>::read_key_val_weights(&mut self.db_iter, direction)
+                .unwrap();
 
-        if &key < self.lower_key_bound {
+        if &Some(&key) < &self.lower_key_bound.as_ref() {
             self.cur_key = None;
-            self.cur_vals = None;
+            self.cur_val = None;
+            self.cur_diffs = None;
         } else {
-            self.val_idx = 0;
-            self.cur_key = key;
-            self.cur_vals = values;
+            self.cur_key = Some(key);
+            self.cur_val = Some(value);
+            self.cur_diffs = Some(diffs);
         }
     }
 
@@ -77,18 +76,18 @@ where
     fn read_key_val_weights(
         iter: &mut DBRawIterator<'s>,
         direction: Direction,
-    ) -> (Option<B::Key>, Option<Values<B::Val, B::Time, B::R>>) {
+    ) -> Option<(B::Key, B::Val, Values<B::Time, B::R>)> {
         loop {
             if !iter.valid() {
-                return (None, None);
+                return None;
             }
 
             if let (Some(k), Some(v)) = (iter.key(), iter.value()) {
-                let key: B::Key = unaligned_deserialize(k);
-                let values: PersistedValue<B::Val, B::Time, B::R> = unaligned_deserialize(v);
-                match values {
-                    PersistedValue::Values(vals) => {
-                        return (Some(key), Some(vals));
+                let (key, value): (B::Key, B::Val) = unaligned_deserialize(k);
+                let time_weights: PersistedValue<B::Time, B::R> = unaligned_deserialize(v);
+                match time_weights {
+                    PersistedValue::Values(weights) => {
+                        return Some((key, value, weights));
                     }
                     PersistedValue::Tombstone => {
                         // Skip tombstones:
@@ -117,15 +116,24 @@ impl<'s, B: Batch> PersistentTraceCursor<'s, B> {
 
         db_iter.seek_to_first();
 
-        let (cur_key, cur_vals) =
+        let kvw =
             PersistentTraceCursor::<'s, B>::read_key_val_weights(&mut db_iter, Direction::Forward);
 
-        let mut result = PersistentTraceCursor {
-            db_iter,
-            val_idx: 0,
-            cur_key,
-            cur_vals,
-            lower_key_bound,
+        let mut result = match kvw {
+            Some((key, value, diffs)) => PersistentTraceCursor {
+                db_iter,
+                cur_key: Some(key),
+                cur_val: Some(value),
+                cur_diffs: Some(diffs),
+                lower_key_bound,
+            },
+            None => PersistentTraceCursor {
+                db_iter,
+                cur_key: None,
+                cur_val: None,
+                cur_diffs: None,
+                lower_key_bound,
+            },
         };
 
         if let Some(bound) = lower_key_bound {
@@ -142,11 +150,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
     }
 
     fn val_valid(&self) -> bool {
-        // A value is valid if `cur_vals` is set and we have not iterated past
-        // the length of the current values.
-        self.cur_vals.is_some()
-            && self.val_idx < self.cur_vals.as_ref().unwrap().len() as isize
-            && self.val_idx >= 0
+        self.cur_val.is_some()
     }
 
     fn key(&self) -> &B::Key {
@@ -154,7 +158,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
     }
 
     fn val(&self) -> &B::Val {
-        &self.cur_vals.as_ref().unwrap()[self.val_idx as usize].0
+        self.cur_val.as_ref().unwrap()
     }
 
     fn fold_times<F, U>(&mut self, init: U, mut fold: F) -> U
@@ -162,8 +166,9 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
         F: FnMut(U, &B::Time, &B::R) -> U,
     {
         if self.key_valid() && self.val_valid() {
-            self.cur_vals.as_ref().unwrap()[self.val_idx as usize]
-                .1
+            self.cur_diffs
+                .as_ref()
+                .unwrap()
                 .iter()
                 .fold(init, |init, (time, val)| fold(init, time, val))
         } else {
@@ -178,10 +183,11 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
         if self.key_valid() && self.val_valid() {
             // Note that `fold_times_through` uses `less_equal` to determine if
             // `fold` should be called on a given `(time, diff)`. However,
-            // `cur_vals` is sorted by `Ord` hence we have to go through all the
+            // `cur_diffs` is sorted by `Ord` hence we have to go through all the
             // values to determine how many times `fold` should be called.
-            self.cur_vals.as_ref().unwrap()[self.val_idx as usize]
-                .1
+            self.cur_diffs
+                .as_ref()
+                .unwrap()
                 .iter()
                 .filter(|(time, _)| time.less_equal(upper))
                 .fold(init, |init, (time, val)| fold(init, time, val))
@@ -197,10 +203,8 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
         // This is super ugly because the RocksDB storage format is generic and
         // needs to support all the different data-structures, but if we can
         // call weight we can basically just access the first elements in the
-        // list of lists of lists of lists...
-        self.cur_vals.as_ref().unwrap()[self.val_idx as usize].1[0]
-            .1
-            .clone()
+        // list since we know it will always be length 1...
+        self.cur_diffs.as_ref().unwrap()[0].1.clone()
     }
 
     fn step_key(&mut self) {
@@ -212,11 +216,11 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
                 self.update_current_key_weight(Direction::Forward);
             } else {
                 self.cur_key = None;
-                self.cur_vals = None;
+                self.cur_diffs = None;
             }
         } else {
             self.cur_key = None;
-            self.cur_vals = None;
+            self.cur_diffs = None;
         }
     }
 
@@ -228,11 +232,11 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
                 self.update_current_key_weight(Direction::Backward);
             } else {
                 self.cur_key = None;
-                self.cur_vals = None;
+                self.cur_diffs = None;
             }
         } else {
             self.cur_key = None;
-            self.cur_vals = None;
+            self.cur_diffs = None;
         }
     }
 
@@ -248,7 +252,10 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
                 // can fix the discrepancy here since we know the batch is
                 // ordered: If we're seeking something that's behind us, we just
                 // skip the seek call:
-                self.val_idx = 0;
+
+                //XXX: not sure what to do here
+                //self.val_idx = 0;
+
                 return;
             }
         }
@@ -261,8 +268,8 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
             self.update_current_key_weight(Direction::Forward);
         } else {
             self.cur_key = None;
-            self.cur_vals = None;
-            self.val_idx = 0;
+            self.cur_val = None;
+            self.cur_diffs = None;
         }
     }
 
@@ -292,7 +299,10 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
                 // can fix the discrepancy here since we know the batch is
                 // ordered: If we're seeking something that's behind us, we just
                 // skip the seek call:
-                self.val_idx = 0;
+
+                //XXX: not sure what to do here
+                //self.val_idx = 0;
+
                 return;
             }
         }
@@ -305,17 +315,17 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
             self.update_current_key_weight(Direction::Backward);
         } else {
             self.cur_key = None;
-            self.cur_vals = None;
-            self.val_idx = 0;
+            self.cur_val = None;
+            self.cur_diffs = None;
         }
     }
 
     fn step_val(&mut self) {
-        self.val_idx += 1;
+        // XXX: self.val_idx += 1; need to seek rocksdb
     }
 
     fn step_val_reverse(&mut self) {
-        self.val_idx -= 1;
+        // XXXX: self.val_idx -= 1; need to seek rocksdb
     }
 
     fn seek_val(&mut self, val: &B::Val) {
@@ -354,8 +364,8 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
             self.update_current_key_weight(Direction::Forward);
         } else {
             self.cur_key = None;
-            self.cur_vals = None;
-            self.val_idx = 0;
+            self.cur_val = None;
+            self.cur_diffs = None;
         }
     }
 
@@ -365,18 +375,19 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
             self.update_current_key_weight(Direction::Backward);
         } else {
             self.cur_key = None;
-            self.cur_vals = None;
-            self.val_idx = 0;
+            self.cur_val = None;
+            self.cur_diffs = None;
         }
     }
 
     fn rewind_vals(&mut self) {
-        self.val_idx = 0;
+        let key = self.key().clone();
+        self.seek_key(&key);
     }
 
     fn fast_forward_vals(&mut self) {
-        if self.cur_vals.is_some() {
-            self.val_idx = self.cur_vals.as_ref().unwrap().len() as isize - 1;
+        if self.cur_val.is_some() {
+            // self.val_idx = self.cur_diffs.as_ref().unwrap().len() as isize - 1;
         }
     }
 }
