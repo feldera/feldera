@@ -2792,12 +2792,7 @@ where
                 operator.location(),
             ));
 
-            let node = NaryNode::new(
-                operator,
-                input_streams.clone().into_iter(),
-                self.clone(),
-                id,
-            );
+            let node = NaryNode::new(operator, input_streams.clone(), self.clone(), id);
             let output_stream = node.output_stream();
             for stream in input_streams.iter() {
                 self.connect_stream(stream, id, input_preference);

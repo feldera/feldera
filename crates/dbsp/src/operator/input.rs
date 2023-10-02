@@ -1012,12 +1012,12 @@ where
 mod test {
     use crate::{
         indexed_zset,
-        trace::{cursor::Cursor, BatchReader},
+        trace::{cursor::Cursor, Batch, BatchReader, Builder},
         zset, CollectionHandle, InputHandle, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime,
         UpsertHandle,
     };
     use anyhow::Result as AnyResult;
-    use std::iter::once;
+    use std::{iter::once, ops::Mul};
 
     fn input_batches() -> Vec<OrdZSet<usize, isize>> {
         vec![
@@ -1051,13 +1051,19 @@ mod test {
 
         let mut expected_batches = input_batches().into_iter().chain(input_batches()).chain(
             input_batches().into_iter().map(move |batch| {
-                let mut result = batch.clone();
-                for _ in 1..nworkers {
-                    result += batch.clone();
+                //let mut result = batch.clone();
+                let mut cursor = batch.cursor();
+                let mut result =
+                    <OrdZSet<usize, isize> as Batch>::Builder::with_capacity((), batch.len());
+
+                while cursor.key_valid() {
+                    result.push((cursor.key().clone(), cursor.weight().mul(nworkers as isize)));
+                    cursor.step_key();
                 }
-                result
+                result.done()
             }),
         );
+
         stream.gather(0).inspect(move |batch| {
             if Runtime::worker_index() == 0 {
                 assert_eq!(batch, &expected_batches.next().unwrap())
