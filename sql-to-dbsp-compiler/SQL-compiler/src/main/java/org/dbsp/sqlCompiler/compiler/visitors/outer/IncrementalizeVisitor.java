@@ -38,7 +38,7 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPSourceOperator operator) {
+    public void postorder(DBSPSourceMultisetOperator operator) {
         if (this.visited.contains(operator))
             return;
         this.addOperator(operator);

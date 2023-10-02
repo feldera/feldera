@@ -62,16 +62,16 @@ public class CompilerOptions {
          * Only compare fields that matter.
          */
         public boolean same(Optimizer optimizer) {
-            return incrementalize == optimizer.incrementalize;
+            return this.incrementalize == optimizer.incrementalize;
         }
 
         @Override
         public String toString() {
             return "Optimizer{" +
-                    "incrementalize=" + incrementalize +
-                    ", optimizationLevel=" + optimizationLevel +
-                    ", throwOnError=" + throwOnError +
-                    ", generateInputForEveryTable=" + generateInputForEveryTable +
+                    "incrementalize=" + this.incrementalize +
+                    ", optimizationLevel=" + this.optimizationLevel +
+                    ", throwOnError=" + this.throwOnError +
+                    ", generateInputForEveryTable=" + this.generateInputForEveryTable +
                     '}';
         }
     }
@@ -121,21 +121,21 @@ public class CompilerOptions {
          */
         public boolean same(IO io) {
             if (jit != io.jit) return false;
-            return lexicalRules == io.lexicalRules;
+            return lexicalRules.equals(io.lexicalRules);
         }
 
         @Override
         public String toString() {
             return "IO{" +
-                    "outputFile='" + outputFile + '\'' +
-                    ", jit=" + jit +
-                    ", emitJpeg=" + emitJpeg +
-                    ", emitPng=" + emitPng +
-                    ", emitJsonErrors=" + emitJsonErrors +
-                    ", emitJsonSchema='" + emitJsonSchema + '\'' +
-                    ", inputFile='" + inputFile + '\'' +
-                    ", functionName='" + functionName + '\'' +
-                    ", lexicalRules=" + lexicalRules +
+                    "outputFile='" + this.outputFile + '\'' +
+                    ", jit=" + this.jit +
+                    ", emitJpeg=" + this.emitJpeg +
+                    ", emitPng=" + this.emitPng +
+                    ", emitJsonErrors=" + this.emitJsonErrors +
+                    ", emitJsonSchema='" + this.emitJsonSchema + '\'' +
+                    ", inputFile='" + this.inputFile + '\'' +
+                    ", functionName='" + this.functionName + '\'' +
+                    ", lexicalRules=" + this.lexicalRules +
                     '}';
         }
     }

@@ -69,7 +69,9 @@ public class Main {
 
         String[] args = {
                 "-v", "-v", "-x",
-                "-e", "jit",      // executor
+                "-e",
+                //"jit",      // executor
+                "hybrid",     // executor
         };
         if (argv.length > 0) {
             args = argv;

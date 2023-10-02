@@ -66,7 +66,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(op.getName())
                 .append(".clone();")
                 .newline();
-        if (op instanceof DBSPSourceOperator) {
+        if (op instanceof DBSPSourceMultisetOperator) {
             this.builder.append("let ")
                     .append(op.getName())
                     .append(" = Generator::new(move || ")
@@ -172,7 +172,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPSourceOperator operator) {
+    public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
         this.writeComments(operator)
                 .append("let ")
                 .append(operator.getName())

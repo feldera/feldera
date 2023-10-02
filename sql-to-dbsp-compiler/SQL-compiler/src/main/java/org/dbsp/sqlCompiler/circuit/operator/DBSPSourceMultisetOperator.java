@@ -23,29 +23,19 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
-import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
-public class DBSPSourceOperator extends DBSPOperator {
-    /**
-     * Original output row type, as a struct (not a tuple), i.e., with named columns.
-     */
-    public final DBSPTypeStruct originalRowType;
-    public final CalciteObject sourceName;
-    // Note: the metadata is not transformed after being set.
-    // In particular, types are not rewritten.
-    public final List<InputColumnMetadata> metadata;
-
+public class DBSPSourceMultisetOperator extends DBSPSourceBaseOperator {
     /**
      * Create a DBSP operator that is a source to the dataflow graph.
+     * The table has *no* primary key, so the data can form a multiset.
      * @param node        Calcite node for the statement creating the table
      *                    that this node is created from.
      * @param sourceName  Calcite node for the identifier naming the table.
@@ -53,21 +43,11 @@ public class DBSPSourceOperator extends DBSPOperator {
      * @param comment     A comment describing the operator.
      * @param name        The name of the table that this operator is created from.
      */
-    public DBSPSourceOperator(
+    public DBSPSourceMultisetOperator(
             CalciteObject node, CalciteObject sourceName,
             DBSPType outputType, DBSPTypeStruct originalRowType, @Nullable String comment,
             List<InputColumnMetadata> metadata, String name) {
-        super(node, "", null, outputType, false, comment, name);
-        this.originalRowType = originalRowType;
-        this.sourceName = sourceName;
-        this.metadata = metadata;
-    }
-
-    @Override
-    public SourcePositionRange getSourcePosition() {
-        if (!this.sourceName.isEmpty() && this.sourceName.getPositionRange().isValid())
-            return this.sourceName.getPositionRange();
-        return this.getNode().getPositionRange();
+        super(node, sourceName, outputType, originalRowType, comment, metadata, name);
     }
 
     @Override
@@ -78,26 +58,16 @@ public class DBSPSourceOperator extends DBSPOperator {
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
-        return new DBSPSourceOperator(this.getNode(), this.sourceName, outputType, this.originalRowType,
+        return new DBSPSourceMultisetOperator(this.getNode(), this.sourceName, outputType, this.originalRowType,
                 this.comment, this.metadata, this.outputName);
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPSourceOperator(
+            return new DBSPSourceMultisetOperator(
                     this.getNode(), this.sourceName, this.outputType, this.originalRowType,
                     this.comment, this.metadata, this.outputName);
         return this;
-    }
-
-    @Override
-    public IIndentStream toString(IIndentStream builder) {
-        return this.writeComments(builder)
-                .append("let ")
-                .append(this.getName())
-                .append(" = ")
-                .append(this.outputName)
-                .append("();");
     }
 }
