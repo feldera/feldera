@@ -13,10 +13,11 @@ use crate::circuit::{
 use circuit_graph::{CircuitGraph, Node, NodeKind, Region, RegionId};
 use std::{
     borrow::Cow,
+    cell::RefCell,
     collections::{HashMap, HashSet},
     fmt,
     fmt::Display,
-    sync::{Arc, Mutex},
+    rc::Rc,
 };
 use visual_graph::Graph as VisGraph;
 
@@ -128,7 +129,7 @@ impl Display for TraceError {
 /// test`.
 #[repr(transparent)]
 #[derive(Clone)]
-pub struct TraceMonitor(Arc<Mutex<TraceMonitorInternal>>);
+pub struct TraceMonitor(Rc<RefCell<TraceMonitorInternal>>);
 
 impl TraceMonitor {
     /// Attach trace monitor to a circuit.  The monitor will register for
@@ -152,14 +153,14 @@ impl TraceMonitor {
         CE: Fn(&CircuitEvent, &TraceError) + 'static,
         SE: Fn(&SchedulerEvent, &TraceError) + 'static,
     {
-        Self(Arc::new(Mutex::new(TraceMonitorInternal::new(
+        Self(Rc::new(RefCell::new(TraceMonitorInternal::new(
             circuit_error_handler,
             scheduler_error_handler,
         ))))
     }
 
     pub fn new_panic_on_error() -> Self {
-        Self(Arc::new(Mutex::new(
+        Self(Rc::new(RefCell::new(
             TraceMonitorInternal::new_panic_on_error(),
         )))
     }
@@ -172,7 +173,7 @@ impl TraceMonitor {
     where
         F: Fn(&GlobalNodeId) -> String,
     {
-        self.0.lock().unwrap().circuit.visualize(&annotate)
+        self.0.borrow().circuit.visualize(&annotate)
     }
 }
 
@@ -196,7 +197,7 @@ pub struct TraceMonitorInternal {
 
 impl TraceMonitorInternal {
     fn attach(
-        this: Arc<Mutex<Self>>,
+        this: Rc<RefCell<Self>>,
         circuit: &RootCircuit,
         monitor_eval: bool,
         handler_name: &str,
@@ -204,7 +205,7 @@ impl TraceMonitorInternal {
         let this_clone = this.clone();
 
         circuit.register_circuit_event_handler(handler_name, move |event| {
-            let mut this = this.lock().unwrap();
+            let mut this = this.borrow_mut();
             let _ = this.circuit_event(event).map_err(|e| {
                 (this.circuit_error_handler)(event, &e);
             });
@@ -214,7 +215,7 @@ impl TraceMonitorInternal {
                 // The `ClockEnd` event can be triggered by `CircuitHandle::drop()` while the
                 // thread is being terminated, at which point the lock may be
                 // poisoned.  Just ignore the event in that case.
-                if let Ok(mut this) = this_clone.lock() {
+                if let Ok(mut this) = this_clone.try_borrow_mut() {
                     let _ = this.scheduler_event(event).map_err(|e| {
                         (this.scheduler_error_handler)(event, &e);
                     });

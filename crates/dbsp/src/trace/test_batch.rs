@@ -1,6 +1,7 @@
 //! Reference implementation of batch and trace traits for use in testing.
 //!
 //! So far, only methods/traits used in tests have been implemented.
+#![allow(clippy::type_complexity)]
 
 use super::{
     Activator, AntichainRef, Batch, BatchReader, Batcher, Builder, Consumer, Cursor, Merger, Trace,
