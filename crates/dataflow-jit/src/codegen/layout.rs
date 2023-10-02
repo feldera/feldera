@@ -494,7 +494,7 @@ impl NativeLayout {
             Some(NonNull::dangling())
         } else {
             let layout = self.rust_layout();
-            NonNull::new(unsafe { std::alloc::alloc_zeroed(layout) })
+            NonNull::new(unsafe { std::alloc::alloc(layout) })
         }
     }
 
@@ -527,7 +527,7 @@ impl NativeLayout {
                 layout = layout.extend(single).unwrap().0;
             }
 
-            NonNull::new(unsafe { std::alloc::alloc_zeroed(layout) })
+            NonNull::new(unsafe { std::alloc::alloc(layout) })
         }
     }
 
