@@ -135,23 +135,31 @@ pub trait DeScalarStream: Send {
 }
 
 #[derive(Clone)]
-pub struct DeScalarHandleImpl<T> {
+pub struct DeScalarHandleImpl<T, D, F> {
     handle: InputHandle<T>,
+    map_func: F,
+    phantom: PhantomData<fn(D)>,
 }
 
-impl<T> DeScalarHandleImpl<T> {
-    pub fn new(handle: InputHandle<T>) -> Self {
-        Self { handle }
+impl<T, D, F> DeScalarHandleImpl<T, D, F> {
+    pub fn new(handle: InputHandle<T>, map_func: F) -> Self {
+        Self {
+            handle,
+            map_func,
+            phantom: PhantomData,
+        }
     }
 }
 
-impl<T> DeScalarHandle for DeScalarHandleImpl<T>
+impl<T, D, F> DeScalarHandle for DeScalarHandleImpl<T, D, F>
 where
-    T: Default
+    T: Default + Send + Clone + 'static,
+    D: Default
+        + for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
         + Send
         + Clone
-        + for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
         + 'static,
+    F: Fn(D) -> T + Send + Clone + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -163,56 +171,74 @@ where
                 Ok(Box::new(DeScalarStreamImpl::<
                     CsvDeserializerFromBytes<_>,
                     T,
+                    D,
                     _,
-                >::new(self.handle.clone(), config)))
+                    _,
+                >::new(
+                    self.handle.clone(),
+                    self.map_func.clone(),
+                    config,
+                )))
             }
             RecordFormat::Json(flavor) => {
                 let config = SqlDeserializerConfig::from(flavor);
                 Ok(Box::new(DeScalarStreamImpl::<
                     JsonDeserializerFromBytes<_>,
                     T,
+                    D,
                     _,
-                >::new(self.handle.clone(), config)))
+                    _,
+                >::new(
+                    self.handle.clone(),
+                    self.map_func.clone(),
+                    config,
+                )))
             }
         }
     }
 }
 
-struct DeScalarStreamImpl<De, T, C> {
+struct DeScalarStreamImpl<De, T, D, C, F> {
     handle: InputHandle<T>,
     deserializer: De,
+    map_func: F,
     config: C,
+    phantom: PhantomData<fn(D)>,
 }
 
-impl<De, T, C> DeScalarStreamImpl<De, T, C>
+impl<De, T, D, C, F> DeScalarStreamImpl<De, T, D, C, F>
 where
     De: DeserializerFromBytes<C> + Send,
     C: Clone,
 {
-    fn new(handle: InputHandle<T>, config: C) -> Self {
+    fn new(handle: InputHandle<T>, map_func: F, config: C) -> Self {
         Self {
             handle,
             deserializer: De::create(config.clone()),
+            map_func,
             config,
+            phantom: PhantomData,
         }
     }
 }
 
-impl<De, T, C> DeScalarStream for DeScalarStreamImpl<De, T, C>
+impl<De, T, D, C, F> DeScalarStream for DeScalarStreamImpl<De, T, D, C, F>
 where
-    T: Default + Send + Clone + for<'de> DeserializeWithContext<'de, C> + 'static,
+    T: Default + Send + Clone + 'static,
+    D: Default + for<'de> DeserializeWithContext<'de, C> + Send + Clone + 'static,
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
+    F: Fn(D) -> T + Clone + Send + 'static,
 {
     fn set_for_worker(&mut self, worker: usize, data: &[u8]) -> AnyResult<()> {
         let val = self.deserializer.deserialize(data)?;
-        self.handle.set_for_worker(worker, val);
+        self.handle.set_for_worker(worker, (self.map_func)(val));
         Ok(())
     }
 
     fn set_for_all(&mut self, data: &[u8]) -> AnyResult<()> {
         let val = self.deserializer.deserialize(data)?;
-        self.handle.set_for_all(val);
+        self.handle.set_for_all((self.map_func)(val));
         Ok(())
     }
 
@@ -221,7 +247,11 @@ where
     }
 
     fn fork(&self) -> Box<dyn DeScalarStream> {
-        Box::new(Self::new(self.handle.clone(), self.config.clone()))
+        Box::new(Self::new(
+            self.handle.clone(),
+            self.map_func.clone(),
+            self.config.clone(),
+        ))
     }
 }
 
@@ -472,21 +502,28 @@ where
     }
 }
 
-pub struct DeMapHandle<K, V, F> {
+pub struct DeMapHandle<K, KD, V, VD, F> {
     handle: UpsertHandle<K, Option<V>>,
     key_func: F,
+    phantom: PhantomData<fn(KD, VD)>,
 }
 
-impl<K, V, F> DeMapHandle<K, V, F> {
+impl<K, KD, V, VD, F> DeMapHandle<K, KD, V, VD, F> {
     pub fn new(handle: UpsertHandle<K, Option<V>>, key_func: F) -> Self {
-        Self { handle, key_func }
+        Self {
+            handle,
+            key_func,
+            phantom: PhantomData,
+        }
     }
 }
 
-impl<K, V, F> DeCollectionHandle for DeMapHandle<K, V, F>
+impl<K, KD, V, VD, F> DeCollectionHandle for DeMapHandle<K, KD, V, VD, F>
 where
-    K: DBData + for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>,
-    V: DBData + for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>,
+    K: DBData + From<KD>,
+    KD: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig> + Send + 'static,
+    V: DBData + From<VD>,
+    VD: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig> + Send + 'static,
     F: Fn(&V) -> K + Clone + Send + 'static,
 {
     fn configure_deserializer(
@@ -497,7 +534,9 @@ where
             RecordFormat::Csv => Ok(Box::new(DeMapStream::<
                 CsvDeserializerFromBytes<_>,
                 K,
+                KD,
                 V,
+                VD,
                 F,
                 _,
             >::new(
@@ -508,7 +547,9 @@ where
             RecordFormat::Json(flavor) => Ok(Box::new(DeMapStream::<
                 JsonDeserializerFromBytes<_>,
                 K,
+                KD,
                 V,
+                VD,
                 F,
                 _,
             >::new(
@@ -532,15 +573,16 @@ where
 /// The [`delete`](`Self::delete`) method of this handle deserializes value
 /// `k` type `K` and buffers a `(k, None)` update for the underlying
 /// `UpsertHandle`.
-pub struct DeMapStream<De, K, V, F, C> {
+pub struct DeMapStream<De, K, KD, V, VD, F, C> {
     updates: Vec<(K, Option<V>)>,
     key_func: F,
     handle: UpsertHandle<K, Option<V>>,
     config: C,
     deserializer: De,
+    phantom: PhantomData<fn(KD, VD)>,
 }
 
-impl<De, K, V, F, C> DeMapStream<De, K, V, F, C>
+impl<De, K, KD, V, VD, F, C> DeMapStream<De, K, KD, V, VD, F, C>
 where
     De: DeserializerFromBytes<C>,
     C: Clone,
@@ -552,20 +594,23 @@ where
             handle,
             deserializer: De::create(config.clone()),
             config,
+            phantom: PhantomData,
         }
     }
 }
 
-impl<De, K, V, F, C> DeCollectionStream for DeMapStream<De, K, V, F, C>
+impl<De, K, KD, V, VD, F, C> DeCollectionStream for DeMapStream<De, K, KD, V, VD, F, C>
 where
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
-    K: DBData + for<'de> DeserializeWithContext<'de, C>,
-    V: DBData + for<'de> DeserializeWithContext<'de, C>,
+    K: DBData + From<KD>,
+    KD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    V: DBData + From<VD>,
+    VD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
     F: Fn(&V) -> K + Clone + Send + 'static,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
-        let val = self.deserializer.deserialize::<V>(data)?;
+        let val = V::from(self.deserializer.deserialize::<VD>(data)?);
         let key = (self.key_func)(&val);
 
         self.updates.push((key, Some(val)));
@@ -573,7 +618,7 @@ where
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
-        let key = self.deserializer.deserialize::<K>(data)?;
+        let key = K::from(self.deserializer.deserialize::<KD>(data)?);
 
         self.updates.push((key, None));
         Ok(())
@@ -675,7 +720,7 @@ mod test {
         })
         .unwrap();
 
-        let input_handle = DeScalarHandleImpl::new(input_handle);
+        let input_handle = DeScalarHandleImpl::new(input_handle, |x| x);
 
         (dbsp, Box::new(input_handle), output_handle)
     }
@@ -757,7 +802,8 @@ mod test {
 
         let de_zset = DeZSetHandle::new(zset_input);
         let de_set = DeSetHandle::new(set_input);
-        let de_map = DeMapHandle::new(map_input, |test_struct: &TestStruct| test_struct.id);
+        let de_map: DeMapHandle<i64, i64, _, _, _> =
+            DeMapHandle::new(map_input, |test_struct: &TestStruct| test_struct.id);
 
         (
             dbsp,
