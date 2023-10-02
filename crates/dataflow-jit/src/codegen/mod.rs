@@ -1614,8 +1614,18 @@ impl<'a> CodegenCtx<'a> {
     fn binary_op(&mut self, expr_id: ExprId, binop: &BinaryOp, builder: &mut FunctionBuilder<'_>) {
         let (lhs, rhs) = (self.exprs[&binop.lhs()], self.exprs[&binop.rhs()]);
         let (lhs_ty, rhs_ty) = (self.expr_types[&binop.lhs()], self.expr_types[&binop.rhs()]);
-        debug_assert_eq!(builder.value_type(lhs), builder.value_type(rhs));
-        debug_assert_eq!(lhs_ty, rhs_ty);
+        debug_assert_eq!(
+	    builder.value_type(lhs),
+	    builder.value_type(rhs),
+	    "Operands of binary operation {:?} have different types",
+	    binop
+	);
+        debug_assert_eq!(
+	    lhs_ty,
+	    rhs_ty,
+	    "Operands of binary operation {:?} have different types",
+	    binop
+	);
 
         let mut value_ty = lhs_ty;
         let value = match binop.kind() {

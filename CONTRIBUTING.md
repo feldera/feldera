@@ -128,7 +128,7 @@ Execute the following command to make `git push` check the code for formatting i
 
 ```shell
 GITDIR=$(git rev-parse --git-dir)
-ln -sf $(pwd)/tools/pre-push ${GITDIR}/hooks/pre-push
+ln -sf $(pwd)/scripts/pre-push ${GITDIR}/hooks/pre-push
 ```
 ### Formatting Commit Messages
 
