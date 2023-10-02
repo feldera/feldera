@@ -58,14 +58,14 @@ public class CircuitOptimizer implements ICompilerComponent {
         IErrorReporter reporter = this.getCompiler();
         passes.add(new MergeSums(reporter));
         passes.add(new PropagateEmptySources(reporter));
-        passes.add(new DeadCode(reporter, true));
+        passes.add(new DeadCode(reporter, this.compiler.options.optimizerOptions.generateInputForEveryTable, true));
         passes.add(new OptimizeProjections(reporter));
         passes.add(new OptimizeDistinctVisitor(reporter));
         if (this.getCompiler().options.optimizerOptions.incrementalize) {
             passes.add(new IncrementalizeVisitor(reporter));
             passes.add(new OptimizeIncrementalVisitor(reporter));
         }
-        passes.add(new DeadCode(reporter, false));
+        passes.add(new DeadCode(reporter, true, false));
         if (this.getCompiler().options.optimizerOptions.incrementalize)
             passes.add(new NoIntegralVisitor(reporter));
         passes.add(new Simplify(reporter).circuitRewriter());

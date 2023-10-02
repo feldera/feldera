@@ -241,9 +241,10 @@ public class DBSPExecutor extends SqlSltTestExecutor {
 
     boolean runBatch(TestStatistics result) {
         try {
-            DBSPCompiler compiler = new DBSPCompiler(this.compilerOptions);
             final List<ProgramAndTester> codeGenerated = new ArrayList<>();
-            // Create input tables
+
+            // Create contents for input tables
+            DBSPCompiler compiler = new DBSPCompiler(this.compilerOptions);
             this.createTables(compiler);
             compiler.throwIfErrorsOccurred();
             // Create function which generates inputs for all tests in this batch.
@@ -256,6 +257,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             int queryNo = 0;
             for (SqlTestQuery testQuery : this.queriesToRun) {
                 try {
+                    // Create input tables in circuit
+                    compiler = new DBSPCompiler(this.compilerOptions);
+                    this.createTables(compiler);
                     ProgramAndTester pc = this.generateTestCase(
                             compiler, streamInputFunction, this.viewPreparation, testQuery, queryNo);
                     codeGenerated.add(pc);
@@ -662,6 +666,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 CompilerOptions compilerOptions = new CompilerOptions();
                 compilerOptions.optimizerOptions.incrementalize = incremental.get();
                 compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
+                compilerOptions.optimizerOptions.generateInputForEveryTable = true;
                 DBSPExecutor result = new DBSPExecutor(options, compilerOptions, "csv");
                 Set<String> bugs = options.readBugsFile();
                 result.avoid(bugs);

@@ -194,7 +194,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPCircuit circuit = getCircuit(compiler);
         String str = circuit.toString();
         String expected = "Circuit circuit0 {\n" +
-                "    // DBSPSourceOperator 53\n" +
+                "    // DBSPSourceMultisetOperator 53\n" +
                 "    // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)\n" +
                 "    let T = T();\n" +
                 "    // DBSPMapOperator 113\n" +

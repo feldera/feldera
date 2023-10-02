@@ -175,7 +175,7 @@ public class CalciteCompilerTests {
         // standard syntax for primary keys
         String query =
                 "create table git_commit (\n" +
-                        "    git_commit_id bigint not null," +
+                        "    git_commit_id bigint not null,\n" +
                         "    PRIMARY KEY (git_commit_id)\n" +
                         ")";
         CalciteCompiler calcite = this.getCompiler();
