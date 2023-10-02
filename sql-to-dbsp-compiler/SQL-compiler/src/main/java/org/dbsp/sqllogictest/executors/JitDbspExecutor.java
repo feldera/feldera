@@ -405,7 +405,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 options.stopAtFirstError, options.verbosity);
         result.incFiles();
         int queryNo = 0;
-        int skip = 146;  // used only for debugging
+        int skip = 211;  // used only for debugging
         for (ISqlTestOperation operation : testFile.fileContents) {
             SltSqlStatement stat = operation.as(SltSqlStatement.class);
             if (stat != null) {

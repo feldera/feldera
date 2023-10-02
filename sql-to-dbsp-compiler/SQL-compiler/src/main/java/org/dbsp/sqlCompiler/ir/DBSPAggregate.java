@@ -152,13 +152,15 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             // Must package together several accumulator fields if the original type was a tuple
             DBSPType accumulatorType = accumulatorTypes[i];
             DBSPTypeTupleBase tuple = accumulatorType.as(DBSPTypeTupleBase.class);
-            DBSPExpression accumulatorArgs = accumParam.field(i + start);
+            DBSPExpression accumulatorArgs = accumParam.field(start);
             if (tuple != null) {
                 DBSPExpression[] accumArgFields = new DBSPExpression[tuple.size()];
                 for (int j = 0; j < tuple.size(); j++, start++) {
                     accumArgFields[j] = accumParam.field(start);
                 }
                 accumulatorArgs = new DBSPRawTupleExpression(accumArgFields);
+            } else {
+                start++;
             }
             DBSPExpression init = closure.call(
                     accumulatorArgs, row.asVariableReference(), weight.asVariableReference());
@@ -411,6 +413,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
 
         @Override
         public IIndentStream toString(IIndentStream builder) {
+            builder.append("[").increase();
             builder.append("zero=")
                     .append(this.zero)
                     .newline()
@@ -432,6 +435,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                         .append("linearFunction=")
                         .append(this.linearFunction);
             }
+            builder.newline().decrease().append("]");
             return builder;
         }
     }

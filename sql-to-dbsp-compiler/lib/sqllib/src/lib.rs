@@ -166,8 +166,8 @@ macro_rules! some_function3 {
 }
 
 // Macro to create variants of a function with 4 arguments
-// If there exists a function is f____(x: T, y: S, z: V, w: W) -> U, this creates
-// fifteen functions:
+// If there exists a function is f____(x: T, y: S, z: V, w: W) -> U, this
+// creates fifteen functions:
 // - f___N(x: T, y: S, z: V, w: Option<W>) -> Option<U>
 // - f__N_(x: T, y: S, z: Option<V>, w: W) -> Option<U>
 // - etc.

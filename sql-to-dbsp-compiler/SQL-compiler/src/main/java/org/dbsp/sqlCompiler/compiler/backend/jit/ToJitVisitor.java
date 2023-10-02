@@ -546,9 +546,9 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
         Passes rewriter = new Passes(compiler);
         rewriter.add(new ExpandWritelog(compiler));
         rewriter.add(new BlockClosures(compiler));
-        rewriter.add(new ResolveWeightType(compiler, compiler.getWeightTypeImplementation()).circuitRewriter());
-        rewriter.add(new EliminateMulWeight(compiler).circuitRewriter());
-        rewriter.add(new Simplify(compiler).circuitRewriter());
+        rewriter.add(new ResolveWeightType(compiler, compiler.getWeightTypeImplementation()));
+        rewriter.add(new EliminateMulWeight(compiler));
+        rewriter.add(new Simplify(compiler));
 
         circuit = rewriter.apply(circuit);
         Logger.INSTANCE.belowLevel("ToJitVisitor", 2)
