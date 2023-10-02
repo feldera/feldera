@@ -122,6 +122,8 @@ class TestCase {
         List<DBSPStatement> list = new ArrayList<>();
         if (!this.name.isEmpty())
             list.add(new DBSPComment(this.name));
+        if (!this.javaTestName.isEmpty())
+            list.add(new DBSPComment(this.javaTestName));
         JITProgram program = ToJitVisitor.circuitToJIT(this.compiler, this.circuit);
         DBSPComment comment = new DBSPComment(program.toAssembly());
         list.add(comment);
