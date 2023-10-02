@@ -126,10 +126,5 @@ where
 pub(crate) fn bytes_of<T>(slice: &[T]) -> &[MaybeUninit<u8>] {
     // Safety: It's always sound to interpret possibly uninitialized bytes as
     // `MaybeUninit<u8>`
-    unsafe {
-        std::slice::from_raw_parts(
-            slice.as_ptr().cast(),
-            slice.len() * std::mem::size_of::<T>(),
-        )
-    }
+    unsafe { std::slice::from_raw_parts(slice.as_ptr().cast(), std::mem::size_of_val(slice)) }
 }

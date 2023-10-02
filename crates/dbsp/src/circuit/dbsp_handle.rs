@@ -441,7 +441,7 @@ impl DBSPHandle {
 
         // Send command.
         for (worker, sender) in self.command_senders.iter().enumerate() {
-            if matches!(sender.send(command.clone()), Err(_)) {
+            if sender.send(command.clone()).is_err() {
                 let _ = self.kill_inner();
                 return Err(DBSPError::Runtime(RuntimeError::WorkerPanic { worker }));
             }

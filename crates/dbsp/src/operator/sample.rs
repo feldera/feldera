@@ -76,8 +76,6 @@ where
         })
     }
 
-
-
     /// Generates a uniform random sample of (key,value) pairs from `self`,
     /// assuming that `self` contains exactly one value per key.
     ///
@@ -274,6 +272,7 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("SampleUniqueKeyVals")
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -300,6 +299,7 @@ where
                 cursor.seek_key(&key);
                 debug_assert!(cursor.key_valid());
                 debug_assert_eq!(cursor.key(), &key);
+
                 while cursor.val_valid() {
                     if !cursor.weight().is_zero() {
                         sample_with_vals.push((key, cursor.val().clone()));
@@ -322,6 +322,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod test {
     use crate::{
         trace::{
@@ -333,7 +334,8 @@ mod test {
         UpsertHandle,
     };
     use anyhow::Result as AnyResult;
-    use std::collections::BTreeSet;
+    use proptest::{collection::vec, prelude::*};
+    use std::{cmp::Ordering, collections::BTreeSet};
 
     fn test_circuit(
         circuit: &mut RootCircuit,
@@ -400,8 +402,6 @@ mod test {
             trace_handle,
         ))
     }
-
-    use proptest::{collection::vec, prelude::*};
 
     fn input_trace(
         max_key: i32,
@@ -487,10 +487,14 @@ mod test {
             for (batch, sample_size) in trace.into_iter() {
 
                 for (k, v, r) in batch.into_iter() {
-                    if r > 0 {
-                        input_handle.push(k, Some(v));
-                    } else if r < 0 {
-                        input_handle.push(k, None);
+                    match r.cmp(&0) {
+                        Ordering::Greater => {
+                            input_handle.push(k, Some(v));
+                        }
+                        Ordering::Less => {
+                            input_handle.push(k, None);
+                        }
+                        _ => (),
                     }
                 }
 

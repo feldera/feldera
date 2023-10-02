@@ -1327,6 +1327,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod test {
     use crate::{
         trace::{
