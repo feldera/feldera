@@ -28,7 +28,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
@@ -173,7 +173,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPSourceOperator operator) {
+    public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
         DBSPStructItem item = new DBSPStructItem(type);
         item.accept(this.innerVisitor);
@@ -228,7 +228,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
 
         // Register input streams in the catalog.
         int index = 0;
-        for (DBSPSourceOperator i : circuit.inputOperators) {
+        for (DBSPSourceMultisetOperator i : circuit.inputOperators) {
             this.builder.append("catalog.register_input_set::<_, ");
             i.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")

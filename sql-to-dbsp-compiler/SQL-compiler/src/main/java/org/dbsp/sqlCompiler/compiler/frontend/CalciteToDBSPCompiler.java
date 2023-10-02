@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend;
 
-import org.apache.calcite.prepare.RelOptTableImpl;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
@@ -398,40 +397,21 @@ public class CalciteToDBSPCompiler extends RelVisitor
         String tableName = name.get(name.size() - 1);
         @Nullable
         DBSPOperator source = this.circuit.getOperator(tableName);
-        if (source != null) {
-            if (source.is(DBSPSinkOperator.class)) {
-                // We do this because sink operators do not have outputs.
-                // A table scan for a sink operator can appear because of
-                // a VIEW that is an input to a query.
-                Utilities.putNew(this.nodeOperator, scan, source.to(DBSPSinkOperator.class).input());
-            } else {
-                // Multiple queries can share an input.
-                // Or the input may have been created by a CREATE TABLE statement.
-                Utilities.putNew(this.nodeOperator, scan, source);
-            }
-            return;
+        // The inputs should have been created while parsing the CREATE TABLE statements.
+        if (source == null) {
+            throw new InternalCompilerError("Could not find input for table " + tableName, node);
         }
 
-        if (this.options.optimizerOptions.generateInputForEveryTable)
-            throw new InternalCompilerError("Could not find input for table " + tableName, node);
-        @Nullable String comment = null;
-        if (scan.getTable() instanceof RelOptTableImpl) {
-            RelOptTableImpl impl = (RelOptTableImpl) scan.getTable();
-            CreateRelationStatement.EmulatedTable et = impl.unwrap(CreateRelationStatement.EmulatedTable.class);
-            if (et != null)
-                comment = et.getStatement();
+        if (source.is(DBSPSinkOperator.class)) {
+            // We do this because sink operators do not have outputs.
+            // A table scan for a sink operator can appear because of
+            // a VIEW that is an input to a query.
+            Utilities.putNew(this.nodeOperator, scan, source.to(DBSPSinkOperator.class).input());
+        } else {
+            // Multiple queries can share an input.
+            // Or the input may have been created by a CREATE TABLE statement.
+            Utilities.putNew(this.nodeOperator, scan, source);
         }
-        DBSPType rowType = this.convertType(scan.getRowType(), false);
-        DBSPTypeStruct originalType = this.convertType(scan.getRowType(), true).to(DBSPTypeStruct.class);
-        List<InputColumnMetadata> metadata = new ArrayList<>();
-        for (DBSPTypeStruct.Field field: originalType.fields.values()) {
-            InputColumnMetadata meta = new InputColumnMetadata(
-                    field.name, field.type, false, null, null);
-            metadata.add(meta);
-        }
-        DBSPSourceOperator result = new DBSPSourceOperator(
-                node, CalciteObject.EMPTY, this.makeZSet(rowType), originalType, comment, metadata, tableName);
-        this.assignOperator(scan, result);
     }
 
     void assignOperator(RelNode rel, DBSPOperator op) {
@@ -1151,11 +1131,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 statement.is(DropTableStatement.class)) {
             this.tableContents.execute(statement);
             CreateTableStatement create = statement.as(CreateTableStatement.class);
-            if (create != null && this.options.optimizerOptions.generateInputForEveryTable) {
-                // We create an input for the circuit.  The inputs
-                // could be created by visiting LogicalTableScan, but if a table
-                // is *not* used in a view, it won't have a corresponding input
-                // in the circuit.
+            if (create != null) {
+                // We create an input for the circuit.
                 String tableName = create.relationName;
                 CreateTableStatement def = this.tableContents.getTableDefinition(tableName);
                 DBSPType rowType = def.getRowTypeAsTuple(this.compiler.getTypeCompiler());
@@ -1166,7 +1143,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     identifier = new CalciteObject(sct.name);
                 }
                 List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
-                DBSPSourceOperator result = new DBSPSourceOperator(
+                DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                         create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
                         def.statement, metadata, tableName);
                 this.circuit.addOperator(result);

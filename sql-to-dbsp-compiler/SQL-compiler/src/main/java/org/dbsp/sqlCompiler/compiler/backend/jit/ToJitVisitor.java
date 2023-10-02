@@ -242,7 +242,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public VisitDecision preorder(DBSPSourceOperator operator) {
+    public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
         JITRowType type = this.getTypeCatalog().convertTupleType(operator.getOutputZSetElementType(), this);
         JITSourceOperator source = new JITSourceOperator(operator.id, type, operator.outputName);
         this.program.add(source);

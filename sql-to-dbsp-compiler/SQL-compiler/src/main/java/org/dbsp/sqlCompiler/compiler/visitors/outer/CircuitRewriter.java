@@ -24,20 +24,9 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
+import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
@@ -103,14 +92,29 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPSourceOperator operator) {
+    public void postorder(DBSPSourceMultisetOperator operator) {
         DBSPTypeStruct originalRowType = this.transform(operator.originalRowType).to(DBSPTypeStruct.class);
         DBSPType outputType = this.transform(operator.outputType);
         DBSPOperator result = operator;
         if (!originalRowType.sameType(operator.originalRowType)
                 || !outputType.sameType(operator.outputType)) {
-            result = new DBSPSourceOperator(operator.getNode(), operator.sourceName,
+            result = new DBSPSourceMultisetOperator(operator.getNode(), operator.sourceName,
                     outputType, originalRowType, operator.comment, operator.metadata, operator.outputName);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPSourceSetOperator operator) {
+        DBSPTypeStruct originalRowType = this.transform(operator.originalRowType).to(DBSPTypeStruct.class);
+        DBSPType keyType = this.transform(operator.keyType);
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPOperator result = operator;
+        if (!originalRowType.sameType(operator.originalRowType)
+                || !outputType.sameType(operator.outputType)
+                || !keyType.sameType(operator.keyType)) {
+            result = new DBSPSourceSetOperator(operator.getNode(), operator.sourceName,
+                    keyType, outputType, originalRowType, operator.comment, operator.metadata, operator.outputName);
         }
         this.map(operator, result);
     }

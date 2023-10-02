@@ -29,7 +29,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -43,7 +43,7 @@ import java.util.*;
  * A complete circuit can be obtained by calling the "seal" method.
  */
 public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs {
-    public final List<DBSPSourceOperator> inputOperators = new ArrayList<>();
+    public final List<DBSPSourceMultisetOperator> inputOperators = new ArrayList<>();
     public final List<DBSPSinkOperator> outputOperators = new ArrayList<>();
     public final List<DBSPOperator> allOperators = new ArrayList<>();
     public final Map<String, DBSPOperator> operatorDeclarations = new HashMap<>();
@@ -84,8 +84,8 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
             return;
         }
         Utilities.putNew(this.operatorDeclarations, operator.outputName, operator);
-        if (operator.is(DBSPSourceOperator.class))
-            this.inputOperators.add(operator.to(DBSPSourceOperator.class));
+        if (operator.is(DBSPSourceMultisetOperator.class))
+            this.inputOperators.add(operator.to(DBSPSourceMultisetOperator.class));
         else if (operator.is(DBSPSinkOperator.class))
             this.outputOperators.add(operator.to(DBSPSinkOperator.class));
         this.allOperators.add(operator);

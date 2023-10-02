@@ -23,10 +23,11 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceSetOperator;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.IWritesLogs;
@@ -44,15 +45,21 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     public final Set<DBSPOperator> reachable = new HashSet<>();
     // Includes reachable plus all inputs
     public final Set<DBSPOperator> toKeep = new HashSet<>();
+    /**
+     * If true all sources are kept, even if they are dead.
+     */
+    public final boolean keepAllSources;
     public final boolean warn;
 
     /**
      * Run the dead code visitor.
      * @param reporter  Report errors here.
+     * @param keepAllSources  If true all sources are kept, even if they are not used.
      * @param warn      If set warn about unused tables.
      */
-    public FindDeadCode(IErrorReporter reporter, boolean warn) {
+    public FindDeadCode(IErrorReporter reporter, boolean keepAllSources, boolean warn) {
         super(reporter);
+        this.keepAllSources = keepAllSources;
         this.warn = warn;
     }
 
@@ -72,8 +79,16 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public VisitDecision preorder(DBSPSourceOperator operator) {
-        this.keep(operator);
+    public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
+        if (this.keepAllSources)
+            this.keep(operator);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPSourceSetOperator operator) {
+        if (this.keepAllSources)
+            this.keep(operator);
         return VisitDecision.STOP;
     }
 
@@ -95,7 +110,7 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     @Override
     public void endVisit() {
         for (DBSPOperator source: this.getCircuit().circuit.inputOperators) {
-            if (!this.reachable.contains(source) && this.warn)
+            if (!this.reachable.contains(source) && this.warn && !this.keepAllSources)
                 this.errorReporter.reportError(source.getSourcePosition(), true,
                         "Unused", "Table " + Utilities.singleQuote(source.outputName) +
                                 " is not used");

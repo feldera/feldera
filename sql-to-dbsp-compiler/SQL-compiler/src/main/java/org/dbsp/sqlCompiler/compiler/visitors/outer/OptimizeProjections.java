@@ -13,7 +13,7 @@ public class OptimizeProjections extends Repeat {
         result.add(new OptimizeProjectionVisitor(reporter,
                 // Do not remove joins with fanout > 1
                 op -> fanout.getFanout(op) == 1));
-        result.add(new DeadCode(reporter, false));
+        result.add(new DeadCode(reporter, true, false));
         return result;
     }
 

@@ -9,11 +9,12 @@ public class DeadCode extends Passes {
     /**
      * Create a circuit visitor which removes unused operators.
      * @param reporter  Used to report errors.
+     * @param keepAllSources  If true keep even sources that have no users.
      * @param warn      If true warn about unused inputs.
      */
-    public DeadCode(IErrorReporter reporter, boolean warn) {
+    public DeadCode(IErrorReporter reporter, boolean keepAllSources, boolean warn) {
         super(reporter);
-        FindDeadCode finder = new FindDeadCode(reporter, warn);
+        FindDeadCode finder = new FindDeadCode(reporter, keepAllSources, warn);
         super.add(finder);
         super.add(new RemoveOperatorsVisitor(reporter, finder.toKeep));
     }
