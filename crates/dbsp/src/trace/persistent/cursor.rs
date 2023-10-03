@@ -266,11 +266,20 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
                 // dbsp cursors will start to seek from the current position. We
                 // can fix the discrepancy here since we know the batch is
                 // ordered: If we're seeking something that's behind us, we just
-                // skip the seek call:
-
-                //XXX: not sure what to do here
-                //self.val_idx = 0;
-
+                // skip the seek call.
+                //
+                // The semantics of the DRAM cursor are that the value iteration
+                // gets set to the beginning of the value list, so we need to
+                // reset that still by seeking to the beginning of our current
+                // key.
+                let persisted_key: PersistedKey<B::Key, B::Val> = (cur_key.clone(), None);
+                let encoded_key = to_bytes(&persisted_key).expect("Can't encode `key`");
+                self.db_iter.seek(encoded_key);
+                assert!(
+                    self.db_iter.valid(),
+                    "We already know this key is valid because it's the key at current position"
+                );
+                self.update_current_key_weight(Direction::Forward);
                 return;
             }
         }

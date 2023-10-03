@@ -203,15 +203,15 @@ fn action<
     prop_oneof![
         Just(CursorAction::StepKey),
         Just(CursorAction::StepVal),
-        //Just(CursorAction::RewindKeys),
-        //Just(CursorAction::RewindVals),
+        Just(CursorAction::RewindKeys),
+        Just(CursorAction::RewindVals),
         Just(CursorAction::Key),
         Just(CursorAction::Val),
-        //Just(CursorAction::MapTimes),
-        //any::<T>().prop_map(CursorAction::MapTimesThrough),
-        //any::<K>().prop_map(CursorAction::SeekKey),
-        //any::<V>().prop_map(CursorAction::SeekVal),
-        //any::<V>().prop_map(CursorAction::SeekValWith),
+        Just(CursorAction::MapTimes),
+        any::<T>().prop_map(CursorAction::MapTimesThrough),
+        any::<K>().prop_map(CursorAction::SeekKey),
+        any::<V>().prop_map(CursorAction::SeekVal),
+        any::<V>().prop_map(CursorAction::SeekValWith),
     ]
 }
 
