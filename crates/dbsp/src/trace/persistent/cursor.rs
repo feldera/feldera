@@ -9,7 +9,7 @@ use rkyv::to_bytes;
 use rocksdb::{BoundColumnFamily, DBRawIterator};
 
 use super::trace::PersistedValue;
-use super::{Values, ROCKS_DB_INSTANCE};
+use super::{PersistedKey, Values, ROCKS_DB_INSTANCE};
 use crate::algebra::PartialOrder;
 use crate::trace::{unaligned_deserialize, Batch, Cursor};
 
@@ -83,7 +83,9 @@ where
             }
 
             if let (Some(k), Some(v)) = (iter.key(), iter.value()) {
-                let (key, value): (B::Key, B::Val) = unaligned_deserialize(k);
+                let (key, value): PersistedKey<B::Key, B::Val> = unaligned_deserialize(k);
+                let value =
+                    value.expect("We never store None as value (just have Option for seeking)");
                 let time_weights: PersistedValue<B::Time, B::R> = unaligned_deserialize(v);
                 match time_weights {
                     PersistedValue::Values(weights) => {
@@ -209,17 +211,30 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
 
     fn step_key(&mut self) {
         if self.db_iter.valid() {
-            // Note: RocksDB only allows to call `next` on a `valid` cursor
-            self.db_iter.next();
+            debug_assert!(
+                self.cur_key.is_some(),
+                "db_iter.valid() implies cur_key.is_some()"
+            );
 
-            if self.db_iter.valid() {
-                self.update_current_key_weight(Direction::Forward);
-            } else {
-                self.cur_key = None;
-                self.cur_diffs = None;
+            // We skip the rocksdb keys (which are k,v pairs) until we arrive at
+            // the next (dbsp) key that differs from our current key:
+            let cur_key: Option<_> = self.cur_key.clone();
+            while self.cur_key == cur_key {
+                // Note: RocksDB only allows to call `next` on a `valid` cursor
+                self.db_iter.next();
+                if self.db_iter.valid() {
+                    self.update_current_key_weight(Direction::Forward);
+                } else {
+                    // Reached the end of the iterator:
+                    self.cur_key = None;
+                    self.cur_val = None;
+                    self.cur_diffs = None;
+                    return;
+                }
             }
         } else {
             self.cur_key = None;
+            self.cur_val = None;
             self.cur_diffs = None;
         }
     }
@@ -260,7 +275,8 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
             }
         }
 
-        let encoded_key = to_bytes(key).expect("Can't encode `key`");
+        let persisted_key: PersistedKey<B::Key, B::Val> = (key.clone(), None);
+        let encoded_key = to_bytes(&persisted_key).expect("Can't encode `key`");
         self.db_iter.seek(encoded_key);
         self.cur_key = Some(key.clone());
 
@@ -321,7 +337,32 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
     }
 
     fn step_val(&mut self) {
-        // XXX: self.val_idx += 1; need to seek rocksdb
+        if self.db_iter.valid() {
+            let old_key = self.cur_key.clone();
+            // If we call .next() we either
+            // - got a new value (if the dbsp key is still the same)
+            //   we loaded the new value and are done
+            // - reach a new key (key changed, but the value will too)
+            //   we go back to the prev key, but set value to None
+            //   so val_valid() will return false
+            // - we reached the end (rocksdb valid() is false now)
+            //   same as above, we go back one and set value to None
+            self.db_iter.next();
+            if self.db_iter.valid() {
+                self.update_current_key_weight(Direction::Forward);
+                if old_key == self.cur_key {
+                    return;
+                } else {
+                    self.db_iter.prev();
+                    self.update_current_key_weight(Direction::Forward);
+                    self.cur_val = None;
+                    return;
+                }
+            } else {
+                self.cur_val = None;
+                return;
+            }
+        }
     }
 
     fn step_val_reverse(&mut self) {
@@ -381,8 +422,10 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
     }
 
     fn rewind_vals(&mut self) {
-        let key = self.key().clone();
-        self.seek_key(&key);
+        if self.cur_key.is_some() {
+            let key = self.key().clone();
+            self.seek_key(&key);
+        }
     }
 
     fn fast_forward_vals(&mut self) {

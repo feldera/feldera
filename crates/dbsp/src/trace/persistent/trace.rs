@@ -13,8 +13,9 @@ use rocksdb::{BoundColumnFamily, MergeOperands, Options, WriteBatch};
 use size_of::SizeOf;
 use uuid::Uuid;
 
-use super::ROCKS_DB_INSTANCE;
-use super::{rocksdb_key_comparator, PersistentTraceCursor, Values};
+use super::{
+    rocksdb_key_comparator, PersistedKey, PersistentTraceCursor, Values, ROCKS_DB_INSTANCE,
+};
 use crate::algebra::AddAssignByRef;
 use crate::circuit::Activator;
 use crate::time::{Antichain, Timestamp};
@@ -447,7 +448,7 @@ where
         let mut cf_options = Options::default();
         cf_options.set_comparator(
             "Rust type compare",
-            Box::new(rocksdb_key_comparator::<B::Key>),
+            Box::new(rocksdb_key_comparator::<B::Key, B::Val>),
         );
         cf_options.set_merge_operator_associative(
             "Trace value merge function",
@@ -579,7 +580,8 @@ where
         let mut batch_cursor = batch.cursor();
         while batch_cursor.key_valid() {
             while batch_cursor.val_valid() {
-                let kv = (batch_cursor.key().clone(), batch_cursor.val().clone());
+                let kv: PersistedKey<B::Key, B::Val> =
+                    (batch_cursor.key().clone(), Some(batch_cursor.val().clone()));
 
                 let mut weights = Vec::new();
                 batch_cursor.map_times(|ts, r| {

@@ -378,3 +378,121 @@ fn cursor_weight_multiple_values_bug() {
     spine_cursor.step_val();
     assert_eq!(ptrace_cursor.weight(), spine_cursor.weight());
 }
+
+/// Inserting a rocks-key with the same key but different dbsp-value fails to
+/// get the key when the key comparator function is wrong.
+#[test]
+fn simple_val_batch() {
+    let mut ks = vec![
+        (
+            (
+                ComplexKey {
+                    _a: 0,
+                    ord: String::from(""),
+                },
+                String::from(""),
+            ),
+            1i32,
+        ),
+        (
+            (
+                ComplexKey {
+                    _a: 0,
+                    ord: String::from(""),
+                },
+                String::from(" "),
+            ),
+            -1i32,
+        ),
+    ];
+    let mut val_builder =
+        <OrdValBatch<ComplexKey, String, u32, i32> as Batch>::Batcher::new_batcher(0);
+    val_builder.push_batch(&mut ks);
+    let vset1 = val_builder.seal();
+
+    let mut ptrace = PersistentTrace::<OrdValBatch<ComplexKey, String, u32, i32>>::new(None);
+    ptrace.insert(vset1);
+    ptrace.cursor().key();
+}
+
+/// Inserting a rocks-key with the same key but different dbsp-value fails to
+/// get the key when the key comparator function is wrong.
+#[test]
+fn step_key_val_key() {
+    let mut ks = vec![
+        (
+            (
+                ComplexKey {
+                    _a: 0,
+                    ord: String::from(""),
+                },
+                String::from(""),
+            ),
+            1i32,
+        ),
+        (
+            (
+                ComplexKey {
+                    _a: 0,
+                    ord: String::from("A"),
+                },
+                String::from(""),
+            ),
+            -1,
+        ),
+        (
+            (
+                ComplexKey {
+                    _a: 0,
+                    ord: String::from("0"),
+                },
+                String::from(""),
+            ),
+            -1,
+        ),
+        (
+            (
+                ComplexKey {
+                    _a: 0,
+                    ord: String::from(" "),
+                },
+                String::from(""),
+            ),
+            1,
+        ),
+    ];
+
+    let mut val_builder =
+        <OrdValBatch<ComplexKey, String, u32, i32> as Batch>::Batcher::new_batcher(0);
+    val_builder.push_batch(&mut ks);
+    let vset1 = val_builder.seal();
+
+    let mut spine =
+        crate::trace::spine_fueled::Spine::<OrdValBatch<ComplexKey, String, u32, i32>>::new(None);
+    spine.insert(vset1.clone());
+    let mut fuel = 10000;
+    spine.apply_fuel(&mut fuel);
+
+    let mut ptrace = PersistentTrace::<OrdValBatch<ComplexKey, String, u32, i32>>::new(None);
+    ptrace.insert(vset1);
+
+    let mut spcursor = spine.cursor();
+    spcursor.step_key();
+    spcursor.step_key();
+    spcursor.step_key();
+    assert!(spcursor.key_valid());
+    spcursor.step_val();
+    assert!(spcursor.key_valid());
+    spcursor.step_key();
+    assert!(!spcursor.key_valid());
+
+    let mut ptcursor = ptrace.cursor();
+    ptcursor.step_key();
+    ptcursor.step_key();
+    ptcursor.step_key();
+    assert!(ptcursor.key_valid());
+    ptcursor.step_val();
+    assert!(ptcursor.key_valid());
+    ptcursor.step_key();
+    assert!(!ptcursor.key_valid());
+}

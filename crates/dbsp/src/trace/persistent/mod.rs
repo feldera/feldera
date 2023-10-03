@@ -71,12 +71,18 @@ static ROCKS_DB_INSTANCE: Lazy<DB> = Lazy::new(|| {
     DB::open(&DB_OPTS, DB_PATH.clone()).unwrap()
 });
 
+/// The format of the 'key' we store in RocksDB.
+pub(self) type PersistedKey<K, V> = (K, Option<V>);
+
 /// Wrapper function for doing key comparison in RockDB.
 ///
 /// It works by deserializing the keys and then comparing it (as opposed to the
 /// byte-wise comparison which is the default in RocksDB).
-pub(self) fn rocksdb_key_comparator<K: Deserializable + Ord>(a: &[u8], b: &[u8]) -> Ordering {
-    let key_a: K = unaligned_deserialize(a);
-    let key_b: K = unaligned_deserialize(b);
-    key_a.cmp(&key_b)
+pub(self) fn rocksdb_key_comparator<K: Deserializable + Ord, V: Deserializable + Ord>(
+    a: &[u8],
+    b: &[u8],
+) -> Ordering {
+    let (key_a, val_a): PersistedKey<K, V> = unaligned_deserialize(a);
+    let (key_b, val_b): PersistedKey<K, V> = unaligned_deserialize(b);
+    key_a.cmp(&key_b).then(val_a.cmp(&val_b))
 }
