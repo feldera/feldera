@@ -398,9 +398,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         @Nullable
         DBSPOperator source = this.circuit.getOperator(tableName);
         // The inputs should have been created while parsing the CREATE TABLE statements.
-        if (source == null) {
+        if (source == null)
             throw new InternalCompilerError("Could not find input for table " + tableName, node);
-        }
 
         if (source.is(DBSPSinkOperator.class)) {
             // We do this because sink operators do not have outputs.

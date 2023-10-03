@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.backend.*;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.IndexedInputs;
 import org.dbsp.util.Logger;
 
 import javax.annotation.Nullable;
@@ -157,6 +158,8 @@ public class CompilerMain {
                 String output = program.asJson().toPrettyString();
                 stream.println(output);
             } else {
+                IndexedInputs ii = new IndexedInputs(compiler);
+                dbsp = ii.apply(dbsp);
                 RustFileWriter writer = new RustFileWriter(compiler, stream);
                 writer.emitCodeWithHandle(true);
                 writer.add(dbsp);
