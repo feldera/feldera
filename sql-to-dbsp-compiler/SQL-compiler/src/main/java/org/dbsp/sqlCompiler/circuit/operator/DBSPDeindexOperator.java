@@ -25,8 +25,9 @@ public class DBSPDeindexOperator extends DBSPUnaryOperator {
 
     static DBSPExpression function(DBSPType inputType) {
         DBSPTypeIndexedZSet ix = inputType.to(DBSPTypeIndexedZSet.class);
-        DBSPVariablePath t = new DBSPVariablePath("t", new DBSPTypeRawTuple(ix.keyType, ix.elementType));
-        return t.field(1).applyCloneIfNeeded().closure(t.asParameter());
+        DBSPVariablePath t = new DBSPVariablePath("t",
+                new DBSPTypeRawTuple(ix.keyType.ref(), ix.elementType.ref()));
+        return t.field(1).applyClone().closure(t.asParameter());
     }
 
     public DBSPDeindexOperator(CalciteObject node, DBSPOperator input) {
