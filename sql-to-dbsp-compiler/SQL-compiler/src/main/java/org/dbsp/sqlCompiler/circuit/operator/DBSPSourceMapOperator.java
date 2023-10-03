@@ -100,7 +100,7 @@ public class DBSPSourceMapOperator extends DBSPSourceBaseOperator {
             fields[insertAt++] = var.field(index);
         }
         DBSPExpression tuple = new DBSPTupleExpression(fields);
-        return tuple.closure(var.asParameter());
+        return tuple.closure(var.asRefParameter());
     }
 
     public DBSPTypeIndexedZSet getOutputIndexedZSetType() {

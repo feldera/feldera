@@ -213,6 +213,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         item.accept(this.innerVisitor);
         // Trait for serialization
         this.generateFromTrait(operator.getKeyStructType());
+        this.generateRenameMacro(item.type.name, item.type, false);
 
         this.writeComments(operator)
                 .append("let (")
@@ -288,6 +289,8 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 map.getOutputIndexedZSetType().elementType.accept(this.innerVisitor);
                 this.builder.append(", ");
                 map.originalRowType.accept(this.innerVisitor);
+                this.builder.append(", ");
+                map.getOutputIndexedZSetType().weightType.accept(this.innerVisitor);
                 this.builder.append(", _>(")
                         .append(Utilities.doubleQuote(i.getName()))
                         .append(", ")
