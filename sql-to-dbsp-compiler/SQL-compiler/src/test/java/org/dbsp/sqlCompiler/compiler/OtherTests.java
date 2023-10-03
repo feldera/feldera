@@ -733,7 +733,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "CREATE TABLE S (COL1 INT);\n" +
                 "CREATE VIEW V AS SELECT * FROM S";
         File file = this.createInputScript(statements);
-        CompilerMessages messages = CompilerMain.execute(file.getPath(), "-o", "/dev/null", "-alltables");
+        CompilerMessages messages = CompilerMain.execute(file.getPath(), "-o", "/dev/null");
         Assert.assertEquals(messages.exitCode, 0);
         Assert.assertEquals(messages.warningCount(), 1);
         Assert.assertEquals(messages.errorCount(), 0);
