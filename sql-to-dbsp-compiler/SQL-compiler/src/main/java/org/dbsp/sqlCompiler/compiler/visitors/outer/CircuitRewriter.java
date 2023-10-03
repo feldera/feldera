@@ -74,6 +74,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     // - DBSPNoopOperator
     // - DBSPSubtractOperator
     // - DBSPSumOperator
+    // - DBSPDeindexOperator
     @Override
     public void replace(DBSPOperator operator) {
         DBSPExpression function = null;
@@ -105,16 +106,15 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPSourceSetOperator operator) {
+    public void postorder(DBSPSourceMapOperator operator) {
         DBSPTypeStruct originalRowType = this.transform(operator.originalRowType).to(DBSPTypeStruct.class);
-        DBSPType keyType = this.transform(operator.keyType);
         DBSPType outputType = this.transform(operator.outputType);
         DBSPOperator result = operator;
         if (!originalRowType.sameType(operator.originalRowType)
-                || !outputType.sameType(operator.outputType)
-                || !keyType.sameType(operator.keyType)) {
-            result = new DBSPSourceSetOperator(operator.getNode(), operator.sourceName,
-                    keyType, outputType, originalRowType, operator.comment, operator.metadata, operator.outputName);
+                || !outputType.sameType(operator.outputType)) {
+            result = new DBSPSourceMapOperator(operator.getNode(), operator.sourceName,
+                    operator.keyFields, outputType, originalRowType,
+                    operator.comment, operator.metadata, operator.outputName);
         }
         this.map(operator, result);
     }

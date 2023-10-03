@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceSetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
@@ -86,7 +86,7 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public VisitDecision preorder(DBSPSourceSetOperator operator) {
+    public VisitDecision preorder(DBSPSourceMapOperator operator) {
         if (this.keepAllSources)
             this.keep(operator);
         return VisitDecision.STOP;

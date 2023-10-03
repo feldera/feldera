@@ -1,0 +1,53 @@
+package org.dbsp.sqlCompiler.compiler.visitors.outer;
+
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.InputColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Converts DBSPSourceMultisetOperators that have a primary key
+ * into DBSPSourceSetOperator followed by a DBSPDeindexOperator.
+ */
+public class IndexedInputs extends CircuitCloneVisitor {
+    public IndexedInputs(IErrorReporter reporter) {
+        super(reporter, false);
+    }
+
+    @Override
+    public void postorder(DBSPSourceMultisetOperator node) {
+        List<DBSPType> keyFields = new ArrayList<>();
+        List<Integer> keyColumnFields = new ArrayList<>();
+        for (int i = 0; i < node.metadata.size(); i++) {
+            InputColumnMetadata inputColumnMetadata = node.metadata.get(i);
+            if (inputColumnMetadata.isPrimaryKey) {
+                keyColumnFields.add(i);
+                keyFields.add(inputColumnMetadata.type);
+            }
+        }
+        if (keyColumnFields.isEmpty()) {
+            super.postorder(node);
+            return;
+        }
+
+        DBSPType keyType = new DBSPTypeTuple(keyFields);
+        DBSPTypeZSet inputType = node.outputType.to(DBSPTypeZSet.class);
+        DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(node.getNode(), keyType,
+                inputType.elementType, inputType.weightType);
+        DBSPSourceMapOperator set = new DBSPSourceMapOperator(
+                node.getNode(), node.sourceName, keyColumnFields,
+                ix, node.originalRowType, node.comment,
+                node.metadata, node.outputName);
+        this.addOperator(set);
+        DBSPDeindexOperator deindex = new DBSPDeindexOperator(node.getNode(), set);
+        this.map(node, deindex);
+    }
+}
