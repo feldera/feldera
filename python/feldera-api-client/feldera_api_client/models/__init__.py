@@ -10,6 +10,7 @@ from .connector_descr import ConnectorDescr
 from .csv_encoder_config import CsvEncoderConfig
 from .csv_parser_config import CsvParserConfig
 from .egress_mode import EgressMode
+from .empty_object_response import EmptyObjectResponse
 from .error_response import ErrorResponse
 from .error_response_details import ErrorResponseDetails
 from .field import Field
@@ -57,6 +58,8 @@ from .program_status_type_4 import ProgramStatusType4
 from .program_status_type_5 import ProgramStatusType5
 from .program_status_type_6 import ProgramStatusType6
 from .program_status_type_7 import ProgramStatusType7
+from .provider_aws_cognito import ProviderAwsCognito
+from .provider_type_0 import ProviderType0
 from .relation import Relation
 from .runtime_config import RuntimeConfig
 from .sql_compiler_message import SqlCompilerMessage
@@ -81,6 +84,7 @@ __all__ = (
     "CsvEncoderConfig",
     "CsvParserConfig",
     "EgressMode",
+    "EmptyObjectResponse",
     "ErrorResponse",
     "ErrorResponseDetails",
     "Field",
@@ -128,6 +132,8 @@ __all__ = (
     "ProgramStatusType5",
     "ProgramStatusType6",
     "ProgramStatusType7",
+    "ProviderAwsCognito",
+    "ProviderType0",
     "Relation",
     "RuntimeConfig",
     "SqlCompilerMessage",

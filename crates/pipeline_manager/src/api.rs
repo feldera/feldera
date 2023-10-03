@@ -147,8 +147,11 @@ request is rejected."
         delete_connector,
         http_input,
         http_output,
+        get_authentication_config,
     ),
     components(schemas(
+        crate::auth::Provider,
+        crate::auth::ProviderAwsCognito,
         crate::compiler::SqlCompilerMessage,
         crate::db::AttachedConnector,
         crate::db::ProgramDescr,
@@ -196,6 +199,8 @@ request is rejected."
         AttachedConnectorId,
         Version,
         ProgramStatus,
+        EmptyObjectResponse,
+        ErrorResponse,
         ProgramCodeResponse,
         NewProgramRequest,
         NewProgramResponse,
@@ -360,6 +365,7 @@ fn api_scope() -> Scope {
         .service(delete_connector)
         .service(http_input)
         .service(http_output)
+        .service(get_authentication_config)
 }
 
 // Example errors for use in OpenApi docs.
@@ -1908,6 +1914,40 @@ async fn http_output(
         .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, &endpoint, req, body)
         .await
 }
+
+/// Get authentication provider configuration
+#[utoipa::path(
+    responses(
+        (status = OK
+            , description = "The empty response indicates absence of authentication."
+            , content_type = "application/json"
+            , body = EmptyObjectResponse),
+        (status = OK
+            , description = "The response body contains Authentication Provider configuration."
+            , content_type = "application/json"
+            , body = Provider),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Request failed."
+            , body = ErrorResponse),
+    ),
+    tag = "Manager"
+)]
+#[get("/config/authentication")]
+async fn get_authentication_config(
+    state: WebData<ServerState>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    debug!("Received {req:?}");
+    if state._config.use_auth {
+        return Ok(HttpResponse::Ok().json({}));
+    }
+    let auth_config = req.app_data::<crate::auth::AuthConfiguration>().unwrap();
+    Ok(HttpResponse::Ok().json(&auth_config.provider))
+}
+
+/// Empty object response.
+#[derive(Serialize, ToSchema)]
+struct EmptyObjectResponse {}
 
 /// This is an internal endpoint and as such is not exposed via OpenAPI
 #[get("/healthz")]

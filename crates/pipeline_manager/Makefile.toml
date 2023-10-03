@@ -27,7 +27,7 @@ description = "Generate Python bindings for the REST API"
 dependencies = ["openapi_json"]
 script_runner = "@shell"
 script = '''
-pip3 install openapi-python-client
+pip3 install openapi-python-client==0.15.0
 cd ../../python
 rm -rf feldera-api-client
 openapi-python-client generate --path ../openapi.json --fail-on-warning

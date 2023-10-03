@@ -255,9 +255,17 @@ impl Claim {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, ToSchema)]
+pub(crate) struct ProviderAwsCognito {
+    pub jwk_uri: String,
+    pub region: String,
+    pub user_pool_id: String,
+    pub user_pool_web_client_id: String,
+}
+
+#[derive(Clone, Serialize, ToSchema)]
 pub(crate) enum Provider {
-    AwsCognito(String), // The argument is the URL to use for fetching JWKs
+    AwsCognito(ProviderAwsCognito), // The argument is the URL to use for fetching JWKs
 }
 
 pub(crate) fn aws_auth_config() -> AuthConfiguration {
@@ -268,7 +276,15 @@ pub(crate) fn aws_auth_config() -> AuthConfiguration {
     validation.set_audience(&[audience]);
     validation.set_issuer(&[iss]);
     AuthConfiguration {
-        provider: Provider::AwsCognito(jwk_uri),
+        provider: Provider::AwsCognito(ProviderAwsCognito {
+            jwk_uri,
+            region: env::var("AWS_AMPLIFY_REGION")
+                .expect("Missing environment variable AWS_AMPLIFY_REGION"),
+            user_pool_id: env::var("AWS_AMPLIFY_USER_POOL_ID")
+                .expect("Missing environment variable AWS_AMPLIFY_USER_POOL_ID"),
+            user_pool_web_client_id: env::var("AWS_AMPLIFY_USER_POOL_WEB_CLIENT_ID")
+                .expect("Missing environment variable AWS_AMPLIFY_USER_POOL_WEB_CLIENT_ID"),
+        }),
         validation,
     }
 }
@@ -463,7 +479,7 @@ async fn fetch_jwk_keys(
     configuration: &AuthConfiguration,
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
     match &configuration.provider {
-        Provider::AwsCognito(url) => fetch_jwk_aws_cognito_keys(url).await,
+        Provider::AwsCognito(provider) => fetch_jwk_aws_cognito_keys(&provider.jwk_uri).await,
     }
 }
 
@@ -645,7 +661,12 @@ mod test {
         validation: Validation,
     ) -> ServiceResponse<EitherBody<BoxBody>> {
         let config = AuthConfiguration {
-            provider: Provider::AwsCognito("some-url".to_string()),
+            provider: Provider::AwsCognito(auth::ProviderAwsCognito {
+                jwk_uri: "some-url".to_string(),
+                region: "some-url".to_string(),
+                user_pool_id: "some-url".to_string(),
+                user_pool_web_client_id: "some-url".to_string(),
+            }),
             validation,
         };
         let closure = auth::auth_validator;
