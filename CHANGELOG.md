@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   want to manually complete all steps in the tutorial can instead play with the
   pre-built pipeline.
   ([#822](https://github.com/feldera/feldera/pull/822))
+- Support input tables with primary keys
+  ([#826](https://github.com/feldera/feldera/issues/826))
 
 ## [0.1.5] - 2023-10-10
 

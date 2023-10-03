@@ -974,3 +974,112 @@ async fn quoted_columns() {
         .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
+
+#[actix_web::test]
+#[serial]
+async fn primary_keys() {
+    let config = setup().await;
+    let id = deploy_pipeline_without_connectors(
+        &config,
+        r#"create table t1(id bigint not null, s varchar not null, primary key (id))"#,
+    )
+    .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .await;
+
+    // Push some data using default json config.
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
+                id
+            ),
+            r#"{"insert":{"id":1, "s": "1"}}
+{"insert":{"id":2, "s": "2"}}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let quantiles = config.quantiles_json(&id, "T1").await;
+    assert_eq!(
+        quantiles.parse::<Value>().unwrap(),
+        "[{\"insert\":{\"ID\":1,\"S\":\"1\"}},{\"insert\":{\"ID\":2,\"S\":\"2\"}}]"
+            .parse::<Value>()
+            .unwrap()
+    );
+
+    let hood = config
+        .neighborhood_json(&id, "T1", Some(json!({"id":2,"s":"1"})), 10, 10)
+        .await;
+    assert_eq!(
+        hood.parse::<Value>().unwrap(),
+        "[{\"insert\":{\"index\":-1,\"key\":{\"ID\":1,\"S\":\"1\"}}},{\"insert\":{\"index\":0,\"key\":{\"ID\":2,\"S\":\"2\"}}}]"
+            .parse::<Value>()
+            .unwrap()
+    );
+
+    // Update a key
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
+                id
+            ),
+            r#"{"insert":{"id":1, "s": "1-modified"}}"#.to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let quantiles = config.quantiles_json(&id, "T1").await;
+    assert_eq!(
+        quantiles.parse::<Value>().unwrap(),
+        "[{\"insert\":{\"ID\":1,\"S\":\"1-modified\"}},{\"insert\":{\"ID\":2,\"S\":\"2\"}}]"
+            .parse::<Value>()
+            .unwrap()
+    );
+
+    let hood = config.neighborhood_json(&id, "T1", None, 10, 10).await;
+    assert_eq!(
+        hood.parse::<Value>().unwrap(),
+        "[{\"insert\":{\"index\":0,\"key\":{\"ID\":1,\"S\":\"1-modified\"}}},{\"insert\":{\"index\":1,\"key\":{\"ID\":2,\"S\":\"2\"}}}]"
+            .parse::<Value>()
+            .unwrap()
+    );
+
+    // Delete a key
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
+                id
+            ),
+            r#"{"delete":{"id":2}}"#.to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let quantiles = config.quantiles_json(&id, "T1").await;
+    assert_eq!(
+        quantiles.parse::<Value>().unwrap(),
+        "[{\"insert\":{\"ID\":1,\"S\":\"1-modified\"}}]"
+            .parse::<Value>()
+            .unwrap()
+    );
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
+        .await;
+}
