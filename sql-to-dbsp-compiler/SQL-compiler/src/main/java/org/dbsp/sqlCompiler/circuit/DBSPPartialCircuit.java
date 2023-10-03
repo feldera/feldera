@@ -23,13 +23,13 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -43,10 +43,11 @@ import java.util.*;
  * A complete circuit can be obtained by calling the "seal" method.
  */
 public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs {
-    public final List<DBSPSourceMultisetOperator> inputOperators = new ArrayList<>();
+    public final List<DBSPSourceBaseOperator> inputOperators = new ArrayList<>();
     public final List<DBSPSinkOperator> outputOperators = new ArrayList<>();
     public final List<DBSPOperator> allOperators = new ArrayList<>();
     public final Map<String, DBSPOperator> operatorDeclarations = new HashMap<>();
+    /** Maps indexed z-set table names to the corresponding deindex operator */
     public final IErrorReporter errorReporter;
 
     public DBSPPartialCircuit(IErrorReporter errorReporter) {
@@ -84,8 +85,8 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
             return;
         }
         Utilities.putNew(this.operatorDeclarations, operator.outputName, operator);
-        if (operator.is(DBSPSourceMultisetOperator.class))
-            this.inputOperators.add(operator.to(DBSPSourceMultisetOperator.class));
+        if (operator.is(DBSPSourceBaseOperator.class))
+            this.inputOperators.add(operator.to(DBSPSourceBaseOperator.class));
         else if (operator.is(DBSPSinkOperator.class))
             this.outputOperators.add(operator.to(DBSPSinkOperator.class));
         this.allOperators.add(operator);

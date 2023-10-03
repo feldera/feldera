@@ -24,6 +24,8 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -32,6 +34,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
@@ -196,6 +199,39 @@ public class ToRustHandleVisitor extends ToRustVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPSourceMapOperator operator) {
+        DBSPTypeStruct type = operator.originalRowType;
+        // Generate struct type definition
+        DBSPStructItem item = new DBSPStructItem(type);
+        item.accept(this.innerVisitor);
+        // Traits for serialization
+        this.generateFromTrait(type);
+        // Macro for serialization
+        this.generateRenameMacro(operator.outputName, type, false);
+        // Generate key type definition
+        item = new DBSPStructItem(operator.getKeyStructType());
+        item.accept(this.innerVisitor);
+        // Trait for serialization
+        this.generateFromTrait(operator.getKeyStructType());
+
+        this.writeComments(operator)
+                .append("let (")
+                .append(operator.outputName)
+                .append(", handle")
+                .append(this.inputHandleIndex++)
+                .append(") = circuit.add_input_map::<");
+
+        DBSPTypeIndexedZSet ix = operator.getOutputIndexedZSetType();
+        ix.keyType.accept(this.innerVisitor);
+        this.builder.append(", ");
+        ix.elementType.accept(this.innerVisitor);
+        this.builder.append(", ");
+        ix.weightType.accept(this.innerVisitor);
+        this.builder.append(">();");
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPSinkOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
         DBSPStructItem item = new DBSPStructItem(type);
@@ -221,24 +257,48 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 .newline()
                 .append("let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {")
                 .increase()
-                .append("let mut catalog = Catalog::new();");
+                .append("let mut catalog = Catalog::new();")
+                .newline();
 
         for (IDBSPNode node : circuit.getAllOperators())
             super.processNode(node);
 
         // Register input streams in the catalog.
         int index = 0;
-        for (DBSPSourceMultisetOperator i : circuit.inputOperators) {
-            this.builder.append("catalog.register_input_set::<_, ");
-            i.originalRowType.accept(this.innerVisitor);
-            this.builder.append(">(")
-                    .append(Utilities.doubleQuote(i.getName()))
-                    .append(", ")
-                    .append(i.outputName)
-                    .append(".clone(), handle")
-                    .append(index++)
-                    .append(");")
-                    .newline();
+        for (DBSPSourceBaseOperator i : circuit.inputOperators) {
+            if (i.is(DBSPSourceMultisetOperator.class)) {
+                this.builder.append("catalog.register_input_set::<_, ");
+                i.originalRowType.accept(this.innerVisitor);
+                this.builder.append(">(")
+                        .append(Utilities.doubleQuote(i.getName()))
+                        .append(", ")
+                        .append(i.outputName)
+                        .append(".clone(), handle")
+                        .append(index++)
+                        .append(");")
+                        .newline();
+            } else {
+                DBSPSourceMapOperator map = i.to(DBSPSourceMapOperator.class);
+                this.builder.append("catalog.register_input_map::<");
+                DBSPTypeStruct keyStructType = map.getKeyStructType();
+                keyStructType.toTuple().accept(this.innerVisitor);
+                this.builder.append(", ");
+                keyStructType.accept(this.innerVisitor);
+                this.builder.append(", ");
+                map.getOutputIndexedZSetType().elementType.accept(this.innerVisitor);
+                this.builder.append(", ");
+                map.originalRowType.accept(this.innerVisitor);
+                this.builder.append(", _>(")
+                        .append(Utilities.doubleQuote(i.getName()))
+                        .append(", ")
+                        .append(i.outputName)
+                        .append(".clone(), handle")
+                        .append(index++)
+                        .append(", ");
+                map.getKeyFunc().accept(this.innerVisitor);
+                this.builder.append(");")
+                        .newline();
+            }
         }
 
         // Register output streams in the catalog.

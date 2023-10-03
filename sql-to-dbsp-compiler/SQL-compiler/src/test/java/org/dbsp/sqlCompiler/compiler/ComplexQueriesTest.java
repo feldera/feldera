@@ -29,6 +29,8 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.IndexedInputs;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
@@ -424,10 +426,11 @@ public class ComplexQueriesTest extends BaseSQLTests {
     }
 
     @Test
-    public void testComplex1() throws IOException, InterruptedException {
+    public void testComplexWithHandle() throws IOException, InterruptedException {
+        Logger.INSTANCE.setLoggingLevel(CircuitCloneVisitor.class, 2);
         String statements = "-- Git repository.\n" +
                 "create table repository (\n" +
-                "    repository_id bigint not null,\n" +
+                "    repository_id bigint not null primary key,\n" +
                 "    type varchar not null,\n" +
                 "    url varchar not null,\n" +
                 "    name varchar not null\n" +
@@ -572,6 +575,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(statements);
         DBSPCircuit circuit = getCircuit(compiler);
+        IndexedInputs ii = new IndexedInputs(compiler);
+        circuit = ii.apply(circuit);
         RustFileWriter writer = new RustFileWriter(compiler, testFilePath);
         writer.emitCodeWithHandle(true);
         writer.add(circuit);
