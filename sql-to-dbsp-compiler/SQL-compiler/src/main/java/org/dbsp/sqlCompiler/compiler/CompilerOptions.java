@@ -108,6 +108,9 @@ public class CompilerOptions {
         @Parameter(names = "-d", description = "SQL syntax dialect used",
                    converter = SqlLexicalRulesConverter.class)
         public Lex lexicalRules;
+        @Parameter(names = "--lenient",
+                description = "Lenient SQL validation.  If true it allows duplicate column names in a view")
+        public boolean lenient = false;
 
         IO() {
             this.lexicalRules = Lex.ORACLE;

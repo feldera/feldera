@@ -148,7 +148,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                 rows.add(row);
             }
             rs.close();
-            if (rows.size() == 0)
+            if (rows.isEmpty())
                 return new DBSPZSetLiteral(new DBSPTypeTuple(colTypes), new DBSPTypeWeight());
             return new DBSPZSetLiteral(new DBSPTypeWeight(), rows.toArray(new DBSPExpression[0]));
         }
@@ -286,6 +286,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                         .as(DBSPExecutor.class);
                 CompilerOptions compilerOptions = Objects.requireNonNull(dbsp).compilerOptions;
                 compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
+                compilerOptions.ioOptions.lenient = true;
                 DbspJdbcExecutor result = new DbspJdbcExecutor(
                         Objects.requireNonNull(inner), options, compilerOptions);
                 Set<String> bugs = options.readBugsFile();

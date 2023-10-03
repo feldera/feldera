@@ -83,7 +83,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /**
      * Where does the compiled program come from?
      */
-    enum InputSource {
+    public enum InputSource {
         /**
          * No data source set yet.
          */
@@ -184,8 +184,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         if (warning)
             this.hasWarnings = true;
         this.messages.reportError(range, warning, errorType, message);
-        if (!warning && this.options.optimizerOptions.throwOnError)
+        if (!warning && this.options.optimizerOptions.throwOnError) {
+            System.err.println(this.messages);
             throw new CompilationError("Error during compilation");
+        }
     }
 
     /**

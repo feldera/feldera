@@ -178,7 +178,6 @@ public class Utilities {
     public static void runProcess(String directory, Map<String, String> environment, String[] commands)
             throws IOException, InterruptedException {
         File out = File.createTempFile("out", ".tmp", new File("."));
-        out.deleteOnExit();
         ProcessBuilder processBuilder = new ProcessBuilder()
                 .command(commands)
                 .directory(new File(directory))
@@ -197,8 +196,12 @@ public class Utilities {
             for (String s: strings)
                 System.out.println(s);
         }
-        if (exitCode != 0)
+        if (exitCode != 0) {
             throw new RuntimeException("Process failed with exit code " + exitCode);
+        } else {
+            @SuppressWarnings("unused")
+            boolean success = out.delete();
+        }
     }
 
     public static void runProcess(String directory, String... commands) throws IOException, InterruptedException {

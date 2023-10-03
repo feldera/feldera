@@ -181,8 +181,10 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         List<File> toDelete = new ArrayList<>();
         File programFile = this.fileFromName("program.json");
         toDelete.add(programFile);
-
         Utilities.writeFile(programFile.toPath(), json);
+        File asm = this.fileFromName("program.asm");
+        toDelete.add(asm);
+        Utilities.writeFile(asm.toPath(), program.toString());
 
         // Prepare input files for the JIT runtime
         boolean sameFiles = Arrays.equals(previousValues, inputSets);
@@ -226,11 +228,14 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         DBSPZSetLiteral.Contents actual = outFile.parse(outputType.to(DBSPTypeZSet.class).getElementType());
 
         boolean result = this.validateOutput(query, queryNo, actual, query.outputDescription, statistics);
-        for (File file: toDelete) {
-            // This point won't be reached if the program fails with an exception.
-            boolean success = file.delete();
-            if (!success)
-                System.err.println("Failed to delete " + file);
+        if (!result) {
+            for (File file : toDelete) {
+                // This point won't be reached if the program fails with an exception
+                // or validation fails with -x flag
+                boolean success = file.delete();
+                if (!success)
+                    System.err.println("Failed to delete " + file);
+            }
         }
         return result;
     }
@@ -405,7 +410,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 options.stopAtFirstError, options.verbosity);
         result.incFiles();
         int queryNo = 0;
-        int skip = 211;  // used only for debugging
+        int skip = 0;  // used only for debugging
         for (ISqlTestOperation operation : testFile.fileContents) {
             SltSqlStatement stat = operation.as(SltSqlStatement.class);
             if (stat != null) {
@@ -462,6 +467,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 CompilerOptions compilerOptions = new CompilerOptions();
                 compilerOptions.ioOptions.jit = true;
                 compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
+                compilerOptions.ioOptions.lenient = true;
                 JitDbspExecutor result = new JitDbspExecutor(
                         Objects.requireNonNull(inner), options, compilerOptions);
                 Set<String> bugs = options.readBugsFile();
