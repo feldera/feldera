@@ -3,9 +3,10 @@ mod serialize;
 
 use self::{
     deserialize::{
-        deserialize_json_bool, deserialize_json_date, deserialize_json_f32, deserialize_json_f64,
-        deserialize_json_i32, deserialize_json_i64, deserialize_json_string,
-        deserialize_json_timestamp,
+        deserialize_json_bool, deserialize_json_date, deserialize_json_date_from_days,
+        deserialize_json_f32, deserialize_json_f64, deserialize_json_i32, deserialize_json_i64,
+        deserialize_json_string, deserialize_json_timestamp,
+        deserialize_json_timestamp_from_micros, deserialize_json_timestamp_from_millis,
     },
     serialize::{
         byte_vec_push, byte_vec_reserve, write_date_to_byte_vec, write_decimal_to_byte_vec,
@@ -621,6 +622,9 @@ intrinsics! {
     deserialize_json_f64 = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_date = fn(ptr, ptr, ptr, ptr, usize, ptr) -> bool,
     deserialize_json_timestamp = fn(ptr, ptr, ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_date_from_days = fn(ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_timestamp_from_millis = fn(ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_timestamp_from_micros = fn(ptr, ptr, usize, ptr) -> bool,
 
     byte_vec_push = fn(ptr, ptr, usize),
     byte_vec_reserve = fn(ptr, usize),
@@ -765,14 +769,14 @@ debug_primitives! {
     f64,
 }
 
-unsafe extern "C" fn date_debug(date: i32, fmt: *mut fmt::Formatter<'_>) -> bool {
+unsafe extern "C" fn date_debug(days: i32, fmt: *mut fmt::Formatter<'_>) -> bool {
     debug_assert!(!fmt.is_null());
 
     // TODO: UTC?
-    if let Some(date) = NaiveDate::from_num_days_from_ce_opt(date) {
-        write!(&mut *fmt, "{}", date.format("%Y-%m-%d")).is_ok()
+    if let Some(date) = NaiveDateTime::from_timestamp_millis(days as i64 * (86400 * 1000)) {
+        write!(&mut *fmt, "{}", date.date().format("%Y-%m-%d")).is_ok()
     } else {
-        tracing::error!("failed to create date from {date}");
+        tracing::error!("failed to create date from {days}");
         false
     }
 }

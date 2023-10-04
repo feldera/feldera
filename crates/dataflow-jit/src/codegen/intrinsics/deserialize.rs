@@ -196,6 +196,26 @@ pub(super) extern "C" fn deserialize_json_date(
     }
 }
 
+pub(super) extern "C" fn deserialize_json_date_from_days(
+    place: &mut MaybeUninit<i32>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    map: &Value,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+
+    if let Some(days) = map.pointer(json_pointer).and_then(Value::as_i64) {
+        // TODO: This silently truncates, do we want that?
+        place.write(days as i32);
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
 pub(super) extern "C" fn deserialize_json_timestamp(
     place: &mut MaybeUninit<i64>,
     json_pointer_ptr: *const u8,
@@ -222,6 +242,44 @@ pub(super) extern "C" fn deserialize_json_timestamp(
         )
     {
         place.write(date);
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
+pub(super) extern "C" fn deserialize_json_timestamp_from_millis(
+    place: &mut MaybeUninit<i64>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    map: &Value,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+
+    if let Some(millis) = map.pointer(json_pointer).and_then(Value::as_i64) {
+        place.write(millis);
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
+pub(super) extern "C" fn deserialize_json_timestamp_from_micros(
+    place: &mut MaybeUninit<i64>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    map: &Value,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+
+    if let Some(micros) = map.pointer(json_pointer).and_then(Value::as_i64) {
+        place.write(micros / 1000);
         false
 
     // Otherwise the value couldn't be found and is considered null

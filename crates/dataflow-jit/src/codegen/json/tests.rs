@@ -1,12 +1,10 @@
 #![cfg(test)]
 
-use chrono::NaiveDate;
-
 use crate::{
     codegen::{
         json::{
-            call_deserialize_fn, DeserializeJsonFn, JsonColumn, JsonDeserConfig, JsonSerConfig,
-            SerializeFn,
+            call_deserialize_fn, DeserializeJsonFn, JsonColumn, JsonColumnParseSpec,
+            JsonDeserConfig, JsonSerConfig, SerializeFn,
         },
         Codegen, CodegenConfig,
     },
@@ -14,6 +12,7 @@ use crate::{
     row::{row_from_literal, UninitRow},
     utils::{self, HashMap},
 };
+use chrono::{NaiveDate, NaiveDateTime};
 use std::mem::transmute;
 
 #[test]
@@ -173,6 +172,86 @@ fn deserialize_invalid_json() {
                 Err(error) => panic!("{error}"),
             }
         }
+    }
+
+    unsafe {
+        drop(Box::from_raw(vtable));
+        jit.free_memory();
+    }
+}
+
+#[test]
+fn deserialize_parsing() {
+    utils::test_logger();
+
+    let layout_cache = RowLayoutCache::new();
+    let layout = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::Date, false)
+            .with_column(ColumnType::Timestamp, false)
+            .with_column(ColumnType::Timestamp, false)
+            .build(),
+    );
+
+    let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
+
+    let deserialize = JsonDeserConfig {
+        layout,
+        mappings: {
+            let columns = [
+                JsonColumn::new("/foo", JsonColumnParseSpec::DateFromDays),
+                JsonColumn::new("/bar", JsonColumnParseSpec::TimeFromMillis),
+                JsonColumn::new("/baz", JsonColumnParseSpec::TimeFromMicros),
+            ];
+
+            let mut mappings = HashMap::with_capacity_and_hasher(columns.len(), Default::default());
+            for (idx, column) in columns.into_iter().enumerate() {
+                mappings.insert(idx, column);
+            }
+
+            mappings
+        },
+    };
+
+    let deserialize_json = codegen.deserialize_json(&deserialize);
+    let vtable = codegen.vtable_for(layout);
+
+    let (jit, layout_cache) = codegen.finalize_definitions();
+    let vtable = Box::into_raw(Box::new(vtable.marshalled(&jit)));
+
+    {
+        let deserialize_json = unsafe {
+            transmute::<_, DeserializeJsonFn>(jit.get_finalized_function(deserialize_json))
+        };
+
+        // 2098-11-28 = 47083 days
+        // 2022-06-30 10:35:00 = 1656585300000 millis
+        // 2022-06-30 10:35:00 = 1656585300000000 micros
+        let json_value = serde_json::from_str(
+            r#"{ "foo": 47083, "bar": 1656585300000, "baz": 1656585300000000 }"#,
+        )
+        .unwrap();
+        let mut uninit = UninitRow::new(unsafe { &*vtable });
+
+        unsafe {
+            match call_deserialize_fn(deserialize_json, uninit.as_mut_ptr(), &json_value) {
+                // This shouldn't ever be ok
+                Ok(()) => {}
+                Err(error) => panic!("{error}"),
+            }
+        }
+
+        let row = unsafe { uninit.assume_init() };
+
+        let expected = row![
+            NaiveDate::parse_from_str("2098-11-28", "%F").unwrap(),
+            NaiveDateTime::parse_from_str("2022-06-30 10:35:00", "%F %T").unwrap(),
+            NaiveDateTime::parse_from_str("2022-06-30 10:35:00", "%F %T").unwrap(),
+        ];
+        let expected =
+            unsafe { row_from_literal(&expected, &*vtable, &layout_cache.layout_of(layout)) };
+
+        assert_eq!(row, expected);
     }
 
     unsafe {
