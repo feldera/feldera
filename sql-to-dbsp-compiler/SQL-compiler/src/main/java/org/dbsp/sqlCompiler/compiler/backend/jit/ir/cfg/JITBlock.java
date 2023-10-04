@@ -95,6 +95,7 @@ public class JITBlock extends JITNode implements IJITId {
         if (this.terminator != null)
             throw new InternalCompilerError("Block already terminated while adding instruction ", instruction);
         for (JITInstruction existing: this.instructions) {
+            // It's probably best to compare in this direction
             if (instruction.same(existing))
                 return existing.getInstructionReference();
         }

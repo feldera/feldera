@@ -334,7 +334,7 @@ public class AggregateCompiler implements ICompilerComponent {
 
         if (aggregatedValueType.mayBeNull)
             plusOne = new DBSPUnaryExpression(node, new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false),
-                    DBSPOpcode.INDICATOR, aggregatedValue);
+                    DBSPOpcode.INDICATOR, aggregatedValue.deepCopy());
         if (this.isDistinct) {
             count = this.aggregateOperation(
                     node, DBSPOpcode.AGG_ADD,
