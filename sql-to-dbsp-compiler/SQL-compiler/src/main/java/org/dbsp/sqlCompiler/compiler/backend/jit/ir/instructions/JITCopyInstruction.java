@@ -56,9 +56,7 @@ public class JITCopyInstruction extends JITInstruction {
 
     @Override
     public boolean same(JITInstruction other) {
-        JITCopyInstruction oc = other.as(JITCopyInstruction.class);
-        if (oc == null)
-            return false;
-        return this.operand.equals(oc.operand);
+        // Two copy instructions are never equivalent due to the side effects
+        return false;
     }
 }

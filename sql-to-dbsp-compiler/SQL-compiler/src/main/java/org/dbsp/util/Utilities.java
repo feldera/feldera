@@ -243,7 +243,7 @@ public class Utilities {
                 "cranelift_jit=off,dataflow_jit::ir::function::passes=off");
         Utilities.runProcess(directory, env,
                 new String[] {
-                        "cargo", "run", // "--release",
+                        "cargo", "run", "--release",
                         "-p", "dataflow-jit", "--bin", "dataflow-jit",
                         "--features", "binary", "--", "run", program, config });
     }
