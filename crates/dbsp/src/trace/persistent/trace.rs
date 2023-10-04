@@ -363,6 +363,7 @@ where
                 vals.retain(|(_t, ret_w)| !ret_w.is_zero());
             }
             MergeOp::RecedeTo(frontier) => {
+                log::info!("MergeOp::RecedeTo {frontier:?}");
                 let mut modified_t = false;
                 for (existing_t, _existing_w) in vals.iter_mut() {
                     // I think due to this being sorted by Ord we have to
@@ -486,16 +487,20 @@ where
     fn recede_to(&mut self, frontier: &B::Time) {
         let mut cursor = self.cursor();
         while cursor.key_valid() {
-            let kv = (cursor.key().clone(), cursor.val().clone());
-            let encoded_key = to_bytes(&kv).expect("Can't encode `key`");
+            while cursor.val_valid() {
+                let kv: PersistedKey<B::Key, B::Val> =
+                    (cursor.key().clone(), Some(cursor.val().clone()));
+                let encoded_key = to_bytes(&kv).expect("Can't encode `key`");
 
-            let update: MergeOp<B::Time, B::R> = MergeOp::RecedeTo(frontier.clone());
-            let encoded_update = to_bytes(&update).expect("Can't encode `vals`");
+                let update: MergeOp<B::Time, B::R> = MergeOp::RecedeTo(frontier.clone());
+                let encoded_update = to_bytes(&update).expect("Can't encode `vals`");
 
-            ROCKS_DB_INSTANCE
-                .merge_cf(&self.cf, encoded_key, encoded_update)
-                .expect("Can't merge recede update");
-            // XXX: cursor.step_val();
+                ROCKS_DB_INSTANCE
+                    .merge_cf(&self.cf, encoded_key, encoded_update)
+                    .expect("Can't merge recede update");
+
+                cursor.step_val();
+            }
             cursor.step_key();
         }
     }

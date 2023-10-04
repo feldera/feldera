@@ -145,7 +145,13 @@ where
             ptcursor.map_times(|v, t| {
                 test_invocation.push((v.clone(), t.clone()));
             });
-            assert_eq!(model_invocations, test_invocation, "time->weights mismatch");
+            assert_eq!(
+                model_invocations,
+                test_invocation,
+                "model vs. impl: time->weights mismatch for key={:?} val={:?}",
+                ptcursor.key(),
+                ptcursor.val()
+            );
 
             spine_cursor.step_val();
             ptcursor.step_val();
