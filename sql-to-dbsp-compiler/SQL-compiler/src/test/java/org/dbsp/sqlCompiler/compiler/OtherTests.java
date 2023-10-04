@@ -29,8 +29,6 @@ import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.schema.SchemaPlus;
-import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
@@ -140,7 +138,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
         // Allocate output files
         List<JitFileAndSerialization> outputFiles = new ArrayList<>();
-        for (DBSPZSetLiteral.Contents outputData: data.outputs) {
+        for (DBSPZSetLiteral.Contents ignored1 : data.outputs) {
             File output = File.createTempFile("output", ".json", baseDirectory);
             outputFiles.add(new JitFileAndSerialization(
                     output.getAbsolutePath(),
@@ -453,8 +451,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         "    part bigint not null,\n" +
                         "    vendor bigint not null,\n" +
                         "    price decimal\n" +
-                        ");" +
-                        "" +
+                        ");\n" +
+                        "\n" +
                         "create view LOW_PRICE AS " +
                         "with LOW_PRICE_CTE AS (" +
                         "  select part, MIN(price) as price from PRICE group by part" +

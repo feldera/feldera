@@ -307,6 +307,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /**
      * Given a list of files containing the inputs and outputs,
      * generate a configuration for the JIT runtime.
+     * WARNING: this API is only used for testing the JIT execution engine.
+     * This API is not part of the public compiler API.
      */
     public JsonNode createJitRuntimeConfig(
             List<JitIODescription> inputFiles,

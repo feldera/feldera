@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.backend.jit;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.util.TimeString;
@@ -31,7 +32,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.util.Utilities;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -52,8 +52,7 @@ public class JitJsonOutputDescription extends JitIODescription {
 
         JsonNode asJson() {
             ObjectNode result = jsonFactory().createObjectNode();
-            String label = "Normal";
-            @Nullable String format = null;
+            ObjectNode spec = null;
             switch (this.type.getSqlTypeName()) {
                 case BOOLEAN:
                 case TINYINT:
@@ -68,12 +67,14 @@ public class JitJsonOutputDescription extends JitIODescription {
                 case VARCHAR:
                     break;
                 case DATE:
-                    label = "Date";
-                    format = "%F";
+                    spec = jsonFactory().createObjectNode();
+                    ObjectNode datetime = spec.putObject("DateFromStr");
+                    datetime.put("format", "%F");
                     break;
                 case TIME:
-                    label = "Time";
-                    format = "%F";
+                    spec = jsonFactory().createObjectNode();
+                    ObjectNode time = spec.putObject("TimeFromStr");
+                    time.put("format", "%F");
                     break;
                 case TIME_WITH_LOCAL_TIME_ZONE:
                 case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
@@ -98,8 +99,9 @@ public class JitJsonOutputDescription extends JitIODescription {
                 case INTERVAL_SECOND:
                     throw new UnimplementedException(new CalciteObject(this.type));
                 case TIMESTAMP:
-                    label = "Timestamp";
-                    format = "%F %T";
+                    spec = jsonFactory().createObjectNode();
+                    ObjectNode timestamp = spec.putObject("TimestampFromStr");
+                    timestamp.put("format", "%F %T");
                     break;
                 case UNKNOWN:
                 case ANY:
@@ -117,10 +119,11 @@ public class JitJsonOutputDescription extends JitIODescription {
                 case SARG:
                     throw new UnsupportedException(new CalciteObject(this.type));
             }
-            ObjectNode obj = result.putObject(label);
-            obj.put("key", this.name);
-            if (format != null)
-                obj.put("format", format);
+            result.put("key", this.name);
+            if (spec != null)
+                result.set("spec", spec);
+            else
+                result.set("spec", NullNode.getInstance());
             return result;
         }
     }

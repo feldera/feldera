@@ -26,7 +26,9 @@ package org.dbsp.sqlCompiler.compiler.backend.jit.ir.types;
 import com.fasterxml.jackson.databind.node.BaseJsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.util.Utilities;
 
 public class JITScalarType extends JITType {
     protected JITScalarType(DBSPTypeCode code) {
@@ -47,6 +49,9 @@ public class JITScalarType extends JITType {
 
     @Override
     public String toString() {
+        if (this.code.jitName.isEmpty())
+            throw new UnimplementedException("Type " + Utilities.singleQuote(this.code.toString()) +
+                    " not yet supported in JIT");
         return this.code.jitName;
     }
 
