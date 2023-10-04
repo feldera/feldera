@@ -11,6 +11,7 @@ jobs:
         uses: peter-evans/slash-command-dispatch@v3
         with:
           token: ${{ secrets.SLASH_COMMANDS }}
+          reaction-token: ${{ secrets.SLASH_COMMANDS }}
           issue-type: pull-request
           commands: |
             benchmark
