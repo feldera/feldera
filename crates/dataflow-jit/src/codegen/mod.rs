@@ -1276,23 +1276,30 @@ impl<'a> CodegenCtx<'a> {
 
     fn is_null(&mut self, expr_id: ExprId, is_null: &IsNull, builder: &mut FunctionBuilder<'_>) {
         let layout_id = self.layout_id(is_null.target());
-        let layout = self.layout_cache.layout_of(layout_id);
+        let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
+
+        if !row_layout.column_nullable(is_null.column()) {
+            let alloc = Arena::<()>::new();
+            let mut pretty = String::new();
+
+            is_null
+                .pretty(&alloc, self.layout_cache.row_layout_cache())
+                .render_fmt(DEFAULT_WIDTH, &mut pretty)
+                .expect("writing to a string shouldn't fail");
+
+            panic!("called is_null on non-nullable column in expr {expr_id}: {pretty}");
+        }
 
         let mut flags = MemFlags::trusted();
         if self.is_readonly(is_null.target()) {
             flags.set_readonly();
         }
 
-        if self
-            .layout_cache
-            .row_layout(layout_id)
-            .column_type(is_null.column())
-            .is_string()
-        {
+        if row_layout.column_type(is_null.column()).is_string() {
             let string_ty = layout.type_of(is_null.column());
             let offset = layout.offset_of(is_null.column());
             let string = self.load_from_row(is_null.target(), flags, string_ty, offset, builder);
-            drop(layout);
+            drop((layout, row_layout));
 
             let is_null = builder.ins().icmp_imm(IntCC::Equal, string, 0);
             self.add_expr(expr_id, is_null, ColumnType::Bool, None);
@@ -1302,7 +1309,7 @@ impl<'a> CodegenCtx<'a> {
 
         let (bitset_ty, bitset_offset, bit_idx) = layout.nullability_of(is_null.column());
         let bitset_occupants = layout.bitset_occupants(is_null.column());
-        drop(layout);
+        drop((layout, row_layout));
 
         let bitset = self.load_from_row(
             is_null.target(),
@@ -1346,23 +1353,25 @@ impl<'a> CodegenCtx<'a> {
         self.add_expr(expr_id, is_null, ColumnType::Bool, None);
     }
 
-    fn set_null(
-        &mut self,
-        _expr_id: ExprId,
-        set_null: &SetNull,
-        builder: &mut FunctionBuilder<'_>,
-    ) {
+    fn set_null(&mut self, expr_id: ExprId, set_null: &SetNull, builder: &mut FunctionBuilder<'_>) {
         debug_assert!(!self.is_readonly(set_null.target()));
 
         let layout_id = self.layout_id(set_null.target());
-        let layout = self.layout_cache.layout_of(layout_id);
+        let (layout, row_layout) = self.layout_cache.get_layouts(layout_id);
 
-        if self
-            .layout_cache
-            .row_layout(layout_id)
-            .column_type(set_null.column())
-            .is_string()
-        {
+        if !row_layout.column_nullable(set_null.column()) {
+            let alloc = Arena::<()>::new();
+            let mut pretty = String::new();
+
+            set_null
+                .pretty(&alloc, self.layout_cache.row_layout_cache())
+                .render_fmt(DEFAULT_WIDTH, &mut pretty)
+                .expect("writing to a string shouldn't fail");
+
+            panic!("called set_null on non-nullable column in expr {expr_id}: {pretty}");
+        }
+
+        if row_layout.column_type(set_null.column()).is_string() {
             match set_null.is_null() {
                 RValue::Expr(expr) => {
                     let is_null = self.exprs[expr];
@@ -1615,17 +1624,16 @@ impl<'a> CodegenCtx<'a> {
         let (lhs, rhs) = (self.exprs[&binop.lhs()], self.exprs[&binop.rhs()]);
         let (lhs_ty, rhs_ty) = (self.expr_types[&binop.lhs()], self.expr_types[&binop.rhs()]);
         debug_assert_eq!(
-	    builder.value_type(lhs),
-	    builder.value_type(rhs),
-	    "Operands of binary operation {:?} have different types",
-	    binop
-	);
+            builder.value_type(lhs),
+            builder.value_type(rhs),
+            "Operands of binary operation {:?} have different types",
+            binop
+        );
         debug_assert_eq!(
-	    lhs_ty,
-	    rhs_ty,
-	    "Operands of binary operation {:?} have different types",
-	    binop
-	);
+            lhs_ty, rhs_ty,
+            "Operands of binary operation {:?} have different types",
+            binop
+        );
 
         let mut value_ty = lhs_ty;
         let value = match binop.kind() {

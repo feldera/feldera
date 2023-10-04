@@ -394,7 +394,7 @@ mod proptests {
         utils::NativeRepr,
         ThinStr,
     };
-    use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+    use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
     use proptest::{
         prelude::any, prop_assert, prop_assert_eq, prop_assert_ne, prop_compose, proptest,
         strategy::Strategy, test_runner::TestCaseResult,
@@ -425,7 +425,9 @@ mod proptests {
         Bool(bool),
         // Usize(usize),
         String(String),
-        #[proptest(strategy = "date().prop_map(|date| Column::Date(date.num_days_from_ce()))")]
+        #[proptest(
+            strategy = "date().prop_map(|date| Column::Date((date.and_time(NaiveTime::MIN).timestamp_millis() / (86400 * 1000)) as i32))"
+        )]
         Date(i32),
         #[proptest(strategy = "timestamp().prop_map(|date| Column::Timestamp(date.timestamp()))")]
         Timestamp(i64),
@@ -433,8 +435,8 @@ mod proptests {
     }
 
     prop_compose! {
-        fn date()(days in NaiveDate::MIN.num_days_from_ce()..=NaiveDate::MAX.num_days_from_ce()) -> NaiveDate {
-            NaiveDate::from_num_days_from_ce_opt(days).unwrap()
+        fn date()(days in NaiveDateTime::MIN.timestamp_millis() / (86400 * 1000)..=NaiveDateTime::MAX.timestamp_millis() / (86400 * 1000)) -> NaiveDate {
+            NaiveDateTime::from_timestamp_millis(days).unwrap().date()
         }
     }
 
