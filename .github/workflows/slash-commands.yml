@@ -13,4 +13,4 @@ jobs:
           token: ${{ secrets.SLASH_COMMANDS }}
           issue-type: pull-request
           commands: |
-            /benchmark
+            benchmark
