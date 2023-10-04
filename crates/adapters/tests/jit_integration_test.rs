@@ -175,9 +175,17 @@ fn supply_chain_test() {
         .status()
         .is_success());
 
-    // TODO: validate outputs.  Requires either quantiles support or using Kafka connector.
-
+    sleep(Duration::from_millis(2_000));
     server_thread.shutdown();
+
+    let expected_output = r#"{"insert":{"PART_ID":1,"PART_NAME":"Flux Capacitor","VENDOR_ID":2,"VENDOR_NAME":"HyperDrive Innovations","PRICE":10000}}
+{"insert":{"PART_ID":2,"PART_NAME":"Warp Core","VENDOR_ID":1,"VENDOR_NAME":"Gravitech Dynamics","PRICE":15000}}
+{"insert":{"PART_ID":3,"PART_NAME":"Kyber Crystal","VENDOR_ID":3,"VENDOR_NAME":"DarkMatter Devices","PRICE":9000}}"#;
+
+    assert_eq!(
+        fs::read_to_string("tests/sql_tests/supply_chain/preferred_vendor.json").unwrap(),
+        expected_output,
+    );
 }
 
 #[test]
@@ -188,4 +196,30 @@ fn secops_test() {
     // TODO: process some Kafka data. Requires CSV support.
 
     server_thread.shutdown();
+}
+
+#[test]
+#[serial]
+fn datetime_test() {
+    let server_thread = ServerThread::new(start_pipeline("tests/sql_tests/datetime"));
+
+    let client = Client::new();
+
+    assert!(client
+        .post(endpoint(
+            "ingress/T1?format=json&json_flavor=debezium_mysql"
+        ))
+        .body(r#"{"insert": {"d": 16816, "ts": "2018-06-20T13:37:03Z"}}"#)
+        .send()
+        .unwrap()
+        .status()
+        .is_success());
+
+    sleep(Duration::from_millis(2_000));
+
+    server_thread.shutdown();
+    assert_eq!(
+        fs::read_to_string("tests/sql_tests/datetime/v1.json").unwrap(),
+        r#"{"insert":{"D":"2016-01-16","TS":"2018-06-20 13:37:03"}}"#
+    );
 }

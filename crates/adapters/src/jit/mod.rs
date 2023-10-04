@@ -7,7 +7,7 @@ mod json;
 pub mod schema;
 pub mod seroutput;
 
-use crate::Catalog;
+use crate::{format::JsonFlavor, Catalog};
 pub use schema::ProgramSchema;
 use std::{collections::HashMap, path::PathBuf};
 
@@ -106,12 +106,20 @@ pub fn start_circuit(
     // println!("sink_names: {source_names:?}");
 
     let mut demands = Demands::new();
-    let mut json_input_demands: HashMap<NodeId, DemandId> = HashMap::new();
+    let mut default_json_input_demands: HashMap<NodeId, DemandId> = HashMap::new();
+    let mut debezium_mysql_json_input_demands: HashMap<NodeId, DemandId> = HashMap::new();
     for table_schema in schema.inputs.iter() {
         let (node, layout) = source_names.get(&table_schema.name).ok_or_else(|| ControllerError::schema_validation_error(&format!("program schema specifies input table '{}', which does not exist in the dataflow graph", &table_schema.name)))?;
 
-        let json_config = build_json_deser_config(*layout, table_schema);
-        json_input_demands.insert(*node, demands.add_json_deserialize(json_config));
+        let default_json_config =
+            build_json_deser_config(*layout, table_schema, &JsonFlavor::Default);
+        let debezium_mysql_json_config =
+            build_json_deser_config(*layout, table_schema, &JsonFlavor::DebeziumMySql);
+        default_json_input_demands.insert(*node, demands.add_json_deserialize(default_json_config));
+        debezium_mysql_json_input_demands.insert(
+            *node,
+            demands.add_json_deserialize(debezium_mysql_json_config),
+        );
 
         // let csv_config = build_csv_deser_config(table_schema);
         // demands.add_csv_deserialize(*layout, csv_config);
@@ -159,15 +167,27 @@ pub fn start_circuit(
 
         // FIXME: This is unsafe. The correct fix is to make sure `endpoint.disconnect`
         // returns after all endpoint threads have terminated.
-        let json = unsafe { circuit.json_input_set(node_id, json_input_demands[&node_id]) }
-            .ok_or_else(|| {
-                ControllerError::jit_error(&format!(
-                    "JsonSetHandle not found (table name: '{}', node id: {})",
-                    table_schema.name, node_id,
-                ))
-            })?;
+        let default_json =
+            unsafe { circuit.json_input_set(node_id, default_json_input_demands[&node_id]) }
+                .ok_or_else(|| {
+                    ControllerError::jit_error(&format!(
+                        "JsonSetHandle[Default] not found (table name: '{}', node id: {})",
+                        table_schema.name, node_id,
+                    ))
+                })?;
+        let debezium_mysql_json =
+            unsafe { circuit.json_input_set(node_id, debezium_mysql_json_input_demands[&node_id]) }
+                .ok_or_else(|| {
+                    ControllerError::jit_error(&format!(
+                        "JsonSetHandle[DebeziumMySQL] not found (table name: '{}', node id: {})",
+                        table_schema.name, node_id,
+                    ))
+                })?;
 
-        catalog.register_input_collection_handle(&table_schema.name, DeZSetHandles::new(json))
+        catalog.register_input_collection_handle(
+            &table_schema.name,
+            DeZSetHandles::new(default_json, debezium_mysql_json),
+        )
     }
 
     for table_schema in schema.outputs.iter() {

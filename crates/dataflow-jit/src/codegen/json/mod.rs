@@ -54,6 +54,26 @@ impl JsonColumn {
         }
     }
 
+    pub fn date_from_days<K>(key: K) -> Self
+    where
+        K: Into<Box<str>>,
+    {
+        Self {
+            key: key.into(),
+            spec: Some(JsonColumnParseSpec::DateFromDays),
+        }
+    }
+
+    pub fn time_from_micros<K>(key: K) -> Self
+    where
+        K: Into<Box<str>>,
+    {
+        Self {
+            key: key.into(),
+            spec: Some(JsonColumnParseSpec::TimeFromMicros),
+        }
+    }
+
     pub fn key(&self) -> &str {
         &self.key
     }

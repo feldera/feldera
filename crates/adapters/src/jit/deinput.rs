@@ -1,7 +1,10 @@
 use anyhow::Result as AnyResult;
 use dataflow_jit::facade::{DeCollectionStream as JitDeCollectionStream, JsonZSetHandle};
 
-use crate::{catalog::RecordFormat, ControllerError, DeCollectionHandle, DeCollectionStream};
+use crate::{
+    catalog::RecordFormat, format::JsonFlavor, ControllerError, DeCollectionHandle,
+    DeCollectionStream,
+};
 
 impl<JS> DeCollectionStream for JS
 where
@@ -34,12 +37,16 @@ where
 /// [`DeCollectionHandle`] implementation using pre-compiled deserializers
 /// for all supported formats.
 pub struct DeZSetHandles {
-    json: JsonZSetHandle,
+    default_json: JsonZSetHandle,
+    debezium_mysql_json: JsonZSetHandle,
 }
 
 impl DeZSetHandles {
-    pub fn new(json: JsonZSetHandle) -> Self {
-        Self { json }
+    pub fn new(default_json: JsonZSetHandle, debezium_mysql_json: JsonZSetHandle) -> Self {
+        Self {
+            default_json,
+            debezium_mysql_json,
+        }
     }
 }
 
@@ -49,8 +56,10 @@ impl DeCollectionHandle for DeZSetHandles {
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
-            // TODO: generate flavor-specific deserializers.
-            RecordFormat::Json(_) => Ok(Box::new(self.json.clone())),
+            RecordFormat::Json(JsonFlavor::Default) => Ok(Box::new(self.default_json.clone())),
+            RecordFormat::Json(JsonFlavor::DebeziumMySql) => {
+                Ok(Box::new(self.debezium_mysql_json.clone()))
+            }
             RecordFormat::Csv => {
                 todo!()
             }
