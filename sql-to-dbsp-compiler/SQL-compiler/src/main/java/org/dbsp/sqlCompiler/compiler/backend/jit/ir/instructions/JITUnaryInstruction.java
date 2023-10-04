@@ -50,8 +50,9 @@ public class JITUnaryInstruction extends JITInstruction {
     public final JITInstructionRef operand;
     public final JITType type;
 
-    public JITUnaryInstruction(long id, Operation operation, JITInstructionRef operand, JITType type) {
-        super(id, "UnaryOp");
+    public JITUnaryInstruction(long id, Operation operation, JITInstructionRef operand, JITType type,
+                               String comment) {
+        super(id, "UnaryOp", comment);
         this.operation = operation;
         this.operand = operand;
         this.type = type;
@@ -73,7 +74,8 @@ public class JITUnaryInstruction extends JITInstruction {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append(this.id)
+        return this.commentToString(builder)
+                .append(this.id)
                 .append(" ")
                 .append(this.operation.toString())
                 .append(" ")

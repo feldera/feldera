@@ -666,22 +666,22 @@ public class PostgresStringTests extends PostgresBaseTest {
 
     @Test
     public void testLikeCombinations() {
-        this.q("SELECT 'foo' LIKE '_%' as t, 'f' LIKE '_%' as t, '' LIKE '_%' as f;\n" +
-                " t | t | f \n" +
-                "---+---+---\n" +
-                " t | t | f");
-        this.q("SELECT 'foo' LIKE '%_' as t, 'f' LIKE '%_' as t, '' LIKE '%_' as f;\n" +
-                " t | t | f \n" +
-                "---+---+---\n" +
-                " t | t | f");
-        this.q("SELECT 'foo' LIKE '__%' as t, 'foo' LIKE '___%' as t, 'foo' LIKE '____%' as f;\n" +
-                " t | t | f \n" +
-                "---+---+---\n" +
-                " t | t | f");
-        this.q("SELECT 'foo' LIKE '%__' as t, 'foo' LIKE '%___' as t, 'foo' LIKE '%____' as f;\n" +
-                " t | t | f \n" +
-                "---+---+---\n" +
-                " t | t | f");
+        this.q("SELECT 'foo' LIKE '_%' as t, 'f' LIKE '_%' as t0, '' LIKE '_%' as f;\n" +
+                " t | t0 | f \n" +
+                "---+----+---\n" +
+                " t | t  | f");
+        this.q("SELECT 'foo' LIKE '%_' as t, 'f' LIKE '%_' as t0, '' LIKE '%_' as f;\n" +
+                " t | t0 | f \n" +
+                "---+----+---\n" +
+                " t | t  | f");
+        this.q("SELECT 'foo' LIKE '__%' as t, 'foo' LIKE '___%' as t0, 'foo' LIKE '____%' as f;\n" +
+                " t | t0 | f \n" +
+                "---+----+---\n" +
+                " t | t  | f");
+        this.q("SELECT 'foo' LIKE '%__' as t, 'foo' LIKE '%___' as t0, 'foo' LIKE '%____' as f;\n" +
+                " t | t0 | f \n" +
+                "---+----+---\n" +
+                " t | t  | f");
         this.q("SELECT 'jack' LIKE '%____%' AS t;\n" +
                 " t \n" +
                 "---\n" +

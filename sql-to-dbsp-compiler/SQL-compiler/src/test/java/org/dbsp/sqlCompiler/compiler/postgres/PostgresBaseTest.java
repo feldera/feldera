@@ -321,8 +321,11 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
                 result = new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, data, StandardCharsets.UTF_8);
             }
         } else if (fieldType.is(DBSPTypeBool.class)) {
-            boolean value = trimmed.equalsIgnoreCase("t") || trimmed.equalsIgnoreCase("true");
-            result = new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, value);
+            boolean isTrue = trimmed.equalsIgnoreCase("t") || trimmed.equalsIgnoreCase("true");
+            boolean isFalse = trimmed.equalsIgnoreCase("f") || trimmed.equalsIgnoreCase("false");
+            if (!isTrue && !isFalse)
+                throw new RuntimeException("Cannot parse boolean value " + Utilities.singleQuote(trimmed));
+            result = new DBSPBoolLiteral(CalciteObject.EMPTY, fieldType, isTrue);
         } else if (fieldType.is(DBSPTypeVec.class)) {
             DBSPTypeVec vec = fieldType.to(DBSPTypeVec.class);
             // TODO: this does not handle nested arrays

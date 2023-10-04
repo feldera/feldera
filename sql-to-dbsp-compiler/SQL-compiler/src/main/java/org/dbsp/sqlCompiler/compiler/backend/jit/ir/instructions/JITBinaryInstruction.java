@@ -65,7 +65,6 @@ public class JITBinaryInstruction extends JITInstruction {
     public final JITInstructionRef right;
     public final JITType type;
 
-
     public JITBinaryInstruction(long id, Operation operation,
                                 JITInstructionRef left,
                                 JITInstructionRef right,
