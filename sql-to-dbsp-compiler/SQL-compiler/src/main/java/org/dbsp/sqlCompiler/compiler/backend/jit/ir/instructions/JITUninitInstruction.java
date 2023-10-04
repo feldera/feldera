@@ -45,6 +45,12 @@ public class JITUninitInstruction extends JITInstruction {
     }
 
     @Override
+    public boolean same(JITInstruction other) {
+        // Two uninit instructions are never considered the same.
+        return false;
+    }
+
+    @Override
     protected BaseJsonNode instructionAsJson() {
         ObjectNode result = jsonFactory().createObjectNode();
         ObjectNode valueNode = result.putObject("value");

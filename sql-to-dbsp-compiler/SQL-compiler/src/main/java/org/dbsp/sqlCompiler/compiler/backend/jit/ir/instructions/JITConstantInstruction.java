@@ -65,6 +65,15 @@ public class JITConstantInstruction extends JITInstruction {
     }
 
     @Override
+    public boolean same(JITInstruction other) {
+        JITConstantInstruction oc = other.as(JITConstantInstruction.class);
+        if (oc == null)
+            return false;
+        return this.type.sameType(oc.type) &&
+                this.value.literal.sameValue(oc.value.literal);
+    }
+
+    @Override
     public IIndentStream toString(IIndentStream builder) {
         return super.toString(builder)
                 .append(" ")

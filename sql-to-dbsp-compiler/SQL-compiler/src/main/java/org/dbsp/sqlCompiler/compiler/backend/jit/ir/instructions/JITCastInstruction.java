@@ -29,6 +29,8 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
 import org.dbsp.util.IIndentStream;
 
+import java.util.Optional;
+
 public class JITCastInstruction extends JITInstruction {
     public final JITInstructionRef operand;
     public final JITType sourceType;
@@ -63,5 +65,15 @@ public class JITCastInstruction extends JITInstruction {
                 .append(this.operand)
                 .append(" as ")
                 .append(this.destinationType);
+    }
+
+    @Override
+    public boolean same(JITInstruction other) {
+        JITCastInstruction oc = other.as(JITCastInstruction.class);
+        if (oc == null)
+            return false;
+        return this.operand.equals(oc.operand) &&
+                this.sourceType.sameType(oc.sourceType) &&
+                this.destinationType.sameType(oc.destinationType);
     }
 }

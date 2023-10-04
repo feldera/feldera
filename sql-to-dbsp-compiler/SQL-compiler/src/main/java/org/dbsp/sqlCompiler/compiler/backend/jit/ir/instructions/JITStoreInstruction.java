@@ -78,4 +78,11 @@ public class JITStoreInstruction extends JITInstruction {
                 .append("]=")
                 .append(this.source);
     }
+
+    @Override
+    public boolean same(JITInstruction other) {
+        // Two store instructions are never considered the same
+        // even if they have the same operands.
+        return false;
+    }
 }

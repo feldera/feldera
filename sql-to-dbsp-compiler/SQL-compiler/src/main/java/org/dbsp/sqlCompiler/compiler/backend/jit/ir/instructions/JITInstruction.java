@@ -97,4 +97,13 @@ public abstract class JITInstruction extends JITNode implements IJITId {
         this.toString(str);
         return sps.toString();
     }
+
+    /**
+     * True if these two instructions are equivalent.
+     * This means that they perform the same operation on the same inputs.
+     * In general, instructions that have side-effects are never equivalent to other instructions.
+     * (This would assume that the two instructions are in the same basic block, but
+     *  that is not checked).
+     */
+    public abstract boolean same(JITInstruction other);
 }

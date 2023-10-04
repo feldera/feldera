@@ -55,6 +55,13 @@ public class JITFunctionCall extends JITInstruction {
     }
 
     @Override
+    public boolean same(JITInstruction other) {
+        // Currently two function calls are never considered to be the same.
+        // Perhaps this should be revisited.
+        return false;
+    }
+
+    @Override
     public BaseJsonNode instructionAsJson() {
         // { "Call": {
         //    "function": "some.func",

@@ -29,6 +29,8 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITScalarType;
 import org.dbsp.util.IIndentStream;
 
+import java.util.Optional;
+
 public class JITCopyInstruction extends JITInstruction {
     public final JITInstructionRef operand;
     public final JITScalarType type;
@@ -52,5 +54,13 @@ public class JITCopyInstruction extends JITInstruction {
         return super.toString(builder)
                 .append(" ")
                 .append(this.operand);
+    }
+
+    @Override
+    public boolean same(JITInstruction other) {
+        JITCopyInstruction oc = other.as(JITCopyInstruction.class);
+        if (oc == null)
+            return false;
+        return this.operand.equals(oc.operand);
     }
 }

@@ -62,6 +62,11 @@ public class JITRowType extends JITType implements IJITId, IJitKvOrRowType {
         public String toString() {
             return (this.nullable ? "?" : "") + this.type;
         }
+
+        public boolean sameType(NullableScalarType other) {
+            return this.nullable == other.nullable &&
+                    this.type.sameType(other.type);
+        }
     }
 
     public final long id;
@@ -124,6 +129,19 @@ public class JITRowType extends JITType implements IJITId, IJitKvOrRowType {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.toString());
+    }
+
+    @Override
+    public boolean sameType(JITType other) {
+        JITRowType or = other.as(JITRowType.class);
+        if (or == null)
+            return false;
+        if (this.fields.size() != or.fields.size())
+            return false;
+        for (int i = 0; i < this.fields.size(); i++)
+            if (!this.fields.get(i).sameType(or.fields.get(i)))
+                return false;
+        return true;
     }
 
     @Override

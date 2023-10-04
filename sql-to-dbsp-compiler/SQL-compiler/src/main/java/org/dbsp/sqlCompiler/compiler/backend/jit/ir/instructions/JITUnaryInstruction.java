@@ -81,4 +81,13 @@ public class JITUnaryInstruction extends JITInstruction {
                 .append(" ")
                 .append(this.operand);
     }
+
+    @Override
+    public boolean same(JITInstruction other) {
+        JITUnaryInstruction ob = other.as(JITUnaryInstruction.class);
+        if (ob == null)
+            return false;
+        return this.operand.equals(ob.operand) &&
+                this.operation.equals(ob.operation);
+    }
 }

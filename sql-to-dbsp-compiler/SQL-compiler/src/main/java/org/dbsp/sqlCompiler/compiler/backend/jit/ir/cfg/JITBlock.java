@@ -107,7 +107,7 @@ public class JITBlock extends JITNode implements IJITId {
         return instruction.getInstructionReference();
     }
 
-    public void add(JITInstruction instruction) {
+    public JITInstruction add(JITInstruction instruction) {
         if (this.terminator != null)
             throw new InternalCompilerError("Block already terminated while adding instruction ", instruction);
         this.instructions.add(instruction);
@@ -115,11 +115,12 @@ public class JITBlock extends JITNode implements IJITId {
             JITConstantInstruction cst = instruction.to(JITConstantInstruction.class);
             if (cst.value.literal.is(DBSPBoolLiteral.class)) {
                 DBSPBoolLiteral lit = cst.value.literal.to(DBSPBoolLiteral.class);
-                if (cst.value.literal.isNull) return;
+                if (cst.value.literal.isNull) return instruction;
                 boolean b = Objects.requireNonNull(lit.value);
                 this.constants.put(b, instruction);
             }
         }
+        return instruction;
     }
 
     public JITInstructionRef addParameter(JITReference instruction, JITType type) {

@@ -301,8 +301,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     }
 
     JITInstruction add(JITInstruction instruction) {
-        this.getCurrentBlock().add(instruction);
-        return instruction;
+        return this.getCurrentBlock().add(instruction);
     }
 
     void newContext() {
