@@ -2,14 +2,14 @@ workers: 8
 cpu_profiler: false
 min_batch_size_records: 0
 max_buffering_delay_usecs: 0
-name: pipeline-018ab35c-cc94-700b-8cd2-3986f46eecc4
-inputs: {}
+name: datetime-pipeline
+inputs:
 outputs:
-  preferred_vendor:
-    stream: PREFERRED_VENDOR
+  v1:
+    stream: V1
     transport:
         name: file
         config:
-          path: preferred_vendor.json
+          path: v1.json
     format:
       name: json

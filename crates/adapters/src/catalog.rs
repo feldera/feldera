@@ -26,6 +26,7 @@ pub enum JsonFlavor {
     /// Default encoding used by Feldera, documented
     /// [here](https://www.feldera.com/docs/api/json#types).
     #[default]
+    #[serde(rename = "default")]
     Default,
     /// Debezium MySQL JSON produced by the default configuration of the Debezium
     /// [Kafka Connect connector](https://debezium.io/documentation/reference/stable/connectors/mysql.html#mysql-data-types).
