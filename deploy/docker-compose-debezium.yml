@@ -44,7 +44,7 @@ services:
         condition: service_started
       mysql:
         condition: service_healthy
-    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.1.3}
+    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.1.6}
     environment:
       RUST_BACKTRACE: "1"
       REDPANDA_BROKERS: "redpanda:9092"
