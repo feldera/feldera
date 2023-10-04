@@ -41,6 +41,10 @@ Usage: sql-to-dbsp [options] Input file to compile
   Options:
     -h, --help, -?
       Show this message and exit
+    --lenient
+      Lenient SQL validation.  If true it allows duplicate column names in a 
+      view 
+      Default: false
     -O
       Optimization level (0, 1, or 2)
       Default: 2
@@ -75,6 +79,9 @@ Usage: sql-to-dbsp [options] Input file to compile
       Emit a JSON file containing the schema of all views and tables involved
     -o
       Output file; stdout if null
+    -q
+      Quiet: do not print warnings
+      Default: false      
 $ ./sql-to-dbsp x.sql -o ../temp/src/lib.rs
 ```
 
