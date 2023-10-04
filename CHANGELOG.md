@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a `--lenient` SQL compiler flag to allow views with multiple
+  columns with the same name.
 - Added a demo based on the "Feldera: The Basics" tutorial.  People who don't
   want to manually complete all steps in the tutorial can instead play with the
   pre-built pipeline.

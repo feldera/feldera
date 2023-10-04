@@ -29,8 +29,6 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITType;
 import org.dbsp.util.IIndentStream;
 
-import java.util.Optional;
-
 public class JITCastInstruction extends JITInstruction {
     public final JITInstructionRef operand;
     public final JITType sourceType;
