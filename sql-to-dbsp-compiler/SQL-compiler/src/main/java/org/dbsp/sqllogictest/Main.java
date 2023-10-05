@@ -44,7 +44,7 @@ public class Main {
     @SuppressWarnings("SpellCheckingInspection")
     public static void main(String[] argv) throws IOException {
         List<String> files = Linq.list(
-                "test/random/select/slt_good_58.test"
+                // "test/random/select/slt_good_58.test"
                 /*
                 "select1.test"
                 "select2.test",

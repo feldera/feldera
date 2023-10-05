@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.util.FreshName;
 
 import java.util.HashSet;
-import java.util.Set;
 
 /**
  * Information about an output view.

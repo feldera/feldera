@@ -27,7 +27,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 /**
- * A batch of tests for the 
+ * A batch of tests for the JitDbspExecutor.
  */
 public class JitTestBatch extends TestBatch {
     final DBSPCompiler compiler;
