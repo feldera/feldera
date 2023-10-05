@@ -363,7 +363,6 @@ where
                 vals.retain(|(_t, ret_w)| !ret_w.is_zero());
             }
             MergeOp::RecedeTo(frontier) => {
-                log::info!("MergeOp::RecedeTo {frontier:?}");
                 let mut modified_t = false;
                 for (existing_t, _existing_w) in vals.iter_mut() {
                     // I think due to this being sorted by Ord we have to
@@ -528,11 +527,11 @@ where
                     w.add_assign_by_ref(cur_w);
                 });
                 let k = cursor.key().clone();
-
-                builder.push((Self::Batch::item_from(k, v), w));
+                if !w.is_zero() {
+                    builder.push((Self::Batch::item_from(k, v), w));
+                }
                 cursor.step_val();
             }
-
             cursor.step_key();
         }
 

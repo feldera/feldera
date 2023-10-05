@@ -45,25 +45,28 @@ impl<'s, B> PersistentTraceCursor<'s, B>
 where
     B: Batch + 's,
 {
-    /// Loads the current key&value and its weights from RocksDB and stores them in the
-    /// [`PersistentTraceCursor`] struct.
+    /// Loads the current key&value and its weights from RocksDB and stores them
+    /// in the [`PersistentTraceCursor`] struct.
     ///
-    /// # Panics
-    /// - In case the `db_iter` is invalid.
+    /// In case the iterator is invalid or we encounter a tombstone (a key-value
+    /// pair that was deleted but not yet GCed) we reset the values to `None`.
     fn update_current_key_weight(&mut self, direction: Direction) {
-        assert!(self.db_iter.valid());
-        let (key, value, diffs) =
-            PersistentTraceCursor::<'s, B>::read_key_val_weights(&mut self.db_iter, direction)
-                .unwrap();
+        self.cur_key = None;
+        self.cur_val = None;
+        self.cur_diffs = None;
 
-        if &Some(&key) < &self.lower_key_bound.as_ref() {
-            self.cur_key = None;
-            self.cur_val = None;
-            self.cur_diffs = None;
-        } else {
-            self.cur_key = Some(key);
-            self.cur_val = Some(value);
-            self.cur_diffs = Some(diffs);
+        match PersistentTraceCursor::<'s, B>::read_key_val_weights(&mut self.db_iter, direction) {
+            Some((key, value, diffs)) => {
+                if &Some(&key) >= &self.lower_key_bound.as_ref() {
+                    self.cur_key = Some(key);
+                    self.cur_val = Some(value);
+                    self.cur_diffs = Some(diffs);
+                }
+            }
+            None => {
+                // We already reset to None, so it also applies to cases where
+                // we're below lower_key_bound
+            }
         }
     }
 
@@ -71,7 +74,8 @@ where
     ///
     /// # Returns
     /// - The key and its values.
-    /// - `None` if the iterator is invalid.
+    /// - `None` if the iterator is invalid or we encountered a tombstone (a
+    ///   key-value pair that was deleted but not yet GCed)
     #[allow(clippy::type_complexity)]
     fn read_key_val_weights(
         iter: &mut DBRawIterator<'s>,
@@ -102,9 +106,6 @@ where
                         continue;
                     }
                 }
-            } else {
-                // This holds according to the RocksDB C++ API docs
-                unreachable!("db_iter.valid() implies Some(key)")
             }
         }
     }
@@ -222,15 +223,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
             while self.cur_key == cur_key {
                 // Note: RocksDB only allows to call `next` on a `valid` cursor
                 self.db_iter.next();
-                if self.db_iter.valid() {
-                    self.update_current_key_weight(Direction::Forward);
-                } else {
-                    // Reached the end of the iterator:
-                    self.cur_key = None;
-                    self.cur_val = None;
-                    self.cur_diffs = None;
-                    return;
-                }
+                self.update_current_key_weight(Direction::Forward);
             }
         } else {
             self.cur_key = None;
@@ -242,13 +235,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
     fn step_key_reverse(&mut self) {
         if self.db_iter.valid() {
             self.db_iter.prev();
-
-            if self.db_iter.valid() {
-                self.update_current_key_weight(Direction::Backward);
-            } else {
-                self.cur_key = None;
-                self.cur_diffs = None;
-            }
+            self.update_current_key_weight(Direction::Backward);
         } else {
             self.cur_key = None;
             self.cur_diffs = None;
@@ -287,15 +274,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
         let persisted_key: PersistedKey<B::Key, B::Val> = (key.clone(), None);
         let encoded_key = to_bytes(&persisted_key).expect("Can't encode `key`");
         self.db_iter.seek(encoded_key);
-        self.cur_key = Some(key.clone());
-
-        if self.db_iter.valid() {
-            self.update_current_key_weight(Direction::Forward);
-        } else {
-            self.cur_key = None;
-            self.cur_val = None;
-            self.cur_diffs = None;
-        }
+        self.update_current_key_weight(Direction::Forward);
     }
 
     fn seek_key_with<P>(&mut self, _predicate: P)
@@ -336,13 +315,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
         self.db_iter.seek(encoded_key);
         self.cur_key = Some(key.clone());
 
-        if self.db_iter.valid() {
-            self.update_current_key_weight(Direction::Backward);
-        } else {
-            self.cur_key = None;
-            self.cur_val = None;
-            self.cur_diffs = None;
-        }
+        self.update_current_key_weight(Direction::Backward);
     }
 
     fn step_val(&mut self) {
@@ -410,24 +383,12 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
 
     fn rewind_keys(&mut self) {
         self.db_iter.seek_to_first();
-        if self.db_iter.valid() {
-            self.update_current_key_weight(Direction::Forward);
-        } else {
-            self.cur_key = None;
-            self.cur_val = None;
-            self.cur_diffs = None;
-        }
+        self.update_current_key_weight(Direction::Forward);
     }
 
     fn fast_forward_keys(&mut self) {
         self.db_iter.seek_to_last();
-        if self.db_iter.valid() {
-            self.update_current_key_weight(Direction::Backward);
-        } else {
-            self.cur_key = None;
-            self.cur_val = None;
-            self.cur_diffs = None;
-        }
+        self.update_current_key_weight(Direction::Backward);
     }
 
     fn rewind_vals(&mut self) {
