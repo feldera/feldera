@@ -514,7 +514,6 @@ build-pipeline-manager-container:
     COPY sql-to-dbsp-compiler/temp /database-stream-processor/sql-to-dbsp-compiler/temp
     RUN ./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
     ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
-    SAVE IMAGE ghcr.io/feldera/pipeline-manager
 
 # TODO: mirrors the Dockerfile. See note above.
 build-demo-container:
@@ -530,7 +529,9 @@ build-demo-container:
     COPY +install-python/bin /root/.local/bin
     COPY demo demo
     CMD bash
-    SAVE IMAGE ghcr.io/feldera/demo-container
+
+build-kafka-connect-container:
+    FROM DOCKERFILE -f deploy/Dockerfile --target kafka-connect .
 
 test-docker-compose:
     FROM earthly/dind:alpine
@@ -550,10 +551,10 @@ test-debezium:
     ENV FELDERA_VERSION=latest
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
-                --pull debezium/connect:2.3 \
                 --pull debezium/example-mysql:2.3 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
-                --load ghcr.io/feldera/demo-container:latest=+build-demo-container
+                --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
+                --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
         RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml -f docker-compose-debezium.yml --profile debezium up --force-recreate --exit-code-from debezium-demo
     END
 

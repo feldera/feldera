@@ -4,7 +4,7 @@ services:
   # Kafka connect.
   # TODO: add a healthcheck to this container.
   connect:
-    image: debezium/connect:2.3
+    image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.1.6}
     depends_on:
       redpanda:
         condition: service_healthy
@@ -28,7 +28,17 @@ services:
       MYSQL_USER: mysqluser
       MYSQL_PASSWORD: mysqlpw
     healthcheck:
-      test: ["CMD", "mysqladmin" , "-u", "$$MYSQL_USER",  "-p$$MYSQL_PASSWORD" ,"ping", "-h", "localhost"]
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "-u",
+          "$$MYSQL_USER",
+          "-p$$MYSQL_PASSWORD",
+          "ping",
+          "-h",
+          "localhost"
+        ]
       interval: 5s
       timeout: 20s
       # MySQL can be _very_ slow to start.

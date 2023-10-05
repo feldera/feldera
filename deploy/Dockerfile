@@ -167,6 +167,13 @@ RUN apt update && apt install pkg-config \
   && apt remove python3-pip unzip pkg-config -y && apt autoremove -y
 CMD bash
 
+# Kafka connect with all Debezium connectors + the Snowflake connector.
+FROM debezium/connect:2.3 AS kafka-connect
+RUN mkdir /kafka/connect/snowflake-kafka-connector
+RUN cd /kafka/connect/snowflake-kafka-connector \
+    && curl -LO https://repo1.maven.org/maven2/com/snowflake/snowflake-kafka-connector/2.1.0/snowflake-kafka-connector-2.1.0.jar \
+    && curl -LO https://repo1.maven.org/maven2/org/bouncycastle/bc-fips/1.0.1/bc-fips-1.0.1.jar \
+    && curl -LO https://repo1.maven.org/maven2/org/bouncycastle/bcpkix-fips/1.0.3/bcpkix-fips-1.0.3.jar
 
 # By default, only build the release version
 FROM release
