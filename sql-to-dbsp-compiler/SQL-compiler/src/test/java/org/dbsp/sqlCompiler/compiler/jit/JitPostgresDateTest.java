@@ -6,6 +6,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class JitPostgresDateTest extends PostgresDateTests {
+    @Override
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = super.getOptions(optimize);
         options.ioOptions.jit = true;

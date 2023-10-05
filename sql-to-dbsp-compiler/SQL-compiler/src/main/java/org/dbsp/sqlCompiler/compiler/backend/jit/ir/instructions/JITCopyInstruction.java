@@ -53,4 +53,10 @@ public class JITCopyInstruction extends JITInstruction {
                 .append(" ")
                 .append(this.operand);
     }
+
+    @Override
+    public boolean same(JITInstruction other) {
+        // Two copy instructions are never equivalent due to the side effects
+        return false;
+    }
 }

@@ -10,13 +10,10 @@ import net.hydromatic.sqllogictest.SqlTestQueryOutputDescription;
 import net.hydromatic.sqllogictest.TestStatistics;
 import net.hydromatic.sqllogictest.executors.JdbcExecutor;
 import net.hydromatic.sqllogictest.executors.SqlSltTestExecutor;
-import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
-import org.dbsp.sqlCompiler.compiler.backend.ToSqlVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitFileAndSerialization;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitIODescription;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitSerializationKind;
@@ -24,7 +21,7 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqllogictest.SqlTestPrepareInput;
@@ -181,8 +178,10 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         List<File> toDelete = new ArrayList<>();
         File programFile = this.fileFromName("program.json");
         toDelete.add(programFile);
-
         Utilities.writeFile(programFile.toPath(), json);
+        File asm = this.fileFromName("program.asm");
+        toDelete.add(asm);
+        Utilities.writeFile(asm.toPath(), program.toString());
 
         // Prepare input files for the JIT runtime
         boolean sameFiles = Arrays.equals(previousValues, inputSets);
@@ -226,11 +225,14 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         DBSPZSetLiteral.Contents actual = outFile.parse(outputType.to(DBSPTypeZSet.class).getElementType());
 
         boolean result = this.validateOutput(query, queryNo, actual, query.outputDescription, statistics);
-        for (File file: toDelete) {
-            // This point won't be reached if the program fails with an exception.
-            boolean success = file.delete();
-            if (!success)
-                System.err.println("Failed to delete " + file);
+        if (!result) {
+            for (File file : toDelete) {
+                // This point won't be reached if the program fails with an exception
+                // or validation fails with -x flag
+                boolean success = file.delete();
+                if (!success)
+                    System.err.println("Failed to delete " + file);
+            }
         }
         return result;
     }
@@ -320,7 +322,133 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         }
     }
 
-    static final IErrorReporter errorReporter = new StderrErrorReporter();
+    Row getValue(DBSPTupleExpression rs, String columnTypes) {
+        Row row = new Row();
+        for(int i = 0; i < columnTypes.length(); ++i) {
+            char c = columnTypes.charAt(i);
+            DBSPLiteral value = rs.get(i).to(DBSPLiteral.class);
+            if (value.isNull) {
+                row.add("NULL");
+                continue;
+            }
+            switch (c) {
+                case 'I': {
+                    long integer;
+                    switch (value.getType().code) {
+                        case BOOL:
+                            integer = Objects.requireNonNull(value.to(DBSPBoolLiteral.class).value) ? 1 : 0;
+                            break;
+                        case DECIMAL:
+                            integer = Objects.requireNonNull(value.to(DBSPDecimalLiteral.class).value).longValue();
+                            break;
+                        case DOUBLE:
+                            integer = Objects.requireNonNull(value.to(DBSPDoubleLiteral.class).value).longValue();
+                            break;
+                        case FLOAT:
+                            integer = Objects.requireNonNull(value.to(DBSPFloatLiteral.class).value).longValue();
+                            break;
+                        case INT32:
+                            integer = Objects.requireNonNull(value.to(DBSPI32Literal.class).value);
+                            break;
+                        case INT64:
+                            integer = Objects.requireNonNull(value.to(DBSPI64Literal.class).value);
+                            break;
+                        case STRING:
+                            try {
+                                integer = Long.parseLong(Objects.requireNonNull(value.to(DBSPStringLiteral.class).value));
+                            } catch (NumberFormatException ex) {
+                                integer = 0;
+                            }
+                            break;
+                        default:
+                            integer = 0;
+                            break;
+                    }
+                    row.add(String.format("%d", integer));
+                    break;
+                }
+                case 'R': {
+                    double d;
+                    switch (value.getType().code) {
+                        case BOOL:
+                            d = Objects.requireNonNull(value.to(DBSPBoolLiteral.class).value) ? 1 : 0;
+                            break;
+                        case DECIMAL:
+                            d = Objects.requireNonNull(value.to(DBSPDecimalLiteral.class).value).doubleValue();
+                            break;
+                        case DOUBLE:
+                            d = Objects.requireNonNull(value.to(DBSPDoubleLiteral.class).value);
+                            break;
+                        case FLOAT:
+                            d = Objects.requireNonNull(value.to(DBSPFloatLiteral.class).value);
+                            break;
+                        case INT32:
+                            d = Objects.requireNonNull(value.to(DBSPI32Literal.class).value);
+                            break;
+                        case INT64:
+                            d = Objects.requireNonNull(value.to(DBSPI64Literal.class).value);
+                            break;
+                        case STRING:
+                            try {
+                                d = Double.parseDouble(Objects.requireNonNull(value.to(DBSPStringLiteral.class).value));
+                            } catch (NumberFormatException ex) {
+                                d = 0;
+                            }
+                            break;
+                        default:
+                            d = 0;
+                            break;
+                    }
+                    row.add(String.format("%.3f", d));
+                    break;
+                }
+                case 'T': {
+                    String s;
+                    switch (value.getType().code) {
+                        case BOOL:
+                            s = Objects.requireNonNull(value.to(DBSPBoolLiteral.class).value) ? "1" : "0";
+                            break;
+                        case DECIMAL:
+                            s = Objects.requireNonNull(value.to(DBSPDecimalLiteral.class).value).toString();
+                            break;
+                        case DOUBLE:
+                            s = Objects.requireNonNull(value.to(DBSPDoubleLiteral.class).value).toString();
+                            break;
+                        case FLOAT:
+                            s = Objects.requireNonNull(value.to(DBSPFloatLiteral.class).value).toString();
+                            break;
+                        case INT32:
+                            s = Objects.requireNonNull(value.to(DBSPI32Literal.class).value).toString();
+                            break;
+                        case INT64:
+                            s = Objects.requireNonNull(value.to(DBSPI64Literal.class).value).toString();
+                            break;
+                        case STRING:
+                            s = Objects.requireNonNull(value.to(DBSPStringLiteral.class).value);
+                            break;
+                        default:
+                            throw new RuntimeException("Unexpected type " + value);
+                    }
+                    StringBuilder result = new StringBuilder();
+
+                    for (int j = 0; j < s.length(); ++j) {
+                        char sc = s.charAt(j);
+                        if (sc < ' ' || sc > '~') {
+                            sc = '@';
+                        }
+
+                        result.append(sc);
+                    }
+
+                    row.add(result.toString());
+                    break;
+                }
+                default:
+                    throw new RuntimeException("Unexpected column type " + c);
+            }
+        }
+        return row;
+    }
 
     /**
      * Validate output.  Return 'true' if we need to stop executing.
@@ -330,8 +458,6 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                            DBSPZSetLiteral.Contents actual,
                            SqlTestQueryOutputDescription description,
                            TestStatistics statistics) throws NoSuchAlgorithmException {
-        StringBuilder builder = new StringBuilder();
-        ToSqlVisitor visitor = new ToSqlVisitor(errorReporter, builder);
         Rows rows = new Rows();
         for (Map.Entry<DBSPExpression, Long> entry: actual.data.entrySet()) {
             if (entry.getValue() <= 0)
@@ -340,14 +466,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                                 "Produced negative result", entry.toString(), null));
             for (long i = 0; i < entry.getValue(); i++) {
                 DBSPTupleExpression tuple = entry.getKey().to(DBSPTupleExpression.class);
-                Row row = new Row();
-                for (int j = 0; j < tuple.size(); j++) {
-                    DBSPExpression expr = tuple.get(j);
-                    // clear builder
-                    builder.setLength(0);
-                    expr.accept(visitor);
-                    row.add(builder.toString());
-                }
+                Row row = this.getValue(tuple, Objects.requireNonNull(description.columnTypes));
                 rows.add(row);
             }
         }
@@ -405,7 +524,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 options.stopAtFirstError, options.verbosity);
         result.incFiles();
         int queryNo = 0;
-        int skip = 211;  // used only for debugging
+        int skip = 0;  // used only for debugging
         for (ISqlTestOperation operation : testFile.fileContents) {
             SltSqlStatement stat = operation.as(SltSqlStatement.class);
             if (stat != null) {
@@ -462,6 +581,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 CompilerOptions compilerOptions = new CompilerOptions();
                 compilerOptions.ioOptions.jit = true;
                 compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
+                compilerOptions.ioOptions.lenient = true;
                 JitDbspExecutor result = new JitDbspExecutor(
                         Objects.requireNonNull(inner), options, compilerOptions);
                 Set<String> bugs = options.readBugsFile();

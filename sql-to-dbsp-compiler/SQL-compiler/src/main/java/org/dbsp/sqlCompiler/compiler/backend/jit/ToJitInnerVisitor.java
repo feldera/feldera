@@ -290,9 +290,6 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     }
 
     public JITInstructionRef constantBool(boolean value) {
-        JITInstructionRef exists = this.getCurrentBlock().getBooleanConstant(value);
-        if (exists.isValid())
-            return exists;
         return this.accept(new DBSPBoolLiteral(value)).value;
     }
 
@@ -300,9 +297,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         return this.jitVisitor.scalarType(expression.getType());
     }
 
-    JITInstruction add(JITInstruction instruction) {
-        this.getCurrentBlock().add(instruction);
-        return instruction;
+    JITInstructionRef add(JITInstruction instruction) {
+        return this.getCurrentBlock().add(instruction);
     }
 
     void newContext() {
@@ -381,7 +377,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 isNull = arg;
             else  {
                 isNull = this.insertBinary(JITBinaryInstruction.Operation.OR,
-                        isNull, arg, JITBoolType.INSTANCE, "");
+                        isNull, arg, JITBoolType.INSTANCE, expression.toString());
             }
         }
 
@@ -404,7 +400,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
 
         JITScalarType jitResultType = this.convertType(resultType).to(JITScalarType.class);
         long id = this.nextInstructionId();
-        JITInstruction call = this.add(new JITFunctionCall(id, name, args, argumentTypes, jitResultType));
+        JITInstructionRef call = this.add(new JITFunctionCall(id, name, args, argumentTypes, jitResultType));
         JITInstructionPair result;
 
         if (isNull.isValid()) {
@@ -416,7 +412,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             JITInstructionRef param;
             if (resultType.code != VOID) {
                 param = this.addParameter(nextBlock, jitResultType);
-                next.addArgument(call.getInstructionReference());
+                next.addArgument(call);
             } else {
                 param = JITInstructionRef.INVALID;
             }
@@ -563,13 +559,12 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         boolean mayBeNull = expression.getType().mayBeNull;
         JITConstantInstruction value = new JITConstantInstruction(
                 this.nextInstructionId(), type, literal, true);
-        this.add(value);
-
+        JITInstructionRef valueInstr = this.add(value);
         JITInstructionRef isNull = JITInstructionRef.INVALID;
         if (mayBeNull) {
             isNull = this.constantBool(expression.isNull);
         }
-        JITInstructionPair pair = new JITInstructionPair(value.getInstructionReference(), isNull);
+        JITInstructionPair pair = new JITInstructionPair(valueInstr, isNull);
         this.map(expression, pair);
         return VisitDecision.STOP;
     }
@@ -696,9 +691,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         if (sourceType.equals(destType))
             // This can happen for casts that only change nullability
             return source;
-        JITInstruction cast = this.add(new JITCastInstruction(
+        return this.add(new JITCastInstruction(
                 this.nextInstructionId(), source, sourceType, destType, comment));
-        return cast.getInstructionReference();
     }
 
     /**
@@ -719,23 +713,22 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         condition.mustBeValid();
         left.mustBeValid();
         right.mustBeValid();
-        JITInstructionRef False = this.getCurrentBlock().getBooleanConstant(false);
-        JITInstructionRef True = this.getCurrentBlock().getBooleanConstant(true);
+        JITInstructionRef False = this.constantBool(false);
+        JITInstructionRef True = this.constantBool(true);
 
         if (condition.equals(False))
             return right;
         if (condition.equals(True))
             return left;
-        JITInstruction mux = this.add(new JITMuxInstruction(this.nextInstructionId(),
+        return this.add(new JITMuxInstruction(this.nextInstructionId(),
                 condition, left, right, valueType, comment));
-        return mux.getInstructionReference();
     }
 
     JITInstructionRef insertUnary(JITUnaryInstruction.Operation opcode,
-                                  JITInstructionRef operand, JITType type) {
+                                  JITInstructionRef operand, JITType type, String comment) {
         operand.mustBeValid();
-        JITInstruction result = this.add(new JITUnaryInstruction(this.nextInstructionId(), opcode, operand, type));
-        return result.getInstructionReference();
+        return this.add(
+                new JITUnaryInstruction(this.nextInstructionId(), opcode, operand, type, comment));
     }
 
     JITInstructionRef insertBinary(JITBinaryInstruction.Operation opcode,
@@ -743,9 +736,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                                 JITType type, String comment) {
         left.mustBeValid();
         right.mustBeValid();
-        JITInstruction result = this.add(new JITBinaryInstruction(
+        return this.add(new JITBinaryInstruction(
                 this.nextInstructionId(), opcode, left, right, type, comment));
-        return result.getInstructionReference();
     }
 
     JITInstructionRef addParameter(JITBlock block, JITType type) {
@@ -891,11 +883,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             // TODO: replace with uninit
             DBSPLiteral numericZero = numeric.getZero();
             JITLiteral jitZero = new JITLiteral(numericZero, type);
-            JITInstruction zero = this.add(
+            JITInstructionRef zero = this.add(
                     new JITConstantInstruction(this.nextInstructionId(), type, jitZero, true));
             // (right == 0)
             JITInstructionRef compare = this.insertBinary(JITBinaryInstruction.Operation.EQ,
-                    zero.getInstructionReference(), right.value, type, "");
+                    zero, right.value, type, "");
             JITBlock isZero = this.newBlock();
             JITBlock isNotZero = this.newBlock();
             JITBlock next = this.newBlock();
@@ -912,7 +904,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             JITBlockDestination zeroToNext = next.createDestination();
             zeroToNext.addArgument(True);
             // result can be 0
-            zeroToNext.addArgument(zero.getInstructionReference());
+            zeroToNext.addArgument(zero);
             JITJumpTerminator jump = new JITJumpTerminator(zeroToNext);
             isZero.terminate(jump);
 
@@ -964,9 +956,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 //                              : (b.is_null ? a.value : false)
 
                 // cond1 = (b.is_null ? true : b.value)
-                JITInstructionRef cond1 = this.insertMux(rightNullId, True, rightId.value, JITBoolType.INSTANCE, "");
+                JITInstructionRef cond1 = this.insertMux(rightNullId, True, rightId.value, JITBoolType.INSTANCE,
+                        "a&&b -> b.is_null ? true : b.value");
                 // cond2 = (b.is_null ? !a.value   : false)
-                JITInstructionRef cond2 = this.insertMux(rightNullId, leftId.value, False, JITBoolType.INSTANCE, "");
+                JITInstructionRef cond2 = this.insertMux(rightNullId, leftId.value, False, JITBoolType.INSTANCE,
+                        "a&&b -> b.is_null ? !a.value : false");
 
                 // (a && b).value = a.is_null ? b.value
                 //                            : (b.is_null ? a.value : a.value && b.value)
@@ -974,41 +968,43 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 // a.value && b.value
                 JITInstructionRef and = this.insertBinary(
                         JITBinaryInstruction.Operation.AND,
-                        leftId.value, rightId.value, convertScalarType(expression.left), "");
+                        leftId.value, rightId.value, convertScalarType(expression.left),
+                        "a && b -> d = a.value && b.value");
                 // (b.is_null ? a.value : a.value && b.value)
-                JITInstructionRef secondBranch = this.insertMux(rightNullId, leftId.value, and, JITBoolType.INSTANCE, "");
+                JITInstructionRef secondBranch = this.insertMux(rightNullId, leftId.value, and, JITBoolType.INSTANCE,
+                        "a&&b -> b.is_null ? a.value : d");
                 // Final Mux
                 JITInstructionRef value = this.insertMux(
                         leftNullId, rightId.value, secondBranch, JITBoolType.INSTANCE, expression.toString());
                 JITInstructionRef isNull = this.insertMux(leftNullId, cond1, cond2, JITBoolType.INSTANCE,
                         expression.is_null().toString());
                 this.map(expression, new JITInstructionPair(value, isNull));
-            } else { // Boolean ||
+            } else { // Boolean || OR
                 // Nullable bit computation
                 // (a || b).is_null = a.is_null ? (b.is_null ? true : !b.value)
                 //                              : (b.is_null ? !a.value : false)
-                // true
-                // cond1 = (b.is_null ? true : !b.value)
                 // !b.value
                 JITInstructionRef notB = this.insertUnary(
-                        JITUnaryInstruction.Operation.NOT, rightId.value, JITBoolType.INSTANCE);
+                        JITUnaryInstruction.Operation.NOT, rightId.value, JITBoolType.INSTANCE, "a||b -> notB = !b.value");
+                // cond1 = (b.is_null ? true : !b.value)
                 JITInstructionRef cond1 = this.insertMux(
-                        rightNullId, True, notB, JITBoolType.INSTANCE, "");
-                // cond2 = (b.is_null ? !a.value : false)
-                // !a
+                        rightNullId, True, notB, JITBoolType.INSTANCE, "a||b -> cond1 = b.is_null ? true : !b.value");
+                // !a.value
                 JITInstructionRef notA = this.insertUnary(
-                        JITUnaryInstruction.Operation.NOT, leftId.value, JITBoolType.INSTANCE);
-                JITInstructionRef cond2 = this.insertMux(rightNullId, notA, False, JITBoolType.INSTANCE, "");
+                        JITUnaryInstruction.Operation.NOT, leftId.value, JITBoolType.INSTANCE,
+                        "a||b -> notA = !a.value");
+                // cond2 = (b.is_null ? !a.value : false)
+                JITInstructionRef cond2 = this.insertMux(rightNullId, notA, False, JITBoolType.INSTANCE,
+                        "a||b -> cond2 = b.is_null ? !a.value : false");
 
-                // (a || b).value = a.is_null ? b.value
-                //                            : a.value || b.value
                 // a.value || b.value
                 JITInstructionRef or = this.insertBinary(
                                 JITBinaryInstruction.Operation.OR,
-                                leftId.value, rightId.value, convertScalarType(expression.left), "");
-                // Result
-                JITInstructionRef value = this.insertMux(leftNullId, cond1, cond2, JITBoolType.INSTANCE, expression.toString());
-                JITInstructionRef isNull = this.insertMux(leftNullId, rightId.value, or, JITBoolType.INSTANCE,
+                                leftId.value, rightId.value, convertScalarType(expression.left), "a||b -> a.value || b.value");
+                // (a || b).value = a.is_null ? b.value : (a.value || b.value)
+                JITInstructionRef value = this.insertMux(leftNullId, rightId.value, or, JITBoolType.INSTANCE, expression.toString());
+                // (a||b).is_null = a.is_null ? cond1 : cond2
+                JITInstructionRef isNull = this.insertMux(leftNullId, cond1, cond2, JITBoolType.INSTANCE,
                         expression.is_null().toString());
                 this.map(expression, new JITInstructionPair(value, isNull));
             }
@@ -1055,7 +1051,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                     // result = left.is_null ? false : !left.value
                     // ! left.value
                     JITInstructionRef ni = this.insertUnary(
-                        JITUnaryInstruction.Operation.NOT, source.value, convertScalarType(expression.source));
+                        JITUnaryInstruction.Operation.NOT, source.value, convertScalarType(expression.source),
+                            "a.is_false -> !a");
                     // result
                     JITInstructionRef value = this.insertMux(
                             source.isNull, False, ni, JITBoolType.INSTANCE, expression.toString());
@@ -1083,7 +1080,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                     // result = left.is_null ? true : !left.value
                     // ! left.value
                     JITInstructionRef ni = this.insertUnary(
-                        JITUnaryInstruction.Operation.NOT, source.value, convertScalarType(expression.source));
+                        JITUnaryInstruction.Operation.NOT, source.value, convertScalarType(expression.source),
+                            "is_not_true(a) -> !a");
                     JITInstructionRef True = this.constantBool(true);
                     // result
                     JITInstructionRef value = this.insertMux(
@@ -1113,7 +1111,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                     throw new InternalCompilerError("indicator called on non-nullable expression", expression);
                 // indicator(v) = v.is_null() ? 0 : 1, i.e., !v.is_null().
                 JITInstructionRef not = this.insertUnary(
-                        JITUnaryInstruction.Operation.NOT, source.isNull, JITBoolType.INSTANCE);
+                        JITUnaryInstruction.Operation.NOT, source.isNull, JITBoolType.INSTANCE,
+                        "indicator(a) -> !a.is_null");
                 JITInstructionRef value = this.insertCast(
                     not, JITBoolType.INSTANCE, JITI64Type.INSTANCE, "");
                 this.map(expression, new JITInstructionPair(value));
@@ -1122,7 +1121,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             default:
                 throw new UnimplementedException(expression);
         }
-        JITInstructionRef value = this.insertUnary(kind, source.value, convertScalarType(expression.source));
+        JITInstructionRef value = this.insertUnary(kind, source.value, convertScalarType(expression.source),
+                expression.toString());
         JITInstructionRef isNull = JITInstructionRef.INVALID;
         if (source.hasNull())
             isNull = source.isNull;
@@ -1189,11 +1189,11 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPFieldExpression expression) {
-        JITInstruction isNull = null;
+        JITInstructionRef isNull = JITInstructionRef.INVALID;
         JITInstructionPair sourceId = this.accept(expression.expression);
         JITRowType sourceType = this.typeCatalog.convertTupleType(
                 expression.expression.getType(), this.jitVisitor);
-        JITInstruction load = this.add(new JITLoadInstruction(
+        JITInstructionRef load = this.add(new JITLoadInstruction(
                 this.nextInstructionId(), sourceId.value, sourceType,
                 expression.fieldNo, convertScalarType(expression), expression.toString()));
         if (needsNull(expression)) {
@@ -1223,7 +1223,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         if (type.isScalarType()) {
             JITScalarType scalarType = type.to(JITScalarType.class);
             if (!needsNull(expression)) {
-                JITInstruction copy = this.add(new JITCopyInstruction(this.nextInstructionId(), source.value, scalarType));
+                JITInstructionRef copy = this.add(new JITCopyInstruction(this.nextInstructionId(), source.value, scalarType));
                 this.map(expression, new JITInstructionPair(copy));
                 return VisitDecision.STOP;
             } else {
@@ -1235,17 +1235,17 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
                 this.getCurrentBlock().terminate(branch);
                 this.setCurrentBlock(isNull);
 
-                JITInstruction uninit = this.add(new JITUninitInstruction(
+                JITInstructionRef uninit = this.add(new JITUninitInstruction(
                         this.nextInstructionId(), scalarType, "if (" + expression + ").is_null"));
                 JITBlockDestination nextDestination = next.createDestination();
-                nextDestination.addArgument(uninit.getInstructionReference());
+                nextDestination.addArgument(uninit);
                 JITJumpTerminator jump = new JITJumpTerminator(nextDestination);
                 this.getCurrentBlock().terminate(jump);
 
                 this.setCurrentBlock(isNotNull);
-                JITInstruction copy = this.add(new JITCopyInstruction(this.nextInstructionId(), source.value, scalarType));
+                JITInstructionRef copy = this.add(new JITCopyInstruction(this.nextInstructionId(), source.value, scalarType));
                 nextDestination = next.createDestination();
-                nextDestination.addArgument(copy.getInstructionReference());
+                nextDestination.addArgument(copy);
                 jump = new JITJumpTerminator(nextDestination);
                 this.getCurrentBlock().terminate(jump);
 

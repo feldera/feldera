@@ -58,4 +58,13 @@ public class JITIsNullInstruction extends JITInstruction {
                 .append(this.column)
                 .append("]");
     }
+
+    @Override
+    public boolean same(JITInstruction other) {
+        JITIsNullInstruction on = other.as(JITIsNullInstruction.class);
+        if (on == null)
+            return false;
+        return this.target.equals(on.target) &&
+                this.column == on.column;
+    }
 }

@@ -64,4 +64,14 @@ public class JITCastInstruction extends JITInstruction {
                 .append(" as ")
                 .append(this.destinationType);
     }
+
+    @Override
+    public boolean same(JITInstruction other) {
+        JITCastInstruction oc = other.as(JITCastInstruction.class);
+        if (oc == null)
+            return false;
+        return this.operand.equals(oc.operand) &&
+                this.sourceType.sameType(oc.sourceType) &&
+                this.destinationType.sameType(oc.destinationType);
+    }
 }

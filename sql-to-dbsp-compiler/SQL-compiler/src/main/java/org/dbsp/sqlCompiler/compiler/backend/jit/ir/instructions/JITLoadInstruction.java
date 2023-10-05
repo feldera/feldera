@@ -69,4 +69,14 @@ public class JITLoadInstruction extends JITInstruction {
                 .append(this.column)
                 .append("]");
     }
+
+    @Override
+    public boolean same(JITInstruction other) {
+        JITLoadInstruction ol = other.as(JITLoadInstruction.class);
+        if (ol == null)
+            return false;
+        return this.source.equals(ol.source) &&
+                this.column == ol.column &&
+                this.sourceType.sameType(ol.sourceType);
+    }
 }

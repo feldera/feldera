@@ -112,18 +112,18 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                 .newline();
 
         IRTransform normalizer = this.normalizer(simpleParameters);
-        function = normalizer.apply(function).to(DBSPClosureExpression.class);
-        function = this.tupleEachParameter(function);
+        final DBSPClosureExpression function0 = normalizer.apply(function).to(DBSPClosureExpression.class);
+        final DBSPClosureExpression function1 = this.tupleEachParameter(function0);
 
         Logger.INSTANCE.belowLevel(this, 4)
                 .append("Converting function to JIT")
                 .newline()
-                .append(function.toString())
+                .append(function1.toString())
                 .newline();
-        DBSPType resultType = function.getResultType();
+        DBSPType resultType = function1.getResultType();
         JITParameterMapping mapping = new JITParameterMapping(this.getTypeCatalog());
 
-        for (DBSPParameter param: function.parameters)
+        for (DBSPParameter param: function1.parameters)
             mapping.addParameter(param, JITParameter.Direction.IN, this);
 
         // If the result type is a scalar, it is marked as a result type.
@@ -131,7 +131,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
         JITScalarType returnType = mapping.addReturn(resultType, this);
 
         List<JITBlock> blocks = ToJitInnerVisitor.convertClosure(
-                this.errorReporter, this, mapping, function, this.getTypeCatalog());
+                this.errorReporter, this, mapping, function1, this.getTypeCatalog());
         JITFunction result = new JITFunction(mapping.parameters, blocks, returnType);
         Logger.INSTANCE.belowLevel(this, 4)
                 .append(result.toAssembly())

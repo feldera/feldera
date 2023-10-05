@@ -213,12 +213,12 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
 
         List<DBSPStatement> body = new ArrayList<>();
         List<DBSPExpression> tmps = new ArrayList<>();
+        int start = 0;
         for (int i = 0; i < closures.length; i++) {
             DBSPClosureExpression closure = closures[i];
             String tmp = "tmp" + i;
             DBSPExpression[] args = new DBSPExpression[closure.parameters.length];
             for (int j = 0; j < args.length; j++) {
-                int start = 0;
                 DBSPType paramType = closure.parameters[j].getType();
                 if (paramType.is(DBSPTypeRef.class))
                     paramType = paramType.to(DBSPTypeRef.class).type;
@@ -226,12 +226,13 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                     DBSPTypeTupleBase tuple = paramType.to(DBSPTypeTupleBase.class);
                     DBSPExpression[] argFields = new DBSPExpression[tuple.size()];
                     for (int k = 0; k < tuple.size(); k++) {
-                        argFields[k] = resultParams[j].field(i + start);
+                        argFields[k] = resultParams[j].field(start);
                         start++;
                     }
                     args[j] = tuple.makeTuple(argFields);
                 } else {
-                    args[j] = resultParams[j].field(i + start);
+                    args[j] = resultParams[j].field(start);
+                    start++;
                 }
             }
             DBSPExpression init = closure.call(args);

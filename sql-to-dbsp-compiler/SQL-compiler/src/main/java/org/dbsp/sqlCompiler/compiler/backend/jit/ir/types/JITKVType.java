@@ -55,6 +55,15 @@ public class JITKVType extends JITType implements IJitKvOrRowType {
     }
 
     @Override
+    public boolean sameType(JITType other) {
+        JITKVType ok = other.as(JITKVType.class);
+        if (ok == null)
+            return false;
+        return this.key.sameType(ok.key) &&
+                this.value.sameType(ok.value);
+    }
+
+    @Override
     public void addDescriptionTo(ObjectNode parent, String label) {
         ObjectNode map = parent.putObject(label);
         ArrayNode array = map.putArray("Map");

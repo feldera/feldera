@@ -48,6 +48,11 @@ public class JITScalarType extends JITType {
     }
 
     @Override
+    public boolean sameType(JITType other) {
+        return this.code == other.code;
+    }
+
+    @Override
     public String toString() {
         if (this.code.jitName.isEmpty())
             throw new UnimplementedException("Type " + Utilities.singleQuote(this.code.toString()) +

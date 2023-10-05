@@ -597,7 +597,7 @@ public class CalciteCompiler implements IWritesLogs {
         return result;
     }
 
-    List<RelColumnMetadata> createColumnsMetadata(SqlNodeList list) {
+    List<RelColumnMetadata> createTableColumnsMetadata(SqlNodeList list) {
         List<RelColumnMetadata> result = new ArrayList<>();
         int index = 0;
         Map<String, SqlNode> columnDefinition = new HashMap<>();
@@ -712,18 +712,24 @@ public class CalciteCompiler implements IWritesLogs {
     }
 
     public List<RelColumnMetadata> createColumnsMetadata(
-            CalciteObject node, RelRoot relRoot, @Nullable SqlNodeList columnNames) {
+            CalciteObject node, SqlIdentifier objectName, boolean view, RelRoot relRoot, @Nullable SqlNodeList columnNames) {
         List<RelColumnMetadata> columns = new ArrayList<>();
         RelDataType rowType = relRoot.rel.getRowType();
         if (columnNames != null && columnNames.size() != relRoot.fields.size()) {
-            throw new CompilationError(
-                    "View specifies " + columnNames.size() + " columns " +
-                            " but query computes " + relRoot.fields.size() + " columns", node);
+            this.errorReporter.reportError(
+                    new SourcePositionRange(objectName.getParserPosition()), false,
+                    "Column count mismatch",
+                    (view ? "View " : " Table ") + objectName.getSimple() +
+                            " specifies " + columnNames.size() + " columns " +
+                            " but query computes " + relRoot.fields.size() + " columns");
+            return columns;
         }
         int index = 0;
+        Map<String, RelDataTypeField> colByName = new HashMap<>();
+        List<RelDataTypeField> fieldList = rowType.getFieldList();
         for (Pair<Integer, String> fieldPairs : relRoot.fields) {
-            String name = fieldPairs.right;
-            RelDataTypeField field = rowType.getField(name, false, false);
+            String specifiedName = fieldPairs.right;
+            RelDataTypeField field = fieldList.get(index);
             Objects.requireNonNull(field);
             boolean nameIsQuoted = false;
             if (columnNames != null) {
@@ -731,6 +737,27 @@ public class CalciteCompiler implements IWritesLogs {
                 String columnName = id.getSimple();
                 nameIsQuoted = Utilities.identifierIsQuoted(id);
                 field = new RelDataTypeFieldImpl(columnName, field.getIndex(), field.getType());
+            }
+
+            if (specifiedName != null) {
+                if (colByName.containsKey(specifiedName)) {
+                    if (!this.options.ioOptions.lenient) {
+                        this.errorReporter.reportError(
+                                new SourcePositionRange(objectName.getParserPosition()), false,
+                                "Duplicate column",
+                                (view ? "View " : "Table ") + objectName.getSimple() +
+                                        " contains two columns with the same name " + Utilities.singleQuote(specifiedName) + "\n" +
+                                        "You can allow this behavior using the --lenient compiler flag");
+                    } else {
+                        this.errorReporter.reportError(
+                                new SourcePositionRange(objectName.getParserPosition()), true,
+                                "Duplicate column",
+                                (view ? "View " : "Table ") + objectName.getSimple() +
+                                        " contains two columns with the same name " + Utilities.singleQuote(specifiedName) + "\n" +
+                                        "Some columns will be renamed in the produced output.");
+                    }
+                }
+                colByName.put(specifiedName, field);
             }
             RelColumnMetadata meta = new RelColumnMetadata(
                     field, false, nameIsQuoted, null, null);
@@ -768,7 +795,7 @@ public class CalciteCompiler implements IWritesLogs {
                 String tableName = Catalog.identifierToString(ct.name);
                 List<RelColumnMetadata> cols;
                 if (ct.columnList != null) {
-                    cols = this.createColumnsMetadata(Objects.requireNonNull(ct.columnList));
+                    cols = this.createTableColumnsMetadata(Objects.requireNonNull(ct.columnList));
                 } else {
                     if (ct.query == null)
                         throw new UnsupportedException("CREATE TABLE cannot contain a query",
@@ -778,7 +805,7 @@ public class CalciteCompiler implements IWritesLogs {
                             .newline();
                     RelRoot relRoot = this.converter.convertQuery(ct.query, true, true);
                     cols = this.createColumnsMetadata(
-                            new CalciteObject(ct), relRoot, null);
+                            new CalciteObject(ct), ct.name, false, relRoot, null);
                 }
                 CreateTableStatement table = new CreateTableStatement(node, sqlStatement, tableName, comment, cols);
                 this.catalog.addTable(tableName, table.getEmulatedTable());
@@ -800,7 +827,7 @@ public class CalciteCompiler implements IWritesLogs {
                         .newline();
                 RelRoot relRoot = this.converter.convertQuery(query, true, true);
                 List<RelColumnMetadata> columns = this.createColumnsMetadata(
-                        new CalciteObject(cv), relRoot, cv.columnList);
+                        new CalciteObject(cv), cv.name, true, relRoot, cv.columnList);
                 RelNode optimized = this.optimize(relRoot.rel);
                 relRoot = relRoot.withRel(optimized);
                 String viewName = Catalog.identifierToString(cv.name);

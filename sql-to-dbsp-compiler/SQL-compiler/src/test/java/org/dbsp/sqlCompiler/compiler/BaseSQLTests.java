@@ -135,6 +135,12 @@ public class BaseSQLTests {
     protected void addRustTestCase(String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {
         compiler.messages.show(System.err);
         compiler.messages.clear();
+        if (this.currentTestInformation.startsWith("Jit") &&
+            !compiler.options.ioOptions.jit) {
+            // Got confused on setting options a few times, this will help catch such mistakes
+            throw new RuntimeException("JIT test " + this.currentTestInformation +
+                    " without JIT compiler option?" + compiler.options);
+        }
         TestCase test = new TestCase(name, this.currentTestInformation, compiler, circuit, streams);
         testsToRun.add(test);
     }

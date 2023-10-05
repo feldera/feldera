@@ -662,6 +662,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 CompilerOptions compilerOptions = new CompilerOptions();
                 compilerOptions.optimizerOptions.incrementalize = incremental.get();
                 compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
+                compilerOptions.ioOptions.lenient = true;
                 DBSPExecutor result = new DBSPExecutor(options, compilerOptions, "csv");
                 Set<String> bugs = options.readBugsFile();
                 result.avoid(bugs);

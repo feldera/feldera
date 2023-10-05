@@ -472,7 +472,7 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void joinTest() {
-        String query = "SELECT T1.COL3, T2.COL3 FROM T AS T1 JOIN T AS T2 ON T1.COL1 = T2.COL1";
+        String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 JOIN T AS T2 ON T1.COL1 = T2.COL1";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(new DBSPBoolLiteral(false), new DBSPBoolLiteral(false)),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false), new DBSPBoolLiteral(true)),
@@ -482,7 +482,7 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void joinNullableTest() {
-        String query = "SELECT T1.COL3, T2.COL3 FROM T AS T1 JOIN T AS T2 ON T1.COL1 = T2.COL5";
+        String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 JOIN T AS T2 ON T1.COL1 = T2.COL5";
         this.testQuery(query, empty);
     }
 
@@ -511,7 +511,7 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void leftOuterJoinTest() {
-        String query = "SELECT T1.COL3, T2.COL3 FROM T AS T1 LEFT JOIN T AS T2 ON T1.COL1 = T2.COL5";
+        String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 LEFT JOIN T AS T2 ON T1.COL1 = T2.COL5";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(new DBSPBoolLiteral(false), new DBSPBoolLiteral()),
                 new DBSPTupleExpression(new DBSPBoolLiteral(true), new DBSPBoolLiteral())
@@ -520,7 +520,7 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void rightOuterJoinTest() {
-        String query = "SELECT T1.COL3, T2.COL3 FROM T AS T1 RIGHT JOIN T AS T2 ON T1.COL1 = T2.COL5";
+        String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 RIGHT JOIN T AS T2 ON T1.COL1 = T2.COL5";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(new DBSPBoolLiteral(), new DBSPBoolLiteral(false)),
                 new DBSPTupleExpression(new DBSPBoolLiteral(), new DBSPBoolLiteral(true))
@@ -529,7 +529,7 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void fullOuterJoinTest() {
-        String query = "SELECT T1.COL3, T2.COL3 FROM T AS T1 FULL OUTER JOIN T AS T2 ON T1.COL1 = T2.COL5";
+        String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 FULL OUTER JOIN T AS T2 ON T1.COL1 = T2.COL5";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(new DBSPBoolLiteral(false, true), new DBSPBoolLiteral()),
                 new DBSPTupleExpression(new DBSPBoolLiteral(true, true), new DBSPBoolLiteral()),

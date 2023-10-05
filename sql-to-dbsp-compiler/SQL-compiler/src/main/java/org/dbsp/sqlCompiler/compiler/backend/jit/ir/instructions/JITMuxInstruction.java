@@ -68,4 +68,14 @@ public class JITMuxInstruction extends JITInstruction {
                 .append(" : ")
                 .append(this.right);
     }
+
+    @Override
+    public boolean same(JITInstruction other) {
+        JITMuxInstruction oc = other.as(JITMuxInstruction.class);
+        if (oc == null)
+            return false;
+        return this.condition.equals(oc.condition) &&
+                this.left.equals(oc.left) &&
+                this.right.equals(oc.right);
+    }
 }

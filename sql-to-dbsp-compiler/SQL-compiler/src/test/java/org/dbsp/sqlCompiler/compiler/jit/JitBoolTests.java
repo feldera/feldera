@@ -1,12 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.jit;
 
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.postgres.PostgresNumericTests;
-import org.junit.Ignore;
+import org.dbsp.sqlCompiler.compiler.postgres.PostgresBoolTests;
 
-@Ignore("Not yet implemented")
-public class JitPostgresNumericTests extends PostgresNumericTests {
+public class JitBoolTests extends PostgresBoolTests {
     @Override
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = super.getOptions(optimize);

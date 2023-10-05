@@ -43,4 +43,9 @@ public abstract class JITType extends JITNode {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.toString());
     }
+
+    /**
+     * True if these two types are equivalent: same fields, same types.
+     */
+    public abstract boolean sameType(JITType other);
 }

@@ -70,4 +70,10 @@ public class JITSetNullInstruction extends JITInstruction {
                 .append("]=")
                 .append(this.source);
     }
+
+    @Override
+    public boolean same(JITInstruction other) {
+        // Two instructions that setnull are never considered to be equivalent.
+        return false;
+    }
 }

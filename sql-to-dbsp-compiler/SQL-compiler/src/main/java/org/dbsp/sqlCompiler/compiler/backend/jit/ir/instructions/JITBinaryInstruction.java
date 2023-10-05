@@ -65,7 +65,6 @@ public class JITBinaryInstruction extends JITInstruction {
     public final JITInstructionRef right;
     public final JITType type;
 
-
     public JITBinaryInstruction(long id, Operation operation,
                                 JITInstructionRef left,
                                 JITInstructionRef right,
@@ -103,5 +102,15 @@ public class JITBinaryInstruction extends JITInstruction {
                 .append(this.operation.text)
                 .append(" ")
                 .append(this.right);
+    }
+
+    @Override
+    public boolean same(JITInstruction other) {
+        JITBinaryInstruction ob = other.as(JITBinaryInstruction.class);
+        if (ob == null)
+            return false;
+        return this.left.equals(ob.left) &&
+                this.right.equals(ob.right) &&
+                this.operation.equals(ob.operation);
     }
 }
