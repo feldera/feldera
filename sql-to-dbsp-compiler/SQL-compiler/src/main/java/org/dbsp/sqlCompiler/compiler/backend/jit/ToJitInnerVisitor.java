@@ -1292,12 +1292,10 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
 
         this.setCurrentBlock(next);
         JITType type = this.convertType(expression.getType());
-        JITInstructionRef paramValue = new JITInstructionRef(this.nextInstructionId());
+        JITInstructionRef paramValue = this.addParameter(next, type);
         JITInstructionRef isNull = JITInstructionRef.INVALID;
-        this.addParameter(next, type);
-        if (nullable) {
-            this.addParameter(next, JITBoolType.INSTANCE);
-        }
+        if (nullable)
+            isNull = this.addParameter(next, JITBoolType.INSTANCE);
         this.setCurrentBlock(next);
         this.map(expression, new JITInstructionPair(paramValue, isNull));
         return VisitDecision.STOP;

@@ -44,6 +44,7 @@ public class Main {
     @SuppressWarnings("SpellCheckingInspection")
     public static void main(String[] argv) throws IOException {
         List<String> files = Linq.list(
+                "test/random/select/slt_good_58.test"
                 /*
                 "select1.test"
                 "select2.test",
@@ -68,10 +69,8 @@ public class Main {
         );
 
         String[] args = {
-                "-v", "-v", "-x",
-                "-e",
-                //"jit",      // executor
-                "hybrid",     // executor
+                "-v", "-x",
+                "-e", "jit",      // executor
         };
         if (argv.length > 0) {
             args = argv;

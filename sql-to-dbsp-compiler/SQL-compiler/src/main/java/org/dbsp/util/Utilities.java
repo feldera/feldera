@@ -29,6 +29,7 @@ import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
 
+import javax.annotation.Nullable;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -80,7 +81,7 @@ public class Utilities {
     /**
      * Just adds single quotes around a string.  No escaping is performed.
      */
-     public static String singleQuote(String other) {
+     public static String singleQuote(@Nullable String other) {
          return "'" + other + "'";
      }
 

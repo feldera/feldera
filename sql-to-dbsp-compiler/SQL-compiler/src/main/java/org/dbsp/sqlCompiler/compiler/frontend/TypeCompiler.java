@@ -32,11 +32,10 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.util.FreshName;
 import org.dbsp.util.NameGen;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 public class TypeCompiler implements ICompilerComponent {
     final DBSPCompiler compiler;
@@ -63,17 +62,23 @@ public class TypeCompiler implements ICompilerComponent {
         if (dt.isStruct()) {
             if (asStruct) {
                 List<DBSPTypeStruct.Field> fields = new ArrayList<>();
+                FreshName fieldNameGen = new FreshName(new HashSet<>());
                 for (RelDataTypeField field : dt.getFieldList()) {
-                    DBSPType type = this.convertType(field.getType(), asStruct);
+                    DBSPType type = this.convertType(field.getType(), true);
+                    String fieldName = field.getName();
+                    if (this.getCompiler().options.ioOptions.lenient)
+                        // If we are not lenient and names are duplicated
+                        // we will get an exception below where we create the struct.
+                        fieldName = fieldNameGen.freshName(fieldName);
                     fields.add(new DBSPTypeStruct.Field(
-                            new CalciteObject(dt), field.getName(), field.getName(), type, false));
+                            new CalciteObject(dt), fieldName, fieldName, type, false));
                 }
                 String name = structNameGen.nextName();
                 return new DBSPTypeStruct(node, name, name, fields);
             } else {
                 List<DBSPType> fields = new ArrayList<>();
                 for (RelDataTypeField field : dt.getFieldList()) {
-                    DBSPType type = this.convertType(field.getType(), asStruct);
+                    DBSPType type = this.convertType(field.getType(), false);
                     fields.add(type);
                 }
                 return new DBSPTypeTuple(node, fields);
@@ -122,6 +127,7 @@ public class TypeCompiler implements ICompilerComponent {
                 case VARCHAR: {
                     int precision = dt.getPrecision();
                     if (precision == RelDataType.PRECISION_NOT_SPECIFIED)
+                        //noinspection ReassignedVariable,DataFlowIssue
                         precision = DBSPTypeString.UNLIMITED_PRECISION;
                     return new DBSPTypeString(node, precision, tn.equals(SqlTypeName.CHAR), nullable);
                 }

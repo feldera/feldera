@@ -1983,7 +1983,7 @@ impl<'a> CodegenCtx<'a> {
     fn unary_op(&mut self, expr_id: ExprId, unary: &UnaryOp, builder: &mut FunctionBuilder<'_>) {
         let (value, value_ty) = {
             let value_id = unary.value();
-            let value = self.exprs[&value_id];
+            let value = self.value(value_id);
             let value_ty = self.expr_types[&value_id];
             debug_assert!(
                 (unary.kind() == UnaryOpKind::StringLen || !value_ty.is_string())
