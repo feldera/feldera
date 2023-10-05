@@ -8,8 +8,6 @@ RUN apt update --fix-missing && apt install \
   libssl-dev pkg-config \
   # rdkafka dependency needs cmake and a CXX compiler
   cmake build-essential \
-  # rdkafka dependency needs libsasl \
-  libsasl2-dev \
   # To install rust
   curl  \
   # For running the SQL compiler
@@ -88,10 +86,9 @@ ENV BANNER_ADDR localhost
 ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
 
 # Standalone api-server
-FROM ubuntu:22.04 as api-server
+FROM gcr.io/distroless/cc-debian12 AS api-server
 COPY --from=builder /app/target/release/api-server api-server
 ENV BANNER_ADDR localhost
-RUN apt update && apt install libsasl2-dev -y
 ENTRYPOINT ["./api-server", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir"]
 
 # Standalone compiler-server
@@ -116,8 +113,7 @@ RUN ./compiler-server --compiler-working-directory=/working-dir --sql-compiler-h
 ENTRYPOINT ["./compiler-server", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
 
 # Standalone local-runner
-FROM ubuntu:22.04 as local-runner
-RUN apt update && apt install libsasl2-dev -y
+FROM gcr.io/distroless/cc-debian12 AS local-runner
 COPY --from=builder /app/target/release/local-runner local-runner
 ENTRYPOINT ["./local-runner", "--runner-working-directory=/working-dir"]
 
