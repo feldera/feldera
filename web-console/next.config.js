@@ -4,13 +4,12 @@ const path = require('path')
 /** @type {import("next").NextConfig} */
 module.exports = {
   output: 'export', // https://nextjs.org/docs/app/building-your-application/deploying/static-exports
-  distDir: 'out', // Optional, default: `out`
+  distDir: process.env.BUILD_DIR || 'out',
   trailingSlash: true,
   reactStrictMode: true,
-  compiler: {
-  },
+  compiler: {},
   images: { unoptimized: true },
   experimental: {
-    esmExternals: false,
-  },
+    esmExternals: false
+  }
 }

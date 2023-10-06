@@ -5,6 +5,7 @@
 /.next/
 /out/
 /build
+/pipeline-manager-*
 
 # misc
 .DS_Store
