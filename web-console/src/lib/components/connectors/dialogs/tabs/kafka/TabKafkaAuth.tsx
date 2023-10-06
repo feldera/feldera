@@ -1,6 +1,13 @@
 import { GridItems } from '$lib/components/common/GridItems'
 import { KafkaAuthSchema } from '$lib/functions/kafka/authParamsSchema'
-import { PasswordElement, SelectElement, SwitchElement, TextFieldElement, useFormContext } from 'react-hook-form-mui'
+import {
+  PasswordElement,
+  SelectElement,
+  SwitchElement,
+  TextareaAutosizeElement,
+  TextFieldElement,
+  useFormContext
+} from 'react-hook-form-mui'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 
@@ -166,25 +173,27 @@ const sslForm = (
     <GridItems xs={12}>
       <Tooltip title="Client's private key string (PEM format) used for authentication.">
         <div>
-          <TextFieldElement
+          <TextareaAutosizeElement
             name='ssl_key_pem'
             label='ssl.key.pem'
             size='small'
             placeholder=''
             aria-describedby='validation-host'
             fullWidth
+            resizeStyle='vertical'
           />
         </div>
       </Tooltip>
       <Tooltip title="Client's public key string (PEM format) used for authentication.">
         <div>
-          <TextFieldElement
+          <TextareaAutosizeElement
             name='ssl_certificate_pem'
             label='ssl.certificate.pem'
             size='small'
             placeholder=''
             aria-describedby='validation-host'
             fullWidth
+            resizeStyle='vertical'
           />
         </div>
       </Tooltip>
@@ -195,13 +204,14 @@ const sslForm = (
       </Tooltip>
       <Tooltip title="CA certificate string (PEM format) for verifying the broker's key.">
         <div>
-          <TextFieldElement
+          <TextareaAutosizeElement
             name='ssl_ca_pem'
             label='ssl.ca.pem'
             size='small'
             placeholder=''
             aria-describedby='validation-host'
             fullWidth
+            resizeStyle='vertical'
           />
         </div>
       </Tooltip>
