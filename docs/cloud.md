@@ -67,9 +67,10 @@ To create an EKS cluster with this configuration, run:
 eksctl create cluster -f eks-config.yaml
 ```
 
-This uses CloudFormation behind-the-scenes to to bring up an EKS cluster named
-`feldera-eks` with three worker nodes, running in a newly created dedicated
-VPC. It should take roughly 15-20 minutes.
+This uses CloudFormation behind-the-scenes to bring up an EKS cluster named
+`feldera-eks` with three worker nodes (m5.large EC2 instances, specified in
+managedNodeGroups), running in a newly created dedicated VPC. It should take
+roughly 15-20 minutes.
 
 `eksctl` will create the VPC in the `us-west-1` region which will run the EKS
 cluster. The cluster will be deployed across two availability zones (AZs). Each
