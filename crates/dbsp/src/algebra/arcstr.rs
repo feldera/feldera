@@ -1,6 +1,7 @@
 use std::{
+    borrow::Borrow,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
-    ops::Deref, borrow::Borrow,
+    ops::Deref,
 };
 
 use arcstr::ArcStr as Inner;

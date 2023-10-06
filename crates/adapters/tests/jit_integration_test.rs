@@ -1,7 +1,7 @@
 //! Integration tests for JIT-compiled circuits.
 //!
-//! Test cases in this module run the SQL compiler to generate program IR + schema,
-//! start a pipeline server using this IR and feed some test data to it.
+//! Test cases in this module run the SQL compiler to generate program IR +
+//! schema, start a pipeline server using this IR and feed some test data to it.
 
 use reqwest::{blocking::Client, StatusCode};
 use serial_test::serial;

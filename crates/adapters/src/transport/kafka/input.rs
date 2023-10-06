@@ -162,22 +162,25 @@ impl KafkaInputConfig {
     fn validate(&mut self) -> AnyResult<()> {
         self.set_option_if_missing("bootstrap.servers", &default_redpanda_server());
 
-        // These options will prevent librdkafka from automatically committing offsets of consumed
-        // messages to the broker, meaning that next time the connector is instantiated it will
-        // start reading from the offset specified in `auto.offset.reset`.  We used to set these to
+        // These options will prevent librdkafka from automatically committing offsets
+        // of consumed messages to the broker, meaning that next time the
+        // connector is instantiated it will start reading from the offset
+        // specified in `auto.offset.reset`.  We used to set these to
         // `true`, which caused `rdkafka` to hang in some circumstances
         // (https://github.com/confluentinc/librdkafka/issues/3954).  Besides, the new behavior
-        // is probably more correct given that circuit state currently does not survive across
-        // pipeline restarts, so it makes sense to start feeding messages from the start rather
-        // than from the last offset consumed by the previous instance of the pipeline, whose state
-        // is lost.  Once we add fault tolerance, we will likely use explicit commits,
-        // which also do not require these options.
+        // is probably more correct given that circuit state currently does not survive
+        // across pipeline restarts, so it makes sense to start feeding messages
+        // from the start rather than from the last offset consumed by the
+        // previous instance of the pipeline, whose state is lost.  Once we add
+        // fault tolerance, we will likely use explicit commits, which also do
+        // not require these options.
         //
         // See https://docs.confluent.io/platform/current/clients/consumer.html#offset-management
         //
-        // Note: we allow the user to override the options, so they can still enable auto commit
-        // if they know what they are doing, e.g., the secops demo requires the pipeline to commit
-        // its offset for the generator to know when to resume sending.
+        // Note: we allow the user to override the options, so they can still enable
+        // auto commit if they know what they are doing, e.g., the secops demo
+        // requires the pipeline to commit its offset for the generator to know
+        // when to resume sending.
         self.set_option_if_missing("enable.auto.commit", "false");
         self.set_option_if_missing("enable.auto.offset.store", "false");
 

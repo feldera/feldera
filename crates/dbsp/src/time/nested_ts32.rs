@@ -18,7 +18,7 @@ const EPOCH_MASK: u32 = 0x80000000;
 /// This representation precisely captures the nested clock value, but only
 /// distinguishes the latest parent clock cycle, or "epoch" (higher-order bit
 /// set to `1`) from all previous epochs (higher order bit is `0`).
-/// 
+///
 /// This is useful because, in DBSP, computations inside a nested circuit only
 /// need to distinguish between updates added during the current run of the
 /// nested circuit from those added all previous runs.  Thus, we only need a

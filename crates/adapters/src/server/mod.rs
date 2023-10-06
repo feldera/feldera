@@ -46,11 +46,11 @@ mod prometheus;
 pub use self::error::{ErrorResponse, PipelineError, MAX_REPORTED_PARSE_ERRORS};
 use self::prometheus::PrometheusMetrics;
 
-/// By default actix will start the number of threads equal to the number of cores,
-/// which is an overkill and can lead to file descriptor exhaustion when running
-/// multiple pipelines on systems with >100 cores.  We use a fixed number of
-/// threads instead.  Four should be more than enough, but we can make it
-/// configurable if needed.
+/// By default actix will start the number of threads equal to the number of
+/// cores, which is an overkill and can lead to file descriptor exhaustion when
+/// running multiple pipelines on systems with >100 cores.  We use a fixed
+/// number of threads instead.  Four should be more than enough, but we can make
+/// it configurable if needed.
 static NUM_HTTP_WORKERS: usize = 4;
 
 /// Tracks the health of the pipeline.
@@ -981,7 +981,8 @@ outputs:
             sleep(Duration::from_millis(200));
         }
 
-        // Request quantiles while the table is empty.  This should return an empty quantile.
+        // Request quantiles while the table is empty.  This should return an empty
+        // quantile.
         let mut quantiles_resp1 = server
             .post("/egress/test_output1?mode=snapshot&query=quantiles")
             .send()

@@ -310,7 +310,7 @@ where
 }
 
 /// A [`BatchReader`] plus features for constructing new batches.
-/// 
+///
 /// [`Batch`] extends [`BatchReader`] with types for constructing new batches
 /// from ordered tuples ([`Self::Builder`]) or unordered tuples
 /// ([`Self::Batcher`]), or by merging traces of like types ([`Self::Merger`]),

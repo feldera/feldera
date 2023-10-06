@@ -319,7 +319,8 @@ impl Encoder for CsvEncoder {
                     if overflow {
                         buffer.truncate(prev_len);
                     }
-                    // println!("push_buffer {}", buffer.len() /*std::str::from_utf8(&buffer).unwrap()*/);
+                    // println!("push_buffer {}", buffer.len()
+                    // /*std::str::from_utf8(&buffer).unwrap()*/);
                     self.output_consumer.push_buffer(&buffer);
                     buffer.clear();
                     num_records = 0;
