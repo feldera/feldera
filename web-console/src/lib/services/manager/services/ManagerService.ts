@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { Provider } from '../models/Provider'
+import type { AuthProvider } from '../models/AuthProvider'
 
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
@@ -12,13 +12,13 @@ export class ManagerService {
   /**
    * Get authentication provider configuration
    * Get authentication provider configuration
-   * @returns Provider The response body contains Authentication Provider configuration.
+   * @returns AuthProvider The response body contains Authentication Provider configuration, or is empty if no auth is configured.
    * @throws ApiError
    */
-  public static getAuthenticationConfig(): CancelablePromise<Provider> {
+  public static getAuthenticationConfig(): CancelablePromise<AuthProvider> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/config/authentication',
+      url: '/../config/authentication',
       errors: {
         500: `Request failed.`
       }

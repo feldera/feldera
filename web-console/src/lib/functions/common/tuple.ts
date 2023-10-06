@@ -27,7 +27,7 @@ export function tuples<T extends unknown[]>(...t: [...T][]) {
  * Zip lists together.
  * @see https://stackoverflow.com/a/70192772
  * @example
- * console.log( zip([1,2,3], ["a","b","c","d"]) ) => [[1, "a"], [2, "b"], [3, "c"], [undefined, "d"]]
+ * zip([1,2,3], ["a","b","c","d"]) // [[1, "a"], [2, "b"], [3, "c"], [undefined, "d"]]
  * @param arr Arrays to zip
  * @returns
  */

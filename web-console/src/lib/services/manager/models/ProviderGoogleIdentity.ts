@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 
-/**
- * Empty object response.
- */
-export type EmptyObjectResponse = Record<string, any>
+export type ProviderGoogleIdentity = {
+  client_id: string
+  jwk_uri: string
+}

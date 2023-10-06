@@ -5,7 +5,6 @@
 
 export type ProviderAwsCognito = {
   jwk_uri: string
-  region: string
-  user_pool_id: string
-  user_pool_web_client_id: string
+  login_url: string
+  logout_url: string
 }

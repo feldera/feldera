@@ -22,7 +22,7 @@ Build and start the Pipeline Manager (that also serves the Feldera Web Console):
 ```bash
 RUST_LOG=info RUST_BACKTRACE=1 cargo run --bin pipeline-manager --features pg-embed -- --api-server-working-directory ~/.dbsp -d postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.dbsp --runner-working-directory ~/.dbsp
 ```
-
+RUST_LOG=info RUST_BACKTRACE=1 AUTH_CLIENT_ID=44jttbufih62p9hh999f3irjkm AUTH_ISSUER="https://cognito-idp.us-east-1.amazonaws.com/us-east-1_gkyurqf2T" AWS_COGNITO_REGION="us-east-1" AWS_COGNITO_USER_POOL_ID="us-east-1_gkyurqf2T" cargo run --bin pipeline-manager --features pg-embed -- --api-server-working-directory ~/.dbsp -d postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.dbsp --runner-working-directory ~/.dbsp --auth-provider=aws-cognito
 
 > Here, `~/.dbsp` is the directory that will host compilation artifacts of SQL Compiler that Pipeline Manager will then use. It will be created if it doesn't exist, and you can use another name for it - just replace corresponding arguments in the above command.
 
@@ -40,18 +40,11 @@ The Web Console in dev mode is available at http://localhost:3000/
 
 Now you can proceed with the [demo](#manually-starting-the-demos).
 #### Authenticated mode
-In Authenticated mode you need to login via AWS Cognito, and Pipeline Manager will requre Bearer auth token.
-To enable authenticated mode, add the following variables to your `web-console/.env.local`, substituting `...` :
-```bash
-NEXT_PUBLIC_AWS_AMPLIFY_REGION=...
-NEXT_PUBLIC_AWS_AMPLIFY_USER_POOL_ID=...
-NEXT_PUBLIC_AWS_AMPLIFY_USER_POOL_WEB_CLIENT_ID=...
-NEXT_PUBLIC_WEB_CONSOLE_TEST_AUTH=true
-```
+In Authenticated mode you need to login in the Web Console via one of the supported OAuth providers (e.g. AWS Cognito), and Pipeline Manager will require Bearer authorization header for protected requests.
 
 Start Pipeline Manager in authenticated mode:
 ```bash
-RUST_LOG=info RUST_BACKTRACE=1 AUTH_CLIENT_ID=... AUTH_ISSUER=... cargo run --bin pipeline-manager --features pg-embed -- > --api-server-working-directory ~/.dbsp -d postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./> sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.dbsp --runner-working-directory ~/.dbsp > --use-auth=true
+RUST_LOG=info RUST_BACKTRACE=1 AUTH_CLIENT_ID=... AUTH_ISSUER=... AWS_COGNITO_REGION=... AWS_COGNITO_USER_POOL_ID=... cargo run --bin pipeline-manager --features pg-embed -- --api-server-working-directory ~/.dbsp -d postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.dbsp --runner-working-directory ~/.dbsp --auth-provider=aws-cognito
 ```
 
 ## Develop on your machine

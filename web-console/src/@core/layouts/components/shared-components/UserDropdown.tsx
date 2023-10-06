@@ -1,8 +1,11 @@
+'use client'
+
+import { AuthData, useAuth } from '$lib/compositions/auth/useAuth'
 import AccountOutline from 'mdi-material-ui/AccountOutline'
 import CogOutline from 'mdi-material-ui/CogOutline'
 import LogoutVariant from 'mdi-material-ui/LogoutVariant'
-import { useRouter } from 'next/navigation'
 import { Fragment, SyntheticEvent, useState } from 'react'
+import invariant from 'tiny-invariant'
 
 import Avatar from '@mui/material/Avatar'
 import Badge from '@mui/material/Badge'
@@ -21,18 +24,16 @@ const BadgeContentSpan = styled('span')(({ theme }) => ({
   boxShadow: `0 0 0 2px ${theme.palette.background.paper}`
 }))
 
-const UserDropdown = () => {
+const UserDropdown = (props: { auth: AuthData }) => {
   const [anchorEl, setAnchorEl] = useState<Element | null>(null)
-  const router = useRouter()
+  const { auth, setAuth } = useAuth()
+  invariant(typeof auth === 'object')
 
   const handleDropdownOpen = (event: SyntheticEvent) => {
     setAnchorEl(event.currentTarget)
   }
 
-  const handleDropdownClose = (url?: string) => {
-    if (url) {
-      router.push(url)
-    }
+  const handleDropdownClose = () => {
     setAnchorEl(null)
   }
 
@@ -79,28 +80,28 @@ const UserDropdown = () => {
               <Avatar alt='John Doe' sx={{ width: '2.5rem', height: '2.5rem' }} />
             </Badge>
             <Box sx={{ display: 'flex', marginLeft: 3, alignItems: 'flex-start', flexDirection: 'column' }}>
-              <Typography sx={{ fontWeight: 600 }}>John Doe</Typography>
+              <Typography sx={{ fontWeight: 600 }}>{auth.user.username}</Typography>
               <Typography variant='body2' sx={{ fontSize: '0.8rem', color: 'text.disabled' }}>
-                Admin
+                user
               </Typography>
             </Box>
           </Box>
         </Box>
         <Divider sx={{ mt: 0, mb: 1 }} />
-        <MenuItem sx={{ p: 0 }} onClick={() => handleDropdownClose()}>
+        <MenuItem sx={{ p: 0 }} onClick={() => handleDropdownClose()} disabled>
           <Box sx={styles}>
             <AccountOutline sx={{ marginRight: 2 }} />
             Profile
           </Box>
         </MenuItem>
-        <MenuItem sx={{ p: 0 }} onClick={() => handleDropdownClose()}>
+        <MenuItem sx={{ p: 0 }} onClick={() => handleDropdownClose()} disabled>
           <Box sx={styles}>
             <CogOutline sx={{ marginRight: 2 }} />
             Settings
           </Box>
         </MenuItem>
         <Divider />
-        <MenuItem sx={{ py: 2 }} onClick={() => handleDropdownClose('/pages/login')}>
+        <MenuItem sx={{ py: 2 }} href={props.auth.signOutUrl} onClick={() => setAuth('Unauthenticated')}>
           <LogoutVariant sx={{ marginRight: 2, fontSize: '1.375rem', color: 'text.secondary' }} />
           Logout
         </MenuItem>

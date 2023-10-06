@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add the ability to authorize access to Pipeline Manager via Web Console
+  through AWS Cognito and Google Identity Platform as authentication providers
+  ([#787](https://github.com/feldera/feldera/issues/787))
 - Added a `--lenient` SQL compiler flag to allow views with multiple
   columns with the same name.
 - Added a demo based on the "Feldera: The Basics" tutorial.  People who don't

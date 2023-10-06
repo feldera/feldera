@@ -1,19 +1,14 @@
 'use client'
 /** @jsxImportSource @emotion/react */
 
-import '@aws-amplify/ui-react/styles.css'
-
 import StatusSnackBar from '$lib/components/common/errors/StatusSnackBar'
+import { AuthenticationProvider } from '$lib/components/layouts/AuthProvider'
 import { OpenAPI } from '$lib/services/manager'
 import { Next13ProgressBar as NextProgressBar } from 'next13-progressbar'
 import { ReactNode } from 'react'
 import { SettingsConsumer, SettingsProvider } from 'src/@core/context/settingsContext'
 import ThemeComponent from 'src/@core/theme/ThemeComponent'
-import { useAuthentication } from 'src/lib/compositions/useAuth'
-import { awsAmplifyConfig } from 'src/lib/functions/aws/awsExports'
 
-import { Amplify } from '@aws-amplify/core'
-import { Authenticator } from '@aws-amplify/ui-react'
 import { useTheme } from '@mui/material/styles'
 import { LocalizationProvider } from '@mui/x-date-pickers'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
@@ -29,17 +24,13 @@ OpenAPI.BASE =
       // backend server running on port 8080
       // Otherwise the API and UI URL will be the same
       window.location.origin.replace(/:(300[0-9])$/, ':8080')
-    : '') + '/v0'
+    : '') + OpenAPI.BASE
 
 // provide the default query function to your app with defaultOptions
 const queryClient = new QueryClient({})
 
-Amplify.configure(awsAmplifyConfig)
-
 const Layout = (props: { children: ReactNode }) => {
   const theme = useTheme()
-  const auth = useAuthentication()
-  OpenAPI.TOKEN = auth?.bearer
   return (
     <>
       <NextProgressBar height='3px' color={theme.palette.primary.main} options={{ showSpinner: false }} showOnShallow />
@@ -54,7 +45,7 @@ export default (props: { children: ReactNode }) => {
     <EmotionRootStyleRegistry>
       <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale='en-gb'>
         <QueryClientProvider client={queryClient}>
-          <Authenticator.Provider>
+          <AuthenticationProvider>
             <SettingsProvider>
               <SettingsConsumer>
                 {({ settings }) => {
@@ -66,7 +57,7 @@ export default (props: { children: ReactNode }) => {
                 }}
               </SettingsConsumer>
             </SettingsProvider>
-          </Authenticator.Provider>
+          </AuthenticationProvider>
         </QueryClientProvider>
       </LocalizationProvider>
     </EmotionRootStyleRegistry>

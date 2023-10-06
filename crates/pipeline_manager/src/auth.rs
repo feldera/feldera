@@ -95,7 +95,10 @@ async fn bearer_auth(
     let configuration = req.app_data::<AuthConfiguration>().unwrap();
     let token = credentials.token();
     let token = match configuration.provider {
-        Provider::AwsCognito(_) => decode_aws_cognito_token(token, &req, configuration).await,
+        AuthProvider::AwsCognito(_) => decode_aws_cognito_token(token, &req, configuration).await,
+        AuthProvider::GoogleIdentity(_) => {
+            decode_google_identity_token(token, &req, configuration).await
+        }
     };
     match token {
         Ok(claim) => {
@@ -258,14 +261,20 @@ impl Claim {
 #[derive(Clone, Serialize, ToSchema)]
 pub(crate) struct ProviderAwsCognito {
     pub jwk_uri: String,
-    pub region: String,
-    pub user_pool_id: String,
-    pub user_pool_web_client_id: String,
+    pub login_url: String,
+    pub logout_url: String,
 }
 
 #[derive(Clone, Serialize, ToSchema)]
-pub(crate) enum Provider {
+pub(crate) struct ProviderGoogleIdentity {
+    pub jwk_uri: String,
+    pub client_id: String,
+}
+
+#[derive(Clone, Serialize, ToSchema)]
+pub(crate) enum AuthProvider {
     AwsCognito(ProviderAwsCognito), // The argument is the URL to use for fetching JWKs
+    GoogleIdentity(ProviderGoogleIdentity),
 }
 
 pub(crate) fn aws_auth_config() -> AuthConfiguration {
@@ -276,14 +285,29 @@ pub(crate) fn aws_auth_config() -> AuthConfiguration {
     validation.set_audience(&[audience]);
     validation.set_issuer(&[iss]);
     AuthConfiguration {
-        provider: Provider::AwsCognito(ProviderAwsCognito {
+        provider: AuthProvider::AwsCognito(ProviderAwsCognito {
             jwk_uri,
-            region: env::var("AWS_AMPLIFY_REGION")
-                .expect("Missing environment variable AWS_AMPLIFY_REGION"),
-            user_pool_id: env::var("AWS_AMPLIFY_USER_POOL_ID")
-                .expect("Missing environment variable AWS_AMPLIFY_USER_POOL_ID"),
-            user_pool_web_client_id: env::var("AWS_AMPLIFY_USER_POOL_WEB_CLIENT_ID")
-                .expect("Missing environment variable AWS_AMPLIFY_USER_POOL_WEB_CLIENT_ID"),
+            login_url: env::var("AWS_COGNITO_LOGIN_URL")
+                .expect("Missing environment variable AWS_COGNITO_LOGIN_URL"),
+            logout_url: env::var("AWS_COGNITO_LOGOUT_URL")
+                .expect("Missing environment variable AWS_COGNITO_LOGOUT_URL"),
+        }),
+        validation,
+    }
+}
+
+pub(crate) fn google_auth_config() -> AuthConfiguration {
+    let mut validation = Validation::new(Algorithm::RS256);
+    let audience = env::var("AUTH_CLIENT_ID").expect("Missing environment variable AUTH_CLIENT_ID");
+    let iss = env::var("AUTH_ISSUER").expect("Missing environment variable AUTH_ISSUER");
+    let jwk_uri = format!("{}/.well-known/jwks.json", iss);
+    validation.set_audience(&[audience]);
+    validation.set_issuer(&[iss]);
+    AuthConfiguration {
+        provider: AuthProvider::GoogleIdentity(ProviderGoogleIdentity {
+            jwk_uri,
+            client_id: env::var("AUTH_CLIENT_ID")
+                .expect("Missing environment variable AUTH_CLIENT_ID"),
         }),
         validation,
     }
@@ -292,7 +316,7 @@ pub(crate) fn aws_auth_config() -> AuthConfiguration {
 #[derive(Clone)]
 // Expected issuer and client_id for each authentication request
 pub(crate) struct AuthConfiguration {
-    pub provider: Provider,
+    pub provider: AuthProvider,
     pub validation: Validation,
 }
 
@@ -396,7 +420,9 @@ async fn decode_aws_cognito_token(
                 }
                 let state = req.app_data::<Data<ServerState>>().unwrap();
                 let cache = &mut state.jwk_cache.lock().await;
-                let jwk = cache.get(&header.kid.unwrap(), configuration).await?;
+                let jwk = cache
+                    .get(&header.kid.unwrap(), &configuration.provider)
+                    .await?;
 
                 let token_data = decode::<AwsCognitoClaim>(token, &jwk, &configuration.validation);
                 if let Ok(t) = &token_data {
@@ -428,6 +454,14 @@ async fn decode_aws_cognito_token(
     }
 }
 
+async fn decode_google_identity_token(
+    _token: &str,
+    _req: &ServiceRequest,
+    _configuration: &AuthConfiguration,
+) -> Result<Claim, AuthError> {
+    todo!("Google Identity authentication not implemented!")
+}
+
 pub struct JwkCache {
     cache: TimedCache<String, DecodingKey>,
 }
@@ -448,7 +482,7 @@ impl JwkCache {
     async fn get(
         &mut self,
         key: &String,
-        configuration: &AuthConfiguration,
+        provider: &AuthProvider,
     ) -> Result<DecodingKey, AuthError> {
         let cache = &mut self.cache;
         let val = &cache.cache_get(key);
@@ -456,7 +490,7 @@ impl JwkCache {
             Some(dk) => Ok((*dk).clone()),
             None => {
                 // TODO: Introduce a minimum delay between refreshes
-                let fetched = fetch_jwk_keys(configuration).await;
+                let fetched = fetch_jwk_keys(provider).await;
                 match fetched {
                     Ok(map) => {
                         for (key_id, decoding_key) in map {
@@ -476,10 +510,13 @@ impl JwkCache {
 }
 
 async fn fetch_jwk_keys(
-    configuration: &AuthConfiguration,
+    provider: &AuthProvider,
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
-    match &configuration.provider {
-        Provider::AwsCognito(provider) => fetch_jwk_aws_cognito_keys(&provider.jwk_uri).await,
+    match &provider {
+        AuthProvider::AwsCognito(provider) => fetch_jwk_aws_cognito_keys(&provider.jwk_uri).await,
+        AuthProvider::GoogleIdentity(provider) => {
+            fetch_jwk_google_identity_keys(&provider.jwk_uri).await
+        }
     }
 }
 
@@ -532,6 +569,14 @@ async fn fetch_jwk_aws_cognito_keys(
         Err(JsonPayloadError::Payload(payload)) => Err(AuthError::JwkPayload(payload)),
         Err(JsonPayloadError::ContentType) => Err(AuthError::JwkContentType),
     }
+}
+
+// We don't want to fetch keys on every authentication attempt, so cache the
+// results. TODO: implement periodic refresh
+async fn fetch_jwk_google_identity_keys(
+    _url: &String,
+) -> Result<HashMap<String, DecodingKey>, AuthError> {
+    todo!("Google Identity authentication not implemented!")
 }
 
 fn check_key_as_str<'a>(key: &str, check: &str, json: &'a Value) -> Option<&'a Value> {
@@ -599,7 +644,9 @@ mod test {
 
     use crate::{
         api::ServerState,
-        auth::{self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AwsCognitoClaim, Provider},
+        auth::{
+            self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AuthProvider, AwsCognitoClaim,
+        },
         config::ApiServerConfig,
         db::{storage::Storage, ApiPermission},
     };
@@ -661,11 +708,10 @@ mod test {
         validation: Validation,
     ) -> ServiceResponse<EitherBody<BoxBody>> {
         let config = AuthConfiguration {
-            provider: Provider::AwsCognito(auth::ProviderAwsCognito {
+            provider: AuthProvider::AwsCognito(auth::ProviderAwsCognito {
                 jwk_uri: "some-url".to_string(),
-                region: "some-url".to_string(),
-                user_pool_id: "some-url".to_string(),
-                user_pool_web_client_id: "some-url".to_string(),
+                login_url: "some".to_string(),
+                logout_url: "some".to_string(),
             }),
             validation,
         };
@@ -676,7 +722,7 @@ mod test {
             port: 0,
             bind_address: "0.0.0.0".to_owned(),
             api_server_working_directory: "".to_owned(),
-            use_auth: true,
+            auth_provider: crate::config::AuthProviderType::AwsCognito,
             dev_mode: false,
             dump_openapi: false,
             config_file: None,
