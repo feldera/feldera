@@ -68,8 +68,8 @@ eksctl create cluster -f eks-config.yaml
 ```
 
 This uses CloudFormation behind-the-scenes to bring up an EKS cluster named
-`feldera-eks` with three worker nodes (m5.large EC2 instances, specified in
-managedNodeGroups), running in a newly created dedicated VPC. It should take
+`feldera-eks` with three EC2 on-demand instances as worker nodes, 
+running in a newly created dedicated VPC. It should take
 roughly 15-20 minutes.
 
 `eksctl` will create the VPC in the `us-west-1` region which will run the EKS
@@ -92,8 +92,9 @@ documentation to learn more.
 :::
 
 :::tip
-`eksctl` allows extensive configuration beyond what we've shown here. Check out
-the [configuration file schema](https://eksctl.io/usage/schema/) to learn more.
+`eksctl` allows additional cluster setup and access configuration beyond what
+we've shown here. Check out the [configuration file
+schema](https://eksctl.io/usage/schema/) to learn more.
 :::
 
 To verify that the EKS cluster is running, run:
@@ -106,17 +107,18 @@ You should see a three node cluster, all with the status `Ready`.
 
 ## Cluster ingress
 
-To allow external access to services running inside the EKS cluster, we
-recommend setting up a Kubernetes Ingress controller. This is useful to allow
-access to the Feldera Web Console or to issue REST API calls directly. 
+To allow external access to Feldera and other services running inside the EKS
+cluster, we recommend setting up a Kubernetes Ingress controller. This is
+useful to allow access to the Feldera Web Console or to issue REST API calls
+directly. 
 
 :::tip
 When you install an ingress controller, it uses an AWS load balancer to expose
 an IP address via a generated DNS name for external access. By default,
 creating ingress controllers leads to both an internal and external load
 balancer being created, with the external one being prefered to expose
-services. Most Feldera Cloud users should prefer to only expose  services only
-an internal load balancer.
+services. Most Feldera Cloud users should need to expose Feldera services only
+over an internal load balancer.
 :::
 
 To install an ingress controller where the external load balancer is disabled,
