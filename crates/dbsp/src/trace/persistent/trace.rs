@@ -299,8 +299,8 @@ where
 #[derive(Clone, Debug, Archive, Serialize, Deserialize)]
 enum MergeOp<T, R>
 where
-    T: DBTimestamp,
-    R: DBWeight,
+    T: DBTimestamp + Debug,
+    R: DBWeight + Debug,
 {
     /// A recede-to command to reset times of values.
     RecedeTo(T),
@@ -318,7 +318,7 @@ where
 /// several times when we probably can be smarter etc. -- not clear it matters
 /// without benchmarking though.
 fn rocksdb_concat_merge<K, V, R, T>(
-    _new_key: &[u8],
+    new_key: &[u8],
     existing_val: Option<&[u8]>,
     operands: &MergeOperands,
 ) -> Option<Vec<u8>>
@@ -328,7 +328,7 @@ where
     R: DBWeight,
     T: DBTimestamp,
 {
-    //let (_key, _value): (K, V) = unaligned_deserialize(new_key);
+    //let (key, value): PersistedKey<K, V> = unaligned_deserialize(new_key);
 
     let mut vals: Values<T, R> = if let Some(val) = existing_val {
         let decoded_val: PersistedValue<T, R> = unaligned_deserialize(val);
@@ -340,8 +340,10 @@ where
         Vec::new()
     };
 
+    //println!("merging update for: key={:?} val={:?}", key, value);
     for op in operands {
         let decoded_update: MergeOp<T, R> = unaligned_deserialize(op);
+        //println!("update is (time, weight): {:?}", decoded_update);
         match decoded_update {
             MergeOp::Insert(tws) => {
                 for (t, w) in &tws {
@@ -527,9 +529,7 @@ where
                     w.add_assign_by_ref(cur_w);
                 });
                 let k = cursor.key().clone();
-                if !w.is_zero() {
-                    builder.push((Self::Batch::item_from(k, v), w));
-                }
+                builder.push((Self::Batch::item_from(k, v), w));
                 cursor.step_val();
             }
             cursor.step_key();
@@ -591,6 +591,12 @@ where
                 batch_cursor.map_times(|ts, r| {
                     weights.push((ts.clone(), r.clone()));
                 });
+                //println!(
+                //    "add_batch_to_cf key={:?} val={:?} weights={:?}",
+                //    batch_cursor.key(),
+                //    batch_cursor.val(),
+                //    weights
+                //);
                 let encoded_vals = to_bytes(&MergeOp::Insert(weights)).expect("Can't encode `val`");
 
                 let encoded_key = to_bytes(&kv).expect("Can't encode `key--value`");

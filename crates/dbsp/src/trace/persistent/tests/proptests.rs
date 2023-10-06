@@ -90,6 +90,12 @@ impl Ord for ComplexKey {
     }
 }
 
+#[derive(PartialEq, Eq)]
+enum Direction {
+    Forward,
+    Backward,
+}
+
 /// Makes sure that everything we find in `spine` is also in `ptrace` (and not
 /// more).
 pub(super) fn spine_ptrace_are_equal<B>(spine: &Spine<B>, ptrace: &PersistentTrace<B>) -> bool
@@ -188,9 +194,15 @@ enum CursorAction<
     T: Arbitrary + Clone + 'static,
 > {
     StepKey,
+    //StepKeyReverse,
+    //FastForwardKeys,
     StepVal,
+    //StepValReverse,
+    FastForwardVals,
     SeekKey(K),
+    //SeekKeyReverse(K),
     SeekVal(V),
+    //SeekValReverse(V),
     SeekValWith(V),
     RewindKeys,
     RewindVals,
@@ -208,7 +220,11 @@ fn action<
 >() -> impl Strategy<Value = CursorAction<K, V, T>> {
     prop_oneof![
         Just(CursorAction::StepKey),
+        //Just(CursorAction::StepKeyReverse),
+        //Just(CursorAction::FastForwardKeys),
         Just(CursorAction::StepVal),
+        //Just(CursorAction::StepValReverse),
+        Just(CursorAction::FastForwardVals),
         Just(CursorAction::RewindKeys),
         Just(CursorAction::RewindVals),
         Just(CursorAction::Key),
@@ -216,7 +232,9 @@ fn action<
         Just(CursorAction::MapTimes),
         any::<T>().prop_map(CursorAction::MapTimesThrough),
         any::<K>().prop_map(CursorAction::SeekKey),
+        //any::<K>().prop_map(CursorAction::SeekKeyReverse),
         any::<V>().prop_map(CursorAction::SeekVal),
+        //any::<V>().prop_map(CursorAction::SeekValReverse),
         any::<V>().prop_map(CursorAction::SeekValWith),
     ]
 }
@@ -296,41 +314,98 @@ fn cursor_trait<B, I>(
     }
 
     //assert_eq!(ptrace.len(), model.len());
+    let mut direction = Direction::Forward;
     for (i, action) in ops.iter().enumerate() {
         let step = i + 1;
         log::trace!("executing action {:?}", action);
         match action {
             CursorAction::StepKey => {
+                direction = Direction::Forward;
                 model_cursor.step_key();
                 totest_cursor.step_key();
                 check_eq_invariants(step, &model_cursor, &totest_cursor);
             }
+            //CursorAction::StepKeyReverse => {
+            //direction = Direction::Forward;
+            //model_cursor.step_key_reverse();
+            //totest_cursor.step_key_reverse();
+            //check_eq_invariants(step, &model_cursor, &totest_cursor);
+            //}
+            //CursorAction::FastForwardKeys => {
+            //model_cursor.fast_forward_keys();
+            //totest_cursor.fast_forward_keys();
+            //check_eq_invariants(step, &model_cursor, &totest_cursor);
+            //}
             CursorAction::StepVal => {
-                model_cursor.step_val();
-                totest_cursor.step_val();
+                match direction {
+                    Direction::Forward => {
+                        model_cursor.step_val();
+                        totest_cursor.step_val();
+                    }
+                    Direction::Backward => {
+                        model_cursor.step_val_reverse();
+                        totest_cursor.step_val_reverse();
+                    }
+                }
+                check_eq_invariants(step, &model_cursor, &totest_cursor);
+            }
+            //CursorAction::StepValReverse => {
+            //model_cursor.step_val_reverse();
+            //totest_cursor.step_val_reverse();
+            //check_eq_invariants(step, &model_cursor, &totest_cursor);
+            //}
+            CursorAction::FastForwardVals => {
+                model_cursor.fast_forward_vals();
+                totest_cursor.fast_forward_vals();
+                direction = Direction::Backward;
                 check_eq_invariants(step, &model_cursor, &totest_cursor);
             }
             CursorAction::SeekKey(k) => {
+                direction = Direction::Forward;
                 model_cursor.seek_key(k);
                 totest_cursor.seek_key(k);
                 check_eq_invariants(step, &model_cursor, &totest_cursor);
             }
+            //CursorAction::SeekKeyReverse(k) => {
+            //direction = Direction::Forward;
+            //model_cursor.seek_key_reverse(k);
+            //totest_cursor.seek_key_reverse(k);
+            //check_eq_invariants(step, &model_cursor, &totest_cursor);
+            //}
             CursorAction::SeekVal(v) => {
-                model_cursor.seek_val(v);
-                totest_cursor.seek_val(v);
+                match direction {
+                    Direction::Forward => {
+                        model_cursor.seek_val(v);
+                        totest_cursor.seek_val(v);
+                    }
+                    Direction::Backward => {
+                        model_cursor.seek_val_reverse(v);
+                        totest_cursor.seek_val_reverse(v);
+                    }
+                }
                 check_eq_invariants(step, &model_cursor, &totest_cursor);
             }
             CursorAction::SeekValWith(v) => {
-                model_cursor.seek_val_with(|cmp_with| cmp_with >= v);
-                totest_cursor.seek_val_with(|cmp_with| cmp_with >= v);
+                match direction {
+                    Direction::Forward => {
+                        model_cursor.seek_val_with(|cmp_with| cmp_with >= v);
+                        totest_cursor.seek_val_with(|cmp_with| cmp_with >= v);
+                    }
+                    Direction::Backward => {
+                        model_cursor.seek_val_with_reverse(|cmp_with| cmp_with >= v);
+                        totest_cursor.seek_val_with_reverse(|cmp_with| cmp_with >= v);
+                    }
+                }
                 check_eq_invariants(step, &model_cursor, &totest_cursor);
             }
             CursorAction::RewindKeys => {
+                direction = Direction::Forward;
                 model_cursor.rewind_keys();
                 totest_cursor.rewind_keys();
                 check_eq_invariants(step, &model_cursor, &totest_cursor);
             }
             CursorAction::RewindVals => {
+                direction = Direction::Forward;
                 model_cursor.rewind_vals();
                 totest_cursor.rewind_vals();
                 check_eq_invariants(step, &model_cursor, &totest_cursor);

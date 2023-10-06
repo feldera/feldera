@@ -238,6 +238,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
             self.update_current_key_weight(Direction::Backward);
         } else {
             self.cur_key = None;
+            self.cur_val = None;
             self.cur_diffs = None;
         }
     }
@@ -303,18 +304,13 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
                 // can fix the discrepancy here since we know the batch is
                 // ordered: If we're seeking something that's behind us, we just
                 // skip the seek call:
-
-                //XXX: not sure what to do here
-                //self.val_idx = 0;
-
+                self.rewind_vals();
                 return;
             }
         }
 
         let encoded_key = to_bytes(key).expect("Can't encode `key`");
         self.db_iter.seek(encoded_key);
-        self.cur_key = Some(key.clone());
-
         self.update_current_key_weight(Direction::Backward);
     }
 
@@ -348,7 +344,10 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
     }
 
     fn step_val_reverse(&mut self) {
-        // XXXX: self.val_idx -= 1; need to seek rocksdb
+        if self.db_iter.valid() {
+            self.db_iter.prev();
+            self.update_current_key_weight(Direction::Backward);
+        }
     }
 
     fn seek_val(&mut self, val: &B::Val) {
@@ -400,7 +399,11 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
 
     fn fast_forward_vals(&mut self) {
         if self.cur_val.is_some() {
-            // self.val_idx = self.cur_diffs.as_ref().unwrap().len() as isize - 1;
+            while self.val_valid() {
+                self.step_val();
+            }
+
+            self.update_current_key_weight(Direction::Backward);
         }
     }
 }

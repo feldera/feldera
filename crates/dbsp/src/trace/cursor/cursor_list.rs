@@ -50,7 +50,7 @@ where
     fn set_val_direction(&mut self, _direction: Direction) {}
 
     #[cfg(debug_assertions)]
-    fn assert_val_direction(&self, direction: Direction) {
+    pub(super) fn assert_val_direction(&self, direction: Direction) {
         debug_assert_eq!(self.val_direction, direction);
     }
 

@@ -526,7 +526,7 @@ mod test {
     #[test]
     fn neighborhood_test() {
         let (mut dbsp, (descr_handle, input_handle, output_handle)) =
-            Runtime::init_circuit(4, test_circuit).unwrap();
+            Runtime::init_circuit(1, test_circuit).unwrap();
 
         // Empty collection.
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
