@@ -71,15 +71,17 @@ impl Catalog {
 
     /// Register an input handle created using `add_input_map`.
     ///
-    /// Elements are inserted by value and deleted by key.  On insert, the handle uses `key_func`
-    /// to extract the key from the value.
+    /// Elements are inserted by value and deleted by key.  On insert, the
+    /// handle uses `key_func` to extract the key from the value.
     ///
     /// # Generics
     ///
     /// * `K` - Key type of the input collection.
-    /// * `KD` - Key type in the input byte stream.  Keys will get deserialized into instances of `KD` and then converted to `K`.
+    /// * `KD` - Key type in the input byte stream.  Keys will get deserialized
+    ///   into instances of `KD` and then converted to `K`.
     /// * `V` - value type of the input collection.
-    /// * `VD` - Value type in the input byte stream.  Values will get deserialized into instances of `VD` and then converted to `K`.
+    /// * `VD` - Value type in the input byte stream.  Values will get
+    ///   deserialized into instances of `VD` and then converted to `K`.
     pub fn register_input_map<K, KD, V, VD, R, F>(
         &mut self,
         name: &str,

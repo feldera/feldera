@@ -162,8 +162,8 @@ where
     /// tuples in `self` `num_quantiles + 1` approximately equal-size quantiles,
     /// assuming that `self` contains exactly one value per key.
     ///
-    /// Equivalent to `self.map(|(k, v)| (k, v)).stream_unique_key_val_quantiles()`,
-    /// but is more efficient.
+    /// Equivalent to `self.map(|(k, v)| (k,
+    /// v)).stream_unique_key_val_quantiles()`, but is more efficient.
     #[allow(clippy::type_complexity)]
     pub fn stream_unique_key_val_quantiles(
         &self,
