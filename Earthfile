@@ -12,7 +12,7 @@ ENV RUST_VERSION=1.70.0
 ENV RUST_BUILD_MODE='' # set to --release for release builds
 
 install-deps:
-    RUN apt-get update --fix-missing
+    RUN apt-get update
     RUN apt-get install --yes build-essential curl libssl-dev build-essential pkg-config \
                               cmake git gcc clang libclang-dev python3-pip python3-plumbum \
                               hub numactl openjdk-19-jre-headless maven netcat jq \
@@ -54,6 +54,14 @@ install-rust:
     RUN rustup --version
     RUN cargo --version
     RUN rustc --version
+
+formatting-check:
+    FROM +install-rust
+    COPY Cargo.toml Cargo.toml
+    COPY rustfmt.toml rustfmt.toml
+    COPY crates/ crates/
+    COPY sql-to-dbsp-compiler/lib sql-to-dbsp-compiler/lib
+    RUN cargo +nightly fmt --all -- --check
 
 install-python-deps:
     FROM +install-deps
@@ -591,6 +599,7 @@ benchmark:
     SAVE ARTIFACT crates/dbsp/ldbc_results.csv AS LOCAL .
 
 all-tests:
+    BUILD +formatting-check
     BUILD +test-rust
     BUILD +test-python
     BUILD +audit
