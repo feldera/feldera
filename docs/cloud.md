@@ -112,13 +112,11 @@ access to the Feldera Web Console or to issue REST API calls directly.
 :::tip
 When you install an ingress controller, it uses an AWS load balancer to expose
 an IP address via a generated DNS name for external access. By default,
-creating an ingress controller leads to both an internal and external load
+creating ingress controllers leads to both an internal and external load
 balancer being created, with the external one being prefered to expose
-services. Most Feldera Cloud users should prefer to only expose the service
-over an internal load balancer.
+services. Most Feldera Cloud users should prefer to only expose  services only
+an internal load balancer.
 :::
-
-### Ingress that only uses an internal balancer
 
 To install an ingress controller where the external load balancer is disabled,
 first create the following file:
@@ -159,14 +157,6 @@ helm repo update
 helm upgrade --install ingress-nginx-internal ingress-nginx/ingress-nginx \
   -n ingress-nginx-internal \
   -f ingress-nginx.yaml
-```
-
-### Simple ingress that prefers an external balancer
-
-To install an nginx-based Ingress that prefers the external load balancer, run:
-
-```
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.0/deploy/static/provider/aws/deploy.yaml
 ```
  
 ## Installing Feldera Cloud
