@@ -46,13 +46,14 @@ iam:
 managedNodeGroups:
   - name: managed-ng
     desiredCapacity: 3
+    instanceType: m5.large
     privateNetworking: true
 
 vpc:
   clusterEndpoints:
-    publicAccess:  true
     privateAccess: true
-    # publicAccessCIDRs: ["<a.b.c.d/32>"]
+    publicAccess:  true
+    # publicAccessCIDRs: ["<a.b.c.d/32>"] # Change to your IP address if using publicAccess: true
 
 addons:
 - name: aws-ebs-csi-driver
