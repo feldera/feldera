@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Enhanced
 - Made connector type icons look nicer in Pipeline Builder
+- Forbid empty group.id in Kafka form
+  ([#840](https://github.com/feldera/feldera/issues/840))
+- Enable multiline text input for .pem SSL certificates
+  ([#841](https://github.com/feldera/feldera/issues/841))
 
 ## [0.1.4] - 2023-09-26
 

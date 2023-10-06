@@ -43,9 +43,9 @@ const schema = intersection([
     description: va.optional(va.string(), ''),
     bootstrap_servers: va.nonOptional(va.string()),
     auto_offset_reset: va.optional(va.string(), 'none'),
-    group_id: va.nonOptional(va.string()),
+    group_id: va.nonOptional(va.string([va.minLength(1, 'group.id should not be empty')])),
     topics: va.nonOptional(
-      va.array(va.string([va.minLength(1, 'Topic name should be >=1 character')]), [
+      va.array(va.string([va.minLength(1, 'Topic name should not be empty')]), [
         va.minLength(1, 'Provide at least one topic (press enter to add the topic).')
       ])
     ),
