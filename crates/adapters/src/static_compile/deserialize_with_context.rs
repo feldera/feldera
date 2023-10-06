@@ -19,10 +19,12 @@
 //!
 //! ## Design
 //!
-//! * We define [`trait DeserializeWithContext`], which has the same signature as
+//! * We define [`trait DeserializeWithContext`], which has the same signature
+//!   as
 //! `Deserialize` with the extra context argument.
 //!
-//! * [`deserialize_without_context`](`crate::deserialize_without_context`) macro
+//! * [`deserialize_without_context`](`crate::deserialize_without_context`)
+//!   macro
 //! is used to implement [`DeserializeWithContext`] for types that implement
 //! `serde::Deserialize` and don't support configurable deserialization.
 //!
@@ -38,7 +40,8 @@
 //! handles case-(in)sensitive SQL columns.
 
 // TODOs:
-// This could benefit from using procedural macros to auto-derive [`DeserializeWithContext`].
+// This could benefit from using procedural macros to auto-derive
+// [`DeserializeWithContext`].
 
 use std::{fmt, marker::PhantomData};
 
@@ -53,18 +56,19 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 
-/// Similar to [`Deserialize`], but takes an extra `context` argument and threads
-/// it through all nested structures.
+/// Similar to [`Deserialize`], but takes an extra `context` argument and
+/// threads it through all nested structures.
 pub trait DeserializeWithContext<'de, C>: Sized {
     fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>;
 }
 
-/// Implement [`DeserializeWithContext`] for types that implement [`Deserialize`] and
-/// don't support configurable deserialization.
+/// Implement [`DeserializeWithContext`] for types that implement
+/// [`Deserialize`] and don't support configurable deserialization.
 ///
-/// The implementation invokes [`Deserialize::deserialize`], ignoring the context.
+/// The implementation invokes [`Deserialize::deserialize`], ignoring the
+/// context.
 #[macro_export]
 macro_rules! deserialize_without_context {
     ($typ:tt) => {
@@ -322,8 +326,8 @@ pub struct FieldParseError {
     pub description: String,
 }
 
-/// Generate [`DeserializeWithContext`] implementation parameterized by context type
-/// for a struct.
+/// Generate [`DeserializeWithContext`] implementation parameterized by context
+/// type for a struct.
 ///
 /// # Arguments
 ///
@@ -335,7 +339,6 @@ pub struct FieldParseError {
 /// * `$type` - field type.
 /// * `$default` - `None`, or `Some(value)` for fields that have a default
 /// value.
-///
 // TODO: This should be a procedural macro, but I don't have experience with those
 // and it would take me too long to write one.  It should be possible to steal code
 // from `serde_derive`.

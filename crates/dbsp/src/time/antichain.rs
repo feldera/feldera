@@ -18,9 +18,9 @@ use std::{
 /// elements to maintain the *minimal* antichain, those incomparable elements no
 /// greater than any other element.
 ///
-/// Two antichains are equal if they contain the same set of elements, even if in
-/// different orders. This can make equality testing quadratic, though linear in
-/// the common case that the sequences are identical.
+/// Two antichains are equal if they contain the same set of elements, even if
+/// in different orders. This can make equality testing quadratic, though linear
+/// in the common case that the sequences are identical.
 ///
 /// DBSP logical times are, in generally, only [partially ordered].  That means
 /// that a collection of logical times may have multiple different lower bounds,

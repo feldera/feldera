@@ -3,7 +3,7 @@
 //! A [`Spine`] is a trace implemented in terms of a collection of batches.  The
 //! cursor for a spine reads all of the batches in parallel and merges their
 //! streams of tuples to provide the same external behavior as a single trace.
-//! 
+//!
 //! The time cost of merging the streams in the cursor increases with the number
 //! of batches.  There is also a memory cost if the batches contain tuples with
 //! the same key, value, and time, especially if their weights would add to

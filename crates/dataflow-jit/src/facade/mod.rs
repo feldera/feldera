@@ -342,7 +342,8 @@ impl DbspCircuit {
     /// # Safety
     ///
     /// `demand` must refer to a function of type `SerializeFn`.
-    /// The produced function pointer must be dropped before the parent `DbspCircuit`
+    /// The produced function pointer must be dropped before the parent
+    /// `DbspCircuit`
     pub unsafe fn serialization_function(
         &self,
         demand: DemandId,

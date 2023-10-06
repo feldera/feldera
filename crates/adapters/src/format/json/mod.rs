@@ -96,9 +96,11 @@ pub struct DebeziumPayload<T> {
     // source: Option<DebeziumSource>,
     #[allow(dead_code)]
     op: DebeziumOp,
-    /// When present and not `null`, this field specifies a record to be deleted from the table.
+    /// When present and not `null`, this field specifies a record to be deleted
+    /// from the table.
     before: Option<T>,
-    /// When present and not `null`, this field specifies a record to be inserted to the table.
+    /// When present and not `null`, this field specifies a record to be
+    /// inserted to the table.
     after: Option<T>,
 }
 
@@ -111,10 +113,12 @@ pub struct InsDelUpdate<T> {
     #[allow(dead_code)]
     #[serde(skip_serializing_if = "Option::is_none")]
     table: Option<String>,
-    /// When present and not `null`, this field specifies a record to be inserted to the table.
+    /// When present and not `null`, this field specifies a record to be
+    /// inserted to the table.
     #[serde(skip_serializing_if = "Option::is_none")]
     insert: Option<T>,
-    /// When present and not `null`, this field specifies a record to be deleted from the table.
+    /// When present and not `null`, this field specifies a record to be deleted
+    /// from the table.
     #[serde(skip_serializing_if = "Option::is_none")]
     delete: Option<T>,
 }

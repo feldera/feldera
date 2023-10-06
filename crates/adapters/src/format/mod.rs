@@ -126,11 +126,11 @@ pub struct ParseErrorInner {
 
     /// Event number relative to the start of the stream.
     ///
-    /// An input stream is a series data change events (row insertions, deletions,
-    /// and updates).  This field specifies the index (starting from 1) of the
-    /// event that caused the error, relative to the start of the stream.  In
-    /// some cases this index cannot be identified, e.g., if the error makes an entire
-    /// block of events unparseable.
+    /// An input stream is a series data change events (row insertions,
+    /// deletions, and updates).  This field specifies the index (starting
+    /// from 1) of the event that caused the error, relative to the start of
+    /// the stream.  In some cases this index cannot be identified, e.g., if
+    /// the error makes an entire block of events unparseable.
     event_number: Option<u64>,
 
     /// Field that failed to parse.
@@ -150,8 +150,8 @@ pub struct ParseErrorInner {
     /// Only used for text-based formats and in cases when input is valid UTF-8.
     invalid_text: Option<String>,
 
-    /// Any additional information that may help fix the problem, e.g., example of
-    /// a valid input.
+    /// Any additional information that may help fix the problem, e.g., example
+    /// of a valid input.
     suggestion: Option<Cow<'static, str>>,
 }
 
@@ -204,7 +204,8 @@ impl ParseErrorInner {
         }
     }
 
-    /// Error parsing an individual event in a text-based input format (e.g., JSON, CSV).
+    /// Error parsing an individual event in a text-based input format (e.g.,
+    /// JSON, CSV).
     pub fn text_event_error<E>(
         msg: &str,
         error: E,
@@ -216,9 +217,9 @@ impl ParseErrorInner {
         E: ToString,
     {
         let err_str = error.to_string();
-        // Try to parse the error as `FieldParseError`.  If this is not a field-specific error or
-        // the error was not returned by the `deserialize_table_record` macro, this will fail and
-        // we'll store the error as is.
+        // Try to parse the error as `FieldParseError`.  If this is not a field-specific
+        // error or the error was not returned by the `deserialize_table_record`
+        // macro, this will fail and we'll store the error as is.
         let (descr, field) = if let Some(offset) = err_str.find("{\"field\":") {
             if let Some(Ok(err)) = serde_json::Deserializer::from_str(&err_str[offset..])
                 .into_iter::<FieldParseError>()
@@ -265,7 +266,8 @@ impl ParseErrorInner {
         )
     }
 
-    /// Error parsing an individual event in a binary input format (e.g., bincode).
+    /// Error parsing an individual event in a binary input format (e.g.,
+    /// bincode).
     pub fn bin_event_error(
         description: String,
         event_number: u64,
@@ -328,16 +330,17 @@ pub trait InputFormat: Send + Sync {
 
     /// Extract parser configuration from an HTTP request.
     ///
-    /// Returns the extracted configuration cast to the `ErasedSerialize` trait object
-    /// (to keep this trait object-safe).
+    /// Returns the extracted configuration cast to the `ErasedSerialize` trait
+    /// object (to keep this trait object-safe).
     ///
     /// # Discussion
     ///
     /// We could rely on the `serde_urlencoded` crate to deserialize the config
-    /// from the HTTP request, which is what most implementations will do internally; however
-    /// allowing the implementation to override this method enables additional flexibility.
-    /// For example, an implementation may use `Content-Type` and other request headers,
-    /// set HTTP-specific defaults for config fields, etc.
+    /// from the HTTP request, which is what most implementations will do
+    /// internally; however allowing the implementation to override this
+    /// method enables additional flexibility. For example, an
+    /// implementation may use `Content-Type` and other request headers, set
+    /// HTTP-specific defaults for config fields, etc.
     fn config_from_http_request(
         &self,
         endpoint_name: &str,
@@ -427,8 +430,8 @@ pub trait OutputFormat: Send + Sync {
 
     /// Extract encoder configuration from an HTTP request.
     ///
-    /// Returns the extracted configuration cast to the `ErasedSerialize` trait object
-    /// (to keep this trait object-safe).
+    /// Returns the extracted configuration cast to the `ErasedSerialize` trait
+    /// object (to keep this trait object-safe).
     fn config_from_http_request(
         &self,
         endpoint_name: &str,

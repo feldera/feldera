@@ -28,8 +28,8 @@ pub enum JsonFlavor {
     #[default]
     #[serde(rename = "default")]
     Default,
-    /// Debezium MySQL JSON produced by the default configuration of the Debezium
-    /// [Kafka Connect connector](https://debezium.io/documentation/reference/stable/connectors/mysql.html#mysql-data-types).
+    /// Debezium MySQL JSON produced by the default configuration of the
+    /// Debezium [Kafka Connect connector](https://debezium.io/documentation/reference/stable/connectors/mysql.html#mysql-data-types).
     #[serde(rename = "debezium_mysql")]
     DebeziumMySql,
 }
@@ -69,9 +69,10 @@ where
 /// An input handle that deserializes records before pushing them to a
 /// stream.
 ///
-/// A trait for a type that wraps a [`CollectionHandle`](`dbsp::CollectionHandle`) or
-/// an [`UpsertHandle`](`dbsp::UpsertHandle`) and pushes serialized relational data
-/// to the associated input stream record-by-record.  The client passes a
+/// A trait for a type that wraps a
+/// [`CollectionHandle`](`dbsp::CollectionHandle`) or
+/// an [`UpsertHandle`](`dbsp::UpsertHandle`) and pushes serialized relational
+/// data to the associated input stream record-by-record.  The client passes a
 /// byte array with a serialized data record (e.g., in JSON or CSV format)
 /// to [`insert`](`Self::insert`) and [`delete`](`Self::delete`) methods.
 /// The record gets deserialized into the strongly typed representation
@@ -227,8 +228,9 @@ pub trait SerCursor {
 /// A handle to an output stream of a circuit that yields type-erased
 /// output batches.
 ///
-/// A trait for a type that wraps around an [`OutputHandle`](`dbsp::OutputHandle`)
-/// and yields output batches produced by the circuit as [`SerBatch`]s.
+/// A trait for a type that wraps around an
+/// [`OutputHandle`](`dbsp::OutputHandle`) and yields output batches produced by
+/// the circuit as [`SerBatch`]s.
 pub trait SerCollectionHandle: Send + Sync {
     /// Like [`OutputHandle::take_from_worker`](`dbsp::OutputHandle::take_from_worker`),
     ///  but returns output batch as a [`SerBatch`] trait object.
@@ -238,8 +240,8 @@ pub trait SerCollectionHandle: Send + Sync {
     /// but returns output batches as [`SerBatch`] trait objects.
     fn take_from_all(&self) -> Vec<Arc<dyn SerBatch>>;
 
-    /// Like [`OutputHandle::consolidate`](`dbsp::OutputHandle::consolidate`), but
-    /// returns the output batch as a [`SerBatch`] trait object.
+    /// Like [`OutputHandle::consolidate`](`dbsp::OutputHandle::consolidate`),
+    /// but returns the output batch as a [`SerBatch`] trait object.
     fn consolidate(&self) -> Box<dyn SerBatch>;
 
     /// Returns an alias to `self`.
@@ -373,8 +375,9 @@ pub struct OutputCollectionHandles {
     /// [`Stream::neighborhood`] operator.
     pub neighborhood_handle: Option<Box<dyn SerCollectionHandle>>,
 
-    /// A stream that contains the full snapshot of the neighborhood.  Only produces
-    /// an output whenever the `neighborhood_descr_handle` input is set to `Some(..)`.
+    /// A stream that contains the full snapshot of the neighborhood.  Only
+    /// produces an output whenever the `neighborhood_descr_handle` input is
+    /// set to `Some(..)`.
     pub neighborhood_snapshot_handle: Option<Box<dyn SerCollectionHandle>>,
 
     /// Input stream used to submit the quantiles query.
@@ -403,10 +406,12 @@ pub enum OutputQuery {
     /// Query the entire contents of the table (similar to `SELECT * FROM`).
     #[serde(rename = "table")]
     Table,
-    /// Neighborhood query (see [`Stream::neighborhood`](`dbsp::Stream::neighborhood`)).
+    /// Neighborhood query (see
+    /// [`Stream::neighborhood`](`dbsp::Stream::neighborhood`)).
     #[serde(rename = "neighborhood")]
     Neighborhood,
-    /// Quantiles query (see [`Stream::stream_key_quantiles`](`dbsp::Stream::stream_key_quantiles`)).
+    /// Quantiles query (see
+    /// [`Stream::stream_key_quantiles`](`dbsp::Stream::stream_key_quantiles`)).
     #[serde(rename = "quantiles")]
     Quantiles,
 }

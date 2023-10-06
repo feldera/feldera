@@ -72,8 +72,8 @@ pub fn main() -> AnyResult<()> {
     let jit_args = JitArgs::from_arg_matches(&matches)?;
     let server_args = ServerArgs::from_arg_matches(&matches)?;
 
-    // Do all input validation and initialization inside `run`, so that all errors can be
-    // reported via REST API.
+    // Do all input validation and initialization inside `run`, so that all errors
+    // can be reported via REST API.
     run_server(server_args, move |workers| run(workers, jit_args))?;
 
     Ok(())
