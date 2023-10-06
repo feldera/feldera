@@ -17,6 +17,7 @@ const sidebars = {
     'what-is-feldera',
     'intro',
     'tour/tour',
+    'cloud',
     {
       type: 'category',
       label: 'Tutorials',
