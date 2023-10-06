@@ -273,7 +273,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
         }
 
         let persisted_key: PersistedKey<B::Key, B::Val> = (key.clone(), None);
-        let encoded_key = to_bytes(&persisted_key).expect("Can't encode `key`");
+        let encoded_key = to_bytes(&persisted_key).expect("Can't encode key");
         self.db_iter.seek(encoded_key);
         self.update_current_key_weight(Direction::Forward);
     }
@@ -403,7 +403,10 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
                 self.step_val();
             }
 
-            self.update_current_key_weight(Direction::Backward);
+            while !self.val_valid() && !self.key_valid() {
+                self.db_iter.prev();
+                self.update_current_key_weight(Direction::Backward);
+            }
         }
     }
 }
