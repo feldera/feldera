@@ -83,6 +83,7 @@ where
     ) -> Option<(B::Key, B::Val, Values<B::Time, B::R>)> {
         loop {
             if !iter.valid() {
+                log::trace!("read_key_val_weights iter invalid(), None returned");
                 return None;
             }
 
@@ -345,7 +346,13 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
 
     fn step_val_reverse(&mut self) {
         if self.db_iter.valid() {
+            log::error!("step_val_reverse");
             self.db_iter.prev();
+            self.update_current_key_weight(Direction::Backward);
+        } else {
+            // Once we reach last element we can't go back anymore with prev
+            self.db_iter.seek_to_last();
+            assert!(self.db_iter.valid());
             self.update_current_key_weight(Direction::Backward);
         }
     }
@@ -398,15 +405,25 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
     }
 
     fn fast_forward_vals(&mut self) {
-        if self.cur_val.is_some() {
+        log::trace!("fast_forward_vals");
+        if self.db_iter.valid() && self.key_valid() && self.val_valid() {
+            let key = self.key().clone();
+            let mut last_val = self.val().clone();
             while self.val_valid() {
+                last_val = self.val().clone();
                 self.step_val();
             }
 
-            while !self.val_valid() && !self.key_valid() {
-                self.db_iter.prev();
-                self.update_current_key_weight(Direction::Backward);
-            }
+            let last_kv: PersistedKey<B::Key, B::Val> = (key.clone(), Some(last_val));
+            let encoded_key = to_bytes(&last_kv).expect("Can't encode key");
+            self.db_iter.seek(encoded_key);
+            assert!(
+                self.db_iter.valid(),
+                "fast_forward_vals: We just seeked to a valid key"
+            );
+            self.update_current_key_weight(Direction::Backward);
+
+            log::trace!("fast_forward_vals {:?}", self.key());
         }
     }
 }

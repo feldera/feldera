@@ -379,6 +379,52 @@ fn cursor_weight_multiple_values_bug() {
     assert_eq!(ptrace_cursor.weight(), spine_cursor.weight());
 }
 
+#[test]
+fn fast_forward_vals() {
+    let _r = env_logger::try_init();
+
+    let mut ks = vec![(
+        (ComplexKey {
+            _a: 0,
+            ord: String::from(""),
+        }),
+        -1i32,
+    )];
+
+    let mut val_builder = <OrdKeyBatch<ComplexKey, u32, i32> as Batch>::Batcher::new_batcher(0);
+    val_builder.push_batch(&mut ks);
+    let vset1 = val_builder.seal();
+
+    let mut ptrace = PersistentTrace::<OrdKeyBatch<ComplexKey, u32, i32>>::new(None);
+    ptrace.insert(vset1);
+    let mut c = ptrace.cursor();
+    c.fast_forward_vals();
+    assert!(c.key_valid());
+
+    // OrdValBatch
+    let mut ks = vec![(
+        (
+            ComplexKey {
+                _a: 0,
+                ord: String::from(""),
+            },
+            String::from(""),
+        ),
+        -1i32,
+    )];
+
+    let mut val_builder =
+        <OrdValBatch<ComplexKey, String, u32, i32> as Batch>::Batcher::new_batcher(0);
+    val_builder.push_batch(&mut ks);
+    let vset1 = val_builder.seal();
+
+    let mut ptrace = PersistentTrace::<OrdValBatch<ComplexKey, String, u32, i32>>::new(None);
+    ptrace.insert(vset1);
+    let mut c = ptrace.cursor();
+    c.fast_forward_vals();
+    assert!(c.key_valid());
+}
+
 /// Inserting a rocks-key with the same key but different dbsp-value fails to
 /// get the key when the key comparator function is wrong.
 #[test]
