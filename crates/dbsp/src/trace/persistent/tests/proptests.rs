@@ -194,10 +194,8 @@ enum CursorAction<
     T: Arbitrary + Clone + 'static,
 > {
     StepKey,
-    //StepKeyReverse,
     //FastForwardKeys,
     StepVal,
-    //StepValReverse,
     FastForwardVals,
     SeekKey(K),
     //SeekKeyReverse(K),
@@ -298,18 +296,28 @@ fn cursor_trait<B, I>(
         assert_eq!(
             model_cursor.key_valid(),
             totest_cursor.key_valid(),
-            "key_valid() mismatch in step {}: model = {} impl = {}",
+            "key_valid() mismatch in step {}: model = {} impl = {} (key = {:?})",
             step,
             model_cursor.key_valid(),
-            totest_cursor.key_valid()
+            totest_cursor.key_valid(),
+            if model_cursor.key_valid() {
+                model_cursor.key()
+            } else {
+                totest_cursor.key()
+            }
         );
         assert_eq!(
             model_cursor.val_valid(),
             totest_cursor.val_valid(),
-            "val_valid() mismatch in step {}: model = {} impl = {}",
+            "val_valid() mismatch in step {}: model = {} impl = {} (val = {:?})",
             step,
             model_cursor.val_valid(),
-            totest_cursor.val_valid()
+            totest_cursor.val_valid(),
+            if model_cursor.val_valid() {
+                model_cursor.val()
+            } else {
+                totest_cursor.val()
+            }
         );
     }
 
@@ -317,7 +325,7 @@ fn cursor_trait<B, I>(
     let mut direction = Direction::Forward;
     for (i, action) in ops.iter().enumerate() {
         let step = i + 1;
-        log::trace!("executing action {:?}", action);
+        //log::trace!("executing action {:?}", action);
         match action {
             CursorAction::StepKey => {
                 direction = Direction::Forward;

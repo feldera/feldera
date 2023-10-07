@@ -423,6 +423,8 @@ fn fast_forward_vals() {
     let mut c = ptrace.cursor();
     c.fast_forward_vals();
     assert!(c.key_valid());
+    c.step_val_reverse();
+    assert!(c.key_valid());
 }
 
 /// Inserting a rocks-key with the same key but different dbsp-value fails to

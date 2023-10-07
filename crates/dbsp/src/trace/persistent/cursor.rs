@@ -83,7 +83,7 @@ where
     ) -> Option<(B::Key, B::Val, Values<B::Time, B::R>)> {
         loop {
             if !iter.valid() {
-                log::trace!("read_key_val_weights iter invalid(), None returned");
+                //log::trace!("read_key_val_weights iter invalid(), None returned");
                 return None;
             }
 
@@ -346,18 +346,42 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
 
     fn step_val_reverse(&mut self) {
         if self.db_iter.valid() {
-            log::error!("step_val_reverse");
+            let old_key = self.cur_key.clone();
             self.db_iter.prev();
-            self.update_current_key_weight(Direction::Backward);
+            if self.db_iter.valid() {
+                self.update_current_key_weight(Direction::Backward);
+                if old_key == self.cur_key {
+                    return;
+                } else {
+                    self.db_iter.next();
+                    self.update_current_key_weight(Direction::Forward);
+                    self.cur_val = None;
+                    return;
+                }
+            } else {
+                self.db_iter.seek_to_first();
+                self.cur_val = None;
+            }
         } else {
-            // Once we reach last element we can't go back anymore with prev
-            self.db_iter.seek_to_last();
-            assert!(self.db_iter.valid());
-            self.update_current_key_weight(Direction::Backward);
+            self.cur_val = None;
         }
     }
 
     fn seek_val(&mut self, val: &B::Val) {
+        /*if self.db_iter.valid() {
+            let key = self.cur_key.as_ref().unwrap().clone();
+            let val = Some(val.clone());
+            let persisted_key: PersistedKey<B::Key, B::Val> = (key, val);
+
+            let encoded_key = to_bytes(&persisted_key).expect("Can't encode `key`");
+            self.db_iter.seek(encoded_key);
+            self.update_current_key_weight(Direction::Forward);
+        } else {
+            self.cur_key = None;
+            self.cur_diffs = None;
+            self.cur_val = None;
+        }*/
+
         while self.val_valid() && self.val() < val {
             self.step_val();
         }
@@ -405,7 +429,8 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
     }
 
     fn fast_forward_vals(&mut self) {
-        log::trace!("fast_forward_vals");
+        self.rewind_vals();
+
         if self.db_iter.valid() && self.key_valid() && self.val_valid() {
             let key = self.key().clone();
             let mut last_val = self.val().clone();
@@ -421,9 +446,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
                 self.db_iter.valid(),
                 "fast_forward_vals: We just seeked to a valid key"
             );
-            self.update_current_key_weight(Direction::Backward);
-
-            log::trace!("fast_forward_vals {:?}", self.key());
+            self.update_current_key_weight(Direction::Forward);
         }
     }
 }
