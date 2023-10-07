@@ -83,11 +83,13 @@ nodes will only be on the private subnet.
 
 
 :::tip
-Unless you are running `eksctl` from a machine which is in the same VPC and
-subnet as the EKS control plane, you will want to set `publicAccess: true`.
-If so, we strongly recommend using the `publicAccessCIDRs` setting to limit IP ranges
-which are allowed to interact with the EKS control plane. For example, set it
-to the publicly visible IP of the machine where you are running these commands.
+Unless you are running `eksctl` and `kubectl` from a machine which is in the
+same VPC and subnet as the EKS control plane, you will want to set
+`publicAccess: true`. If so, we strongly recommend using the
+`publicAccessCIDRs` setting to limit IP ranges which are allowed to interact
+with the EKS control plane. We recommend customers set this to a well-scoped
+network range as they see fit to restrict access to one or more operators in your
+corporate network.
 
 See the [eksctl cluster access](https://eksctl.io/usage/vpc-cluster-access/)
 documentation to learn more.
