@@ -447,9 +447,10 @@ pub trait OutputFormat: Send + Sync {
     /// * `consumer` - Consumer to send encoded data batches to.
     fn new_encoder(
         &self,
+        endpoint_name: &str,
         config: &YamlValue,
         consumer: Box<dyn OutputConsumer>,
-    ) -> AnyResult<Box<dyn Encoder>>;
+    ) -> Result<Box<dyn Encoder>, ControllerError>;
 }
 
 impl dyn OutputFormat {

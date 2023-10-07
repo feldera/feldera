@@ -248,6 +248,100 @@ pub trait SerCollectionHandle: Send + Sync {
     fn fork(&self) -> Box<dyn SerCollectionHandle>;
 }
 
+/// Cursor that iterates over deletions before insertions.
+///
+/// Most consumers don't understand Z-sets and expect a stream of upserts
+/// instead, which means that the order of updates matters. For a table
+/// with a primary key or unique constraint we must delete an existing record
+/// before creating a new one with the same key.  DBSP may not know about
+/// these constraints, so the safe thing to do is to output deletions before
+/// insertions.  This cursor helps by iterating over all deletions in
+/// the batch before insertions.
+pub struct CursorWithPolarity<'a> {
+    cursor: Box<dyn SerCursor + 'a>,
+    second_pass: bool,
+}
+
+impl<'a> CursorWithPolarity<'a> {
+    pub fn new(cursor: Box<dyn SerCursor + 'a>) -> Self {
+        let mut result = Self {
+            cursor,
+            second_pass: false,
+        };
+
+        if result.key_valid() {
+            result.advance_val();
+        }
+
+        result
+    }
+
+    fn advance_val(&mut self) {
+        while self.cursor.val_valid()
+            && ((!self.second_pass && self.cursor.weight() >= 0)
+                || (self.second_pass && self.cursor.weight() <= 0))
+        {
+            self.step_val();
+        }
+    }
+}
+
+impl<'a> SerCursor for CursorWithPolarity<'a> {
+    fn key_valid(&self) -> bool {
+        self.cursor.key_valid()
+    }
+
+    fn val_valid(&self) -> bool {
+        self.cursor.val_valid()
+    }
+
+    fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_key(dst)
+    }
+
+    fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_key_weight(dst)
+    }
+
+    fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_val(dst)
+    }
+
+    fn weight(&mut self) -> i64 {
+        self.cursor.weight()
+    }
+
+    fn step_key(&mut self) {
+        self.cursor.step_key();
+        if !self.cursor.key_valid() && !self.second_pass {
+            self.cursor.rewind_keys();
+            self.second_pass = true;
+        }
+
+        if self.cursor.key_valid() {
+            self.advance_val();
+        }
+    }
+
+    fn step_val(&mut self) {
+        self.cursor.step_val();
+        self.advance_val();
+    }
+
+    fn rewind_keys(&mut self) {
+        self.cursor.rewind_keys();
+        self.second_pass = false;
+        if self.cursor.key_valid() {
+            self.advance_val();
+        }
+    }
+
+    fn rewind_vals(&mut self) {
+        self.cursor.rewind_vals();
+        self.advance_val();
+    }
+}
+
 /// A catalog of input and output stream handles of a circuit.
 pub trait CircuitCatalog: Send {
     /// Look up an input stream handle by name.

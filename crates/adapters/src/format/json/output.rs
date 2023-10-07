@@ -1,16 +1,19 @@
 use crate::{
-    catalog::{JsonFlavor, RecordFormat, SerBatch},
+    catalog::{CursorWithPolarity, JsonFlavor, RecordFormat, SerBatch, SerCursor},
     util::truncate_ellipse,
     ControllerError, Encoder, OutputConsumer, OutputFormat,
 };
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, mem::take, sync::Arc};
+use std::{borrow::Cow, io::Write, mem::take, sync::Arc};
 use utoipa::ToSchema;
+
+use super::JsonUpdateFormat;
 
 /// JSON format encoder.
 pub struct JsonOutputFormat;
@@ -33,10 +36,31 @@ static MAX_RECORD_LEN_IN_ERRMSG: usize = 4096;
 // suppors arbitrary weights beyond `MAX_DUPLICATES`.
 #[derive(Deserialize, Serialize, ToSchema)]
 pub struct JsonEncoderConfig {
+    #[serde(default)]
+    update_format: JsonUpdateFormat,
     #[serde(default = "default_buffer_size_records")]
     buffer_size_records: usize,
     #[serde(default)]
     array: bool,
+}
+
+impl JsonEncoderConfig {
+    fn validate(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        if !matches!(
+            self.update_format,
+            JsonUpdateFormat::InsertDelete | JsonUpdateFormat::Snowflake
+        ) {
+            return Err(ControllerError::output_format_not_supported(
+                endpoint_name,
+                &format!(
+                    "{:?} update format is not supported for output JSON streams",
+                    self.update_format
+                ),
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 impl OutputFormat for JsonOutputFormat {
@@ -55,6 +79,7 @@ impl OutputFormat for JsonOutputFormat {
         .map_err(|e| {
             ControllerError::encoder_config_parse_error(endpoint_name, &e, request.query_string())
         })?;
+
         // We currently always break output into chunks, which requires encoding
         // JSON data as a valid JSON document (can't use ND-JSON), so we set `array`
         // to `true` for the result to be valid.
@@ -67,10 +92,24 @@ impl OutputFormat for JsonOutputFormat {
 
     fn new_encoder(
         &self,
+        endpoint_name: &str,
         config: &YamlValue,
         consumer: Box<dyn OutputConsumer>,
-    ) -> AnyResult<Box<dyn Encoder>> {
-        let config = JsonEncoderConfig::deserialize(config)?;
+    ) -> Result<Box<dyn Encoder>, ControllerError> {
+        let mut config = JsonEncoderConfig::deserialize(config).map_err(|e| {
+            ControllerError::encoder_config_parse_error(
+                endpoint_name,
+                &e,
+                &serde_yaml::to_string(&config).unwrap_or_default(),
+            )
+        })?;
+
+        config.validate(endpoint_name)?;
+
+        // Snowflake requires one record per message.
+        if config.update_format == JsonUpdateFormat::Snowflake {
+            config.buffer_size_records = 1;
+        }
 
         Ok(Box::new(JsonEncoder::new(consumer, config)))
     }
@@ -82,6 +121,10 @@ struct JsonEncoder {
     config: JsonEncoderConfig,
     buffer: Vec<u8>,
     max_buffer_size: usize,
+    /// Unique id of this encoder instance.
+    stream_id: u64,
+    /// Sequence number of the last record produced by this encoder.
+    seq_number: u64,
 }
 
 impl JsonEncoder {
@@ -93,6 +136,10 @@ impl JsonEncoder {
             config,
             buffer: Vec::new(),
             max_buffer_size,
+            // Make sure broken JSON parsers/encoders don't convert stream
+            // id into a negative number.
+            stream_id: StdRng::from_entropy().gen_range(0..i64::MAX) as u64,
+            seq_number: 0,
         }
     }
 }
@@ -115,9 +162,14 @@ impl Encoder for JsonEncoder {
         let mut num_records = 0;
         for batch in batches.iter() {
             // TODO: configurable serializer.
-            let mut cursor = batch.cursor(RecordFormat::Json(JsonFlavor::Default))?;
+            let mut cursor =
+                CursorWithPolarity::new(batch.cursor(RecordFormat::Json(JsonFlavor::Default))?);
 
             while cursor.key_valid() {
+                if !cursor.val_valid() {
+                    cursor.step_key();
+                    continue;
+                }
                 let mut w = cursor.weight();
 
                 if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
@@ -148,13 +200,42 @@ impl Encoder for JsonEncoder {
                     // implementation of `RawValue`. If we ever decide to build one,
                     // check out the "$serde_json::private::RawValue" magic string in
                     // crate `serde_json`.
-                    if w > 0 {
-                        buffer.extend_from_slice(br#"{"insert":"#);
-                    } else {
-                        buffer.extend_from_slice(br#"{"delete":"#);
+                    match self.config.update_format {
+                        JsonUpdateFormat::InsertDelete => {
+                            if w > 0 {
+                                buffer.extend_from_slice(br#"{"insert":"#);
+                            } else {
+                                buffer.extend_from_slice(br#"{"delete":"#);
+                            }
+                            cursor.serialize_key(&mut buffer)?;
+                            buffer.push(b'}');
+                        }
+                        JsonUpdateFormat::Snowflake => {
+                            cursor.serialize_key(&mut buffer)?;
+
+                            // Remove the closing brace and add '__action' field.
+                            if buffer.pop() != Some(b'}') {
+                                bail!("Serialized JSON value does not end in '}}'");
+                            }
+                            if buffer.last() != Some(&b'{') {
+                                buffer.push(b',');
+                            }
+                            let action = if w > 0 { "insert" } else { "delete" };
+                            write!(
+                                buffer,
+                                r#""__action":"{action}","__stream_id":{},"__seq_number":{}}}"#,
+                                self.stream_id, self.seq_number
+                            )?;
+                        }
+                        _ => {
+                            // Should never happen.  Unsupported formats are rejected during
+                            // initialization.
+                            bail!(
+                                "Unsupported JSON serialization format: {:?}",
+                                self.config.update_format
+                            )
+                        }
                     }
-                    cursor.serialize_key(&mut buffer)?;
-                    buffer.push(b'}');
 
                     // Drop the last encoded record if it exceeds max_buffer_size.
                     // The record will be included in the next buffer.
@@ -177,6 +258,7 @@ impl Encoder for JsonEncoder {
                             w += 1;
                         }
                         num_records += 1;
+                        self.seq_number += 1;
                     }
 
                     if num_records >= self.config.buffer_size_records || buffer_full {
@@ -215,18 +297,88 @@ impl Encoder for JsonEncoder {
 #[cfg(test)]
 mod test {
     use super::{JsonEncoder, JsonEncoderConfig};
+    use crate::test::generate_test_batches_with_weights;
     use crate::{
         catalog::SerBatch,
-        format::{json::InsDelUpdate, Encoder},
+        format::{
+            json::{InsDelUpdate, SnowflakeAction, SnowflakeUpdate},
+            Encoder, JsonUpdateFormat,
+        },
         static_compile::seroutput::SerBatchImpl,
         test::{MockOutputConsumer, TestStruct},
     };
     use dbsp::{trace::Batch, IndexedZSet, OrdZSet};
     use log::trace;
-    use std::sync::Arc;
+    use proptest::prelude::*;
+    use serde::Deserialize;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::{fmt::Debug, sync::Arc};
 
-    fn test_json(array: bool, batches: Vec<Vec<(TestStruct, i64)>>) {
+    trait OutputUpdate: Debug + for<'de> Deserialize<'de> + Eq + Ord {
+        type Val;
+
+        fn update_format() -> JsonUpdateFormat;
+        fn update(insert: bool, val: Self::Val, stream_id: u64, sequence_num: u64) -> Self;
+    }
+
+    impl<T> OutputUpdate for InsDelUpdate<T>
+    where
+        T: Debug + Eq + Ord + for<'de> Deserialize<'de>,
+    {
+        type Val = T;
+
+        fn update_format() -> JsonUpdateFormat {
+            JsonUpdateFormat::InsertDelete
+        }
+
+        fn update(insert: bool, val: Self::Val, _stream_id: u64, _sequence_num: u64) -> Self {
+            if insert {
+                Self {
+                    table: None,
+                    insert: Some(val),
+                    delete: None,
+                }
+            } else {
+                Self {
+                    table: None,
+                    insert: None,
+                    delete: Some(val),
+                }
+            }
+        }
+    }
+
+    impl<T> OutputUpdate for SnowflakeUpdate<T>
+    where
+        T: Debug + Eq + Ord + for<'de> Deserialize<'de>,
+    {
+        type Val = T;
+
+        fn update_format() -> JsonUpdateFormat {
+            JsonUpdateFormat::Snowflake
+        }
+
+        fn update(insert: bool, value: Self::Val, stream_id: u64, sequence_num: u64) -> Self {
+            SnowflakeUpdate {
+                value,
+                __action: if insert {
+                    SnowflakeAction::Insert
+                } else {
+                    SnowflakeAction::Delete
+                },
+                __seq_number: sequence_num,
+                __stream_id: stream_id,
+            }
+        }
+    }
+
+    fn test_json<U: OutputUpdate<Val = TestStruct>>(
+        array: bool,
+        batches: Vec<Vec<(TestStruct, i64)>>,
+    ) {
         let config = JsonEncoderConfig {
+            update_format: U::update_format(),
             buffer_size_records: 3,
             array,
         };
@@ -249,6 +401,7 @@ mod test {
             .collect::<Vec<_>>();
         encoder.encode(zsets.as_slice()).unwrap();
 
+        let seq_number = Rc::new(RefCell::new(0));
         let expected_output = batches
             .into_iter()
             .flat_map(|batch| {
@@ -259,18 +412,47 @@ mod test {
                         .map(|(x, w)| (x.clone(), *w))
                         .collect::<Vec<_>>(),
                 );
-                zset.iter()
+                let mut deletes = zset
+                    .iter()
                     .flat_map(|(data, (), weight)| {
                         trace!("data: {data:?}, weight: {weight}");
-                        let range = if weight > 0 { 0..weight } else { weight..0 };
+                        let range = if weight < 0 { weight..0 } else { 0..0 };
 
-                        range.map(move |_| InsDelUpdate {
-                            table: None,
-                            insert: if weight > 0 { Some(data.clone()) } else { None },
-                            delete: if weight < 0 { Some(data.clone()) } else { None },
+                        let seq_number = seq_number.clone();
+                        range.map(move |_| {
+                            let upd = U::update(
+                                false,
+                                data.clone(),
+                                encoder.stream_id,
+                                *seq_number.borrow(),
+                            );
+                            *seq_number.borrow_mut() += 1;
+                            upd
                         })
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                let mut inserts = zset
+                    .iter()
+                    .flat_map(|(data, (), weight)| {
+                        trace!("data: {data:?}, weight: {weight}");
+                        let range = if weight > 0 { 0..weight } else { 0..0 };
+
+                        let seq_number = seq_number.clone();
+                        range.map(move |_| {
+                            let upd = U::update(
+                                true,
+                                data.clone(),
+                                encoder.stream_id,
+                                *seq_number.borrow(),
+                            );
+                            *seq_number.borrow_mut() += 1;
+                            upd
+                        })
+                    })
+                    .collect::<Vec<_>>();
+
+                deletes.append(&mut inserts);
+                deletes
             })
             .collect::<Vec<_>>();
 
@@ -279,14 +461,17 @@ mod test {
             std::str::from_utf8(&consumer_data.lock().unwrap()).unwrap()
         );
 
+        let consumer_data = consumer_data.lock().unwrap();
+        let deserializer = serde_json::Deserializer::from_slice(&consumer_data);
+
         let actual_output = if array {
-            serde_json::Deserializer::from_slice(&consumer_data.lock().unwrap())
-                .into_iter::<Vec<InsDelUpdate<TestStruct>>>()
+            deserializer
+                .into_iter::<Vec<U>>()
                 .flat_map(|item| item.unwrap())
                 .collect::<Vec<_>>()
         } else {
-            serde_json::Deserializer::from_slice(&consumer_data.lock().unwrap())
-                .into_iter::<InsDelUpdate<TestStruct>>()
+            deserializer
+                .into_iter::<U>()
                 .map(|item| item.unwrap())
                 .collect::<Vec<_>>()
         };
@@ -362,6 +547,7 @@ mod test {
     #[test]
     fn test_long_record_error() {
         let config = JsonEncoderConfig {
+            update_format: JsonUpdateFormat::InsertDelete,
             buffer_size_records: 3,
             array: false,
         };
@@ -373,33 +559,52 @@ mod test {
         let err = encoder
             .encode(&[Arc::new(<SerBatchImpl<_, TestStruct, ()>>::new(zset)) as Arc<dyn SerBatch>])
             .unwrap_err();
-        assert_eq!(format!("{err}"), "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is 32 bytes, but the following record requires 47 bytes: '{\"insert\":{\"id\":0,\"b\":true,\"i\":null,\"s\":\"foo\"}}'.");
+        assert_eq!(format!("{err}"), "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is 32 bytes, but the following record requires 46 bytes: '{\"delete\":{\"id\":1,\"b\":false,\"i\":10,\"s\":\"bar\"}}'.");
     }
 
     #[test]
-    fn test_ndjson() {
-        test_json(false, test_data());
+    fn test_ndjson_insdel() {
+        test_json::<InsDelUpdate<TestStruct>>(false, test_data());
     }
 
     #[test]
-    fn test_arrayjson() {
-        test_json(true, test_data());
+    fn test_arrayjson_insdel() {
+        test_json::<InsDelUpdate<TestStruct>>(true, test_data());
     }
 
-    use crate::test::generate_test_batches_with_weights;
-    use proptest::prelude::*;
+    #[test]
+    fn test_ndjson_snowflake() {
+        test_json::<SnowflakeUpdate<TestStruct>>(false, test_data());
+    }
+
+    #[test]
+    fn test_arrayjson_snowflake() {
+        test_json::<SnowflakeUpdate<TestStruct>>(true, test_data());
+    }
 
     proptest! {
         #[test]
-        fn proptest_arrayjson(data in generate_test_batches_with_weights(10, 20))
+        fn proptest_arrayjson_insdel(data in generate_test_batches_with_weights(10, 20))
         {
-            test_json(true, data)
+            test_json::<InsDelUpdate<TestStruct>>(true, data)
         }
 
         #[test]
-        fn proptest_ndjson(data in generate_test_batches_with_weights(10, 20))
+        fn proptest_ndjson_insdel(data in generate_test_batches_with_weights(10, 20))
         {
-            test_json(false, data)
+            test_json::<InsDelUpdate<TestStruct>>(false, data)
+        }
+
+        #[test]
+        fn proptest_arrayjson_snowflake(data in generate_test_batches_with_weights(10, 20))
+        {
+            test_json::<SnowflakeUpdate<TestStruct>>(true, data)
+        }
+
+        #[test]
+        fn proptest_ndjson_snowflake(data in generate_test_batches_with_weights(10, 20))
+        {
+            test_json::<SnowflakeUpdate<TestStruct>>(false, data)
         }
     }
 }

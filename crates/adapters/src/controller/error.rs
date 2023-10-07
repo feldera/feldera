@@ -75,6 +75,16 @@ pub enum ConfigError {
         endpoint_name: String,
         stream_name: String,
     },
+
+    InputFormatNotSupported {
+        endpoint_name: String,
+        error: String,
+    },
+
+    OutputFormatNotSupported {
+        endpoint_name: String,
+        error: String,
+    },
 }
 
 impl StdError for ConfigError {}
@@ -93,6 +103,8 @@ impl DetailedError for ConfigError {
             Self::UnknownOutputTransport { .. } => Cow::from("UnknownOutputTransport"),
             Self::UnknownInputStream { .. } => Cow::from("UnknownInputStream"),
             Self::UnknownOutputStream { .. } => Cow::from("UnknownOutputStream"),
+            Self::InputFormatNotSupported { .. } => Cow::from("InputFormatNotSupported"),
+            Self::OutputFormatNotSupported { .. } => Cow::from("OutputFormatNotSupported"),
         }
     }
 }
@@ -167,6 +179,24 @@ impl Display for ConfigError {
                 stream_name,
             } => {
                 write!(f, "Output endpoint '{endpoint_name}' specifies unknown output table or view '{stream_name}'")
+            }
+            Self::InputFormatNotSupported {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "Format not supported on input endpoint '{endpoint_name}': {error}"
+                )
+            }
+            Self::OutputFormatNotSupported {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "Format not supported on output endpoint '{endpoint_name}': {error}"
+                )
             }
         }
     }
@@ -255,6 +285,20 @@ impl ConfigError {
         Self::UnknownOutputStream {
             endpoint_name: endpoint_name.to_owned(),
             stream_name: stream_name.to_owned(),
+        }
+    }
+
+    pub fn input_format_not_supported(endpoint_name: &str, error: &str) -> Self {
+        Self::InputFormatNotSupported {
+            endpoint_name: endpoint_name.to_owned(),
+            error: error.to_owned(),
+        }
+    }
+
+    pub fn output_format_not_supported(endpoint_name: &str, error: &str) -> Self {
+        Self::OutputFormatNotSupported {
+            endpoint_name: endpoint_name.to_owned(),
+            error: error.to_owned(),
         }
     }
 }
@@ -629,6 +673,18 @@ impl ControllerError {
     pub fn unknown_output_stream(endpoint_name: &str, stream_name: &str) -> Self {
         Self::Config {
             config_error: ConfigError::unknown_output_stream(endpoint_name, stream_name),
+        }
+    }
+
+    pub fn input_format_not_supported(endpoint_name: &str, error: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::input_format_not_supported(endpoint_name, error),
+        }
+    }
+
+    pub fn output_format_not_supported(endpoint_name: &str, error: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::output_format_not_supported(endpoint_name, error),
         }
     }
 

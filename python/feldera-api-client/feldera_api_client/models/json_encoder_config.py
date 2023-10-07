@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Type, TypeVar, Union
 
 from attrs import define, field
 
+from ..models.json_update_format import JsonUpdateFormat
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="JsonEncoderConfig")
@@ -13,15 +14,24 @@ class JsonEncoderConfig:
     Attributes:
         array (Union[Unset, bool]):
         buffer_size_records (Union[Unset, int]):
+        update_format (Union[Unset, JsonUpdateFormat]): Supported JSON data change event formats.
+
+            Each element in a JSON-formatted input stream specifies
+            an update to one or more records in an input table.  We support
+            several different ways to represent such updates.
     """
 
     array: Union[Unset, bool] = UNSET
     buffer_size_records: Union[Unset, int] = UNSET
+    update_format: Union[Unset, JsonUpdateFormat] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         array = self.array
         buffer_size_records = self.buffer_size_records
+        update_format: Union[Unset, str] = UNSET
+        if not isinstance(self.update_format, Unset):
+            update_format = self.update_format.value
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -30,6 +40,8 @@ class JsonEncoderConfig:
             field_dict["array"] = array
         if buffer_size_records is not UNSET:
             field_dict["buffer_size_records"] = buffer_size_records
+        if update_format is not UNSET:
+            field_dict["update_format"] = update_format
 
         return field_dict
 
@@ -40,9 +52,17 @@ class JsonEncoderConfig:
 
         buffer_size_records = d.pop("buffer_size_records", UNSET)
 
+        _update_format = d.pop("update_format", UNSET)
+        update_format: Union[Unset, JsonUpdateFormat]
+        if isinstance(_update_format, Unset):
+            update_format = UNSET
+        else:
+            update_format = JsonUpdateFormat(_update_format)
+
         json_encoder_config = cls(
             array=array,
             buffer_size_records=buffer_size_records,
+            update_format=update_format,
         )
 
         json_encoder_config.additional_properties = d

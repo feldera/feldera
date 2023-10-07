@@ -1,22 +1,6 @@
 # Additional services needed to test/demo Debezium integration
 
 services:
-  # Kafka connect.
-  # TODO: add a healthcheck to this container.
-  connect:
-    image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.1.7}
-    depends_on:
-      redpanda:
-        condition: service_healthy
-    ports:
-      - "8083:8083"
-    environment:
-      BOOTSTRAP_SERVERS: "redpanda:9092"
-      GROUP_ID: "1"
-      CONFIG_STORAGE_TOPIC: "inventory.configs"
-      OFFSET_STORAGE_TOPIC: "inventory.offset"
-      STATUS_STORAGE_TOPIC: "inventory.status"
-
   # MySQL container with a toy database used in the Debezium
   # MySQL tutorial (based on MySQL 8.0).
   mysql:

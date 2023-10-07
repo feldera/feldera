@@ -28,11 +28,13 @@ def execute(
         prepare_fn()
 
     if "run" in actions:
+        # Make sure we run the pipeline from a clean slate.
+        pipeline.shutdown()
         pipeline.run()
         print("Pipeline started")
 
     if verify_fn and "verify" in actions:
-        verify_fn()
+        verify_fn(dbsp_url, pipeline)
 
 
 def run_demo(name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None):

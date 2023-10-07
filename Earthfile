@@ -525,6 +525,10 @@ build-demo-container:
             && unzip rpk-linux-$arch.zip -d /bin/ \
             && rpk version \
             && rm rpk-linux-$arch.zip
+    # Install snowsql
+    RUN curl -O https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.28-linux_x86_64.bash \
+        && SNOWSQL_DEST=/bin SNOWSQL_LOGIN_SHELL=~/.profile bash snowsql-1.2.28-linux_x86_64.bash \
+        && snowsql -v
     COPY +install-python/python3.10 /root/.local/lib/python3.10
     COPY +install-python/bin /root/.local/bin
     COPY demo demo
@@ -558,6 +562,19 @@ test-debezium:
         RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml -f docker-compose-debezium.yml --profile debezium up --force-recreate --exit-code-from debezium-demo
     END
 
+test-snowflake:
+    FROM earthly/dind:alpine
+    COPY deploy/docker-compose.yml .
+    COPY deploy/.env .
+    RUN cat .env
+    ENV FELDERA_VERSION=latest
+    WITH DOCKER --pull postgres \
+                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+                --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
+                --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml --profile snowflake up --force-recreate --exit-code-from snowflake-demo
+    END
 
 # Fetches the test binary from test-manager, and produces a container image out of it
 integration-test-container:
@@ -608,5 +625,6 @@ all-tests:
     BUILD +test-sql
     BUILD +test-docker-compose
     BUILD +test-debezium
+    BUILD +test-snowflake
     BUILD +integration-tests
 

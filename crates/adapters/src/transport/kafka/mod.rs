@@ -84,7 +84,7 @@ where
 {
     match e.rdkafka_error_code() {
         None => (false, AnyError::from(e)),
-        Some(code) if code == RDKafkaErrorCode::Fatal => {
+        Some(RDKafkaErrorCode::Fatal) => {
             if let Some((_errcode, errstr)) = client.fatal_error() {
                 (true, AnyError::msg(errstr))
             } else {

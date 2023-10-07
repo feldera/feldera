@@ -1059,9 +1059,11 @@ impl ControllerInner {
                     &endpoint_config.connector_config.format.name,
                 )
             })?;
-        let encoder = format
-            .new_encoder(&endpoint_config.connector_config.format.config, probe)
-            .map_err(|e| ControllerError::encode_error(endpoint_name, e))?;
+        let encoder = format.new_encoder(
+            endpoint_name,
+            &endpoint_config.connector_config.format.config,
+            probe,
+        )?;
 
         let parker = Parker::new();
         let endpoint_descr = OutputEndpointDescr::new(

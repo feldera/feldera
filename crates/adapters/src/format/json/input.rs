@@ -72,6 +72,22 @@ pub struct JsonParserConfig {
     array: bool,
 }
 
+impl JsonParserConfig {
+    fn validate(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        if self.update_format == JsonUpdateFormat::Snowflake {
+            return Err(ControllerError::input_format_not_supported(
+                endpoint_name,
+                &format!(
+                    "{:?} is not supported for JSON input streams",
+                    &self.update_format
+                ),
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 trait UpdateFormat {
     fn error() -> &'static str;
     fn array_error() -> &'static str;
@@ -231,6 +247,7 @@ impl InputFormat for JsonInputFormat {
                 &serde_yaml::to_string(&config).unwrap_or_default(),
             )
         })?;
+        config.validate(endpoint_name)?;
         let input_stream =
             input_stream.configure_deserializer(RecordFormat::Json(config.json_flavor.clone()))?;
         Ok(Box::new(JsonParser::new(input_stream, config)) as Box<dyn Parser>)
@@ -402,6 +419,9 @@ impl JsonParser {
                     self.apply_update::<WeightedUpdate<_>>(update, &mut errors)
                 }
                 JsonUpdateFormat::Raw => self.apply_update::<&RawValue>(update, &mut errors),
+                JsonUpdateFormat::Snowflake => {
+                    panic!("Unexpected update format: {:?}", &self.config.update_format)
+                }
             }
         }
 

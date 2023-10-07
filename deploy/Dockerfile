@@ -62,7 +62,7 @@ COPY sql-to-dbsp-compiler /sql/sql-to-dbsp-compiler
 RUN cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -ntp -DskipTests package
 
 # Minimal image for running the pipeline manager
-from base as release
+FROM base as release
 ENV PATH="$PATH:/root/.cargo/bin"
 # Pipeline manager binary
 COPY --from=builder /app/target/release/pipeline-manager pipeline-manager
@@ -156,10 +156,14 @@ RUN apt update && apt install pkg-config \
   && unzip rpk-linux-$arch.zip -d /bin/ \
   && rpk version \
   && rm rpk-linux-$arch.zip \
+  # Install snowsql
+  && curl -O https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.28-linux_x86_64.bash \
+  && SNOWSQL_DEST=/bin SNOWSQL_LOGIN_SHELL=~/.profile bash snowsql-1.2.28-linux_x86_64.bash \
+  && snowsql -v \
   # Install DBSP python library and dependencies
   && ./pipeline-manager --dump-openapi \
   && rm pipeline-manager \
-  && pip3 install openapi-python-client==0.15.0 websockets \
+  && pip3 install openapi-python-client==0.15.0 websockets snowflake-connector-python \
   && cd python \
   && rm -rf feldera-api-client \
   && openapi-python-client generate --path ../openapi.json --fail-on-warning \
@@ -175,9 +179,9 @@ CMD bash
 FROM debezium/connect:2.3 AS kafka-connect
 RUN mkdir /kafka/connect/snowflake-kafka-connector
 RUN cd /kafka/connect/snowflake-kafka-connector \
-    && curl -LO https://repo1.maven.org/maven2/com/snowflake/snowflake-kafka-connector/2.1.0/snowflake-kafka-connector-2.1.0.jar \
-    && curl -LO https://repo1.maven.org/maven2/org/bouncycastle/bc-fips/1.0.1/bc-fips-1.0.1.jar \
-    && curl -LO https://repo1.maven.org/maven2/org/bouncycastle/bcpkix-fips/1.0.3/bcpkix-fips-1.0.3.jar
+  && curl -LO https://repo1.maven.org/maven2/com/snowflake/snowflake-kafka-connector/2.1.0/snowflake-kafka-connector-2.1.0.jar \
+  && curl -LO https://repo1.maven.org/maven2/org/bouncycastle/bc-fips/1.0.1/bc-fips-1.0.1.jar \
+  && curl -LO https://repo1.maven.org/maven2/org/bouncycastle/bcpkix-fips/1.0.3/bcpkix-fips-1.0.3.jar
 
 # By default, only build the release version
 FROM release
