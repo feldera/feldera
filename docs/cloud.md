@@ -169,8 +169,11 @@ helm upgrade --install ingress-nginx-internal ingress-nginx/ingress-nginx \
 ## Installing Feldera Cloud
 
 To install Feldera Cloud, first get the Helm package and container images that
-are provided with our license. Please contact support@feldera.com if you do not
-already have these artifacts for your install.
+are provided with our license. Please contact `support@feldera.com` if you do
+not already have these artifacts for your install. The typical workflow for
+customers would be to host the Feldera-supplied artifacts in their own
+container registry (like ECR). Customers will also have direct access to the
+Feldera registry using IAM credentials.
 
 Next, let's create a Kubernetes namespace to deploy Feldera Cloud in.
 
