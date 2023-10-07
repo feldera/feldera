@@ -186,6 +186,7 @@ Next, let's use Helm to install Feldera. We will create a Helm release named
 
 ```
 helm upgrade --install feldera ./helm/feldera \
+    --set felderaLicenseKey=$FELDERA_KEY
     --set felderaImageRepo=$FELDERA_REPO
     --set felderaVersion=$FELDERA_VERSION \
     -n feldera
