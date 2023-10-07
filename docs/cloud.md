@@ -1,6 +1,8 @@
 # Feldera Cloud
 
-These instructions explain how to run the Feldera Platform on a AWS Elastic Kubernetes Service (EKS). 
+These instructions explain how to install and run our enterprise offering,
+*Feldera Cloud*, on Amazon's Elastic Kubernetes Service (EKS). Contact us at
+`learnmore@feldera.com` if you are interested.
 
 ## Prerequisites
 
@@ -165,7 +167,8 @@ helm upgrade --install ingress-nginx-internal ingress-nginx/ingress-nginx \
 ## Installing Feldera Cloud
 
 To install Feldera Cloud, first get the Helm package and container images that
-are provided with our license.
+are provided with our license. Please contact support@feldera.com if you do not
+already have these artifacts for your install.
 
 Next, let's create a Kubernetes namespace to deploy Feldera Cloud in.
 
