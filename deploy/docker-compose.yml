@@ -40,7 +40,7 @@ services:
       retries: 5
 
   redpanda:
-    profiles: [ "demo", "debezium" ]
+    profiles: [ "demo", "debezium", "snowflake" ]
     command:
       - redpanda
       - start
@@ -83,6 +83,23 @@ services:
       retries: 5
       start_period: 5s
 
+  # Kafka connect.
+  # TODO: add a healthcheck to this container.
+  connect:
+    profiles: [ "demo", "debezium", "snowflake" ]
+    image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.1.7}
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: "redpanda:9092"
+      GROUP_ID: "1"
+      CONFIG_STORAGE_TOPIC: "inventory.configs"
+      OFFSET_STORAGE_TOPIC: "inventory.offset"
+      STATUS_STORAGE_TOPIC: "inventory.status"
+
   demo:
     profiles: [ "demo" ]
     depends_on:
@@ -104,3 +121,24 @@ services:
       - |
         sleep 1
         demo/demo-container.sh
+
+  snowflake-demo:
+    profiles: [ "snowflake" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+      connect:
+        condition: service_started
+    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.1.6}
+    environment:
+      RUST_BACKTRACE: "1"
+      REDPANDA_BROKERS: "redpanda:9092"
+      RUST_LOG: "info"
+      KAFKA_CONNECT_SERVER: "http://connect:8083"
+      SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE: "${SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE}"
+      SNOWFLAKE_CI_USER_PRIVATE_KEY: "${SNOWFLAKE_CI_USER_PRIVATE_KEY}"
+      SNOWFLAKE_CI_USER_PASSWORD: "${SNOWFLAKE_CI_USER_PASSWORD}"
+    command:
+      - bash
+      - -c
+      - "sleep 1 && env && cd demo/project_demo07-SnowflakeSink/ && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile run verify"

@@ -75,6 +75,17 @@ jobs:
         env:
           itest_config: ${{ secrets.itest_config }}
 
+      # Ship secrets for the Snowflake CI account to Earthly.
+      - name: Snowflake .env
+        run: |
+          echo SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE="${snowflake_passphrase}" >> deploy/.env && \
+          echo SNOWFLAKE_CI_USER_PRIVATE_KEY="${snowflake_key}" >> deploy/.env && \
+          echo SNOWFLAKE_CI_USER_PASSWORD="${snowflake_password}" >> deploy/.env
+        env:
+          snowflake_key: ${{ secrets.snowflake_ci_user_private_key }}
+          snowflake_passphrase: ${{ secrets.snowflake_ci_user_private_key_passphrase }}
+          snowflake_password: ${{ secrets.snowflake_ci_user_password }}
+
       - name: Earthly version
         run: earthly --version
 

@@ -388,6 +388,21 @@ class DBSPPipelineConfig:
         ).unwrap("Failed to retrieve pipeline status")
         return status.additional_properties
 
+    def shutdown(self):
+        """Shut down the pipeline.
+
+        Shut down the pipeline if it is running.
+
+        Raises:
+            httpx.TimeoutException: If the request takes longer than Client.timeout.
+            dbsp.DBSPServerError: If the DBSP server returns an error.
+        """
+
+        pipeline_action.sync_detailed(
+            client=self.api_client, pipeline_id=self.pipeline_id, action="shutdown"
+        ).unwrap("Failed to shut down the pipeline")
+        self.wait_for_status(PipelineStatus.SHUTDOWN, 60.0)
+
     def delete(self):
         """Terminate and delete a pipeline.
 
@@ -399,10 +414,7 @@ class DBSPPipelineConfig:
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
 
-        pipeline_action.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id, action="shutdown"
-        ).unwrap("Failed to pause pipeline")
-        self.wait_for_status(PipelineStatus.SHUTDOWN, 60.0)
+        self.shutdown()
 
         pipeline_delete.sync_detailed(
             client=self.api_client, pipeline_id=self.pipeline_id

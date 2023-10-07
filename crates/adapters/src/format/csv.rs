@@ -1,5 +1,5 @@
 use crate::{
-    catalog::{DeCollectionStream, RecordFormat, SerBatch},
+    catalog::{CursorWithPolarity, DeCollectionStream, RecordFormat, SerBatch, SerCursor},
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
     util::{split_on_newline, truncate_ellipse},
     ControllerError, DeCollectionHandle, OutputConsumer,
@@ -246,10 +246,17 @@ impl OutputFormat for CsvOutputFormat {
 
     fn new_encoder(
         &self,
+        endpoint_name: &str,
         config: &YamlValue,
         consumer: Box<dyn OutputConsumer>,
-    ) -> AnyResult<Box<dyn Encoder>> {
-        let config = CsvEncoderConfig::deserialize(config)?;
+    ) -> Result<Box<dyn Encoder>, ControllerError> {
+        let config = CsvEncoderConfig::deserialize(config).map_err(|e| {
+            ControllerError::encoder_config_parse_error(
+                endpoint_name,
+                &e,
+                &serde_yaml::to_string(&config).unwrap_or_default(),
+            )
+        })?;
 
         Ok(Box::new(CsvEncoder::new(consumer, config)))
     }
@@ -288,9 +295,13 @@ impl Encoder for CsvEncoder {
         let mut num_records = 0;
 
         for batch in batches.iter() {
-            let mut cursor = batch.cursor(RecordFormat::Csv)?;
+            let mut cursor = CursorWithPolarity::new(batch.cursor(RecordFormat::Csv)?);
 
             while cursor.key_valid() {
+                if !cursor.val_valid() {
+                    cursor.step_key();
+                    continue;
+                }
                 let prev_len = buffer.len();
 
                 // `serialize_key_weight`
