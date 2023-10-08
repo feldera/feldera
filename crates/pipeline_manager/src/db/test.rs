@@ -2413,4 +2413,8 @@ impl Storage for Mutex<DbModel> {
     ) -> Result<(), DBError> {
         todo!("Unimplemented");
     }
+
+    async fn check_connection(&self) -> Result<(), DBError> {
+        todo!("Unimplemented");
+    }
 }

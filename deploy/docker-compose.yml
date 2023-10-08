@@ -33,7 +33,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl --fail --request GET --url http://localhost:8080/v0/pipelines"
+          "curl --fail --request GET --url http://localhost:8080/healthz"
         ]
       interval: 10s
       timeout: 5s

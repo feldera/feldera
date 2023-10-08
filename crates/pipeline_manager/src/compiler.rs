@@ -3,6 +3,7 @@ use crate::config::CompilerConfig;
 use crate::db::storage::Storage;
 use crate::db::{DBError, ProgramId, ProjectDB, Version};
 use crate::error::ManagerError;
+use crate::probe::Probe;
 use actix_files::NamedFile;
 use actix_web::{get, web, HttpRequest, HttpServer, Responder};
 use futures_util::join;
@@ -158,6 +159,12 @@ async fn index(
     Ok(NamedFile::open_async(path).await)
 }
 
+/// Health check endpoint
+#[get("/healthz")]
+async fn healthz(probe: web::Data<Arc<Mutex<Probe>>>) -> Result<impl Responder, ManagerError> {
+    probe.lock().await.status_as_http_response()
+}
+
 impl Compiler {
     pub async fn run(
         config: &CompilerConfig,
@@ -165,6 +172,7 @@ impl Compiler {
     ) -> Result<(), ManagerError> {
         Self::create_working_directory(config).await?;
         let compiler_task = spawn(Self::compiler_task(config.clone(), db.clone()));
+        let probe = web::Data::new(Probe::new(db.clone()).await);
         let gc_task = spawn(Self::gc_task(config.clone(), db));
         let config_copy = web::Data::new(config.clone());
         let port = config.binary_ref_port;
@@ -172,7 +180,9 @@ impl Compiler {
             HttpServer::new(move || {
                 actix_web::App::new()
                     .app_data(config_copy.clone())
+                    .app_data(probe.clone())
                     .service(index)
+                    .service(healthz)
             })
             .bind(("0.0.0.0", port))
             .unwrap()

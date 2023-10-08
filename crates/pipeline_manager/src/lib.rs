@@ -12,4 +12,6 @@ pub mod db_notifier;
 pub mod local_runner;
 pub mod logging;
 pub mod pipeline_automata;
+pub mod probe;
+pub mod retries;
 pub mod runner;
