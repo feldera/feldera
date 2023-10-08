@@ -627,6 +627,25 @@ where
     }
 }
 
+#[derive(
+    Clone,
+    Debug,
+    Ord,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Hash,
+    SizeOf,
+    Arbitrary,
+    Archive,
+    Serialize,
+    Deserialize,
+)]
+struct ConstrainedString {
+    #[proptest(strategy = "\"[a-c]\"")]
+    inner: String,
+}
+
 proptest! {
     // Verify that our [`Cursor`] implementation for the persistent trace
     // behaves the same as spine (non-persistent traces):

@@ -4,6 +4,7 @@
 use std::cmp::Ordering;
 
 use once_cell::sync::Lazy;
+use rkyv::{Archive, Deserialize, Serialize};
 use rocksdb::{Cache, DBCompressionType, Options, DB};
 use uuid::Uuid;
 
@@ -23,7 +24,7 @@ pub use cursor::PersistentTraceCursor;
 /// The persistent trace itself, it should be equivalent to the [`Spine`].
 pub use trace::PersistentTrace;
 
-use super::{unaligned_deserialize, Deserializable};
+use crate::DBData;
 
 /// DB in-memory cache size [bytes].
 ///
@@ -72,17 +73,135 @@ static ROCKS_DB_INSTANCE: Lazy<DB> = Lazy::new(|| {
 });
 
 /// The format of the 'key' we store in RocksDB.
-pub(self) type PersistedKey<K, V> = (K, Option<V>);
+///
+/// The ordering is important for Ord/PartialOrd to work correctly:
+/// https://doc.rust-lang.org/reference/items/enumerations.html#implicit-discriminants
+#[derive(Debug, PartialEq, Eq, Deserialize, PartialOrd, Serialize, Archive)]
+//#[archive_attr(derive(Debug, PartialEq, Eq, Serialize, Archive))]
+//#[archive(bound(archive = "K: DBData, V: DBData"))]
+pub(self) enum PersistedKey<K: DBData, V: DBData> {
+    /// A (phantom) marker to indicate the start of a key's values.
+    ///
+    /// This is used by [`rocksdb_key_comparator`] to find the beginning of a key.
+    /// It should never be stored itself as a key.
+    ///
+    /// TODO: Would be nice to be able to mark this as non-serializable for rykv
+    /// and panics if we attempt to do it.
+    StartMarker(K),
+    /// A dbsp key--value pair that is persisted in a RocksDB key.
+    Key(K, V),
+    /// A (phantom marker) to indicate the end of a key's values.
+    ///
+    /// See [`StartMarker`] for more details.
+    EndMarker(K),
+}
+
+impl<K, V> TryFrom<PersistedKey<K, V>> for (K, V)
+where
+    K: DBData,
+    V: DBData,
+{
+    type Error = &'static str;
+
+    fn try_from(value: PersistedKey<K, V>) -> Result<Self, Self::Error> {
+        match value {
+            PersistedKey::Key(k, v) => Ok((k, v)),
+            _ => Err("Cannot convert non-key to (key, value)"),
+        }
+    }
+}
+/*
+impl<K, V> PartialOrd for ArchivedPersistedKey<K, V>
+where
+    K: DBData,
+    V: DBData,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<K, V> Ord for ArchivedPersistedKey<K, V>
+where
+    K: DBData,
+    V: DBData,
+{
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (ArchivedPersistedKey::StartMarker(k1), ArchivedPersistedKey::StartMarker(k2)) => {
+                k1.cmp(k2)
+            }
+            (ArchivedPersistedKey::StartMarker(k1), ArchivedPersistedKey::Key(k2, _)) => {
+                k1.cmp(k2).then(Ordering::Less)
+            }
+            (ArchivedPersistedKey::StartMarker(_), ArchivedPersistedKey::EndMarker(_)) => {
+                Ordering::Less
+            }
+            (ArchivedPersistedKey::Key(k1, _), ArchivedPersistedKey::StartMarker(k2)) => {
+                k1.cmp(k2).then(Ordering::Greater)
+            }
+            (ArchivedPersistedKey::Key(k1, v1), ArchivedPersistedKey::Key(k2, v2)) => {
+                k1.cmp(k2).then(v1.cmp(v2))
+            }
+            (ArchivedPersistedKey::Key(k1, _), ArchivedPersistedKey::EndMarker(k2)) => {
+                k1.cmp(k2).then(Ordering::Less)
+            }
+            (ArchivedPersistedKey::EndMarker(k1), ArchivedPersistedKey::EndMarker(k2)) => {
+                k1.cmp(k2)
+            }
+            (ArchivedPersistedKey::EndMarker(k1), ArchivedPersistedKey::Key(k2, _)) => {
+                k1.cmp(k2).then(Ordering::Greater)
+            }
+            (ArchivedPersistedKey::EndMarker(_), ArchivedPersistedKey::StartMarker(_)) => {
+                Ordering::Greater
+            }
+        }
+    }
+}*/
+
+impl<K, V> Ord for PersistedKey<K, V>
+where
+    K: DBData,
+    V: DBData,
+{
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (PersistedKey::StartMarker(k1), PersistedKey::StartMarker(k2)) => k1.cmp(k2),
+            (PersistedKey::StartMarker(k1), PersistedKey::Key(k2, _)) => {
+                k1.cmp(k2).then(Ordering::Less)
+            }
+            (PersistedKey::StartMarker(_), PersistedKey::EndMarker(_)) => Ordering::Less,
+            (PersistedKey::Key(k1, _), PersistedKey::StartMarker(k2)) => {
+                k1.cmp(k2).then(Ordering::Greater)
+            }
+            (PersistedKey::Key(k1, v1), PersistedKey::Key(k2, v2)) => k1.cmp(k2).then(v1.cmp(v2)),
+            (PersistedKey::Key(k1, _), PersistedKey::EndMarker(k2)) => {
+                k1.cmp(k2).then(Ordering::Less)
+            }
+            (PersistedKey::EndMarker(k1), PersistedKey::EndMarker(k2)) => k1.cmp(k2),
+            (PersistedKey::EndMarker(k1), PersistedKey::Key(k2, _)) => {
+                k1.cmp(k2).then(Ordering::Greater)
+            }
+            (PersistedKey::EndMarker(_), PersistedKey::StartMarker(_)) => Ordering::Greater,
+        }
+    }
+}
 
 /// Wrapper function for doing key comparison in RockDB.
 ///
 /// It works by deserializing the keys and then comparing it (as opposed to the
 /// byte-wise comparison which is the default in RocksDB).
-pub(self) fn rocksdb_key_comparator<K: Deserializable + Ord, V: Deserializable + Ord>(
-    a: &[u8],
-    b: &[u8],
-) -> Ordering {
-    let (key_a, val_a): PersistedKey<K, V> = unaligned_deserialize(a);
-    let (key_b, val_b): PersistedKey<K, V> = unaligned_deserialize(b);
-    key_a.cmp(&key_b).then(val_a.cmp(&val_b))
+pub(self) fn rocksdb_key_comparator<K, V>(a: &[u8], b: &[u8]) -> Ordering
+where
+    K: DBData,
+    V: DBData,
+{
+    //let a = unsafe { rkyv::util::archived_root::<PersistedKey<K, V>>(a) };
+    //let b = unsafe { rkyv::util::archived_root::<PersistedKey<K, V>>(b) };
+    //a.cmp(b)
+    let a: PersistedKey<K, V> = super::unaligned_deserialize(a);
+    let b: PersistedKey<K, V> = super::unaligned_deserialize(b);
+    a.cmp(&b)
 }
