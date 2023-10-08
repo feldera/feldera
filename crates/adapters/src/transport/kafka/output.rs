@@ -18,6 +18,7 @@ use std::{
     borrow::Cow,
     collections::BTreeMap,
     sync::RwLock,
+    thread::sleep,
     time::{Duration, Instant},
 };
 use utoipa::{
@@ -349,6 +350,8 @@ impl OutputEndpoint for KafkaOutputEndpoint {
                     self.config.initialization_timeout_secs
                 );
             }
+
+            sleep(Duration::from_millis(100));
         }
         *self
             .kafka_producer
