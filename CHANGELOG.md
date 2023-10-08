@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support input tables with primary keys
   ([#826](https://github.com/feldera/feldera/issues/826))
 
+### Fixed
+
+- Busy-wait loop in Kafka producer.
+  ([#842](https://github.com/feldera/feldera/issues/842))
+
 ## [0.1.5] - 2023-10-10
 
 ### Added
