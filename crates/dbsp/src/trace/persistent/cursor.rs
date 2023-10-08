@@ -88,9 +88,10 @@ where
             }
 
             if let (Some(k), Some(v)) = (iter.key(), iter.value()) {
-                let (key, value): PersistedKey<B::Key, B::Val> = unaligned_deserialize(k);
-                let value =
-                    value.expect("We never store None as value (just have Option for seeking)");
+                let rocks_key: PersistedKey<B::Key, B::Val> = unaligned_deserialize(k);
+                let (key, value) = rocks_key
+                    .try_into()
+                    .expect("We never store None as value (just have Option for seeking)");
                 let time_weights: PersistedValue<B::Time, B::R> = unaligned_deserialize(v);
                 match time_weights {
                     PersistedValue::Values(weights) => {
@@ -217,15 +218,14 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
                 self.cur_key.is_some(),
                 "db_iter.valid() implies cur_key.is_some()"
             );
-
-            // We skip the rocksdb keys (which are k,v pairs) until we arrive at
-            // the next (dbsp) key that differs from our current key:
-            let cur_key: Option<_> = self.cur_key.clone();
-            while self.cur_key == cur_key {
-                // Note: RocksDB only allows to call `next` on a `valid` cursor
-                self.db_iter.next();
-                self.update_current_key_weight(Direction::Forward);
-            }
+            // We seek to the end of the dbsp key (which are k,v pairs):
+            let cur_key = self.cur_key.clone().unwrap();
+            let persisted_key: PersistedKey<B::Key, B::Val> =
+                PersistedKey::EndMarker(cur_key.clone());
+            let encoded_key = to_bytes(&persisted_key).expect("Can't encode `key`");
+            self.db_iter.seek(encoded_key);
+            self.update_current_key_weight(Direction::Forward);
+            return;
         } else {
             self.cur_key = None;
             self.cur_val = None;
@@ -261,7 +261,8 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
                 // gets set to the beginning of the value list, so we need to
                 // reset that still by seeking to the beginning of our current
                 // key.
-                let persisted_key: PersistedKey<B::Key, B::Val> = (cur_key.clone(), None);
+                let persisted_key: PersistedKey<B::Key, B::Val> =
+                    PersistedKey::StartMarker(cur_key.clone());
                 let encoded_key = to_bytes(&persisted_key).expect("Can't encode `key`");
                 self.db_iter.seek(encoded_key);
                 assert!(
@@ -273,7 +274,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
             }
         }
 
-        let persisted_key: PersistedKey<B::Key, B::Val> = (key.clone(), None);
+        let persisted_key: PersistedKey<B::Key, B::Val> = PersistedKey::StartMarker(key.clone());
         let encoded_key = to_bytes(&persisted_key).expect("Can't encode key");
         self.db_iter.seek(encoded_key);
         self.update_current_key_weight(Direction::Forward);
@@ -368,22 +369,20 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
     }
 
     fn seek_val(&mut self, val: &B::Val) {
-        /*if self.db_iter.valid() {
+        if self.val_valid() {
+            if self.val() >= val {
+                return;
+            }
+
             let key = self.cur_key.as_ref().unwrap().clone();
-            let val = Some(val.clone());
-            let persisted_key: PersistedKey<B::Key, B::Val> = (key, val);
+            let to_seek: PersistedKey<B::Key, B::Val> = PersistedKey::Key(key, val.clone());
+            let encoded_key = to_bytes(&to_seek).expect("Can't encode `key`");
 
-            let encoded_key = to_bytes(&persisted_key).expect("Can't encode `key`");
-            self.db_iter.seek(encoded_key);
+            self.db_iter.seek_for_prev(encoded_key);
             self.update_current_key_weight(Direction::Forward);
-        } else {
-            self.cur_key = None;
-            self.cur_diffs = None;
-            self.cur_val = None;
-        }*/
-
-        while self.val_valid() && self.val() < val {
-            self.step_val();
+            if self.cur_val.is_some() && self.cur_val != Some(val.clone()) {
+                self.step_val();
+            }
         }
     }
 
@@ -430,18 +429,11 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCurs
 
     fn fast_forward_vals(&mut self) {
         self.rewind_vals();
-
         if self.db_iter.valid() && self.key_valid() && self.val_valid() {
             let key = self.key().clone();
-            let mut last_val = self.val().clone();
-            while self.val_valid() {
-                last_val = self.val().clone();
-                self.step_val();
-            }
-
-            let last_kv: PersistedKey<B::Key, B::Val> = (key.clone(), Some(last_val));
+            let last_kv: PersistedKey<B::Key, B::Val> = PersistedKey::EndMarker(key.clone());
             let encoded_key = to_bytes(&last_kv).expect("Can't encode key");
-            self.db_iter.seek(encoded_key);
+            self.db_iter.seek_for_prev(encoded_key);
             assert!(
                 self.db_iter.valid(),
                 "fast_forward_vals: We just seeked to a valid key"

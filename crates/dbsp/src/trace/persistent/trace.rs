@@ -22,7 +22,7 @@ use crate::time::{Antichain, Timestamp};
 use crate::trace::cursor::Cursor;
 use crate::trace::{
     unaligned_deserialize, AntichainRef, Batch, BatchReader, Builder, Consumer, DBData,
-    DBTimestamp, DBWeight, HasZero, Trace, ValueConsumer,
+    DBTimestamp, DBWeight, Deserializable, HasZero, Trace, ValueConsumer,
 };
 use crate::NumEntries;
 
@@ -489,8 +489,7 @@ where
         let mut cursor = self.cursor();
         while cursor.key_valid() {
             while cursor.val_valid() {
-                let kv: PersistedKey<B::Key, B::Val> =
-                    (cursor.key().clone(), Some(cursor.val().clone()));
+                let kv = PersistedKey::Key(cursor.key().clone(), cursor.val().clone());
                 let encoded_key = to_bytes(&kv).expect("Can't encode `key`");
 
                 let update: MergeOp<B::Time, B::R> = MergeOp::RecedeTo(frontier.clone());
@@ -584,8 +583,7 @@ where
         let mut batch_cursor = batch.cursor();
         while batch_cursor.key_valid() {
             while batch_cursor.val_valid() {
-                let kv: PersistedKey<B::Key, B::Val> =
-                    (batch_cursor.key().clone(), Some(batch_cursor.val().clone()));
+                let kv = PersistedKey::Key(batch_cursor.key().clone(), batch_cursor.val().clone());
 
                 let mut weights = Vec::new();
                 batch_cursor.map_times(|ts, r| {

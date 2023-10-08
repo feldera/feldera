@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 49e9827df15b35431d5a09cb2078e3f67f6d5313f816f2189fb69ddf1db09cb0 # shrinks to trace = [[(3, 0, 1), (3, 1, 1)]]
 cc dd2bc80ba3c888eb7d28cb70e84c20cc87ded4414eded63318dab2cf21d13c6b # shrinks to trace = [[(2, 10, -1), (2, 11, 1)], [(2, 12, -1)], [(2, 13, 1), (2, 10, 1)], [(2, 0, -1)]]
+cc 21f860436c14fa51f8cfb2e0e2af3bddd4da2a7bee2deb5b82b82edd90f10613 # shrinks to trace = [[(0, 940, -1), (0, 0, 0), (0, 0, 1), (0, 0, 0), (1, 0, 0), (0, 0, 0), (1, 0, 1), (0, 0, 0), (0, 0, 0), (0, 940, 1)]]
