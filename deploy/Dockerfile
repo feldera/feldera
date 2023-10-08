@@ -41,7 +41,7 @@ RUN /root/.cargo/bin/cargo chef prepare --recipe-path recipe.json
 # layer for faster incremental builds of source-code only changes
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
-RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json --bin=pipeline-manager --no-default-features
+RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json --package=pipeline-manager --no-default-features
 COPY . .
 # web-console build tools:
 # - nodejs

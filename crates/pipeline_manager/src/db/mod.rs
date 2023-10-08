@@ -2247,6 +2247,13 @@ impl Storage for ProjectDB {
         let _res = conn.execute(&stmt, &[&program_id.0, &version.0]).await?;
         Ok(())
     }
+
+    async fn check_connection(&self) -> Result<(), DBError> {
+        let conn = self.pool.get().await?;
+        let stmt = conn.prepare_cached("SELECT 1").await?;
+        let _res = conn.execute(&stmt, &[]).await?;
+        Ok(())
+    }
 }
 
 impl ProjectDB {

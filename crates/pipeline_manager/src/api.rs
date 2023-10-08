@@ -23,6 +23,7 @@
 //!   compiled pipelines and for interacting with them at runtime.
 
 use crate::auth::JwkCache;
+use crate::probe::Probe;
 use actix_web::dev::Service;
 use actix_web::Scope;
 use actix_web::{
@@ -228,17 +229,19 @@ pub(crate) struct ServerState {
     runner: RunnerApi,
     _config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
+    probe: Arc<Mutex<Probe>>,
 }
 
 impl ServerState {
     pub async fn new(config: ApiServerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<Self> {
         let runner = RunnerApi::new(db.clone());
-
+        let db_copy = db.clone();
         Ok(Self {
             db,
             runner,
             _config: config,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
+            probe: Probe::new(db_copy).await,
         })
     }
 }
@@ -329,6 +332,7 @@ fn static_website_scope() -> Scope {
     // or route resolution does not work correctly.
     web::scope("")
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
+        .service(healthz)
         .service(ResourceFiles::new("/", generated))
 }
 
@@ -1893,4 +1897,11 @@ async fn http_output(
         .runner
         .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, &endpoint, req, body)
         .await
+}
+
+/// This is an internal endpoint and as such is not exposed via OpenAPI
+#[get("/healthz")]
+async fn healthz(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
+    let probe = state.probe.lock().await;
+    probe.status_as_http_response()
 }

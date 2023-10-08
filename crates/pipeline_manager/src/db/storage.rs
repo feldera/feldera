@@ -430,4 +430,7 @@ pub(crate) trait Storage {
         program_id: ProgramId,
         version: Version,
     ) -> Result<(), DBError>;
+
+    /// Check connectivity to the DB
+    async fn check_connection(&self) -> Result<(), DBError>;
 }
