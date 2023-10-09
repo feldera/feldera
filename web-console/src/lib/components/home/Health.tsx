@@ -32,8 +32,8 @@ const ProgramLink = ({ program }: { program: ProgramDescr }) => (
   </Link>
 )
 
-const limitAndAppend = (text: string | null | undefined, max: number, suffix: string) =>
-  text?.slice(0, max) + (text && text.length > max ? suffix : '')
+const limitMessage = (text: string | null | undefined, max: number, prefix: string) =>
+  (t => (t.length > max ? prefix : '') + t.slice(Math.max(0, t.length - max)))(text || '')
 
 const programErrors = (program: ProgramDescr) =>
   match(program.status)
@@ -54,10 +54,10 @@ const programErrors = (program: ProgramDescr) =>
                 </>
               ),
               report: {
-                Error: '```\n' + limitAndAppend(e.message, 1000, '\n...Rest of the error...') + '\n```',
+                Error: '```\n' + limitMessage(e.message, 1000, '\n...Beginning of the error...') + '\n```',
                 SQL: () =>
                   ProgramsService.getProgram(program.program_id, true).then(
-                    p => '```\n' + limitAndAppend(p.code, 7000, '\n...Rest of the code...') + '\n```'
+                    p => '```\n' + limitMessage(p.code, 7000, '\n...Beginning of the code...') + '\n```'
                   )
               }
             }
@@ -77,10 +77,10 @@ const programErrors = (program: ProgramDescr) =>
             </>
           ),
           report: {
-            Error: '```\n' + limitAndAppend(e, 1000, '\n...Rest of the error...') + '\n```',
+            Error: '```\n' + limitMessage(e, 1000, '\n...Beginning of the error...') + '\n```',
             SQL: () =>
               ProgramsService.getProgram(program.program_id, true).then(
-                p => '```\n' + limitAndAppend(p.code, 7000, '\n...Rest of the code...') + '\n```'
+                p => '```\n' + limitMessage(p.code, 7000, '\n...Beginning of the code...') + '\n```'
               )
           }
         }
@@ -99,10 +99,10 @@ const programErrors = (program: ProgramDescr) =>
             </>
           ),
           report: {
-            Error: '```\n' + limitAndAppend(e, 1000, '\n...Rest of the error...') + '\n```',
+            Error: '```\n' + limitMessage(e, 1000, '\n...Beginning of the error...') + '\n```',
             SQL: () =>
               ProgramsService.getProgram(program.program_id, true).then(
-                p => '```\n' + limitAndAppend(p.code, 7000, '\n...Rest of the code...') + '\n```'
+                p => '```\n' + limitMessage(p.code, 7000, '\n...Beginning of the code...') + '\n```'
               )
           }
         }
@@ -129,7 +129,7 @@ const pipelineErrors = (p: Pipeline) =>
               </>
             ),
             report: {
-              Error: '```\n' + limitAndAppend(p.state.error.message, 1000, '\n...Rest of the error...') + '\n```',
+              Error: '```\n' + limitMessage(p.state.error.message, 1000, '\n...Beginning of the error...') + '\n```',
               Version: String(p.descriptor.version),
               ...(p =>
                 !p
@@ -137,7 +137,7 @@ const pipelineErrors = (p: Pipeline) =>
                   : {
                       SQL: () =>
                         ProgramsService.getProgram(p, true).then(
-                          p => '```\n' + limitAndAppend(p.code, 7000, '\n...Rest of the code...') + '\n```'
+                          p => '```\n' + limitMessage(p.code, 7000, '\n...Beginning of the code...') + '\n```'
                         )
                     })(p.descriptor.program_id)
             }
