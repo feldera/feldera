@@ -3,6 +3,7 @@
 
 import { AnyIcon } from '$lib/components/common/AnyIcon'
 import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
+import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { connectorDescrToType, connectorTypeToIcon } from '$lib/functions/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
 import { Connection, NodeProps, Position, useReactFlow } from 'reactflow'
@@ -34,6 +35,8 @@ const OutputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
     }
   }
 
+  const { showDeleteDialog } = useDeleteDialog()
+
   return (
     <Node>
       <Link href={`#edit/connector/${data.connector.connector_id}`}>
@@ -57,7 +60,17 @@ const OutputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
         sx={{ display: 'flex', alignItems: 'center', position: 'absolute', top: 4, right: 4 }}
         className='nodrag nopan'
       >
-        <IconButton size='small' aria-label='close' sx={{ color: 'text.secondary' }} onClick={() => onDelete()}>
+        <IconButton
+          size='small'
+          aria-label='close'
+          sx={{ color: 'text.secondary' }}
+          onClick={showDeleteDialog(
+            'Remove',
+            `${data.connector.name || 'unnamed'} output`,
+            onDelete,
+            'You can add it back later.'
+          )}
+        >
           <Icon icon='bx:x' fontSize={20} />
         </IconButton>
       </Box>

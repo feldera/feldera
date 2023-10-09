@@ -16,6 +16,7 @@ import usePausePipeline from '$lib/compositions/streaming/management/usePausePip
 import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import useShutdownPipeline from '$lib/compositions/streaming/management/useShutdownPipeline'
 import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
+import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { useHashPart } from '$lib/compositions/useHashPart'
 import { humanSize } from '$lib/functions/common/string'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
@@ -638,6 +639,8 @@ const PipelineActions = (params: { row: Pipeline }) => {
   const shutdownPipelineClick = useShutdownPipeline()
   const deletePipelineClick = useDeletePipeline()
 
+  const { showDeleteDialog } = useDeleteDialog()
+
   const actions = {
     pause: () => (
       <Tooltip title='Pause Pipeline' key='pause'>
@@ -687,7 +690,15 @@ const PipelineActions = (params: { row: Pipeline }) => {
     ),
     delete: () => (
       <Tooltip title='Delete Pipeline' key='delete'>
-        <IconButton className='deleteButton' size='small' onClick={() => deletePipelineClick(pipeline.pipeline_id)}>
+        <IconButton
+          className='deleteButton'
+          size='small'
+          onClick={showDeleteDialog(
+            'Delete',
+            `${pipeline.name.replace(/^[Pp]ipeline\s+|\s+[Pp]ipeline$/, '') || 'unnamed'} pipeline`,
+            () => deletePipelineClick(pipeline.pipeline_id)
+          )}
+        >
           <Icon icon='bx:trash-alt' fontSize={20} />
         </IconButton>
       </Tooltip>

@@ -6,6 +6,7 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import EntityTable from '$lib/components/common/table/EntityTable'
+import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import {
   ApiError,
@@ -144,6 +145,7 @@ const TableSqlPrograms = () => {
     return newRow
   }
 
+  const { showDeleteDialog } = useDeleteDialog()
   // Deleting a row
   const deleteMutation = useMutation<void, ApiError, string>(ProgramsService.deleteProgram)
   const deleteProject = useCallback(
@@ -190,7 +192,7 @@ const TableSqlPrograms = () => {
         setRows={setRows}
         fetchRows={fetchQuery}
         onUpdateRow={processRowUpdate}
-        onDeleteRow={deleteProject}
+        onDeleteRow={showDeleteDialog('Delete', row => `${row.name || 'unnamed'} program`, deleteProject)}
         editRowBtnProps={{ href: row => `/analytics/editor/?program_id=${row.program_id}` }}
         apiRef={apiRef}
         toolbarChildren={[btnAdd, <GridToolbarFilterButton key='1' />, <div style={{ marginLeft: 'auto' }} key='2' />]}

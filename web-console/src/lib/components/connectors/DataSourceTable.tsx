@@ -7,6 +7,7 @@
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import EntityTable from '$lib/components/common/table/EntityTable'
 import { AnyConnectorDialog } from '$lib/components/connectors/dialogs/AnyConnector'
+import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { connectorDescrToType, getStatusObj } from '$lib/functions/connectors'
 import {
@@ -169,6 +170,8 @@ const DataSourceTable = () => {
     </Button>
   )
 
+  const { showDeleteDialog } = useDeleteDialog()
+
   return (
     <>
       <Card>
@@ -177,7 +180,7 @@ const DataSourceTable = () => {
           setRows={setRows}
           fetchRows={fetchQuery}
           onUpdateRow={processRowUpdate}
-          onDeleteRow={deleteSource}
+          onDeleteRow={showDeleteDialog('Delete', row => `${row.name || 'unnamed'} connector`, deleteSource)}
           editRowBtnProps={{ onClick: editConnector }}
           hasSearch
           hasFilter
