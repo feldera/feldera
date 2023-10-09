@@ -279,10 +279,13 @@ pub(crate) enum AuthProvider {
 
 pub(crate) fn aws_auth_config() -> AuthConfiguration {
     let mut validation = Validation::new(Algorithm::RS256);
-    let audience = env::var("AUTH_CLIENT_ID").expect("Missing environment variable AUTH_CLIENT_ID");
+    let client_id =
+        env::var("AUTH_CLIENT_ID").expect("Missing environment variable AUTH_CLIENT_ID");
     let iss = env::var("AUTH_ISSUER").expect("Missing environment variable AUTH_ISSUER");
     let jwk_uri = format!("{}/.well-known/jwks.json", iss);
-    validation.set_audience(&[audience]);
+    // We do not validate with set_audience because it is optional,
+    // and AWS Cognito doesn't consistently claim it in JWT (e.g. via Hosted UI
+    // auth)
     validation.set_issuer(&[iss]);
     AuthConfiguration {
         provider: AuthProvider::AwsCognito(ProviderAwsCognito {
@@ -293,15 +296,16 @@ pub(crate) fn aws_auth_config() -> AuthConfiguration {
                 .expect("Missing environment variable AWS_COGNITO_LOGOUT_URL"),
         }),
         validation,
+        client_id,
     }
 }
 
 pub(crate) fn google_auth_config() -> AuthConfiguration {
     let mut validation = Validation::new(Algorithm::RS256);
-    let audience = env::var("AUTH_CLIENT_ID").expect("Missing environment variable AUTH_CLIENT_ID");
+    let client_id =
+        env::var("AUTH_CLIENT_ID").expect("Missing environment variable AUTH_CLIENT_ID");
     let iss = env::var("AUTH_ISSUER").expect("Missing environment variable AUTH_ISSUER");
     let jwk_uri = format!("{}/.well-known/jwks.json", iss);
-    validation.set_audience(&[audience]);
     validation.set_issuer(&[iss]);
     AuthConfiguration {
         provider: AuthProvider::GoogleIdentity(ProviderGoogleIdentity {
@@ -310,6 +314,7 @@ pub(crate) fn google_auth_config() -> AuthConfiguration {
                 .expect("Missing environment variable AUTH_CLIENT_ID"),
         }),
         validation,
+        client_id,
     }
 }
 
@@ -318,6 +323,7 @@ pub(crate) fn google_auth_config() -> AuthConfiguration {
 pub(crate) struct AuthConfiguration {
     pub provider: AuthProvider,
     pub validation: Validation,
+    pub client_id: String,
 }
 
 ///
@@ -427,14 +433,7 @@ async fn decode_aws_cognito_token(
                 let token_data = decode::<AwsCognitoClaim>(token, &jwk, &configuration.validation);
                 if let Ok(t) = &token_data {
                     // TODO: aud and client_id may not be the same when using a resource server
-                    if !configuration
-                        .validation
-                        .aud
-                        .as_ref()
-                        .unwrap() // We create the validation object, so it's an error to not have aud set
-                        .iter()
-                        .any(|aud| *aud == t.claims.client_id)
-                    {
+                    if configuration.client_id != t.claims.client_id {
                         return Err(jsonwebtoken::errors::ErrorKind::InvalidAudience.into());
                     }
                 }
@@ -681,7 +680,6 @@ mod test {
 
     fn validation(aud: &str, iss: &str) -> Validation {
         let mut validation = Validation::new(Algorithm::RS256);
-        validation.set_audience(&[aud]);
         validation.set_issuer(&[iss]);
         validation
     }
@@ -714,6 +712,7 @@ mod test {
                 logout_url: "some".to_string(),
             }),
             validation,
+            client_id: "some".to_string(),
         };
         let closure = auth::auth_validator;
         let auth_middleware = HttpAuthentication::with_fn(closure);
