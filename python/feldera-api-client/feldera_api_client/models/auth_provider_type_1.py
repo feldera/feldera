@@ -1,36 +1,32 @@
-from typing import Any, Dict, List, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
 
-T = TypeVar("T", bound="ProviderAwsCognito")
+if TYPE_CHECKING:
+    from ..models.provider_google_identity import ProviderGoogleIdentity
+
+
+T = TypeVar("T", bound="AuthProviderType1")
 
 
 @define
-class ProviderAwsCognito:
+class AuthProviderType1:
     """
     Attributes:
-        jwk_uri (str):
-        login_url (str):
-        logout_url (str):
+        google_identity (ProviderGoogleIdentity):
     """
 
-    jwk_uri: str
-    login_url: str
-    logout_url: str
+    google_identity: "ProviderGoogleIdentity"
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        jwk_uri = self.jwk_uri
-        login_url = self.login_url
-        logout_url = self.logout_url
+        google_identity = self.google_identity.to_dict()
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "jwk_uri": jwk_uri,
-                "login_url": login_url,
-                "logout_url": logout_url,
+                "GoogleIdentity": google_identity,
             }
         )
 
@@ -38,21 +34,17 @@ class ProviderAwsCognito:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
+        from ..models.provider_google_identity import ProviderGoogleIdentity
+
         d = src_dict.copy()
-        jwk_uri = d.pop("jwk_uri")
+        google_identity = ProviderGoogleIdentity.from_dict(d.pop("GoogleIdentity"))
 
-        login_url = d.pop("login_url")
-
-        logout_url = d.pop("logout_url")
-
-        provider_aws_cognito = cls(
-            jwk_uri=jwk_uri,
-            login_url=login_url,
-            logout_url=logout_url,
+        auth_provider_type_1 = cls(
+            google_identity=google_identity,
         )
 
-        provider_aws_cognito.additional_properties = d
-        return provider_aws_cognito
+        auth_provider_type_1.additional_properties = d
+        return auth_provider_type_1
 
     @property
     def additional_keys(self) -> List[str]:

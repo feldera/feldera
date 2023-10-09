@@ -67,6 +67,7 @@ export type { UpdatePipelineRequest } from './models/UpdatePipelineRequest'
 export type { UpdatePipelineResponse } from './models/UpdatePipelineResponse'
 export type { UpdateProgramRequest } from './models/UpdateProgramRequest'
 export type { UpdateProgramResponse } from './models/UpdateProgramResponse'
+export type { UrlInputConfig } from './models/UrlInputConfig'
 export type { Version } from './models/Version'
 
 export { ConnectorsService } from './services/ConnectorsService'

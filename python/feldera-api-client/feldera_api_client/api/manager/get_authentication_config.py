@@ -5,8 +5,9 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.auth_provider_type_0 import AuthProviderType0
+from ...models.auth_provider_type_1 import AuthProviderType1
 from ...models.error_response import ErrorResponse
-from ...models.provider_type_0 import ProviderType0
 from ...types import Response
 
 
@@ -15,21 +16,29 @@ def _get_kwargs() -> Dict[str, Any]:
 
     return {
         "method": "get",
-        "url": "/config/authentication",
+        "url": "/../config/authentication",
     }
 
 
 def _parse_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Optional[Union["ProviderType0", ErrorResponse]]:
+) -> Optional[Union[ErrorResponse, Union["AuthProviderType0", "AuthProviderType1"]]]:
     if response.status_code == HTTPStatus.OK:
 
-        def _parse_response_200(data: object) -> "ProviderType0":
+        def _parse_response_200(data: object) -> Union["AuthProviderType0", "AuthProviderType1"]:
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                componentsschemas_auth_provider_type_0 = AuthProviderType0.from_dict(data)
+
+                return componentsschemas_auth_provider_type_0
+            except:  # noqa: E722
+                pass
             if not isinstance(data, dict):
                 raise TypeError()
-            componentsschemas_provider_type_0 = ProviderType0.from_dict(data)
+            componentsschemas_auth_provider_type_1 = AuthProviderType1.from_dict(data)
 
-            return componentsschemas_provider_type_0
+            return componentsschemas_auth_provider_type_1
 
         response_200 = _parse_response_200(response.json())
 
@@ -46,7 +55,7 @@ def _parse_response(
 
 def _build_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Response[Union["ProviderType0", ErrorResponse]]:
+) -> Response[Union[ErrorResponse, Union["AuthProviderType0", "AuthProviderType1"]]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -58,7 +67,7 @@ def _build_response(
 def sync_detailed(
     *,
     client: Union[AuthenticatedClient, Client],
-) -> Response[Union["ProviderType0", ErrorResponse]]:
+) -> Response[Union[ErrorResponse, Union["AuthProviderType0", "AuthProviderType1"]]]:
     """Get authentication provider configuration
 
      Get authentication provider configuration
@@ -68,7 +77,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union['ProviderType0', ErrorResponse]]
+        Response[Union[ErrorResponse, Union['AuthProviderType0', 'AuthProviderType1']]]
     """
 
     kwargs = _get_kwargs()
@@ -83,7 +92,7 @@ def sync_detailed(
 def sync(
     *,
     client: Union[AuthenticatedClient, Client],
-) -> Optional[Union["ProviderType0", ErrorResponse]]:
+) -> Optional[Union[ErrorResponse, Union["AuthProviderType0", "AuthProviderType1"]]]:
     """Get authentication provider configuration
 
      Get authentication provider configuration
@@ -93,7 +102,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union['ProviderType0', ErrorResponse]
+        Union[ErrorResponse, Union['AuthProviderType0', 'AuthProviderType1']]
     """
 
     return sync_detailed(
@@ -104,7 +113,7 @@ def sync(
 async def asyncio_detailed(
     *,
     client: Union[AuthenticatedClient, Client],
-) -> Response[Union["ProviderType0", ErrorResponse]]:
+) -> Response[Union[ErrorResponse, Union["AuthProviderType0", "AuthProviderType1"]]]:
     """Get authentication provider configuration
 
      Get authentication provider configuration
@@ -114,7 +123,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union['ProviderType0', ErrorResponse]]
+        Response[Union[ErrorResponse, Union['AuthProviderType0', 'AuthProviderType1']]]
     """
 
     kwargs = _get_kwargs()
@@ -127,7 +136,7 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: Union[AuthenticatedClient, Client],
-) -> Optional[Union["ProviderType0", ErrorResponse]]:
+) -> Optional[Union[ErrorResponse, Union["AuthProviderType0", "AuthProviderType1"]]]:
     """Get authentication provider configuration
 
      Get authentication provider configuration
@@ -137,7 +146,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union['ProviderType0', ErrorResponse]
+        Union[ErrorResponse, Union['AuthProviderType0', 'AuthProviderType1']]
     """
 
     return (

@@ -1,6 +1,8 @@
 """ Contains all the data models used in inputs/outputs """
 
 from .attached_connector import AttachedConnector
+from .auth_provider_type_0 import AuthProviderType0
+from .auth_provider_type_1 import AuthProviderType1
 from .chunk import Chunk
 from .chunk_json_data import ChunkJsonData
 from .column_type import ColumnType
@@ -10,7 +12,6 @@ from .connector_descr import ConnectorDescr
 from .csv_encoder_config import CsvEncoderConfig
 from .csv_parser_config import CsvParserConfig
 from .egress_mode import EgressMode
-from .empty_object_response import EmptyObjectResponse
 from .error_response import ErrorResponse
 from .error_response_details import ErrorResponseDetails
 from .field import Field
@@ -59,7 +60,7 @@ from .program_status_type_5 import ProgramStatusType5
 from .program_status_type_6 import ProgramStatusType6
 from .program_status_type_7 import ProgramStatusType7
 from .provider_aws_cognito import ProviderAwsCognito
-from .provider_type_0 import ProviderType0
+from .provider_google_identity import ProviderGoogleIdentity
 from .relation import Relation
 from .runtime_config import RuntimeConfig
 from .sql_compiler_message import SqlCompilerMessage
@@ -75,6 +76,8 @@ from .url_input_config import UrlInputConfig
 
 __all__ = (
     "AttachedConnector",
+    "AuthProviderType0",
+    "AuthProviderType1",
     "Chunk",
     "ChunkJsonData",
     "ColumnType",
@@ -84,7 +87,6 @@ __all__ = (
     "CsvEncoderConfig",
     "CsvParserConfig",
     "EgressMode",
-    "EmptyObjectResponse",
     "ErrorResponse",
     "ErrorResponseDetails",
     "Field",
@@ -133,7 +135,7 @@ __all__ = (
     "ProgramStatusType6",
     "ProgramStatusType7",
     "ProviderAwsCognito",
-    "ProviderType0",
+    "ProviderGoogleIdentity",
     "Relation",
     "RuntimeConfig",
     "SqlCompilerMessage",

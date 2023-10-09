@@ -7,6 +7,6 @@
  * Specifies JSON encoding used of table records.
  */
 export enum JsonFlavor {
-  DEFAULT = 'Default',
+  DEFAULT = 'default',
   DEBEZIUM_MYSQL = 'debezium_mysql'
 }

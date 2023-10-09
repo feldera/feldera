@@ -2,29 +2,50 @@ from typing import Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
 
-T = TypeVar("T", bound="EmptyObjectResponse")
+T = TypeVar("T", bound="ProviderGoogleIdentity")
 
 
 @define
-class EmptyObjectResponse:
-    """Empty object response."""
+class ProviderGoogleIdentity:
+    """
+    Attributes:
+        client_id (str):
+        jwk_uri (str):
+    """
 
+    client_id: str
+    jwk_uri: str
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        client_id = self.client_id
+        jwk_uri = self.jwk_uri
+
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({})
+        field_dict.update(
+            {
+                "client_id": client_id,
+                "jwk_uri": jwk_uri,
+            }
+        )
 
         return field_dict
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        empty_object_response = cls()
+        client_id = d.pop("client_id")
 
-        empty_object_response.additional_properties = d
-        return empty_object_response
+        jwk_uri = d.pop("jwk_uri")
+
+        provider_google_identity = cls(
+            client_id=client_id,
+            jwk_uri=jwk_uri,
+        )
+
+        provider_google_identity.additional_properties = d
+        return provider_google_identity
 
     @property
     def additional_keys(self) -> List[str]:

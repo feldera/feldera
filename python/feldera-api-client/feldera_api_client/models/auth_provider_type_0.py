@@ -6,11 +6,11 @@ if TYPE_CHECKING:
     from ..models.provider_aws_cognito import ProviderAwsCognito
 
 
-T = TypeVar("T", bound="ProviderType0")
+T = TypeVar("T", bound="AuthProviderType0")
 
 
 @define
-class ProviderType0:
+class AuthProviderType0:
     """
     Attributes:
         aws_cognito (ProviderAwsCognito):
@@ -39,12 +39,12 @@ class ProviderType0:
         d = src_dict.copy()
         aws_cognito = ProviderAwsCognito.from_dict(d.pop("AwsCognito"))
 
-        provider_type_0 = cls(
+        auth_provider_type_0 = cls(
             aws_cognito=aws_cognito,
         )
 
-        provider_type_0.additional_properties = d
-        return provider_type_0
+        auth_provider_type_0.additional_properties = d
+        return auth_provider_type_0
 
     @property
     def additional_keys(self) -> List[str]:
