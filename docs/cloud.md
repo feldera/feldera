@@ -129,7 +129,7 @@ To install an ingress controller where the external load balancer is disabled,
 first create the following file:
 
 ```
-# File name: ingress-controller-config.yaml
+# File name: ingress-nginx.yaml
 
 controller:
   ingressClassByName: true
