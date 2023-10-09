@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#840](https://github.com/feldera/feldera/issues/840))
 - Enable multiline text input for .pem SSL certificates
   ([#841](https://github.com/feldera/feldera/issues/841))
+- Prefer last lines of output when reporting an error
+  ([#784](https://github.com/feldera/feldera/issues/784))
 
 ## [0.1.4] - 2023-09-26
 
