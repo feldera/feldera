@@ -71,6 +71,8 @@ async fn main() -> anyhow::Result<()> {
     )
     .await
     .unwrap();
+    // Run migrations before starting any service
+    db.run_migrations().await?;
     let db = Arc::new(Mutex::new(db));
     let db_clone = db.clone();
     let _compiler = tokio::spawn(async move {

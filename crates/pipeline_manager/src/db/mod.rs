@@ -2262,7 +2262,6 @@ impl ProjectDB {
         #[cfg(feature = "pg-embed")] api_config: Option<&ApiServerConfig>,
     ) -> Result<Self, DBError> {
         let connection_str = db_config.database_connection_string();
-        let initial_sql = &db_config.initial_sql;
 
         #[cfg(feature = "pg-embed")]
         if connection_str.starts_with("postgres-embed") {
@@ -2271,13 +2270,11 @@ impl ProjectDB {
                 .postgres_embed_data_dir();
             let pg_inst = pg_setup::install(database_dir, true, Some(8082)).await?;
             let connection_string = pg_inst.db_uri.to_string();
-            return Self::connect_inner(connection_string.as_str(), initial_sql, Some(pg_inst))
-                .await;
+            return Self::connect_inner(connection_string.as_str(), Some(pg_inst)).await;
         };
 
         Self::connect_inner(
             connection_str.as_str(),
-            initial_sql,
             #[cfg(feature = "pg-embed")]
             None,
         )
@@ -2288,19 +2285,14 @@ impl ProjectDB {
     ///
     /// # Arguments
     /// - `config` a tokio postgres config
-    /// - `initial_sql`: The initial SQL to execute on the database.
     ///
     /// # Notes
     /// Maybe this should become the preferred way to create a ProjectDb
     /// together with `pg-client-config` (and drop `connect_inner`).
     #[cfg(all(test, not(feature = "pg-embed")))]
-    async fn with_config(
-        config: tokio_postgres::Config,
-        initial_sql: &Option<String>,
-    ) -> Result<Self, DBError> {
+    async fn with_config(config: tokio_postgres::Config) -> Result<Self, DBError> {
         let db = ProjectDB::initialize(
             config,
-            initial_sql,
             #[cfg(feature = "pg-embed")]
             None,
         )
@@ -2319,10 +2311,8 @@ impl ProjectDB {
     ///
     /// # Arguments
     /// - `connection_str`: The connection string to the database.
-    /// - `initial_sql`: The initial SQL to execute on the database.
     async fn connect_inner(
         connection_str: &str,
-        initial_sql: &Option<String>,
         #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>,
     ) -> Result<Self, DBError> {
         if !connection_str.starts_with("postgres") {
@@ -2333,7 +2323,6 @@ impl ProjectDB {
 
         let db = ProjectDB::initialize(
             config,
-            initial_sql,
             #[cfg(feature = "pg-embed")]
             pg_inst,
         )
@@ -2355,7 +2344,6 @@ impl ProjectDB {
 
     async fn initialize(
         config: tokio_postgres::Config,
-        initial_sql: &Option<String>,
         #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>,
     ) -> Result<Self, DBError> {
         let mgr_config = deadpool_postgres::ManagerConfig {
@@ -2363,18 +2351,6 @@ impl ProjectDB {
         };
         let mgr = Manager::from_config(config.clone(), NoTls, mgr_config);
         let pool = Pool::builder(mgr).max_size(16).build().unwrap();
-        let mut client = pool.get().await?;
-        embedded::migrations::runner()
-            .run_async(&mut **client)
-            .await?;
-        if let Some(initial_sql_file) = &initial_sql {
-            if let Ok(initial_sql) = tokio::fs::read_to_string(initial_sql_file).await {
-                client.execute(&initial_sql, &[]).await?;
-            } else {
-                log::warn!("initial SQL file '{}' does not exist", initial_sql_file);
-            }
-        }
-
         #[cfg(feature = "pg-embed")]
         return Ok(Self {
             config,
@@ -2855,5 +2831,14 @@ impl ProjectDB {
         }
 
         err
+    }
+
+    /// Run database migrations
+    pub async fn run_migrations(&self) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        embedded::migrations::runner()
+            .run_async(&mut **client)
+            .await?;
+        Ok(())
     }
 }

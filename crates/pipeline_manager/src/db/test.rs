@@ -154,9 +154,7 @@ pub(crate) async fn setup_pg() -> (ProjectDB, tokio_postgres::Config) {
     log::debug!("tests connecting to: {config:#?}");
 
     config.dbname(&test_db);
-    let conn = ProjectDB::with_config(config.clone(), &Some("".to_string()))
-        .await
-        .unwrap();
+    let conn = ProjectDB::with_config(config.clone()).await.unwrap();
 
     (conn, config)
 }
