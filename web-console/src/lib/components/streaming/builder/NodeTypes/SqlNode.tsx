@@ -2,6 +2,7 @@
 // to.
 
 import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
+import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { zipDefault } from '$lib/functions/common/tuple'
 import { memo } from 'react'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
@@ -100,6 +101,8 @@ function SqlNode({ id, data }: NodeProps) {
   const inputs = data.program.schema?.inputs || []
   const outputs = data.program.schema?.outputs || []
 
+  const { showDeleteDialog } = useDeleteDialog()
+
   return (
     <Node>
       <CardHeader
@@ -109,7 +112,17 @@ function SqlNode({ id, data }: NodeProps) {
         avatar={<Icon icon='ant-design:console-sql-outlined' fontSize='2rem' />}
         action={
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <IconButton size='small' aria-label='close' sx={{ color: 'text.secondary' }} onClick={() => onDelete()}>
+            <IconButton
+              size='small'
+              aria-label='close'
+              sx={{ color: 'text.secondary' }}
+              onClick={showDeleteDialog(
+                'Remove',
+                `${data.program.name || 'unnamed'} program`,
+                onDelete,
+                'You can add it back later.'
+              )}
+            >
               <Icon icon='bx:x' fontSize={20} />
             </IconButton>
           </Box>

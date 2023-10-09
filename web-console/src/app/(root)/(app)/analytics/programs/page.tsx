@@ -1,7 +1,7 @@
 'use client'
 
+import TableSqlPrograms from '$lib/components/analytics/TableSqlPrograms'
 import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
-import TableSqlPrograms from '$lib/components/layouts/analytics/TableSqlPrograms'
 
 import { Link } from '@mui/material'
 import Grid from '@mui/material/Grid'

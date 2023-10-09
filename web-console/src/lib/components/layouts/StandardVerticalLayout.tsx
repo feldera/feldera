@@ -9,6 +9,7 @@ import { Grid } from '@mui/material'
 import { Theme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
 
+import { GlobalDialog } from './GlobalDialog'
 import VerticalAppBarContent from './vertical/AppBarContent'
 
 interface Props {
@@ -47,6 +48,7 @@ const StandardVerticalLayout = ({ children }: Props) => {
       <Grid container spacing={6} className='match-height'>
         {children}
       </Grid>
+      <GlobalDialog />
     </VerticalLayout>
   )
 }
