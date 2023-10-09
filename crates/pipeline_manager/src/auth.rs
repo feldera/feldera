@@ -346,7 +346,7 @@ struct AwsCognitoClaim {
     jti: String,
 
     /// Token revocation identifier associated with the user's refresh token
-    origin_jti: String,
+    origin_jti: Option<String>,
 
     /// OAuth 2.0 scopes
     scope: String,
@@ -574,7 +574,7 @@ async fn fetch_jwk_aws_cognito_keys(
 // We don't want to fetch keys on every authentication attempt, so cache the
 // results. TODO: implement periodic refresh
 async fn fetch_jwk_google_identity_keys(
-    _url: &String,
+    _url: &str,
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
     todo!("Google Identity authentication not implemented!")
 }
@@ -694,7 +694,7 @@ mod test {
             iss: "some-iss".to_owned(),
             sub: "some-sub".to_owned(),
             jti: "some-jti".to_owned(),
-            origin_jti: "some-origin-jti".to_owned(),
+            origin_jti: Some("some-origin-jti".to_owned()),
             scope: "".to_owned(),
             token_use: "access".to_owned(),
             username: "some-user".to_owned(),

@@ -7,6 +7,7 @@ import LogoutVariant from 'mdi-material-ui/LogoutVariant'
 import { Fragment, SyntheticEvent, useState } from 'react'
 import invariant from 'tiny-invariant'
 
+import { Link } from '@mui/material'
 import Avatar from '@mui/material/Avatar'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
@@ -101,10 +102,12 @@ const UserDropdown = (props: { auth: AuthData }) => {
           </Box>
         </MenuItem>
         <Divider />
-        <MenuItem sx={{ py: 2 }} href={props.auth.signOutUrl} onClick={() => setAuth('Unauthenticated')}>
-          <LogoutVariant sx={{ marginRight: 2, fontSize: '1.375rem', color: 'text.secondary' }} />
-          Logout
-        </MenuItem>
+        <Link href={props.auth.signOutUrl}>
+          <MenuItem sx={{ py: 2 }} onClick={() => setTimeout(() => setAuth('Unauthenticated'), 0)}>
+            <LogoutVariant sx={{ marginRight: 2, fontSize: '1.375rem', color: 'text.secondary' }} />
+            Logout
+          </MenuItem>
+        </Link>
       </Menu>
     </Fragment>
   )
