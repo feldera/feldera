@@ -2830,4 +2830,35 @@ impl ProjectDB {
         .await?;
         Ok(())
     }
+
+    /// Check if the expected DB migrations have already been run
+    pub async fn check_migrations(self) -> Result<Self, DBError> {
+        debug!("Checking if DB migrations have been applied");
+        let mut client = self.pool.get().await?;
+        let runner = embedded::migrations::runner();
+        let expected_max_version = runner
+            .get_migrations()
+            .iter()
+            .map(|m| m.version())
+            .fold(std::u32::MIN, |a, b| a.max(b));
+        let migration = runner.get_last_applied_migration_async(&mut **client).await;
+        if let Ok(Some(m)) = migration {
+            let v = m.version();
+            info!("Expected version = {expected_max_version}. Actual version = {v}.");
+            if v == expected_max_version {
+                Ok(self)
+            } else {
+                Err(DBError::MissingMigrations {
+                    expected: expected_max_version,
+                    actual: v,
+                })
+            }
+        } else {
+            info!("Expected version = {expected_max_version}. Actual version = None.");
+            Err(DBError::MissingMigrations {
+                expected: expected_max_version,
+                actual: 0,
+            })
+        }
+    }
 }

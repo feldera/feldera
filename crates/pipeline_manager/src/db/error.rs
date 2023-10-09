@@ -102,6 +102,10 @@ pub enum DBError {
     ViewsNotInSchema {
         missing: Vec<(String, String)>,
     },
+    MissingMigrations {
+        expected: u32,
+        actual: u32,
+    },
 }
 
 impl DBError {
@@ -398,6 +402,12 @@ impl Display for DBError {
                     missing.iter().map(|(ac, v)| format!("{} -> {}", ac, v)).collect::<Vec<String>>().join(", ").trim_end_matches(", ")
                 )
             }
+            DBError::MissingMigrations { expected, actual } => {
+                write!(
+                    f,
+                    "Expected DB migrations to be applied up to {expected}, but DB only has applied migrations up to {actual}"
+                )
+            }
         }
     }
 }
@@ -432,6 +442,7 @@ impl DetailedError for DBError {
             Self::RevisionNotChanged => Cow::from("RevisionNotChanged"),
             Self::TablesNotInSchema { .. } => Cow::from("TablesNotInSchema"),
             Self::ViewsNotInSchema { .. } => Cow::from("ViewsNotInSchema"),
+            Self::MissingMigrations { .. } => Cow::from("MissingMigrations"),
         }
     }
 
@@ -476,6 +487,7 @@ impl ResponseError for DBError {
             Self::ProgramNotSet => StatusCode::BAD_REQUEST,
             // should in practice not happen, e.g., would mean a Uuid conflict:
             Self::UniqueKeyViolation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::MissingMigrations { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             // should in practice not happen, e.g., would mean invalid status in db:
             Self::UnknownPipelineStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::NoRevisionAvailable { .. } => StatusCode::NOT_FOUND,
