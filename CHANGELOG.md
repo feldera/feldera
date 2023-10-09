@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#822](https://github.com/feldera/feldera/pull/822))
 - Support input tables with primary keys
   ([#826](https://github.com/feldera/feldera/issues/826))
+- Add health check endpoints to pipeline-manager components
+  ([#855](https://github.com/feldera/feldera/pull/855))
 
 ## [0.1.5] - 2023-10-10
 
