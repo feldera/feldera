@@ -112,9 +112,8 @@ pub(crate) async fn setup_pg() -> (ProjectDB, tempfile::TempDir) {
         .await
         .unwrap();
     let db_uri = pg.db_uri.clone();
-    let conn = ProjectDB::connect_inner(&db_uri, &Some("".to_string()), Some(pg))
-        .await
-        .unwrap();
+    let conn = ProjectDB::connect_inner(&db_uri, Some(pg)).await.unwrap();
+    conn.run_migrations().await.unwrap();
     (conn, _temp_dir)
 }
 
@@ -155,6 +154,7 @@ pub(crate) async fn setup_pg() -> (ProjectDB, tokio_postgres::Config) {
 
     config.dbname(&test_db);
     let conn = ProjectDB::with_config(config.clone()).await.unwrap();
+    conn.run_migrations().await.unwrap();
 
     (conn, config)
 }

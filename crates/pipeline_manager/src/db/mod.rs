@@ -13,7 +13,7 @@ use dbsp_adapters::{
 };
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use futures_util::TryFutureExt;
-use log::{debug, error};
+use log::{debug, error, info};
 use openssl::sha;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -2297,13 +2297,6 @@ impl ProjectDB {
             None,
         )
         .await?;
-        let default_tenant = TenantRecord::default();
-        db.create_tenant_if_not_exists(
-            default_tenant.id.0,
-            default_tenant.tenant,
-            default_tenant.provider,
-        )
-        .await?;
         Ok(db)
     }
 
@@ -2326,20 +2319,8 @@ impl ProjectDB {
             #[cfg(feature = "pg-embed")]
             pg_inst,
         )
-        .await;
-        match db {
-            Ok(db) => {
-                let default_tenant = TenantRecord::default();
-                db.create_tenant_if_not_exists(
-                    default_tenant.id.0,
-                    default_tenant.tenant,
-                    default_tenant.provider,
-                )
-                .await?;
-                Ok(db)
-            }
-            Err(e) => Err(e),
-        }
+        .await?;
+        Ok(db)
     }
 
     async fn initialize(
@@ -2835,10 +2816,18 @@ impl ProjectDB {
 
     /// Run database migrations
     pub async fn run_migrations(&self) -> Result<(), DBError> {
+        info!("Running DB migrations");
         let mut client = self.pool.get().await?;
         embedded::migrations::runner()
             .run_async(&mut **client)
             .await?;
+        let default_tenant = TenantRecord::default();
+        self.create_tenant_if_not_exists(
+            default_tenant.id.0,
+            default_tenant.tenant,
+            default_tenant.provider,
+        )
+        .await?;
         Ok(())
     }
 }
