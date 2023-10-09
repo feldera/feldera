@@ -117,6 +117,10 @@ FROM gcr.io/distroless/cc-debian12 AS local-runner
 COPY --from=builder /app/target/release/local-runner local-runner
 ENTRYPOINT ["./local-runner", "--runner-working-directory=/working-dir"]
 
+# DB Migrations
+FROM gcr.io/distroless/cc-debian12 AS migrations
+COPY --from=builder /app/target/release/migrations migrations
+ENTRYPOINT ["./migrations"]
 
 ##### The stages below are used to build the demo container
 

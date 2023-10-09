@@ -708,7 +708,7 @@ mod test {
         test::call_service(&app, req).await
     }
 
-    #[tokio::test]
+    #[actix_web::test]
     async fn invalid_url() {
         let url = "http://localhost/doesnotexist".to_owned();
         let res = fetch_jwk_aws_cognito_keys(&url).await;

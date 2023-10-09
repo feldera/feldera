@@ -26,14 +26,19 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|err| err.exit())
         .unwrap();
     let api_config = api_config.canonicalize().unwrap();
-    let db: ProjectDB = pipeline_manager::retries::retry_async(
+    let db = pipeline_manager::retries::retry_async(
         || async {
-            ProjectDB::connect(
+            let db = ProjectDB::connect(
                 &database_config,
                 #[cfg(feature = "pg-embed")]
                 None,
             )
-            .await
+            .await;
+            if let Ok(d) = db {
+                d.check_migrations().await
+            } else {
+                db
+            }
         },
         30,
         Duration::from_secs(1),
