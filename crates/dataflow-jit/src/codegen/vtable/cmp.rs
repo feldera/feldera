@@ -55,7 +55,7 @@ impl Codegen {
             }
 
             // Zero sized types are always equal
-            let are_equal = if layout.is_zero_sized() || row_layout.is_empty() {
+            let are_equal = if layout.is_zero_sized() {
                 builder.true_byte()
 
             // If there's any strings then comparisons are non-trivial
@@ -94,6 +94,9 @@ impl Codegen {
                         // Zero = value isn't null, non-zero = value is null
                         let lhs_non_null = column_non_null(idx, lhs, &layout, &mut builder, true);
                         let rhs_non_null = column_non_null(idx, rhs, &layout, &mut builder, true);
+
+                        let lhs_non_null = builder.ins().icmp_imm(IntCC::Equal, lhs_non_null, 0);
+                        let rhs_non_null = builder.ins().icmp_imm(IntCC::Equal, rhs_non_null, 0);
 
                         let check_nulls = builder.create_block();
                         let null_eq = builder.ins().icmp(IntCC::Equal, lhs_non_null, rhs_non_null);
