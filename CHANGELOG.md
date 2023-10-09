@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#855](https://github.com/feldera/feldera/pull/855))
 - Added documentation for deploying Feldera Cloud on AWS EKS.
   ([#850](https://github.com/feldera/feldera/pull/850))
+- DB migration until now was performed during DB connection setup. Now, users
+  running the standalone services must invoke the new migrations binary to
+  explicitly perform database upgrades. The pipeline-manager binary retains the
+  old behavior for convenience.
+  ([#856](https://github.com/feldera/feldera/pull/856))
 
 ### Fixed
 
