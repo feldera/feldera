@@ -243,7 +243,10 @@ impl Subgraph {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ir::{nodes::StreamLayout, ColumnType, Constant, Graph, GraphExt, RowLayoutBuilder},
+        ir::{
+            nodes::{SourceKind, StreamLayout},
+            ColumnType, Constant, Graph, GraphExt, RowLayoutBuilder,
+        },
         utils,
     };
 
@@ -259,7 +262,7 @@ mod tests {
                 .build(),
         );
 
-        let source = graph.source(u32);
+        let source = graph.source(u32, SourceKind::ZSet);
         let distinct_1 = graph.distinct(source, StreamLayout::Set(u32));
         let filtered = graph.filter(distinct_1, {
             let mut builder = graph.function_builder().with_return_type(ColumnType::Bool);

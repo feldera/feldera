@@ -48,10 +48,9 @@ impl Graph {
     pub fn source_nodes(&self) -> Vec<(NodeId, StreamLayout)> {
         self.nodes()
             .iter()
-            .filter_map(|(&node_id, node)| match node {
-                Node::Source(source) => Some((node_id, source.output_layout())),
-                Node::SourceMap(source_map) => Some((node_id, source_map.output_layout())),
-                _ => None,
+            .filter_map(|(&node_id, node)| {
+                node.as_source()
+                    .map(|source| (node_id, source.output_layout()))
             })
             .collect()
     }

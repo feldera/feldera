@@ -211,7 +211,7 @@ mod tests {
         dataflow::CompiledDataflow,
         ir::{
             exprs::{Call, RowOrScalar},
-            nodes::{FilterMap, FlatMap, Node, StreamLayout},
+            nodes::{FilterMap, FlatMap, Node, SourceKind, StreamLayout},
             ColumnType, Constant, Graph, GraphExt, RowLayoutBuilder,
         },
         row::{Row, UninitRow},
@@ -240,7 +240,7 @@ mod tests {
                 .build(),
         );
 
-        let source = graph.source(i32);
+        let source = graph.source(i32, SourceKind::ZSet);
 
         let flat_map = graph.add_node(Node::FlatMap(FlatMap::new(
             source,
@@ -345,7 +345,7 @@ mod tests {
                 .build(),
         );
 
-        let source = graph.source(i32);
+        let source = graph.source(i32, SourceKind::ZSet);
 
         let filter_map = graph.add_node(Node::FilterMap(FilterMap::new(
             source,

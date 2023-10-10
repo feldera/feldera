@@ -100,7 +100,7 @@ mod tests {
     use crate::{
         ir::{
             literal::{NullableConstant, RowLiteral, StreamCollection, StreamLiteral},
-            nodes::{ConstantStream, StreamLayout},
+            nodes::{ConstantStream, SourceKind, StreamLayout},
             ColumnType, Constant, Graph, GraphExt, RowLayoutBuilder,
         },
         utils,
@@ -118,7 +118,7 @@ mod tests {
                 .build(),
         );
 
-        let source = graph.source(u32);
+        let source = graph.source(u32, SourceKind::ZSet);
         let distinct2 = graph.distinct(source, StreamLayout::Set(u32));
         let distinct3 = graph.distinct(source, StreamLayout::Set(u32));
         let sink1 = graph.sink(distinct2, "D2", StreamLayout::Set(u32));

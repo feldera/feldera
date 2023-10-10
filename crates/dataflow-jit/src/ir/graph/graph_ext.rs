@@ -3,7 +3,7 @@ use crate::ir::{
     layout_cache::RowLayoutCache,
     nodes::{
         ConstantStream, DataflowNode, Differentiate, Distinct, Filter, IndexWith, Integrate,
-        JoinCore, Map, Node, Sink, Source, SourceMap, StreamDistinct, StreamKind, StreamLayout,
+        JoinCore, Map, Node, Sink, Source, SourceKind, StreamDistinct, StreamKind, StreamLayout,
         Subgraph as SubgraphNode,
     },
     visit::{MutNodeVisitor, NodeVisitor},
@@ -113,19 +113,19 @@ pub trait GraphExt {
         FunctionBuilder::new(self.layout_cache().clone())
     }
 
-    fn source(&mut self, key_layout: LayoutId) -> NodeId {
-        self.add_node(Source::new(key_layout, None))
+    fn source<L>(&mut self, layout: L, kind: SourceKind) -> NodeId
+    where
+        L: Into<StreamLayout>,
+    {
+        self.add_node(Source::new(layout.into(), kind, None))
     }
 
-    fn named_source<N>(&mut self, key_layout: LayoutId, name: N) -> NodeId
+    fn named_source<L, N>(&mut self, layout: L, kind: SourceKind, name: N) -> NodeId
     where
+        L: Into<StreamLayout>,
         N: Into<Box<str>>,
     {
-        self.add_node(Source::new(key_layout, Some(name.into())))
-    }
-
-    fn source_map(&mut self, key_layout: LayoutId, value_layout: LayoutId) -> NodeId {
-        self.add_node(SourceMap::new(key_layout, value_layout))
+        self.add_node(Source::new(layout.into(), kind, Some(name.into())))
     }
 
     fn sink<N>(&mut self, input: NodeId, view: N, input_layout: StreamLayout) -> NodeId
@@ -219,7 +219,7 @@ pub trait GraphExt {
 
         for node in self.nodes().values() {
             match node {
-                Node::Source(_) | Node::SourceMap(_) => stats.sources += 1,
+                Node::Source(_) => stats.sources += 1,
                 Node::Sink(_) => stats.sinks += 1,
                 Node::JoinCore(_) | Node::MonotonicJoin(_) => stats.joins += 1,
                 Node::Subgraph(subgraph) => {
