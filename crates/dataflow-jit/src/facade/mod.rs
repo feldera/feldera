@@ -11,6 +11,7 @@ use crate::{
         CodegenConfig, NativeLayout, NativeLayoutCache, VTable,
     },
     dataflow::{CompiledDataflow, JitHandle, RowInput, RowOutput},
+    facade::handle::{JsonIndexedZSetHandle, JsonMapHandle, JsonSetHandle},
     ir::{
         literal::{NullableConstant, RowLiteral, StreamCollection},
         nodes::StreamLayout,
@@ -266,7 +267,7 @@ impl DbspCircuit {
                         batch.push((key, *diff));
                     }
 
-                    input.as_set_mut().unwrap().append(&mut batch);
+                    input.as_zset_mut().unwrap().append(&mut batch);
                 }
 
                 StreamCollection::Map(map) => {
@@ -292,7 +293,7 @@ impl DbspCircuit {
                         batch.push((key, (value, *diff)));
                     }
 
-                    input.as_map_mut().unwrap().append(&mut batch);
+                    input.as_indexed_zset_mut().unwrap().append(&mut batch);
                 }
             }
 
@@ -308,7 +309,41 @@ impl DbspCircuit {
     ///
     /// # Safety
     ///
-    /// The produced `JsonSetHandle` must be dropped before the [`DbspCircuit`]
+    /// The produced [`JsonZSetHandle`] must be dropped before the [`DbspCircuit`]
+    /// that created it, using the handle after the parent circuit has shut down
+    /// is undefined behavior
+    // TODO: We should probably wrap the innards of `DbspCircuit` in a struct
+    // and arc and handles should hold a reference to that (maybe even a weak ref).
+    // Alternatively we could use lifetimes, but I'm not 100% sure how that would
+    // interact with consumers
+    pub unsafe fn json_input_zset(
+        &mut self,
+        target: NodeId,
+        demand: DemandId,
+    ) -> Option<JsonZSetHandle> {
+        let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
+        let layout = layout.as_set().unwrap_or_else(|| {
+            panic!(
+                "called `DbspCircuit::json_input_zset()` on node {target} which is a map, not a set",
+            )
+        });
+
+        let handle = input.as_ref()?.as_zset().unwrap().clone();
+        let vtable = unsafe { &*self.jit.vtables()[&layout] };
+        let deserialize_fn = unsafe { demand_function!(self, demand, layout, DeserializeJsonFn) };
+
+        Some(JsonZSetHandle::new(handle, deserialize_fn, vtable))
+    }
+
+    /// Creates a new [`JsonSetHandle`] for ingesting json
+    ///
+    /// Returns [`None`] if the target source node is unreachable
+    ///
+    /// # Safety
+    ///
+    /// The produced [`JsonSetHandle`] must be dropped before the [`DbspCircuit`]
     /// that created it, using the handle after the parent circuit has shut down
     /// is undefined behavior
     // TODO: We should probably wrap the innards of `DbspCircuit` in a struct
@@ -319,7 +354,7 @@ impl DbspCircuit {
         &mut self,
         target: NodeId,
         demand: DemandId,
-    ) -> Option<JsonZSetHandle> {
+    ) -> Option<JsonSetHandle> {
         let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
             panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
         });
@@ -329,11 +364,85 @@ impl DbspCircuit {
             )
         });
 
-        let handle = input.as_ref()?.as_set().unwrap().clone();
+        let handle = input.as_ref()?.as_upsert_zset().unwrap().clone();
         let vtable = unsafe { &*self.jit.vtables()[&layout] };
         let deserialize_fn = unsafe { demand_function!(self, demand, layout, DeserializeJsonFn) };
 
-        Some(JsonZSetHandle::new(handle, deserialize_fn, vtable))
+        Some(JsonSetHandle::new(handle, deserialize_fn, vtable))
+    }
+
+    pub unsafe fn json_input_indexed_zset(
+        &mut self,
+        target: NodeId,
+        key_demand: DemandId,
+        value_demand: DemandId,
+    ) -> Option<JsonIndexedZSetHandle> {
+        let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
+        let (key_layout, value_layout) = layout.as_map().unwrap_or_else(|| {
+            panic!(
+                "called `DbspCircuit::json_input_indexed_zset()` on node {target} which is a set, not a map",
+            )
+        });
+
+        let handle = input.as_ref()?.as_indexed_zset().unwrap().clone();
+        let (key_vtable, value_vtable) = unsafe {
+            (
+                &*self.jit.vtables()[&key_layout],
+                &*self.jit.vtables()[&value_layout],
+            )
+        };
+
+        let deserialize_key =
+            unsafe { demand_function!(self, key_demand, key_layout, DeserializeJsonFn) };
+        let deserialize_value =
+            unsafe { demand_function!(self, value_demand, value_layout, DeserializeJsonFn) };
+
+        Some(JsonIndexedZSetHandle::new(
+            handle,
+            key_vtable,
+            deserialize_key,
+            value_vtable,
+            deserialize_value,
+        ))
+    }
+
+    pub unsafe fn json_input_map(
+        &mut self,
+        target: NodeId,
+        key_demand: DemandId,
+        value_demand: DemandId,
+    ) -> Option<JsonMapHandle> {
+        let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
+        let (key_layout, value_layout) = layout.as_map().unwrap_or_else(|| {
+            panic!(
+                "called `DbspCircuit::json_input_map()` on node {target} which is a set, not a map",
+            )
+        });
+
+        let handle = input.as_ref()?.as_upsert_indexed_zset().unwrap().clone();
+        let (key_vtable, value_vtable) = unsafe {
+            (
+                &*self.jit.vtables()[&key_layout],
+                &*self.jit.vtables()[&value_layout],
+            )
+        };
+
+        let deserialize_key =
+            unsafe { demand_function!(self, key_demand, key_layout, DeserializeJsonFn) };
+        let deserialize_value =
+            unsafe { demand_function!(self, value_demand, value_layout, DeserializeJsonFn) };
+
+        Some(JsonMapHandle::new(
+            handle,
+            key_vtable,
+            deserialize_key,
+            value_vtable,
+            deserialize_value,
+        ))
     }
 
     /// Fetches a serialization function and turns it into a function
@@ -399,7 +508,7 @@ impl DbspCircuit {
                     }
 
                     let records = batch.len();
-                    input.as_set_mut().unwrap().append(&mut batch);
+                    input.as_zset_mut().unwrap().append(&mut batch);
                     records
                 }
 
@@ -443,7 +552,7 @@ impl DbspCircuit {
                     unsafe { call_deserialize_fn(deserialize_json, row.as_mut_ptr(), &value)? }
 
                     input
-                        .as_set_mut()
+                        .as_zset_mut()
                         .unwrap()
                         .push(unsafe { row.assume_init() }, 1);
                 }
@@ -497,7 +606,7 @@ impl DbspCircuit {
                     }
 
                     let records = batch.len();
-                    input.as_set_mut().unwrap().append(&mut batch);
+                    input.as_zset_mut().unwrap().append(&mut batch);
                     records
                 }
 

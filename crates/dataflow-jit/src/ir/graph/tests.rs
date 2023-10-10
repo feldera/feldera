@@ -442,7 +442,7 @@ fn mapping() {
             .get_mut(&source)
             .unwrap()
             .0
-            .as_set_mut()
+            .as_zset_mut()
             .unwrap()
             .append(&mut values);
 
