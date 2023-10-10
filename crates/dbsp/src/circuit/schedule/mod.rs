@@ -259,7 +259,7 @@ mod util {
         for edge in circuit.edges().deref().iter() {
             successors
                 .entry(edge.origin.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push((edge.to, edge.ownership_preference));
         }
 

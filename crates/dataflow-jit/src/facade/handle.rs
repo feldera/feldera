@@ -19,6 +19,11 @@ fn clear_and_shrink<T>(buffer: &mut Vec<T>) {
     buffer.shrink_to(MAX_REUSABLE_CAPACITY);
 }
 
+/// Convenience function for deserializing a row
+///
+/// # Safety
+///
+/// `deserialize_fn` must be for the type `vtable` contains
 unsafe fn deserialize_row(
     deserialize_fn: DeserializeJsonFn,
     vtable: &'static VTable,
@@ -27,7 +32,7 @@ unsafe fn deserialize_row(
     let mut uninit = UninitRow::new(vtable);
 
     unsafe {
-        call_deserialize_fn(deserialize_fn, uninit.as_mut_ptr(), &json)?;
+        call_deserialize_fn(deserialize_fn, uninit.as_mut_ptr(), json)?;
         Ok(uninit.assume_init())
     }
 }

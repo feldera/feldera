@@ -309,7 +309,7 @@ impl DbspCircuit {
     ///
     /// # Safety
     ///
-    /// The produced [`JsonZSetHandle`] must be dropped before the
+    /// The produced `JsonZSetHandle` must be dropped before the
     /// [`DbspCircuit`] that created it, using the handle after the parent
     /// circuit has shut down is undefined behavior
     // TODO: We should probably wrap the innards of `DbspCircuit` in a struct
@@ -343,7 +343,7 @@ impl DbspCircuit {
     ///
     /// # Safety
     ///
-    /// The produced [`JsonSetHandle`] must be dropped before the
+    /// The produced `JsonSetHandle` must be dropped before the
     /// [`DbspCircuit`] that created it, using the handle after the parent
     /// circuit has shut down is undefined behavior
     // TODO: We should probably wrap the innards of `DbspCircuit` in a struct
@@ -371,6 +371,15 @@ impl DbspCircuit {
         Some(JsonSetHandle::new(handle, deserialize_fn, vtable))
     }
 
+    /// Creates a new [`JsonIndexedZSetHandle`] for ingesting json
+    ///
+    /// Returns [`None`] if the target source node is unreachable
+    ///
+    /// # Safety
+    ///
+    /// The produced `JsonIndexedZSetHandle` must be dropped before the
+    /// [`DbspCircuit`] that created it, using the handle after the parent
+    /// circuit has shut down is undefined behavior
     pub unsafe fn json_input_indexed_zset(
         &mut self,
         target: NodeId,
@@ -408,6 +417,15 @@ impl DbspCircuit {
         ))
     }
 
+    /// Creates a new [`JsonMapHandle`] for ingesting json
+    ///
+    /// Returns [`None`] if the target source node is unreachable
+    ///
+    /// # Safety
+    ///
+    /// The produced `JsonMapHandle` must be dropped before the
+    /// [`DbspCircuit`] that created it, using the handle after the parent
+    /// circuit has shut down is undefined behavior
     pub unsafe fn json_input_map(
         &mut self,
         target: NodeId,

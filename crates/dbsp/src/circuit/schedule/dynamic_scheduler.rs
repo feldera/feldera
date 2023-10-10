@@ -250,21 +250,15 @@ impl Inner {
         let mut predecessors: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(num_nodes);
 
         for edge in circuit.edges().iter() {
-            successors
-                .entry(edge.from)
-                .or_insert_with(Vec::new)
-                .push(edge.to);
+            successors.entry(edge.from).or_default().push(edge.to);
 
-            predecessors
-                .entry(edge.to)
-                .or_insert_with(Vec::new)
-                .push(edge.from);
+            predecessors.entry(edge.to).or_default().push(edge.from);
         }
 
         // Add ownership constraints to the graph.
         for (from, to) in extra_constraints.into_iter() {
-            successors.entry(from).or_insert_with(Vec::new).push(to);
-            predecessors.entry(to).or_insert_with(Vec::new).push(from);
+            successors.entry(from).or_default().push(to);
+            predecessors.entry(to).or_default().push(from);
         }
 
         let mut tasks = Vec::with_capacity(num_nodes);
