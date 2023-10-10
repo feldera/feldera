@@ -47,6 +47,12 @@ pub enum RunnerError {
         // similar to `DBSPError::IO`.
         error: String,
     },
+    PipelineShutdownError {
+        pipeline_id: PipelineId,
+        // TODO: This should be IOError, so we can serialize the error code
+        // similar to `DBSPError::IO`.
+        error: String,
+    },
     IllegalPipelineStateTransition {
         pipeline_id: PipelineId,
         error: String,
@@ -72,6 +78,7 @@ impl DetailedError for RunnerError {
             }
             Self::PipelineShutdownTimeout { .. } => Cow::from("PipelineShutdownTimeout"),
             Self::PipelineStartupError { .. } => Cow::from("PipelineStartupError"),
+            Self::PipelineShutdownError { .. } => Cow::from("PipelineShutdownError"),
             Self::IllegalPipelineStateTransition { .. } => {
                 Cow::from("IllegalPipelineStateTransition")
             }
@@ -84,12 +91,12 @@ impl Display for RunnerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::PipelineShutdown { pipeline_id } => {
-                write!(f, "Pipeline '{pipeline_id}' is not currently running.")
+                write!(f, "Pipeline {pipeline_id} is not currently running.")
             }
             Self::HttpForwardError { pipeline_id, error } => {
                 write!(
                     f,
-                    "Error forwarding HTTP request to pipeline '{pipeline_id}': '{error}'"
+                    "Error forwarding HTTP request to pipeline {pipeline_id}: {error}"
                 )
             }
             Self::PipelineProvisioningTimeout {
@@ -98,14 +105,17 @@ impl Display for RunnerError {
             } => {
                 write!(
                     f,
-                    "Waiting for pipeline '{pipeline_id}' to start timed out after {timeout:?}"
+                    "Waiting for pipeline {pipeline_id} to start timed out after {timeout:?}"
                 )
             }
             Self::PipelineInitializationTimeout {
                 pipeline_id,
                 timeout,
             } => {
-                write!(f, "Waiting for pipeline '{pipeline_id}' initialization timed out after {timeout:?}")
+                write!(
+                    f,
+                    "Waiting for pipeline {pipeline_id} initialization timed out after {timeout:?}"
+                )
             }
             Self::PipelineShutdownTimeout {
                 pipeline_id,
@@ -113,17 +123,20 @@ impl Display for RunnerError {
             } => {
                 write!(
                     f,
-                    "Waiting for pipeline '{pipeline_id}' to shutdown timed out after {timeout:?}"
+                    "Waiting for pipeline {pipeline_id} to shutdown timed out after {timeout:?}"
                 )
             }
             Self::PortFileParseError { pipeline_id, error } => {
                 write!(
                     f,
-                    "Could not parse port for pipeline '{pipeline_id}' from port file: '{error}'"
+                    "Could not parse port for pipeline {pipeline_id} from port file: {error}"
                 )
             }
             Self::PipelineStartupError { pipeline_id, error } => {
-                write!(f, "Failed to start pipeline '{pipeline_id}': '{error}'")
+                write!(f, "Failed to start pipeline {pipeline_id}: {error}")
+            }
+            Self::PipelineShutdownError { pipeline_id, error } => {
+                write!(f, "Failed to shutdown pipeline '{pipeline_id}': '{error}'")
             }
             Self::IllegalPipelineStateTransition { error, .. } => {
                 write!(
@@ -132,7 +145,10 @@ impl Display for RunnerError {
                 )
             }
             Self::BinaryFetchError { pipeline_id, error } => {
-                write!(f, "Failed to fetch binary executable for running pipeline '{pipeline_id}': '{error}'")
+                write!(
+                    f,
+                    "Failed to fetch binary executable for running pipeline {pipeline_id}: {error}"
+                )
             }
         }
     }
@@ -150,6 +166,7 @@ impl ResponseError for RunnerError {
             Self::PipelineInitializationTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineShutdownTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineStartupError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineShutdownError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::IllegalPipelineStateTransition { .. } => StatusCode::BAD_REQUEST,
             Self::BinaryFetchError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
