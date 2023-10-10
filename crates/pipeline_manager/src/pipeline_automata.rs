@@ -201,7 +201,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         );
                     }
                     Err(e) => {
-                        self.force_kill_pipeline(&mut pipeline, Some(e)).await?;
+                        self.mark_pipeline_as_failed(&mut pipeline, Some(e)).await?;
                     }
                 }
                 poll_timeout = Self::PROVISIONING_POLL_PERIOD;
@@ -234,7 +234,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 pipeline.status_since,
                                 Self::PROVISIONING_TIMEOUT,
                             ) {
-                                self.force_kill_pipeline(
+                                self.mark_pipeline_as_failed(
                                     &mut pipeline,
                                     Some(RunnerError::PipelineProvisioningTimeout {
                                         pipeline_id: self.pipeline_id,
@@ -247,13 +247,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             }
                         }
                         Err(e) => {
-                            self.force_kill_pipeline(&mut pipeline, Some(e)).await?;
+                            self.mark_pipeline_as_failed(&mut pipeline, Some(e)).await?;
                         }
                     }
                 }
                 // User cancels the pipeline while it's still provisioning.
                 (PipelineStatus::Provisioning, PipelineStatus::Shutdown) => {
-                    self.force_kill_pipeline(&mut pipeline, <Option<RunnerError>>::None)
+                    self.mark_pipeline_as_failed(&mut pipeline, <Option<RunnerError>>::None)
                         .await?;
                 }
                 // We're waiting for the pipeline to initialize.
@@ -271,12 +271,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     {
                         Err(e) => {
                             info!("Could not connect to pipeline {e:?}");
-                            // self.force_kill_pipeline(&mut pipeline, Some(e)).await?;
+                            // self.mark_pipeline_as_failed(&mut pipeline, Some(e)).await?;
                             if Self::timeout_expired(
                                 pipeline.status_since,
                                 Self::INITIALIZATION_TIMEOUT,
                             ) {
-                                self.force_kill_pipeline(
+                                self.mark_pipeline_as_failed(
                                     &mut pipeline,
                                     Some(RunnerError::PipelineInitializationTimeout {
                                         pipeline_id: self.pipeline_id,
@@ -302,7 +302,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                     pipeline.status_since,
                                     Self::INITIALIZATION_TIMEOUT,
                                 ) {
-                                    self.force_kill_pipeline(
+                                    self.mark_pipeline_as_failed(
                                         &mut pipeline,
                                         Some(RunnerError::PipelineInitializationTimeout {
                                             pipeline_id: self.pipeline_id,
@@ -314,7 +314,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                     poll_timeout = Self::INITIALIZATION_POLL_PERIOD;
                                 }
                             } else {
-                                self.force_kill_pipeline_on_error(&mut pipeline, status, &body)
+                                self.mark_pipeline_as_failed_on_error(&mut pipeline, status, &body)
                                     .await?;
                             }
                         }
@@ -322,7 +322,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 }
                 // User cancels the pipeline while it is still initalizing.
                 (PipelineStatus::Initializing, PipelineStatus::Shutdown) => {
-                    self.force_kill_pipeline(&mut pipeline, <Option<RunnerError>>::None)
+                    self.mark_pipeline_as_failed(&mut pipeline, <Option<RunnerError>>::None)
                         .await?;
                 }
                 // Unpause the pipeline.
@@ -336,7 +336,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .await
                     {
                         Err(e) => {
-                            self.force_kill_pipeline(&mut pipeline, Some(e)).await?;
+                            self.mark_pipeline_as_failed(&mut pipeline, Some(e)).await?;
                         }
                         Ok((status, body)) => {
                             if status.is_success() {
@@ -348,7 +348,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 .await;
                                 self.update_pipeline_runtime_state(&pipeline).await?;
                             } else {
-                                self.force_kill_pipeline_on_error(&mut pipeline, status, &body)
+                                self.mark_pipeline_as_failed_on_error(&mut pipeline, status, &body)
                                     .await?;
                             }
                         }
@@ -365,7 +365,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .await
                     {
                         Err(e) => {
-                            self.force_kill_pipeline(&mut pipeline, Some(e)).await?;
+                            self.mark_pipeline_as_failed(&mut pipeline, Some(e)).await?;
                         }
                         Ok((status, body)) => {
                             if status.is_success() {
@@ -377,47 +377,39 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 .await;
                                 self.update_pipeline_runtime_state(&pipeline).await?;
                             } else {
-                                self.force_kill_pipeline_on_error(&mut pipeline, status, &body)
+                                self.mark_pipeline_as_failed_on_error(&mut pipeline, status, &body)
                                     .await?;
                             }
                         }
                     }
                 }
-                // Shutdown request.  Forward to the pipeline; on success go to the `ShuttingDown`
-                // state.
+                // Issue a pipeline shutdown.
                 (PipelineStatus::Running, PipelineStatus::Shutdown)
                 | (PipelineStatus::Paused, PipelineStatus::Shutdown) => {
-                    // TODO: replace with direct call to shutdown
-                    match pipeline_http_request_json_response(
-                        self.pipeline_id,
-                        Method::GET,
-                        "shutdown",
-                        &pipeline.location,
-                    )
-                    .await
-                    {
-                        Err(e) => {
-                            self.force_kill_pipeline(&mut pipeline, Some(e)).await?;
+                    match self.pipeline_handle.shutdown().await {
+                        Ok(_) => {
+                            self.update_pipeline_status(
+                                &mut pipeline,
+                                PipelineStatus::ShuttingDown,
+                                None,
+                            )
+                            .await;
+                            self.update_pipeline_runtime_state(&pipeline).await?;
+                            poll_timeout = Self::SHUTDOWN_POLL_PERIOD;
                         }
-                        Ok((status, body)) => {
-                            if status.is_success() {
-                                self.update_pipeline_status(
-                                    &mut pipeline,
-                                    PipelineStatus::ShuttingDown,
-                                    None,
-                                )
-                                .await;
-                                self.update_pipeline_runtime_state(&pipeline).await?;
-                                poll_timeout = Self::SHUTDOWN_POLL_PERIOD;
-                            } else {
-                                self.force_kill_pipeline_on_error(&mut pipeline, status, &body)
-                                    .await?;
-                            }
+                        Err(e) => {
+                            self.mark_pipeline_as_failed(
+                                &mut pipeline,
+                                Some(RunnerError::PipelineShutdownError {
+                                    pipeline_id: self.pipeline_id,
+                                    error: e.to_string(),
+                                }),
+                            )
+                            .await?;
                         }
                     }
                 }
-                // Graceful shutdown in progress.  Wait for the pipeline process to self-terminate.
-                // Force-kill the pipeline after a timeout.
+                // Shutdown in progress. Wait for the pipeline process to terminate.
                 (PipelineStatus::ShuttingDown, _) => {
                     if self.pipeline_handle.check_if_shutdown().await {
                         let _ = self.pipeline_handle.shutdown().await;
@@ -425,7 +417,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             .await;
                         self.update_pipeline_runtime_state(&pipeline).await?;
                     } else if Self::timeout_expired(pipeline.status_since, Self::SHUTDOWN_TIMEOUT) {
-                        self.force_kill_pipeline(
+                        self.mark_pipeline_as_failed(
                             &mut pipeline,
                             Some(RunnerError::PipelineShutdownTimeout {
                                 pipeline_id: self.pipeline_id,
@@ -449,14 +441,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     {
                         Err(e) => {
                             // Cannot reach the pipeline.
-                            self.force_kill_pipeline(&mut pipeline, Some(e)).await?;
+                            self.mark_pipeline_as_failed(&mut pipeline, Some(e)).await?;
                         }
                         Ok((status, body)) => {
                             if !status.is_success() {
                                 // Pipeline responds with an error, meaning that the pipeline
                                 // HTTP server is still running, but the pipeline itself failed --
                                 // save it out of its misery.
-                                self.force_kill_pipeline_on_error(&mut pipeline, status, &body)
+                                self.mark_pipeline_as_failed_on_error(&mut pipeline, status, &body)
                                     .await?;
                             } else {
                                 let global_metrics = if let Some(metrics) =
@@ -507,7 +499,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                     .await;
                                     self.update_pipeline_runtime_state(&pipeline).await?;
                                 } else if state != "Paused" && state != "Running" {
-                                    self.force_kill_pipeline(&mut pipeline, Some(RunnerError::HttpForwardError {
+                                    self.mark_pipeline_as_failed(&mut pipeline, Some(RunnerError::HttpForwardError {
                                         pipeline_id: self.pipeline_id,
                                         error: format!("Pipeline reported unexpected status '{state}', expected 'Paused' or 'Running'")
                                     })).await?;
@@ -520,6 +512,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 // Move to the `Shutdown` state so that the pipeline can be started again.
                 (PipelineStatus::Failed, PipelineStatus::Shutdown) => {
                     let error = pipeline.error.clone();
+                    let _ = self.pipeline_handle.shutdown().await;
                     self.update_pipeline_status(&mut pipeline, PipelineStatus::Shutdown, error)
                         .await;
                     self.update_pipeline_runtime_state(&pipeline).await?;
@@ -567,7 +560,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// places pipeline in the `Failed` state to avoid instant automatic
     /// restart.  Otherwise (the desired state was `Shutdown`), set the
     /// state of the pipeline to `Shutdown`.
-    async fn force_kill_pipeline<E>(
+    async fn mark_pipeline_as_failed<E>(
         &mut self,
         pipeline: &mut PipelineRuntimeState,
         error: Option<E>,
@@ -575,44 +568,26 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     where
         ErrorResponse: for<'a> From<&'a E>,
     {
-        let _ = self.pipeline_handle.shutdown().await;
-
-        if pipeline.desired_status == PipelineStatus::Shutdown {
-            self.update_pipeline_status(
-                pipeline,
-                PipelineStatus::Shutdown,
-                error.map(|e| ErrorResponse::from(&e)),
-            )
-            .await;
-        } else {
-            self.update_pipeline_status(
-                pipeline,
-                PipelineStatus::Failed,
-                error.map(|e| ErrorResponse::from(&e)),
-            )
-            .await;
-        }
+        self.update_pipeline_status(
+            pipeline,
+            PipelineStatus::Failed,
+            error.map(|e| ErrorResponse::from(&e)),
+        )
+        .await;
         self.update_pipeline_runtime_state(pipeline).await
     }
 
-    /// Same as `force_kill_pipeline`, but deserializes `ErrorResponse` from
+    /// Same as `mark_pipeline_as_failed`, but deserializes `ErrorResponse` from
     /// a JSON error returned by the pipeline.
-    async fn force_kill_pipeline_on_error(
+    async fn mark_pipeline_as_failed_on_error(
         &mut self,
         pipeline: &mut PipelineRuntimeState,
         status: StatusCode,
         error: &JsonValue,
     ) -> Result<(), DBError> {
-        let _ = self.pipeline_handle.shutdown().await;
         let error = Self::error_response_from_json(self.pipeline_id, status, error);
-
-        if pipeline.desired_status == PipelineStatus::Shutdown {
-            self.update_pipeline_status(pipeline, PipelineStatus::Shutdown, Some(error))
-                .await;
-        } else {
-            self.update_pipeline_status(pipeline, PipelineStatus::Failed, Some(error))
-                .await;
-        }
+        self.update_pipeline_status(pipeline, PipelineStatus::Failed, Some(error))
+            .await;
         self.update_pipeline_runtime_state(pipeline).await
     }
 

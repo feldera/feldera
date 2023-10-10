@@ -5,7 +5,7 @@ use clap::{Args, Command, FromArgMatches};
 use colored::Colorize;
 
 use pipeline_manager::config::DatabaseConfig;
-use pipeline_manager::db::ProjectDB;
+use pipeline_manager::db::{DBError, ProjectDB};
 
 // A binary to run DB migrations
 #[tokio::main]
@@ -18,20 +18,20 @@ async fn main() -> anyhow::Result<()> {
     let database_config = DatabaseConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
-    let db: ProjectDB = pipeline_manager::retries::retry_async(
+    let _: Result<ProjectDB, DBError> = pipeline_manager::retries::retry_async(
         || async {
-            ProjectDB::connect(
+            let db = ProjectDB::connect(
                 &database_config,
                 #[cfg(feature = "pg-embed")]
                 None,
             )
-            .await
+            .await?;
+            db.run_migrations().await?;
+            Ok(db)
         },
         30,
         Duration::from_secs(1),
     )
-    .await
-    .unwrap();
-    db.run_migrations().await?;
+    .await;
     Ok(())
 }
