@@ -309,9 +309,9 @@ impl DbspCircuit {
     ///
     /// # Safety
     ///
-    /// The produced [`JsonZSetHandle`] must be dropped before the [`DbspCircuit`]
-    /// that created it, using the handle after the parent circuit has shut down
-    /// is undefined behavior
+    /// The produced [`JsonZSetHandle`] must be dropped before the
+    /// [`DbspCircuit`] that created it, using the handle after the parent
+    /// circuit has shut down is undefined behavior
     // TODO: We should probably wrap the innards of `DbspCircuit` in a struct
     // and arc and handles should hold a reference to that (maybe even a weak ref).
     // Alternatively we could use lifetimes, but I'm not 100% sure how that would
@@ -343,9 +343,9 @@ impl DbspCircuit {
     ///
     /// # Safety
     ///
-    /// The produced [`JsonSetHandle`] must be dropped before the [`DbspCircuit`]
-    /// that created it, using the handle after the parent circuit has shut down
-    /// is undefined behavior
+    /// The produced [`JsonSetHandle`] must be dropped before the
+    /// [`DbspCircuit`] that created it, using the handle after the parent
+    /// circuit has shut down is undefined behavior
     // TODO: We should probably wrap the innards of `DbspCircuit` in a struct
     // and arc and handles should hold a reference to that (maybe even a weak ref).
     // Alternatively we could use lifetimes, but I'm not 100% sure how that would

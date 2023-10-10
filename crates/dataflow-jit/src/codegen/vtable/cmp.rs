@@ -1,7 +1,7 @@
 use crate::{
     codegen::{
         utils::{column_non_null, FunctionBuilderExt},
-        Codegen, TRAP_NULL_PTR,
+        Codegen, TRAP_ASSERT_FALSE, TRAP_NULL_PTR,
     },
     ir::{ColumnType, LayoutId},
     ThinStr,
@@ -24,7 +24,6 @@ impl Codegen {
         // fn(*const u8, *const u8) -> bool
         let ptr_ty = self.module.isa().pointer_type();
         let func_id = self.create_function([ptr_ty; 2], Some(types::I8));
-        let mut imports = self.intrinsics.import(self.comment_writer.clone());
 
         self.set_comment_writer(
             &format!("{layout_id}_vtable_eq"),
@@ -95,11 +94,13 @@ impl Codegen {
                         let lhs_non_null = column_non_null(idx, lhs, &layout, &mut builder, true);
                         let rhs_non_null = column_non_null(idx, rhs, &layout, &mut builder, true);
 
+                        // Normal booleans, 1 = true, 0 = false
                         let lhs_non_null = builder.ins().icmp_imm(IntCC::Equal, lhs_non_null, 0);
                         let rhs_non_null = builder.ins().icmp_imm(IntCC::Equal, rhs_non_null, 0);
 
                         let check_nulls = builder.create_block();
                         let null_eq = builder.ins().icmp(IntCC::Equal, lhs_non_null, rhs_non_null);
+
                         // If one is null and one is false, return inequal (`null_eq` will always
                         // hold `false` in this case)
                         builder
@@ -122,14 +123,25 @@ impl Codegen {
                             // is null or not
                             builder.ins().brif(
                                 lhs_non_null,
-                                next_compare,
-                                &[],
                                 compare_innards,
+                                &[],
+                                next_compare,
                                 &[],
                             );
 
                             builder.seal_block(check_nulls);
                             builder.switch_to_block(compare_innards);
+
+                            // Ensure that if we reach this point both values are non-null
+                            if self.config.debug_assertions {
+                                let lhs_non_null =
+                                    column_non_null(idx, lhs, &layout, &mut builder, true);
+                                builder.ins().trapnz(lhs_non_null, TRAP_ASSERT_FALSE);
+
+                                let rhs_non_null =
+                                    column_non_null(idx, rhs, &layout, &mut builder, true);
+                                builder.ins().trapnz(rhs_non_null, TRAP_ASSERT_FALSE);
+                            }
                         }
                     }
 
@@ -221,9 +233,20 @@ impl Codegen {
 
                             builder.switch_to_block(equal);
 
-                            let string_eq =
-                                imports.get("string_eq", &mut self.module, builder.func);
-                            builder.call_fn(string_eq, &[lhs, rhs])
+                            // let string_eq =
+                            //     imports.get("string_eq", &mut self.module, builder.func);
+                            // builder.call_fn(string_eq, &[lhs, rhs])
+
+                            // Get pointers to both string's data
+                            // TODO: Use `CodegenCtx::string_ptr()`
+                            let offset = builder.ins().iconst(ptr_ty, ThinStr::pointer_offset() as i64);
+                            let lhs_ptr = builder.ins().iadd(lhs, offset);
+                            let rhs_ptr = builder.ins().iadd(rhs, offset);
+
+                            // Compare the innards of the strings with a `memcmp()` call
+                            let comparison = builder.call_memcmp(self.module.isa().frontend_config(), lhs_ptr, rhs_ptr, lhs_len);
+                            // `memcmp()` returns -1, 0 or 1 with 0 meaning the strings are equal
+                            builder.ins().icmp_imm(IntCC::Equal, comparison, 0)
                         }
 
                         // Unit values have already been handled

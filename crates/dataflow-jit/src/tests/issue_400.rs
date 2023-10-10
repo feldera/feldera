@@ -15,7 +15,8 @@ const CIRCUIT: &str = r#"{
   "nodes": {
     "594": {
       "Source": {
-        "layout": 1,
+        "layout": { "Set": 1 },
+        "kind": "ZSet",
         "table": "DATE_TBL"
       }
     },
