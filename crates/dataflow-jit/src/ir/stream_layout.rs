@@ -20,7 +20,6 @@ use std::collections::BTreeMap;
     Deserialize,
     Serialize,
     JsonSchema,
-    IsVariant,
     Unwrap,
 )]
 pub enum StreamLayout {
@@ -117,6 +116,22 @@ impl StreamLayout {
         } else {
             None
         }
+    }
+
+    /// Returns `true` if the stream layout is [`Map`].
+    ///
+    /// [`Map`]: StreamLayout::Map
+    #[must_use]
+    pub const fn is_map(&self) -> bool {
+        matches!(self, Self::Map(..))
+    }
+
+    /// Returns `true` if the stream layout is [`Set`].
+    ///
+    /// [`Set`]: StreamLayout::Set
+    #[must_use]
+    pub const fn is_set(&self) -> bool {
+        matches!(self, Self::Set(..))
     }
 }
 

@@ -137,22 +137,66 @@ impl DataflowNode for ExportedNode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema)]
+pub enum SourceKind {
+    /// A zset source
+    ZSet,
+    /// An upsert source
+    Upsert,
+}
+
+impl SourceKind {
+    /// Returns `true` if the source kind is [`ZSet`].
+    ///
+    /// [`ZSet`]: SourceKind::ZSet
+    #[must_use]
+    pub const fn is_zset(self) -> bool {
+        matches!(self, Self::ZSet)
+    }
+
+    /// Returns `true` if the source kind is [`Upsert`].
+    ///
+    /// [`Upsert`]: SourceKind::Upsert
+    #[must_use]
+    pub const fn is_upsert(self) -> bool {
+        matches!(self, Self::Upsert)
+    }
+
+    const fn to_str(self) -> &'static str {
+        match self {
+            Self::ZSet => "zset",
+            Self::Upsert => "upsert",
+        }
+    }
+}
+
+impl Default for SourceKind {
+    fn default() -> Self {
+        Self::ZSet
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Source {
-    /// The type of the source's produced stream
-    layout: LayoutId,
+    /// The type of the source's produced stream, implicitly determines whether the source produces a set or a map
+    layout: StreamLayout,
+    kind: SourceKind,
     #[serde(alias = "table")]
     name: Option<Box<str>>,
 }
 
 impl Source {
-    pub const fn new(layout: LayoutId, name: Option<Box<str>>) -> Self {
-        Self { layout, name }
+    pub const fn new(layout: StreamLayout, kind: SourceKind, name: Option<Box<str>>) -> Self {
+        Self { layout, kind, name }
     }
 
     /// The type of the source's produced stream
-    pub const fn layout(&self) -> LayoutId {
+    pub const fn layout(&self) -> StreamLayout {
         self.layout
+    }
+
+    pub const fn kind(&self) -> SourceKind {
+        self.kind
     }
 
     pub fn name(&self) -> Option<&str> {
@@ -160,7 +204,15 @@ impl Source {
     }
 
     pub const fn output_layout(&self) -> StreamLayout {
-        StreamLayout::Set(self.layout)
+        self.layout()
+    }
+
+    pub const fn is_set(&self) -> bool {
+        self.layout.is_set()
+    }
+
+    pub const fn is_map(&self) -> bool {
+        self.layout.is_map()
     }
 }
 
@@ -182,7 +234,7 @@ impl DataflowNode for Source {
         _inputs: &[StreamLayout],
         _layout_cache: &RowLayoutCache,
     ) -> Option<StreamLayout> {
-        Some(StreamLayout::Set(self.layout))
+        Some(self.layout)
     }
 
     fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
@@ -193,11 +245,11 @@ impl DataflowNode for Source {
     where
         F: FnMut(LayoutId) + ?Sized,
     {
-        map(self.layout);
+        self.layout.map_layouts(map);
     }
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
-        self.layout = mappings[&self.layout];
+        self.layout.remap_layouts(mappings);
     }
 }
 
@@ -210,88 +262,9 @@ where
         alloc
             .text("source")
             .append(alloc.space())
-            .append(StreamLayout::Set(self.layout).pretty(alloc, cache))
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-pub struct SourceMap {
-    key_layout: LayoutId,
-    value_layout: LayoutId,
-}
-
-impl SourceMap {
-    pub const fn new(key: LayoutId, value: LayoutId) -> Self {
-        Self {
-            key_layout: key,
-            value_layout: value,
-        }
-    }
-
-    /// The key type of the source's produced stream
-    pub const fn key(&self) -> LayoutId {
-        self.key_layout
-    }
-
-    /// The value type of the source's produced stream
-    pub const fn value(&self) -> LayoutId {
-        self.value_layout
-    }
-
-    pub const fn output_layout(&self) -> StreamLayout {
-        StreamLayout::Map(self.key_layout, self.value_layout)
-    }
-}
-
-impl DataflowNode for SourceMap {
-    fn map_inputs<F>(&self, _map: &mut F)
-    where
-        F: FnMut(NodeId) + ?Sized,
-    {
-    }
-
-    fn map_inputs_mut<F>(&mut self, _map: &mut F)
-    where
-        F: FnMut(&mut NodeId) + ?Sized,
-    {
-    }
-
-    fn output_stream(
-        &self,
-        _inputs: &[StreamLayout],
-        _layout_cache: &RowLayoutCache,
-    ) -> Option<StreamLayout> {
-        Some(self.output_layout())
-    }
-
-    fn validate(&self, _inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {}
-
-    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
-
-    fn map_layouts<F>(&self, map: &mut F)
-    where
-        F: FnMut(LayoutId) + ?Sized,
-    {
-        map(self.key_layout);
-        map(self.value_layout);
-    }
-
-    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
-        self.key_layout = mappings[&self.key_layout];
-        self.value_layout = mappings[&self.value_layout];
-    }
-}
-
-impl<'a, D, A> Pretty<'a, D, A> for &SourceMap
-where
-    A: 'a,
-    D: DocAllocator<'a, A> + ?Sized,
-{
-    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
-        alloc
-            .text("source_map")
+            .append(self.kind.to_str())
             .append(alloc.space())
-            .append(StreamLayout::Map(self.key_layout, self.value_layout).pretty(alloc, cache))
+            .append(self.layout.pretty(alloc, cache))
     }
 }
 

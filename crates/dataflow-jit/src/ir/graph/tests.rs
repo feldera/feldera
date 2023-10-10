@@ -8,7 +8,7 @@ use crate::{
         function::FunctionBuilder,
         graph::{Graph, GraphExt},
         literal::{NullableConstant, RowLiteral},
-        nodes::{Differentiate, Fold, IndexWith, Neg, Source, StreamLayout, Sum},
+        nodes::{Differentiate, Fold, IndexWith, Neg, SourceKind, StreamLayout, Sum},
         row_layout::{RowLayout, RowLayoutBuilder},
         types::ColumnType,
         validate::Validator,
@@ -49,7 +49,7 @@ fn complex() {
             .with_column(ColumnType::F64, true)
             .build(),
     );
-    let source = graph.add_node(Source::new(source_row, None));
+    let source = graph.source(source_row, SourceKind::ZSet);
 
     // ```
     // let stream7850: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = T.map(
@@ -286,7 +286,7 @@ fn complex() {
     //     Tuple1::new(None::<i32>) => 1,
     // )));
     // ```
-    let stream7130 = graph.add_node(Source::new(nullable_i32, None));
+    let stream7130 = graph.source(nullable_i32, SourceKind::ZSet);
 
     // ```
     // let stream7883: Stream<_, OrdZSet<Tuple1<Option<i32>>, Weight>> = stream7130.differentiate();
@@ -378,7 +378,7 @@ fn mapping() {
             .with_column(ColumnType::U32, false)
             .build(),
     );
-    let source = graph.add_node(Source::new(xy_layout, None));
+    let source = graph.source(xy_layout, SourceKind::ZSet);
 
     let x_layout = graph.layout_cache().add(
         RowLayoutBuilder::new()

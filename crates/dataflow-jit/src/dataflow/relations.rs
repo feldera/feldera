@@ -2,7 +2,9 @@ use crate::{
     ir::{nodes::StreamLayout, NodeId},
     row::Row,
 };
-use dbsp::{trace::Spine, CollectionHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Stream};
+use dbsp::{
+    trace::Spine, CollectionHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Stream, UpsertHandle,
+};
 use derive_more::{IsVariant, Unwrap};
 use std::collections::BTreeMap;
 
@@ -26,13 +28,15 @@ pub enum RowTrace<C> {
 
 #[derive(Clone, IsVariant, Unwrap)]
 pub enum RowInput {
-    Set(CollectionHandle<Row, i32>),
-    Map(CollectionHandle<Row, (Row, i32)>),
+    ZSet(CollectionHandle<Row, i32>),
+    UpsertZSet(UpsertHandle<Row, bool>),
+    IndexedZSet(CollectionHandle<Row, (Row, i32)>),
+    UpsertIndexedZSet(UpsertHandle<Row, Option<Row>>),
 }
 
 impl RowInput {
     pub const fn as_set(&self) -> Option<&CollectionHandle<Row, i32>> {
-        if let Self::Set(handle) = self {
+        if let Self::ZSet(handle) = self {
             Some(handle)
         } else {
             None
@@ -40,7 +44,7 @@ impl RowInput {
     }
 
     pub fn as_set_mut(&mut self) -> Option<&mut CollectionHandle<Row, i32>> {
-        if let Self::Set(handle) = self {
+        if let Self::ZSet(handle) = self {
             Some(handle)
         } else {
             None
@@ -48,7 +52,7 @@ impl RowInput {
     }
 
     pub const fn as_map(&self) -> Option<&CollectionHandle<Row, (Row, i32)>> {
-        if let Self::Map(handle) = self {
+        if let Self::IndexedZSet(handle) = self {
             Some(handle)
         } else {
             None
@@ -56,7 +60,7 @@ impl RowInput {
     }
 
     pub fn as_map_mut(&mut self) -> Option<&mut CollectionHandle<Row, (Row, i32)>> {
-        if let Self::Map(handle) = self {
+        if let Self::IndexedZSet(handle) = self {
             Some(handle)
         } else {
             None

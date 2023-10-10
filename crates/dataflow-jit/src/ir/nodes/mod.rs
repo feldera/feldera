@@ -20,7 +20,7 @@ pub use differentiate::{Differentiate, Integrate};
 pub use filter_map::{Filter, FilterMap, Map};
 pub use flat_map::FlatMap;
 pub use index::{IndexByColumn, IndexWith, UnitMapToSet};
-pub use io::{Export, ExportedNode, Sink, Source, SourceMap};
+pub use io::{Export, ExportedNode, Sink, Source, SourceKind};
 pub use join::{Antijoin, JoinCore, MonotonicJoin};
 pub use subgraph::Subgraph;
 pub use sum::{Minus, Sum};
@@ -52,7 +52,6 @@ pub enum Node {
     Filter(Filter),
     FilterMap(FilterMap),
     Source(Source),
-    SourceMap(SourceMap),
     IndexWith(IndexWith),
     Differentiate(Differentiate),
     Integrate(Integrate),
@@ -128,7 +127,6 @@ where
             Node::Filter(filter) => filter.pretty(alloc, cache),
             Node::FilterMap(filter_map) => filter_map.pretty(alloc, cache),
             Node::Source(source) => source.pretty(alloc, cache),
-            Node::SourceMap(source_map) => source_map.pretty(alloc, cache),
             Node::IndexWith(index_with) => index_with.pretty(alloc, cache),
             Node::Differentiate(differentiate) => differentiate.pretty(alloc, cache),
             Node::Integrate(integrate) => integrate.pretty(alloc, cache),

@@ -2,7 +2,7 @@ use crate::{
     codegen::VTable,
     dataflow::RowZSet,
     ir::{
-        nodes::{StreamKind, StreamLayout, TopkOrder},
+        nodes::{SourceKind, StreamKind, StreamLayout, TopkOrder},
         LayoutId, NodeId,
     },
     row::Row,
@@ -238,12 +238,14 @@ pub struct DelayedFeedback {}
 #[derive(Debug, Clone)]
 pub struct Source {
     pub key_layout: LayoutId,
+    pub kind: SourceKind,
 }
 
 #[derive(Debug, Clone)]
 pub struct SourceMap {
     pub key_layout: LayoutId,
     pub value_layout: LayoutId,
+    pub kind: SourceKind,
 }
 
 #[derive(Debug, Clone)]

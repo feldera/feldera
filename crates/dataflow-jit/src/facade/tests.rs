@@ -5,7 +5,7 @@ use crate::{
     facade::Demands,
     ir::{
         literal::{NullableConstant, RowLiteral, StreamCollection},
-        nodes::{IndexByColumn, StreamKind, StreamLayout},
+        nodes::{IndexByColumn, SourceKind, StreamKind, StreamLayout},
         ColumnType, Constant, Graph, GraphExt, NodeId, RowLayoutBuilder,
     },
     sql_graph::SqlGraph,
@@ -33,9 +33,9 @@ fn time_series_enrich_e2e() {
 
     let mut demands = Demands::new();
     let transactions_demand =
-        demands.add_csv_deserialize(transactions_layout, transaction_mappings());
+        demands.add_csv_deserialize(transactions_layout.unwrap_set(), transaction_mappings());
     let demographics_demand =
-        demands.add_csv_deserialize(demographics_layout, demographic_mappings());
+        demands.add_csv_deserialize(demographics_layout.unwrap_set(), demographic_mappings());
 
     // Create the circuit
     let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), demands);
@@ -125,8 +125,8 @@ fn time_series_enrich_e2e_2() {
             .build(),
     );
 
-    let demographics_src = graph.source(demographics_layout);
-    let transactions_src = graph.source(transactions_layout);
+    let demographics_src = graph.source(demographics_layout, SourceKind::ZSet);
+    let transactions_src = graph.source(transactions_layout, SourceKind::ZSet);
 
     let indexed_demographics = graph.add_node(IndexByColumn::new(
         demographics_src,

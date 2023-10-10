@@ -90,7 +90,6 @@ impl Subgraph {
                 // Don't mark empty streams as reachable
                 .map_or(true, |constant| !constant.value().is_empty())
                 && (node.is_source()
-                    || node.is_source_map()
                     || node.is_delayed_feedback()
                     || node.is_delta_0()
                     || self
@@ -172,7 +171,7 @@ mod tests {
     use crate::{
         ir::{
             literal::{NullableConstant, RowLiteral, StreamCollection, StreamLiteral},
-            nodes::{ConstantStream, StreamLayout, Sum},
+            nodes::{ConstantStream, SourceKind, StreamLayout, Sum},
             ColumnType, Graph, GraphExt, RowLayoutBuilder,
         },
         utils,
@@ -189,7 +188,7 @@ mod tests {
                 .build(),
         );
 
-        graph.source(value);
+        graph.source(value, SourceKind::ZSet);
 
         let empty = graph.empty_set(value);
         graph.sink(empty, "V", StreamLayout::Set(value));

@@ -5,7 +5,7 @@ use crate::{
     dataflow::{CompiledDataflow, RowOutput},
     ir::{
         graph::GraphExt,
-        nodes::{Min, Minus, MonotonicJoin, StreamKind, StreamLayout, Sum},
+        nodes::{Min, Minus, MonotonicJoin, SourceKind, StreamKind, StreamLayout, Sum},
         ColumnType, Constant, FunctionBuilder, Graph, RowLayoutBuilder,
     },
     row::UninitRow,
@@ -35,7 +35,7 @@ fn compiled_dataflow() {
             .build(),
     );
 
-    let source = graph.source(xy_layout);
+    let source = graph.source(xy_layout, SourceKind::ZSet);
 
     let mul = graph.map(
         source,
@@ -193,9 +193,9 @@ fn bfs() {
             .build(),
     );
 
-    let roots = graph.source(u64x2);
-    let edges = graph.source_map(u64x1, u64x1);
-    let vertices = graph.source(u64x1);
+    let roots = graph.source(u64x2, SourceKind::ZSet);
+    let edges = graph.source((u64x1, u64x1), SourceKind::ZSet);
+    let vertices = graph.source(u64x1, SourceKind::ZSet);
 
     let (_recursive, distances) = graph.subgraph(|subgraph| {
         let nodes = subgraph.delayed_feedback(u64x2);

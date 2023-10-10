@@ -15,7 +15,8 @@ use crate::{
         graph,
         literal::StreamCollection,
         nodes::{
-            DataflowNode as _, Node, StreamKind, StreamLayout, Subgraph as SubgraphNode, TopkOrder,
+            DataflowNode as _, Node, SourceKind, StreamKind, StreamLayout,
+            Subgraph as SubgraphNode, TopkOrder,
         },
         Graph, GraphExt, LayoutId, NodeId,
     },
@@ -385,7 +386,34 @@ impl CompiledDataflow {
                 }
 
                 DataflowNode::Source(source) => {
-                    let (stream, handle) = circuit.add_input_zset::<Row, i32>();
+                    let stream = match source.kind {
+                        SourceKind::ZSet => {
+                            let (stream, handle) = circuit.add_input_zset::<Row, i32>();
+
+                            streams.insert(node_id, RowStream::Set(stream.clone()));
+                            inputs.insert(
+                                node_id,
+                                (RowInput::ZSet(handle), StreamLayout::Set(source.key_layout)),
+                            );
+
+                            stream
+                        }
+
+                        SourceKind::Upsert => {
+                            let (stream, handle) = circuit.add_input_set::<Row, i32>();
+
+                            streams.insert(node_id, RowStream::Set(stream.clone()));
+                            inputs.insert(
+                                node_id,
+                                (
+                                    RowInput::UpsertZSet(handle),
+                                    StreamLayout::Set(source.key_layout),
+                                ),
+                            );
+
+                            stream
+                        }
+                    };
 
                     if cfg!(debug_assertions) {
                         let key_layout = source.key_layout;
@@ -400,16 +428,41 @@ impl CompiledDataflow {
                             }
                         });
                     }
-
-                    streams.insert(node_id, RowStream::Set(stream));
-                    inputs.insert(
-                        node_id,
-                        (RowInput::Set(handle), StreamLayout::Set(source.key_layout)),
-                    );
                 }
 
                 DataflowNode::SourceMap(source) => {
-                    let (stream, handle) = circuit.add_input_indexed_zset::<Row, Row, i32>();
+                    let stream = match source.kind {
+                        SourceKind::ZSet => {
+                            let (stream, handle) =
+                                circuit.add_input_indexed_zset::<Row, Row, i32>();
+
+                            streams.insert(node_id, RowStream::Map(stream.clone()));
+                            inputs.insert(
+                                node_id,
+                                (
+                                    RowInput::IndexedZSet(handle),
+                                    StreamLayout::Map(source.key_layout, source.value_layout),
+                                ),
+                            );
+
+                            stream
+                        }
+
+                        SourceKind::Upsert => {
+                            let (stream, handle) = circuit.add_input_map::<Row, Row, i32>();
+
+                            streams.insert(node_id, RowStream::Map(stream.clone()));
+                            inputs.insert(
+                                node_id,
+                                (
+                                    RowInput::UpsertIndexedZSet(handle),
+                                    StreamLayout::Map(source.key_layout, source.value_layout),
+                                ),
+                            );
+
+                            stream
+                        }
+                    };
 
                     if cfg!(debug_assertions) {
                         let (key_layout, value_layout) = (source.key_layout, source.value_layout);
@@ -432,15 +485,6 @@ impl CompiledDataflow {
                             }
                         });
                     }
-
-                    streams.insert(node_id, RowStream::Map(stream));
-                    inputs.insert(
-                        node_id,
-                        (
-                            RowInput::Map(handle),
-                            StreamLayout::Map(source.key_layout, source.value_layout),
-                        ),
-                    );
                 }
 
                 DataflowNode::Delta0(_) => todo!(),
@@ -1658,20 +1702,22 @@ fn collect_functions(
                     .or_insert_with(|| codegen.vtable_for(index_by.value_layout()));
             }
 
-            Node::Source(source) => {
-                vtables
-                    .entry(source.layout())
-                    .or_insert_with(|| codegen.vtable_for(source.layout()));
-            }
+            Node::Source(source) => match source.layout() {
+                StreamLayout::Set(key) => {
+                    vtables
+                        .entry(key)
+                        .or_insert_with(|| codegen.vtable_for(key));
+                }
 
-            Node::SourceMap(source) => {
-                vtables
-                    .entry(source.key())
-                    .or_insert_with(|| codegen.vtable_for(source.key()));
-                vtables
-                    .entry(source.value())
-                    .or_insert_with(|| codegen.vtable_for(source.value()));
-            }
+                StreamLayout::Map(key, value) => {
+                    vtables
+                        .entry(key)
+                        .or_insert_with(|| codegen.vtable_for(key));
+                    vtables
+                        .entry(value)
+                        .or_insert_with(|| codegen.vtable_for(value));
+                }
+            },
 
             Node::JoinCore(join) => {
                 let join_fn = codegen.codegen_func(&format!("join_fn_{node_id}"), join.join_fn());
@@ -1987,22 +2033,22 @@ fn compile_nodes(
             }
 
             Node::Source(source) => {
-                nodes.insert(
-                    *node_id,
-                    DataflowNode::Source(Source {
-                        key_layout: source.layout(),
-                    }),
-                );
-            }
+                let kind = source.kind();
+                let source = match source.layout() {
+                    StreamLayout::Set(key_layout) => {
+                        DataflowNode::Source(Source { key_layout, kind })
+                    }
 
-            Node::SourceMap(source) => {
-                nodes.insert(
-                    *node_id,
-                    DataflowNode::SourceMap(SourceMap {
-                        key_layout: source.key(),
-                        value_layout: source.value(),
-                    }),
-                );
+                    StreamLayout::Map(key_layout, value_layout) => {
+                        DataflowNode::SourceMap(SourceMap {
+                            key_layout,
+                            value_layout,
+                            kind,
+                        })
+                    }
+                };
+
+                nodes.insert(*node_id, source);
             }
 
             Node::IndexWith(index) => {

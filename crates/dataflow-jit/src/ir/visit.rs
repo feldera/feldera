@@ -3,7 +3,7 @@ use crate::ir::{
         Antijoin, ConstantStream, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
         ExportedNode, Filter, FilterMap, FlatMap, Fold, IndexByColumn, IndexWith, Integrate,
         JoinCore, Map, Max, Min, Minus, MonotonicJoin, Neg, Node, PartitionedRollingFold, Sink,
-        Source, SourceMap, StreamDistinct, Subgraph, Sum, TopK, UnitMapToSet,
+        Source, StreamDistinct, Subgraph, Sum, TopK, UnitMapToSet,
     },
     GraphExt, NodeId,
 };
@@ -22,7 +22,6 @@ pub trait NodeVisitor {
     fn visit_filter(&mut self, _node_id: NodeId, _filter: &Filter) {}
     fn visit_filter_map(&mut self, _node_id: NodeId, _filter_map: &FilterMap) {}
     fn visit_source(&mut self, _node_id: NodeId, _source: &Source) {}
-    fn visit_source_map(&mut self, _node_id: NodeId, _source_map: &SourceMap) {}
     fn visit_index_with(&mut self, _node_id: NodeId, _index_with: &IndexWith) {}
     fn visit_differentiate(&mut self, _node_id: NodeId, _differentiate: &Differentiate) {}
     fn visit_integrate(&mut self, _node_id: NodeId, _integrate: &Integrate) {}
@@ -70,7 +69,6 @@ pub trait MutNodeVisitor {
     fn visit_filter(&mut self, _node_id: NodeId, _filter: &mut Filter) {}
     fn visit_filter_map(&mut self, _node_id: NodeId, _filter_map: &mut FilterMap) {}
     fn visit_source(&mut self, _node_id: NodeId, _source: &mut Source) {}
-    fn visit_source_map(&mut self, _node_id: NodeId, _source_map: &mut SourceMap) {}
     fn visit_index_with(&mut self, _node_id: NodeId, _index_with: &mut IndexWith) {}
     fn visit_differentiate(&mut self, _node_id: NodeId, _differentiate: &mut Differentiate) {}
     fn visit_integrate(&mut self, _node_id: NodeId, _integrate: &mut Integrate) {}
@@ -128,7 +126,6 @@ impl Node {
             Self::Filter(filter) => visitor.visit_filter(node_id, filter),
             Self::FilterMap(filter_map) => visitor.visit_filter_map(node_id, filter_map),
             Self::Source(source) => visitor.visit_source(node_id, source),
-            Self::SourceMap(source_map) => visitor.visit_source_map(node_id, source_map),
             Self::IndexWith(index_with) => visitor.visit_index_with(node_id, index_with),
             Self::Differentiate(differentiate) => {
                 visitor.visit_differentiate(node_id, differentiate);
@@ -181,7 +178,6 @@ impl Node {
             Self::Filter(filter) => visitor.visit_filter(node_id, filter),
             Self::FilterMap(filter_map) => visitor.visit_filter_map(node_id, filter_map),
             Self::Source(source) => visitor.visit_source(node_id, source),
-            Self::SourceMap(source_map) => visitor.visit_source_map(node_id, source_map),
             Self::IndexWith(index_with) => visitor.visit_index_with(node_id, index_with),
             Self::Differentiate(differentiate) => {
                 visitor.visit_differentiate(node_id, differentiate);

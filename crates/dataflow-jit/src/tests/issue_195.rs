@@ -4,7 +4,7 @@ use crate::{
     ir::{
         exprs::{Call, RowOrScalar},
         literal::{NullableConstant, RowLiteral, StreamCollection},
-        nodes::StreamLayout,
+        nodes::{SourceKind, StreamLayout},
         ColumnType, Constant, Graph, GraphExt, RowLayoutBuilder,
     },
     utils, DbspCircuit,
@@ -27,7 +27,7 @@ fn issue_195() {
             .build(),
     );
 
-    let source = graph.source(layout);
+    let source = graph.source(layout, SourceKind::ZSet);
 
     let printed = graph.map(
         source,
