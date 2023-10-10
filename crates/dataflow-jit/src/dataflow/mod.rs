@@ -1,6 +1,7 @@
+pub mod relations;
+
 mod nodes;
 mod operators;
-mod relations;
 mod tests;
 
 use crate::{

@@ -169,21 +169,22 @@ pub fn start_circuit(
         // FIXME: This is unsafe. The correct fix is to make sure `endpoint.disconnect`
         // returns after all endpoint threads have terminated.
         let default_json =
-            unsafe { circuit.json_input_set(node_id, default_json_input_demands[&node_id]) }
+            unsafe { circuit.json_input_zset(node_id, default_json_input_demands[&node_id]) }
                 .ok_or_else(|| {
                     ControllerError::jit_error(&format!(
                         "JsonSetHandle[Default] not found (table name: '{}', node id: {})",
                         table_schema.name, node_id,
                     ))
                 })?;
-        let debezium_mysql_json =
-            unsafe { circuit.json_input_set(node_id, debezium_mysql_json_input_demands[&node_id]) }
-                .ok_or_else(|| {
-                    ControllerError::jit_error(&format!(
-                        "JsonSetHandle[DebeziumMySQL] not found (table name: '{}', node id: {})",
-                        table_schema.name, node_id,
-                    ))
-                })?;
+        let debezium_mysql_json = unsafe {
+            circuit.json_input_zset(node_id, debezium_mysql_json_input_demands[&node_id])
+        }
+        .ok_or_else(|| {
+            ControllerError::jit_error(&format!(
+                "JsonSetHandle[DebeziumMySQL] not found (table name: '{}', node id: {})",
+                table_schema.name, node_id,
+            ))
+        })?;
 
         catalog.register_input_collection_handle(
             &table_schema.name,

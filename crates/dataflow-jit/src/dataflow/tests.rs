@@ -126,7 +126,7 @@ fn compiled_dataflow() {
         .get_mut(&source)
         .unwrap()
         .0
-        .as_set_mut()
+        .as_zset_mut()
         .unwrap()
         .append(&mut values);
 
@@ -364,7 +364,7 @@ fn bfs() {
         let u64x2_vtable = unsafe { &*jit_handle.vtables()[&u64x2] };
         let u64x2_layout = layout_cache.layout_of(u64x2);
 
-        let roots = inputs.get_mut(&roots).unwrap().0.as_set_mut().unwrap();
+        let roots = inputs.get_mut(&roots).unwrap().0.as_zset_mut().unwrap();
         let mut source_vertex = UninitRow::new(u64x2_vtable);
         unsafe {
             source_vertex
@@ -382,7 +382,7 @@ fn bfs() {
         }
 
         let vertices_data = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let vertices = inputs.get_mut(&vertices).unwrap().0.as_set_mut().unwrap();
+        let vertices = inputs.get_mut(&vertices).unwrap().0.as_zset_mut().unwrap();
         for &vertex in vertices_data {
             let mut key = UninitRow::new(u64x1_vtable);
             unsafe {
@@ -414,7 +414,12 @@ fn bfs() {
             (8, 1),
             (9, 4),
         ];
-        let edges = inputs.get_mut(&edges).unwrap().0.as_map_mut().unwrap();
+        let edges = inputs
+            .get_mut(&edges)
+            .unwrap()
+            .0
+            .as_indexed_zset_mut()
+            .unwrap();
         for &(src, dest) in edge_data {
             let (mut key, mut value) = (UninitRow::new(u64x1_vtable), UninitRow::new(u64x1_vtable));
 

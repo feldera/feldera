@@ -118,6 +118,16 @@ impl StreamLayout {
         }
     }
 
+    #[must_use]
+    #[inline]
+    pub const fn as_map(&self) -> Option<(LayoutId, LayoutId)> {
+        if let Self::Map(key, value) = *self {
+            Some((key, value))
+        } else {
+            None
+        }
+    }
+
     /// Returns `true` if the stream layout is [`Map`].
     ///
     /// [`Map`]: StreamLayout::Map
