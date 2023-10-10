@@ -108,6 +108,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
                 )
                 .await
                 .unwrap();
+                db.run_migrations().await.unwrap();
                 let db = Arc::new(Mutex::new(db));
                 let db_clone = db.clone();
                 let _compiler = tokio::spawn(async move {

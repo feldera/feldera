@@ -49,7 +49,7 @@ impl Drop for DbHandle {
     #[cfg(not(feature = "pg-embed"))]
     fn drop(&mut self) {
         let _r = async {
-            let db_name = self.config.get_dbname().unwrap_or("").clone();
+            let db_name = self.config.get_dbname().unwrap_or("");
 
             // This command cannot be executed while connected to the target
             // database. Thus we make a new connection.
