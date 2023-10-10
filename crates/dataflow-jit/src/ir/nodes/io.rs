@@ -178,8 +178,10 @@ impl Default for SourceKind {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Source {
-    /// The type of the source's produced stream, implicitly determines whether the source produces a set or a map
+    /// The type of the source's produced stream, implicitly determines whether
+    /// the source produces a set or a map
     layout: StreamLayout,
+    #[serde(default)]
     kind: SourceKind,
     #[serde(alias = "table")]
     name: Option<Box<str>>,
@@ -271,15 +273,16 @@ where
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Sink {
     input: NodeId,
-    view: Box<str>,
+    #[serde(alias = "view")]
+    name: Box<str>,
     input_layout: StreamLayout,
 }
 
 impl Sink {
-    pub fn new(input: NodeId, view: Box<str>, input_layout: StreamLayout) -> Self {
+    pub fn new(input: NodeId, name: Box<str>, input_layout: StreamLayout) -> Self {
         Self {
             input,
-            view,
+            name,
             input_layout,
         }
     }
@@ -288,12 +291,8 @@ impl Sink {
         self.input
     }
 
-    pub const fn view(&self) -> &str {
-        &self.view
-    }
-
     pub const fn name(&self) -> &str {
-        &self.view
+        &self.name
     }
 
     pub const fn input_layout(&self) -> StreamLayout {

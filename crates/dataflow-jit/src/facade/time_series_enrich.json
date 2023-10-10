@@ -2,13 +2,19 @@
     "nodes": {
         "54": {
             "Source": {
-                "layout": 1,
+                "layout": {
+                    "Set": 1
+                },
+                "kind": "ZSet",
                 "table": "TRANSACTIONS"
             }
         },
         "68": {
             "Source": {
-                "layout": 2,
+                "layout": {
+                    "Set": 2
+                },
+                "kind": "ZSet",
                 "table": "DEMOGRAPHICS"
             }
         },

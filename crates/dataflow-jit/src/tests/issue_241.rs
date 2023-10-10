@@ -13,9 +13,12 @@ use crate::{
 const CIRCUIT: &str = r#"{
   "nodes": {
     "6764": {
-      "SourceMap": {
-        "key_layout": 3,
-        "value_layout": 2
+      "Source": {
+        "layout": {
+            "Map": [3, 2]
+        },
+        "kind": "ZSet",
+        "table": "T"
       }
     },
     "7172": {

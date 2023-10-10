@@ -16,7 +16,8 @@ static CIRCUIT: &str = r#"{
   "nodes": {
     "168": {
       "Source": {
-        "layout": 1,
+        "layout": { "Set": 1 },
+        "kind": "ZSet",
         "table": "T"
       }
     },

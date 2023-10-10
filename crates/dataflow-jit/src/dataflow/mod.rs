@@ -2027,7 +2027,7 @@ fn compile_nodes(
                     *node_id,
                     DataflowNode::Sink(Sink {
                         input: sink.input(),
-                        view: sink.view().to_string(),
+                        view: sink.name().to_string(),
                         layout: node_streams[&sink.input()].unwrap(),
                     }),
                 );

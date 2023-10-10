@@ -4,7 +4,7 @@ use crate::{
     codegen::{Codegen, CodegenConfig},
     ir::{ColumnType, RowLayoutBuilder, RowLayoutCache},
     row::UninitRow,
-    ThinStr,
+    utils, ThinStr,
 };
 use dbsp::{trace::layers::erased::DataVTable, utils::DynVec};
 use size_of::{Context, SizeOf, TotalSize};
@@ -20,6 +20,8 @@ use std::{
 
 #[test]
 fn empty() {
+    utils::test_logger();
+
     let layout_cache = RowLayoutCache::new();
     let empty_layout = layout_cache.add(RowLayoutBuilder::new().build());
 
@@ -91,6 +93,8 @@ fn empty() {
 
 #[test]
 fn string_smoke() {
+    utils::test_logger();
+
     let layout_cache = RowLayoutCache::new();
     let string_layout = layout_cache.add(
         RowLayoutBuilder::new()
@@ -214,6 +218,8 @@ fn string_smoke() {
 
 #[test]
 fn dyn_vec() {
+    utils::test_logger();
+
     let types = [
         ColumnType::Bool,
         ColumnType::U16,
@@ -278,6 +284,7 @@ fn dyn_vec() {
         let data_vtable = Box::into_raw(Box::new(DataVTable {
             common: vtable.erased(&jit),
         }));
+
         let vtable = Box::into_raw(Box::new(vtable.marshalled(&jit)));
 
         {
@@ -343,7 +350,7 @@ fn dyn_vec() {
             }
 
             let clone = vec.clone();
-            assert_eq!(vec, clone);
+            assert_eq!(&vec, &clone);
             drop(clone);
 
             println!("{vec:#?}");
