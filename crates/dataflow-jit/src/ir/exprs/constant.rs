@@ -232,6 +232,7 @@ impl PartialEq for Constant {
 
 impl Eq for Constant {}
 
+#[allow(clippy::incorrect_partial_ord_impl_on_ord_type)]
 impl PartialOrd for Constant {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(match (self, other) {

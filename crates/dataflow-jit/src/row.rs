@@ -260,8 +260,7 @@ impl Eq for Row {}
 
 impl PartialOrd for Row {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        debug_assert_eq!(self.vtable().layout_id, other.vtable().layout_id);
-        unsafe { Some((self.vtable().cmp)(self.as_ptr(), other.as_ptr())) }
+        Some(self.cmp(other))
     }
 
     fn lt(&self, other: &Self) -> bool {

@@ -581,7 +581,7 @@ where
                 if let Some(t) = time_of_interest {
                     self.keys_of_interest
                         .entry(t)
-                        .or_insert_with(BTreeSet::new)
+                        .or_default()
                         .insert(key.clone());
                 }
             }

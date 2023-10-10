@@ -503,7 +503,7 @@ where
                 if let Some(t) = time_of_interest {
                     self.keys_of_interest
                         .entry(t)
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(((key.clone(), val.clone()), Present));
                 }
             }
