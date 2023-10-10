@@ -1,7 +1,8 @@
 use super::{DiffGroupTransformer, Monotonicity, NonIncrementalGroupTransformer};
 use crate::{
-    algebra::ZRingValue, trace::Cursor, DBData, DBWeight, IndexedZSet, OrdIndexedZSet, RootCircuit,
-    Stream,
+    algebra::ZRingValue,
+    trace::{BatchReader, Cursor, Deserializable},
+    DBData, DBWeight, IndexedZSet, OrdIndexedZSet, RootCircuit, Stream,
 };
 use std::marker::PhantomData;
 
@@ -16,6 +17,8 @@ where
     pub fn topk_asc(&self, k: usize) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val, B::R>>
     where
         B::R: ZRingValue,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.group_transform(DiffGroupTransformer::new(TopK::asc(k)))
     }
@@ -27,6 +30,8 @@ where
     pub fn topk_desc(&self, k: usize) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val, B::R>>
     where
         B::R: ZRingValue,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.group_transform(DiffGroupTransformer::new(TopK::desc(k)))
     }

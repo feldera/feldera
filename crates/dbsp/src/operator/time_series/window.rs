@@ -7,7 +7,7 @@ use crate::{
         Circuit, OwnershipPreference, Scope, Stream,
     },
     operator::trace::TraceBound,
-    trace::{cursor::Cursor, BatchReader, Spine},
+    trace::{cursor::Cursor, BatchReader, Deserializable, Spine},
 };
 use std::{borrow::Cow, cmp::max, marker::PhantomData};
 
@@ -16,6 +16,8 @@ where
     C: Circuit,
     B: IndexedZSet,
     B::R: NegByRef,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     /// Extract a subset of values that fall within a moving window from a
     /// stream of time-indexed values.
@@ -131,6 +133,8 @@ impl<B> TernaryOperator<Spine<B>, B, (B::Key, B::Key), B> for Window<B>
 where
     B: IndexedZSet,
     B::R: NegByRef,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     /// * `batch` - input stream containing new time series data points indexed
     ///   by time.

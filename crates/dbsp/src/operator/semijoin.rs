@@ -6,7 +6,7 @@ use crate::{
     },
     circuit::{GlobalNodeId, OwnershipPreference},
     circuit_cache_key,
-    trace::{Batch, BatchReader, Builder, Consumer, Cursor, ValueConsumer},
+    trace::{Batch, BatchReader, Builder, Consumer, Cursor, Deserializable, ValueConsumer},
     Circuit, Stream,
 };
 use std::{
@@ -44,6 +44,8 @@ where
         // TODO: Should this be `IndexedZSet<Key = Pairs::Key, Val = Pairs::Val>`?
         Out: ZSet<Key = (Pairs::Key, Pairs::Val)>,
         Pairs::R: MulByRef<Keys::R, Output = Out::R>,
+        <<Pairs as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Pairs as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.circuit()
             .cache_get_or_insert_with(

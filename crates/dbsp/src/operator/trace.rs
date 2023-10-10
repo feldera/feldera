@@ -6,7 +6,7 @@ use crate::{
         Scope, Stream, WithClock,
     },
     circuit_cache_key,
-    trace::{cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace},
+    trace::{cursor::Cursor, Batch, BatchReader, Builder, Deserializable, Spine, Trace},
     DBData, Timestamp,
 };
 use size_of::SizeOf;
@@ -238,6 +238,8 @@ where
     where
         B: Batch<Time = ()>,
         Spine<B>: SizeOf,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.integrate_trace_with_bound(TraceBound::new(), TraceBound::new())
     }
@@ -251,6 +253,8 @@ where
     where
         B: Batch<Time = ()>,
         Spine<B>: SizeOf,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         let mut trace_bounds = self.circuit().cache_get_or_insert_with(
             TraceId::new(self.origin_node_id().clone()),

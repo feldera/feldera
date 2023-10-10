@@ -11,7 +11,7 @@ use crate::{
         ord::{OrdIndexedZSet, OrdKeyBatch, OrdValBatch, OrdZSet},
         persistent::{cursor::PersistentTraceCursor, PersistentTrace},
         spine_fueled::{Spine, SpineCursor},
-        Batch, BatchReader, Builder, Rkyv, Trace,
+        Batch, BatchReader, Builder, Deserializable, Rkyv, Trace,
     },
 };
 use proptest::prelude::*;
@@ -51,6 +51,7 @@ const WEIGHT_RANGE: Range<isize> = -10..10;
 /// ordering as the DRAM based version which is defined through the [`Ord`]
 /// trait.
 #[derive(Clone, Debug, Arbitrary, SizeOf, Archive, Serialize, Deserialize)]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub(super) struct ComplexKey {
     /// We ignore this type for ordering.
     pub(super) _a: isize,
@@ -105,6 +106,8 @@ where
     B::Val: Clone + Debug + Eq + Ord + Rkyv,
     B::R: Clone + Debug + Eq + Ord + Rkyv,
     B::Time: Rkyv + Ord,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     let mut spine_cursor = spine.cursor();
     let mut ptcursor = ptrace.cursor();
@@ -258,6 +261,8 @@ fn cursor_trait<B, I>(
     B::Val: Arbitrary + Ord + Clone + Rkyv,
     B::R: Arbitrary + Ord + Clone + MonoidValue + Rkyv,
     B::Time: Arbitrary + Clone + Rkyv + Default,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     let _r = env_logger::try_init();
     // Builder interface wants sorted, unique(?) keys:
@@ -292,6 +297,8 @@ fn cursor_trait<B, I>(
         B::Val: Ord + Clone + Rkyv,
         B::Time: Rkyv,
         B::R: MonoidValue + Rkyv,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         assert_eq!(
             model_cursor.key_valid(),
@@ -535,6 +542,8 @@ where
     B::Val: Arbitrary + Ord + Clone + Rkyv,
     B::R: Arbitrary + Ord + Clone + MonoidValue + Rkyv,
     B::Time: Arbitrary + Clone + Rkyv + Default,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     let mut model = Spine::<B>::new(None);
     let mut ptrace = PersistentTrace::<B>::new(None);
@@ -550,6 +559,8 @@ where
         B::Val: Debug + Ord + Clone + Rkyv,
         B::Time: Rkyv,
         B::R: Debug + MonoidValue + Rkyv,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         assert_eq!(
             model.dirty(),

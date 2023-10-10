@@ -1,10 +1,11 @@
 //! Convenience API for defining recursive computations.
 
+use crate::trace::BatchReader;
 use crate::{
     algebra::{IndexedZSet, ZRingValue},
     circuit::{schedule::Error as SchedulerError, ChildCircuit, Circuit, Stream, WithClock},
     operator::DelayedFeedback,
-    trace::Spine,
+    trace::{Deserializable, Spine},
     DBTimestamp,
 };
 use impl_trait_for_tuples::impl_for_tuples;
@@ -56,6 +57,8 @@ where
     B: IndexedZSet + Send,
     B::R: ZRingValue,
     Spine<B>: SizeOf,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     type Feedback = DelayedFeedback<C, B>;
     type Export = Stream<C::Parent, Spine<B>>;

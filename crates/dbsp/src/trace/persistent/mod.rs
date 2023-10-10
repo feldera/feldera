@@ -4,8 +4,8 @@
 use std::cmp::Ordering;
 
 use once_cell::sync::Lazy;
-use rkyv::{Archive, Deserialize, Serialize};
-use rocksdb::{Cache, DBCompressionType, Options, DB};
+use rkyv::{validation::validators::DefaultValidator, Archive, Deserialize, Serialize};
+use rocksdb::{BlockBasedOptions, Cache, DBCompressionType, Options, DB};
 use uuid::Uuid;
 
 mod cursor;
@@ -26,12 +26,14 @@ pub use trace::PersistentTrace;
 
 use crate::DBData;
 
+use super::Deserializable;
+
 /// DB in-memory cache size [bytes].
 ///
 /// # TODO
 /// Set to 1 GiB for now, in the future we should probably make this
 /// configurable or determine it based on the system parameters.
-const DB_DRAM_CACHE_SIZE: usize = 1024 * 1024 * 1024;
+const DB_DRAM_CACHE_SIZE: usize = 4 * 1024 * 1024 * 1024;
 
 /// Path of the RocksDB database file on disk.
 ///
@@ -55,6 +57,20 @@ static DB_OPTS: Lazy<Options> = Lazy::new(|| {
     // the number of open files by closing them again (should be set in
     // accordance with ulimit)
     global_opts.set_max_open_files(9000);
+    global_opts.set_use_direct_reads(true);
+
+    let mut bbo = BlockBasedOptions::default();
+    bbo.set_format_version(5);
+    //let cache = Cache::new_lru_cache(DB_DRAM_CACHE_SIZE);
+    //bbo.set_block_cache(&cache);
+    //bbo.set_block_size(16 * 4096);
+    //bbo.set_cache_index_and_filter_blocks(true);
+    //bbo.set_pin_l0_filter_and_index_blocks_in_cache(true);
+    //bbo.set_pin_top_level_index_and_filter(true);
+    global_opts.set_block_based_table_factory(&bbo);
+
+    global_opts.set_enable_blob_files(true);
+
     // Some options (that seem to hurt more than help -- needs more
     // experimentation):
     //global_opts.increase_parallelism(2);
@@ -76,9 +92,12 @@ static ROCKS_DB_INSTANCE: Lazy<DB> = Lazy::new(|| {
 ///
 /// The ordering is important for Ord/PartialOrd to work correctly:
 /// https://doc.rust-lang.org/reference/items/enumerations.html#implicit-discriminants
-#[derive(Debug, PartialEq, Eq, Deserialize, PartialOrd, Serialize, Archive)]
-//#[archive_attr(derive(Debug, PartialEq, Eq, Serialize, Archive))]
-//#[archive(bound(archive = "K: DBData, V: DBData"))]
+#[derive(Debug, Archive, PartialEq, Eq, Deserialize, PartialOrd, Serialize)]
+#[archive_attr(derive(Eq, PartialEq, PartialOrd))]
+#[archive(bound(
+    archive = "K: std::cmp::Eq, <K as super::Deserializable>::ArchivedDeser: std::cmp::Eq + Ord, V: std::cmp::Eq, <V as super::Deserializable>::ArchivedDeser: std::cmp::Eq + Ord"
+))]
+#[archive_attr(repr(align(4)))]
 pub(self) enum PersistedKey<K: DBData, V: DBData> {
     /// A (phantom) marker to indicate the start of a key's values.
     ///
@@ -120,11 +139,13 @@ where
         Some(self.cmp(other))
     }
 }
-
+*/
 impl<K, V> Ord for ArchivedPersistedKey<K, V>
 where
     K: DBData,
     V: DBData,
+    <K as Deserializable>::ArchivedDeser: Ord,
+    <V as Deserializable>::ArchivedDeser: Ord,
 {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
@@ -150,6 +171,7 @@ where
             (ArchivedPersistedKey::EndMarker(k1), ArchivedPersistedKey::EndMarker(k2)) => {
                 k1.cmp(k2)
             }
+
             (ArchivedPersistedKey::EndMarker(k1), ArchivedPersistedKey::Key(k2, _)) => {
                 k1.cmp(k2).then(Ordering::Greater)
             }
@@ -158,7 +180,7 @@ where
             }
         }
     }
-}*/
+}
 
 impl<K, V> Ord for PersistedKey<K, V>
 where
@@ -197,11 +219,17 @@ pub(self) fn rocksdb_key_comparator<K, V>(a: &[u8], b: &[u8]) -> Ordering
 where
     K: DBData,
     V: DBData,
+    <K as super::Deserializable>::ArchivedDeser: Ord,
+    <V as super::Deserializable>::ArchivedDeser: Ord,
 {
-    //let a = unsafe { rkyv::util::archived_root::<PersistedKey<K, V>>(a) };
-    //let b = unsafe { rkyv::util::archived_root::<PersistedKey<K, V>>(b) };
-    //a.cmp(b)
-    let a: PersistedKey<K, V> = super::unaligned_deserialize(a);
-    let b: PersistedKey<K, V> = super::unaligned_deserialize(b);
-    a.cmp(&b)
+    log::info!("Comparing keys: {:?} {:?}", a, b);
+    let a = unsafe { rkyv::archived_root::<PersistedKey<K, V>>(a) };
+    log::info!("parsed a");
+    let b = unsafe { rkyv::archived_root::<PersistedKey<K, V>>(b) };
+    log::info!("compared:");
+
+    a.cmp(b)
+    //let a: PersistedKey<K, V> = super::unaligned_deserialize(a);
+    //let b: PersistedKey<K, V> = super::unaligned_deserialize(b);
+    //a.cmp(&b)
 }

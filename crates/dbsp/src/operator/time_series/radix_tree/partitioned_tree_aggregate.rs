@@ -13,7 +13,7 @@ use crate::{
         trace::{TraceBounds, TraceFeedback},
         Aggregator,
     },
-    trace::{cursor::CursorEmpty, Builder, Cursor, Spine},
+    trace::{cursor::CursorEmpty, BatchReader, Builder, Cursor, Deserializable, Spine},
     Circuit, DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream,
 };
 use num::PrimInt;
@@ -125,6 +125,10 @@ where
         V: DBData,
         Agg: Aggregator<V, (), Z::R>,
         Agg::Accumulator: Default,
+        <TS as Deserializable>::ArchivedDeser: Ord,
+        <<Agg as Aggregator<V, (), <Z as BatchReader>::R>>::Accumulator as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <V as Deserializable>::ArchivedDeser: Ord
     {
         self.partitioned_tree_aggregate_generic::<TS, V, Agg, OrdPartitionedRadixTree<Z::Key, TS, Agg::Accumulator, isize>>(
             aggregator,
@@ -148,6 +152,10 @@ where
         Agg::Accumulator: Default,
         O: PartitionedRadixTreeBatch<TS, Agg::Accumulator, Key = Z::Key>,
         O::R: ZRingValue,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <TS as Deserializable>::ArchivedDeser: Ord,
+        <<Agg as Aggregator<V, (), <Z as BatchReader>::R>>::Accumulator as Deserializable>::ArchivedDeser: Ord,
+        <V as Deserializable>::ArchivedDeser: Ord
     {
         self.circuit()
             .cache_get_or_insert_with(

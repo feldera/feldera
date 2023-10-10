@@ -10,7 +10,7 @@ use crate::{
     operator::trace::{TraceBounds, TraceFeedback},
     trace::{
         cursor::{CursorEmpty, CursorGroup, CursorPair},
-        Builder, Cursor, Spine, Trace,
+        BatchReader, Builder, Cursor, Deserializable, Spine, Trace,
     },
     Circuit, DBData, DBWeight, IndexedZSet, OrdIndexedZSet, RootCircuit, Stream,
 };
@@ -263,6 +263,8 @@ where
 impl<B> Stream<RootCircuit, B>
 where
     B: IndexedZSet + Send,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     /// Apply group `transformer` to each partition in the input stream.
     ///
@@ -276,6 +278,7 @@ where
         GT: GroupTransformer<B::Val, OV, B::R>,
         OV: DBData,
         B::R: ZRingValue,
+        <OV as Deserializable>::ArchivedDeser: Ord,
     {
         self.group_transform_generic(transformer)
     }
@@ -287,6 +290,8 @@ where
         OB: IndexedZSet<Key = B::Key, R = B::R>,
         OB::Item: Ord,
         GT: GroupTransformer<B::Val, OB::Val, B::R>,
+        <<OB as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<OB as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         let circuit = self.circuit();
         let stream = self.shard();

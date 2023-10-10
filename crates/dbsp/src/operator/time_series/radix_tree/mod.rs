@@ -357,6 +357,8 @@ where
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
+#[archive(bound(archive = "<TS as Archive>::Archived: Eq + Ord"))]
 pub struct Prefix<TS> {
     /// Prefix bits.
     key: TS,
@@ -500,6 +502,10 @@ where
 #[derive(
     Clone, Debug, SizeOf, PartialEq, Eq, Hash, PartialOrd, Ord, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
+#[archive(bound(
+    archive = "<Prefix<TS> as Archive>::Archived: Eq + Ord, <A as Archive>::Archived: Eq + Ord"
+))]
 pub struct ChildPtr<TS, A> {
     /// Unique prefix of a child subtree, which serves as a pointer
     /// to the child node.  Given this prefix the child node can
@@ -555,6 +561,10 @@ where
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
+#[archive(bound(
+    archive = "<[std::option::Option<ChildPtr<TS, A>>; 16] as Archive>::Archived: Eq + Ord"
+))]
 pub struct TreeNode<TS, A> {
     /// Array of children.
     // `Option` doesn't introduce space overhead.

@@ -11,7 +11,7 @@ use rocksdb::{BoundColumnFamily, DBRawIterator};
 use super::trace::PersistedValue;
 use super::{PersistedKey, Values, ROCKS_DB_INSTANCE};
 use crate::algebra::PartialOrder;
-use crate::trace::{unaligned_deserialize, Batch, Cursor};
+use crate::trace::{unaligned_deserialize, Batch, BatchReader, Cursor, Deserializable};
 
 #[derive(PartialEq, Eq)]
 enum Direction {
@@ -44,6 +44,8 @@ pub struct PersistentTraceCursor<'s, B: Batch + 's> {
 impl<'s, B> PersistentTraceCursor<'s, B>
 where
     B: Batch + 's,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     /// Loads the current key&value and its weights from RocksDB and stores them
     /// in the [`PersistentTraceCursor`] struct.
@@ -113,7 +115,11 @@ where
     }
 }
 
-impl<'s, B: Batch> PersistentTraceCursor<'s, B> {
+impl<'s, B: Batch> PersistentTraceCursor<'s, B>
+where
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+{
     /// Creates a new [`PersistentTraceCursor`], requires to pass a handle to
     /// the column family of the trace.
     pub(super) fn new(cf: &Arc<BoundColumnFamily>, lower_key_bound: &'s Option<B::Key>) -> Self {
@@ -149,7 +155,11 @@ impl<'s, B: Batch> PersistentTraceCursor<'s, B> {
     }
 }
 
-impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCursor<'s, B> {
+impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for PersistentTraceCursor<'s, B>
+where
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+{
     fn key_valid(&self) -> bool {
         self.cur_key.is_some()
     }

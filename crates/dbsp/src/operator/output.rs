@@ -4,7 +4,7 @@ use crate::{
         operator_traits::{BinarySinkOperator, Operator, SinkOperator},
         LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
     },
-    trace::{Batch, Spine, Trace},
+    trace::{Batch, BatchReader, Deserializable, Spine, Trace},
     Circuit, Runtime, Stream,
 };
 use std::{
@@ -212,6 +212,8 @@ where
 impl<T> OutputHandle<T>
 where
     T: Batch<Time = ()> + Send,
+    <<T as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<T as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     /// Read batches produced by all worker threads during the last
     /// clock cycle and consolidate them into a single batch.

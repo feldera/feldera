@@ -4,7 +4,7 @@ use crate::{
         operator_traits::{BinaryOperator, Operator},
         Scope,
     },
-    trace::{cursor::Cursor, Batch, BatchReader, Builder},
+    trace::{cursor::Cursor, Batch, BatchReader, Builder, Deserializable},
     Circuit, DBData, DBWeight, IndexedZSet, NumEntries, OrdIndexedZSet, OrdZSet, RootCircuit,
     Stream,
 };
@@ -111,6 +111,8 @@ impl<B> Stream<RootCircuit, B>
 where
     B: IndexedZSet + Send,
     B::R: ZRingValue,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     /// Returns a small contiguous range of rows ([`Neighborhood`]) of the input
     /// table.

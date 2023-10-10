@@ -14,7 +14,7 @@ use crate::{
         trace::{TraceBound, TraceBounds, TraceFeedback},
         Aggregator, Avg, FilterMap,
     },
-    trace::{BatchReader, Builder, Cursor, Spine},
+    trace::{BatchReader, Builder, Cursor, Deserializable, Spine},
     Circuit, DBData, DBWeight, RootCircuit, Stream,
 };
 use num::{Bounded, PrimInt};
@@ -171,6 +171,12 @@ where
         Agg::Accumulator: Default,
         TS: DBData + PrimInt,
         V: DBData,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <PK as Deserializable>::ArchivedDeser: Ord,
+        <V as Deserializable>::ArchivedDeser: Ord,
+        <<Agg as Aggregator<V, (), <B as BatchReader>::R>>::Accumulator as Deserializable>::ArchivedDeser: Ord,
+        <<Agg as Aggregator<V, (), <B as BatchReader>::R>>::Output as Deserializable>::ArchivedDeser: Ord
     {
         self.circuit()
             .region("partitioned_rolling_aggregate_with_watermark", || {
@@ -251,6 +257,12 @@ impl<B> Stream<RootCircuit, B> {
         Agg::Accumulator: Default,
         TS: DBData + PrimInt,
         V: DBData,
+        <V as Deserializable>::ArchivedDeser: Ord,
+        <TS as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <<Agg as Aggregator<V, (), <B as BatchReader>::R>>::Accumulator as Deserializable>::ArchivedDeser: Ord,
+        <<Agg as Aggregator<V, (), <B as BatchReader>::R>>::Output as Deserializable>::ArchivedDeser: Ord
     {
         self.partitioned_rolling_aggregate_generic::<TS, V, Agg, _>(aggregator, range)
     }
@@ -270,6 +282,12 @@ impl<B> Stream<RootCircuit, B> {
         O: PartitionedIndexedZSet<TS, Option<Agg::Output>, Key = B::Key, R = B::R>,
         TS: DBData + PrimInt,
         V: DBData,
+        <TS as Deserializable>::ArchivedDeser: Ord,
+        <V as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <<Agg as Aggregator<V, (), <B as BatchReader>::R>>::Accumulator as Deserializable>::ArchivedDeser: Ord,
+        <<Agg as Aggregator<V, (), <B as BatchReader>::R>>::Output as Deserializable>::ArchivedDeser: Ord
     {
         // ```
         //                  ┌───────────────┐   input_trace
@@ -306,6 +324,12 @@ impl<B> Stream<RootCircuit, B> {
         O: PartitionedIndexedZSet<TS, Option<Agg::Output>, Key = B::Key, R = B::R>,
         TS: DBData + PrimInt,
         V: DBData,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <TS as Deserializable>::ArchivedDeser: Ord,
+        <V as Deserializable>::ArchivedDeser: Ord,
+        <<Agg as Aggregator<V, (), <B as BatchReader>::R>>::Accumulator as Deserializable>::ArchivedDeser: Ord,
+        <<Agg as Aggregator<V, (), <B as BatchReader>::R>>::Output as Deserializable>::ArchivedDeser: Ord,
     {
         let circuit = self.circuit();
         let stream = self.shard();
@@ -373,6 +397,11 @@ impl<B> Stream<RootCircuit, B> {
         TS: DBData + PrimInt,
         V: DBData,
         O: DBData,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <V as Deserializable>::ArchivedDeser: Ord,
+        <A as Deserializable>::ArchivedDeser: Ord,
+        <O as Deserializable>::ArchivedDeser: Ord,
+        <TS as Deserializable>::ArchivedDeser: Ord,
     {
         let aggregator = LinearAggregator::new(f, output_func);
         self.partitioned_rolling_aggregate_generic::<TS, V, _, _>(aggregator, range)
@@ -396,6 +425,11 @@ impl<B> Stream<RootCircuit, B> {
         V: DBData,
         O: DBData,
         Out: PartitionedIndexedZSet<TS, Option<O>, Key = B::Key, R = B::R>,
+        <TS as Deserializable>::ArchivedDeser: Ord,
+        <A as Deserializable>::ArchivedDeser: Ord,
+        <O as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <V as Deserializable>::ArchivedDeser: Ord,
     {
         let aggregator = LinearAggregator::new(f, output_func);
         self.partitioned_rolling_aggregate_generic::<TS, V, _, _>(aggregator, range)
@@ -416,6 +450,10 @@ impl<B> Stream<RootCircuit, B> {
         V: DBData + From<B::R> + GroupValue + Default + MulByRef<Output = V> + Div<Output = V>,
         // This bound is only here to prevent conflict with `MulByRef<Present>` :(
         <B as BatchReader>::R: From<i8>,
+        <TS as Deserializable>::ArchivedDeser: Ord,
+        <V as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::R as Deserializable>::ArchivedDeser: Ord,
     {
         self.partitioned_rolling_average_generic(range)
     }
@@ -432,6 +470,10 @@ impl<B> Stream<RootCircuit, B> {
         // This bound is only here to prevent conflict with `MulByRef<Present>` :(
         <B as BatchReader>::R: From<i8>,
         Out: PartitionedIndexedZSet<TS, Option<V>, Key = B::Key, R = B::R>,
+        <V as Deserializable>::ArchivedDeser: Ord,
+        <TS as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::R as Deserializable>::ArchivedDeser: Ord,
     {
         self.partitioned_rolling_aggregate_linear_generic(
             move |v| Avg::new(v.clone(), B::R::one()),

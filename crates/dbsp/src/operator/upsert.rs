@@ -6,7 +6,8 @@ use crate::{
     },
     operator::trace::{DelayedTraceId, TraceAppend, TraceBounds, TraceId, Z1Trace},
     trace::{
-        consolidation::consolidate, cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace,
+        consolidation::consolidate, cursor::Cursor, Batch, BatchReader, Builder, Deserializable,
+        Spine, Trace,
     },
     utils::VecExt,
     Circuit, DBData, DBTimestamp, Stream, Timestamp,
@@ -36,6 +37,8 @@ where
         K: DBData,
         B::R: DBData + ZRingValue,
         B: Batch<Key = K, Val = (), Time = ()>,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         let circuit = self.circuit();
 
@@ -132,6 +135,8 @@ where
         V: DBData,
         B::R: DBData + ZRingValue,
         B: Batch<Key = K, Val = V, Time = ()>,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         let circuit = self.circuit();
 

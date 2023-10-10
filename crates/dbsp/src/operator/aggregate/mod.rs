@@ -20,7 +20,7 @@ use crate::{
     time::Timestamp,
     trace::{
         cursor::{Cursor, CursorGroup},
-        Batch, BatchReader, Builder, Spine,
+        Batch, BatchReader, Builder, Deserializable, Spine,
     },
     DBData, DBTimestamp, DBWeight, OrdIndexedZSet, OrdZSet,
 };
@@ -179,6 +179,8 @@ where
         Z: IndexedZSet + Send,
         A: Aggregator<Z::Val, (), Z::R>,
         Z::R: ZRingValue,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.stream_aggregate_generic(aggregator)
     }
@@ -190,6 +192,8 @@ where
         A: Aggregator<Z::Val, (), Z::R>,
         O: IndexedZSet<Key = Z::Key, Val = A::Output>,
         O::R: ZRingValue,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.circuit()
             .add_unary_operator(Aggregate::new(aggregator), &self.shard())
@@ -211,6 +215,8 @@ where
         A: DBData + MulByRef<Z::R, Output = A> + GroupValue,
         Z::R: ZRingValue,
         F: Fn(&Z::Val) -> A + Clone + 'static,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.stream_aggregate_linear_generic(f)
     }
@@ -223,6 +229,8 @@ where
         O: IndexedZSet<Key = Z::Key, Val = A>,
         O::R: ZRingValue,
         F: Fn(&Z::Val) -> A + Clone + 'static,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.weigh(move |_k, v| f(v))
             .stream_aggregate_generic(WeightedCount)
@@ -242,6 +250,9 @@ where
         Z: IndexedZSet + Send,
         A: Aggregator<Z::Val, <C as WithClock>::Time, Z::R>,
         Z::R: ZRingValue,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <<A as Aggregator<<Z as BatchReader>::Val, <C as WithClock>::Time, <Z as BatchReader>::R>>::Output as Deserializable>::ArchivedDeser: Ord
     {
         self.aggregate_generic::<A, OrdIndexedZSet<Z::Key, A::Output, Z::R>>(aggregator)
     }
@@ -253,6 +264,9 @@ where
         A: Aggregator<Z::Val, <C as WithClock>::Time, Z::R>,
         O: Batch<Key = Z::Key, Val = A::Output, Time = ()>,
         O::R: ZRingValue,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <<A as Aggregator<<Z as BatchReader>::Val, <C as WithClock>::Time, <Z as BatchReader>::R>>::Output as Deserializable>::ArchivedDeser: Ord
     {
         let circuit = self.circuit();
         let stream = self.shard();
@@ -295,6 +309,9 @@ where
         A: DBData + MulByRef<Z::R, Output = A> + GroupValue,
         F: Fn(&Z::Val) -> A + Clone + 'static,
         Z::R: ZRingValue,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <A as Deserializable>::ArchivedDeser: Ord,
     {
         self.aggregate_linear_generic(f)
     }
@@ -307,6 +324,9 @@ where
         O: Batch<Key = Z::Key, Time = ()>,
         O::R: ZRingValue,
         O::Val: MulByRef<Z::R, Output = O::Val> + GroupValue,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <<O as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.weigh(move |_k, v| f(v))
             .aggregate_generic(WeightedCount)

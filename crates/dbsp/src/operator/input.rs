@@ -5,7 +5,7 @@ use crate::{
         LocalStoreMarker, RootCircuit, Scope,
     },
     default_hash,
-    trace::Batch,
+    trace::{Batch, BatchReader, Deserializable},
     Circuit, DBData, DBWeight, OrdIndexedZSet, OrdZSet, Runtime, Stream,
 };
 use std::{
@@ -131,6 +131,8 @@ impl RootCircuit {
         K: DBData,
         B: Batch<Key = K, Val = (), Time = ()>,
         B::R: ZRingValue,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         let sorted = input_stream
             .apply_owned(move |mut upserts| {
@@ -171,6 +173,8 @@ impl RootCircuit {
         B::R: ZRingValue,
         V: DBData,
         VI: DBData,
+        <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         let sorted = input_stream
             .apply_owned(move |mut upserts| {
@@ -264,6 +268,7 @@ impl RootCircuit {
     pub fn add_input_set<K, R>(&self) -> (ZSetStream<K, R>, UpsertHandle<K, bool>)
     where
         K: DBData,
+        <K as Deserializable>::ArchivedDeser: Ord,
         R: DBData + ZRingValue,
     {
         self.region("input_set", || {
@@ -348,6 +353,8 @@ impl RootCircuit {
         K: DBData,
         V: DBData,
         R: DBData + ZRingValue,
+        <K as Deserializable>::ArchivedDeser: Ord,
+        <V as Deserializable>::ArchivedDeser: Ord,
     {
         self.region("input_map", || {
             let (input, input_handle) = Input::new(|tuples: Vec<(K, Option<V>)>| tuples);

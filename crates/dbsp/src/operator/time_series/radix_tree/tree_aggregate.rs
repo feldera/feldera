@@ -10,7 +10,7 @@ use crate::{
         trace::{TraceBounds, TraceFeedback},
         Aggregator,
     },
-    trace::{Batch, BatchReader, Builder, Spine},
+    trace::{Batch, BatchReader, Builder, Deserializable, Spine},
     Circuit, NumEntries, OrdIndexedZSet, Stream,
 };
 use num::PrimInt;
@@ -63,6 +63,9 @@ where
         Z::Key: PrimInt,
         Agg: Aggregator<Z::Val, (), Z::R>,
         Agg::Accumulator: Default,
+        <<Agg as Aggregator<<Z as BatchReader>::Val, (), <Z as BatchReader>::R>>::Accumulator as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord
     {
         self.tree_aggregate_generic::<Agg, OrdRadixTree<Z::Key, Agg::Accumulator, isize>>(
             aggregator,
@@ -78,6 +81,9 @@ where
         Agg::Accumulator: Default,
         O: RadixTreeBatch<Z::Key, Agg::Accumulator>,
         O::R: ZRingValue,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Agg as Aggregator<<Z as BatchReader>::Val, (), <Z as BatchReader>::R>>::Accumulator as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord
     {
         self.circuit()
             .cache_get_or_insert_with(

@@ -3,7 +3,7 @@ use crate::{
     algebra::{HasZero, ZRingValue},
     trace::{
         cursor::{CursorPair, ReverseKeyCursor},
-        Cursor,
+        BatchReader, Cursor, Deserializable,
     },
     DBData, DBWeight, IndexedZSet, OrdIndexedZSet, RootCircuit, Stream,
 };
@@ -14,6 +14,8 @@ const MAX_RETRACTIONS_CAPACITY: usize = 100_000usize;
 impl<B> Stream<RootCircuit, B>
 where
     B: IndexedZSet + Send,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     /// Lag operator matches each row in a group with a previous row in the
     /// same group.
@@ -37,6 +39,7 @@ where
         B::R: ZRingValue,
         OV: DBData,
         PF: Fn(Option<&B::Val>) -> OV + 'static,
+        <OV as Deserializable>::ArchivedDeser: Ord,
     {
         self.group_transform(Lag::new(
             offset,
@@ -70,6 +73,7 @@ where
         B::R: ZRingValue,
         OV: DBData,
         PF: Fn(Option<&B::Val>) -> OV + 'static,
+        <OV as Deserializable>::ArchivedDeser: Ord,
     {
         self.group_transform(Lag::new(
             offset,

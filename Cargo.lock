@@ -3761,6 +3761,7 @@ dependencies = [
  "glob",
  "libc",
  "libz-sys",
+ "pkg-config",
 ]
 
 [[package]]

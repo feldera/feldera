@@ -8,7 +8,9 @@ use crate::{
         Circuit, GlobalNodeId, Scope, Stream, WithClock,
     },
     circuit_cache_key,
-    trace::{ord::OrdValSpine, Batch, BatchReader, Builder, Cursor as TraceCursor, Trace},
+    trace::{
+        ord::OrdValSpine, Batch, BatchReader, Builder, Cursor as TraceCursor, Deserializable, Trace,
+    },
     DBTimestamp, OrdIndexedZSet, Timestamp,
 };
 use size_of::SizeOf;
@@ -88,6 +90,8 @@ where
     where
         Z: IndexedZSet + Send,
         Z::R: ZRingValue,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.circuit()
             .cache_get_or_insert_with(DistinctId::new(self.origin_node_id().clone()), || {
@@ -113,6 +117,8 @@ where
         Z: IndexedZSet + Send,
         Z::R: ZRingValue,
         <C as WithClock>::Time: DBTimestamp,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         let circuit = self.circuit();
         circuit

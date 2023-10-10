@@ -10,7 +10,10 @@ use crate::{
     circuit_cache_key,
     operator::FilterMap,
     time::Timestamp,
-    trace::{cursor::Cursor as TraceCursor, Batch, BatchReader, Batcher, Builder, Spine, Trace},
+    trace::{
+        cursor::Cursor as TraceCursor, Batch, BatchReader, Batcher, Builder, Deserializable, Spine,
+        Trace,
+    },
     DBData, DBTimestamp, OrdIndexedZSet, OrdZSet,
 };
 use size_of::{Context, SizeOf};
@@ -58,6 +61,10 @@ where
         I1: Batch<Time = ()> + Send,
         I2: Batch<Key = I1::Key, Time = ()> + Send,
         I1::R: MulByRef<I2::R>,
+        <<I1 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I1 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
         <I1::R as MulByRef<I2::R>>::Output: DBData + ZRingValue,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + 'static,
         V: DBData,
@@ -71,6 +78,10 @@ where
     pub fn stream_join_generic<F, I2, Z>(&self, other: &Stream<C, I2>, join: F) -> Stream<C, Z>
     where
         I1: Batch<Time = ()> + Send,
+        <<I1 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I1 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
         I2: Batch<Key = I1::Key, Time = ()> + Send,
         Z: ZSet,
         I1::R: MulByRef<I2::R, Output = Z::R>,
@@ -94,6 +105,10 @@ where
     where
         I1: Batch<Time = ()> + Send,
         I2: Batch<Key = I1::Key, Time = ()> + Send,
+        <<I1 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I1 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
         Z: ZSet,
         I1::R: MulByRef<I2::R, Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
@@ -151,6 +166,10 @@ impl<I1> Stream<RootCircuit, I1> {
         F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
         Z: ZSet<R = I1::R>,
         Z::R: ZRingValue,
+        <<I1 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I1 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         let left = self.shard();
         let right = other.shard();
@@ -168,6 +187,8 @@ where
     <C as WithClock>::Time: DBTimestamp,
     I1: IndexedZSet + Send,
     I1::R: ZRingValue,
+    <<I1 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<I1 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     // TODO: Derive `TS` type from circuit.
     /// Incrementally join two streams of batches.
@@ -193,6 +214,8 @@ where
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> V + Clone + 'static,
         V: DBData,
+        <<I2 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.join_generic(other, move |k, v1, v2| once((join_func(k, v1, v2), ())))
     }
@@ -211,6 +234,8 @@ where
     ) -> Stream<C, OrdIndexedZSet<K, V, I1::R>>
     where
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
+        <<I2 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> It + Clone + 'static,
         K: DBData,
         V: DBData,
@@ -228,6 +253,8 @@ where
         Z::R: MulByRef<Output = Z::R>,
         F: Fn(&I1::Key, &I1::Val, &I2::Val) -> It + Clone + 'static,
         It: IntoIterator<Item = (Z::Key, Z::Val)> + 'static,
+        <<I2 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         // TODO: I think this is correct, but we need a proper proof.
 
@@ -305,6 +332,8 @@ where
     pub fn antijoin<I2>(&self, other: &Stream<C, I2>) -> Stream<C, I1>
     where
         I2: IndexedZSet<Key = I1::Key, R = I1::R> + Send,
+        <<I2 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<I2 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.circuit()
             .cache_get_or_insert_with(
@@ -335,6 +364,8 @@ where
     Z::Key: Default,
     Z::Val: Default,
     Z::R: ZRingValue,
+    <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     /// Outer join:
     /// - returns the output of `join_func` for common keys.
@@ -358,6 +389,8 @@ where
         F: Fn(&Z::Key, &Z::Val, &Z2::Val) -> O + Clone + 'static,
         for<'a> FL: Fn(<Self as FilterMap<C>>::ItemRef<'a>) -> O + Clone + 'static,
         for<'a> FR: Fn(<Stream<C, Z2> as FilterMap<C>>::ItemRef<'a>) -> O + Clone + 'static,
+        <<Z2 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z2 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         let center = self.join_generic(other, move |k, v1, v2| {
             std::iter::once((join_func(k, v1, v2), ()))
@@ -381,6 +414,8 @@ where
         Stream<C, Z2>: for<'a> FilterMap<C, R = Z::R, ItemRef<'a> = (&'a Z2::Key, &'a Z2::Val)>,
         O: DBData + Default,
         F: Fn(&Z::Key, &Z::Val, &Z2::Val) -> O + Clone + 'static,
+        <<Z2 as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z2 as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         let join_func_left = join_func.clone();
         let join_func_right = join_func.clone();
@@ -1136,6 +1171,7 @@ mod test {
         Serialize,
         Deserialize,
     )]
+    #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
     struct Label(pub usize, pub u16);
 
     impl Display for Label {

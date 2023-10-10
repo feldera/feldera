@@ -4,7 +4,10 @@ use crate::{
         ZRingValue,
     },
     circuit::WithClock,
-    trace::layers::{column_layer::ColumnLayer, ordered::OrderedLayer},
+    trace::{
+        layers::{column_layer::ColumnLayer, ordered::OrderedLayer},
+        BatchReader, Deserializable,
+    },
     utils::VecExt,
     Circuit, DBData, DBTimestamp, DBWeight, OrdIndexedZSet, Stream,
 };
@@ -37,6 +40,10 @@ use std::{
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
+#[archive(bound(
+    archive = "<T as Archive>::Archived: Eq + Ord, <R as Archive>::Archived: Eq + Ord"
+))]
 pub struct Avg<T, R> {
     sum: T,
     count: R,
@@ -214,6 +221,10 @@ where
         Avg<A, Z::R>: MulByRef<Z::R, Output = Avg<A, Z::R>>,
         A: DBData + From<Z::R> + Div<Output = A> + GroupValue,
         F: Fn(&Z::Val) -> A + Clone + 'static,
+        <A as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::R as Deserializable>::ArchivedDeser: Ord,
     {
         let aggregate = self.aggregate_linear(move |val| Avg::new(f(val), Z::R::one()));
 

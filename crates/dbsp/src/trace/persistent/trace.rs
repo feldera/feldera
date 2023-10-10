@@ -59,6 +59,8 @@ where
 impl<B> Default for PersistentTrace<B>
 where
     B: Batch,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     fn default() -> Self {
         PersistentTrace::new(None)
@@ -71,15 +73,17 @@ where
 {
     /// Deletes the RocksDB column family.
     fn drop(&mut self) {
-        ROCKS_DB_INSTANCE
-            .drop_cf(&self.cf_name)
-            .expect("Can't delete CF?");
+        //ROCKS_DB_INSTANCE
+        //    .drop_cf(&self.cf_name)
+        //    .expect("Can't delete CF?");
     }
 }
 
 impl<B> Debug for PersistentTrace<B>
 where
     B: Batch,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         let mut cursor: PersistentTraceCursor<B> = self.cursor();
@@ -119,6 +123,8 @@ where
 impl<B> NumEntries for PersistentTrace<B>
 where
     B: Batch,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
@@ -215,6 +221,8 @@ where
 impl<B> BatchReader for PersistentTrace<B>
 where
     B: Batch,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     type Key = B::Key;
     type Val = B::Val;
@@ -433,6 +441,8 @@ impl<B> Trace for PersistentTrace<B>
 where
     B: Batch + Clone + 'static,
     B::Time: DBTimestamp,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     type Batch = B;
 
@@ -577,6 +587,8 @@ where
 impl<B> PersistentTrace<B>
 where
     B: Batch,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     fn add_batch_to_cf(&mut self, batch: B) {
         let mut sstable = WriteBatch::default();

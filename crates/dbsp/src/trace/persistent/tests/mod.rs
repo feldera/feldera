@@ -351,6 +351,7 @@ fn cursor_weight_multiple_values_bug() {
     //
     // Checks that if we have multiple values with weights we need to report the
     // right weights when stepping through them
+    let _r = env_logger::try_init();
 
     let mut val_builder = <OrdIndexedZSet<String, String, i32> as Batch>::Batcher::new_batcher(());
     let mut b = vec![

@@ -8,7 +8,7 @@ use crate::{
     circuit::GlobalNodeId,
     circuit_cache_key, default_hash,
     operator::communication::exchange::new_exchange_operators,
-    trace::{cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace},
+    trace::{cursor::Cursor, Batch, BatchReader, Builder, Deserializable, Spine, Trace},
     Circuit, Runtime, Stream,
 };
 use std::{hash::Hash, panic::Location};
@@ -30,6 +30,8 @@ where
     IB: BatchReader<Time = ()> + Clone,
     IB::Key: Ord + Clone + Hash,
     IB::Val: Ord + Clone,
+    <<IB as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<IB as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     /// Shard batches across multiple worker threads based on keys.
     ///

@@ -3,7 +3,7 @@
 use crate::{
     algebra::{HasOne, IndexedZSet, ZRingValue},
     circuit::{Circuit, Stream, WithClock},
-    trace::Batch,
+    trace::{Batch, BatchReader, Deserializable},
     DBTimestamp, OrdIndexedZSet,
 };
 
@@ -12,7 +12,10 @@ where
     C: Circuit,
     <C as WithClock>::Time: DBTimestamp,
     Z: IndexedZSet,
+    <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     Z::R: ZRingValue,
+    <<Z as BatchReader>::R as Deserializable>::ArchivedDeser: Ord,
 {
     /// Incrementally sums the weights for each key `self` into an indexed Z-set
     /// that maps from the original keys to the weights.  Both the input and
