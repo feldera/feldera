@@ -9,8 +9,6 @@ import { Grid } from '@mui/material'
 import { Theme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
 
-import { AccountButton } from './AccountButton'
-import { AccountPanel } from './AccountPanel'
 import { GlobalDialog } from './GlobalDialog'
 import VerticalAppBarContent from './vertical/AppBarContent'
 

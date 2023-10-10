@@ -680,6 +680,7 @@ mod test {
 
     fn validation(aud: &str, iss: &str) -> Validation {
         let mut validation = Validation::new(Algorithm::RS256);
+        validation.set_audience(&[aud]);
         validation.set_issuer(&[iss]);
         validation
     }
@@ -705,6 +706,14 @@ mod test {
         api_key: Option<String>,
         validation: Validation,
     ) -> ServiceResponse<EitherBody<BoxBody>> {
+        let client_id = validation
+            .aud
+            .as_ref()
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap()
+            .clone();
         let config = AuthConfiguration {
             provider: AuthProvider::AwsCognito(auth::ProviderAwsCognito {
                 jwk_uri: "some-url".to_string(),
@@ -712,7 +721,7 @@ mod test {
                 logout_url: "some".to_string(),
             }),
             validation,
-            client_id: "some".to_string(),
+            client_id,
         };
         let closure = auth::auth_validator;
         let auth_middleware = HttpAuthentication::with_fn(closure);
