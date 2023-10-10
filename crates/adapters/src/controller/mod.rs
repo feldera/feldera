@@ -155,7 +155,7 @@ impl Controller {
             let inner = inner.clone();
 
             // A channel to communicate circuit initialization status.
-            // The `citcuit_factory` closure must be invoked in the context of
+            // The `circuit_factory` closure must be invoked in the context of
             // the circuit thread, because the circuit handle it returns doesn't
             // implement `Send`.  So we need this channel to communicate circuit
             // initialization status back to this thread.
