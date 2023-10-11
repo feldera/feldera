@@ -1,11 +1,11 @@
 use super::NexmarkStream;
 use crate::{model::Event, queries::OrdinalDate};
+use dbsp::algebra::ArcStr;
 use dbsp::{
     operator::{FilterMap, Max},
-    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
-use dbsp::algebra::ArcStr;
-use rkyv::{Archive, Serialize, Deserialize};
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     hash::Hash,
@@ -83,6 +83,7 @@ use time::{
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub struct Q16Output {
     channel: ArcStr,
     day: ArcStr,
@@ -117,6 +118,7 @@ type Q16Stream = Stream<RootCircuit, OrdZSet<Q16Output, isize>>;
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub struct Q16Intermediate1(
     isize,
     (u8, u8),
@@ -145,6 +147,7 @@ pub struct Q16Intermediate1(
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub struct Q16Intermediate2(
     isize,
     (u8, u8),
@@ -251,23 +254,19 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
         .index();
 
     // Compute bids per channel per day.
-    let count_total_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = bids
-        .index()
-        .weighted_count();
+    let count_total_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+        bids.index().weighted_count();
     let max_minutes = bids
         .map_index(|((channel, day), (_auction, _price, _bidder, mins))| {
             ((channel.clone(), *day), *mins)
         })
         .aggregate(Max);
-    let count_rank1_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = rank1_bids
-        .index()
-        .weighted_count();
-    let count_rank2_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = rank2_bids
-        .index()
-        .weighted_count();
-    let count_rank3_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = rank3_bids
-        .index()
-        .weighted_count();
+    let count_rank1_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+        rank1_bids.index().weighted_count();
+    let count_rank2_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+        rank2_bids.index().weighted_count();
+    let count_rank3_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+        rank3_bids.index().weighted_count();
 
     // Count unique bidders per channel per day.
     let count_total_bidders: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
@@ -588,9 +587,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        generator::tests::make_bid, model::Bid,
-    };
+    use crate::{generator::tests::make_bid, model::Bid};
     use dbsp::{zset, Runtime};
     use rstest::rstest;
 

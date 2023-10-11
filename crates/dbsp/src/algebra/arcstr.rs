@@ -1,6 +1,7 @@
 use std::{
+    borrow::Borrow,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
-    ops::Deref, borrow::Borrow,
+    ops::Deref,
 };
 
 use arcstr::ArcStr as Inner;
@@ -14,6 +15,7 @@ use size_of::SizeOf;
 #[derive(
     Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default, SizeOf, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub struct ArcStr(#[with(AsString)] pub Inner);
 
 impl ArcStr {

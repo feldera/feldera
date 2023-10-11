@@ -6,6 +6,7 @@ use crate::{
 use dbsp::{
     algebra::ZRingValue,
     operator::{DelayedFeedback, NeighborhoodDescr},
+    trace::{BatchReader, Deserializable},
     CollectionHandle, RootCircuit, Stream, UpsertHandle, ZSet,
 };
 use serde::Serialize;
@@ -33,6 +34,8 @@ impl Catalog {
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Serialize + Sync + From<D>,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.register_input_collection_handle(name, DeZSetHandle::new(handle));
 
@@ -55,6 +58,8 @@ impl Catalog {
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Serialize + Sync + From<D>,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         self.register_input_collection_handle(name, DeSetHandle::new(handle));
 
@@ -74,6 +79,8 @@ impl Catalog {
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Serialize + Sync + From<D>,
+        <<Z as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+        <<Z as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
     {
         let circuit = stream.circuit();
 

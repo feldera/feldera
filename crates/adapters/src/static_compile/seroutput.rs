@@ -5,7 +5,7 @@ use crate::{
 use anyhow::Result as AnyResult;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
 use dbsp::{
-    trace::{Batch, BatchReader, Cursor},
+    trace::{Batch, BatchReader, Cursor, Deserializable},
     OutputHandle,
 };
 use serde::Serialize;
@@ -131,6 +131,8 @@ where
     B::R: Into<i64>,
     KD: From<B::Key> + Serialize + 'static,
     VD: From<B::Val> + Serialize + 'static,
+    <<B as BatchReader>::Key as Deserializable>::ArchivedDeser: Ord,
+    <<B as BatchReader>::Val as Deserializable>::ArchivedDeser: Ord,
 {
     fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatch>> {
         self.handle

@@ -639,6 +639,7 @@ mod test {
         rkyv::Serialize,
         rkyv::Deserialize,
     )]
+    #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
     struct TestStruct {
         id: i64,
         s: String,

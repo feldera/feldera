@@ -22,6 +22,7 @@ macro_rules! float {
             #[cfg_attr(feature = "with-serde", derive(Serialize, Deserialize))]
             #[cfg_attr(feature = "with-serde", serde(transparent))]
             #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+            #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
             pub struct $outer(OrderedFloat<$inner>);
 
             impl $outer {

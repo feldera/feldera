@@ -13,6 +13,7 @@ use size_of::SizeOf;
 #[derive(
     Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub struct Person {
     pub id: u64,
     pub name: ArcStr,
@@ -42,6 +43,7 @@ pub struct Person {
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub struct Auction {
     pub id: u64,
     pub item_name: ArcStr,
@@ -73,6 +75,7 @@ pub struct Auction {
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub struct Bid {
     /// Id of auction this bid is for.
     pub auction: u64,
