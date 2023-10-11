@@ -44,6 +44,8 @@ release() {
     # change in only after we confirm the new containers are available.
     sed "s/\:\-${old_version}/\:\-${new_version}/g" ../deploy/docker-compose.yml > /tmp/docker-compose-bumped.yml
     mv /tmp/docker-compose-bumped.yml ../deploy/docker-compose.yml
+    sed "s/\:\-${old_version}/\:\-${new_version}/g" ../deploy/docker-compose-debezium.yml > /tmp/docker-compose-bumped.yml
+    mv /tmp/docker-compose-bumped.yml ../deploy/docker-compose-debezium.yml
 }
 
 release "$@"

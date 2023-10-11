@@ -12,7 +12,7 @@ services:
 
   pipeline-manager:
     tty: true
-    image: ghcr.io/feldera/pipeline-manager:${FELDERA_VERSION:-0.1.6}
+    image: ghcr.io/feldera/pipeline-manager:${FELDERA_VERSION:-0.1.7}
     ports:
       - "8080:8080"
     depends_on:
@@ -90,7 +90,7 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
-    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.1.6}
+    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.1.7}
     environment:
       - RUST_BACKTRACE=1
       - REDPANDA_BROKERS=redpanda:9092

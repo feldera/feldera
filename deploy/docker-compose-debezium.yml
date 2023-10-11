@@ -4,7 +4,7 @@ services:
   # Kafka connect.
   # TODO: add a healthcheck to this container.
   connect:
-    image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.1.6}
+    image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.1.7}
     depends_on:
       redpanda:
         condition: service_healthy
@@ -54,7 +54,7 @@ services:
         condition: service_started
       mysql:
         condition: service_healthy
-    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.1.6}
+    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.1.7}
     environment:
       RUST_BACKTRACE: "1"
       REDPANDA_BROKERS: "redpanda:9092"
