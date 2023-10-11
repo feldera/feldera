@@ -50,11 +50,13 @@ const WEIGHT_RANGE: Range<isize> = -10..10;
 /// The tests ensure that the RocksDB based data-structure adhere to the same
 /// ordering as the DRAM based version which is defined through the [`Ord`]
 /// trait.
-#[derive(Clone, Debug, Arbitrary, SizeOf, Archive, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Arbitrary, SizeOf, Archive, Serialize, Deserialize, Eq, Ord, PartialEq, PartialOrd,
+)]
 #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub(super) struct ComplexKey {
     /// We ignore this type for ordering.
-    pub(super) _a: isize,
+    pub(super) _a: u64, //isize,
     /// We use this to define the order of `Self`.
     pub(super) ord: String,
 }
@@ -71,6 +73,7 @@ impl Hash for ComplexKey {
     }
 }
 
+/*
 impl PartialEq for ComplexKey {
     fn eq(&self, other: &Self) -> bool {
         self.ord.eq(&other.ord)
@@ -90,6 +93,7 @@ impl Ord for ComplexKey {
         self.ord.cmp(&other.ord)
     }
 }
+*/
 
 #[derive(PartialEq, Eq)]
 enum Direction {

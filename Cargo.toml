@@ -3,8 +3,11 @@ members = ["crates/*", "sql-to-dbsp-compiler/lib/*"]
 exclude = ["sql-to-dbsp-compiler/temp"]
 resolver = "2"
 
-    [workspace.metadata.release]
-    release = false
+[workspace.metadata.release]
+release = false
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+chrono = { path = "/home/gz/workspace/chrono" }

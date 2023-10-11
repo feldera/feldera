@@ -43,14 +43,18 @@ ordered-float = { version = "3.9.1", features = ["serde", "rkyv"] }
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 crossbeam = "0.8.2"
 rocksdb = { version = "0.21", default-features = false, features = [
-    "multi-threaded-cf", "io-uring"
+    "multi-threaded-cf",
+    "io-uring",
 ], optional = true }
 uuid = { version = "1.1.2", features = ["v4"], optional = true }
 arc-swap = "1.5.1"
 mimalloc-rust-sys = "1.7.2"
 rand = "0.8.5"
 rust_decimal = "1.29"
-rkyv = { version = "0.7.42", features = ["validation"] }
+rkyv = { version = "0.7.42", features = [
+    "alloc",
+    "validation",
+], default-features = false }
 arcstr = { version = "1.1.4" }
 size-of = { version = "0.1.5", features = [
     "hashbrown",
