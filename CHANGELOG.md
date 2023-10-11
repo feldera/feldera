@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2023-10-10
+
 ### Added
 
 - Added a `--lenient` SQL compiler flag to allow views with multiple
@@ -34,7 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Busy-wait loop in Kafka producer.
   ([#842](https://github.com/feldera/feldera/issues/842))
 
-## [0.1.5] - 2023-10-10
+## [0.1.6] - 2023-09-28
+
+### Fixed
+
+- Fixes URL endpoints to access program editor ([#809](https://github.com/feldera/feldera/pull/809))
+
+## [0.1.5] - 2023-09-27
 
 ### Added
 
