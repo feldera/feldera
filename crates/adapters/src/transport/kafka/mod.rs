@@ -52,7 +52,6 @@ where
     C: ClientContext,
 {
     match e.rdkafka_error_code() {
-        None => (false, AnyError::from(e)),
         Some(RDKafkaErrorCode::Fatal) => {
             if let Some((_errcode, errstr)) = client.fatal_error() {
                 (true, AnyError::msg(errstr))
@@ -60,6 +59,6 @@ where
                 (true, AnyError::from(e))
             }
         }
-        _ => (false, AnyError::from(e)),
+        None | Some(_) => (false, AnyError::from(e)),
     }
 }
