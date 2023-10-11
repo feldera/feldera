@@ -1,0 +1,52 @@
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "rules_rust",
+    sha256 = "c46bdafc582d9bd48a6f97000d05af4829f62d5fee10a2a3edddf2f3d9a232c1",
+    urls = ["https://github.com/bazelbuild/rules_rust/releases/download/0.28.0/rules_rust-v0.28.0.tar.gz"],
+)
+
+load("@rules_rust//rust:repositories.bzl", "rules_rust_dependencies", "rust_register_toolchains")
+
+rules_rust_dependencies()
+
+rust_register_toolchains(
+    edition = "2021",
+    versions = [
+        "1.72.0",
+        "nightly/2023-10-01",
+    ],
+)
+
+load("@rules_rust//crate_universe:repositories.bzl", "crate_universe_dependencies")
+crate_universe_dependencies()
+
+load("@rules_rust//crate_universe:defs.bzl", "crates_repository", "crate")
+crates_repository(
+    name = "crate_index",
+    cargo_lockfile = "//:Cargo.lock",
+    lockfile = "//:Cargo.lock.bazel",
+    annotations = {
+        "dbsp": [crate.annotation(
+            gen_binaries = True,
+        )],
+    },
+    manifests = [
+        "//:Cargo.toml",
+        "//:crates/adapters/Cargo.toml",
+        "//:crates/dataflow-jit/Cargo.toml",
+        "//:crates/dbsp/Cargo.toml",
+        "//:crates/nexmark/Cargo.toml",
+        "//:crates/pipeline_manager/Cargo.toml",
+        "//:crates/webui-tester/Cargo.toml",
+        "//:sql-to-dbsp-compiler/lib/hashing/Cargo.toml",
+        "//:sql-to-dbsp-compiler/lib/readers/Cargo.toml",
+        "//:sql-to-dbsp-compiler/lib/sqllib/Cargo.toml",
+        "//:sql-to-dbsp-compiler/lib/sqlvalue/Cargo.toml",
+        "//:sql-to-dbsp-compiler/lib/tuple/Cargo.toml",
+    ],
+    generate_binaries = True,
+)
+
+load("@crate_index//:defs.bzl", "crate_repositories")
+crate_repositories()
