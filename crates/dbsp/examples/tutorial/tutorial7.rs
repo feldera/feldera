@@ -21,6 +21,7 @@ use size_of::SizeOf;
     rkyv::Deserialize,
     serde::Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 struct Record {
     location: String,
     date: NaiveDate,
@@ -41,6 +42,7 @@ struct Record {
     rkyv::Deserialize,
     serde::Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 struct VaxMonthly {
     count: u64,
     year: i32,

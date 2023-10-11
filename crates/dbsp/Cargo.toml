@@ -53,7 +53,7 @@ rand = "0.8.5"
 rust_decimal = "1.29"
 rkyv = { version = "0.7.42", features = [
     "alloc",
-    "validation",
+    "validation"
 ], default-features = false }
 arcstr = { version = "1.1.4" }
 size-of = { version = "0.1.5", features = [
@@ -135,9 +135,9 @@ path = "examples/tutorial/tutorial1.rs"
 name = "tutorial2"
 path = "examples/tutorial/tutorial2.rs"
 
-[[example]]
-name = "tutorial3"
-path = "examples/tutorial/tutorial3.rs"
+#[[example]]
+#name = "tutorial3"
+#path = "examples/tutorial/tutorial3.rs"
 
 [[example]]
 name = "tutorial4"
@@ -151,17 +151,17 @@ path = "examples/tutorial/tutorial5.rs"
 name = "tutorial6"
 path = "examples/tutorial/tutorial6.rs"
 
-[[example]]
-name = "tutorial7"
-path = "examples/tutorial/tutorial7.rs"
+#[[example]]
+#name = "tutorial7"
+#path = "examples/tutorial/tutorial7.rs"
 
 [[example]]
 name = "tutorial8"
 path = "examples/tutorial/tutorial8.rs"
 
-[[example]]
-name = "tutorial9"
-path = "examples/tutorial/tutorial9.rs"
+#[[example]]
+#name = "tutorial9"
+#path = "examples/tutorial/tutorial9.rs"
 
 [[example]]
 name = "coord"

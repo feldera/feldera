@@ -39,6 +39,7 @@ pub struct Record {
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub struct VaxMonthly {
     pub count: u64,
     pub year: i32,

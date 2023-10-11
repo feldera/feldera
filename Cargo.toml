@@ -10,4 +10,5 @@ release = false
 debug = true
 
 [patch.crates-io]
-chrono = { path = "/home/gz/workspace/chrono" }
+#rkyv = { path = "/home/gz/workspace/rkyv/rkyv", default-features = false, features = ["alloc", "size_64"] }
+#rust_decimal = { git = "https://github.com/gz/rust-decimal.git", branch = "patch-1" }

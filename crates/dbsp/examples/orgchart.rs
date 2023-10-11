@@ -21,6 +21,7 @@ type EmployeeID = usize;
 #[derive(
     Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 struct Manages {
     manager: EmployeeID,
     employee: EmployeeID,
@@ -31,6 +32,7 @@ struct Manages {
 #[derive(
     Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 struct SkipLevel {
     grandmanager: EmployeeID,
     manager: EmployeeID,

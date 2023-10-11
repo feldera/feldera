@@ -56,7 +56,7 @@ const WEIGHT_RANGE: Range<isize> = -10..10;
 #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub(super) struct ComplexKey {
     /// We ignore this type for ordering.
-    pub(super) _a: u64, //isize,
+    pub(super) _a: isize,
     /// We use this to define the order of `Self`.
     pub(super) ord: String,
 }
