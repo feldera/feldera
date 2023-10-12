@@ -433,7 +433,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         if (name.startsWith("select5"))
             batchSize = 5;
         // Used for debugging
-        int toSkip = 0; // file.getTestCount() - 10;
+        int toSkip = 0;
 
         TestStatistics result = new TestStatistics(options.stopAtFirstError, options.verbosity);
         boolean seenQueries = false;
@@ -453,6 +453,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                         this.options.message("Skipping buggy test " + stat.statement + "\n", 1);
                     } else {
                         this.statement(stat);
+                        if (!stat.shouldPass) {
+                            options.err.println("Statement should have failed: " + operation);
+                        }
                     }
                 } catch (SQLException ex) {
                     if (stat.shouldPass)

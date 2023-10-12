@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -53,7 +54,8 @@ public class DBSPIfExpression extends DBSPExpression {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         this.type.accept(visitor);
         this.condition.accept(visitor);
@@ -77,22 +79,26 @@ public class DBSPIfExpression extends DBSPExpression {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         builder.append("if ")
-                .append(this.condition);
+                .append(this.condition)
+                .append(" ");
         if (this.positive.is(DBSPBlockExpression.class))
             builder.append(this.positive);
         else {
             builder.append("{")
                     .increase()
                     .append(this.positive)
+                    .newline()
                     .decrease()
                     .append("}");
         }
+        builder.append(" else ");
         if (this.negative.is(DBSPBlockExpression.class))
             builder.append(this.negative);
         else {
             builder.append("{")
                     .increase()
                     .append(this.negative)
+                    .newline()
                     .decrease()
                     .append("}");
         }

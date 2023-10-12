@@ -139,6 +139,11 @@ public abstract class JITOperator extends JITNode implements IJITId {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
+        if (this.comment != null && !this.comment.isEmpty()) {
+            builder.append("# ")
+                    .join("\n# ", this.comment.split("\n"))
+                    .newline();
+        }
         builder.append(this.getId())
                 .append(" ")
                 .append(this.name)

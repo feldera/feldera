@@ -28,6 +28,7 @@ import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParametersDelegate;
 import org.apache.calcite.config.Lex;
 import org.dbsp.util.SqlLexicalRulesConverter;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -127,15 +128,16 @@ public class CompilerOptions {
         @Override
         public String toString() {
             return "IO{" +
-                    "outputFile='" + this.outputFile + '\'' +
+                    "outputFile=" + Utilities.singleQuote(this.outputFile) +
                     ", jit=" + this.jit +
                     ", emitJpeg=" + this.emitJpeg +
                     ", emitPng=" + this.emitPng +
                     ", emitJsonErrors=" + this.emitJsonErrors +
-                    ", emitJsonSchema='" + this.emitJsonSchema + '\'' +
-                    ", inputFile='" + this.inputFile + '\'' +
-                    ", functionName='" + this.functionName + '\'' +
+                    ", emitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +
+                    ", inputFile=" + Utilities.singleQuote(this.inputFile) +
+                    ", functionName=" + Utilities.singleQuote(this.functionName) +
                     ", lexicalRules=" + this.lexicalRules +
+                    ", lenient=" + this.lenient +
                     '}';
         }
     }
