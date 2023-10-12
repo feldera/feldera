@@ -44,6 +44,43 @@ const sidebars = {
     'demo/demo',
     {
       type: 'category',
+      label: 'Data Sources and Sinks',
+      link: {
+        type: 'doc',
+        id: 'connectors/index'
+      },
+      items: [
+          {
+              type: 'category',
+              label: 'Sources',
+              link: {
+                  type: 'doc',
+                  id: 'connectors/sources/index',
+              },
+              items: [
+                  'connectors/sources/http',
+                  'connectors/sources/http-get',
+                  'connectors/sources/kafka',
+                  'connectors/sources/debezium-mysql'
+              ]
+          },
+          {
+              type: 'category',
+              label: 'Sinks',
+              link: {
+                  type: 'doc',
+                  id: 'connectors/sinks/index',
+              },
+              items: [
+                  'connectors/sinks/http',
+                  'connectors/sinks/kafka',
+                  'connectors/sinks/snowflake'
+              ]
+          }
+      ]
+    },
+    {
+      type: 'category',
       label: 'SQL Reference',
       link: { type: 'doc', id: 'sql/intro' },
       items: [
