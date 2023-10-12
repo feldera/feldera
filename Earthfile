@@ -518,6 +518,7 @@ build-pipeline-manager-container:
 
     # Then copy over the crates needed by the sql compiler
     COPY crates/dbsp database-stream-processor/crates/dbsp
+    COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
     COPY crates/adapters database-stream-processor/crates/adapters
     COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
     COPY README.md database-stream-processor/README.md
