@@ -347,7 +347,7 @@ where
                     return;
                 } else {
                     self.db_iter.prev();
-                    self.update_current_key_weight(Direction::Forward);
+                    self.update_current_key_weight(Direction::Backward);
                     self.cur_val = None;
                     return;
                 }
