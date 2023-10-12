@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Avoid shutting down pipelines when they encounter
   errors during lifecycle state changes.
   ([#869](https://github.com/feldera/feldera/pull/869))
+- The compiler flag `-js` generates primary key information
+  ([#772](https://github.com/feldera/feldera/issues/772))
 
 ### Added
 
