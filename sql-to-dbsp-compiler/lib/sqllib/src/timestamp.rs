@@ -753,7 +753,7 @@ mod test {
     use super::{Date, Time, Timestamp};
     use dbsp_adapters::{deserialize_table_record, DeserializeWithContext, SqlDeserializerConfig};
     use lazy_static::lazy_static;
-    use pipeline_types::json::JsonFlavor;
+    use pipeline_types::format::json::JsonFlavor;
 
     #[derive(Debug, Eq, PartialEq)]
     #[allow(non_snake_case)]

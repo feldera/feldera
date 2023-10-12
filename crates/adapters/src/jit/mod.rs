@@ -8,7 +8,7 @@ pub mod schema;
 pub mod seroutput;
 
 use crate::Catalog;
-use pipeline_types::json::JsonFlavor;
+use pipeline_types::format::json::JsonFlavor;
 pub use schema::ProgramSchema;
 use std::{collections::HashMap, path::PathBuf};
 

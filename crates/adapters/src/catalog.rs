@@ -4,7 +4,7 @@ use crate::{static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
 use dbsp::InputHandle;
 use pipeline_types::catalog::OutputQuery;
-use pipeline_types::json::JsonFlavor;
+use pipeline_types::format::json::JsonFlavor;
 use serde::{Deserialize, Serialize};
 
 /// Descriptor that specifies the format in which records are received

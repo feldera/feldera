@@ -9,7 +9,7 @@ use crate::{
 };
 use actix_web::HttpRequest;
 use erased_serde::Serialize as ErasedSerialize;
-use pipeline_types::json::{JsonParserConfig, JsonUpdateFormat};
+use pipeline_types::format::json::{JsonParserConfig, JsonUpdateFormat};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -433,7 +433,7 @@ mod test {
         DeserializeWithContext, FormatConfig, ParseError, SqlDeserializerConfig,
     };
     use log::trace;
-    use pipeline_types::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
+    use pipeline_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
     use std::{borrow::Cow, fmt::Debug};
 
     #[derive(PartialEq, Debug, Eq)]

@@ -6,7 +6,7 @@ use crate::{
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
-use pipeline_types::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
+use pipeline_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -290,7 +290,7 @@ mod test {
     };
     use dbsp::{trace::Batch, IndexedZSet, OrdZSet};
     use log::trace;
-    use pipeline_types::json::JsonUpdateFormat;
+    use pipeline_types::format::json::JsonUpdateFormat;
     use proptest::prelude::*;
     use serde::Deserialize;
     use std::cell::RefCell;

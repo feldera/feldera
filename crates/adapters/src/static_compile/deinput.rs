@@ -662,7 +662,7 @@ mod test {
     use dbsp::{
         algebra::F32, trace::Batch, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
     };
-    use pipeline_types::json::JsonFlavor;
+    use pipeline_types::format::json::JsonFlavor;
     use serde_json::to_string as to_json_string;
     use size_of::SizeOf;
     use std::hash::Hash;

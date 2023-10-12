@@ -23,7 +23,7 @@ use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
 use log::{debug, error, info, warn};
 use pipeline_types::{catalog::OutputQuery, transport::http::SERVER_PORT_FILE};
-use pipeline_types::{json::JsonFlavor, transport::http::EgressMode};
+use pipeline_types::{format::json::JsonFlavor, transport::http::EgressMode};
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::io::Write;

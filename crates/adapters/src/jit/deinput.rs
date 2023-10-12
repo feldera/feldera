@@ -1,6 +1,6 @@
 use anyhow::Result as AnyResult;
 use dataflow_jit::facade::{DeCollectionStream as JitDeCollectionStream, JsonZSetHandle};
-use pipeline_types::json::JsonFlavor;
+use pipeline_types::format::json::JsonFlavor;
 
 use crate::{catalog::RecordFormat, ControllerError, DeCollectionHandle, DeCollectionStream};
 

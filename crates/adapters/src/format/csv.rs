@@ -8,7 +8,7 @@ use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use csv_core::{ReadRecordResult, Reader as CsvReader};
 use erased_serde::Serialize as ErasedSerialize;
-use pipeline_types::csv::{CsvEncoderConfig, CsvParserConfig};
+use pipeline_types::format::csv::{CsvEncoderConfig, CsvParserConfig};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
