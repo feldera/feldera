@@ -259,7 +259,6 @@ build-dbsp:
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
 
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline_types
-    RUN cd crates/pipeline-types && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline_types -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline_types --no-run
 
