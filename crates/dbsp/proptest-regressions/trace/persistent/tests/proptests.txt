@@ -16,3 +16,4 @@ cc cbfd2665a4aaa8392fff99de0450134e1ca914af36f8e8438fe2953212f5fbff # shrinks to
 cc 1bba8880b09031b1265ea95fc36d6667d6721ba918f5be8f9a2ffa14444f448c # shrinks to ks = [], ops = [FastForwardVals]
 cc bfab5e8319f81dae44c6adeda9055c6aa8fd2f3a889188cfe83f35e4a5ce5866 # shrinks to ks = [(ComplexKey { _a: 11725995549945181088, ord: "" }, -1), (ComplexKey { _a: 0, ord: "" }, 1)], ops = [SeekKey(ComplexKey { _a: 0, ord: " " }), StepVal, StepKeyReverse]
 cc e27836c67411fc8b4c4fbde22ca335106d0a9ad5ce79ab7a995426efd726d30d # shrinks to ks = [(ComplexKey { _a: 0, ord: "" }, 1), (ComplexKey { _a: 0, ord: "a" }, -1)], ops = [StepKey, StepVal, StepKeyReverse]
+cc 1e30bb37bea2025e6c3387fe14aaa7f11703c3894f4d1af5e0b224378f3a2645 # shrinks to ks = [], ops = [FastForwardVals, FastForwardKeys, SeekVal(0)]

@@ -202,7 +202,7 @@ enum CursorAction<
 > {
     StepKey,
     StepKeyReverse,
-    //FastForwardKeys,
+    FastForwardKeys,
     StepVal,
     FastForwardVals,
     SeekKey(K),
@@ -227,9 +227,8 @@ fn action<
     prop_oneof![
         Just(CursorAction::StepKey),
         Just(CursorAction::StepKeyReverse),
-        //Just(CursorAction::FastForwardKeys),
+        Just(CursorAction::FastForwardKeys),
         Just(CursorAction::StepVal),
-        //Just(CursorAction::StepValReverse),
         Just(CursorAction::FastForwardVals),
         Just(CursorAction::RewindKeys),
         Just(CursorAction::RewindVals),
@@ -351,11 +350,12 @@ fn cursor_trait<B, I>(
                 totest_cursor.step_key_reverse();
                 check_eq_invariants(step, &model_cursor, &totest_cursor);
             }
-            //CursorAction::FastForwardKeys => {
-            //model_cursor.fast_forward_keys();
-            //totest_cursor.fast_forward_keys();
-            //check_eq_invariants(step, &model_cursor, &totest_cursor);
-            //}
+            CursorAction::FastForwardKeys => {
+                direction = Direction::Forward;
+                model_cursor.fast_forward_keys();
+                totest_cursor.fast_forward_keys();
+                check_eq_invariants(step, &model_cursor, &totest_cursor);
+            }
             CursorAction::StepVal => {
                 match direction {
                     Direction::Forward => {
@@ -369,11 +369,6 @@ fn cursor_trait<B, I>(
                 }
                 check_eq_invariants(step, &model_cursor, &totest_cursor);
             }
-            //CursorAction::StepValReverse => {
-            //model_cursor.step_val_reverse();
-            //totest_cursor.step_val_reverse();
-            //check_eq_invariants(step, &model_cursor, &totest_cursor);
-            //}
             CursorAction::FastForwardVals => {
                 model_cursor.fast_forward_vals();
                 totest_cursor.fast_forward_vals();

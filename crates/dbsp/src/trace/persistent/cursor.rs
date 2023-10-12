@@ -323,8 +323,9 @@ where
             }
         }
 
-        let encoded_key = to_bytes(key).expect("Can't encode `key`");
-        self.db_iter.seek(encoded_key);
+        let persisted_key: PersistedKey<B::Key, B::Val> = PersistedKey::StartMarker(key.clone());
+        let encoded_key = to_bytes(&persisted_key).expect("Can't encode `key`");
+        self.db_iter.seek_for_prev(encoded_key);
         self.update_current_key_weight(Direction::Backward);
     }
 

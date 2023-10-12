@@ -207,15 +207,15 @@ where
     <K as super::Deserializable>::ArchivedDeser: Ord,
     <V as super::Deserializable>::ArchivedDeser: Ord,
 {
-    let mut aligned_a = AlignedVec::with_capacity(a.len());
-    aligned_a.extend_from_slice(a);
-    let mut aligned_b = AlignedVec::with_capacity(b.len());
-    aligned_b.extend_from_slice(b);
-    let a = unsafe { rkyv::archived_root::<PersistedKey<K, V>>(&aligned_a) };
-    let b = unsafe { rkyv::archived_root::<PersistedKey<K, V>>(&aligned_b) };
-    a.cmp(b)
+    //let mut aligned_a = AlignedVec::with_capacity(a.len());
+    //aligned_a.extend_from_slice(a);
+    //let mut aligned_b = AlignedVec::with_capacity(b.len());
+    //aligned_b.extend_from_slice(b);
+    //let a = unsafe { rkyv::archived_root::<PersistedKey<K, V>>(&aligned_a) };
+    //let b = unsafe { rkyv::archived_root::<PersistedKey<K, V>>(&aligned_b) };
+    //a.cmp(b)
 
-    //let a: PersistedKey<K, V> = super::unaligned_deserialize(a);
-    //let b: PersistedKey<K, V> = super::unaligned_deserialize(b);
-    //a.cmp(&b)
+    let a: PersistedKey<K, V> = super::unaligned_deserialize(a);
+    let b: PersistedKey<K, V> = super::unaligned_deserialize(b);
+    a.cmp(&b)
 }
