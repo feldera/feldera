@@ -184,6 +184,12 @@ pub struct RunnerApi {
 }
 
 impl RunnerApi {
+    /// Timeout for a HTTP request to a pipeline. This is the maximum time to
+    /// wait for the issued request to attain an outcome (be it success or
+    /// failure). Upon timeout, the request is failed and immediately
+    /// returns.
+    const PIPELINE_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_millis(2_000);
+
     /// Create a local runner.
     pub fn new(db: Arc<Mutex<ProjectDB>>) -> Self {
         Self { db }
@@ -441,6 +447,7 @@ impl RunnerApi {
         let client = reqwest::Client::new();
         client
             .request(method, &format!("http://{location}/{endpoint}",))
+            .timeout(Self::PIPELINE_HTTP_REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(|e| RunnerError::HttpForwardError {
