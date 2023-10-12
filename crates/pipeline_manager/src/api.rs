@@ -490,11 +490,14 @@ fn example_unknown_name() -> ErrorResponse {
 //
 // fn example_parse_errors() -> ErrorResponse {
 //     let errors = [
-//         ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 27".to_string(), "{\"b\": false, \"i\": 100, \"s\":", None),
-//         ParseError::text_event_error("failed to deserialize JSON record '{\"b\": false}'", "missing field `i` at line 3 column 12", 3, Some("{\"b\": false}"), None),
-//     ];
-//     ErrorResponse::from_error_nolog(&PipelineError::parse_errors(errors.len(), errors.iter()))
-// }
+//         ParseError::text_envelope_error("failed to parse string as a JSON
+// document: EOF while parsing a value at line 1 column 27".to_string(),
+// "{\"b\": false, \"i\": 100, \"s\":", None),
+//         ParseError::text_event_error("failed to deserialize JSON record
+// '{\"b\": false}'", "missing field `i` at line 3 column 12", 3, Some("{\"b\":
+// false}"), None),     ];
+//     ErrorResponse::from_error_nolog(&PipelineError::parse_errors(errors.
+// len(), errors.iter())) }
 //
 // fn example_unknown_output_format() -> ErrorResponse {
 //     ErrorResponse::from_error_nolog(&ControllerError::unknown_output_format(
