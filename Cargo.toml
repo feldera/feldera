@@ -9,6 +9,6 @@ release = false
 [profile.bench]
 debug = true
 
-[patch.crates-io]
-rkyv = { path = "/home/gz/workspace/rkyv/rkyv", default-features = false, features = ["alloc", "size_64"] }
-rust_decimal = { git = "https://github.com/gz/rust-decimal.git", branch = "patch-1" }
+#[patch.crates-io]
+#rkyv = { path = "/home/gz/workspace/rkyv/rkyv", default-features = false, features = ["alloc", "size_64"] }
+#rust_decimal = { git = "https://github.com/gz/rust-decimal.git", branch = "patch-1" }
