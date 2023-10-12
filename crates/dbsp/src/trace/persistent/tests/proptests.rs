@@ -206,9 +206,8 @@ enum CursorAction<
     StepVal,
     FastForwardVals,
     SeekKey(K),
-    //SeekKeyReverse(K),
+    SeekKeyReverse(K),
     SeekVal(V),
-    //SeekValReverse(V),
     SeekValWith(V),
     RewindKeys,
     RewindVals,
@@ -237,9 +236,8 @@ fn action<
         Just(CursorAction::MapTimes),
         any::<T>().prop_map(CursorAction::MapTimesThrough),
         any::<K>().prop_map(CursorAction::SeekKey),
-        //any::<K>().prop_map(CursorAction::SeekKeyReverse),
+        any::<K>().prop_map(CursorAction::SeekKeyReverse),
         any::<V>().prop_map(CursorAction::SeekVal),
-        //any::<V>().prop_map(CursorAction::SeekValReverse),
         any::<V>().prop_map(CursorAction::SeekValWith),
     ]
 }
@@ -381,12 +379,12 @@ fn cursor_trait<B, I>(
                 totest_cursor.seek_key(k);
                 check_eq_invariants(step, &model_cursor, &totest_cursor);
             }
-            //CursorAction::SeekKeyReverse(k) => {
-            //direction = Direction::Forward;
-            //model_cursor.seek_key_reverse(k);
-            //totest_cursor.seek_key_reverse(k);
-            //check_eq_invariants(step, &model_cursor, &totest_cursor);
-            //}
+            CursorAction::SeekKeyReverse(k) => {
+                direction = Direction::Forward;
+                model_cursor.seek_key_reverse(k);
+                totest_cursor.seek_key_reverse(k);
+                check_eq_invariants(step, &model_cursor, &totest_cursor);
+            }
             CursorAction::SeekVal(v) => {
                 match direction {
                     Direction::Forward => {
