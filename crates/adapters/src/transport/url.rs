@@ -6,7 +6,7 @@ use anyhow::{anyhow, Result as AnyResult};
 use awc::{Client, Connector};
 use futures::StreamExt;
 use lazy_static::lazy_static;
-use pipeline_types::transport::UrlInputConfig;
+use pipeline_types::transport::url::UrlInputConfig;
 use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
 use serde::Deserialize;
 use serde_yaml::Value as YamlValue;

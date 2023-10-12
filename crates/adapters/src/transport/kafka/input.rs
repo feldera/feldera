@@ -7,7 +7,7 @@ use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
 use log::debug;
 use num_traits::FromPrimitive;
-use pipeline_types::transport::KafkaInputConfig;
+use pipeline_types::transport::kafka::KafkaInputConfig;
 use rdkafka::{
     config::FromClientConfigAndContext,
     consumer::{BaseConsumer, Consumer, ConsumerContext, Rebalance, RebalanceProtocol},

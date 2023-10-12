@@ -3,7 +3,7 @@ use crate::{OutputEndpointConfig, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use num_traits::FromPrimitive;
-use pipeline_types::transport::{FileInputConfig, FileOutputConfig};
+use pipeline_types::transport::file::{FileInputConfig, FileOutputConfig};
 use serde::Deserialize;
 use serde_yaml::Value as YamlValue;
 use std::{

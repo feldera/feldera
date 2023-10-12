@@ -8,8 +8,8 @@ use crossbeam::{
     sync::{Parker, Unparker},
 };
 use log::{debug, error};
-use pipeline_types::transport::default_redpanda_server;
-use pipeline_types::transport::KafkaLogLevel;
+use pipeline_types::transport::kafka::default_redpanda_server;
+use pipeline_types::transport::kafka::KafkaLogLevel;
 use rdkafka::{
     config::FromClientConfigAndContext,
     error::KafkaError,

@@ -1,5 +1,5 @@
 use anyhow::Error as AnyError;
-use pipeline_types::transport::KafkaLogLevel;
+use pipeline_types::transport::kafka::KafkaLogLevel;
 use rdkafka::{
     client::{Client as KafkaClient, ClientContext},
     config::RDKafkaLogLevel,
