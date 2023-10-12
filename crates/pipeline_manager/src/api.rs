@@ -41,11 +41,9 @@ use actix_web::{
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
-use dbsp_adapters::{
-    ConnectorConfig, ControllerError, ErrorResponse, ParseError, PipelineConfig, PipelineError,
-    RuntimeConfig,
-};
 use log::{debug, info};
+use pipeline_types::config::{ConnectorConfig, PipelineConfig, RuntimeConfig};
+use pipeline_types::error::ErrorResponse;
 use serde::{Deserialize, Serialize};
 use std::{env, net::TcpListener, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
@@ -165,31 +163,32 @@ request is rejected."
         crate::db::PipelineRevision,
         crate::db::Revision,
         crate::db::PipelineStatus,
-        dbsp_adapters::EgressMode,
-        dbsp_adapters::PipelineConfig,
-        dbsp_adapters::InputEndpointConfig,
-        dbsp_adapters::NeighborhoodQuery,
-        dbsp_adapters::OutputEndpointConfig,
-        dbsp_adapters::OutputQuery,
-        dbsp_adapters::TransportConfig,
-        dbsp_adapters::FormatConfig,
-        dbsp_adapters::RuntimeConfig,
-        dbsp_adapters::ConnectorConfig,
-        dbsp_adapters::TransportConfig,
-        dbsp_adapters::FormatConfig,
-        dbsp_adapters::transport::FileInputConfig,
-        dbsp_adapters::transport::FileOutputConfig,
-        dbsp_adapters::transport::UrlInputConfig,
-        dbsp_adapters::transport::KafkaInputConfig,
-        dbsp_adapters::transport::KafkaOutputConfig,
-        dbsp_adapters::transport::KafkaLogLevel,
-        dbsp_adapters::transport::http::Chunk,
-        dbsp_adapters::format::CsvEncoderConfig,
-        dbsp_adapters::format::CsvParserConfig,
-        dbsp_adapters::format::JsonEncoderConfig,
-        dbsp_adapters::format::JsonParserConfig,
-        dbsp_adapters::format::JsonFlavor,
-        dbsp_adapters::format::JsonUpdateFormat,
+        pipeline_types::query::NeighborhoodQuery,
+        pipeline_types::query::OutputQuery,
+        pipeline_types::config::PipelineConfig,
+        pipeline_types::config::InputEndpointConfig,
+        pipeline_types::config::OutputEndpointConfig,
+        pipeline_types::config::TransportConfig,
+        pipeline_types::config::FormatConfig,
+        pipeline_types::config::RuntimeConfig,
+        pipeline_types::config::ConnectorConfig,
+        pipeline_types::config::TransportConfig,
+        pipeline_types::config::FormatConfig,
+        pipeline_types::transport::file::FileInputConfig,
+        pipeline_types::transport::file::FileOutputConfig,
+        pipeline_types::transport::url::UrlInputConfig,
+        pipeline_types::transport::kafka::KafkaInputConfig,
+        pipeline_types::transport::kafka::KafkaOutputConfig,
+        pipeline_types::transport::kafka::KafkaLogLevel,
+        pipeline_types::transport::http::Chunk,
+        pipeline_types::transport::http::EgressMode,
+        pipeline_types::format::csv::CsvEncoderConfig,
+        pipeline_types::format::csv::CsvParserConfig,
+        pipeline_types::format::json::JsonEncoderConfig,
+        pipeline_types::format::json::JsonParserConfig,
+        pipeline_types::format::json::JsonFlavor,
+        pipeline_types::format::json::JsonUpdateFormat,
+        pipeline_types::error::ErrorResponse,
         TenantId,
         ProgramId,
         PipelineId,
@@ -197,7 +196,6 @@ request is rejected."
         AttachedConnectorId,
         Version,
         ProgramStatus,
-        ErrorResponse,
         ProgramCodeResponse,
         NewProgramRequest,
         NewProgramResponse,
@@ -465,41 +463,48 @@ fn example_unknown_name() -> ErrorResponse {
     })
 }
 
-fn example_unknown_input_table(table: &str) -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ControllerError::unknown_input_stream(
-        "input_endpoint1",
-        table,
-    ))
-}
-
-fn example_unknown_output_table(table: &str) -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ControllerError::unknown_output_stream(
-        "output_endpoint1",
-        table,
-    ))
-}
-
-fn example_unknown_input_format() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ControllerError::unknown_input_format(
-        "input_endpoint1",
-        "xml",
-    ))
-}
-
-fn example_parse_errors() -> ErrorResponse {
-    let errors = [
-        ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 27".to_string(), "{\"b\": false, \"i\": 100, \"s\":", None),
-        ParseError::text_event_error("failed to deserialize JSON record '{\"b\": false}'", "missing field `i` at line 3 column 12", 3, Some("{\"b\": false}"), None),
-    ];
-    ErrorResponse::from_error_nolog(&PipelineError::parse_errors(errors.len(), errors.iter()))
-}
-
-fn example_unknown_output_format() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&ControllerError::unknown_output_format(
-        "output_endpoint1",
-        "xml",
-    ))
-}
+//
+// TODO: These all require dependencies to the adapter crate and are used
+//       nowhere else. We might have to manually write out these responses.
+//
+// fn example_unknown_input_table(table: &str) -> ErrorResponse {
+//     ErrorResponse::from_error_nolog(&ControllerError::unknown_input_stream(
+//         "input_endpoint1",
+//         table,
+//     ))
+// }
+//
+// fn example_unknown_output_table(table: &str) -> ErrorResponse {
+//     ErrorResponse::from_error_nolog(&ControllerError::unknown_output_stream(
+//         "output_endpoint1",
+//         table,
+//     ))
+// }
+//
+// fn example_unknown_input_format() -> ErrorResponse {
+//     ErrorResponse::from_error_nolog(&ControllerError::unknown_input_format(
+//         "input_endpoint1",
+//         "xml",
+//     ))
+// }
+//
+// fn example_parse_errors() -> ErrorResponse {
+//     let errors = [
+//         ParseError::text_envelope_error("failed to parse string as a JSON
+// document: EOF while parsing a value at line 1 column 27".to_string(),
+// "{\"b\": false, \"i\": 100, \"s\":", None),
+//         ParseError::text_event_error("failed to deserialize JSON record
+// '{\"b\": false}'", "missing field `i` at line 3 column 12", 3, Some("{\"b\":
+// false}"), None),     ];
+//     ErrorResponse::from_error_nolog(&PipelineError::parse_errors(errors.
+// len(), errors.iter())) }
+//
+// fn example_unknown_output_format() -> ErrorResponse {
+//     ErrorResponse::from_error_nolog(&ControllerError::unknown_output_format(
+//         "output_endpoint1",
+//         "xml",
+//     ))
+// }
 
 fn example_pipeline_shutdown() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineShutdown {
@@ -1753,7 +1758,8 @@ pub struct PipelineIdOrNameQuery {
         (status = NOT_FOUND
             , description = "Specified table does not exist."
             , body = ErrorResponse
-            , example = json!(example_unknown_input_table("MyTable"))),
+            // , example = json!(example_unknown_input_table("MyTable"))
+            ),
         (status = NOT_FOUND
             , description = "Pipeline is not currently running because it has been shutdown or not yet started."
             , body = ErrorResponse
@@ -1761,11 +1767,13 @@ pub struct PipelineIdOrNameQuery {
         (status = BAD_REQUEST
             , description = "Unknown data format specified in the '?format=' argument."
             , body = ErrorResponse
-            , example = json!(example_unknown_input_format())),
+            // , example = json!(example_unknown_input_format())
+            ),
         (status = BAD_REQUEST
             , description = "Error parsing input data."
             , body = ErrorResponse
-            , example = json!(example_parse_errors())),
+            // , example = json!(example_parse_errors())
+            ),
         (status = INTERNAL_SERVER_ERROR
             , description = "Request failed."
             , body = ErrorResponse),
@@ -1840,7 +1848,8 @@ async fn http_input(
         (status = NOT_FOUND
             , description = "Specified table or view does not exist."
             , body = ErrorResponse
-            , example = json!(example_unknown_output_table("MyTable"))),
+            // , example = json!(example_unknown_output_table("MyTable"))
+            ),
         (status = GONE
             , description = "Pipeline is not currently running because it has been shutdown or not yet started."
             , body = ErrorResponse
@@ -1848,7 +1857,8 @@ async fn http_input(
         (status = BAD_REQUEST
             , description = "Unknown data format specified in the '?format=' argument."
             , body = ErrorResponse
-            , example = json!(example_unknown_output_format())),
+            // , example = json!(example_unknown_output_format())
+            ),
         (status = INTERNAL_SERVER_ERROR
             , description = "Request failed."
             , body = ErrorResponse),

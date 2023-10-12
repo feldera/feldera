@@ -36,7 +36,7 @@
 use crate::DbspCircuitHandle;
 use crate::{
     catalog::SerBatch, Catalog, CircuitCatalog, Encoder, InputConsumer, InputEndpoint, InputFormat,
-    InputTransport, OutputConsumer, OutputEndpoint, OutputFormat, OutputQuery, OutputQueryHandles,
+    InputTransport, OutputConsumer, OutputEndpoint, OutputFormat, OutputQueryHandles,
     OutputTransport, ParseError, Parser, PipelineState,
 };
 use anyhow::Error as AnyError;
@@ -46,6 +46,7 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use log::{debug, error, info};
+use pipeline_types::query::OutputQuery;
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     sync::{
@@ -56,15 +57,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-mod config;
 mod error;
 mod stats;
 
-pub use config::{
+pub use error::{ConfigError, ControllerError};
+pub use pipeline_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };
-pub use error::{ConfigError, ControllerError};
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit

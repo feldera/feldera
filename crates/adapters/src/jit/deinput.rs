@@ -1,10 +1,8 @@
 use anyhow::Result as AnyResult;
 use dataflow_jit::facade::{DeCollectionStream as JitDeCollectionStream, JsonZSetHandle};
+use pipeline_types::format::json::JsonFlavor;
 
-use crate::{
-    catalog::RecordFormat, format::JsonFlavor, ControllerError, DeCollectionHandle,
-    DeCollectionStream,
-};
+use crate::{catalog::RecordFormat, ControllerError, DeCollectionHandle, DeCollectionStream};
 
 impl<JS> DeCollectionStream for JS
 where

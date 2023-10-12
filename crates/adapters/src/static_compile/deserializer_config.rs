@@ -6,7 +6,7 @@
 //! encoding used for SQL types.  All input types used by a Feldera pipeline
 //! must implement `DeserializeWithContext<SqlDeserializerConfig>`
 
-use crate::catalog::JsonFlavor;
+use pipeline_types::format::json::JsonFlavor;
 
 /// Representation of the SQL `TIME` type.
 #[derive(Clone)]

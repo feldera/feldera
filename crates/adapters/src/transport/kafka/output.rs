@@ -1,13 +1,17 @@
-use super::{default_redpanda_server, KafkaLogLevel};
-use crate::{AsyncErrorCallback, OutputEndpoint, OutputEndpointConfig, OutputTransport};
+use crate::{
+    transport::kafka::rdkafka_loglevel_from, AsyncErrorCallback, OutputEndpoint,
+    OutputEndpointConfig, OutputTransport,
+};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::{
     queue::ArrayQueue,
     sync::{Parker, Unparker},
 };
 use log::{debug, error};
+use pipeline_types::transport::kafka::default_redpanda_server;
+use pipeline_types::transport::kafka::KafkaLogLevel;
 use rdkafka::{
-    config::{FromClientConfigAndContext, RDKafkaLogLevel},
+    config::FromClientConfigAndContext,
     error::KafkaError,
     producer::{BaseRecord, DeliveryResult, Producer, ProducerContext, ThreadedProducer},
     types::RDKafkaErrorCode,
@@ -281,7 +285,7 @@ impl KafkaOutputEndpoint {
         client_config.set("statistics.interval.ms", "1000");
 
         if let Some(log_level) = config.log_level {
-            client_config.set_log_level(RDKafkaLogLevel::from(log_level));
+            client_config.set_log_level(rdkafka_loglevel_from(log_level));
         }
 
         let parker = Parker::new();

@@ -751,10 +751,9 @@ pub fn extract_hour_Time(value: Time) -> i64 {
 #[cfg(test)]
 mod test {
     use super::{Date, Time, Timestamp};
-    use dbsp_adapters::{
-        deserialize_table_record, format::JsonFlavor, DeserializeWithContext, SqlDeserializerConfig,
-    };
+    use dbsp_adapters::{deserialize_table_record, DeserializeWithContext, SqlDeserializerConfig};
     use lazy_static::lazy_static;
+    use pipeline_types::format::json::JsonFlavor;
 
     #[derive(Debug, Eq, PartialEq)]
     #[allow(non_snake_case)]

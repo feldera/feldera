@@ -3,6 +3,7 @@ use crate::{OutputEndpointConfig, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use num_traits::FromPrimitive;
+use pipeline_types::transport::file::{FileInputConfig, FileOutputConfig};
 use serde::Deserialize;
 use serde_yaml::Value as YamlValue;
 use std::{
@@ -16,7 +17,6 @@ use std::{
     thread::{sleep, spawn},
     time::Duration,
 };
-use utoipa::ToSchema;
 
 const SLEEP_MS: u64 = 200;
 
@@ -39,28 +39,6 @@ impl InputTransport for FileInputTransport {
         let ep = FileInputEndpoint::new(config);
         Ok(Box::new(ep))
     }
-}
-
-/// Configuration for reading data from a file with [`FileInputTransport`].
-#[derive(Deserialize, ToSchema)]
-pub struct FileInputConfig {
-    /// File path.
-    pub path: String,
-
-    /// Read buffer size.
-    ///
-    /// Default: when this parameter is not specified, a platform-specific
-    /// default is used.
-    pub buffer_size_bytes: Option<usize>,
-
-    /// Enable file following.
-    ///
-    /// When `false`, the endpoint outputs an [`eoi`](`InputConsumer::eoi`)
-    /// message and stops upon reaching the end of file.  When `true`, the
-    /// endpoint will keep watching the file and outputting any new content
-    /// appended to it.
-    #[serde(default)]
-    pub follow: bool,
 }
 
 struct FileInputEndpoint {
@@ -200,13 +178,6 @@ impl OutputTransport for FileOutputTransport {
 
         Ok(Box::new(ep))
     }
-}
-
-/// Configuration for writing data to a file with [`FileOutputTransport`].
-#[derive(Deserialize, ToSchema)]
-pub struct FileOutputConfig {
-    /// File path.
-    pub path: String,
 }
 
 struct FileOutputEndpoint {

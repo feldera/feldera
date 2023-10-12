@@ -135,6 +135,7 @@ prepare-cache:
     COPY --keep-ts crates/dataflow-jit/Cargo.toml crates/dataflow-jit/
     COPY --keep-ts crates/nexmark/Cargo.toml crates/nexmark/
     COPY --keep-ts crates/dbsp/Cargo.toml crates/dbsp/
+    COPY --keep-ts crates/pipeline-types/Cargo.toml crates/pipeline-types/
     COPY --keep-ts crates/adapters/Cargo.toml crates/adapters/
     COPY --keep-ts crates/pipeline_manager/Cargo.toml crates/pipeline_manager/
     #COPY --keep-ts crates/webui-tester/Cargo.toml crates/webui-tester/
@@ -149,6 +150,7 @@ prepare-cache:
     RUN mkdir -p crates/nexmark/src && touch crates/nexmark/src/lib.rs
     RUN mkdir -p crates/dbsp/src && touch crates/dbsp/src/lib.rs
     RUN mkdir -p crates/dbsp/examples && touch crates/dbsp/examples/degrees.rs && touch crates/dbsp/examples/orgchart.rs
+    RUN mkdir -p crates/pipeline-types/src && touch crates/pipeline-types/src/lib.rs
     RUN mkdir -p crates/adapters/src && touch crates/adapters/src/lib.rs
     RUN mkdir -p crates/adapters/examples && touch crates/adapters/examples/server.rs
     RUN mkdir -p crates/dataflow-jit/src && touch crates/dataflow-jit/src/main.rs
@@ -202,6 +204,9 @@ build-cache:
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --features persistence --no-run
+    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline_types
+    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline_types --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline_types
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_adapters
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --no-run
@@ -243,12 +248,21 @@ build-dbsp:
     RUN rm -rf crates/dbsp
     # Copy in the actual sources
     COPY --keep-ts --dir crates/dbsp crates/dbsp
+    # pipeline-types is used by all subsequent dependencies. It's small enough and
+    # easier to build it in this step instead of having a separate one.
+    RUN rm -rf crates/pipeline-types
+    COPY --keep-ts --dir crates/pipeline-types crates/pipeline-types
     COPY --keep-ts README.md README.md
 
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp
     RUN cd crates/dbsp && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
+
+    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline_types
+    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline_types -- -D warnings
+    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline_types --no-run
+
 
 build-dataflow-jit:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -504,6 +518,7 @@ build-pipeline-manager-container:
 
     # Then copy over the crates needed by the sql compiler
     COPY crates/dbsp database-stream-processor/crates/dbsp
+    COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
     COPY crates/adapters database-stream-processor/crates/adapters
     COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
     COPY README.md database-stream-processor/README.md

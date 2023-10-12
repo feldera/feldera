@@ -71,6 +71,7 @@ RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
 COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
 # The crates needed for the SQL compiler
 COPY crates/dbsp database-stream-processor/crates/dbsp
+COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
 COPY crates/adapters database-stream-processor/crates/adapters
 COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
 COPY README.md database-stream-processor/README.md
@@ -100,6 +101,7 @@ RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
 COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
 # The crates needed for the SQL compiler
 COPY crates/dbsp database-stream-processor/crates/dbsp
+COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
 COPY crates/adapters database-stream-processor/crates/adapters
 COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
 COPY README.md database-stream-processor/README.md

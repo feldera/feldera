@@ -1,92 +1,23 @@
 //! JSON format parser.
 
-use super::{DebeziumUpdate, InsDelUpdate, JsonUpdateFormat, WeightedUpdate};
+use super::{DebeziumUpdate, InsDelUpdate, WeightedUpdate};
 use crate::{
-    catalog::{DeCollectionStream, JsonFlavor, RecordFormat},
+    catalog::{DeCollectionStream, RecordFormat},
     format::{InputFormat, ParseError, Parser},
     util::split_on_newline,
     ControllerError, DeCollectionHandle,
 };
 use actix_web::HttpRequest;
 use erased_serde::Serialize as ErasedSerialize;
-use serde::{Deserialize, Serialize};
+use pipeline_types::format::json::{JsonParserConfig, JsonUpdateFormat};
+use serde::Deserialize;
 use serde_json::value::RawValue;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, mem::take};
-use utoipa::ToSchema;
 
 /// JSON format parser.
 pub struct JsonInputFormat;
-
-/// JSON parser configuration.
-///
-/// Describes the shape of an input JSON stream.
-///
-/// # Examples
-///
-/// A configuration with `update_format="raw"` and `array=false`
-/// is used to parse a stream of JSON objects without any envelope
-/// that get inserted in the input table.
-///
-/// ```json
-/// {"b": false, "i": 100, "s": "foo"}
-/// {"b": true, "i": 5, "s": "bar"}
-/// ```
-///
-/// A configuration with `update_format="insert_delete"` and
-/// `array=false` is used to parse a stream of JSON data change events
-/// in the insert/delete format:
-///
-/// ```json
-/// {"delete": {"b": false, "i": 15, "s": ""}}
-/// {"insert": {"b": false, "i": 100, "s": "foo"}}
-/// ```
-///
-/// A configuration with `update_format="insert_delete"` and
-/// `array=true` is used to parse a stream of JSON arrays
-/// where each array contains multiple data change events in
-/// the insert/delete format.
-///
-/// ```json
-/// [{"insert": {"b": true, "i": 0}}, {"delete": {"b": false, "i": 100, "s": "foo"}}]
-/// ```
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
-pub struct JsonParserConfig {
-    /// JSON update format.
-    #[serde(default)]
-    update_format: JsonUpdateFormat,
-
-    /// Specifies JSON encoding used for individual table records.
-    #[serde(default)]
-    json_flavor: JsonFlavor,
-
-    /// Set to `true` if updates in this stream are packaged into JSON arrays.
-    ///
-    /// # Example
-    ///
-    /// ```json
-    /// [{"b": true, "i": 0},{"b": false, "i": 100, "s": "foo"}]
-    /// ```
-    #[serde(default)]
-    array: bool,
-}
-
-impl JsonParserConfig {
-    fn validate(&self, endpoint_name: &str) -> Result<(), ControllerError> {
-        if self.update_format == JsonUpdateFormat::Snowflake {
-            return Err(ControllerError::input_format_not_supported(
-                endpoint_name,
-                &format!(
-                    "{:?} is not supported for JSON input streams",
-                    &self.update_format
-                ),
-            ));
-        }
-
-        Ok(())
-    }
-}
 
 trait UpdateFormat {
     fn error() -> &'static str;
@@ -247,7 +178,7 @@ impl InputFormat for JsonInputFormat {
                 &serde_yaml::to_string(&config).unwrap_or_default(),
             )
         })?;
-        config.validate(endpoint_name)?;
+        validate_parser_config(&config, endpoint_name)?;
         let input_stream =
             input_stream.configure_deserializer(RecordFormat::Json(config.json_flavor.clone()))?;
         Ok(Box::new(JsonParser::new(input_stream, config)) as Box<dyn Parser>)
@@ -271,6 +202,23 @@ impl InputFormat for JsonInputFormat {
             })?,
         ))
     }
+}
+
+fn validate_parser_config(
+    config: &JsonParserConfig,
+    endpoint_name: &str,
+) -> Result<(), ControllerError> {
+    if config.update_format == JsonUpdateFormat::Snowflake {
+        return Err(ControllerError::input_format_not_supported(
+            endpoint_name,
+            &format!(
+                "{:?} is not supported for JSON input streams",
+                config.update_format
+            ),
+        ));
+    }
+
+    Ok(())
 }
 
 struct JsonParser {
@@ -481,14 +429,11 @@ impl Parser for JsonParser {
 #[cfg(test)]
 mod test {
     use crate::{
-        catalog::JsonFlavor,
-        deserialize_table_record,
-        format::{JsonParserConfig, JsonUpdateFormat},
-        test::mock_parser_pipeline,
-        transport::InputConsumer,
+        deserialize_table_record, test::mock_parser_pipeline, transport::InputConsumer,
         DeserializeWithContext, FormatConfig, ParseError, SqlDeserializerConfig,
     };
     use log::trace;
+    use pipeline_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
     use std::{borrow::Cow, fmt::Debug};
 
     #[derive(PartialEq, Debug, Eq)]

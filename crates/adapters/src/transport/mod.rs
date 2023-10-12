@@ -46,13 +46,11 @@ pub mod url;
 #[cfg(feature = "with-kafka")]
 pub(crate) mod kafka;
 
-pub use file::{FileInputConfig, FileInputTransport, FileOutputConfig, FileOutputTransport};
-pub use url::{UrlInputConfig, UrlInputTransport};
+pub use file::{FileInputTransport, FileOutputTransport};
+pub use url::UrlInputTransport;
 
 #[cfg(feature = "with-kafka")]
-pub use kafka::{
-    KafkaInputConfig, KafkaInputTransport, KafkaLogLevel, KafkaOutputConfig, KafkaOutputTransport,
-};
+pub use kafka::{KafkaInputTransport, KafkaOutputConfig, KafkaOutputTransport};
 
 /// Static map of supported input transports.
 // TODO: support for registering new transports at runtime in order to allow

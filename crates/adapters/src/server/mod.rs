@@ -1,11 +1,12 @@
 use crate::{
-    catalog::{JsonFlavor, RecordFormat},
+    catalog::RecordFormat,
     controller::ConnectorConfig,
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
     CircuitCatalog, Controller, ControllerError, DbspCircuitHandle, FormatConfig, InputEndpoint,
-    InputEndpointConfig, OutputEndpoint, OutputEndpointConfig, OutputQuery, PipelineConfig,
+    InputEndpointConfig, InputFormat, OutputEndpoint, OutputEndpointConfig, OutputFormat,
+    PipelineConfig,
 };
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
@@ -21,6 +22,8 @@ use colored::Colorize;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
 use log::{debug, error, info, warn};
+use pipeline_types::{format::json::JsonFlavor, transport::http::EgressMode};
+use pipeline_types::{query::OutputQuery, transport::http::SERVER_PORT_FILE};
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::io::Write;
@@ -37,7 +40,6 @@ use tokio::{
     spawn,
     sync::mpsc::{channel, Sender},
 };
-use utoipa::ToSchema;
 use uuid::Uuid;
 
 pub mod error;
@@ -130,9 +132,6 @@ pub struct ServerArgs {
     #[arg(short = 'p', long)]
     default_port: Option<u16>,
 }
-
-// This file indicates the port used by the server
-pub const SERVER_PORT_FILE: &str = "port";
 
 /// Server main function.
 ///
@@ -575,11 +574,7 @@ async fn input_endpoint(
         stream: Cow::from(table_name),
         connector_config: ConnectorConfig {
             transport: HttpInputTransport::config(),
-            format: FormatConfig::parser_config_from_http_request(
-                &endpoint_name,
-                &args.format,
-                &req,
-            )?,
+            format: parser_config_from_http_request(&endpoint_name, &args.format, &req)?,
             max_buffered_records: HttpInputTransport::default_max_buffered_records(),
         },
     };
@@ -622,31 +617,46 @@ async fn input_endpoint(
     response
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, ToSchema)]
-pub enum EgressMode {
-    /// Continuously monitor the output of the query.
-    ///
-    /// For queries that support snapshots, e.g.,
-    /// [neighborhood](`OutputQuery::Neighborhood`) queries,
-    /// the endpoint outputs the initial snapshot followed
-    /// by a stream of deltas.  For queries that don't support
-    /// snapshots, the endpoint outputs the stream of deltas
-    /// relative to the current output of the query.
-    #[serde(rename = "watch")]
-    Watch,
-    /// Output a single snapshot of query results.
-    ///
-    /// Currently only supported for [quantile](`OutputQuery::Quantiles`)
-    /// and [neighborhood](`OutputQuery::Neighborhood`) queries.
-    #[serde(rename = "snapshot")]
-    Snapshot,
+/// Create an instance of `FormatConfig` from format name and
+/// HTTP request using the `InputFormat::config_from_http_request` method.
+pub fn parser_config_from_http_request(
+    endpoint_name: &str,
+    format_name: &str,
+    request: &HttpRequest,
+) -> Result<FormatConfig, ControllerError> {
+    let format = <dyn InputFormat>::get_format(format_name)
+        .ok_or_else(|| ControllerError::unknown_input_format(endpoint_name, format_name))?;
+
+    let config = format.config_from_http_request(endpoint_name, request)?;
+
+    // Convert config to YAML format.
+    // FIXME: this is hacky. Perhaps we can parameterize `FormatConfig` with the
+    // exact type stored in the `config` field, so it can be either YAML or a
+    // strongly typed format-specific config.
+    Ok(FormatConfig {
+        name: Cow::from(format_name.to_string()),
+        config: serde_yaml::to_value(config)
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, ""))?,
+    })
 }
 
-impl Default for EgressMode {
-    /// If `mode` is not specified, default to `Watch`.
-    fn default() -> Self {
-        Self::Watch
-    }
+/// Create an instance of `FormatConfig` from format name and
+/// HTTP request using the `InputFormat::config_from_http_request` method.
+pub fn encoder_config_from_http_request(
+    endpoint_name: &str,
+    format_name: &str,
+    request: &HttpRequest,
+) -> Result<FormatConfig, ControllerError> {
+    let format = <dyn OutputFormat>::get_format(format_name)
+        .ok_or_else(|| ControllerError::unknown_output_format(endpoint_name, format_name))?;
+
+    let config = format.config_from_http_request(endpoint_name, request)?;
+
+    Ok(FormatConfig {
+        name: Cow::from(format_name.to_string()),
+        config: serde_yaml::to_value(config)
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, ""))?,
+    })
 }
 
 /// URL-encoded arguments to the `/egress` endpoint.
@@ -748,11 +758,7 @@ async fn output_endpoint(
         query: args.query,
         connector_config: ConnectorConfig {
             transport: HttpOutputTransport::config(),
-            format: FormatConfig::encoder_config_from_http_request(
-                &endpoint_name,
-                &args.format,
-                &req,
-            )?,
+            format: encoder_config_from_http_request(&endpoint_name, &args.format, &req)?,
             max_buffered_records: HttpOutputTransport::default_max_buffered_records(),
         },
     };
