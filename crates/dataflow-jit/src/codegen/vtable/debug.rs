@@ -204,6 +204,7 @@ impl Codegen {
 
                                 ColumnType::Date => "date_debug",
                                 ColumnType::Timestamp => "timestamp_debug",
+                                ColumnType::Time => "time_debug",
 
                                 ColumnType::String => "string_debug",
 

@@ -412,6 +412,7 @@ fn clone_layout(
             | ColumnType::F64
             | ColumnType::Date
             | ColumnType::Timestamp
+            | ColumnType::Time
             | ColumnType::Decimal => src_value,
 
             // Strings need their clone function called

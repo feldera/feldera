@@ -2,7 +2,7 @@ use crate::ir::{
     pretty::{DocAllocator, DocBuilder, Pretty},
     ColumnType, RowLayoutCache,
 };
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use derive_more::From;
 use rust_decimal::Decimal;
 use schemars::{
@@ -36,6 +36,8 @@ pub enum Constant {
     Timestamp(NaiveDateTime),
     #[schemars(schema_with = "decimal_schema")]
     Decimal(Decimal),
+    #[serde(deserialize_with = "deserialize_time")]
+    Time(NaiveTime),
 }
 
 impl Constant {
@@ -107,6 +109,14 @@ impl Constant {
         matches!(self, Self::Timestamp(..))
     }
 
+    /// Returns `true` if the constant is a [`Time`].
+    ///
+    /// [`Time`]: Constant::Time
+    #[must_use]
+    pub const fn is_time(&self) -> bool {
+        matches!(self, Self::Time(..))
+    }
+
     /// Returns `true` if the constant is a [`Decimal`].
     ///
     /// [`Decimal`]: Constant::Decimal
@@ -137,6 +147,7 @@ impl Constant {
             Self::Date(_) => ColumnType::Date,
             Self::Timestamp(_) => ColumnType::Timestamp,
             Self::Decimal(_) => ColumnType::Decimal,
+            Self::Time(_) => ColumnType::Time,
         }
     }
 }
@@ -177,6 +188,7 @@ where
             Constant::Date(date) => format!("{date:?}"),
             // Formats as `2001-07-08T00:34:60.026490+09:30`
             Constant::Timestamp(timestamp) => format!("{timestamp:?}"),
+            Constant::Time(time) => format!("{time:?}"),
             Constant::Decimal(decimal) => format!("{decimal}"),
             Constant::Unit => unreachable!("already handled unit"),
         };
@@ -220,6 +232,7 @@ impl PartialEq for Constant {
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
             (Self::Date(lhs), Self::Date(rhs)) => lhs == rhs,
             (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs == rhs,
+            (Self::Time(lhs), Self::Time(rhs)) => lhs == rhs,
             (Self::Decimal(lhs), Self::Decimal(rhs)) => lhs == rhs,
 
             _ => {
@@ -279,6 +292,7 @@ impl PartialOrd for Constant {
             (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
             (Self::Date(lhs), Self::Date(rhs)) => lhs.cmp(rhs),
             (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs.cmp(rhs),
+            (Self::Time(lhs), Self::Time(rhs)) => lhs.cmp(rhs),
             (Self::Decimal(lhs), Self::Decimal(rhs)) => lhs.cmp(rhs),
 
             _ => {
@@ -335,6 +349,7 @@ impl Ord for Constant {
             (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
             (Self::Date(lhs), Self::Date(rhs)) => lhs.cmp(rhs),
             (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs.cmp(rhs),
+            (Self::Time(lhs), Self::Time(rhs)) => lhs.cmp(rhs),
             (Self::Decimal(lhs), Self::Decimal(rhs)) => lhs.cmp(rhs),
 
             _ => {
@@ -366,6 +381,30 @@ impl<'de> de::Visitor<'de> for TimestampVisitor {
         E: de::Error,
     {
         NaiveDateTime::parse_from_str(value, "%+").map_err(E::custom)
+    }
+}
+
+fn deserialize_time<'de, D>(deserializer: D) -> Result<NaiveTime, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_str(TimeVisitor)
+}
+
+struct TimeVisitor;
+
+impl<'de> de::Visitor<'de> for TimeVisitor {
+    type Value = NaiveTime;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a formatted time string")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        NaiveTime::parse_from_str(value, "%H-%M-%S%.f").map_err(E::custom)
     }
 }
 

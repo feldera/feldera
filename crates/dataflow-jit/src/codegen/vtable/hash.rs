@@ -123,7 +123,7 @@ impl Codegen {
                             ColumnType::I16 => "i16_hash",
                             ColumnType::U32 => "u32_hash",
                             ColumnType::I32 | ColumnType::Date => "i32_hash",
-                            ColumnType::U64 => "u64_hash",
+                            ColumnType::U64 | ColumnType::Time => "u64_hash",
                             ColumnType::I64 | ColumnType::Timestamp => "i64_hash",
                             ColumnType::Usize => {
                                 let ptr_ty = ctx.pointer_type();

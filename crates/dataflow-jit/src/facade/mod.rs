@@ -21,8 +21,9 @@ use crate::{
     },
     row::{row_from_literal, Row, UninitRow},
     thin_str::ThinStrRef,
+    utils::TimeExt,
 };
-use chrono::{TimeZone, Utc};
+use chrono::{NaiveTime, TimeZone, Utc};
 use cranelift_module::FuncId;
 use csv::StringRecord;
 use dbsp::{
@@ -846,6 +847,9 @@ unsafe fn constant_from_column(
                 .unwrap()
                 .naive_utc(),
         ),
+        ColumnType::Time => {
+            Constant::Time(NaiveTime::from_nanoseconds(ptr.cast::<u64>().read()).unwrap())
+        }
 
         ColumnType::String => Constant::String(ptr.cast::<ThinStrRef>().read().to_string()),
 

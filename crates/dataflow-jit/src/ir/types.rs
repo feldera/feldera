@@ -91,6 +91,8 @@ column_type! {
     Date = ("date", I32),
     /// Represents the milliseconds since January 1, 1970 as an `i64`
     Timestamp = ("timestamp", I64),
+    /// A time represented as nanoseconds since midnight
+    Time = ("time", U64),
 
     /// A string encoded as UTF-8
     String = ("str", Ptr),

@@ -1,3 +1,4 @@
+use chrono::{NaiveTime, Timelike};
 use rust_decimal::Decimal;
 use xxhash_rust::xxh3::Xxh3Builder;
 
@@ -74,4 +75,41 @@ macro_rules! row {
             )*],
         )
     };
+}
+
+pub const SECONDS_TO_NANOS: u64 = 1_000_000_000;
+pub const MILLIS_TO_NANOS: u64 = 1_000_000;
+pub const MICROS_TO_NANOS: u64 = 1000;
+
+pub trait TimeExt: Sized {
+    fn to_nanoseconds(self) -> u64;
+
+    fn from_nanoseconds(nanos: u64) -> Option<Self>;
+
+    fn from_milliseconds(millis: u64) -> Option<Self>;
+
+    fn from_microseconds(micros: u64) -> Option<Self>;
+}
+
+impl TimeExt for NaiveTime {
+    #[inline]
+    fn to_nanoseconds(self) -> u64 {
+        (self.num_seconds_from_midnight() as u64 * SECONDS_TO_NANOS) + self.nanosecond() as u64
+    }
+
+    #[inline]
+    fn from_nanoseconds(nanos: u64) -> Option<Self> {
+        let (secs, nanos) = (nanos / SECONDS_TO_NANOS, nanos % SECONDS_TO_NANOS);
+        NaiveTime::from_num_seconds_from_midnight_opt(secs as u32, nanos as u32)
+    }
+
+    #[inline]
+    fn from_milliseconds(millis: u64) -> Option<Self> {
+        Self::from_nanoseconds(millis * MILLIS_TO_NANOS)
+    }
+
+    #[inline]
+    fn from_microseconds(micros: u64) -> Option<Self> {
+        Self::from_nanoseconds(micros * MICROS_TO_NANOS)
+    }
 }
