@@ -204,10 +204,10 @@ build-cache:
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --features persistence --no-run
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline-types
+    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline_types
     # pipeline-types has no tests
-    # RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-types --no-run
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline-types
+    # RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline_types --no-run
+    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline_types
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_adapters
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --no-run
