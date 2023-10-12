@@ -205,8 +205,7 @@ build-cache:
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --features persistence --no-run
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline_types
-    # pipeline-types has no tests
-    # RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline_types --no-run
+    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline_types --no-run
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline_types
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_adapters
@@ -258,6 +257,12 @@ build-dbsp:
     RUN cd crates/dbsp && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
+
+    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline_types
+    RUN cd crates/pipeline-types && cargo +$RUST_TOOLCHAIN machete
+    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline_types -- -D warnings
+    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline_types --no-run
+
 
 build-dataflow-jit:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
