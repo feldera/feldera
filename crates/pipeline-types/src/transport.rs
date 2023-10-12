@@ -268,6 +268,7 @@ impl KafkaOutputConfig {
             .or_insert_with(|| val.to_string());
     }
 
+    #[allow(dead_code)]
     /// Validate configuration, set default option values required by this
     /// adapter.
     fn validate(&mut self) -> AnyResult<()> {

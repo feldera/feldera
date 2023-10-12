@@ -250,6 +250,7 @@ build-dbsp:
     COPY --keep-ts --dir crates/dbsp crates/dbsp
     # pipeline-types is used by all subsequent dependencies. It's small enough and
     # easier to build it in this step instead of having a separate one.
+    RUN rm -rf crates/pipeline-types
     COPY --keep-ts --dir crates/pipeline-types crates/pipeline-types
     COPY --keep-ts README.md README.md
 
