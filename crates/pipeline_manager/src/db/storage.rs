@@ -6,7 +6,7 @@ use super::{
 use crate::api::ProgramStatus;
 use crate::auth::TenantId;
 use async_trait::async_trait;
-use dbsp_adapters::{ConnectorConfig, RuntimeConfig};
+use pipeline_types::controller_config::{ConnectorConfig, RuntimeConfig};
 use uuid::Uuid;
 
 /// The storage trait contains the methods to interact with the pipeline manager

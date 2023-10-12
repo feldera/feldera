@@ -649,8 +649,8 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::static_compile::deinput::RecordFormat;
     use crate::{
-        catalog::{JsonFlavor, RecordFormat},
         deserialize_without_context,
         static_compile::{
             DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
@@ -662,6 +662,7 @@ mod test {
     use dbsp::{
         algebra::F32, trace::Batch, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
     };
+    use pipeline_types::json::JsonFlavor;
     use serde_json::to_string as to_json_string;
     use size_of::SizeOf;
     use std::hash::Hash;

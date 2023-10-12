@@ -7,14 +7,15 @@ use crate::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use dbsp_adapters::{
-    ConnectorConfig, ErrorResponse, InputEndpointConfig, OutputEndpointConfig, OutputQuery,
-    PipelineConfig, RuntimeConfig,
-};
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use futures_util::TryFutureExt;
 use log::{debug, error, info};
 use openssl::sha;
+use pipeline_types::catalog::OutputQuery;
+use pipeline_types::controller_config::{
+    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
+};
+use pipeline_types::error::ErrorResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{

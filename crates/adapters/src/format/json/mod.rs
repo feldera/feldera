@@ -3,77 +3,8 @@ use serde::{Deserialize, Serialize};
 mod input;
 mod output;
 
-pub use input::{JsonInputFormat, JsonParserConfig};
-pub use output::{JsonEncoderConfig, JsonOutputFormat};
-use utoipa::ToSchema;
-
-/// Supported JSON data change event formats.
-///
-/// Each element in a JSON-formatted input stream specifies
-/// an update to one or more records in an input table.  We support
-/// several different ways to represent such updates.
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, ToSchema)]
-pub enum JsonUpdateFormat {
-    /// Insert/delete format.
-    ///
-    /// Each element in the input stream consists of an "insert" or "delete"
-    /// command and a record to be inserted to or deleted from the input table.
-    ///
-    /// # Example
-    ///
-    /// ```json
-    /// {"insert": {"column1": "hello, world!", "column2": 100}}
-    /// ```
-    #[serde(rename = "insert_delete")]
-    InsertDelete,
-
-    #[serde(rename = "weighted")]
-    Weighted,
-
-    /// Simplified Debezium CDC format.
-    ///
-    /// We support a simplified version of the Debezium CDC format.  All fields
-    /// except `payload` are ignored.
-    ///
-    /// # Example
-    ///
-    /// ```json
-    /// {"payload": {"op": "u", "before": {"b": true, "i": 123}, "after": {"b": true, "i": 0}}}
-    /// ```
-    #[serde(rename = "debezium")]
-    Debezium,
-
-    /// Format used to output JSON data to Snowflake.
-    ///
-    /// Uses flat structure so that fields can get parsed directly into SQL
-    /// columns.  Defines three metadata fields:
-    ///
-    /// * `__action` - "insert" or "delete"
-    /// * `__stream_id` - unique 64-bit ID of the output stream (records within
-    ///   a stream are totally ordered)
-    /// * `__seq_number` - monotonically increasing sequence number relative to
-    ///   the start of the stream.
-    ///
-    /// ```json
-    /// {"PART":1,"VENDOR":2,"EFFECTIVE_SINCE":"2019-05-21","PRICE":"10000","__action":"insert","__stream_id":4523666124030717756,"__seq_number":1}
-    /// ```
-    #[serde(rename = "snowflake")]
-    Snowflake,
-
-    /// Raw input format.
-    ///
-    /// This format is suitable for insert-only streams (no deletions).
-    /// Each element in the input stream contains a record without any
-    /// additional envelope that gets inserted in the input table.
-    #[serde(rename = "raw")]
-    Raw,
-}
-
-impl Default for JsonUpdateFormat {
-    fn default() -> Self {
-        Self::InsertDelete
-    }
-}
+pub use input::JsonInputFormat;
+pub use output::JsonOutputFormat;
 
 /// Debezium CDC operation.
 ///

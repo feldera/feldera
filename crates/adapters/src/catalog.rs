@@ -3,8 +3,9 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::{static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
 use dbsp::InputHandle;
+use pipeline_types::catalog::OutputQuery;
+use pipeline_types::json::JsonFlavor;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 /// Descriptor that specifies the format in which records are received
 /// or into which they should be encoded before sending.
@@ -18,33 +19,6 @@ pub enum RecordFormat {
     // tables that store raw JSON or binary data to be parsed using SQL.
     Json(JsonFlavor),
     Csv,
-}
-
-/// Specifies JSON encoding used of table records.
-#[derive(Clone, Default, Deserialize, Serialize, Debug, PartialEq, Eq, ToSchema)]
-pub enum JsonFlavor {
-    /// Default encoding used by Feldera, documented
-    /// [here](https://www.feldera.com/docs/api/json#types).
-    #[default]
-    #[serde(rename = "default")]
-    Default,
-    /// Debezium MySQL JSON produced by the default configuration of the
-    /// Debezium [Kafka Connect connector](https://debezium.io/documentation/reference/stable/connectors/mysql.html#mysql-data-types).
-    #[serde(rename = "debezium_mysql")]
-    DebeziumMySql,
-}
-
-// This is only here so we can derive `ToSchema` for it without adding
-// a `utoipa` dependency to the `dbsp` crate to derive ToSchema for
-// `NeighborhoodDescr`.
-/// A request to output a specific neighborhood of a table or view.
-/// The neighborhood is defined in terms of its central point (`anchor`)
-/// and the number of rows preceding and following the anchor to output.
-#[derive(Deserialize, ToSchema)]
-pub struct NeighborhoodQuery {
-    pub anchor: Option<utoipa::openapi::Object>,
-    pub before: u32,
-    pub after: u32,
 }
 
 // Helper type only used to serialize neighborhoods as a map vs tuple.
@@ -489,31 +463,6 @@ pub struct OutputCollectionHandles {
     /// outputs up to `N` quantiles of the input collection, computed using
     /// the [`Stream::stream_key_quantiles`] operator.
     pub quantiles_handle: Option<Box<dyn SerCollectionHandle>>,
-}
-
-/// A query over an output stream.
-///
-/// We currently do not support ad hoc queries.  Instead the client can use
-/// three pre-defined queries to inspect the contents of a table or view.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, ToSchema, Ord)]
-pub enum OutputQuery {
-    /// Query the entire contents of the table (similar to `SELECT * FROM`).
-    #[serde(rename = "table")]
-    Table,
-    /// Neighborhood query (see
-    /// [`Stream::neighborhood`](`dbsp::Stream::neighborhood`)).
-    #[serde(rename = "neighborhood")]
-    Neighborhood,
-    /// Quantiles query (see
-    /// [`Stream::stream_key_quantiles`](`dbsp::Stream::stream_key_quantiles`)).
-    #[serde(rename = "quantiles")]
-    Quantiles,
-}
-
-impl Default for OutputQuery {
-    fn default() -> Self {
-        Self::Table
-    }
 }
 
 /// Query result streams.

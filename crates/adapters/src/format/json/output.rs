@@ -1,26 +1,21 @@
 use crate::{
-    catalog::{CursorWithPolarity, JsonFlavor, RecordFormat, SerBatch, SerCursor},
+    catalog::{CursorWithPolarity, RecordFormat, SerBatch, SerCursor},
     util::truncate_ellipse,
     ControllerError, Encoder, OutputConsumer, OutputFormat,
 };
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
+use pipeline_types::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, io::Write, mem::take, sync::Arc};
-use utoipa::ToSchema;
-
-use super::JsonUpdateFormat;
+use std::io::Write;
+use std::{borrow::Cow, mem::take, sync::Arc};
 
 /// JSON format encoder.
 pub struct JsonOutputFormat;
-
-const fn default_buffer_size_records() -> usize {
-    10_000
-}
 
 /// The largest weight of a record that can be output using
 /// a JSON format without explicit weights.  Such formats require
@@ -31,37 +26,6 @@ const MAX_DUPLICATES: i64 = 1_000_000;
 /// When including a long JSON record in an error message,
 /// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.
 static MAX_RECORD_LEN_IN_ERRMSG: usize = 4096;
-
-// TODO: support multiple update formats, e.g., `WeightedUpdate`
-// suppors arbitrary weights beyond `MAX_DUPLICATES`.
-#[derive(Deserialize, Serialize, ToSchema)]
-pub struct JsonEncoderConfig {
-    #[serde(default)]
-    update_format: JsonUpdateFormat,
-    #[serde(default = "default_buffer_size_records")]
-    buffer_size_records: usize,
-    #[serde(default)]
-    array: bool,
-}
-
-impl JsonEncoderConfig {
-    fn validate(&self, endpoint_name: &str) -> Result<(), ControllerError> {
-        if !matches!(
-            self.update_format,
-            JsonUpdateFormat::InsertDelete | JsonUpdateFormat::Snowflake
-        ) {
-            return Err(ControllerError::output_format_not_supported(
-                endpoint_name,
-                &format!(
-                    "{:?} update format is not supported for output JSON streams",
-                    self.update_format
-                ),
-            ));
-        }
-
-        Ok(())
-    }
-}
 
 impl OutputFormat for JsonOutputFormat {
     fn name(&self) -> Cow<'static, str> {
@@ -104,7 +68,7 @@ impl OutputFormat for JsonOutputFormat {
             )
         })?;
 
-        config.validate(endpoint_name)?;
+        validate(&config, endpoint_name)?;
 
         // Snowflake requires one record per message.
         if config.update_format == JsonUpdateFormat::Snowflake {
@@ -113,6 +77,23 @@ impl OutputFormat for JsonOutputFormat {
 
         Ok(Box::new(JsonEncoder::new(consumer, config)))
     }
+}
+
+fn validate(config: &JsonEncoderConfig, endpoint_name: &str) -> Result<(), ControllerError> {
+    if !matches!(
+        config.update_format,
+        JsonUpdateFormat::InsertDelete | JsonUpdateFormat::Snowflake
+    ) {
+        return Err(ControllerError::output_format_not_supported(
+            endpoint_name,
+            &format!(
+                "{:?} update format is not supported for output JSON streams",
+                config.update_format
+            ),
+        ));
+    }
+
+    Ok(())
 }
 
 struct JsonEncoder {
@@ -302,13 +283,14 @@ mod test {
         catalog::SerBatch,
         format::{
             json::{InsDelUpdate, SnowflakeAction, SnowflakeUpdate},
-            Encoder, JsonUpdateFormat,
+            Encoder,
         },
         static_compile::seroutput::SerBatchImpl,
         test::{MockOutputConsumer, TestStruct},
     };
     use dbsp::{trace::Batch, IndexedZSet, OrdZSet};
     use log::trace;
+    use pipeline_types::json::JsonUpdateFormat;
     use proptest::prelude::*;
     use serde::Deserialize;
     use std::cell::RefCell;

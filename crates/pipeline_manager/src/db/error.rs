@@ -3,10 +3,10 @@ use crate::auth::TenantId;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
-use dbsp_adapters::DetailedError;
-use dbsp_adapters::ErrorResponse;
 use deadpool_postgres::PoolError;
 use log::Level;
+use pipeline_types::error::DetailedError;
+use pipeline_types::error::ErrorResponse;
 use refinery::Error as RefineryError;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{backtrace::Backtrace, borrow::Cow, error::Error as StdError, fmt, fmt::Display};

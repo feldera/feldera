@@ -145,11 +145,11 @@ pub use dbsp::DetailedError;
 
 pub use circuit_handle::DbspCircuitHandle;
 
-pub use server::{EgressMode, ErrorResponse, PipelineError};
+pub use server::{ErrorResponse, PipelineError};
 
 pub use catalog::{
-    Catalog, CircuitCatalog, DeCollectionHandle, DeCollectionStream, NeighborhoodQuery,
-    OutputQuery, OutputQueryHandles, SerBatch, SerCollectionHandle,
+    Catalog, CircuitCatalog, DeCollectionHandle, DeCollectionStream, OutputQueryHandles, SerBatch,
+    SerCollectionHandle,
 };
 pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser};
 

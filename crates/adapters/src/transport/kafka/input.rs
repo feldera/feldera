@@ -1,11 +1,15 @@
-use super::{default_redpanda_server, refine_kafka_error, KafkaLogLevel};
-use crate::{InputConsumer, InputEndpoint, InputTransport, PipelineState};
+use super::refine_kafka_error;
+use crate::{
+    transport::kafka::rdkafka_loglevel_from, InputConsumer, InputEndpoint, InputTransport,
+    PipelineState,
+};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
 use log::debug;
 use num_traits::FromPrimitive;
+use pipeline_types::transport::KafkaInputConfig;
 use rdkafka::{
-    config::{FromClientConfigAndContext, RDKafkaLogLevel},
+    config::FromClientConfigAndContext,
     consumer::{BaseConsumer, Consumer, ConsumerContext, Rebalance, RebalanceProtocol},
     error::{KafkaError, KafkaResult},
     ClientConfig, ClientContext, Message,
@@ -14,20 +18,12 @@ use serde::Deserialize;
 use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
-    collections::BTreeMap,
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex, Weak,
     },
     thread::spawn,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-};
-use utoipa::{
-    openapi::{
-        schema::{KnownFormat, Schema},
-        ArrayBuilder, ObjectBuilder, RefOr, SchemaFormat, SchemaType,
-    },
-    ToSchema,
+    time::{Duration, Instant},
 };
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
@@ -35,12 +31,6 @@ const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 // Size of the circular buffer used to pass errors from ClientContext
 // to the worker thread.
 const ERROR_BUFFER_SIZE: usize = 1000;
-
-/// On startup, the endpoint waits to join the consumer group.
-/// This constant defines the default wait timeout.
-const fn default_group_join_timeout_secs() -> u32 {
-    10
-}
 
 /// [`InputTransport`] implementation that reads data from one or more
 /// Kafka topics.
@@ -64,137 +54,6 @@ impl InputTransport for KafkaInputTransport {
         let config = KafkaInputConfig::deserialize(config)?;
         let ep = KafkaInputEndpoint::new(config)?;
         Ok(Box::new(ep))
-    }
-}
-
-/// Configuration for reading data from Kafka topics with [`InputTransport`].
-#[derive(Deserialize, Debug)]
-pub struct KafkaInputConfig {
-    /// Options passed directly to `rdkafka`.
-    ///
-    /// [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
-    /// used to configure the Kafka consumer.  Not all options are valid with
-    /// this Kafka adapter:
-    ///
-    /// * "enable.auto.commit", if present, must be set to "false",
-    /// * "enable.auto.offset.store", if present, must be set to "false"
-    #[serde(flatten)]
-    pub kafka_options: BTreeMap<String, String>,
-
-    /// List of topics to subscribe to.
-    pub topics: Vec<String>,
-
-    /// The log level of the client.
-    ///
-    /// If not specified, the log level will be calculated based on the global
-    /// log level of the `log` crate.
-    pub log_level: Option<KafkaLogLevel>,
-
-    /// Maximum timeout in seconds to wait for the endpoint to join the Kafka
-    /// consumer group during initialization.
-    #[serde(default = "default_group_join_timeout_secs")]
-    pub group_join_timeout_secs: u32,
-}
-
-// The auto-derived implementation gets confused by the flattened
-// `kafka_options` field. FIXME: I didn't figure out how to attach a
-// `description` to the `topics` property.
-impl<'s> ToSchema<'s> for KafkaInputConfig {
-    fn schema() -> (&'s str, RefOr<Schema>) {
-        (
-            "KafkaInputConfig",
-            ObjectBuilder::new()
-                .property(
-                    "topics",
-                    ArrayBuilder::new().items(
-                        ObjectBuilder::new()
-                            .schema_type(SchemaType::String)
-                    )
-                )
-                .required("topics")
-                .property(
-                    "log_level",
-                    KafkaLogLevel::schema().1
-                )
-                .property(
-                    "group_join_timeout_secs",
-                    ObjectBuilder::new()
-                        .schema_type(SchemaType::Integer)
-                        .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int32)))
-                        .description(Some("Maximum timeout in seconds to wait for the endpoint to join the Kafka consumer group during initialization.")),
-                )
-                .additional_properties(Some(
-                        ObjectBuilder::new()
-                        .schema_type(SchemaType::String)
-                        .description(Some(r#"Options passed directly to `rdkafka`.
-
-See [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
-used to configure the Kafka producer."#))))
-                .into(),
-        )
-    }
-}
-
-impl KafkaInputConfig {
-    /// Set `option` to `val`; return an error if `option` is set to a different
-    /// value.
-    #[allow(dead_code)]
-    fn enforce_option(&mut self, option: &str, val: &str) -> AnyResult<()> {
-        let option_val = self
-            .kafka_options
-            .entry(option.to_string())
-            .or_insert_with(|| val.to_string());
-        if option_val != val {
-            Err(AnyError::msg("cannot override '{option}' option: the Kafka transport adapter sets this option to '{val}'"))?;
-        }
-        Ok(())
-    }
-
-    /// Set `option` to `val`, if missing.
-    fn set_option_if_missing(&mut self, option: &str, val: &str) {
-        self.kafka_options
-            .entry(option.to_string())
-            .or_insert_with(|| val.to_string());
-    }
-
-    /// Validate configuration, set default option values required by this
-    /// adapter.
-    fn validate(&mut self) -> AnyResult<()> {
-        self.set_option_if_missing("bootstrap.servers", &default_redpanda_server());
-
-        // These options will prevent librdkafka from automatically committing offsets
-        // of consumed messages to the broker, meaning that next time the
-        // connector is instantiated it will start reading from the offset
-        // specified in `auto.offset.reset`.  We used to set these to
-        // `true`, which caused `rdkafka` to hang in some circumstances
-        // (https://github.com/confluentinc/librdkafka/issues/3954).  Besides, the new behavior
-        // is probably more correct given that circuit state currently does not survive
-        // across pipeline restarts, so it makes sense to start feeding messages
-        // from the start rather than from the last offset consumed by the
-        // previous instance of the pipeline, whose state is lost.  Once we add
-        // fault tolerance, we will likely use explicit commits, which also do
-        // not require these options.
-        //
-        // See https://docs.confluent.io/platform/current/clients/consumer.html#offset-management
-        //
-        // Note: we allow the user to override the options, so they can still enable
-        // auto commit if they know what they are doing, e.g., the secops demo
-        // requires the pipeline to commit its offset for the generator to know
-        // when to resume sending.
-        self.set_option_if_missing("enable.auto.commit", "false");
-        self.set_option_if_missing("enable.auto.offset.store", "false");
-
-        let group_id = format!(
-            "{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-        );
-        self.set_option_if_missing("group.id", &group_id);
-        self.set_option_if_missing("enable.partition.eof", "false");
-
-        Ok(())
     }
 }
 
@@ -284,7 +143,7 @@ impl KafkaInputEndpointInner {
         }
 
         if let Some(log_level) = config.log_level {
-            client_config.set_log_level(RDKafkaLogLevel::from(log_level));
+            client_config.set_log_level(rdkafka_loglevel_from(log_level));
         }
 
         // Context object to intercept rebalancing events and errors.

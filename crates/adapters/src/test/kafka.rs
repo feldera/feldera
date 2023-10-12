@@ -1,12 +1,12 @@
 use crate::{
     test::{wait, MockDeZSet, TestStruct},
-    transport::kafka::default_redpanda_server,
     InputFormat,
 };
 use anyhow::{anyhow, bail, Result as AnyResult};
 use csv::WriterBuilder as CsvWriterBuilder;
 use futures::executor::block_on;
 use log::{error, info};
+use pipeline_types::transport::default_redpanda_server;
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
     client::{Client, DefaultClientContext},

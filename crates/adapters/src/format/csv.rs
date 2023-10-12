@@ -8,11 +8,11 @@ use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use csv_core::{ReadRecordResult, Reader as CsvReader};
 use erased_serde::Serialize as ErasedSerialize;
-use serde::{Deserialize, Serialize};
+use pipeline_types::csv::{CsvEncoderConfig, CsvParserConfig};
+use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, mem::take, sync::Arc};
-use utoipa::ToSchema;
 
 pub(crate) mod deserializer;
 pub use deserializer::byte_record_deserializer;
@@ -24,9 +24,6 @@ static MAX_RECORD_LEN_IN_ERRMSG: usize = 4096;
 
 /// CSV format parser.
 pub struct CsvInputFormat;
-
-#[derive(Deserialize, Serialize, ToSchema)]
-pub struct CsvParserConfig {}
 
 impl InputFormat for CsvInputFormat {
     fn name(&self) -> Cow<'static, str> {
@@ -209,16 +206,6 @@ impl Parser for CsvParser {
 
 /// CSV format encoder.
 pub struct CsvOutputFormat;
-
-const fn default_buffer_size_records() -> usize {
-    10_000
-}
-
-#[derive(Deserialize, Serialize, ToSchema)]
-pub struct CsvEncoderConfig {
-    #[serde(default = "default_buffer_size_records")]
-    buffer_size_records: usize,
-}
 
 impl OutputFormat for CsvOutputFormat {
     fn name(&self) -> Cow<'static, str> {

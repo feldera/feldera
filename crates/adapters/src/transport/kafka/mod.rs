@@ -1,13 +1,11 @@
 use anyhow::Error as AnyError;
+use pipeline_types::transport::KafkaLogLevel;
 use rdkafka::{
     client::{Client as KafkaClient, ClientContext},
     config::RDKafkaLogLevel,
     error::KafkaError,
     types::RDKafkaErrorCode,
 };
-use serde::Deserialize;
-use std::env;
-use utoipa::ToSchema;
 
 mod input;
 mod output;
@@ -15,61 +13,32 @@ mod output;
 #[cfg(test)]
 pub mod test;
 
-pub use input::{KafkaInputConfig, KafkaInputTransport};
+pub use input::KafkaInputTransport;
 pub use output::{KafkaOutputConfig, KafkaOutputTransport};
 
-pub(crate) fn default_redpanda_server() -> String {
-    env::var("REDPANDA_BROKERS").unwrap_or_else(|_| "localhost".to_string())
-}
+// fn kafka_loglevel_from(level: RDKafkaLogLevel) -> KafkaLogLevel {
+//     match level {
+//         RDKafkaLogLevel::Emerg => KafkaLogLevel::Emerg,
+//         RDKafkaLogLevel::Alert => KafkaLogLevel::Alert,
+//         RDKafkaLogLevel::Critical => KafkaLogLevel::Critical,
+//         RDKafkaLogLevel::Error => KafkaLogLevel::Error,
+//         RDKafkaLogLevel::Warning => KafkaLogLevel::Warning,
+//         RDKafkaLogLevel::Notice => KafkaLogLevel::Notice,
+//         RDKafkaLogLevel::Info => KafkaLogLevel::Info,
+//         RDKafkaLogLevel::Debug => KafkaLogLevel::Debug,
+//     }
+// }
 
-/// Kafka logging levels.
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ToSchema)]
-pub enum KafkaLogLevel {
-    #[serde(rename = "emerg")]
-    Emerg,
-    #[serde(rename = "alert")]
-    Alert,
-    #[serde(rename = "critical")]
-    Critical,
-    #[serde(rename = "error")]
-    Error,
-    #[serde(rename = "warning")]
-    Warning,
-    #[serde(rename = "notice")]
-    Notice,
-    #[serde(rename = "info")]
-    Info,
-    #[serde(rename = "debug")]
-    Debug,
-}
-
-impl From<RDKafkaLogLevel> for KafkaLogLevel {
-    fn from(level: RDKafkaLogLevel) -> Self {
-        match level {
-            RDKafkaLogLevel::Emerg => Self::Emerg,
-            RDKafkaLogLevel::Alert => Self::Alert,
-            RDKafkaLogLevel::Critical => Self::Critical,
-            RDKafkaLogLevel::Error => Self::Error,
-            RDKafkaLogLevel::Warning => Self::Warning,
-            RDKafkaLogLevel::Notice => Self::Notice,
-            RDKafkaLogLevel::Info => Self::Info,
-            RDKafkaLogLevel::Debug => Self::Debug,
-        }
-    }
-}
-
-impl From<KafkaLogLevel> for RDKafkaLogLevel {
-    fn from(level: KafkaLogLevel) -> Self {
-        match level {
-            KafkaLogLevel::Emerg => RDKafkaLogLevel::Emerg,
-            KafkaLogLevel::Alert => RDKafkaLogLevel::Alert,
-            KafkaLogLevel::Critical => RDKafkaLogLevel::Critical,
-            KafkaLogLevel::Error => RDKafkaLogLevel::Error,
-            KafkaLogLevel::Warning => RDKafkaLogLevel::Warning,
-            KafkaLogLevel::Notice => RDKafkaLogLevel::Notice,
-            KafkaLogLevel::Info => RDKafkaLogLevel::Info,
-            KafkaLogLevel::Debug => RDKafkaLogLevel::Debug,
-        }
+fn rdkafka_loglevel_from(level: KafkaLogLevel) -> RDKafkaLogLevel {
+    match level {
+        KafkaLogLevel::Emerg => RDKafkaLogLevel::Emerg,
+        KafkaLogLevel::Alert => RDKafkaLogLevel::Alert,
+        KafkaLogLevel::Critical => RDKafkaLogLevel::Critical,
+        KafkaLogLevel::Error => RDKafkaLogLevel::Error,
+        KafkaLogLevel::Warning => RDKafkaLogLevel::Warning,
+        KafkaLogLevel::Notice => RDKafkaLogLevel::Notice,
+        KafkaLogLevel::Info => RDKafkaLogLevel::Info,
+        KafkaLogLevel::Debug => RDKafkaLogLevel::Debug,
     }
 }
 

@@ -16,17 +16,11 @@ use std::{
 pub(crate) mod csv;
 mod json;
 
-pub use self::{
-    csv::{
-        byte_record_deserializer, string_record_deserializer, CsvEncoderConfig, CsvParserConfig,
-    },
-    json::{JsonEncoderConfig, JsonParserConfig, JsonUpdateFormat},
-};
+pub use self::csv::{byte_record_deserializer, string_record_deserializer};
 use self::{
     csv::{CsvInputFormat, CsvOutputFormat},
     json::{JsonInputFormat, JsonOutputFormat},
 };
-pub use crate::catalog::JsonFlavor;
 
 /// Error parsing input data.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]

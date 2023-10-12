@@ -348,11 +348,11 @@ mod test {
 
     use crate::{
         catalog::{OutputCollectionHandles, RecordFormat},
-        format::JsonFlavor,
         test::TestStruct,
         Catalog, CircuitCatalog, SerBatch,
     };
     use dbsp::Runtime;
+    use pipeline_types::json::JsonFlavor;
 
     const RECORD_FORMAT: RecordFormat = RecordFormat::Json(JsonFlavor::Default);
 

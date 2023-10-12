@@ -1,4 +1,4 @@
-use crate::format::JsonFlavor;
+use pipeline_types::json::JsonFlavor;
 
 use super::schema::{ColumnSchema, TableSchema};
 use dataflow_jit::{

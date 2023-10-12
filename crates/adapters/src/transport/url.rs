@@ -6,6 +6,7 @@ use anyhow::{anyhow, Result as AnyResult};
 use awc::{Client, Connector};
 use futures::StreamExt;
 use lazy_static::lazy_static;
+use pipeline_types::transport::UrlInputConfig;
 use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
 use serde::Deserialize;
 use serde_yaml::Value as YamlValue;
@@ -14,7 +15,6 @@ use tokio::{
     select,
     sync::watch::{channel, Receiver, Sender},
 };
-use utoipa::ToSchema;
 use webpki_roots::TLS_SERVER_ROOTS;
 
 /// [`InputTransport`] implementation that reads data from an HTTP or HTTPS URL.
@@ -36,14 +36,6 @@ impl InputTransport for UrlInputTransport {
         let ep = UrlInputEndpoint::new(config);
         Ok(Box::new(ep))
     }
-}
-
-/// Configuration for reading data from an HTTP or HTTPS URL with
-/// [`UrlInputTransport`].
-#[derive(Clone, Deserialize, ToSchema)]
-pub struct UrlInputConfig {
-    /// URL.
-    pub path: String,
 }
 
 struct UrlInputEndpoint {

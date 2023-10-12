@@ -1,0 +1,19 @@
+[package]
+name = "pipeline_types"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Public API types for pipelines"
+homepage = "https://github.com/feldera/feldera"
+repository = "https://github.com/feldera/feldera"
+keywords = ["DBSP", "streaming", "analytics", "database"]
+categories = ["database", "api-bindings", "network-programming"]
+publish = false
+
+[dependencies]
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_yaml = "0.9.14"
+serde_json = { version = "1.0.103", features = ["raw_value"] }
+anyhow = { version = "1.0.57", features = ["backtrace"] }
+log = "0.4.20"
+utoipa = { version = "3.3.0" }

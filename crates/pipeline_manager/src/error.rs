@@ -22,8 +22,8 @@ use crate::runner::RunnerError;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
-use dbsp_adapters::{DetailedError, ErrorResponse};
 use log::Level;
+use pipeline_types::error::{DetailedError, ErrorResponse};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     backtrace::Backtrace,
