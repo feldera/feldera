@@ -5,15 +5,16 @@ use self::{
     deserialize::{
         deserialize_json_bool, deserialize_json_date, deserialize_json_date_from_days,
         deserialize_json_f32, deserialize_json_f64, deserialize_json_i32, deserialize_json_i64,
-        deserialize_json_string, deserialize_json_timestamp,
+        deserialize_json_string, deserialize_json_time, deserialize_json_time_from_micros,
+        deserialize_json_time_from_millis, deserialize_json_timestamp,
         deserialize_json_timestamp_from_micros, deserialize_json_timestamp_from_millis,
     },
     serialize::{
         byte_vec_push, byte_vec_reserve, write_date_to_byte_vec, write_decimal_to_byte_vec,
         write_escaped_string_to_byte_vec, write_f32_to_byte_vec, write_f64_to_byte_vec,
         write_i16_to_byte_vec, write_i32_to_byte_vec, write_i64_to_byte_vec, write_i8_to_byte_vec,
-        write_timestamp_to_byte_vec, write_u16_to_byte_vec, write_u32_to_byte_vec,
-        write_u64_to_byte_vec, write_u8_to_byte_vec,
+        write_time_to_byte_vec, write_timestamp_to_byte_vec, write_u16_to_byte_vec,
+        write_u32_to_byte_vec, write_u64_to_byte_vec, write_u8_to_byte_vec,
     },
 };
 use crate::{
@@ -25,7 +26,7 @@ use crate::{
     ir::{exprs::Call, ExprId},
     row::{Row, UninitRow},
     thin_str::ThinStrRef,
-    utils::{HashMap, NativeRepr},
+    utils::{HashMap, NativeRepr, TimeExt},
     ThinStr,
 };
 use chrono::{
@@ -167,6 +168,7 @@ macro_rules! intrinsics {
     (@clif_type $ptr_type:ident f64) => { types::F64 };
     (@clif_type $ptr_type:ident date) => { types::I32 };
     (@clif_type $ptr_type:ident timestamp) => { types::I64 };
+    (@clif_type $ptr_type:ident time) => { types::I64 };
 
     (@type) => { ColumnType::Unit };
     (@type ptr) => { ColumnType::Ptr };
@@ -187,6 +189,7 @@ macro_rules! intrinsics {
     (@type f64) => { ColumnType::F64 };
     (@type date) => { ColumnType::Date };
     (@type timestamp) => { ColumnType::Timestamp };
+    (@type time) => { ColumnType::Time };
 
     (@replace $x:tt $y:tt) => { $y };
 }
@@ -400,6 +403,7 @@ intrinsics! {
     f64_debug = fn(f64, ptr: mutable) -> bool,
     date_debug = fn(date, ptr: mutable) -> bool,
     timestamp_debug = fn(timestamp, ptr: mutable) -> bool,
+    time_debug = fn(time, ptr: mutable) -> bool,
     decimal_debug = fn(u64, u64, ptr: mutable) -> bool,
 
     // Hash functions
@@ -427,6 +431,7 @@ intrinsics! {
     write_f64_to_string = fn(str: consume, f64) -> str,
     write_timestamp_to_string = fn(str: consume, timestamp) -> str,
     write_date_to_string = fn(str: consume, date) -> str,
+    write_time_to_string = fn(str: consume, time) -> str,
     write_decimal_to_string = fn(str: consume, u64, u64) -> str,
 
     // String functions
@@ -550,6 +555,7 @@ intrinsics! {
     csv_get_str = fn(ptr, usize) -> str,
     csv_get_bool = fn(ptr, usize) -> bool,
     csv_get_date = fn(ptr, usize, ptr, ptr) -> date,
+    csv_get_time = fn(ptr, usize, ptr, ptr) -> time,
     csv_get_timestamp = fn(ptr, usize, ptr, ptr) -> timestamp,
 
     csv_get_nullable_u8 = fn(ptr, usize, ptr) -> bool,
@@ -565,6 +571,7 @@ intrinsics! {
     csv_get_nullable_str = fn(ptr, usize) -> str,
     csv_get_nullable_bool = fn(ptr, usize, ptr) -> bool,
     csv_get_nullable_date = fn(ptr, usize, ptr, ptr, ptr) -> bool,
+    csv_get_nullable_time = fn(ptr, usize, ptr, ptr, ptr) -> bool,
     csv_get_nullable_timestamp = fn(ptr, usize, ptr, ptr, ptr) -> bool,
 
     // String parsing
@@ -582,6 +589,7 @@ intrinsics! {
     parse_decimal_from_str = fn(ptr, usize, ptr) -> bool,
     parse_date_from_str = fn(ptr, usize, ptr, usize, ptr) -> bool,
     parse_timestamp_from_str = fn(ptr, usize, ptr, usize, ptr) -> bool,
+    parse_time_from_str = fn(ptr, usize, ptr, usize, ptr) -> bool,
 
     round_sql_float_with_string_f32 = fn(f32, i32) -> f32,
     round_sql_float_with_string_f64 = fn(f64, i32) -> f64,
@@ -625,6 +633,9 @@ intrinsics! {
     deserialize_json_date_from_days = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_timestamp_from_millis = fn(ptr, ptr, usize, ptr) -> bool,
     deserialize_json_timestamp_from_micros = fn(ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_time = fn(ptr, ptr, ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_time_from_millis = fn(ptr, ptr, usize, ptr) -> bool,
+    deserialize_json_time_from_micros = fn(ptr, ptr, usize, ptr) -> bool,
 
     byte_vec_push = fn(ptr, ptr, usize),
     byte_vec_reserve = fn(ptr, usize),
@@ -640,6 +651,7 @@ intrinsics! {
     write_f64_to_byte_vec = fn(ptr, f64),
     write_date_to_byte_vec = fn(ptr, ptr, ptr, date),
     write_timestamp_to_byte_vec = fn(ptr, ptr, ptr, timestamp),
+    write_time_to_byte_vec = fn(ptr, ptr, ptr, time),
     write_decimal_to_byte_vec = fn(ptr, u64, u64),
     write_escaped_string_to_byte_vec = fn(ptr, ptr, usize),
 
@@ -792,6 +804,17 @@ unsafe extern "C" fn timestamp_debug(timestamp: i64, fmt: *mut fmt::Formatter<'_
     }
 }
 
+unsafe extern "C" fn time_debug(nanos: u64, fmt: *mut fmt::Formatter<'_>) -> bool {
+    debug_assert!(!fmt.is_null());
+
+    if let Some(time) = NaiveTime::from_nanoseconds(nanos) {
+        write!(&mut *fmt, "{}", time.format("%H:%M:%S%.f")).is_ok()
+    } else {
+        tracing::error!("failed to create time from {nanos}");
+        false
+    }
+}
+
 macro_rules! write_primitives {
     ($($primitive:ident),+ $(,)?) => {
         paste::paste! {
@@ -833,6 +856,18 @@ unsafe extern "C" fn write_date_to_string(mut string: ThinStr, days: i32) -> Thi
         }
     } else {
         tracing::error!("failed to create date from {days} in write_date_to_string");
+    }
+
+    string
+}
+
+unsafe extern "C" fn write_time_to_string(mut string: ThinStr, nanos: u64) -> ThinStr {
+    if let Some(timestamp) = NaiveTime::from_nanoseconds(nanos) {
+        if let Err(error) = write!(string, "{}", timestamp.format("%H:%M:%S%.f")) {
+            tracing::error!("error while writing time {timestamp} to string: {error}");
+        }
+    } else {
+        tracing::error!("failed to create time from {nanos} in write_time_to_string");
     }
 
     string
@@ -1357,6 +1392,55 @@ unsafe extern "C" fn csv_get_nullable_timestamp(
     }
 }
 
+unsafe extern "C" fn csv_get_time(
+    record: &StringRecord,
+    column: usize,
+    format_ptr: *const u8,
+    format_len: usize,
+) -> u64 {
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
+    record
+        .get(column)
+        .and_then(
+            |time| match NaiveTime::parse_from_str(time.trim(), format) {
+                Ok(time) => Some(time.to_nanoseconds()),
+                Err(error) => {
+                    tracing::error!("error parsing csv time from column {column}: {error}");
+                    None
+                }
+            },
+        )
+        .unwrap_or(0)
+}
+
+unsafe extern "C" fn csv_get_nullable_time(
+    record: &StringRecord,
+    column: usize,
+    format_ptr: *const u8,
+    format_len: usize,
+    output: &mut MaybeUninit<u64>,
+) -> bool {
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
+    if let Some(time) = record
+        .get(column)
+        .filter(|column| !column.trim().eq_ignore_ascii_case("null"))
+        .and_then(
+            |time| match NaiveTime::parse_from_str(time.trim(), format) {
+                Ok(time) => Some(time.to_nanoseconds()),
+                Err(error) => {
+                    tracing::error!("error parsing csv time from column {column}: {error}");
+                    None
+                }
+            },
+        )
+    {
+        output.write(time);
+        false
+    } else {
+        true
+    }
+}
+
 macro_rules! parse_from_str {
     ($($ty:ident),+ $(,)?) => {
         paste::paste! {
@@ -1469,6 +1553,33 @@ unsafe extern "C" fn parse_timestamp_from_str(
         Err(error) => {
             tracing::error!(
                 "failed to parse timestamp from string {string:?} with spec {spec:?}: {error}",
+            );
+            true
+        }
+    }
+}
+
+unsafe extern "C" fn parse_time_from_str(
+    ptr: *const u8,
+    len: usize,
+    // TODO: We could pre-process this and pass in a `*const
+    // chrono::format::strftime::StrftimeItems`
+    spec_ptr: *const u8,
+    spec_len: usize,
+    output: &mut MaybeUninit<u64>,
+) -> bool {
+    let string = unsafe { str_from_raw_parts(ptr, len) };
+    let spec = unsafe { str_from_raw_parts(spec_ptr, spec_len) };
+
+    match NaiveTime::parse_from_str(string, spec) {
+        Ok(time) => {
+            output.write(time.to_nanoseconds());
+            false
+        }
+
+        Err(error) => {
+            tracing::error!(
+                "failed to parse time from string {string:?} with spec {spec:?}: {error}",
             );
             true
         }

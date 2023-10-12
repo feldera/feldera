@@ -36,6 +36,7 @@ use crate::{
         terminator::{Branch, Terminator},
         BlockId, ColumnType, LayoutId, RowLayoutCache, RowOrScalar, Signature,
     },
+    utils::TimeExt,
     ThinStr,
 };
 use chrono::NaiveTime;
@@ -723,6 +724,7 @@ impl<'a> CodegenCtx<'a> {
             || constant.is_bool()
             || constant.is_decimal()
             || constant.is_date()
+            || constant.is_time()
             || constant.is_timestamp()
         {
             self.iconst(constant, builder)
@@ -799,6 +801,7 @@ impl<'a> CodegenCtx<'a> {
                     as i32 as i64
                 }
                 Constant::Timestamp(timestamp) => timestamp.timestamp_millis(),
+                Constant::Time(time) => time.to_nanoseconds() as i64,
 
                 Constant::Unit
                 | Constant::F32(_)
@@ -2110,7 +2113,7 @@ impl<'a> CodegenCtx<'a> {
                     // Dates are represented as an i32
                     || ((a.is_i32() || a.is_u32()) && b.is_date())
                     // Timestamps are represented as an i64
-                    || ((a.is_i64() || a.is_u64()) && b.is_timestamp())
+                    || ((a.is_i64() || a.is_u64()) && (b.is_timestamp() || b.is_time()))
                     // Signed <=> unsigned casts
                     || (a.is_i16() && b.is_u16())
                     || (a.is_u16() && b.is_i16())
@@ -2469,6 +2472,7 @@ impl<'a> CodegenCtx<'a> {
                     | ColumnType::Ptr
                     | ColumnType::Date
                     | ColumnType::Timestamp
+                    | ColumnType::Time
                     | ColumnType::String => builder.ins().iconst(ty, 0),
 
                     // 128 bit values can't be constructed directly in cranelift

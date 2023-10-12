@@ -265,7 +265,7 @@ impl Cast {
     /// Returns true if the current cast is between valid types
     pub fn is_valid_cast(&self) -> bool {
         const fn is_weird_float_cast(a: ColumnType, b: ColumnType) -> bool {
-            a.is_float() && (b.is_bool() || b.is_date() || b.is_timestamp())
+            a.is_float() && (b.is_bool() || b.is_date() || b.is_timestamp() || b.is_time())
         }
 
         let Self { from, to, .. } = *self;

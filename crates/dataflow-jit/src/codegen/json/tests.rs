@@ -12,7 +12,7 @@ use crate::{
     row::{row_from_literal, UninitRow},
     utils::{self, HashMap},
 };
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use std::mem::transmute;
 
 #[test]
@@ -29,6 +29,7 @@ fn deserialize_json_smoke() {
             .with_column(ColumnType::F64, false)
             .with_column(ColumnType::F64, true)
             .with_column(ColumnType::Date, false)
+            .with_column(ColumnType::Time, false)
             .build(),
     );
 
@@ -37,29 +38,37 @@ fn deserialize_json_smoke() {
     let deserialize = JsonDeserConfig {
         layout,
         mappings: {
-            let mut mappings = HashMap::default();
-            mappings.insert(0, JsonColumn::normal("/foo"));
-            mappings.insert(1, JsonColumn::normal("/bar"));
-            mappings.insert(2, JsonColumn::normal("/baz"));
-            mappings.insert(3, JsonColumn::normal("/bing"));
-            mappings.insert(4, JsonColumn::normal("/bop"));
-            mappings.insert(5, JsonColumn::normal("/boop"));
-            mappings.insert(6, JsonColumn::datetime("/bang", "%F"));
-            mappings
+            [
+                JsonColumn::normal("/foo"),
+                JsonColumn::normal("/bar"),
+                JsonColumn::normal("/baz"),
+                JsonColumn::normal("/bing"),
+                JsonColumn::normal("/bop"),
+                JsonColumn::normal("/boop"),
+                JsonColumn::datetime("/bang", "%F"),
+                JsonColumn::datetime("/bazinga", "%H:%M:%S%.f"),
+            ]
+            .into_iter()
+            .enumerate()
+            .collect()
         },
     };
     let serialize = JsonSerConfig {
         layout,
         mappings: {
-            let mut mappings = HashMap::default();
-            mappings.insert(0, JsonColumn::normal("foo"));
-            mappings.insert(1, JsonColumn::normal("bar"));
-            mappings.insert(2, JsonColumn::normal("baz"));
-            mappings.insert(3, JsonColumn::normal("bing"));
-            mappings.insert(4, JsonColumn::normal("bop"));
-            mappings.insert(5, JsonColumn::normal("boop"));
-            mappings.insert(6, JsonColumn::datetime("bang", "%F"));
-            mappings
+            [
+                JsonColumn::normal("foo"),
+                JsonColumn::normal("bar"),
+                JsonColumn::normal("baz"),
+                JsonColumn::normal("bing"),
+                JsonColumn::normal("bop"),
+                JsonColumn::normal("boop"),
+                JsonColumn::datetime("bang", "%F"),
+                JsonColumn::datetime("bazinga", "%H:%M:%S%.f"),
+            ]
+            .into_iter()
+            .enumerate()
+            .collect()
         },
     };
 
@@ -68,18 +77,18 @@ fn deserialize_json_smoke() {
     let vtable = codegen.vtable_for(layout);
 
     let json_snippets = &[
-        r#"{ "foo": "foo data string", "bar": "bar data string", "baz": 10, "bing": 100, "bop": 96.542, "boop": -1245.53, "bang": "2023-09-20" }"#,
-        r#"{ "foo": "second foo data string", "bar": null, "baz": -10000, "bing": null, "bop": -0.0, "boop": null, "bang": "1999-09-09" }"#,
-        r#"{ "baz": -32, "bar": null, "foo": "woah, now we switched the field orderings", "bop": 0.3, "bang": "2000-01-01" }"#,
-        r#"{ "baz": 0, "bar": null, "foo": "", "bop": "NaN", "boop": "Inf", "bang": "2098-11-28" }"#,
+        r#"{ "foo": "foo data string", "bar": "bar data string", "baz": 10, "bing": 100, "bop": 96.542, "boop": -1245.53, "bang": "2023-09-20", "bazinga": "12:04:43.5436" }"#,
+        r#"{ "foo": "second foo data string", "bar": null, "baz": -10000, "bing": null, "bop": -0.0, "boop": null, "bang": "1999-09-09", "bazinga": "00:00:00.0000" }"#,
+        r#"{ "baz": -32, "bar": null, "foo": "woah, now we switched the field orderings", "bop": 0.3, "bang": "2000-01-01", "bazinga": "12:59:59.9999" }"#,
+        r#"{ "baz": 0, "bar": null, "foo": "", "bop": "NaN", "boop": "Inf", "bang": "2098-11-28", "bazinga": "01:02:03.4567" }"#,
     ];
 
     #[rustfmt::skip]
     let expected = &[
-        row!["foo data string", ?"bar data string", 10i64, ?100i64, 96.542f64, ?-1245.53f64, NaiveDate::from_ymd_opt(2023, 9, 20).unwrap()],
-        row!["second foo data string", null, -10000i64, null, -0.0, null, NaiveDate::from_ymd_opt(1999, 9, 9).unwrap()],
-        row!["woah, now we switched the field orderings", null, -32i64, null, 0.3, null, NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()],
-        row!["", null, 0i64, null, f64::NAN, ?f64::INFINITY, NaiveDate::from_ymd_opt(2098, 11, 28).unwrap()],
+        row!["foo data string", ?"bar data string", 10i64, ?100i64, 96.542f64, ?-1245.53f64, NaiveDate::from_ymd_opt(2023, 9, 20).unwrap(), NaiveTime::parse_from_str("12:04:43.5436", "%H:%M:%S%.f").unwrap()],
+        row!["second foo data string", null, -10000i64, null, -0.0, null, NaiveDate::from_ymd_opt(1999, 9, 9).unwrap(), NaiveTime::parse_from_str("00:00:00.0000", "%H:%M:%S%.f").unwrap()],
+        row!["woah, now we switched the field orderings", null, -32i64, null, 0.3, null, NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(), NaiveTime::parse_from_str("12:59:59.9999", "%H:%M:%S%.f").unwrap()],
+        row!["", null, 0i64, null, f64::NAN, ?f64::INFINITY, NaiveDate::from_ymd_opt(2098, 11, 28).unwrap(), NaiveTime::parse_from_str("01:02:03.4567", "%H:%M:%S%.f").unwrap()],
     ];
 
     let (jit, layout_cache) = codegen.finalize_definitions();

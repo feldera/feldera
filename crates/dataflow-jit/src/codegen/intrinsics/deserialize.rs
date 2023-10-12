@@ -1,4 +1,4 @@
-use crate::{codegen::utils::str_from_raw_parts, ThinStr};
+use crate::{codegen::utils::str_from_raw_parts, utils::TimeExt, ThinStr};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use serde_json::Value;
 use std::mem::MaybeUninit;
@@ -228,20 +228,20 @@ pub(super) extern "C" fn deserialize_json_timestamp(
     let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
     let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
 
-    if let Some(date) = map
+    if let Some(timestamp) = map
         .pointer(json_pointer)
         .and_then(Value::as_str)
         .and_then(
             |string| match NaiveDateTime::parse_from_str(string, format) {
                 Ok(timestamp) => Some(timestamp.timestamp_millis()),
                 Err(error) => {
-                    tracing::error!("failed parsing date from json: {error}");
+                    tracing::error!("failed parsing timestamp from json: {error}");
                     None
                 }
             },
         )
     {
-        place.write(date);
+        place.write(timestamp);
         false
 
     // Otherwise the value couldn't be found and is considered null
@@ -287,3 +287,85 @@ pub(super) extern "C" fn deserialize_json_timestamp_from_micros(
         true
     }
 }
+
+pub(super) extern "C" fn deserialize_json_time(
+    place: &mut MaybeUninit<u64>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    format_ptr: *const u8,
+    format_len: usize,
+    map: &Value,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
+
+    if let Some(time) = map
+        .pointer(json_pointer)
+        .and_then(Value::as_str)
+        .and_then(|string| match NaiveTime::parse_from_str(string, format) {
+            Ok(time) => Some(time.to_nanoseconds()),
+            Err(error) => {
+                tracing::error!("failed parsing time from json: {error}");
+                None
+            }
+        })
+    {
+        place.write(time);
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
+pub(super) extern "C" fn deserialize_json_time_from_millis(
+    place: &mut MaybeUninit<u64>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    map: &Value,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+
+    if let Some(millis) = map.pointer(json_pointer).and_then(Value::as_u64) {
+        place.write(
+            NaiveTime::from_milliseconds(millis)
+                .unwrap()
+                .to_nanoseconds(),
+        );
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
+pub(super) extern "C" fn deserialize_json_time_from_micros(
+    place: &mut MaybeUninit<u64>,
+    json_pointer_ptr: *const u8,
+    json_pointer_len: usize,
+    map: &Value,
+) -> bool {
+    // The json pointer we're accessing the map with
+    let json_pointer = unsafe { str_from_raw_parts(json_pointer_ptr, json_pointer_len) };
+
+    if let Some(micros) = map.pointer(json_pointer).and_then(Value::as_u64) {
+        place.write(
+            NaiveTime::from_microseconds(micros)
+                .unwrap()
+                .to_nanoseconds(),
+        );
+        false
+
+    // Otherwise the value couldn't be found and is considered null
+    } else {
+        true
+    }
+}
+
+// deserialize_json_time
+// deserialize_json_time_from_millis
+// deserialize_json_time_from_micros

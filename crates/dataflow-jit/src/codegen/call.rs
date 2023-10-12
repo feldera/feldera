@@ -639,6 +639,7 @@ impl CodegenCtx<'_> {
             | ColumnType::F64
             | ColumnType::Date
             | ColumnType::Timestamp
+            | ColumnType::Time
             | ColumnType::Decimal) => {
                 let intrinsic = match ty {
                     ColumnType::U8 => "write_i8_to_string",
@@ -667,6 +668,7 @@ impl CodegenCtx<'_> {
                     }
                     ColumnType::Date => "write_date_to_string",
                     ColumnType::Timestamp => "write_timestamp_to_string",
+                    ColumnType::Time => "write_time_to_string",
 
                     ColumnType::Decimal
                     | ColumnType::Bool
@@ -1305,10 +1307,17 @@ impl CodegenCtx<'_> {
                     builder,
                 );
             }
-
             ColumnType::Timestamp => {
                 self.parse_date_or_timestamp_from_str(
                     "parse_timestamp_from_str",
+                    expr_id,
+                    call,
+                    builder,
+                );
+            }
+            ColumnType::Time => {
+                self.parse_date_or_timestamp_from_str(
+                    "parse_time_from_str",
                     expr_id,
                     call,
                     builder,

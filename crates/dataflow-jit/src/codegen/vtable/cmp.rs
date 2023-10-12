@@ -176,6 +176,7 @@ impl Codegen {
                         | ColumnType::Isize
                         | ColumnType::Date
                         | ColumnType::Timestamp
+                        | ColumnType::Time
                         // Decimals are represented by a 128bit integer so bitwise equality should be correct
                         | ColumnType::Decimal => builder.ins().icmp(IntCC::Equal, lhs, rhs),
 
@@ -455,9 +456,8 @@ impl Codegen {
                         | ColumnType::U16
                         | ColumnType::U32
                         | ColumnType::U64
-                        | ColumnType::Usize => {
-                            builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs)
-                        }
+                        | ColumnType::Usize
+                        | ColumnType::Time => builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs),
 
                         ColumnType::I8
                         | ColumnType::I16
@@ -721,7 +721,8 @@ impl Codegen {
                         | ColumnType::U16
                         | ColumnType::U32
                         | ColumnType::U64
-                        | ColumnType::Usize => {
+                        | ColumnType::Usize
+                        | ColumnType::Time => {
                             let zero = builder.ins().iconst(types::I8, 0);
 
                             let less = builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs);
