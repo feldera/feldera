@@ -232,7 +232,7 @@ fn parse_operation(s: &str) -> Result<Operation, NotificationError> {
 mod test {
     use std::sync::Arc;
 
-    use pipeline_types::controller::config::RuntimeConfig;
+    use pipeline_types::config::RuntimeConfig;
     use uuid::Uuid;
 
     use crate::{

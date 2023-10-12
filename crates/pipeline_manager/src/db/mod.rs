@@ -12,7 +12,7 @@ use futures_util::TryFutureExt;
 use log::{debug, error, info};
 use openssl::sha;
 use pipeline_types::query::OutputQuery;
-use pipeline_types::controller::config::{
+use pipeline_types::config::{
     ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
 };
 use pipeline_types::error::ErrorResponse;
