@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::{static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
 use dbsp::InputHandle;
-use pipeline_types::catalog::OutputQuery;
+use pipeline_types::query::OutputQuery;
 use pipeline_types::format::json::JsonFlavor;
 use serde::{Deserialize, Serialize};
 

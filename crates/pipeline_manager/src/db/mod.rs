@@ -11,7 +11,7 @@ use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use futures_util::TryFutureExt;
 use log::{debug, error, info};
 use openssl::sha;
-use pipeline_types::catalog::OutputQuery;
+use pipeline_types::query::OutputQuery;
 use pipeline_types::controller::config::{
     ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
 };

@@ -46,7 +46,7 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use log::{debug, error, info};
-use pipeline_types::catalog::OutputQuery;
+use pipeline_types::query::OutputQuery;
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     sync::{

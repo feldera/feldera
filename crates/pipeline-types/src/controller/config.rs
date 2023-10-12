@@ -10,7 +10,7 @@ use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, collections::BTreeMap};
 use utoipa::ToSchema;
 
-use crate::catalog::OutputQuery;
+use crate::query::OutputQuery;
 
 /// Default value of `InputEndpointConfig::max_buffered_records`.
 /// It is declared as a function and not as a constant, so it can
