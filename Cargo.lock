@@ -2405,6 +2405,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "psutil",
+ "rand",
  "rdkafka",
  "reqwest",
  "rkyv",

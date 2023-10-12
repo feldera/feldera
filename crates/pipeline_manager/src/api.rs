@@ -42,7 +42,7 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use log::{debug, info};
-use pipeline_types::controller_config::{ConnectorConfig, PipelineConfig, RuntimeConfig};
+use pipeline_types::controller::config::{ConnectorConfig, PipelineConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
 use serde::{Deserialize, Serialize};
 use std::{env, net::TcpListener, sync::Arc, time::Duration};
@@ -166,15 +166,15 @@ request is rejected."
         pipeline_types::server::EgressMode,
         pipeline_types::catalog::NeighborhoodQuery,
         pipeline_types::catalog::OutputQuery,
-        pipeline_types::controller_config::PipelineConfig,
-        pipeline_types::controller_config::InputEndpointConfig,
-        pipeline_types::controller_config::OutputEndpointConfig,
-        pipeline_types::controller_config::TransportConfig,
-        pipeline_types::controller_config::FormatConfig,
-        pipeline_types::controller_config::RuntimeConfig,
-        pipeline_types::controller_config::ConnectorConfig,
-        pipeline_types::controller_config::TransportConfig,
-        pipeline_types::controller_config::FormatConfig,
+        pipeline_types::controller::config::PipelineConfig,
+        pipeline_types::controller::config::InputEndpointConfig,
+        pipeline_types::controller::config::OutputEndpointConfig,
+        pipeline_types::controller::config::TransportConfig,
+        pipeline_types::controller::config::FormatConfig,
+        pipeline_types::controller::config::RuntimeConfig,
+        pipeline_types::controller::config::ConnectorConfig,
+        pipeline_types::controller::config::TransportConfig,
+        pipeline_types::controller::config::FormatConfig,
         pipeline_types::transport::FileInputConfig,
         pipeline_types::transport::FileOutputConfig,
         pipeline_types::transport::UrlInputConfig,

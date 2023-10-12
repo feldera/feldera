@@ -61,7 +61,7 @@ mod error;
 mod stats;
 
 pub use error::{ConfigError, ControllerError};
-pub use pipeline_types::controller_config::{
+pub use pipeline_types::controller::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };

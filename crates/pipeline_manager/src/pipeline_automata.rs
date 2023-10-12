@@ -15,7 +15,7 @@ use actix_web::http::{Method, StatusCode};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use log::{error, info};
-use pipeline_types::controller_config::PipelineConfig;
+use pipeline_types::controller::config::PipelineConfig;
 use pipeline_types::error::ErrorResponse;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;

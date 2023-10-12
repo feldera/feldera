@@ -9,7 +9,7 @@ use crate::db::Relation;
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use openssl::sha::{self};
-use pipeline_types::controller_config::{ConnectorConfig, RuntimeConfig};
+use pipeline_types::controller::config::{ConnectorConfig, RuntimeConfig};
 use pretty_assertions::assert_eq;
 use proptest::test_runner::{Config, TestRunner};
 use proptest::{bool, prelude::*};
