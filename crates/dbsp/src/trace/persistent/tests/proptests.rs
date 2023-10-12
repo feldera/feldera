@@ -56,7 +56,7 @@ const WEIGHT_RANGE: Range<isize> = -10..10;
 #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 pub(super) struct ComplexKey {
     /// We ignore this type for ordering.
-    pub(super) _a: isize,
+    pub(super) _a: u32,
     /// We use this to define the order of `Self`.
     pub(super) ord: String,
 }
@@ -201,6 +201,7 @@ enum CursorAction<
     T: Arbitrary + Clone + 'static,
 > {
     StepKey,
+    StepKeyReverse,
     //FastForwardKeys,
     StepVal,
     FastForwardVals,
@@ -225,7 +226,7 @@ fn action<
 >() -> impl Strategy<Value = CursorAction<K, V, T>> {
     prop_oneof![
         Just(CursorAction::StepKey),
-        //Just(CursorAction::StepKeyReverse),
+        Just(CursorAction::StepKeyReverse),
         //Just(CursorAction::FastForwardKeys),
         Just(CursorAction::StepVal),
         //Just(CursorAction::StepValReverse),
@@ -344,12 +345,12 @@ fn cursor_trait<B, I>(
                 totest_cursor.step_key();
                 check_eq_invariants(step, &model_cursor, &totest_cursor);
             }
-            //CursorAction::StepKeyReverse => {
-            //direction = Direction::Forward;
-            //model_cursor.step_key_reverse();
-            //totest_cursor.step_key_reverse();
-            //check_eq_invariants(step, &model_cursor, &totest_cursor);
-            //}
+            CursorAction::StepKeyReverse => {
+                direction = Direction::Forward;
+                model_cursor.step_key_reverse();
+                totest_cursor.step_key_reverse();
+                check_eq_invariants(step, &model_cursor, &totest_cursor);
+            }
             //CursorAction::FastForwardKeys => {
             //model_cursor.fast_forward_keys();
             //totest_cursor.fast_forward_keys();

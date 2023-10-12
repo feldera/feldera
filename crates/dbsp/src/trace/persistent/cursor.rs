@@ -244,14 +244,16 @@ where
     }
 
     fn step_key_reverse(&mut self) {
-        if self.db_iter.valid() {
-            self.db_iter.prev();
-            self.update_current_key_weight(Direction::Backward);
-        } else {
-            self.cur_key = None;
-            self.cur_val = None;
-            self.cur_diffs = None;
+        if self.cur_key.is_none() {
+            // Batch is empty
+            return;
         }
+        let cur_key = self.cur_key.clone().unwrap();
+        let persisted_key: PersistedKey<B::Key, B::Val> =
+            PersistedKey::StartMarker(cur_key.clone());
+        let encoded_key = to_bytes(&persisted_key).expect("Can't encode `key`");
+        self.db_iter.seek_for_prev(encoded_key);
+        self.update_current_key_weight(Direction::Backward);
     }
 
     fn seek_key(&mut self, key: &B::Key) {

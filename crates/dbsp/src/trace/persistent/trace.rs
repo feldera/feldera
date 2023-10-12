@@ -601,12 +601,6 @@ where
                 batch_cursor.map_times(|ts, r| {
                     weights.push((ts.clone(), r.clone()));
                 });
-                //println!(
-                //    "add_batch_to_cf key={:?} val={:?} weights={:?}",
-                //    batch_cursor.key(),
-                //    batch_cursor.val(),
-                //    weights
-                //);
                 let encoded_vals = to_bytes(&MergeOp::Insert(weights)).expect("Can't encode `val`");
 
                 let encoded_key = to_bytes(&kv).expect("Can't encode `key--value`");
