@@ -40,8 +40,10 @@ public class JITSourceOperator extends JITOperator {
     public BaseJsonNode asJson() {
         ObjectNode result = jsonFactory().createObjectNode();
         ObjectNode data = result.putObject("Source");
-        data.put("layout", this.type.to(JITRowType.class).getId());
+        ObjectNode layout = data.putObject("layout");
+        layout.put("Set", this.type.to(JITRowType.class).getId());
         result.set("Source", data);
+        data.put("kind", "ZSet");
         data.put("table", this.table);
         return result;
     }
