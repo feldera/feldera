@@ -1,14 +1,16 @@
 import { EditorSchema, KafkaInputSchema, KafkaOutputSchema, UrlSchema } from '$lib/components/connectors/dialogs'
 import { DebeziumInputSchema } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
+import { SnowflakeOutputSchema } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
 import { assertUnion } from '$lib/functions/common/array'
+import { parseAuthParams } from '$lib/functions/kafka/authParamsSchema'
 import { ConnectorDescr } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import assert from 'assert'
 import debeziumIcon from 'public/icons/vendors/debezium-icon-color.svg'
 import debeziumLogo from 'public/icons/vendors/debezium-logo-color.svg'
+import snowflakeIcon from 'public/icons/vendors/snowflake-icon.svg'
+import snowflakeLogo from 'public/icons/vendors/snowflake-logo.svg'
 import { match, P } from 'ts-pattern'
-
-import { parseAuthParams } from './kafka/authParamsSchema'
 
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
@@ -17,6 +19,12 @@ export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
       { transport: { name: 'kafka', config: { topics: P._ } }, format: { config: { update_format: 'debezium' } } },
       () => {
         return ConnectorType.DEBEZIUM_IN
+      }
+    )
+    .with(
+      { transport: { name: 'kafka', config: { topic: P._ } }, format: { config: { update_format: 'snowflake' } } },
+      () => {
+        return ConnectorType.SNOWFLAKE_OUT
       }
     )
     .with({ transport: { name: 'kafka', config: { topics: P._ } } }, () => {
@@ -98,6 +106,24 @@ export const parseDebeziumInputSchema = (connector: ConnectorDescr): DebeziumInp
   }
 }
 
+export const parseSnowflakeOutputSchema = (connector: ConnectorDescr): SnowflakeOutputSchema => {
+  assert(connectorDescrToType(connector) === ConnectorType.SNOWFLAKE_OUT)
+  const config = connector.config
+  assert(config.transport.config)
+
+  const authConfig = parseAuthParams(config.transport.config)
+
+  return {
+    name: connector.name,
+    description: connector.description,
+    bootstrap_servers: config.transport.config['bootstrap.servers'],
+    topic: config.transport.config.topic,
+    format_name: assertUnion(['json', 'avro'] as const, config.format.name),
+    update_format: assertUnion(['snowflake'] as const, config.format!.config!.update_format),
+    ...authConfig
+  }
+}
+
 // Given an existing ConnectorDescr return the CsvFileSchema
 // if connector is of type FILE.
 export const parseUrlSchema = (connector: ConnectorDescr): UrlSchema => {
@@ -138,6 +164,9 @@ export const connectorTypeToDirection = (status: ConnectorType) =>
     .with(ConnectorType.DEBEZIUM_IN, () => {
       return Direction.INPUT
     })
+    .with(ConnectorType.SNOWFLAKE_OUT, () => {
+      return Direction.OUTPUT
+    })
     .with(ConnectorType.URL, () => {
       return Direction.INPUT
     })
@@ -156,6 +185,9 @@ export const connectorTransportName = (status: ConnectorType) =>
       return 'kafka'
     })
     .with(ConnectorType.DEBEZIUM_IN, () => {
+      return 'kafka'
+    })
+    .with(ConnectorType.SNOWFLAKE_OUT, () => {
       return 'kafka'
     })
     .with(ConnectorType.URL, () => {
@@ -178,6 +210,9 @@ export const connectorTypeToTitle = (status: ConnectorType) =>
     .with(ConnectorType.DEBEZIUM_IN, () => {
       return 'Debezium Input'
     })
+    .with(ConnectorType.SNOWFLAKE_OUT, () => {
+      return 'Snowflake Output'
+    })
     .with(ConnectorType.URL, () => {
       return 'HTTP URL'
     })
@@ -197,6 +232,9 @@ export const connectorTypeToLogo = (status: ConnectorType) =>
     })
     .with(ConnectorType.DEBEZIUM_IN, () => {
       return debeziumLogo
+    })
+    .with(ConnectorType.SNOWFLAKE_OUT, () => {
+      return snowflakeLogo
     })
     .with(ConnectorType.URL, () => {
       return 'tabler:http-get'
@@ -218,6 +256,9 @@ export const connectorTypeToIcon = (status: ConnectorType) =>
     .with(ConnectorType.DEBEZIUM_IN, () => {
       return debeziumIcon
     })
+    .with(ConnectorType.SNOWFLAKE_OUT, () => {
+      return snowflakeIcon
+    })
     .with(ConnectorType.URL, () => {
       return 'tabler:http-get'
     })
@@ -237,6 +278,9 @@ export const getStatusObj = (status: ConnectorType) =>
     })
     .with(ConnectorType.DEBEZIUM_IN, () => {
       return { title: 'Debezium In', color: 'secondary' as const }
+    })
+    .with(ConnectorType.SNOWFLAKE_OUT, () => {
+      return { title: 'Snowflake Out', color: 'secondary' as const }
     })
     .with(ConnectorType.URL, () => {
       return { title: 'HTTP GET', color: 'secondary' as const }

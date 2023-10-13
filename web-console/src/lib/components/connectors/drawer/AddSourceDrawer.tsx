@@ -5,6 +5,7 @@ import { AnyIcon } from '$lib/components/common/AnyIcon'
 import { DebeziumInputConnectorDialog } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
 import { KafkaInputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaInputConnector'
 import { KafkaOutputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
+import { SnowflakeOutputConnectorDialog } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
 import { UrlConnectorDialog } from '$lib/components/connectors/dialogs/UrlConnector'
 import { useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
 import { useHashPart } from '$lib/compositions/useHashPart'
@@ -60,7 +61,7 @@ const IoSelectBox = (props: { icon: string; howMany: number; onNew: string; onSe
             <AnyIcon
               icon={props.icon}
               fontSize='3rem'
-              style={{ height: 64, objectFit: 'cover', width: 'fit-content' }}
+              style={{ height: 64, objectFit: 'cover', width: 'fit-content', padding: 6 }}
             />
             <Button fullWidth variant='outlined' color='secondary' href={`#${props.onNew}`}>
               New
@@ -160,7 +161,13 @@ const SideBarAddIo = () => {
       </Header>
       {drawer && !drawer.connectorType && (
         <Grid container spacing={6} sx={{ p: 6 }}>
-          {[ConnectorType.KAFKA_IN, ConnectorType.KAFKA_OUT, ConnectorType.DEBEZIUM_IN, ConnectorType.URL].map(
+          {[
+            ConnectorType.KAFKA_IN,
+            ConnectorType.KAFKA_OUT,
+            ConnectorType.DEBEZIUM_IN,
+            ConnectorType.SNOWFLAKE_OUT,
+            ConnectorType.URL
+          ].map(
             type =>
               shouldDisplayConnector(drawer.direction, type) && (
                 <IoSelectBox
@@ -187,6 +194,7 @@ const SideBarAddIo = () => {
           [ConnectorType.KAFKA_IN]: KafkaInputConnectorDialog,
           [ConnectorType.KAFKA_OUT]: KafkaOutputConnectorDialog,
           [ConnectorType.DEBEZIUM_IN]: DebeziumInputConnectorDialog,
+          [ConnectorType.SNOWFLAKE_OUT]: SnowflakeOutputConnectorDialog,
           [ConnectorType.URL]: UrlConnectorDialog
         }
         const res = /new\/connector\/(\w+)\/(\w+)/.exec(hash)
