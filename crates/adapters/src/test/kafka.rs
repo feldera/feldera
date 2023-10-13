@@ -5,6 +5,7 @@ use crate::{
 use anyhow::{anyhow, bail, Result as AnyResult};
 use csv::WriterBuilder as CsvWriterBuilder;
 use futures::executor::block_on;
+use lazy_static::lazy_static;
 use log::{error, info};
 use pipeline_types::transport::kafka::default_redpanda_server;
 use rdkafka::{
@@ -19,7 +20,7 @@ use rdkafka::{
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     thread,
     thread::{sleep, JoinHandle},
@@ -59,6 +60,14 @@ fn check_topics<C: ClientContext>(consumer: &Client<C>, topics: &[(&str, i32)]) 
 /// on drop.  Helps make sure that test runs don't leave garbage behind.
 impl KafkaResources {
     pub fn create_topics(topics: &[(&str, i32)]) -> Self {
+        // Kafka does not handle topic deletion and creation consistently when
+        // multiple operations are performed in parallel, so serialize calls to
+        // this function.
+        lazy_static! {
+            static ref LOCK: Mutex<()> = Mutex::new(());
+        }
+        let _guard = LOCK.lock().unwrap();
+
         let mut admin_config = ClientConfig::new();
         admin_config
             .set("bootstrap.servers", &default_redpanda_server())
