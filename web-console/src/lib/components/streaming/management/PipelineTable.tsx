@@ -5,11 +5,14 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
+import { DataGridPro, DataGridProProps } from '$lib/components/common/table/DataGridProDeclarative'
 import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
+import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import AnalyticsPipelineTput from '$lib/components/streaming/management/AnalyticsPipelineTput'
 import PipelineMemoryGraph from '$lib/components/streaming/management/PipelineMemoryGraph'
 import { PipelineRevisionStatusChip } from '$lib/components/streaming/management/RevisionStatus'
+import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { ClientPipelineStatus, usePipelineStateStore } from '$lib/compositions/streaming/management/StatusContext'
 import useDeletePipeline from '$lib/compositions/streaming/management/useDeletePipeline'
 import usePausePipeline from '$lib/compositions/streaming/management/usePausePipeline'
@@ -39,7 +42,7 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import { format } from 'd3-format'
 import dayjs from 'dayjs'
 import Link from 'next/link'
-import React, { Fragment, useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
 
@@ -60,8 +63,6 @@ import ListSubheader from '@mui/material/ListSubheader'
 import Paper from '@mui/material/Paper'
 import Tooltip from '@mui/material/Tooltip'
 import {
-  DataGridPro,
-  DataGridProProps,
   GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
   GridColDef,
   GridRenderCellParams,
@@ -507,6 +508,10 @@ export default function PipelineTable() {
     setExpandedRows(newExpandedRows)
   }
 
+  const gridPersistence = useDataGridPresentationLocalStorage({
+    key: LS_PREFIX + 'settings/streaming/management/grid'
+  })
+
   return (
     <Card>
       <DataGridPro
@@ -534,6 +539,7 @@ export default function PipelineTable() {
           toolbar: {
             children: [
               btnAdd,
+              <ResetColumnViewButton key='1' {...gridPersistence} />,
               <div style={{ marginLeft: 'auto' }} key='2' />,
               <DataGridSearch fetchRows={pipelineQuery} setFilteredData={setFilteredData} key='99' />
             ]
@@ -544,6 +550,7 @@ export default function PipelineTable() {
         }}
         detailPanelExpandedRowIds={expandedRows}
         onDetailPanelExpandedRowIdsChange={updateExpandedRows}
+        {...gridPersistence}
       />
     </Card>
   )

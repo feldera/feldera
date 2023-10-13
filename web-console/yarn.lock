@@ -1186,6 +1186,11 @@ array-includes@^3.1.5, array-includes@^3.1.6:
     get-intrinsic "^1.1.3"
     is-string "^1.0.7"
 
+array-join@^3.1.1:
+  version "3.1.1"
+  resolved "https://registry.yarnpkg.com/array-join/-/array-join-3.1.1.tgz#b693cf9f28a598f8f8fc1016063689a60b3d04ff"
+  integrity sha512-SLPBxwUinI6tz6lUyAcoN+rVMtjnaUb2l3dZmpuFXWs2o71ksQo92vBVU5OPnDrPbodJpXGLfJwMRIVaBEwCCA==
+
 array-union@^2.1.0:
   version "2.1.0"
   resolved "https://registry.yarnpkg.com/array-union/-/array-union-2.1.0.tgz#b798420adbeb1de828d84acd8a2e23d3efe85e8d"

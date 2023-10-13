@@ -42,8 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#826](https://github.com/feldera/feldera/issues/826))
 - Add health check endpoints to pipeline-manager components
   ([#855](https://github.com/feldera/feldera/pull/855))
-- Web Console: Add confirmation dialog for delete actions
-  ([#766](https://github.com/feldera/feldera/issues/766))
 - Added documentation for deploying Feldera Cloud on AWS EKS.
   ([#850](https://github.com/feldera/feldera/pull/850))
 - DB migration until now was performed during DB connection setup. Now, users
@@ -51,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicitly perform database upgrades. The pipeline-manager binary retains the
   old behavior for convenience.
   ([#856](https://github.com/feldera/feldera/pull/856))
+- WebConsole: data tables' column configuration is preserved between page refreshes
+  ([#696](https://github.com/feldera/feldera/issues/696))
 
 ### Fixed
 
@@ -69,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add Debezium MySQL input connector
   ([#813](https://github.com/feldera/feldera/issues/813))
+- WebConsole: Add confirmation dialog for delete actions
+  ([#766](https://github.com/feldera/feldera/issues/766))
 
 ### Added
 

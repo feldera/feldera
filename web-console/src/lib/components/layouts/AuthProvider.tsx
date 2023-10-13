@@ -1,10 +1,10 @@
 'use client'
 
 import { authContext, useAuthStore } from '$lib/compositions/auth/useAuth'
+import { isEmptyObject } from '$lib/functions/common/object'
 import { OpenAPI } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ReactNode } from 'react'
-import { isEmptyObject } from 'src/lib/functions/common/object'
 import { match, P } from 'ts-pattern'
 
 import { GoogleOAuthProvider } from '@react-oauth/google'

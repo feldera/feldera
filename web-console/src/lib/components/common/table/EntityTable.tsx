@@ -5,6 +5,7 @@
 'use client'
 
 import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
+import { DataGridPro, DataGridProProps } from '$lib/components/common/table/DataGridProDeclarative'
 import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
@@ -15,7 +16,7 @@ import { Icon } from '@iconify/react'
 import Card from '@mui/material/Card'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
-import { DataGridPro, DataGridProProps, GridRenderCellParams, GridValidRowModel } from '@mui/x-data-grid-pro'
+import { GridRenderCellParams, GridValidRowModel } from '@mui/x-data-grid-pro'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
 import { UseQueryResult } from '@tanstack/react-query'
 
