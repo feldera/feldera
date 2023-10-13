@@ -1,5 +1,5 @@
 load("@crate_index//:defs.bzl", "aliases", "all_crate_deps")
-load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test", "rust_binary")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
 rust_library(
     name = "dbsp",
@@ -7,29 +7,200 @@ rust_library(
         "src/**/*.rs",
     ]),
     aliases = aliases(),
+    crate_features = [
+        "with-csv",
+        "with-serde",
+    ],
     proc_macro_deps = all_crate_deps(
         proc_macro = True,
     ),
     visibility = ["//visibility:public"],
-    deps = all_crate_deps(),
+    deps = all_crate_deps() + [
+        "@crate_index//:csv",
+    ],
 )
 
 rust_test(
     name = "unit_test",
-    crate = ":dbsp",
     aliases = aliases(),
-    deps = all_crate_deps(
-        normal_dev = True,
-    ),
+    crate = ":dbsp",
     proc_macro_deps = all_crate_deps(
         proc_macro_dev = True,
     ),
+    deps = all_crate_deps(
+        normal_dev = True,
+    ),
+)
+
+#
+# Docs
+#
+
+# Revisit when https://github.com/bazelbuild/rules_rust/issues/1317
+# is fixed.
+#
+#rust_doc_test(
+#    name = "doc_test",
+#    crate = ":dbsp",
+#    data = ["examples/tutorial/vaccinations.csv"],
+#    deps = all_crate_deps() + [
+#        "@crate_index//:chrono",
+#        "@crate_index//:csv",
+#    ],
+#)
+
+#
+# Benchmarks
+#
+
+rust_binary(
+    name = "galen",
+    srcs = ["benches/galen.rs"],
+    deps = all_crate_deps() + [
+        ":dbsp",
+        "@crate_index//:clap-3.2.25",
+        "@crate_index//:csv",
+        "@crate_index//:zip",
+    ],
 )
 
 rust_binary(
-    name = "tutorial1",
-    srcs = ["examples/tutorial/tutorial1.rs"],
-    visibility = ["//visibility:public"],
+    name = "fraud",
+    srcs = ["benches/fraud.rs"],
+    deps = all_crate_deps() + [
+        ":dbsp",
+        "@crate_index//:chrono",
+        "@crate_index//:clap-3.2.25",
+        "@crate_index//:csv",
+    ],
+)
+
+rust_binary(
+    name = "path",
+    srcs = ["benches/path.rs"],
+    deps = all_crate_deps() + [
+        ":dbsp",
+    ],
+)
+
+rust_binary(
+    name = "consolidation",
+    srcs = ["benches/consolidation.rs"],
+    deps = all_crate_deps() + [
+        ":dbsp",
+        "@crate_index//:criterion",
+        "@crate_index//:rand_xoshiro",
+    ],
+)
+
+rust_binary(
+    name = "ldbc-graphalytics",
+    srcs = glob([
+        "benches/ldbc-graphalytics/*.rs",
+    ]),
+    deps = all_crate_deps() + [
+        ":dbsp",
+        "@crate_index//:clap-3.2.25",
+        "@crate_index//:csv",
+        "@crate_index//:indicatif",
+        "@crate_index//:reqwest",
+        "@crate_index//:serde_json",
+        "@crate_index//:tar",
+        "@crate_index//:zstd",
+    ],
+)
+
+rust_binary(
+    name = "column_layer",
+    srcs = ["benches/column_layer.rs"],
+    deps = all_crate_deps() + [
+        ":dbsp",
+        "@crate_index//:criterion",
+        "@crate_index//:rand_xoshiro",
+    ],
+)
+
+rust_binary(
+    name = "gdelt",
+    srcs = glob([
+        "benches/gdelt/*.rs",
+    ]),
+    deps = all_crate_deps() + [
+        ":dbsp",
+        "@crate_index//:clap-3.2.25",
+        "@crate_index//:csv",
+        "@crate_index//:reqwest",
+        "@crate_index//:zip",
+    ],
+)
+
+#
+# Examples
+#
+
+[rust_binary(
+    name = name,
+    srcs = ["examples/tutorial/{}.rs".format(name)],
     data = ["examples/tutorial/vaccinations.csv"],
-    deps = all_crate_deps() + ["@crate_index//:csv"],
+    deps = all_crate_deps() + [
+        ":dbsp",
+        "@crate_index//:chrono",
+        "@crate_index//:csv",
+    ],
+) for name in [
+    "tutorial1",
+    "tutorial2",
+    "tutorial3",
+    "tutorial4",
+    "tutorial5",
+    "tutorial6",
+    "tutorial7",
+    "tutorial8",
+    "tutorial9",
+]]
+
+rust_binary(
+    name = "degrees",
+    srcs = ["examples/degrees.rs"],
+    deps = all_crate_deps() + [
+        ":dbsp",
+        "@crate_index//:clap-4.4.6",
+    ],
+)
+
+rust_binary(
+    name = "orgchart",
+    srcs = ["examples/orgchart.rs"],
+    deps = all_crate_deps() + [
+        ":dbsp",
+        "@crate_index//:clap-4.4.6",
+    ],
+)
+
+rust_binary(
+    name = "coord",
+    srcs = [
+        "examples/dist/coord.rs",
+        "examples/dist/service.rs",
+    ],
+    deps = all_crate_deps() + [
+        ":dbsp",
+        "@crate_index//:chrono",
+        "@crate_index//:clap-4.4.6",
+        "@crate_index//:csv",
+    ],
+)
+
+rust_binary(
+    name = "pool",
+    srcs = [
+        "examples/dist/pool.rs",
+        "examples/dist/service.rs",
+    ],
+    deps = all_crate_deps() + [
+        ":dbsp",
+        "@crate_index//:chrono",
+        "@crate_index//:clap-4.4.6",
+        "@crate_index//:csv",
+    ],
 )
