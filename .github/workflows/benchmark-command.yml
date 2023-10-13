@@ -47,7 +47,7 @@ jobs:
         uses: peter-evans/create-or-update-comment@v2
         if: ${{ github.event.client_payload.github.payload.issue.number != '' }}
         with:
-          token: ${{ secrets.PAT }}
+          token: ${{ secrets.SLASH_COMMANDS }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           issue-number: ${{ github.event.client_payload.github.payload.issue.number }}
           body-file: nexmark_comment.txt
