@@ -11,6 +11,7 @@ import { Dispatch, SetStateAction } from 'react'
 import { match } from 'ts-pattern'
 
 import { DebeziumInputConnectorDialog } from './DebeziumInputConnector'
+import { SnowflakeOutputConnectorDialog } from './SnowflakeOutputConnector'
 
 // Given a connector return the right dialog component for updating it.
 export const AnyConnectorDialog = (props: {
@@ -27,6 +28,9 @@ export const AnyConnectorDialog = (props: {
     })
     .with(ConnectorType.DEBEZIUM_IN, () => {
       return <DebeziumInputConnectorDialog {...props} />
+    })
+    .with(ConnectorType.SNOWFLAKE_OUT, () => {
+      return <SnowflakeOutputConnectorDialog {...props} />
     })
     .with(ConnectorType.URL, () => {
       return <UrlConnectorDialog {...props} />

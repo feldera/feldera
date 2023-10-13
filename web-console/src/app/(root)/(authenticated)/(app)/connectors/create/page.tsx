@@ -10,6 +10,7 @@ import {
 } from '$lib/components/connectors/dialogs'
 import { AddConnectorCard } from '$lib/components/connectors/dialogs/AddConnectorCard'
 import { DebeziumInputConnectorDialog } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
+import { SnowflakeOutputConnectorDialog } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
 import { useHashPart } from '$lib/compositions/useHashPart'
 import { connectorTypeToLogo } from '$lib/functions/connectors'
 import { showOnHashPart } from '$lib/functions/urlHash'
@@ -46,6 +47,11 @@ const ConnectorCreateGrid = () => {
             addInput={{ href: '#input/debezium' }}
           />
           <AddConnectorCard
+            icon={connectorTypeToLogo(ConnectorType.SNOWFLAKE_OUT)}
+            title='Connect to a Snowflake table'
+            addOutput={{ href: '#output/snowflake' }}
+          />
+          <AddConnectorCard
             id='generic-connector'
             icon={connectorTypeToLogo(ConnectorType.UNKNOWN)}
             title='Configure a generic connector'
@@ -58,6 +64,7 @@ const ConnectorCreateGrid = () => {
       <KafkaInputConnectorDialog {...showOnHash('input/kafka')}></KafkaInputConnectorDialog>
       <KafkaOutputConnectorDialog {...showOnHash('output/kafka')}></KafkaOutputConnectorDialog>
       <DebeziumInputConnectorDialog {...showOnHash('input/debezium')}></DebeziumInputConnectorDialog>
+      <SnowflakeOutputConnectorDialog {...showOnHash('output/snowflake')}></SnowflakeOutputConnectorDialog>
       <ConfigEditorDialog {...showOnHash('generic')}></ConfigEditorDialog>
     </>
   )

@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two new compiler flags: `--outputsAreSets` and `--ignoreOrder`
 - Experimental Snowflake sink
   ([#774](https://github.com/feldera/feldera/issues/774))
+- WebConsole: Snowflake output connector dialog and node
+  ([#859](https://github.com/feldera/feldera/issues/859))
 
 ## [0.1.7] - 2023-10-10
 
