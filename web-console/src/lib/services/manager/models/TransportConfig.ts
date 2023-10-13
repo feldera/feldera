@@ -14,7 +14,7 @@ export type TransportConfig = {
    */
   config?: Record<string, any>
   /**
-   * Data transport name, e.g., "file", "kafka", "kinesis", etc.
+   * Data transport name, e.g., `file`, `kafka`, `kinesis`
    */
   name: string
 }

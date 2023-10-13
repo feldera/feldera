@@ -129,7 +129,7 @@ const Navigation = (props: Props) => {
           </Box>
         </ScrollWrapper>
       </Box>
-      {afterVerticalNavMenuContent ? afterVerticalNavMenuContent(props) : null}
+      {afterVerticalNavMenuContent ? <Box sx={{ pb: 4 }}>{afterVerticalNavMenuContent(props)}</Box> : null}
     </Drawer>
   )
 }

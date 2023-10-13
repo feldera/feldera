@@ -1,6 +1,8 @@
 """ Contains all the data models used in inputs/outputs """
 
 from .attached_connector import AttachedConnector
+from .auth_provider_type_0 import AuthProviderType0
+from .auth_provider_type_1 import AuthProviderType1
 from .chunk import Chunk
 from .chunk_json_data import ChunkJsonData
 from .column_type import ColumnType
@@ -57,6 +59,8 @@ from .program_status_type_4 import ProgramStatusType4
 from .program_status_type_5 import ProgramStatusType5
 from .program_status_type_6 import ProgramStatusType6
 from .program_status_type_7 import ProgramStatusType7
+from .provider_aws_cognito import ProviderAwsCognito
+from .provider_google_identity import ProviderGoogleIdentity
 from .relation import Relation
 from .runtime_config import RuntimeConfig
 from .sql_compiler_message import SqlCompilerMessage
@@ -72,6 +76,8 @@ from .url_input_config import UrlInputConfig
 
 __all__ = (
     "AttachedConnector",
+    "AuthProviderType0",
+    "AuthProviderType1",
     "Chunk",
     "ChunkJsonData",
     "ColumnType",
@@ -128,6 +134,8 @@ __all__ = (
     "ProgramStatusType5",
     "ProgramStatusType6",
     "ProgramStatusType7",
+    "ProviderAwsCognito",
+    "ProviderGoogleIdentity",
     "Relation",
     "RuntimeConfig",
     "SqlCompilerMessage",

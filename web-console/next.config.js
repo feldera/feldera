@@ -1,5 +1,6 @@
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const path = require('path')
+const { IgnorePlugin } = require('webpack')
 
 /** @type {import("next").NextConfig} */
 module.exports = {
@@ -10,6 +11,6 @@ module.exports = {
   compiler: {},
   images: { unoptimized: true },
   experimental: {
-    esmExternals: false
-  }
+    esmExternals: false,
+  },
 }

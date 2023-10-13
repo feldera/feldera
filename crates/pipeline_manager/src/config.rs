@@ -65,6 +65,24 @@ impl DatabaseConfig {
     }
 }
 
+#[derive(Parser, Deserialize, Debug, Clone, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum AuthProviderType {
+    #[default]
+    None,
+    AwsCognito,
+    GoogleIdentity,
+}
+
+impl std::fmt::Display for AuthProviderType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            AuthProviderType::None => write!(f, "none"),
+            AuthProviderType::AwsCognito => write!(f, "aws-cognito"),
+            AuthProviderType::GoogleIdentity => write!(f, "google-identity"),
+        }
+    }
+}
+
 /// Pipeline manager configuration read from a YAML config file or from command
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
@@ -95,8 +113,8 @@ pub struct ApiServerConfig {
     ///
     /// The default is `false`.
     #[serde(default)]
-    #[arg(long, action = clap::ArgAction::Set, default_value_t=false)]
-    pub use_auth: bool,
+    #[arg(long, action = clap::ArgAction::Set, default_value_t=AuthProviderType::None)]
+    pub auth_provider: AuthProviderType,
 
     /// [Developers only] dump OpenAPI specification to `openapi.json` file and
     /// exit immediately.

@@ -1,6 +1,7 @@
 import { invalidateQuery, mkQuery, setQueryData } from '$lib/functions/common/tanstack'
 import {
   ConnectorsService,
+  ManagerService,
   Pipeline,
   PipelineId,
   PipelinesService,
@@ -25,7 +26,8 @@ export const PipelineManagerQuery = mkQuery({
   pipelineLastRevision: PipelinesService.pipelineDeployed,
   pipelineValidate: PipelinesService.pipelineValidate,
   connector: () => ConnectorsService.listConnectors(),
-  connectorStatus: ConnectorsService.getConnector
+  connectorStatus: ConnectorsService.getConnector,
+  getAuthConfig: ManagerService.getAuthenticationConfig
 })
 
 export const invalidatePipeline = (queryClient: QueryClient, pipelineId: PipelineId) => {

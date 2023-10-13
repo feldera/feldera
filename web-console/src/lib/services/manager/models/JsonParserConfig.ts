@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 
+import type { JsonFlavor } from './JsonFlavor'
 import type { JsonUpdateFormat } from './JsonUpdateFormat'
 
 /**
@@ -50,5 +51,6 @@ export type JsonParserConfig = {
    * ```
    */
   array?: boolean
+  json_flavor?: JsonFlavor
   update_format?: JsonUpdateFormat
 }

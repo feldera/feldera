@@ -147,8 +147,12 @@ request is rejected."
         delete_connector,
         http_input,
         http_output,
+        get_authentication_config,
     ),
     components(schemas(
+        crate::auth::AuthProvider,
+        crate::auth::ProviderAwsCognito,
+        crate::auth::ProviderGoogleIdentity,
         crate::compiler::SqlCompilerMessage,
         crate::db::AttachedConnector,
         crate::db::ProgramDescr,
@@ -196,6 +200,7 @@ request is rejected."
         AttachedConnectorId,
         Version,
         ProgramStatus,
+        ErrorResponse,
         ProgramCodeResponse,
         NewProgramRequest,
         NewProgramResponse,
@@ -212,6 +217,7 @@ request is rejected."
         UpdateConnectorResponse,
     ),),
     tags(
+        (name = "Manager", description = "Configure system behavior"),
         (name = "Programs", description = "Manage programs"),
         (name = "Pipelines", description = "Manage pipelines"),
         (name = "Connectors", description = "Manage data connectors"),
@@ -260,39 +266,46 @@ fn create_listener(api_config: &ApiServerConfig) -> AnyResult<TcpListener> {
 pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyResult<()> {
     let listener = create_listener(&api_config)?;
     let state = WebData::new(ServerState::new(api_config.clone(), db).await?);
-    let server = if api_config.use_auth {
-        let server = HttpServer::new(move || {
-            let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
-            let auth_configuration = crate::auth::aws_auth_config();
+    let auth_configuration = match api_config.auth_provider {
+        crate::config::AuthProviderType::None => None,
+        crate::config::AuthProviderType::AwsCognito => Some(crate::auth::aws_auth_config()),
+        crate::config::AuthProviderType::GoogleIdentity => Some(crate::auth::google_auth_config()),
+    };
+    let server = match auth_configuration {
+        Some(auth_configuration) => {
+            let server = HttpServer::new(move || {
+                let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
 
-            App::new()
-                .app_data(state.clone())
-                .app_data(auth_configuration)
-                .wrap(Logger::default())
-                .wrap(Condition::new(
-                    api_config.dev_mode,
-                    actix_cors::Cors::permissive(),
-                ))
-                .service(api_scope().wrap(auth_middleware))
-                .service(static_website_scope())
-        });
-        server.listen(listener)?.run()
-    } else {
-        let server = HttpServer::new(move || {
-            App::new()
-                .app_data(state.clone())
-                .wrap(Logger::default())
-                .wrap(Condition::new(
-                    api_config.dev_mode,
-                    actix_cors::Cors::permissive(),
-                ))
-                .service(api_scope().wrap_fn(|req, srv| {
-                    let req = crate::auth::tag_with_default_tenant_id(req);
-                    srv.call(req)
-                }))
-                .service(static_website_scope())
-        });
-        server.listen(listener)?.run()
+                App::new()
+                    .app_data(state.clone())
+                    .app_data(auth_configuration.clone())
+                    .wrap(Logger::default())
+                    .wrap(Condition::new(
+                        api_config.dev_mode,
+                        actix_cors::Cors::permissive(),
+                    ))
+                    .service(api_scope().wrap(auth_middleware))
+                    .service(public_scope())
+            });
+            server.listen(listener)?.run()
+        }
+        None => {
+            let server = HttpServer::new(move || {
+                App::new()
+                    .app_data(state.clone())
+                    .wrap(Logger::default())
+                    .wrap(Condition::new(
+                        api_config.dev_mode,
+                        actix_cors::Cors::permissive(),
+                    ))
+                    .service(api_scope().wrap_fn(|req, srv| {
+                        let req = crate::auth::tag_with_default_tenant_id(req);
+                        srv.call(req)
+                    }))
+                    .service(public_scope())
+            });
+            server.listen(listener)?.run()
+        }
     };
 
     let addr = env::var("BANNER_ADDR").unwrap_or(api_config.bind_address);
@@ -320,7 +333,7 @@ Documentation: https://www.feldera.com/docs/
 // `static_files` magic.
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-fn static_website_scope() -> Scope {
+fn public_scope() -> Scope {
     let openapi = ApiDoc::openapi();
     // Creates a dictionary of static files indexed by file name.
     let generated = generate();
@@ -329,6 +342,7 @@ fn static_website_scope() -> Scope {
     // app, always attach other scopes without empty prefixes before this one,
     // or route resolution does not work correctly.
     web::scope("")
+        .service(get_authentication_config)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(healthz)
         .service(ResourceFiles::new("/", generated))
@@ -1908,6 +1922,37 @@ async fn http_output(
         .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, &endpoint, req, body)
         .await
 }
+
+/// Get authentication provider configuration
+#[utoipa::path(
+    path="/../config/authentication",
+    responses(
+        (status = OK
+            , description = "The response body contains Authentication Provider configuration, \
+                             or is empty if no auth is configured."
+            , content_type = "application/json"
+            , body = AuthProvider),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Request failed."
+            , body = ErrorResponse),
+    ),
+    tag = "Manager"
+)]
+#[get("/config/authentication")]
+async fn get_authentication_config(
+    state: WebData<ServerState>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    debug!("Received {req:?}");
+    if state._config.auth_provider == crate::config::AuthProviderType::None {
+        return Ok(HttpResponse::Ok().json(EmptyResponse {}));
+    }
+    let auth_config = req.app_data::<crate::auth::AuthConfiguration>().unwrap();
+    Ok(HttpResponse::Ok().json(&auth_config.provider))
+}
+
+#[derive(Serialize, ToSchema)]
+pub(crate) struct EmptyResponse {}
 
 /// This is an internal endpoint and as such is not exposed via OpenAPI
 #[get("/healthz")]

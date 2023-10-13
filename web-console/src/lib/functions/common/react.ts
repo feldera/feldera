@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { create, StateCreator } from 'zustand'
 
 // A way to throw errors in async code so they can be caught with ErrorBoundary
 // in react. Pretty silly, but it works.
@@ -17,3 +18,24 @@ export const useAsyncError = () => {
     [setError]
   )
 }
+
+// https://docs.pmnd.rs/zustand/integrations/persisting-store-data#usage-in-next.js
+export const makeClientStore =
+  <T, Init extends StateCreator<T, [], []> | undefined>(
+    store: (selector: (state: T) => unknown) => unknown,
+    initializer?: Init
+  ) =>
+  <R>(selector: (state: T) => R) => {
+    const result = store(selector) as R
+    /* eslint-disable react-hooks/rules-of-hooks */
+    const [data, setData] = useState<R>()
+
+    useEffect(() => {
+      setData(result)
+    }, [result])
+
+    return (
+      data ??
+      ((initializer ? create<T>()(initializer)(selector) : undefined) as Init extends undefined ? R | undefined : R)
+    )
+  }

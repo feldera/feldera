@@ -34,6 +34,7 @@ const StandardVerticalLayout = ({ children }: Props) => {
       settings={settings}
       saveSettings={saveSettings}
       verticalNavItems={VerticalNavItems()} // Navigation Items
+      afterVerticalNavMenuContent={() => <></>}
       verticalAppBarContent={(
         props // AppBar Content
       ) => (

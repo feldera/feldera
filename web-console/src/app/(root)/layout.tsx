@@ -2,6 +2,7 @@
 /** @jsxImportSource @emotion/react */
 
 import StatusSnackBar from '$lib/components/common/errors/StatusSnackBar'
+import { AuthenticationProvider } from '$lib/components/layouts/AuthProvider'
 import { OpenAPI } from '$lib/services/manager'
 import { Next13ProgressBar as NextProgressBar } from 'next13-progressbar'
 import { ReactNode } from 'react'
@@ -23,37 +24,42 @@ OpenAPI.BASE =
       // backend server running on port 8080
       // Otherwise the API and UI URL will be the same
       window.location.origin.replace(/:(300[0-9])$/, ':8080')
-    : '') + '/v0'
+    : '') + OpenAPI.BASE
 
 // provide the default query function to your app with defaultOptions
 const queryClient = new QueryClient({})
 
-export default (props: { children: ReactNode }) => {
+const Layout = (props: { children: ReactNode }) => {
   const theme = useTheme()
   return (
+    <>
+      <NextProgressBar height='3px' color={theme.palette.primary.main} options={{ showSpinner: false }} showOnShallow />
+      {props.children}
+      <StatusSnackBar />
+    </>
+  )
+}
+
+export default (props: { children: ReactNode }) => {
+  return (
     <EmotionRootStyleRegistry>
-      <SettingsProvider>
-        <SettingsConsumer>
-          {({ settings }) => {
-            return (
-              <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale='en-gb'>
-                <ThemeComponent settings={settings}>
-                  <QueryClientProvider client={queryClient}>
-                    <NextProgressBar
-                      height='3px'
-                      color={theme.palette.primary.main}
-                      options={{ showSpinner: false }}
-                      showOnShallow
-                    />
-                    {props.children}
-                    <StatusSnackBar />
-                  </QueryClientProvider>
-                </ThemeComponent>
-              </LocalizationProvider>
-            )
-          }}
-        </SettingsConsumer>
-      </SettingsProvider>
+      <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale='en-gb'>
+        <QueryClientProvider client={queryClient}>
+          <AuthenticationProvider>
+            <SettingsProvider>
+              <SettingsConsumer>
+                {({ settings }) => {
+                  return (
+                    <ThemeComponent settings={settings}>
+                      <Layout>{props.children}</Layout>
+                    </ThemeComponent>
+                  )
+                }}
+              </SettingsConsumer>
+            </SettingsProvider>
+          </AuthenticationProvider>
+        </QueryClientProvider>
+      </LocalizationProvider>
     </EmotionRootStyleRegistry>
   )
 }

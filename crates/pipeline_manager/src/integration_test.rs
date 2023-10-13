@@ -57,7 +57,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         port: TEST_DBSP_DEFAULT_PORT,
         bind_address: "0.0.0.0".to_owned(),
         api_server_working_directory: workdir.to_owned(),
-        use_auth: false,
+        auth_provider: crate::config::AuthProviderType::None,
         dev_mode: false,
         dump_openapi: false,
         config_file: None,

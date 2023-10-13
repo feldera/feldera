@@ -27,7 +27,7 @@ services:
       - AUTH_ISSUER
     command:
       - --db-connection-string=postgresql://postgres:postgres@db:5432
-      - --use-auth=${USE_AUTH:-false}
+      - --auth-provider=${AUTH_PROVIDER:-none}
     healthcheck:
       # TODO: add `/status` endpoint.
       test:

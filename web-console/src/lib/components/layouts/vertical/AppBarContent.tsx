@@ -1,8 +1,15 @@
+'use client'
+
+import { useAuth } from '$lib/compositions/auth/useAuth'
 // This is the top bar that decides whether to show the hamburger menu or not it
 import Menu from 'mdi-material-ui/Menu'
 import { Settings } from 'src/@core/context/settingsTypes'
 import ModeToggler from 'src/@core/layouts/components/shared-components/ModeToggler'
+import UserDropdown from 'src/@core/layouts/components/shared-components/UserDropdown'
+import invariant from 'tiny-invariant'
 
+import { Icon } from '@iconify/react'
+import { Tooltip } from '@mui/material'
 // also has the search bar and the user dropdown and the notification dropdown.
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
@@ -16,6 +23,7 @@ interface Props {
 
 const AppBarContent = (props: Props) => {
   const { hidden, settings, saveSettings, toggleNavVisibility } = props
+  const { auth } = useAuth()
   return (
     <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 4 }}>
@@ -31,6 +39,15 @@ const AppBarContent = (props: Props) => {
           sx={{ display: 'flex', alignItems: 'center', mb: 'auto', pointerEvents: 'auto' }}
         >
           <ModeToggler settings={settings} saveSettings={saveSettings} />
+          {auth === 'NoAuth' ? (
+            <Tooltip title='No authentication'>
+              <IconButton disableRipple>
+                <Icon icon='bx:lock-open-alt'></Icon>
+              </IconButton>
+            </Tooltip>
+          ) : (
+            (invariant(typeof auth === 'object'), (<UserDropdown auth={auth} />))
+          )}
         </Box>
       </Box>
     </Box>
