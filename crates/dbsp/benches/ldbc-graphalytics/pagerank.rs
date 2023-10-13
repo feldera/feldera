@@ -1,4 +1,5 @@
 use crate::data::{Edges, Node, Rank, RankMap, Ranks, Streamed, Vertices};
+use dbsp::trace::Deserializable;
 use dbsp::{
     algebra::HasOne,
     circuit::WithClock,
@@ -260,6 +261,7 @@ fn div_join_stream<S, K>(
 where
     S: WithClock + Clone + 'static,
     K: DBData + Send + Copy,
+    <K as Deserializable>::ArchivedDeser: Ord,
 {
     lhs.shard().apply2(&rhs.shard(), |lhs, rhs| {
         let capacity = min(lhs.len(), rhs.len());

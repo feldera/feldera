@@ -352,7 +352,7 @@
 //! trait implemented for [`Stream`] to do that.  For example, we can take just
 //! the records for locations in the United Kingdom:
 //!
-//! ```
+//! ```rust,ignore
 //! # use anyhow::Result;
 //! # use csv::Reader;
 //! # use dbsp::{operator::FilterMap, CollectionHandle, OrdZSet, OutputHandle, RootCircuit, ZSet};
@@ -361,6 +361,7 @@
 //! # use chrono::NaiveDate;
 //! #
 //! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
+//! # #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
 //! #     date: NaiveDate,
@@ -416,7 +417,7 @@
 //! to return to `main`, which can then read out the data after each step.  Our
 //! `build_circuit` then looks like this:
 //!
-//! ```
+//! ```rust,ignore
 //! # use anyhow::Result;
 //! # use csv::Reader;
 //! # use dbsp::{operator::FilterMap, CollectionHandle, OrdZSet, OutputHandle, RootCircuit, ZSet};
@@ -425,6 +426,7 @@
 //! # use chrono::NaiveDate;
 //! #
 //! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
+//! # #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
 //! #     date: NaiveDate,
@@ -483,7 +485,7 @@
 //! internally merges the multiple outputs if multiple threads are in use.  To
 //! print the number of records, we can just do the following:
 //!
-//! ```
+//! ```rust,ignore
 //! # use anyhow::Result;
 //! # use csv::Reader;
 //! # use dbsp::{operator::FilterMap, CollectionHandle, OrdZSet, OutputHandle, RootCircuit, ZSet};
@@ -492,6 +494,7 @@
 //! # use chrono::NaiveDate;
 //! #
 //! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
+//! # #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
 //! #     date: NaiveDate,
@@ -1029,7 +1032,7 @@
 //! Then we just adjust `build_circuit` return type and value and print the new
 //! output type in `main`:
 //!
-//! ```
+//! ```rust,ignore
 //! # use anyhow::Result;
 //! # use csv::Reader;
 //! # use dbsp::{
@@ -1040,6 +1043,7 @@
 //! # use chrono::{Datelike, NaiveDate};
 //! #
 //! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
+//! # #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
 //! #     date: NaiveDate,
@@ -1558,7 +1562,7 @@
 //! it feeds data in at most 500 records per step.  The only changes from the
 //! previous version are in `main`, which becomes:
 //!
-//! ```
+//! ```rust,ignore
 //! # use anyhow::Result;
 //! # use csv::Reader;
 //! # use dbsp::{
@@ -1569,6 +1573,7 @@
 //! # use chrono::{Datelike, NaiveDate};
 //! #
 //! # #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf, Archive, Serialize, rkyv::Deserialize, serde::Deserialize)]
+//! # #[archive_attr(derive(Eq, Ord, PartialEq, PartialOrd))]
 //! # struct Record {
 //! #     location: String,
 //! #     date: NaiveDate,

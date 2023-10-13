@@ -19,7 +19,6 @@ use proptest_derive::Arbitrary;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
-    cmp::Ordering,
     fmt::{self, Debug, Display},
     hash::{Hash, Hasher},
     ops::Range,
