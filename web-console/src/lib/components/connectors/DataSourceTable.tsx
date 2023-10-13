@@ -5,7 +5,9 @@
 'use client'
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import { DataGridColumnViewModel } from '$lib/components/common/table/DataGridPro'
 import EntityTable from '$lib/components/common/table/EntityTable'
+import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { AnyConnectorDialog } from '$lib/components/connectors/dialogs/AnyConnector'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
@@ -19,14 +21,23 @@ import {
   UpdateConnectorResponse
 } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 
+import { useLocalStorage } from '@mantine/hooks'
 import { Button } from '@mui/material'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
-import { GridColDef, GridRenderCellParams, GridToolbarFilterButton, useGridApiRef } from '@mui/x-data-grid-pro'
+import {
+  GridColDef,
+  GridColumnVisibilityModel,
+  GridFilterModel,
+  GridRenderCellParams,
+  GridToolbarFilterButton,
+  useGridApiRef
+} from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 const DataSourceTable = () => {
@@ -150,13 +161,6 @@ const DataSourceTable = () => {
     }
   ]
 
-  const tableProps = {
-    getRowId: (row: ConnectorDescr) => row.connector_id,
-    columnVisibilityModel: { connector_id: false },
-    columns: columns,
-    rows: rows
-  }
-
   const [showDialog, setShowDialog] = useState<boolean>(false)
   const [connector, setConnector] = useState<ConnectorDescr | undefined>(undefined)
   const editConnector = useCallback((cur_row: ConnectorDescr) => {
@@ -172,11 +176,33 @@ const DataSourceTable = () => {
 
   const { showDeleteDialog } = useDeleteDialog()
 
+  const defaultColumnVisibility = { connector_id: false }
+  const [columnVisibilityModel, setColumnVisibilityModel] = useLocalStorage<GridColumnVisibilityModel>({
+    key: LS_PREFIX + 'settings/connectors/list/grid/visibility',
+    defaultValue: defaultColumnVisibility
+  })
+  const [columnViewModel, setColumnViewModel] = useLocalStorage<DataGridColumnViewModel>({
+    key: LS_PREFIX + 'settings/connectors/list/grid/columnView'
+  })
+  const [filterModel, setFilterModel] = useLocalStorage<GridFilterModel>({
+    key: LS_PREFIX + 'settings/connectors/list/grid/filters'
+  })
+
   return (
     <>
       <Card>
         <EntityTable
-          tableProps={tableProps}
+          tableProps={{
+            getRowId: (row: ConnectorDescr) => row.connector_id,
+            columns: columns,
+            rows: rows,
+            columnVisibilityModel,
+            setColumnVisibilityModel,
+            filterModel,
+            setFilterModel,
+            columnViewModel,
+            setColumnViewModel
+          }}
           setRows={setRows}
           fetchRows={fetchQuery}
           onUpdateRow={processRowUpdate}
@@ -188,7 +214,12 @@ const DataSourceTable = () => {
           toolbarChildren={[
             btnAdd,
             <GridToolbarFilterButton key='1' />,
-            <div style={{ marginLeft: 'auto' }} key='2' />
+            <ResetColumnViewButton
+              key='2'
+              setColumnViewModel={setColumnViewModel}
+              setColumnVisibilityModel={() => setColumnVisibilityModel(defaultColumnVisibility)}
+            />,
+            <div style={{ marginLeft: 'auto' }} key='3' />
           ]}
           footerChildren={btnAdd}
         />

@@ -29,3 +29,43 @@ export function assertUnion<T extends readonly string[]>(union: T, val: string):
   }
   return val
 }
+
+/**
+ * Mutates the array
+ * @param array
+ * @param fromIndex
+ * @param toIndex
+ * @returns
+ */
+export function reorderElement<T>(array: T[], fromIndex: number, toIndex: number) {
+  console.log('reorderElement', fromIndex, toIndex)
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= array.length || toIndex >= array.length) {
+    // No need to move if the indices are the same or out of bounds.
+    return array
+  }
+
+  const [movedElement] = array.splice(fromIndex, 1)
+
+  array.splice(toIndex, 0, movedElement)
+
+  return array
+}
+
+/**
+ * Replaces the first element in the array for which the replacement result isn't null
+ * Mutates the array
+ * @param array
+ * @param replacement
+ * @returns
+ */
+export function replaceElement<T>(array: T[], replacement: (t: T) => T | null) {
+  let value = null as T | null
+  for (const [i, e] of array.entries()) {
+    value = replacement(e)
+    if (value !== null) {
+      array[i] = value
+      break
+    }
+  }
+  return array
+}

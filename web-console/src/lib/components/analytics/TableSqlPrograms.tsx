@@ -5,7 +5,9 @@
 'use client'
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import { DataGridColumnViewModel } from '$lib/components/common/table/DataGridPro'
 import EntityTable from '$lib/components/common/table/EntityTable'
+import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import {
@@ -18,15 +20,24 @@ import {
   UpdateProgramResponse
 } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
 
+import { useLocalStorage } from '@mantine/hooks'
 import { Button } from '@mui/material'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
-import { GridColDef, GridRenderCellParams, GridToolbarFilterButton, useGridApiRef } from '@mui/x-data-grid-pro'
+import {
+  GridColDef,
+  GridColumnVisibilityModel,
+  GridFilterModel,
+  GridRenderCellParams,
+  GridToolbarFilterButton,
+  useGridApiRef
+} from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 const getStatusObj = (status: ProgramStatus) =>
@@ -168,13 +179,17 @@ const TableSqlPrograms = () => {
     [queryClient, deleteMutation, rows, pushMessage]
   )
 
-  // Table properties, passed to the underlying grid-table
-  const tableProps = {
-    getRowId: (row: ProgramDescr) => row.program_id,
-    columnVisibilityModel: { program_id: false },
-    columns: columns,
-    rows: rows
-  }
+  const defaultColumnVisibility = { program_id: false }
+  const [columnVisibilityModel, setColumnVisibilityModel] = useLocalStorage<GridColumnVisibilityModel>({
+    key: LS_PREFIX + 'settings/analytics/programs/grid/visibility',
+    defaultValue: defaultColumnVisibility
+  })
+  const [filterModel, setFilterModel] = useLocalStorage<GridFilterModel>({
+    key: LS_PREFIX + 'settings/analytics/programs/grid/filters'
+  })
+  const [columnViewModel, setColumnViewModel] = useLocalStorage<DataGridColumnViewModel>({
+    key: LS_PREFIX + 'settings/analytics/programs/grid/columnView'
+  })
 
   const btnAdd = (
     <Button variant='contained' size='small' href='/analytics/editor/' id='btn-add-sql-program' key='0'>
@@ -188,14 +203,34 @@ const TableSqlPrograms = () => {
         hasSearch
         hasFilter
         addActions
-        tableProps={tableProps}
+        // Table properties, passed to the underlying grid-table
+        tableProps={{
+          getRowId: (row: ProgramDescr) => row.program_id,
+          columns,
+          rows,
+          columnVisibilityModel,
+          setColumnVisibilityModel,
+          filterModel,
+          setFilterModel,
+          columnViewModel,
+          setColumnViewModel
+        }}
         setRows={setRows}
         fetchRows={fetchQuery}
         onUpdateRow={processRowUpdate}
         onDeleteRow={showDeleteDialog('Delete', row => `${row.name || 'unnamed'} program`, deleteProject)}
         editRowBtnProps={{ href: row => `/analytics/editor/?program_id=${row.program_id}` }}
         apiRef={apiRef}
-        toolbarChildren={[btnAdd, <GridToolbarFilterButton key='1' />, <div style={{ marginLeft: 'auto' }} key='2' />]}
+        toolbarChildren={[
+          btnAdd,
+          <GridToolbarFilterButton key='1' />,
+          <ResetColumnViewButton
+            key='2'
+            setColumnViewModel={setColumnViewModel}
+            setColumnVisibilityModel={() => setColumnVisibilityModel(defaultColumnVisibility)}
+          />,
+          <div style={{ marginLeft: 'auto' }} key='3' />
+        ]}
         footerChildren={btnAdd}
       />
     </Card>

@@ -1,6 +1,8 @@
 // Browse the contents of a table or a view.
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
+import { DataGridColumnViewModel, DataGridPro } from '$lib/components/common/table/DataGridPro'
+import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { InspectionToolbar } from '$lib/components/streaming/inspection/InspectionToolbar'
 import { PercentilePagination } from '$lib/components/streaming/inspection/PercentilePagination'
 import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
@@ -9,10 +11,18 @@ import { useAsyncError } from '$lib/functions/common/react'
 import { Row, rowToAnchor } from '$lib/functions/ddl'
 import { NeighborhoodQuery, OpenAPI, Pipeline, Relation } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useEffect, useState } from 'react'
+import invariant from 'tiny-invariant'
 
+import { useLocalStorage } from '@mantine/hooks'
 import Card from '@mui/material/Card'
-import { DataGridPro, GridPaginationModel, GridRowSelectionModel } from '@mui/x-data-grid-pro'
+import {
+  GridColumnVisibilityModel,
+  GridFilterModel,
+  GridPaginationModel,
+  GridRowSelectionModel
+} from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 
 const FETCH_QUANTILES = 100
@@ -37,7 +47,12 @@ const DEFAULT_NEIGHBORHOOD: NeighborhoodQuery = { before: PAGE_SIZE, after: PAGE
 // backwards X times until we reach the beginning.
 const INITIAL_PAGINATION_MODEL: GridPaginationModel = { pageSize: PAGE_SIZE, page: 1000 }
 
-export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
+/**
+ * This specialized hook manages logic required for keeping rows up to date.
+ * @param param
+ * @returns
+ */
+const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   const [relation, setRelation] = useState<Relation | undefined>(undefined)
   const [paginationModel, setPaginationModel] = useState(INITIAL_PAGINATION_MODEL)
   const [neighborhood, setNeighborhood] = useState<NeighborhoodQuery>(DEFAULT_NEIGHBORHOOD)
@@ -50,7 +65,7 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   const tableUpdater = useTableUpdater()
 
   const throwError = useAsyncError()
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline?.descriptor.pipeline_id))
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.descriptor.pipeline_id))
 
   // If a revision is loaded, find the requested relation that we want to
   // monitor. We use it to display the table headers etc.
@@ -80,37 +95,38 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   // initial snapshot and subsequent changes. We use setRows to update the rows
   // in the table.
   useEffect(() => {
-    if (relation !== undefined) {
-      const controller = new AbortController()
-      const url = new URL(
-        OpenAPI.BASE +
-          '/pipelines/' +
-          pipeline.descriptor.pipeline_id +
-          '/egress/' +
-          name +
-          '?format=csv&query=neighborhood&mode=watch'
-      )
-      tableUpdater(url, neighborhood, setRows, setLoading, relation, controller).then(
-        () => {
-          // nothing to do here, the tableUpdater will update the table
-        },
-        (error: any) => {
-          if (error.name != 'AbortError') {
-            throwError(error)
-          } else {
-            // The AbortError is expected when we leave the view
-            // (controller.abort() below will trigger it)
-            // -- so nothing to do here
-          }
+    if (!relation) {
+      return
+    }
+    const controller = new AbortController()
+    const url = new URL(
+      OpenAPI.BASE +
+        '/pipelines/' +
+        pipeline.descriptor.pipeline_id +
+        '/egress/' +
+        name +
+        '?format=csv&query=neighborhood&mode=watch'
+    )
+    tableUpdater(url, neighborhood, setRows, setLoading, relation, controller).then(
+      () => {
+        // nothing to do here, the tableUpdater will update the table
+      },
+      (error: any) => {
+        if (error.name != 'AbortError') {
+          throwError(error)
+        } else {
+          // The AbortError is expected when we leave the view
+          // (controller.abort() below will trigger it)
+          // -- so nothing to do here
         }
-      )
-
-      return () => {
-        // If we leave the view, we abort the fetch request otherwise it remains
-        // active (the browser and backend only keep a limited number of active
-        // requests and we don't want to exhaust that limit)
-        controller.abort()
       }
+    )
+
+    return () => {
+      // If we leave the view, we abort the fetch request otherwise it remains
+      // active (the browser and backend only keep a limited number of active
+      // requests and we don't want to exhaust that limit)
+      controller.abort()
     }
   }, [pipeline, name, relation, tableUpdater, throwError, neighborhood])
 
@@ -122,37 +138,38 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
     // the neighborhood query is established. If we do it simultaneously,
     // somehow this led to an issue with sometimes not loading/displaying
     // anything at all (seems like a backend bug).
-    if (relation !== undefined && rows.length > 0 && quantiles === undefined) {
-      const controller = new AbortController()
-      const url = new URL(
-        OpenAPI.BASE +
-          '/pipelines/' +
-          pipeline.descriptor.pipeline_id +
-          '/egress/' +
-          name +
-          '?format=csv&query=quantiles&mode=snapshot'
-      )
-      quantileLoader(url, setQuantiles, relation, controller).then(
-        () => {
-          // nothing to do here, the tableUpdater will update the table
-        },
-        (error: any) => {
-          if (error.name != 'AbortError') {
-            throwError(error)
-          } else {
-            // The AbortError is expected when we leave the view
-            // (controller.abort() below will trigger it)
-            // -- so nothing to do here
-          }
+    if (!relation || rows.length === 0 || quantiles !== undefined) {
+      return
+    }
+    const controller = new AbortController()
+    const url = new URL(
+      OpenAPI.BASE +
+        '/pipelines/' +
+        pipeline.descriptor.pipeline_id +
+        '/egress/' +
+        name +
+        '?format=csv&query=quantiles&mode=snapshot'
+    )
+    quantileLoader(url, setQuantiles, relation, controller).then(
+      () => {
+        // nothing to do here, the tableUpdater will update the table
+      },
+      (error: any) => {
+        if (error.name != 'AbortError') {
+          throwError(error)
+        } else {
+          // The AbortError is expected when we leave the view
+          // (controller.abort() below will trigger it)
+          // -- so nothing to do here
         }
-      )
-
-      return () => {
-        // If we leave the view, we abort the fetch request otherwise it remains
-        // active (the browser and backend only keeps a limited number of active
-        // requests and we don't want to exhaust that limit)
-        controller.abort()
       }
+    )
+
+    return () => {
+      // If we leave the view, we abort the fetch request otherwise it remains
+      // active (the browser and backend only keeps a limited number of active
+      // requests and we don't want to exhaust that limit)
+      controller.abort()
     }
   }, [pipeline, name, relation, quantileLoader, rows, throwError, quantiles])
 
@@ -219,13 +236,72 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
     setNeighborhood({ ...DEFAULT_NEIGHBORHOOD, anchor })
   }
 
+  return {
+    relation,
+    rows,
+    onQuantileSelected,
+    quantile,
+    setQuantile,
+    quantiles,
+    pipeline,
+    isLoading,
+    handlePaginationModelChange,
+    paginationModel,
+    pipelineRevisionQuery
+  }
+}
+
+export const InspectionTable = (props: InspectionTableProps) => {
+  const { relation, ...data } = useInspectionTable(props)
+
+  if (!relation) {
+    return <></>
+  }
+
+  return <InspectionTableImpl {...{ relation, ...data }} />
+}
+
+/**
+ * Encapsulates all logic that requires a valid Relation for consistency
+ * @param param
+ * @returns
+ */
+const InspectionTableImpl = ({
+  relation,
+  rows,
+  onQuantileSelected,
+  quantile,
+  setQuantile,
+  quantiles,
+  pipeline,
+  isLoading,
+  handlePaginationModelChange,
+  paginationModel,
+  pipelineRevisionQuery
+}: ReturnType<typeof useInspectionTable>) => {
+  invariant(relation)
   const [rowSelectionModel, setRowSelectionModel] = useState<GridRowSelectionModel>([])
 
   const isReadonly =
     !!pipelineRevisionQuery.data &&
-    (pipelineRevisionQuery.data.program.schema?.outputs.some(r => r.name === relation?.name) ?? false)
+    (pipelineRevisionQuery.data.program.schema?.outputs.some(r => r.name === relation.name) ?? false)
 
-  return relation ? (
+  const defaultColumnVisibility = {
+    genId: false,
+    rowCount: false
+  }
+  const [columnVisibilityModel, setColumnVisibilityModel] = useLocalStorage<GridColumnVisibilityModel>({
+    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.pipeline_id}/${relation.name}/visibility`,
+    defaultValue: defaultColumnVisibility
+  })
+  const [filterModel, setFilterModel] = useLocalStorage<GridFilterModel>({
+    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.pipeline_id}/${relation.name}/filters`
+  })
+  const [columnViewModel, setColumnViewModel] = useLocalStorage<DataGridColumnViewModel>({
+    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.pipeline_id}/${relation.name}/columnView`
+  })
+
+  return (
     <Card>
       <DataGridPro
         autoHeight
@@ -233,14 +309,6 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
         disableColumnFilter
         density='compact'
         getRowId={(row: Row) => row.genId}
-        initialState={{
-          columns: {
-            columnVisibilityModel: {
-              genId: false,
-              rowCount: false
-            }
-          }
-        }}
         columns={relation.fields
           .map((col: any) => {
             return {
@@ -293,7 +361,13 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
             pipelineId: pipeline.descriptor.pipeline_id,
             status: pipeline.state.current_status,
             relation: relation.name,
-            isReadonly
+            isReadonly,
+            children: (
+              <ResetColumnViewButton
+                setColumnViewModel={setColumnViewModel}
+                setColumnVisibilityModel={() => setColumnVisibilityModel(defaultColumnVisibility)}
+              />
+            )
           }
         }}
         loading={isLoading}
@@ -303,12 +377,10 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
         rows={rows.filter((row: any) => row.genId >= 0 && row.genId < PAGE_SIZE)}
         paginationMode='server'
         pageSizeOptions={[PAGE_SIZE]}
-        onPaginationModelChange={model => handlePaginationModelChange(model)}
+        onPaginationModelChange={handlePaginationModelChange}
         paginationModel={paginationModel}
         checkboxSelection={!isReadonly}
-        onRowSelectionModelChange={newRowSelectionModel => {
-          setRowSelectionModel(newRowSelectionModel)
-        }}
+        onRowSelectionModelChange={setRowSelectionModel}
         rowSelectionModel={rowSelectionModel}
         // Next two lines are a work-around because DataGridPro needs an
         // accurate rowCount for pagination to work which we don't have.
@@ -316,6 +388,14 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
         // This can be removed once the following issue is resolved:
         // https://github.com/mui/mui-x/issues/409
         rowCount={Number.MAX_VALUE}
+        {...{
+          columnVisibilityModel,
+          setColumnVisibilityModel,
+          filterModel,
+          setFilterModel,
+          columnViewModel,
+          setColumnViewModel
+        }}
         sx={{
           '.MuiTablePagination-displayedRows': {
             display: 'none' // 👈 hide huge pagination number
@@ -323,7 +403,5 @@ export const InspectionTable = ({ pipeline, name }: InspectionTableProps) => {
         }}
       />
     </Card>
-  ) : (
-    <></>
   )
 }

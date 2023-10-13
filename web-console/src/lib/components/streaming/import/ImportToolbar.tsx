@@ -7,7 +7,7 @@ import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import dayjs from 'dayjs'
 import Papa from 'papaparse'
-import { ChangeEvent, Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
+import { ChangeEvent, Dispatch, MutableRefObject, ReactNode, SetStateAction, useCallback } from 'react'
 
 import { Icon } from '@iconify/react'
 import { useLocalStorage } from '@mantine/hooks'
@@ -35,6 +35,7 @@ const ImportToolbar = (props: {
   setLoading: Dispatch<SetStateAction<boolean>>
   apiRef: MutableRefObject<GridApi>
   rows: Row[]
+  children: ReactNode
 }) => {
   const { relation, setRows, pipelineRevision, setLoading, apiRef, rows } = props
 
@@ -127,6 +128,7 @@ const ImportToolbar = (props: {
       <Button size='small' onClick={handleInsertRows} startIcon={<Icon icon='mdi:upload' />} color='info'>
         Insert Rows
       </Button>
+      {props.children}
     </GridToolbarContainer>
   ) : (
     <></>

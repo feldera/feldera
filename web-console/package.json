@@ -57,6 +57,7 @@
     "ahooks": "^3.7.8",
     "apexcharts": "^3.41.1",
     "apexcharts-clevision": "^3.28.5",
+    "array-join": "^3.1.1",
     "clsx": "^2.0.0",
     "csv-parse": "^5.4.0",
     "d3-format": "^3.1.0",

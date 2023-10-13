@@ -45,6 +45,7 @@ export const InspectionToolbar = (
         }}
       />
       {!props.isReadonly && <RowDeleteButton onDeleteRows={onDeleteRows}></RowDeleteButton>}
+      {props.children}
     </GridToolbarContainer>
   )
 }
