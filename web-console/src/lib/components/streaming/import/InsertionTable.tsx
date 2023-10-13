@@ -3,14 +3,18 @@
 // The rows can be edited after generation/import and eventually be uploaded to
 // the dbsp table.
 
+import { DataGridPro } from '$lib/components/common/table/DataGridProDeclarative'
+import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
+import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { getValueFormatter, Row, sqlTypeToDataGridType } from '$lib/functions/ddl'
 import { Field, Pipeline, PipelineRevision, Relation } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { LS_PREFIX } from '$lib/types/localStorage'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
+import invariant from 'tiny-invariant'
 
 import Card from '@mui/material/Card'
 import {
-  DataGridPro,
   GridPreProcessEditCellProps,
   GridValueFormatterParams,
   GridValueGetterParams,
@@ -23,7 +27,7 @@ import ImportToolbar from './ImportToolbar'
 
 export type { Row } from '$lib/functions/ddl'
 
-export const InsertionTable = (props: {
+const useInsertionTable = (props: {
   pipeline: Pipeline
   name: string
   insert: { rows: Row[]; setRows: Dispatch<SetStateAction<Row[]>> }
@@ -34,7 +38,7 @@ export const InsertionTable = (props: {
   const apiRef = useGridApiRef()
 
   const pipelineRevisionQuery = useQuery(
-    PipelineManagerQuery.pipelineLastRevision(props.pipeline?.descriptor.pipeline_id)
+    PipelineManagerQuery.pipelineLastRevision(props.pipeline.descriptor.pipeline_id)
   )
 
   // If a revision is loaded, find the requested relation that we want to insert
@@ -66,7 +70,47 @@ export const InsertionTable = (props: {
     props.insert
   ])
 
-  return relation ? (
+  return {
+    relation,
+    pipelineRevision,
+    apiRef,
+    isLoading,
+    setLoading,
+    insert: props.insert
+  }
+}
+
+export const InsertionTable = (props: {
+  pipeline: Pipeline
+  name: string
+  insert: { rows: Row[]; setRows: Dispatch<SetStateAction<Row[]>> }
+}) => {
+  const { relation, ...data } = useInsertionTable(props)
+
+  if (!relation) {
+    return <></>
+  }
+
+  return <InsertionTableImpl {...{ relation, ...data }} />
+}
+
+const InsertionTableImpl = ({
+  relation,
+  pipelineRevision,
+  apiRef,
+  isLoading,
+  setLoading,
+  insert
+}: ReturnType<typeof useInsertionTable>) => {
+  invariant(relation && pipelineRevision)
+
+  const defaultColumnVisibility = { genId: false }
+  const gridPersistence = useDataGridPresentationLocalStorage({
+    key: LS_PREFIX + `settings/streaming/insertion/${pipelineRevision.pipeline.pipeline_id}/${relation.name}`,
+    defaultColumnVisibility
+  })
+
+  return (
     <Card>
       <DataGridPro
         apiRef={apiRef}
@@ -74,7 +118,7 @@ export const InsertionTable = (props: {
         editMode='cell'
         density='compact'
         loading={isLoading}
-        rows={props.insert.rows}
+        rows={insert.rows}
         disableColumnFilter
         initialState={{
           columns: {
@@ -151,16 +195,17 @@ export const InsertionTable = (props: {
             pipelineRevision,
             setLoading,
             apiRef,
-            ...props.insert
+            children: (
+              <ResetColumnViewButton
+                setColumnViewModel={gridPersistence.setColumnViewModel}
+                setColumnVisibilityModel={() => gridPersistence.setColumnVisibilityModel(defaultColumnVisibility)}
+              />
+            ),
+            ...insert
           }
         }}
-        //getCellClassName={(params: GridCellParams) =>
-        //validationStatus[params.row.genId]?.length > 0 ? 'invalid-row' : 'invalid-row'
-        //  'invalid-row'
-        //}
+        {...gridPersistence}
       />
     </Card>
-  ) : (
-    <></>
   )
 }

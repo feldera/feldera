@@ -6,7 +6,9 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import EntityTable from '$lib/components/common/table/EntityTable'
+import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { AnyConnectorDialog } from '$lib/components/connectors/dialogs/AnyConnector'
+import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { connectorDescrToType, getStatusObj } from '$lib/functions/connectors'
@@ -19,6 +21,7 @@ import {
   UpdateConnectorResponse
 } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 
@@ -150,13 +153,6 @@ const DataSourceTable = () => {
     }
   ]
 
-  const tableProps = {
-    getRowId: (row: ConnectorDescr) => row.connector_id,
-    columnVisibilityModel: { connector_id: false },
-    columns: columns,
-    rows: rows
-  }
-
   const [showDialog, setShowDialog] = useState<boolean>(false)
   const [connector, setConnector] = useState<ConnectorDescr | undefined>(undefined)
   const editConnector = useCallback((cur_row: ConnectorDescr) => {
@@ -172,11 +168,22 @@ const DataSourceTable = () => {
 
   const { showDeleteDialog } = useDeleteDialog()
 
+  const defaultColumnVisibility = { connector_id: false }
+  const gridPersistence = useDataGridPresentationLocalStorage({
+    key: LS_PREFIX + 'settings/connectors/list/grid',
+    defaultColumnVisibility
+  })
+
   return (
     <>
       <Card>
         <EntityTable
-          tableProps={tableProps}
+          tableProps={{
+            getRowId: (row: ConnectorDescr) => row.connector_id,
+            columns: columns,
+            rows: rows,
+            ...gridPersistence
+          }}
           setRows={setRows}
           fetchRows={fetchQuery}
           onUpdateRow={processRowUpdate}
@@ -188,7 +195,12 @@ const DataSourceTable = () => {
           toolbarChildren={[
             btnAdd,
             <GridToolbarFilterButton key='1' />,
-            <div style={{ marginLeft: 'auto' }} key='2' />
+            <ResetColumnViewButton
+              key='2'
+              setColumnViewModel={gridPersistence.setColumnViewModel}
+              setColumnVisibilityModel={() => gridPersistence.setColumnVisibilityModel(defaultColumnVisibility)}
+            />,
+            <div style={{ marginLeft: 'auto' }} key='3' />
           ]}
           footerChildren={btnAdd}
         />

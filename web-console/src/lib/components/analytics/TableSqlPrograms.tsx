@@ -6,6 +6,8 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import EntityTable from '$lib/components/common/table/EntityTable'
+import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
+import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import {
@@ -18,6 +20,7 @@ import {
   UpdateProgramResponse
 } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
@@ -168,13 +171,11 @@ const TableSqlPrograms = () => {
     [queryClient, deleteMutation, rows, pushMessage]
   )
 
-  // Table properties, passed to the underlying grid-table
-  const tableProps = {
-    getRowId: (row: ProgramDescr) => row.program_id,
-    columnVisibilityModel: { program_id: false },
-    columns: columns,
-    rows: rows
-  }
+  const defaultColumnVisibility = { program_id: false }
+  const gridPersistence = useDataGridPresentationLocalStorage({
+    key: LS_PREFIX + 'settings/analytics/programs/grid',
+    defaultColumnVisibility
+  })
 
   const btnAdd = (
     <Button variant='contained' size='small' href='/analytics/editor/' id='btn-add-sql-program' key='0'>
@@ -188,14 +189,29 @@ const TableSqlPrograms = () => {
         hasSearch
         hasFilter
         addActions
-        tableProps={tableProps}
+        // Table properties, passed to the underlying grid-table
+        tableProps={{
+          getRowId: (row: ProgramDescr) => row.program_id,
+          columns,
+          rows,
+          ...gridPersistence
+        }}
         setRows={setRows}
         fetchRows={fetchQuery}
         onUpdateRow={processRowUpdate}
         onDeleteRow={showDeleteDialog('Delete', row => `${row.name || 'unnamed'} program`, deleteProject)}
         editRowBtnProps={{ href: row => `/analytics/editor/?program_id=${row.program_id}` }}
         apiRef={apiRef}
-        toolbarChildren={[btnAdd, <GridToolbarFilterButton key='1' />, <div style={{ marginLeft: 'auto' }} key='2' />]}
+        toolbarChildren={[
+          btnAdd,
+          <GridToolbarFilterButton key='1' />,
+          <ResetColumnViewButton
+            key='2'
+            setColumnViewModel={gridPersistence.setColumnViewModel}
+            setColumnVisibilityModel={() => gridPersistence.setColumnVisibilityModel(defaultColumnVisibility)}
+          />,
+          <div style={{ marginLeft: 'auto' }} key='3' />
+        ]}
         footerChildren={btnAdd}
       />
     </Card>
