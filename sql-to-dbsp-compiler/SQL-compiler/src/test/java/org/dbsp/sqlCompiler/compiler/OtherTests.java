@@ -561,7 +561,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "CREATE TABLE T (\n" +
                         "COL1 INT NOT NULL" +
                         ", COL2 DOUBLE NOT NULL" +
-                        ", COL3 VARCHAR(3)" +
+                        ", COL3 VARCHAR(3) PRIMARY KEY" +
                         ", COL4 VARCHAR(3) ARRAY" +
                         ")",
                 "CREATE VIEW V AS SELECT COL1 AS \"xCol\" FROM T",
@@ -616,7 +616,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "          \"precision\" : 3\n" +
                 "        }\n" +
                 "      }\n" +
-                "    } ]\n" +
+                "    } ],\n" +
+                "    \"primary_key\" : [ \"COL3\" ]\n" +
                 "  } ],\n" +
                 "  \"outputs\" : [ {\n" +
                 "    \"name\" : \"V\",\n" +

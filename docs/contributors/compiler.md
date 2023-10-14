@@ -154,3 +154,88 @@ change its name using the compiler option `-f`).  Calling `circuit`
 will return an executable DBSP circuit handle, and a DBSP catalog.
 These APIs can be used to execute the circuit.
 
+## Obtaining the schema information from the compiler
+
+The `-js` compiler flag is followed by a file name.  If the flag is
+supplied, the compiler will write information about the input tables
+and output views in JSON in the supplied file name.  Here is an
+example of the generated JSON for the following program:
+
+```sql
+CREATE TABLE T (
+  COL1 INT NOT NULL
+, COL2 DOUBLE NOT NULL
+, COL3 VARCHAR(3) PRIMARY KEY
+, COL4 VARCHAR(3) ARRAY
+)
+
+CREATE VIEW V AS SELECT COL1 AS xCol FROM T
+CREATE VIEW V1 (yCol) AS SELECT COL1 FROM T
+```sql
+
+Output:
+
+```json
+{
+  "inputs" : [ {
+    "name" : "T",
+    "fields" : [ {
+      "name" : "COL1",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "INTEGER",
+        "nullable" : false
+      }
+    }, {
+      "name" : "COL2",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "DOUBLE",
+        "nullable" : false
+      }
+    }, {
+      "name" : "COL3",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "VARCHAR",
+        "nullable" : true,
+        "precision" : 3
+      }
+    }, {
+      "name" : "COL4",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "ARRAY",
+        "nullable" : true,
+        "component" : {
+          "type" : "VARCHAR",
+          "nullable" : false,
+          "precision" : 3
+        }
+      }
+    } ],
+    "primary_key" : [ "COL3" ]
+  } ],
+  "outputs" : [ {
+    "name" : "V",
+    "fields" : [ {
+      "name" : "xCol",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "INTEGER",
+        "nullable" : false
+      }
+    } ]
+  }, {
+    "name" : "V1",
+    "fields" : [ {
+      "name" : "yCol",
+      "case_sensitive" : true,
+      "columntype" : {
+        "type" : "INTEGER",
+        "nullable" : false
+      }
+    } ]
+  } ]
+}
+```

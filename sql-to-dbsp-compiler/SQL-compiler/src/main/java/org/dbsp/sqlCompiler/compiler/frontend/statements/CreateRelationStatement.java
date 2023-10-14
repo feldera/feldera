@@ -128,10 +128,16 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         ObjectNode result = mapper.createObjectNode();
         result.put("name", this.relationName);
         ArrayNode fields = result.putArray("fields");
+        ArrayNode keyFields = mapper.createArrayNode();
+        boolean hasKey = false;
         for (RelColumnMetadata col: this.columns) {
             ObjectNode column = fields.addObject();
             column.put("name", col.getName());
             column.put("case_sensitive", col.nameIsQuoted);
+            if (col.isPrimaryKey) {
+                keyFields.add(col.getName());
+                hasKey = true;
+            }
             Object object = RelJson.create().withJsonBuilder(new JsonBuilder())
                     .toJson(col.getType());
             try {
@@ -143,6 +149,8 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
                 throw new RuntimeException(e);
             }
         }
+        if (hasKey)
+            result.set("primary_key", keyFields);
         return result;
     }
 }
