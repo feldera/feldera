@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Experimental Snowflake sink
   ([#774](https://github.com/feldera/feldera/issues/774))
 
+- Source and sink connector documentation
+  ([#882](https://github.com/feldera/feldera/pull/882))
+
 ## [0.1.7] - 2023-10-10
 
 ### Added
