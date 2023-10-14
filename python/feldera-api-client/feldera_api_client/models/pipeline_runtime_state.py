@@ -84,7 +84,7 @@ class PipelineRuntimeState:
             in the diagram.
 
             The user can monitor the current state of the pipeline via the
-            `/status` endpoint, which returns an object of type [`Pipeline`].
+            `/status` endpoint, which returns an object of type `Pipeline`.
             In a typical scenario, the user first sets
             the desired state, e.g., by invoking the `/deploy` endpoint, and
             then polls the `GET /pipeline` endpoint to monitor the actual status
@@ -155,7 +155,7 @@ class PipelineRuntimeState:
             in the diagram.
 
             The user can monitor the current state of the pipeline via the
-            `/status` endpoint, which returns an object of type [`Pipeline`].
+            `/status` endpoint, which returns an object of type `Pipeline`.
             In a typical scenario, the user first sets
             the desired state, e.g., by invoking the `/deploy` endpoint, and
             then polls the `GET /pipeline` endpoint to monitor the actual status

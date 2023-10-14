@@ -7,7 +7,7 @@ use serde::Serialize;
 use std::alloc::{GlobalAlloc, Layout};
 
 /// `MI_MAX_ALIGN_SIZE` is 16 unless manually overridden:
-/// https://github.com/microsoft/mimalloc/blob/15220c68/include/mimalloc-types.h#L22
+/// <https://github.com/microsoft/mimalloc/blob/15220c68/include/mimalloc-types.h#L22>
 const MI_MAX_ALIGN_SIZE: usize = 16;
 
 /// Allocation and process statistics

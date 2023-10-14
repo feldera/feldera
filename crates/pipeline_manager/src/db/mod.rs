@@ -57,7 +57,7 @@ mod embedded {
 ///
 /// We use the `status` and `status_since` columns to maintain the compilation
 /// queue.  A program is enqueued for compilation by setting its status to
-/// [`ProgramStatus::Pending`].  The `status_since` column is set to the current
+/// `ProgramStatus::Pending`.  The `status_since` column is set to the current
 /// time, which determines the position of the program in the queue.
 pub struct ProjectDB {
     pub config: tokio_postgres::Config,
@@ -377,7 +377,7 @@ pub(crate) struct ProgramDescr {
 /// in the diagram.
 ///
 /// The user can monitor the current state of the pipeline via the
-/// `/status` endpoint, which returns an object of type [`Pipeline`].
+/// `/status` endpoint, which returns an object of type `Pipeline`.
 /// In a typical scenario, the user first sets
 /// the desired state, e.g., by invoking the `/deploy` endpoint, and
 /// then polls the `GET /pipeline` endpoint to monitor the actual status

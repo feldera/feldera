@@ -10,12 +10,10 @@ pub enum OutputQuery {
     /// Query the entire contents of the table (similar to `SELECT * FROM`).
     #[serde(rename = "table")]
     Table,
-    /// Neighborhood query (see
-    /// [`Stream::neighborhood`](`dbsp::Stream::neighborhood`)).
+    /// Neighborhood query (see `Stream::neighborhood` in dbsp)
     #[serde(rename = "neighborhood")]
     Neighborhood,
-    /// Quantiles query (see
-    /// [`Stream::stream_key_quantiles`](`dbsp::Stream::stream_key_quantiles`)).
+    /// Quantiles query (see `Stream::stream_key_quantiles` in dbsp).
     #[serde(rename = "quantiles")]
     Quantiles,
 }

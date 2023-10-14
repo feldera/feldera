@@ -8,7 +8,7 @@ T = TypeVar("T", bound="UrlInputConfig")
 @define
 class UrlInputConfig:
     """Configuration for reading data from an HTTP or HTTPS URL with
-    [`UrlInputTransport`].
+    `UrlInputTransport`.
 
         Attributes:
             path (str): URL.

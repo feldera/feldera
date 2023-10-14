@@ -43,8 +43,8 @@ impl Graph {
         &mut self.graph
     }
 
-    /// Returns the node ids of every [`Source`] or [`SourceMap`] within the
-    /// graph
+    /// Returns the node ids of every [`Node::Source`] or [`Node::SourceMap`]
+    /// within the graph
     pub fn source_nodes(&self) -> Vec<(NodeId, StreamLayout)> {
         self.nodes()
             .iter()
@@ -56,7 +56,7 @@ impl Graph {
             .collect()
     }
 
-    /// Returns the node ids of every [`Sink`] within the graph
+    /// Returns the node ids of every [`Node::Sink`] within the graph
     pub fn sink_nodes(&self) -> Vec<(NodeId, StreamLayout)> {
         self.nodes()
             .iter()

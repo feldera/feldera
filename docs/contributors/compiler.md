@@ -47,10 +47,10 @@ Usage: sql-to-dbsp [options] Input file to compile
       by any view
       Default: false
     --lenient
-      Lenient SQL validation.  If true it allows duplicate column names in a 
-      view 
+      Lenient SQL validation.  If true it allows duplicate column names in a
+      view
       Default: false
-    --outputAreSets
+    --outputsAreSets
       Ensure that outputs never contain duplicates
       Default: false
     --ignoreOrder
@@ -119,7 +119,7 @@ Here is a description of several command-line options:
      clause, or `ORDER BY` clauses followed by `LIMIT` clauses.  The use of this flag
      is recommended with the `-i` flag that incrementalizes the compiler output.
 
---outputAreSets: SQL queries can produce outputs that contain duplicates, but
+--outputsAreSets: SQL queries can produce outputs that contain duplicates, but
      such outputs are rarely useful in practice.  Using this flag will ensure that
      each output VIEW does not contain duplicates.  This can also be ensured by
      using a `SELECT DISTINCT` statement in the view definition.  An example query

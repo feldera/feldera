@@ -9,7 +9,7 @@ T = TypeVar("T", bound="FileInputConfig")
 
 @define
 class FileInputConfig:
-    """Configuration for reading data from a file with [`FileInputTransport`].
+    """Configuration for reading data from a file with `FileInputTransport`
 
     Attributes:
         path (str): File path.
@@ -19,7 +19,7 @@ class FileInputConfig:
             default is used.
         follow (Union[Unset, bool]): Enable file following.
 
-            When `false`, the endpoint outputs an [`eoi`](`InputConsumer::eoi`)
+            When `false`, the endpoint outputs an `InputConsumer::eoi`
             message and stops upon reaching the end of file.  When `true`, the
             endpoint will keep watching the file and outputting any new content
             appended to it.

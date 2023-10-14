@@ -73,7 +73,7 @@ impl KafkaInputEndpoint {
 /// may not be in the paused/unpaused state required by the endpoint,
 /// so we may need to pause or unpause them as appropriate.
 ///
-/// See https://github.com/edenhill/librdkafka/issues/1849 for a discussion
+/// See <https://github.com/edenhill/librdkafka/issues/1849> for a discussion
 /// of the pause/unpause behavior.
 struct KafkaInputContext {
     // We keep a weak reference to the endpoint to avoid a reference cycle:
