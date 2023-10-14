@@ -12,7 +12,7 @@ use utoipa::{
     ToSchema,
 };
 
-/// Configuration for reading data from Kafka topics with [`InputTransport`].
+/// Configuration for reading data from Kafka topics with `InputTransport`.
 #[derive(Deserialize, Debug)]
 pub struct KafkaInputConfig {
     /// Options passed directly to `rdkafka`.
@@ -182,7 +182,7 @@ const fn default_initialization_timeout_secs() -> u32 {
     10
 }
 
-/// Configuration for writing data to a Kafka topic with [`OutputTransport`].
+/// Configuration for writing data to a Kafka topic with `OutputTransport`.
 #[derive(Deserialize, Debug)]
 pub struct KafkaOutputConfig {
     /// Options passed directly to `rdkafka`.

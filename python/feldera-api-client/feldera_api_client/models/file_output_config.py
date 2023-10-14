@@ -7,7 +7,7 @@ T = TypeVar("T", bound="FileOutputConfig")
 
 @define
 class FileOutputConfig:
-    """Configuration for writing data to a file with [`FileOutputTransport`].
+    """Configuration for writing data to a file with `FileOutputTransport`.
 
     Attributes:
         path (str): File path.

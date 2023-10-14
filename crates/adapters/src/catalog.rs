@@ -440,7 +440,7 @@ pub struct OutputCollectionHandles {
     pub neighborhood_descr_handle: Option<Box<dyn DeScalarHandle>>,
 
     /// A stream of changes to the neighborhood, computed using the
-    /// [`Stream::neighborhood`] operator.
+    /// [`dbsp::Stream::neighborhood`] operator.
     pub neighborhood_handle: Option<Box<dyn SerCollectionHandle>>,
 
     /// A stream that contains the full snapshot of the neighborhood.  Only
@@ -453,7 +453,7 @@ pub struct OutputCollectionHandles {
     /// The value in the stream specifies the number of quantiles to
     /// output.  When  greater than zero, it triggers the quantiles
     /// computation.  The result is output to the
-    /// [`quantiles_handle`](`Self::quantiles_handle`) stream at the
+    /// `quantiles_handle` stream at the
     /// end of the current clock cycle.
     pub num_quantiles_handle: Option<InputHandle<usize>>,
 
@@ -461,7 +461,7 @@ pub struct OutputCollectionHandles {
     ///
     /// When the `num_quantiles_handle` input is set to `N`, `N>0`, this stream
     /// outputs up to `N` quantiles of the input collection, computed using
-    /// the [`Stream::stream_key_quantiles`] operator.
+    /// the [`dbsp::Stream::stream_key_quantiles`] operator.
     pub quantiles_handle: Option<Box<dyn SerCollectionHandle>>,
 }
 

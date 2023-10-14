@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use utoipa::ToSchema;
 
-/// Configuration for reading data from a file with [`FileInputTransport`].
+/// Configuration for reading data from a file with `FileInputTransport`
 #[derive(Deserialize, ToSchema)]
 pub struct FileInputConfig {
     /// File path.
@@ -15,7 +15,7 @@ pub struct FileInputConfig {
 
     /// Enable file following.
     ///
-    /// When `false`, the endpoint outputs an [`eoi`](`InputConsumer::eoi`)
+    /// When `false`, the endpoint outputs an `InputConsumer::eoi`
     /// message and stops upon reaching the end of file.  When `true`, the
     /// endpoint will keep watching the file and outputting any new content
     /// appended to it.
@@ -23,7 +23,7 @@ pub struct FileInputConfig {
     pub follow: bool,
 }
 
-/// Configuration for writing data to a file with [`FileOutputTransport`].
+/// Configuration for writing data to a file with `FileOutputTransport`.
 #[derive(Deserialize, ToSchema)]
 pub struct FileOutputConfig {
     /// File path.

@@ -31,7 +31,7 @@ pub enum EgressMode {
     /// Continuously monitor the output of the query.
     ///
     /// For queries that support snapshots, e.g.,
-    /// [neighborhood](`OutputQuery::Neighborhood`) queries,
+    /// `OutputQuery::Neighborhood` queries,
     /// the endpoint outputs the initial snapshot followed
     /// by a stream of deltas.  For queries that don't support
     /// snapshots, the endpoint outputs the stream of deltas
@@ -40,8 +40,8 @@ pub enum EgressMode {
     Watch,
     /// Output a single snapshot of query results.
     ///
-    /// Currently only supported for [quantile](`OutputQuery::Quantiles`)
-    /// and [neighborhood](`OutputQuery::Neighborhood`) queries.
+    /// Currently only supported for `OutputQuery::Quantiles`
+    /// and `OutputQuery::Neighborhood` queries.
     #[serde(rename = "snapshot")]
     Snapshot,
 }

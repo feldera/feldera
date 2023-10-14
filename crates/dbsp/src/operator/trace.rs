@@ -376,7 +376,7 @@ where
 /// where `F` is an operator that consumes an integral of its own output
 /// stream.
 ///
-/// Use the [`add_integrate_trace_feedback`] method to create a
+/// Use this method to create a
 /// [`TraceFeedbackConnector`] struct.  The struct contains the `delayed_trace`
 /// stream, which can be used as input to instantiate `F` and the `output`
 /// stream.  Close the loop by calling

@@ -13,7 +13,7 @@
 //! which allows them to be returned as error responses by HTTP endpoints.
 //! Our `ResponseError` implementation generates an HTTP response whose body
 //! is a JSON serialization of the
-//! [`ErrorResponse`](`dbsp_adapters::ErrorResponse`) type from the
+//! `dbsp_adapters::ErrorResponse` type from the
 //! `dbsp_adapters` crate, i.e., errors returned by the pipeline manager and
 //! by individual pipelines have the same format.
 

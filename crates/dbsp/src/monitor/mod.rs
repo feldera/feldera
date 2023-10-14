@@ -27,8 +27,7 @@ type CircuitErrorHandler = dyn Fn(&CircuitEvent, &TraceError);
 /// Callback function type signature for reporting an invalid `SchedulerEvent`.
 type SchedulerErrorHandler = dyn Fn(&SchedulerEvent, &TraceError);
 
-/// State of a circuit automaton (see
-/// [`SchedulerEvent`](`super::SchedulerEvent`) documentation).
+/// State of a circuit automaton (see [`SchedulerEvent`]).
 enum CircuitState {
     Idle,
     Running,
