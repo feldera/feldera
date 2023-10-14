@@ -194,7 +194,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPLetStatement let = new DBSPLetStatement(vec.variable,
                 new DBSPPath("Vec", "new").toExpression().call(), true);
         statements.add(let);
-        if (this.compilerOptions.optimizerOptions.incrementalize) {
+        if (this.compilerOptions.languageOptions.incrementalize) {
             for (int i = 0; i < inputType.tupFields.length; i++) {
                 DBSPExpression field = input.getVarReference().field(i);
                 DBSPExpression elems = new DBSPApplyExpression("to_elements",
@@ -667,10 +667,10 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             OptionsParser.SuppliedOptions options = parser.getOptions();
             try {
                 CompilerOptions compilerOptions = new CompilerOptions();
-                compilerOptions.optimizerOptions.incrementalize = incremental.get();
-                compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
-                compilerOptions.ioOptions.lenient = true;
-                compilerOptions.optimizerOptions.generateInputForEveryTable = true;
+                compilerOptions.languageOptions.incrementalize = incremental.get();
+                compilerOptions.languageOptions.throwOnError = options.stopAtFirstError;
+                compilerOptions.languageOptions.lenient = true;
+                compilerOptions.languageOptions.generateInputForEveryTable = true;
                 DBSPExecutor result = new DBSPExecutor(options, compilerOptions, "csv");
                 Set<String> bugs = options.readBugsFile();
                 result.avoid(bugs);

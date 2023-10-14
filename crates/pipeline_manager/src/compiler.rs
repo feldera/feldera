@@ -869,7 +869,7 @@ impl CompilationJob {
             .arg(sql_file_path.as_os_str())
             .arg("-i")
             .arg("-je")
-            .arg("-alltables")
+            .arg("--alltables")
             .stdin(Stdio::null())
             .stderr(Stdio::from(err_file.into_std().await))
             .stdout(Stdio::from(rust_file.into_std().await))

@@ -81,7 +81,7 @@ public class BaseSQLTests {
 
     DBSPCompiler noThrowCompiler() {
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.options.languageOptions.throwOnError = false;
         return compiler;
     }
 
@@ -153,12 +153,12 @@ public class BaseSQLTests {
      */
     public CompilerOptions testOptions(boolean incremental, boolean optimize, boolean jit) {
         CompilerOptions options = new CompilerOptions();
-        options.optimizerOptions.throwOnError = true;
-        options.optimizerOptions.generateInputForEveryTable = true;
+        options.languageOptions.throwOnError = true;
+        options.languageOptions.generateInputForEveryTable = true;
         options.ioOptions.jit = jit;
         options.ioOptions.quiet = true;
-        options.optimizerOptions.incrementalize = incremental;
-        options.optimizerOptions.optimizationLevel = optimize ? 2 : 1;
+        options.languageOptions.incrementalize = incremental;
+        options.languageOptions.optimizationLevel = optimize ? 2 : 1;
         return options;
     }
 

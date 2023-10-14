@@ -200,8 +200,8 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                         .as(JdbcExecutor.class);
                 CompilerOptions compilerOptions = new CompilerOptions();
                 compilerOptions.ioOptions.jit = true;
-                compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
-                compilerOptions.ioOptions.lenient = true;
+                compilerOptions.languageOptions.throwOnError = options.stopAtFirstError;
+                compilerOptions.languageOptions.lenient = true;
                 compilerOptions.ioOptions.quiet = true;
                 JitDbspExecutor result = new JitDbspExecutor(
                         Objects.requireNonNull(inner), options, compilerOptions);

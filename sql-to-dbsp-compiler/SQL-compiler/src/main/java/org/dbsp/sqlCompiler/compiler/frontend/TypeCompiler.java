@@ -66,7 +66,7 @@ public class TypeCompiler implements ICompilerComponent {
                 for (RelDataTypeField field : dt.getFieldList()) {
                     DBSPType type = this.convertType(field.getType(), true);
                     String fieldName = field.getName();
-                    if (this.getCompiler().options.ioOptions.lenient)
+                    if (this.getCompiler().options.languageOptions.lenient)
                         // If we are not lenient and names are duplicated
                         // we will get an exception below where we create the struct.
                         fieldName = fieldNameGen.freshName(fieldName);

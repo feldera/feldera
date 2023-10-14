@@ -1124,3 +1124,10 @@ where
 pub fn array<T>() -> Vec<T> {
     vec![]
 }
+
+pub fn limit<T>(vector: &[T], limit: usize) -> Vec<T>
+where
+    T: Clone,
+{
+    vector[0..limit].to_vec()
+}

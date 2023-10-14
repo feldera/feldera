@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -30,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
+import javax.annotation.Nullable;
 import java.util.List;
 
 /**
@@ -60,6 +62,11 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
         visitor.postorder(this);
     }
 
+    @Nullable
+    public DBSPOperator getOperator(String tableOrView) {
+        return this.circuit.getOperator(tableOrView);
+    }
+
     /**
      * @return The number of outputs of the circuit (SinkOperators).
      */
@@ -75,6 +82,16 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
      */
     public DBSPType getOutputType(int i) {
         return this.circuit.getOutputType(i);
+    }
+
+    /**
+     * The output type of the i-th input.
+     * Inputs are the tables, numbered in the order of creation in the
+     * input SQL program.
+     * @param i Input number.
+     */
+    public DBSPType getInputType(int i) {
+        return this.circuit.getInputType(i);
     }
 
     /**

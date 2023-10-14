@@ -40,14 +40,10 @@ import java.util.Map;
 @SuppressWarnings("CanBeFinal")
 // These fields cannot be final, since JCommander writes them through reflection.
 public class CompilerOptions {
-    /**
-     * Options for the optimizer.
-     */
+    /** Options related to the language compiled. */
     @SuppressWarnings("CanBeFinal")
-    public static class Optimizer {
-        /**
-         * If true the compiler should generate an incremental streaming circuit.
-         */
+    public static class Language {
+        /** If true the compiler should generate an incremental streaming circuit. */
         @Parameter(names = "-i", description = "Generate an incremental circuit")
         public boolean incrementalize = false;
         @Parameter(names = "-O", description = "Optimization level (0, 1, or 2)")
@@ -56,23 +52,40 @@ public class CompilerOptions {
          * Useful for development
          */
         public boolean throwOnError = false;
-        @Parameter(names = "-alltables", description = "Generate an input for each CREATE TABLE, even if the table is not used by any view")
+        @Parameter(names = "--alltables", description = "Generate an input for each CREATE TABLE, even if the table is not used by any view")
         public boolean generateInputForEveryTable = false;
+        @Parameter(names = "--ignoreOrder",
+                description = "Ignore ORDER BY clauses at the end")
+        public boolean ignoreOrderBy = false;
+        @Parameter(names = "--outputsAreSets",
+                description = "Ensure that outputs never contain duplicates")
+        public boolean outputsAreSets = false;
+        @Parameter(names = "-d", description = "SQL syntax dialect used",
+                converter = SqlLexicalRulesConverter.class)
+        public Lex lexicalRules = Lex.ORACLE;
+        @Parameter(names = "--lenient",
+                description = "Lenient SQL validation.  If true it allows duplicate column names in a view")
+        public boolean lenient = false;
 
-        /**
-         * Only compare fields that matter.
-         */
-        public boolean same(Optimizer optimizer) {
-            return this.incrementalize == optimizer.incrementalize;
+        public boolean same(Language language) {
+            // Only compare fields that matter.
+            return this.incrementalize == language.incrementalize &&
+                    this.ignoreOrderBy == language.ignoreOrderBy &&
+                    this.outputsAreSets == language.outputsAreSets &&
+                    this.lexicalRules.equals(language.lexicalRules);
         }
 
         @Override
         public String toString() {
-            return "Optimizer{" +
+            return "Language{" +
                     "incrementalize=" + this.incrementalize +
+                    ", ignoreOrderBy=" + this.ignoreOrderBy +
+                    ", outputsAreSets=" + this.outputsAreSets +
                     ", optimizationLevel=" + this.optimizationLevel +
                     ", throwOnError=" + this.throwOnError +
                     ", generateInputForEveryTable=" + this.generateInputForEveryTable +
+                    ", lexicalRules=" + this.lexicalRules +
+                    ", lenient=" + this.lenient +
                     '}';
         }
     }
@@ -106,23 +119,16 @@ public class CompilerOptions {
         public String inputFile = null;
         @Parameter(names = "-f", description = "Name of function to generate")
         public String functionName = "circuit";
-        @Parameter(names = "-d", description = "SQL syntax dialect used",
-                   converter = SqlLexicalRulesConverter.class)
-        public Lex lexicalRules;
-        @Parameter(names = "--lenient",
-                description = "Lenient SQL validation.  If true it allows duplicate column names in a view")
-        public boolean lenient = false;
 
         IO() {
-            this.lexicalRules = Lex.ORACLE;
+
         }
 
         /**
          * Only compare fields that matter.
          */
         public boolean same(IO io) {
-            if (jit != io.jit) return false;
-            return lexicalRules.equals(io.lexicalRules);
+            return jit == io.jit;
         }
 
         @Override
@@ -136,8 +142,6 @@ public class CompilerOptions {
                     ", emitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +
                     ", inputFile=" + Utilities.singleQuote(this.inputFile) +
                     ", functionName=" + Utilities.singleQuote(this.functionName) +
-                    ", lexicalRules=" + this.lexicalRules +
-                    ", lenient=" + this.lenient +
                     '}';
         }
     }
@@ -147,18 +151,18 @@ public class CompilerOptions {
     @ParametersDelegate
     public IO ioOptions = new IO();
     @ParametersDelegate
-    public Optimizer optimizerOptions = new Optimizer();
+    public Language languageOptions = new Language();
 
     public boolean same(CompilerOptions other) {
         if (!ioOptions.same(other.ioOptions)) return false;
-        return optimizerOptions.same(other.optimizerOptions);
+        return languageOptions.same(other.languageOptions);
     }
 
     @Override
     public int hashCode() {
         int result = (help ? 1 : 0);
         result = 31 * result + ioOptions.hashCode();
-        result = 31 * result + optimizerOptions.hashCode();
+        result = 31 * result + languageOptions.hashCode();
         return result;
     }
 
@@ -167,7 +171,7 @@ public class CompilerOptions {
         return "CompilerOptions{" +
                 "help=" + help +
                 ", ioOptions=" + ioOptions +
-                ", optimizerOptions=" + optimizerOptions +
+                ", optimizerOptions=" + languageOptions +
                 '}';
     }
 

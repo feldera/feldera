@@ -71,6 +71,10 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
         return this.outputOperators.get(outputNo).getType();
     }
 
+    public DBSPType getInputType(int inputNo) {
+        return this.inputOperators.get(inputNo).getType();
+    }
+
     public void addOperator(DBSPOperator operator) {
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Adding ")
@@ -95,8 +99,8 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
     public Iterable<DBSPOperator> getAllOperators() { return this.allOperators; }
 
     @Nullable
-    public DBSPOperator getOperator(String tableName) {
-        return this.operatorDeclarations.get(tableName);
+    public DBSPOperator getOperator(String tableOrView) {
+        return this.operatorDeclarations.get(tableOrView);
     }
 
     @Override
