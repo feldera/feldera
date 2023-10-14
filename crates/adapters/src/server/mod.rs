@@ -16,7 +16,6 @@ use actix_web::{
     web::{Data as WebData, Json, Payload, Query},
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
 };
-use actix_web_static_files::ResourceFiles;
 use clap::Parser;
 use colored::Colorize;
 use dbsp::operator::sample::MAX_QUANTILES;
@@ -401,30 +400,17 @@ where
     Ok(())
 }
 
-include!(concat!(env!("OUT_DIR"), "/generated.rs"));
-
 fn build_app<T>(app: App<T>, state: WebData<ServerState>) -> App<T>
 where
     T: ServiceFactory<ServiceRequest, Config = (), Error = ActixError, InitError = ()>,
 {
-    let generated = generate();
-
-    let index_data = match generated.get("index.html") {
-        None => "<html><head><title>DBSP server</title></head></html>"
-            .as_bytes()
-            .to_owned(),
-        Some(resource) => resource.data.to_owned(),
-    };
-
     app.app_data(state)
         .route(
             "/",
-            web::get().to(move || {
-                let index_data = index_data.clone();
-                async { HttpResponse::Ok().body(index_data) }
+            web::get().to(move || async {
+                HttpResponse::Ok().body("<html><head><title>DBSP server</title></head></html>")
             }),
         )
-        .service(ResourceFiles::new("/static", generated))
         .service(start)
         .service(pause)
         .service(shutdown)

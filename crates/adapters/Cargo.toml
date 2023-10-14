@@ -39,8 +39,6 @@ csv = "1.2.2"
 rdkafka = { version = "0.34.0", features = ["cmake-build", "ssl-vendored", "gssapi-vendored"], optional = true }
 actix = "0.13"
 actix-web = { version = "4.3", default-features = false, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
-actix-web-static-files = "4.0.0"
-static-files = "0.2.3"
 mime = "0.3.16"
 log = "0.4.20"
 size-of = { version = "0.1.2", features = ["time-std"], optional = true }
@@ -85,14 +83,6 @@ reqwest = "0.11.20"
 serial_test = "2.0.0"
 rust_decimal_macros = "1.32"
 
-[build-dependencies]
-static-files = "0.2.3"
-change-detection = "1.2"
-
-[package.metadata.cargo-machete]
-ignored = ["static-files"]
-
 [[bin]]
-
 name = "pipeline"
 path = "src/jit/pipeline.rs"
