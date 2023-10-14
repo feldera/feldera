@@ -33,6 +33,8 @@ import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.tools.RelRunner;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitFileAndSerialization;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitIODescription;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitSerializationKind;
@@ -56,6 +58,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
@@ -85,17 +88,17 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 public class OtherTests extends BaseSQLTests implements IWritesLogs {
+    static final String ddl = "CREATE TABLE T (\n" +
+            "COL1 INT NOT NULL" +
+            ", COL2 DOUBLE NOT NULL" +
+            ", COL3 BOOLEAN NOT NULL" +
+            ", COL4 VARCHAR NOT NULL" +
+            ", COL5 INT" +
+            ", COL6 DOUBLE" +
+            ")";
+
     private DBSPCompiler compileDef() {
         DBSPCompiler compiler = this.testCompiler();
-        String ddl = "CREATE TABLE T (\n" +
-                "COL1 INT NOT NULL" +
-                ", COL2 DOUBLE NOT NULL" +
-                ", COL3 BOOLEAN NOT NULL" +
-                ", COL4 VARCHAR NOT NULL" +
-                ", COL5 INT" +
-                ", COL6 DOUBLE" +
-                ")";
-
         compiler.compileStatement(ddl);
         return compiler;
     }
@@ -112,8 +115,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         new DBSPTupleExpression(new DBSPDoubleLiteral(12)),
                         new DBSPTupleExpression(new DBSPDoubleLiteral(1))));
         // Compile query, generate circuit.
-        // TODO: compiler options should specify JIT as a target
-        DBSPCompiler compiler = this.compileDef();
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.jit = true;
+        compiler.compileStatement(ddl);
         compiler.compileStatements(query);
         DBSPCircuit circuit = getCircuit(compiler);
         // Serialize circuit as JSON for the JIT executor
@@ -348,7 +352,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         "    PRIMARY KEY (unknown)\n" +
                         ")";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(ddl);
         CompilerMessages messages = compiler.messages;
         Assert.assertTrue(messages.toString().contains("does not correspond to a column"));
@@ -361,7 +365,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    PRIMARY KEY (git_commit_id)\n" +
                 ")";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(ddl);
         CompilerMessages messages = compiler.messages;
         Assert.assertTrue(messages.toString().contains("in table with another PRIMARY KEY constraint"));
@@ -374,7 +378,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    PRIMARY KEY (git_commit_id, git_commit_id)\n" +
                 ")";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(ddl);
         CompilerMessages messages = compiler.messages;
         Assert.assertTrue(messages.toString().contains("already declared as key"));
@@ -387,7 +391,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    PRIMARY KEY ()\n" +
                 ")";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(ddl);
         CompilerMessages messages = compiler.messages;
         Assert.assertTrue(messages.toString().contains("Error parsing SQL"));
@@ -488,7 +492,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         // TODO: this test may become invalid once we add support, so we need
         // here some truly invalid SQL.
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatements("create table PART_ORDER (\n" +
                 "    id bigint,\n" +
                 "    part bigint,\n" +
@@ -517,11 +521,46 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertTrue(errors.contains("Not yet implemented: OVER currently does not support sorting on nullable column"));
     }
 
+    // Test the ignoreOrderBy compiler flag
+    @Test
+    public void testIgnoreOrderBy() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.languageOptions.ignoreOrderBy = true;
+        String query = "CREATE VIEW V AS SELECT * FROM T ORDER BY T.COL2";
+        compiler.compileStatement(ddl);
+        compiler.compileStatements(query);
+        DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
+        // Check that the output type does not include a vector.
+        DBSPTypeZSet outputType = circuit.getOutputType(0).to(DBSPTypeZSet.class);
+        DBSPTypeZSet inputType = circuit.getInputType(0).to(DBSPTypeZSet.class);
+        Assert.assertTrue(inputType.sameType(outputType));
+    }
+
+    // Test the outputsAreSets compiler flag
+    @Test
+    public void testOutputSreSets() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.languageOptions.outputsAreSets = true;
+        String query = "CREATE VIEW V AS SELECT T.COL1 FROM T";
+        compiler.compileStatement(ddl);
+        compiler.compileStatements(query);
+        compiler.optimize();
+        DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
+        DBSPOperator sink = circuit.circuit.getOperator("V");
+        Assert.assertNotNull(sink);
+        Assert.assertEquals(1, sink.inputs.size());
+        DBSPOperator op = sink.inputs.get(0);
+        // There is no optimization I can imagine which will remove the distinct
+        Assert.assertTrue(op.is(DBSPDistinctOperator.class));
+    }
+
     @Test
     public void testTypeErrorMessage() {
-        // TODO: this test may become invalid once we add support
+        // TODO: this test may become invalid once we add support for ROW types
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatements("CREATE VIEW V AS SELECT ROW(2, 2);\n");
         String errors = compiler.messages.toString();
         Assert.assertTrue(errors.contains("error: Not yet implemented: ROW(2, 2)"));
@@ -531,7 +570,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     public void duplicateColumnTest() {
         DBSPCompiler compiler = this.testCompiler();
         // allow multiple errors to be reported
-        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.options.languageOptions.throwOnError = false;
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 INT" +
                 ", COL1 DOUBLE" +

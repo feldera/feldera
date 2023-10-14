@@ -550,7 +550,7 @@ public class NexmarkTest extends BaseSQLTests {
     //@Test
     public void testCompile() {
         CompilerOptions options = new CompilerOptions();
-        options.ioOptions.lexicalRules = Lex.ORACLE;
+        options.languageOptions.lexicalRules = Lex.ORACLE;
         DBSPCompiler compiler = new DBSPCompiler(options);
         compiler.compileStatement(table);
         for (String view: views)

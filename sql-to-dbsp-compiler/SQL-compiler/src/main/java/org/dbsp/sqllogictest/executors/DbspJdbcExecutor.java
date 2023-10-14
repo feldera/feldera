@@ -285,8 +285,8 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                 DBSPExecutor dbsp = Objects.requireNonNull(options.getExecutorByName("dbsp"))
                         .as(DBSPExecutor.class);
                 CompilerOptions compilerOptions = Objects.requireNonNull(dbsp).compilerOptions;
-                compilerOptions.optimizerOptions.throwOnError = options.stopAtFirstError;
-                compilerOptions.ioOptions.lenient = true;
+                compilerOptions.languageOptions.throwOnError = options.stopAtFirstError;
+                compilerOptions.languageOptions.lenient = true;
                 DbspJdbcExecutor result = new DbspJdbcExecutor(
                         Objects.requireNonNull(inner), options, compilerOptions);
                 Set<String> bugs = options.readBugsFile();

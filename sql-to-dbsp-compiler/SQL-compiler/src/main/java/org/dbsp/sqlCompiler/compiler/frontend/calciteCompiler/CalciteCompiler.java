@@ -293,7 +293,7 @@ public class CalciteCompiler implements IWritesLogs {
         }
         CalciteConnectionConfig connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
         this.parserConfig = SqlParser.config()
-                .withLex(options.ioOptions.lexicalRules)
+                .withLex(options.languageOptions.lexicalRules)
                 // Our own parser factory, which is a blend of DDL and BABEL
                 .withParserFactory(DbspParserImpl.FACTORY)
                 // Enable the next to preserve casing.
@@ -409,7 +409,7 @@ public class CalciteCompiler implements IWritesLogs {
      * are buggy and don't always work.
      */
     List<HepProgram> getOptimizationStages(RelNode rel) {
-        if (this.options.optimizerOptions.optimizationLevel < 1)
+        if (this.options.languageOptions.optimizationLevel < 1)
             // For optimization levels below 1 we don't even apply Calcite optimizations.
             // Note that this may cause compilation to fail, since our compiler does not
             // handle all possible RelNode programs.
@@ -741,7 +741,7 @@ public class CalciteCompiler implements IWritesLogs {
 
             if (specifiedName != null) {
                 if (colByName.containsKey(specifiedName)) {
-                    if (!this.options.ioOptions.lenient) {
+                    if (!this.options.languageOptions.lenient) {
                         this.errorReporter.reportError(
                                 new SourcePositionRange(objectName.getParserPosition()), false,
                                 "Duplicate column",

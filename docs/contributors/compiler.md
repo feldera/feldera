@@ -1,5 +1,7 @@
 # Using the SQL Compiler directly
 
+## SQL programs
+
 The compiler, which runs internally in the Feldera Platform, must be given the
 table definition first, and then the view definition. e.g.,
 
@@ -13,7 +15,6 @@ CREATE TABLE Person
 );
 CREATE VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18;
 ```
-
 
 The compiler generates a Rust function which implements the query as a function:
 given the input data, it produces the output data.
@@ -29,21 +30,31 @@ views                                           V
                                            view changes
 ```
 
-## Command-line compiler
+## Command-line options
 
 The compiler is invoked using a Linux shell script, called
 `sql-to-dbsp`, residing in the directory `SQL-compiler` directory.
 Here is an example:
 
-```
+```sh
 $ ./sql-to-dbsp -h
 Usage: sql-to-dbsp [options] Input file to compile
   Options:
     -h, --help, -?
       Show this message and exit
+    --alltables
+      Generate an input for each CREATE TABLE, even if the table is not used
+      by any view
+      Default: false
     --lenient
       Lenient SQL validation.  If true it allows duplicate column names in a 
       view 
+      Default: false
+    --outputAreSets
+      Ensure that outputs never contain duplicates
+      Default: false
+    --ignoreOrder
+      Ignore ORDER BY clauses at the end
       Default: false
     -O
       Optimization level (0, 1, or 2)
@@ -52,10 +63,6 @@ Usage: sql-to-dbsp [options] Input file to compile
       Specify logging level for a class (can be repeated)
       Syntax: -Tkey=value
       Default: {}
-    -alltables
-      Generate an input for each CREATE TABLE, even if the table is not used
-      by any view
-      Default: false
     -d
       SQL syntax dialect used
       Default: ORACLE
@@ -81,12 +88,59 @@ Usage: sql-to-dbsp [options] Input file to compile
       Output file; stdout if null
     -q
       Quiet: do not print warnings
-      Default: false      
+      Default: false
+```
+
+Here is a description of several command-line options:
+
+- O: sets the optimization level.  Note that some programs may not
+     compile at optimization level 0, since that level inhibits all
+     front-end (Calcite) optimizations, and some Calcite optimizations
+     are required to eliminate constructs that are not supported by
+     the back-end.
+
+--lenient: Some SQL queries generate output views having multiple columns
+     with the same name.  Such views can cause problems with other tools
+     that interface with the compiler outputs.  By default the compiler will
+     emit an error when given such views.  For example, the following definition:
+
+     `CREATE VIEW V AS SELECT T.COL2, S.COL2 from T, S`
+
+     will create a view with two columns named `COL2`.  The workaround is to
+     explicitly name the view columns, e.g.:
+
+     `CREATE VIEW V AS SELECT T.COL2 AS TCOL2, S.COL2 AS SCOL2 from T, S`
+
+     Using the `--lenient` flag will only emit warnings, but compile such programs.
+
+--ignoreOrder: `ORDER BY` clauses are not naturally incrementalizable.  Using this
+     flag directs the compiler to ignore `ORDER BY` clauses that occur *last*
+     in a view definition.  This will not affect `ORDER BY` clauses in an `OVER`
+     clause, or `ORDER BY` clauses followed by `LIMIT` clauses.  The use of this flag
+     is recommended with the `-i` flag that incrementalizes the compiler output.
+
+--outputAreSets: SQL queries can produce outputs that contain duplicates, but
+     such outputs are rarely useful in practice.  Using this flag will ensure that
+     each output VIEW does not contain duplicates.  This can also be ensured by
+     using a `SELECT DISTINCT` statement in the view definition.  An example query
+     that can produce duplicates is:
+
+     `CREATE VIEW V AS SELECT T.COL1 FROM T`
+
+-d: Sets the lexical rules used.  SQL dialects differ in rules for
+     allowed identifiers, quoting identifiers, conversions to
+     uppercase, case sensitivity of identifiers.
+
+## Compiling a SQL program to Rust
+
+The following command-line compiles a script called `x.sql` and writes
+the result in a file `lib.rs`:
+
+```sh
 $ ./sql-to-dbsp x.sql -o ../temp/src/lib.rs
 ```
 
-The last command-line compiles a script called `x.sql` and writes the
-result in a file `lib.rs`.  Let's assume we are compiling a file
+Let's assume we are compiling a file
 containing the program in the example above.
 
 In the generated program every `CREATE TABLE` is translated to an

@@ -44,31 +44,31 @@ public class CircuitOptimizer implements ICompilerComponent {
     }
 
     CircuitTransform getOptimizer() {
-        if (this.compiler.options.optimizerOptions.optimizationLevel < 2) {
-            if (this.compiler.options.optimizerOptions.incrementalize) {
-                return new IncrementalizeVisitor(this.getCompiler());
-            } else {
-                // Nothing.
-                return new Passes(this.getCompiler());
-            }
-        }
-
         List<CircuitTransform> passes = new ArrayList<>();
-
         IErrorReporter reporter = this.getCompiler();
-        passes.add(new MergeSums(reporter));
-        passes.add(new PropagateEmptySources(reporter));
-        passes.add(new DeadCode(reporter, this.compiler.options.optimizerOptions.generateInputForEveryTable, true));
-        passes.add(new OptimizeProjections(reporter));
-        passes.add(new OptimizeDistinctVisitor(reporter));
-        if (this.getCompiler().options.optimizerOptions.incrementalize) {
-            passes.add(new IncrementalizeVisitor(reporter));
-            passes.add(new OptimizeIncrementalVisitor(reporter));
+
+        if (this.getCompiler().options.languageOptions.outputsAreSets)
+            passes.add(new EnsureDistinctOutputs(reporter));
+        if (this.compiler.options.languageOptions.optimizationLevel < 2) {
+            if (this.compiler.options.languageOptions.incrementalize) {
+                passes.add(new IncrementalizeVisitor(this.getCompiler()));
+            }
+        } else {
+            // only on optimization level 2
+            passes.add(new MergeSums(reporter));
+            passes.add(new PropagateEmptySources(reporter));
+            passes.add(new DeadCode(reporter, this.compiler.options.languageOptions.generateInputForEveryTable, true));
+            passes.add(new OptimizeProjections(reporter));
+            passes.add(new OptimizeDistinctVisitor(reporter));
+            if (this.getCompiler().options.languageOptions.incrementalize) {
+                passes.add(new IncrementalizeVisitor(reporter));
+                passes.add(new OptimizeIncrementalVisitor(reporter));
+            }
+            passes.add(new DeadCode(reporter, true, false));
+            if (this.getCompiler().options.languageOptions.incrementalize)
+                passes.add(new NoIntegralVisitor(reporter));
+            passes.add(new Simplify(reporter).circuitRewriter());
         }
-        passes.add(new DeadCode(reporter, true, false));
-        if (this.getCompiler().options.optimizerOptions.incrementalize)
-            passes.add(new NoIntegralVisitor(reporter));
-        passes.add(new Simplify(reporter).circuitRewriter());
         return new Passes(reporter, passes);
     }
 

@@ -67,12 +67,11 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
 
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
-        options.ioOptions.lexicalRules = Lex.ORACLE;
         options.ioOptions.quiet = true;
-        options.optimizerOptions.throwOnError = true;
-        options.optimizerOptions.optimizationLevel = optimize ? 2 : 0;
-        options.optimizerOptions.generateInputForEveryTable = true;
-        options.optimizerOptions.incrementalize = false;
+        options.languageOptions.throwOnError = true;
+        options.languageOptions.optimizationLevel = optimize ? 2 : 0;
+        options.languageOptions.generateInputForEveryTable = true;
+        options.languageOptions.incrementalize = false;
         return options;
     }
 
@@ -85,7 +84,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareData(compiler);
         compiler.compileStatement(query);
-        if (!compiler.options.optimizerOptions.throwOnError) {
+        if (!compiler.options.languageOptions.throwOnError) {
             compiler.throwIfErrorsOccurred();
         }
         return compiler;
@@ -435,7 +434,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareData(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
-        if (!compiler.options.optimizerOptions.throwOnError)
+        if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
         compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
@@ -450,7 +449,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareData(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
-        if (!compiler.options.optimizerOptions.throwOnError)
+        if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
         compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
@@ -486,7 +485,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
      */
     public void shouldFail(String query, String messageFragment) {
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.optimizerOptions.throwOnError = false;
+        compiler.options.languageOptions.throwOnError = false;
         this.prepareData(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
         compiler.optimize();

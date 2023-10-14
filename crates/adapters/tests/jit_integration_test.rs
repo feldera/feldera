@@ -35,7 +35,7 @@ fn start_pipeline(test_dir: &str) -> JoinHandle<Result<ExitStatus, IoError>> {
                 "schema.json",
                 "-i",
                 "-j",
-                "-alltables",
+                "--alltables",
                 "project.sql",
             ])
             .stdout(ir_file)

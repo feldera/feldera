@@ -867,6 +867,24 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void limitTest() {
+        String query = "SELECT * FROM T ORDER BY T.COL2 LIMIT 1";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPVecLiteral(e1)
+        ));
+    }
+
+    @Test
+    public void nestedOrderbyTest() {
+        // If the optimizer doesn't remove the inner ORDER BY this test
+        // fails because the types don't match in Rust.
+        String query = "SELECT COL1 FROM (SELECT * FROM T ORDER BY T.COL2)";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(new DBSPI32Literal(10)),
+                new DBSPTupleExpression(new DBSPI32Literal(10))));
+    }
+
+    @Test
     public void orderbyDescendingTest() {
         String query = "SELECT * FROM T ORDER BY T.COL2 DESC";
         this.testQuery(query, new DBSPZSetLiteral.Contents(

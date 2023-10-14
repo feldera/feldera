@@ -70,6 +70,11 @@ public class JitTests extends EndToEndTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(t, t));
     }
 
+    @Test @Override @Ignore("ORDER BY not yet implemented")
+    public void limitTest() {
+        super.limitTest();
+    }
+
     @Test @Override @Ignore("ORDER BY not yet implemented https://github.com/feldera/feldera/issues/158")
     public void orderbyTest() {
         String query = "SELECT * FROM T ORDER BY T.COL2";

@@ -53,12 +53,7 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.type.*;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
+import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.util.*;
 
 import javax.annotation.Nullable;
@@ -807,7 +802,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         RelNode input = intersect.getInput(0);
         DBSPOperator previous = this.getInputAs(input, false);
 
-        if (inputs.size() == 0)
+        if (inputs.isEmpty())
             throw new UnsupportedException(node);
         if (inputs.size() == 1) {
             Utilities.putNew(this.nodeOperator, intersect, previous);
@@ -980,11 +975,17 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     public void visitSort(LogicalSort sort) {
         // Aggregate in a single group.
-        // TODO: make this more efficient?
         CalciteObject node = new CalciteObject(sort);
         RelNode input = sort.getInput();
         DBSPType inputRowType = this.convertType(input.getRowType(), false);
         DBSPOperator opInput = this.getOperator(input);
+        if (this.options.languageOptions.ignoreOrderBy && sort.fetch == null) {
+            this.assignOperator(sort, opInput);
+            return;
+        }
+
+        if (sort.offset != null)
+            throw new UnimplementedException(node);
 
         DBSPVariablePath t = inputRowType.var("t");
         DBSPExpression emptyGroupKeys =
@@ -1045,9 +1046,22 @@ public class CalciteToDBSPCompiler extends RelVisitor
             comparator = new DBSPFieldComparatorExpression(node, comparator, field, ascending);
         }
         DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator);
-        DBSPOperator sortElement = new DBSPMapOperator(
+        DBSPOperator result = new DBSPMapOperator(
                 node, sorter, vecType, new DBSPTypeWeight(), agg);
-        this.assignOperator(sort, sortElement);
+        if (sort.fetch != null) {
+            // TODO: sort with limit should be compiled into a TopK operator instead.
+            this.circuit.addOperator(result);
+            ExpressionCompiler expressionCompiler = new ExpressionCompiler(null, this.compiler);
+            DBSPExpression limit = expressionCompiler.compile(sort.fetch);
+            DBSPVariablePath v = new DBSPVariablePath("v", vecType);
+            DBSPExpression truncate =
+                    new DBSPApplyExpression(node, "limit", vecType, v,
+                            new DBSPCastExpression(node, limit, new DBSPTypeUSize(node, false)));
+            DBSPExpression limiter = truncate.closure(v.asRefParameter());
+            result = new DBSPMapOperator(
+                    node, limiter, vecType, new DBSPTypeWeight(), result);
+        }
+        this.assignOperator(sort, result);
     }
 
     @Override
