@@ -9,7 +9,7 @@ const EXCLUDE_LIST: [&str; 4] = [
     "../../web-console/node_modules",
     "../../web-console/out",
     "../../web-console/.next",
-    "../../web-console/pipline-manager-",
+    "../../web-console/pipeline-manager-",
 ];
 
 /// The build script has two modes:
