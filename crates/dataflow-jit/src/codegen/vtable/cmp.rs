@@ -803,10 +803,10 @@ impl Codegen {
                                     let ordering = builder.ins().isub(lhs_le_rhs, lhs_ge_rhs);
                                     builder.ins().brif(
                                         ordering,
-                                        next_compare,
-                                        &[],
                                         return_block,
                                         &[ordering],
+                                        next_compare,
+                                        &[],
                                     );
                                 }
 
@@ -833,10 +833,10 @@ impl Codegen {
                                     let ordering = builder.ins().select(lhs_nan, rhs_nan, less);
                                     builder.ins().brif(
                                         ordering,
-                                        next_compare,
-                                        &[],
                                         return_block,
                                         &[ordering],
+                                        next_compare,
+                                        &[],
                                     );
                                 }
 
@@ -848,10 +848,10 @@ impl Codegen {
                                 let ordering = builder.ins().select(less, less_than, greater_than);
                                 builder.ins().brif(
                                     eq,
-                                    next_compare,
-                                    &[],
                                     return_block,
                                     &[ordering],
+                                    next_compare,
+                                    &[],
                                 );
                             }
                         }
