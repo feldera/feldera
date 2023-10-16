@@ -122,7 +122,7 @@ public class RustFileWriter implements ICompilerComponent {
             "    Error as DBSPError,\n" +
             "    Runtime,\n" +
             "};\n" +
-            "use dbsp_adapters::{deserialize_table_record, Catalog};\n" +
+            "use dbsp_adapters::{deserialize_table_record, serialize_table_record, Catalog};\n" +
             "use size_of::*;\n" +
             "use ::serde::{Deserialize,Serialize};\n" +
             "use compare::{Compare, Extract};\n" +

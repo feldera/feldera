@@ -134,6 +134,9 @@ pub enum JsonFlavor {
     /// Debezium [Kafka Connect connector](https://debezium.io/documentation/reference/stable/connectors/mysql.html#mysql-data-types).
     #[serde(rename = "debezium_mysql")]
     DebeziumMySql,
+    /// JSON format accepted by Snowflake using default settings.
+    #[serde(rename = "snowflake")]
+    Snowflake,
 }
 
 const fn default_buffer_size_records() -> usize {
@@ -146,6 +149,7 @@ const fn default_buffer_size_records() -> usize {
 pub struct JsonEncoderConfig {
     #[serde(default)]
     pub update_format: JsonUpdateFormat,
+    pub json_flavor: Option<JsonFlavor>,
     #[serde(default = "default_buffer_size_records")]
     pub buffer_size_records: usize,
     #[serde(default)]

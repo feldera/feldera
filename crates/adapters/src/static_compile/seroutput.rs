@@ -1,6 +1,6 @@
 use crate::{
     catalog::{RecordFormat, SerBatch, SerCollectionHandle, SerCursor},
-    ControllerError,
+    ControllerError, SerializationContext, SerializeWithContext, SqlSerdeConfig,
 };
 use anyhow::Result as AnyResult;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
@@ -8,7 +8,6 @@ use dbsp::{
     trace::{Batch, BatchReader, Cursor},
     OutputHandle,
 };
-use serde::Serialize;
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
 
 /// Implementation of the [`std::io::Write`] trait that allows swapping out
@@ -55,49 +54,64 @@ where
 }
 
 /// A serializer that encodes values to a byte array.
-trait BytesSerializer: Send {
-    fn create() -> Self;
-    fn serialize<T: Serialize>(&mut self, val: &T, buf: &mut Vec<u8>) -> AnyResult<()>;
+trait BytesSerializer<C>: Send {
+    fn create(context: C) -> Self;
+    fn serialize<T: SerializeWithContext<C>>(
+        &mut self,
+        val: &T,
+        buf: &mut Vec<u8>,
+    ) -> AnyResult<()>;
 }
 
-struct CsvSerializer {
+struct CsvSerializer<C> {
     writer: CsvWriter<SwappableWrite<Vec<u8>>>,
+    context: C,
 }
 
-impl BytesSerializer for CsvSerializer {
-    fn create() -> Self {
+impl<C> BytesSerializer<C> for CsvSerializer<C>
+where
+    C: Send,
+{
+    fn create(context: C) -> Self {
         Self {
             writer: CsvWriterBuilder::new()
                 .has_headers(false)
                 .flexible(true)
                 .from_writer(SwappableWrite::new()),
+            context,
         }
     }
 
     fn serialize<T>(&mut self, val: &T, buf: &mut Vec<u8>) -> AnyResult<()>
     where
-        T: Serialize,
+        T: SerializeWithContext<C>,
     {
         let owned_buf = std::mem::take(buf);
         self.writer.get_ref().swap(Some(owned_buf));
-        let res = self.writer.serialize(val);
+        let val_with_context = SerializationContext::new(&self.context, val);
+        let res = self.writer.serialize(val_with_context);
         let _ = self.writer.flush();
         *buf = self.writer.get_ref().swap(None).unwrap();
         Ok(res?)
     }
 }
 
-struct JsonSerializer;
+struct JsonSerializer<C> {
+    context: C,
+}
 
-impl BytesSerializer for JsonSerializer {
-    fn create() -> Self {
-        Self
+impl<C> BytesSerializer<C> for JsonSerializer<C>
+where
+    C: Send,
+{
+    fn create(context: C) -> Self {
+        Self { context }
     }
     fn serialize<T>(&mut self, val: &T, buf: &mut Vec<u8>) -> AnyResult<()>
     where
-        T: Serialize,
+        T: SerializeWithContext<C>,
     {
-        serde_json::to_writer(buf, val)?;
+        val.serialize_with_context(&mut serde_json::Serializer::new(buf), &self.context)?;
         Ok(())
     }
 }
@@ -129,8 +143,8 @@ impl<B, KD, VD> SerCollectionHandle for SerCollectionHandleImpl<B, KD, VD>
 where
     B: Batch<Time = ()> + Send + Sync + Clone,
     B::R: Into<i64>,
-    KD: From<B::Key> + Serialize + 'static,
-    VD: From<B::Val> + Serialize + 'static,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static,
 {
     fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatch>> {
         self.handle
@@ -182,8 +196,8 @@ impl<B, KD, VD> SerBatch for SerBatchImpl<B, KD, VD>
 where
     B: BatchReader<Time = ()> + Clone + Send + Sync,
     B::R: Into<i64>,
-    KD: From<B::Key> + Serialize,
-    VD: From<B::Val> + Serialize,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig>,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig>,
 {
     fn key_count(&self) -> usize {
         self.batch.key_count()
@@ -198,43 +212,53 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn SerCursor + 'a>, ControllerError> {
         Ok(match record_format {
-            RecordFormat::Csv => Box::new(<SerCursorImpl<'a, CsvSerializer, B, KD, VD>>::new(
-                &self.batch,
-            )),
-            // TODO: configurable serializers.
-            RecordFormat::Json(_) => Box::new(<SerCursorImpl<'a, JsonSerializer, B, KD, VD>>::new(
-                &self.batch,
-            )),
+            RecordFormat::Csv => {
+                Box::new(<SerCursorImpl<'a, CsvSerializer<_>, B, KD, VD, _>>::new(
+                    &self.batch,
+                    SqlSerdeConfig::default(),
+                ))
+            }
+            RecordFormat::Json(json_flavor) => {
+                let config = SqlSerdeConfig::from(json_flavor);
+                Box::new(<SerCursorImpl<
+                    'a,
+                    JsonSerializer<_>,
+                    B,
+                    KD,
+                    VD,
+                    SqlSerdeConfig,
+                >>::new(&self.batch, config))
+            }
         })
     }
 }
 
 /// [`SerCursor`] implementation that wraps a [`Cursor`].
-struct SerCursorImpl<'a, Ser, B, KD, VD>
+struct SerCursorImpl<'a, Ser, B, KD, VD, C>
 where
     B: BatchReader,
 {
     cursor: B::Cursor<'a>,
     serializer: Ser,
-    phantom: PhantomData<fn() -> (KD, VD)>,
+    phantom: PhantomData<fn(KD, VD, C)>,
     key: Option<KD>,
     val: Option<VD>,
 }
 
-impl<'a, Ser, B, KD, VD> SerCursorImpl<'a, Ser, B, KD, VD>
+impl<'a, Ser, B, KD, VD, C> SerCursorImpl<'a, Ser, B, KD, VD, C>
 where
-    Ser: BytesSerializer,
+    Ser: BytesSerializer<C>,
     B: BatchReader<Time = ()> + Clone,
     B::R: Into<i64>,
-    KD: From<B::Key> + Serialize,
-    VD: From<B::Val> + Serialize,
+    KD: From<B::Key> + SerializeWithContext<C>,
+    VD: From<B::Val> + SerializeWithContext<C>,
 {
-    pub fn new(batch: &'a B) -> Self {
+    pub fn new(batch: &'a B, config: C) -> Self {
         let cursor = batch.cursor();
 
         let mut result = Self {
             cursor,
-            serializer: Ser::create(),
+            serializer: Ser::create(config),
             key: None,
             val: None,
             phantom: PhantomData,
@@ -261,13 +285,13 @@ where
     }
 }
 
-impl<'a, Ser, B, KD, VD> SerCursor for SerCursorImpl<'a, Ser, B, KD, VD>
+impl<'a, Ser, B, KD, VD, C> SerCursor for SerCursorImpl<'a, Ser, B, KD, VD, C>
 where
-    Ser: BytesSerializer,
+    Ser: BytesSerializer<C>,
     B: BatchReader<Time = ()> + Clone,
     B::R: Into<i64>,
-    KD: From<B::Key> + Serialize,
-    VD: From<B::Val> + Serialize,
+    KD: From<B::Key> + SerializeWithContext<C>,
+    VD: From<B::Val> + SerializeWithContext<C>,
 {
     fn key_valid(&self) -> bool {
         self.cursor.key_valid()

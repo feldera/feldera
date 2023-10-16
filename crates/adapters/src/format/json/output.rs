@@ -109,8 +109,15 @@ struct JsonEncoder {
 }
 
 impl JsonEncoder {
-    fn new(output_consumer: Box<dyn OutputConsumer>, config: JsonEncoderConfig) -> Self {
+    fn new(output_consumer: Box<dyn OutputConsumer>, mut config: JsonEncoderConfig) -> Self {
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
+
+        if config.json_flavor.is_none() {
+            config.json_flavor = Some(match config.update_format {
+                JsonUpdateFormat::Snowflake => JsonFlavor::Snowflake,
+                _ => JsonFlavor::Default,
+            });
+        }
 
         Self {
             output_consumer,
@@ -142,9 +149,9 @@ impl Encoder for JsonEncoder {
 
         let mut num_records = 0;
         for batch in batches.iter() {
-            // TODO: configurable serializer.
-            let mut cursor =
-                CursorWithPolarity::new(batch.cursor(RecordFormat::Json(JsonFlavor::Default))?);
+            let mut cursor = CursorWithPolarity::new(
+                batch.cursor(RecordFormat::Json(self.config.json_flavor.clone().unwrap()))?,
+            );
 
             while cursor.key_valid() {
                 if !cursor.val_valid() {
@@ -361,6 +368,7 @@ mod test {
     ) {
         let config = JsonEncoderConfig {
             update_format: U::update_format(),
+            json_flavor: None,
             buffer_size_records: 3,
             array,
         };
@@ -530,6 +538,7 @@ mod test {
     fn test_long_record_error() {
         let config = JsonEncoderConfig {
             update_format: JsonUpdateFormat::InsertDelete,
+            json_flavor: None,
             buffer_size_records: 3,
             array: false,
         };

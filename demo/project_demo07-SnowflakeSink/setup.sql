@@ -17,8 +17,7 @@ USE SCHEMA &{schema_name};
 create table PRICE (
     part bigint not null,
     vendor bigint not null,
-    -- TODO: uncomment when we support Snowflake timestamp format.
-    -- created timestamp,
+    created timestamp,
     effective_since date,
     price decimal
 );
@@ -98,13 +97,13 @@ CREATE TASK INGEST_DATA
             -- is a set (all weights are 1), is the only one that needs to take
             -- effect, since all previous updates get canceled out).
             SELECT * FROM PRICE_STREAM where (__stream_id, __seq_number)
-                in (SELECT __stream_id, max(__seq_number) as __seq_number FROM PRICE_STREAM GROUP BY (part, vendor, /*created,*/ effective_since, price, __stream_id))
-        ) AS S ON (T.part = S.part and T.vendor = S.vendor and /*T.created = S.created and*/ T.effective_since = S.effective_since and T.price = S.price)
+                in (SELECT __stream_id, max(__seq_number) as __seq_number FROM PRICE_STREAM GROUP BY (part, vendor, created, effective_since, price, __stream_id))
+        ) AS S ON (T.part = S.part and T.vendor = S.vendor and T.created = S.created and T.effective_since = S.effective_since and T.price = S.price)
         WHEN MATCHED AND S.__action = 'delete' THEN
             DELETE
         WHEN NOT MATCHED AND S.__action = 'insert' THEN
-            INSERT (part, vendor, /*created,*/ effective_since, price)
-            VALUES (S.part, S.vendor, /*S.created,*/ S.effective_since, S.price);
+            INSERT (part, vendor, created, effective_since, price)
+            VALUES (S.part, S.vendor, S.created, S.effective_since, S.price);
         -- Delete all ingested records from the landing table.
         -- We do this in the same transaction, before the stream
         -- offset advances.

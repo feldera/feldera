@@ -58,6 +58,12 @@ impl DeCollectionHandle for DeZSetHandles {
             RecordFormat::Json(JsonFlavor::DebeziumMySql) => {
                 Ok(Box::new(self.debezium_mysql_json.clone()))
             }
+            RecordFormat::Json(JsonFlavor::Snowflake) => {
+                Err(ControllerError::input_format_not_supported(
+                    "unknown endpoint",
+                    "Snowflake JSON input format is not supported in JIT mode",
+                ))
+            }
             RecordFormat::Csv => {
                 todo!()
             }

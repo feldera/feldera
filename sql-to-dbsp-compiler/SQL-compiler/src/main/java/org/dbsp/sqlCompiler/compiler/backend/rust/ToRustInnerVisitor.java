@@ -1034,12 +1034,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTypeStruct.Field field) {
-        if (!field.name.equals(field.sanitizedName)) {
-            this.builder.append("#[serde(rename=")
-                    .append(Utilities.doubleQuote(field.name))
-                    .append(")]")
-                    .newline();
-        }
         this.builder.append(field.sanitizedName)
                 .append(": ");
         field.type.accept(this);
@@ -1048,7 +1042,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPStructItem item) {
-        this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Serialize)]")
+        this.builder.append("#[derive(Clone, Debug, Eq, PartialEq)]")
                 .newline();
         builder.append("struct ")
                     .append(item.type.sanitizedName)

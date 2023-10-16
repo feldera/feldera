@@ -1,10 +1,13 @@
-//! Deserializer configuration used to parse SQL records.
+//! (De)serializer configuration used for SQL records.
 //!
-//! The [`DeserializeWithContext`](`crate::DeserializeWithContext`) trait
-//! provides a mechanism for building configurable deserializers.  This
-//! module defines the [`SqlDeserializerConfig`] type used to specify the
+//! The [`DeserializeWithContext`](`crate::DeserializeWithContext`) and
+//! [`SerializeWithContext`](`crate::SerializeWithContext`) traits
+//! provide a mechanism for building configurable deserializers and serializers.
+//! This module defines the [`SqlSerdeConfig`] type used to specify the
 //! encoding used for SQL types.  All input types used by a Feldera pipeline
-//! must implement `DeserializeWithContext<SqlDeserializerConfig>`
+//! must implement `DeserializeWithContext<SqlDeserializerConfig>`.
+//! Likewise all output types must implement
+//! `SerializeWithContext<SqlSerializerConfig>`.
 
 use pipeline_types::format::json::JsonFlavor;
 
@@ -59,7 +62,7 @@ impl Default for TimestampFormat {
 
 /// Deserializer configuration for parsing SQL records.
 #[derive(Clone, Default)]
-pub struct SqlDeserializerConfig {
+pub struct SqlSerdeConfig {
     /// `TIME` format.
     pub time_format: TimeFormat,
     /// `DATE` format.
@@ -68,7 +71,7 @@ pub struct SqlDeserializerConfig {
     pub timestamp_format: TimestampFormat,
 }
 
-impl From<JsonFlavor> for SqlDeserializerConfig {
+impl From<JsonFlavor> for SqlSerdeConfig {
     fn from(flavor: JsonFlavor) -> Self {
         match flavor {
             JsonFlavor::Default => Default::default(),
@@ -76,6 +79,11 @@ impl From<JsonFlavor> for SqlDeserializerConfig {
                 time_format: TimeFormat::Micros,
                 date_format: DateFormat::DaysSinceEpoch,
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%Z"),
+            },
+            JsonFlavor::Snowflake => Self {
+                time_format: TimeFormat::String("%H:%M:%S%.f"),
+                date_format: DateFormat::String("%Y-%m-%d"),
+                timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%:z"),
             },
         }
     }

@@ -137,13 +137,19 @@ pub fn start_circuit(
         })
         .collect();
 
-    let mut json_output_demands: HashMap<NodeId, DemandId> = HashMap::new();
+    let mut default_json_output_demands: HashMap<NodeId, DemandId> = HashMap::new();
+    let mut snowflake_json_output_demands: HashMap<NodeId, DemandId> = HashMap::new();
     for table_schema in schema.outputs.iter() {
         let (node, layout) = sink_names.get(&table_schema.name).ok_or_else(|| ControllerError::schema_validation_error(&format!("program schema specifies output view '{}', which does not exist in the dataflow graph", &table_schema.name)))?;
 
-        println!("table_name: {}, layout: {}", &table_schema.name, layout);
-        let json_config = build_json_ser_config(*layout, table_schema);
-        json_output_demands.insert(*node, demands.add_json_serialize(json_config));
+        let default_json_config =
+            build_json_ser_config(*layout, table_schema, &JsonFlavor::Default);
+        default_json_output_demands.insert(*node, demands.add_json_serialize(default_json_config));
+
+        let snowflake_json_config =
+            build_json_ser_config(*layout, table_schema, &JsonFlavor::Snowflake);
+        snowflake_json_output_demands
+            .insert(*node, demands.add_json_serialize(snowflake_json_config));
 
         // let csv_config = build_csv_ser_config(table_schema);
         // demands.add_csv_serialize(*layout, csv_config);
@@ -219,18 +225,33 @@ pub fn start_circuit(
 
         // FIXME: This is unsafe. The correct fix is to make sure `endpoint.disconnect`
         // returns after all endpoint threads have terminated.
-        let json =
-            unsafe { circuit.serialization_function(json_output_demands[&node_id], layout_id) }
-                .ok_or_else(|| {
-                    ControllerError::jit_error(&format!(
-                "JSON serialization function not found (view name: '{}', layout id: {layout_id})",
+        let default_json = unsafe {
+            circuit.serialization_function(default_json_output_demands[&node_id], layout_id)
+        }
+        .ok_or_else(|| {
+            ControllerError::jit_error(&format!(
+                "Default JSON serialization function not found (view name: '{}', layout id: {layout_id})",
                 table_schema.name,
             ))
-                })?;
+        })?;
+
+        let snowflake_json = unsafe {
+            circuit.serialization_function(snowflake_json_output_demands[&node_id], layout_id)
+        }
+        .ok_or_else(|| {
+            ControllerError::jit_error(&format!(
+                "Snowflake JSON serialization function not found (view name: '{}', layout id: {layout_id})",
+                table_schema.name,
+            ))
+        })?;
 
         catalog.register_output_collection_handle(
             &table_schema.name,
-            Box::new(SerZSetHandle::new(zset_handle.clone(), json)),
+            Box::new(SerZSetHandle::new(
+                zset_handle.clone(),
+                default_json,
+                snowflake_json,
+            )),
         )
     }
 
