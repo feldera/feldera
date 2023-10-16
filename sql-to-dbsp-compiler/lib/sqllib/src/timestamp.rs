@@ -3,9 +3,10 @@
 use crate::interval::{LongInterval, ShortInterval};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
 use dbsp_adapters::{
-    DateFormat, DeserializeWithContext, SqlDeserializerConfig, TimeFormat, TimestampFormat,
+    DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
+    TimestampFormat,
 };
-use serde::{de::Error as _, ser::Error as _, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de::Error as _, ser::Error as _, Deserialize, Deserializer, Serializer};
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
@@ -48,40 +49,37 @@ impl Debug for Timestamp {
     }
 }
 
-/// Serialize timestamp into the `YYYY-MM-DD HH:MM:SS.fff` format, where
-/// `fff` is the fractional part of a second.
-impl Serialize for Timestamp {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
+    fn serialize_with_context<S>(
+        &self,
+        serializer: S,
+        context: &SqlSerdeConfig,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let datetime =
-            NaiveDateTime::from_timestamp_millis(self.milliseconds).ok_or_else(|| {
-                S::Error::custom(format!(
-                    "timestamp value '{}' out of range",
-                    self.milliseconds
-                ))
-            })?;
-
-        serializer.serialize_str(&datetime.format("%F %T%.f").to_string())
+        let datetime = DateTime::from_timestamp(
+            self.milliseconds / 1000,
+            ((self.milliseconds % 1000) * 1000) as u32,
+        )
+        .ok_or_else(|| {
+            S::Error::custom(format!(
+                "timestamp value '{}' out of range",
+                self.milliseconds
+            ))
+        })?;
+        match context.timestamp_format {
+            TimestampFormat::String(format_string) => {
+                serializer.serialize_str(&datetime.format(format_string).to_string())
+            }
+        }
     }
 }
 
-/// Deserialize timestamp from the `YYYY-MM-DD HH:MM:SS.fff` format.
-///
-/// # Caveats
-///
-/// * The format does not include a time zone, because the `TIMESTAMP` type is
-///   supposed to be timezone-agnostic.
-/// * Different databases may use different default export formats for
-///   timestamps.  Moreover, I suspect that binary serialization formats
-///   represent timestamps as numbers (which is how they are stored inside the
-///   DB), so in the future we may need a smarter implementation that supports
-///   all these variants.
-impl<'de> DeserializeWithContext<'de, SqlDeserializerConfig> for Timestamp {
+impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Timestamp {
     fn deserialize_with_context<D>(
         deserializer: D,
-        config: &'de SqlDeserializerConfig,
+        config: &'de SqlSerdeConfig,
     ) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -395,25 +393,33 @@ where
     }
 }
 
-/// Serialize date into the `YYYY-MM-DD` format
-impl Serialize for Date {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+impl SerializeWithContext<SqlSerdeConfig> for Date {
+    fn serialize_with_context<S>(
+        &self,
+        serializer: S,
+        context: &SqlSerdeConfig,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let millis = (self.days as i64) * 86400 * 1000;
-        let datetime = NaiveDateTime::from_timestamp_millis(millis)
-            .ok_or_else(|| S::Error::custom(format!("date value '{}' out of range", self.days)))?;
+        match context.date_format {
+            DateFormat::String(format_string) => {
+                let millis = (self.days as i64) * 86400 * 1000;
+                let datetime = NaiveDateTime::from_timestamp_millis(millis).ok_or_else(|| {
+                    S::Error::custom(format!("date value '{}' out of range", self.days))
+                })?;
 
-        serializer.serialize_str(&datetime.format("%F").to_string())
+                serializer.serialize_str(&datetime.format(format_string).to_string())
+            }
+            DateFormat::DaysSinceEpoch => serializer.serialize_i32(self.days),
+        }
     }
 }
 
-/// Deserialize date from the `YYYY-MM-DD` format.
-impl<'de> DeserializeWithContext<'de, SqlDeserializerConfig> for Date {
+impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Date {
     fn deserialize_with_context<D>(
         deserializer: D,
-        config: &'de SqlDeserializerConfig,
+        config: &'de SqlSerdeConfig,
     ) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -684,20 +690,29 @@ where
     }
 }
 
-impl Serialize for Time {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+impl SerializeWithContext<SqlSerdeConfig> for Time {
+    fn serialize_with_context<S>(
+        &self,
+        serializer: S,
+        context: &SqlSerdeConfig,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let time = self.to_time();
-        serializer.serialize_str(&time.format("%H:%M:%S%.f").to_string())
+        match context.time_format {
+            TimeFormat::String(format_string) => {
+                let time = self.to_time();
+                serializer.serialize_str(&time.format(format_string).to_string())
+            }
+            TimeFormat::Micros => serializer.serialize_u64(self.nanoseconds / 1_000),
+        }
     }
 }
 
-impl<'de> DeserializeWithContext<'de, SqlDeserializerConfig> for Time {
+impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Time {
     fn deserialize_with_context<D>(
         deserializer: D,
-        config: &'de SqlDeserializerConfig,
+        config: &'de SqlSerdeConfig,
     ) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -751,7 +766,10 @@ pub fn extract_hour_Time(value: Time) -> i64 {
 #[cfg(test)]
 mod test {
     use super::{Date, Time, Timestamp};
-    use dbsp_adapters::{deserialize_table_record, DeserializeWithContext, SqlDeserializerConfig};
+    use dbsp_adapters::{
+        deserialize_table_record, serialize_table_record, DeserializeWithContext,
+        SerializeWithContext, SqlSerdeConfig,
+    };
     use lazy_static::lazy_static;
     use pipeline_types::format::json::JsonFlavor;
 
@@ -768,16 +786,22 @@ mod test {
         (time, "TIME", false, Time, None),
         (timestamp, "TIMESTAMP", false, Timestamp, None)
     });
+    serialize_table_record!(TestStruct[3] {
+        date["DATE"]: Date,
+        time["TIME"]: Time,
+        timestamp["TIMESTAMP"]:  Timestamp
+    });
 
     lazy_static! {
-        static ref DEFAULT_CONFIG: SqlDeserializerConfig = SqlDeserializerConfig::default();
-        static ref DEBEZIUM_CONFIG: SqlDeserializerConfig =
-            SqlDeserializerConfig::from(JsonFlavor::DebeziumMySql);
+        static ref DEFAULT_CONFIG: SqlSerdeConfig = SqlSerdeConfig::default();
+        static ref DEBEZIUM_CONFIG: SqlSerdeConfig =
+            SqlSerdeConfig::from(JsonFlavor::DebeziumMySql);
+        static ref SNOWFLAKE_CONFIG: SqlSerdeConfig = SqlSerdeConfig::from(JsonFlavor::Snowflake);
     }
 
     fn deserialize_with_default_config<'de, T>(json: &'de str) -> Result<T, serde_json::Error>
     where
-        T: DeserializeWithContext<'de, SqlDeserializerConfig>,
+        T: DeserializeWithContext<'de, SqlSerdeConfig>,
     {
         T::deserialize_with_context(
             &mut serde_json::Deserializer::from_str(json),
@@ -787,12 +811,35 @@ mod test {
 
     fn deserialize_with_debezium_config<'de, T>(json: &'de str) -> Result<T, serde_json::Error>
     where
-        T: DeserializeWithContext<'de, SqlDeserializerConfig>,
+        T: DeserializeWithContext<'de, SqlSerdeConfig>,
     {
         T::deserialize_with_context(
             &mut serde_json::Deserializer::from_str(json),
             &DEBEZIUM_CONFIG,
         )
+    }
+
+    fn serialize_with_default_config<'de, T>(val: &T) -> Result<String, serde_json::Error>
+    where
+        T: SerializeWithContext<SqlSerdeConfig>,
+    {
+        let mut data = Vec::new();
+        val.serialize_with_context(&mut serde_json::Serializer::new(&mut data), &DEFAULT_CONFIG)
+            .unwrap();
+        Ok(String::from_utf8(data).unwrap())
+    }
+
+    fn serialize_with_snowflake_config<'de, T>(val: &T) -> Result<String, serde_json::Error>
+    where
+        T: SerializeWithContext<SqlSerdeConfig>,
+    {
+        let mut data = Vec::new();
+        val.serialize_with_context(
+            &mut serde_json::Serializer::new(&mut data),
+            &SNOWFLAKE_CONFIG,
+        )
+        .unwrap();
+        Ok(String::from_utf8(data).unwrap())
     }
 
     #[test]
@@ -811,6 +858,19 @@ mod test {
     }
 
     #[test]
+    fn snowflake_json() {
+        assert_eq!(
+            serialize_with_snowflake_config(&TestStruct {
+                date: Date::new(19628),
+                time: Time::new(84075123000000),
+                timestamp: Timestamp::new(1529501823000),
+            })
+            .unwrap(),
+            r#"{"DATE":"2023-09-28","TIME":"23:21:15.123","TIMESTAMP":"2018-06-20T13:37:03+00:00"}"#
+        );
+    }
+
+    #[test]
     fn default_json() {
         assert_eq!(
             deserialize_with_default_config::<TestStruct>(
@@ -822,6 +882,16 @@ mod test {
                 time: Time::new(84075123000000),
                 timestamp: Timestamp::new(1529501823000),
             }
+        );
+
+        assert_eq!(
+            serialize_with_default_config(&TestStruct {
+                date: Date::new(19628),
+                time: Time::new(84075123000000),
+                timestamp: Timestamp::new(1529501823000),
+            })
+            .unwrap(),
+            r#"{"DATE":"2023-09-28","TIME":"23:21:15.123","TIMESTAMP":"2018-06-20 13:37:03"}"#
         );
     }
 }

@@ -1,18 +1,15 @@
 use crate::{
     catalog::{NeighborhoodEntry, OutputCollectionHandles, SerCollectionHandle},
     static_compile::{DeScalarHandle, DeScalarHandleImpl},
-    Catalog, DeserializeWithContext,
+    Catalog, DeserializeWithContext, SerializeWithContext,
 };
 use dbsp::{
     algebra::ZRingValue,
     operator::{DelayedFeedback, FilterMap, NeighborhoodDescr},
     CollectionHandle, DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream, UpsertHandle, ZSet,
 };
-use serde::Serialize;
 
-use super::{
-    DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl, SqlDeserializerConfig,
-};
+use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl, SqlSerdeConfig};
 
 impl Catalog {
     /// Add an input stream of Z-sets to the catalog.
@@ -26,15 +23,15 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         handle: CollectionHandle<Z::Key, Z::R>,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
-            + Serialize
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
             + Send
             + 'static,
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
-        Z::Key: Serialize + Sync + From<D>,
+        Z::Key: Sync + From<D>,
     {
         self.register_input_collection_handle(name, DeZSetHandle::new(handle));
 
@@ -53,15 +50,15 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         handle: UpsertHandle<Z::Key, bool>,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
-            + Serialize
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
             + Send
             + 'static,
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
-        Z::Key: Serialize + Sync + From<D>,
+        Z::Key: Sync + From<D>,
     {
         self.register_input_collection_handle(name, DeSetHandle::new(handle));
 
@@ -90,21 +87,21 @@ impl Catalog {
         key_func: F,
     ) where
         F: Fn(&V) -> K + Clone + Send + Sync + 'static,
-        KD: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
-            + Serialize
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Clone
             + Send
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
-            + Serialize
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Clone
             + Send
             + 'static,
         R: DBWeight + ZRingValue + Into<i64> + Sync,
-        K: DBData + Serialize + Sync + Default + From<KD>,
-        V: DBData + Serialize + Sync + From<VD> + Default,
+        K: DBData + Sync + Default + From<KD>,
+        V: DBData + Sync + From<VD> + Default,
     {
         self.register_input_collection_handle(name, DeMapHandle::new(handle, key_func.clone()));
 
@@ -115,15 +112,15 @@ impl Catalog {
     /// Add an output stream of Z-sets to the catalog.
     pub fn register_output_zset<Z, D>(&mut self, name: &str, stream: Stream<RootCircuit, Z>)
     where
-        D: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
-            + Serialize
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
             + Send
             + 'static,
         Z: ZSet + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
-        Z::Key: Serialize + Sync + From<D>,
+        Z::Key: Sync + From<D>,
     {
         let circuit = stream.circuit();
 
@@ -228,21 +225,21 @@ impl Catalog {
         key_func: F,
     ) where
         F: Fn(&V) -> K + Clone + Send + Sync + 'static,
-        KD: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
-            + Serialize
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Clone
             + Send
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
-            + Serialize
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Clone
             + Send
             + 'static,
         R: DBWeight + ZRingValue + Into<i64> + Sync,
-        K: DBData + Serialize + Send + Sync + From<KD> + Default,
-        V: DBData + Serialize + Send + Sync + From<VD> + Default,
+        K: DBData + Send + Sync + From<KD> + Default,
+        V: DBData + Send + Sync + From<VD> + Default,
     {
         let circuit = stream.circuit();
 

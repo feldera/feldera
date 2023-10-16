@@ -131,8 +131,9 @@ public class ToRustHandleVisitor extends ToRustVisitor {
     }
 
     /**
-     * Generate a call to the Rust macro that describes how fields are named.
-     * (deserialize_table_record).
+     * Generate calls to the Rust macros that generate serialization and deserialization code
+     * for the struct.
+     *
      * @param tableName Table or view whose type is being described.
      * @param type      Type of record in the table.
      * @param output    True if this is a view (output).
@@ -168,6 +169,36 @@ public class ToRustHandleVisitor extends ToRustVisitor {
             this.builder.append(", ")
                     .append(field.type.mayBeNull ? "Some(None)" : "None")
                     .append(")");
+        }
+        this.builder.newline()
+                .decrease()
+                .append("});")
+                .newline();
+
+        this.builder.append("serialize_table_record!(");
+        this.builder.append(type.sanitizedName)
+                .append("[")
+                .append(type.fields.size())
+                .append("]{")
+                .increase();
+        first = true;
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            if (!first)
+                this.builder.append(",").newline();
+            first = false;
+            String name = field.name;
+            boolean quoted = field.nameIsQuoted;
+            if (output) {
+                name = name.toUpperCase(Locale.ENGLISH);
+                quoted = false;
+            }
+            this.builder
+                    .append(field.sanitizedName)
+                    .append("[")
+                    .append(Utilities.doubleQuote(name))
+                    .append("]")
+                    .append(": ");
+            field.type.accept(this.innerVisitor);
         }
         this.builder.newline()
                 .decrease()

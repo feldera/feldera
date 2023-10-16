@@ -164,5 +164,5 @@ pub use transport::{
 
 pub use static_compile::{
     DateFormat, DeserializationContext, DeserializeWithContext, FieldParseError,
-    SqlDeserializerConfig, TimeFormat, TimestampFormat,
+    SerializationContext, SerializeWithContext, SqlSerdeConfig, TimeFormat, TimestampFormat,
 };

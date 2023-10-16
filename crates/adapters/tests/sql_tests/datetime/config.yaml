@@ -13,3 +13,13 @@ outputs:
           path: v1.json
     format:
       name: json
+  v1-snowflake:
+    stream: V1
+    transport:
+        name: file
+        config:
+          path: v1-snowflake.json
+    format:
+        name: json
+        config:
+          update_format: snowflake

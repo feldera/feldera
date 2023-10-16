@@ -2,7 +2,7 @@ use proptest::{collection, prelude::*};
 use proptest_derive::Arbitrary;
 use size_of::SizeOf;
 
-use crate::deserialize_without_context;
+use crate::{deserialize_without_context, serialize_struct};
 
 #[derive(
     Debug,
@@ -29,6 +29,13 @@ pub struct TestStruct {
 }
 
 deserialize_without_context!(TestStruct);
+
+serialize_struct!(TestStruct()[4]{
+    id["id"]: u32,
+    b["b"]: bool,
+    i["i"]: Option<i64>,
+    s["s"]: String
+});
 
 /// Generate a batch of records no larger that `size`.
 ///

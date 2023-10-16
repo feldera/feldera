@@ -6,6 +6,7 @@ use dbsp::{
     trace::{BatchReader, Cursor},
     OrdZSet, OutputHandle,
 };
+use pipeline_types::format::json::JsonFlavor;
 
 use crate::{
     catalog::{RecordFormat, SerCollectionHandle, SerCursor},
@@ -18,12 +19,17 @@ type RowZSet = OrdZSet<Row, i32>;
 /// serialization functions for all supported formats.
 struct SerZSet {
     zset: RowZSet,
-    json: SerializeFn,
+    default_json: SerializeFn,
+    snowflake_json: SerializeFn,
 }
 
 impl SerZSet {
-    fn new(zset: RowZSet, json: SerializeFn) -> Self {
-        Self { zset, json }
+    fn new(zset: RowZSet, default_json: SerializeFn, snowflake_json: SerializeFn) -> Self {
+        Self {
+            zset,
+            default_json,
+            snowflake_json,
+        }
     }
 }
 
@@ -42,10 +48,14 @@ impl SerBatch for SerZSet {
     ) -> Result<Box<dyn SerCursor + 'a>, ControllerError> {
         match record_format {
             RecordFormat::Csv => todo!(),
-            // TODO: flavor-specific encoders.
-            RecordFormat::Json(_) => {
-                Ok(Box::new(SerZSetCursor::new(self.zset.cursor(), self.json)))
-            }
+            RecordFormat::Json(JsonFlavor::Snowflake) => Ok(Box::new(SerZSetCursor::new(
+                self.zset.cursor(),
+                self.snowflake_json,
+            ))),
+            RecordFormat::Json(_) => Ok(Box::new(SerZSetCursor::new(
+                self.zset.cursor(),
+                self.default_json,
+            ))),
         }
     }
 }
@@ -113,33 +123,46 @@ impl<'a> SerCursor for SerZSetCursor<'a> {
 #[derive(Clone)]
 pub struct SerZSetHandle {
     handle: OutputHandle<RowZSet>,
-    json: SerializeFn,
+    default_json: SerializeFn,
+    snowflake_json: SerializeFn,
 }
 
 impl SerZSetHandle {
-    pub fn new(handle: OutputHandle<OrdZSet<Row, i32>>, json: SerializeFn) -> Self {
-        Self { handle, json }
+    pub fn new(
+        handle: OutputHandle<OrdZSet<Row, i32>>,
+        default_json: SerializeFn,
+        snowflake_json: SerializeFn,
+    ) -> Self {
+        Self {
+            handle,
+            default_json,
+            snowflake_json,
+        }
     }
 }
 
 impl SerCollectionHandle for SerZSetHandle {
     fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatch>> {
-        self.handle
-            .take_from_worker(worker)
-            .map(|batch| Box::new(SerZSet::new(batch, self.json)) as Box<dyn SerBatch>)
+        self.handle.take_from_worker(worker).map(|batch| {
+            Box::new(SerZSet::new(batch, self.default_json, self.snowflake_json))
+                as Box<dyn SerBatch>
+        })
     }
 
     fn take_from_all(&self) -> Vec<Arc<dyn SerBatch>> {
         self.handle
             .take_from_all()
             .into_iter()
-            .map(|batch| Arc::new(SerZSet::new(batch, self.json)) as Arc<dyn SerBatch>)
+            .map(|batch| {
+                Arc::new(SerZSet::new(batch, self.default_json, self.snowflake_json))
+                    as Arc<dyn SerBatch>
+            })
             .collect()
     }
 
     fn consolidate(&self) -> Box<dyn SerBatch> {
         let batch = self.handle.consolidate();
-        Box::new(SerZSet::new(batch, self.json))
+        Box::new(SerZSet::new(batch, self.default_json, self.snowflake_json))
     }
 
     fn fork(&self) -> Box<dyn SerCollectionHandle> {

@@ -430,7 +430,7 @@ impl Parser for JsonParser {
 mod test {
     use crate::{
         deserialize_table_record, test::mock_parser_pipeline, transport::InputConsumer,
-        DeserializeWithContext, FormatConfig, ParseError, SqlDeserializerConfig,
+        DeserializeWithContext, FormatConfig, ParseError, SqlSerdeConfig,
     };
     use log::trace;
     use pipeline_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -480,11 +480,7 @@ mod test {
 
     fn run_test_cases<T>(test_cases: Vec<TestCase<T>>)
     where
-        T: Debug
-            + Eq
-            + for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
-            + Send
-            + 'static,
+        T: Debug + Eq + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     {
         for test in test_cases {
             trace!("test: {test:?}");

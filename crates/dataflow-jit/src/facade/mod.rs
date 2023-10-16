@@ -3,7 +3,9 @@ mod handle;
 mod tests;
 
 pub use demands::Demands;
-pub use handle::{DeCollectionStream, JsonZSetHandle};
+pub use handle::{
+    DeCollectionStream, JsonIndexedZSetHandle, JsonMapHandle, JsonSetHandle, JsonZSetHandle,
+};
 
 use crate::{
     codegen::{
@@ -11,7 +13,6 @@ use crate::{
         CodegenConfig, NativeLayout, NativeLayoutCache, VTable,
     },
     dataflow::{CompiledDataflow, JitHandle, RowInput, RowOutput},
-    facade::handle::{JsonIndexedZSetHandle, JsonMapHandle, JsonSetHandle},
     ir::{
         literal::{NullableConstant, RowLiteral, StreamCollection},
         nodes::StreamLayout,

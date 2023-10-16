@@ -15,10 +15,10 @@ create table PART (
 create table PRICE (
     part bigint not null,
     vendor bigint not null,
-    -- TODO: Snowflake-compatible timestamp serialization
-    -- created timestamp,
+    created timestamp,
     effective_since date,
-    price decimal
+    price decimal,
+    f float
 );
 
 create view PRICE_OUT as select * from PRICE;

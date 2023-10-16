@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result as AnyResult};
 use dbsp::{algebra::ZRingValue, CollectionHandle, DBData, DBWeight, InputHandle, UpsertHandle};
 use std::{collections::VecDeque, marker::PhantomData};
 
-use super::SqlDeserializerConfig;
+use super::SqlSerdeConfig;
 
 /// A deserializer that parses byte arrays into a strongly typed representation.
 pub trait DeserializerFromBytes<C> {
@@ -154,11 +154,7 @@ impl<T, D, F> DeScalarHandleImpl<T, D, F> {
 impl<T, D, F> DeScalarHandle for DeScalarHandleImpl<T, D, F>
 where
     T: Default + Send + Clone + 'static,
-    D: Default
-        + for<'de> DeserializeWithContext<'de, SqlDeserializerConfig>
-        + Send
-        + Clone
-        + 'static,
+    D: Default + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Clone + 'static,
     F: Fn(D) -> T + Send + Clone + 'static,
 {
     fn configure_deserializer(
@@ -167,7 +163,7 @@ where
     ) -> Result<Box<dyn DeScalarStream>, ControllerError> {
         match record_format {
             RecordFormat::Csv => {
-                let config = SqlDeserializerConfig::default();
+                let config = SqlSerdeConfig::default();
                 Ok(Box::new(DeScalarStreamImpl::<
                     CsvDeserializerFromBytes<_>,
                     T,
@@ -181,7 +177,7 @@ where
                 )))
             }
             RecordFormat::Json(flavor) => {
-                let config = SqlDeserializerConfig::from(flavor);
+                let config = SqlSerdeConfig::from(flavor);
                 Ok(Box::new(DeScalarStreamImpl::<
                     JsonDeserializerFromBytes<_>,
                     T,
@@ -273,7 +269,7 @@ impl<K, D, R> DeCollectionHandle for DeZSetHandle<K, D, R>
 where
     K: DBData + From<D>,
     R: DBWeight + ZRingValue,
-    D: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -281,7 +277,7 @@ where
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
             RecordFormat::Csv => {
-                let config = SqlDeserializerConfig::default();
+                let config = SqlSerdeConfig::default();
                 Ok(Box::new(DeZSetStream::<
                     CsvDeserializerFromBytes<_>,
                     K,
@@ -291,7 +287,7 @@ where
                 >::new(self.handle.clone(), config)))
             }
             RecordFormat::Json(flavor) => {
-                let config = SqlDeserializerConfig::from(flavor);
+                let config = SqlSerdeConfig::from(flavor);
                 Ok(Box::new(DeZSetStream::<
                     JsonDeserializerFromBytes<_>,
                     K,
@@ -402,7 +398,7 @@ impl<K, D> DeSetHandle<K, D> {
 impl<K, D> DeCollectionHandle for DeSetHandle<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -412,14 +408,14 @@ where
             RecordFormat::Csv => Ok(Box::new(
                 DeSetStream::<CsvDeserializerFromBytes<_>, K, D, _>::new(
                     self.handle.clone(),
-                    SqlDeserializerConfig::default(),
+                    SqlSerdeConfig::default(),
                 ),
             )),
             RecordFormat::Json(flavor) => {
                 Ok(Box::new(
                     DeSetStream::<JsonDeserializerFromBytes<_>, K, D, _>::new(
                         self.handle.clone(),
-                        SqlDeserializerConfig::from(flavor),
+                        SqlSerdeConfig::from(flavor),
                     ),
                 ))
             }
@@ -521,9 +517,9 @@ impl<K, KD, V, VD, F> DeMapHandle<K, KD, V, VD, F> {
 impl<K, KD, V, VD, F> DeCollectionHandle for DeMapHandle<K, KD, V, VD, F>
 where
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig> + Send + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlDeserializerConfig> + Send + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     F: Fn(&V) -> K + Clone + Send + 'static,
 {
     fn configure_deserializer(
@@ -542,7 +538,7 @@ where
             >::new(
                 self.handle.clone(),
                 self.key_func.clone(),
-                SqlDeserializerConfig::default(),
+                SqlSerdeConfig::default(),
             ))),
             RecordFormat::Json(flavor) => Ok(Box::new(DeMapStream::<
                 JsonDeserializerFromBytes<_>,
@@ -555,7 +551,7 @@ where
             >::new(
                 self.handle.clone(),
                 self.key_func.clone(),
-                SqlDeserializerConfig::from(flavor),
+                SqlSerdeConfig::from(flavor),
             ))),
         }
     }

@@ -4,6 +4,7 @@
 //! schema, start a pipeline server using this IR and feed some test data to it.
 
 use reqwest::{blocking::Client, StatusCode};
+use serde_json::json;
 use serial_test::serial;
 use std::{
     fs::{self},
@@ -221,5 +222,20 @@ fn datetime_test() {
     assert_eq!(
         fs::read_to_string("tests/sql_tests/datetime/v1.json").unwrap(),
         r#"{"insert":{"D":"2016-01-16","TS":"2018-06-20 13:37:03"}}"#
+    );
+    let mut serialized = serde_json::from_str::<serde_json::Value>(
+        &fs::read_to_string("tests/sql_tests/datetime/v1-snowflake.json").unwrap(),
+    )
+    .unwrap();
+    serialized.as_object_mut().unwrap().remove("__stream_id");
+
+    assert_eq!(
+        serialized,
+        json!({
+            "D":"2016-01-16",
+            "TS":"2018-06-20T13:37:03+00:00",
+            "__action":"insert",
+            "__seq_number":0
+        })
     );
 }

@@ -205,9 +205,9 @@ def verify(dbsp_url, pipeline: DBSPPipelineConfig):
     print("Pushing PRICE data")
     requests.post(
         f"{dbsp_url}/v0/pipelines/{pipeline.pipeline_id}/ingress/PRICE?format=json",
-        data=r"""{"insert": {"part": 1, "vendor": 2, "effective_since": "2019-05-21", "price": 10000}}
-{"insert": {"part": 2, "vendor": 1, "effective_since": "2023-10-10", "price": 15000}}
-{"insert": {"part": 3, "vendor": 3, "effective_since": "2024-01-01", "price": 9000}}""",
+        data=r"""{"insert": {"part": 1, "vendor": 2, "created": "2019-05-20 13:37:03", "effective_since": "2019-05-21", "price": 10000, "f": 0.123}}
+{"insert": {"part": 2, "vendor": 1, "created": "2023-10-9 00:00:00", "effective_since": "2023-10-10", "price": 15000, "f": 12345E-2}}
+{"insert": {"part": 3, "vendor": 3, "created": "2024-01-01 11:15:00", "effective_since": "2024-01-01", "price": 9000, "f": 12345}}""",
     ).raise_for_status()
 
     print("Connecting to Snowflake")
@@ -224,7 +224,7 @@ def verify(dbsp_url, pipeline: DBSPPipelineConfig):
     start = time.time()
 
     while True:
-        query = f"select * from {LANDING_SCHEMA_NAME}.preferred_vendor"
+        query = f"select * from {LANDING_SCHEMA_NAME}.price"
         print(query)
         vendors = cursor.execute(query).fetchall()
         print(f"vendors in the landing table: {vendors}")
@@ -232,7 +232,7 @@ def verify(dbsp_url, pipeline: DBSPPipelineConfig):
         if len(vendors) > 0:
             connection.execute_string(f"execute task {LANDING_SCHEMA_NAME}.INGEST_DATA")
 
-        query = f"select * from {SCHEMA_NAME}.preferred_vendor"
+        query = f"select * from {SCHEMA_NAME}.price"
         print(query)
         vendors = cursor.execute(query).fetchall()
         if len(vendors) > 0:
