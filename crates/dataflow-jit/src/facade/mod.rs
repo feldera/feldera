@@ -548,6 +548,80 @@ impl DbspCircuit {
         Ok(())
     }
 
+    /// # Safety
+    ///
+    /// The demand types must be correct for the source node
+    // TODO: Check types instead of unsafe
+    pub unsafe fn append_json_map_input<R>(
+        &mut self,
+        target: NodeId,
+        key: DemandId,
+        value: DemandId,
+        json: R,
+    ) -> Result<(), Box<dyn error::Error>>
+    where
+        R: Read,
+    {
+        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
+
+        if let Some(input) = input {
+            let start = Instant::now();
+
+            let records = match *layout {
+                StreamLayout::Map(key_layout, value_layout) => {
+                    let (key_vtable, value_vtable) = unsafe {
+                        (
+                            &*self.jit.vtables()[&key_layout],
+                            &*self.jit.vtables()[&value_layout],
+                        )
+                    };
+                    let (deserialize_key, deserialize_value) = unsafe {
+                        (
+                            demand_function!(self, key, key_layout, DeserializeJsonFn),
+                            demand_function!(self, value, value_layout, DeserializeJsonFn),
+                        )
+                    };
+
+                    let mut batch = Vec::new();
+                    let stream = Deserializer::from_reader(json).into_iter::<Value>();
+                    for json in stream {
+                        let json = json?;
+
+                        let (mut key, mut value) =
+                            (UninitRow::new(key_vtable), UninitRow::new(value_vtable));
+                        unsafe {
+                            call_deserialize_fn(deserialize_key, key.as_mut_ptr(), &json)?;
+                            call_deserialize_fn(deserialize_value, value.as_mut_ptr(), &json)?;
+                        }
+
+                        let (key, value) = unsafe { (key.assume_init(), value.assume_init()) };
+
+                        batch.push((key, (value, 1)));
+                    }
+
+                    let records = batch.len();
+                    input.as_indexed_zset_mut().unwrap().append(&mut batch);
+                    records
+                }
+
+                StreamLayout::Set(_) => panic!(),
+            };
+
+            let elapsed = start.elapsed();
+            // TODO: Log the source's name
+            tracing::info!("ingested {records} records for {target} in {elapsed:#?}");
+
+        // If the source is unused, do nothing
+        } else {
+            // TODO: Log the source's name
+            tracing::info!("appended json to source {target} which is unused, doing nothing");
+        }
+
+        Ok(())
+    }
+
     pub fn append_json_record(
         &mut self,
         target: NodeId,
