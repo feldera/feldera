@@ -82,6 +82,8 @@ pub const MILLIS_TO_NANOS: u64 = 1_000_000;
 pub const MICROS_TO_NANOS: u64 = 1000;
 
 pub trait TimeExt: Sized {
+    const MAX: Self;
+
     fn to_nanoseconds(self) -> u64;
 
     fn from_nanoseconds(nanos: u64) -> Option<Self>;
@@ -92,6 +94,14 @@ pub trait TimeExt: Sized {
 }
 
 impl TimeExt for NaiveTime {
+    const MAX: Self = match NaiveTime::from_num_seconds_from_midnight_opt(
+        23 * 3600 + 59 * 60 + 59,
+        999_999_999,
+    ) {
+        Some(max) => max,
+        None => panic!(),
+    };
+
     #[inline]
     fn to_nanoseconds(self) -> u64 {
         (self.num_seconds_from_midnight() as u64 * SECONDS_TO_NANOS) + self.nanosecond() as u64

@@ -398,7 +398,7 @@ mod proptests {
         codegen::{Codegen, CodegenConfig},
         ir::{ColumnType, RowLayout, RowLayoutBuilder, RowLayoutCache},
         row::UninitRow,
-        utils::NativeRepr,
+        utils::{NativeRepr, TimeExt},
         ThinStr,
     };
     use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
@@ -438,6 +438,8 @@ mod proptests {
         Date(i32),
         #[proptest(strategy = "timestamp().prop_map(|date| Column::Timestamp(date.timestamp()))")]
         Timestamp(i64),
+        #[proptest(strategy = "time().prop_map(|date| Column::Time(date.to_nanoseconds()))")]
+        Time(u64),
         Decimal(Decimal),
     }
 
@@ -448,7 +450,7 @@ mod proptests {
     }
 
     prop_compose! {
-        fn time()(secs in 0..=86_399u32, nanos in 0..=999_999_999u32) -> NaiveTime {
+        fn time()(secs in 0..=23u32 * 3600 + 59 * 60 + 59, nanos in 0..=999_999_999u32) -> NaiveTime {
             NaiveTime::from_num_seconds_from_midnight_opt(secs, nanos).unwrap()
         }
     }
@@ -479,6 +481,7 @@ mod proptests {
                 Self::String(_) => ColumnType::String,
                 Self::Date(_) => ColumnType::Date,
                 Self::Timestamp(_) => ColumnType::Timestamp,
+                Self::Time(_) => ColumnType::Time,
                 Self::Decimal(_) => ColumnType::Decimal,
             }
         }
@@ -555,6 +558,10 @@ mod proptests {
                     prop_assert_eq!(ptr as usize % align_of::<i64>(), 0);
                     ptr.cast::<i64>().write(timestamp);
                 }
+                Self::Time(time) => {
+                    prop_assert_eq!(ptr as usize % align_of::<u64>(), 0);
+                    ptr.cast::<u64>().write(time);
+                }
 
                 Self::Decimal(decimal) => {
                     prop_assert_eq!(
@@ -600,6 +607,7 @@ mod proptests {
                 (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
                 (Self::Date(lhs), Self::Date(rhs)) => lhs == rhs,
                 (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs == rhs,
+                (Self::Time(lhs), Self::Time(rhs)) => lhs == rhs,
                 (Self::Decimal(lhs), Self::Decimal(rhs)) => lhs == rhs,
                 _ => unreachable!(),
             }
@@ -658,6 +666,7 @@ mod proptests {
                 (Self::String(lhs), Self::String(rhs)) => lhs.cmp(rhs),
                 (Self::Date(lhs), Self::Date(rhs)) => lhs.cmp(rhs),
                 (Self::Timestamp(lhs), Self::Timestamp(rhs)) => lhs.cmp(rhs),
+                (Self::Time(lhs), Self::Time(rhs)) => lhs.cmp(rhs),
                 (Self::Decimal(lhs), Self::Decimal(rhs)) => lhs.cmp(rhs),
                 _ => unreachable!(),
             }
