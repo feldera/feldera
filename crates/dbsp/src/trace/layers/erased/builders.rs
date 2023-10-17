@@ -68,6 +68,18 @@ where
         unsafe { self.layer.extend_from_range(&other.layer, lower, upper) };
     }
 
+    fn copy_range_retain_keys<'a, F>(
+        &mut self,
+        _other: &'a Self::Trie,
+        _lower: usize,
+        _upper: usize,
+        _filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
+        todo!()
+    }
+
     fn push_merge<'a>(
         &'a mut self,
         lhs_cursor: <Self::Trie as Trie>::Cursor<'a>,
@@ -77,6 +89,18 @@ where
         let lhs_bounds = (lhs_cursor.position(), lhs_cursor.bounds().1);
         let rhs_bounds = (rhs_cursor.position(), rhs_cursor.bounds().1);
         self.layer.push_merge(lhs, lhs_bounds, rhs, rhs_bounds)
+    }
+
+    fn push_merge_retain_keys<'a, F>(
+        &'a mut self,
+        _other1: <Self::Trie as Trie>::Cursor<'a>,
+        _other2: <Self::Trie as Trie>::Cursor<'a>,
+        _filter: &F,
+    ) -> usize
+    where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
+        todo!()
     }
 }
 

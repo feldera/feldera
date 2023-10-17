@@ -1,5 +1,4 @@
 //! Implementation using ordered keys and exponential search.
-
 mod consumer;
 mod tests;
 
@@ -413,6 +412,64 @@ impl<K, L, O> OrderedBuilder<K, L, O> {
         }
     }
 
+    pub fn merge_step_retain_keys<F>(
+        &mut self,
+        (trie1, lower1, upper1): (&<Self as Builder>::Trie, &mut usize, usize),
+        (trie2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
+        filter: &F,
+    ) where
+        K: Ord + Clone,
+        L: MergeBuilder,
+        O: OrdOffset,
+        F: Fn(&K) -> bool,
+    {
+        match trie1.keys[*lower1].cmp(&trie2.keys[*lower2]) {
+            Ordering::Less => {
+                // determine how far we can advance lower1 until we reach/pass lower2
+                let step = 1 + advance(&trie1.keys[(1 + *lower1)..upper1], |x| {
+                    x < &trie2.keys[*lower2]
+                });
+                let step = min(step, 1_000);
+                self.copy_range_retain_keys(trie1, *lower1, *lower1 + step, filter);
+                *lower1 += step;
+            }
+
+            Ordering::Equal => {
+                let lower = self.vals.boundary();
+                if filter(&trie1.keys[*lower1]) {
+                    // record vals_length so we can tell if anything was pushed.
+                    let upper = self.vals.push_merge(
+                        trie1.vals.cursor_from(
+                            trie1.offs[*lower1].into_usize(),
+                            trie1.offs[*lower1 + 1].into_usize(),
+                        ),
+                        trie2.vals.cursor_from(
+                            trie2.offs[*lower2].into_usize(),
+                            trie2.offs[*lower2 + 1].into_usize(),
+                        ),
+                    );
+                    if upper > lower {
+                        self.keys.push(trie1.keys[*lower1].clone());
+                        self.offs.push(O::from_usize(upper));
+                    }
+                }
+
+                *lower1 += 1;
+                *lower2 += 1;
+            }
+
+            Ordering::Greater => {
+                // determine how far we can advance lower2 until we reach/pass lower1
+                let step = 1 + advance(&trie2.keys[(1 + *lower2)..upper2], |x| {
+                    x < &trie1.keys[*lower1]
+                });
+                let step = min(step, 1_000);
+                self.copy_range_retain_keys(trie2, *lower2, *lower2 + step, filter);
+                *lower2 += step;
+            }
+        }
+    }
+
     /// Push a key and all of its associated values to the current builder
     ///
     /// Can be more efficient than repeatedly calling `.push_tuple()` because it
@@ -465,14 +522,6 @@ where
         *self.pushes += 1;
         self.builder.vals.push_tuple(value);
     }
-}
-
-impl<K, L, O> OrderedBuilder<K, L, O>
-where
-    K: Ord + Clone,
-    L: Builder,
-    O: OrdOffset,
-{
 }
 
 impl<K, L, O> Builder for OrderedBuilder<K, L, O>
@@ -555,6 +604,65 @@ where
         *fuel -= effort;
     }
 
+    pub fn push_merge_retain_keys_fueled<F>(
+        &mut self,
+        (source1, lower1, upper1): (&<Self as Builder>::Trie, &mut usize, usize),
+        (source2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
+        filter: &F,
+        fuel: &mut isize,
+    ) where
+        F: Fn(&K) -> bool,
+    {
+        let starting_updates = self.vals.keys();
+        let mut effort = 0isize;
+
+        // while both mergees are still active
+        while *lower1 < upper1 && *lower2 < upper2 && effort < *fuel {
+            self.merge_step_retain_keys(
+                (source1, lower1, upper1),
+                (source2, lower2, upper2),
+                filter,
+            );
+            effort = (self.vals.keys() - starting_updates) as isize;
+        }
+
+        // Merging is complete; only copying remains.
+        if *lower1 == upper1 || *lower2 == upper2 {
+            // Limit merging by remaining fuel.
+            let mut remaining_fuel = *fuel - effort;
+            if remaining_fuel > 0 {
+                if *lower1 < upper1 {
+                    if remaining_fuel < 1_000 {
+                        remaining_fuel = 1_000;
+                    }
+                    *lower1 = self.copy_range_retain_keys_fueled(
+                        source1,
+                        *lower1,
+                        upper1,
+                        filter,
+                        remaining_fuel as usize,
+                    );
+                }
+                if *lower2 < upper2 {
+                    if remaining_fuel < 1_000 {
+                        remaining_fuel = 1_000;
+                    }
+                    *lower2 = self.copy_range_retain_keys_fueled(
+                        source2,
+                        *lower2,
+                        upper2,
+                        filter,
+                        remaining_fuel as usize,
+                    );
+                }
+            }
+        }
+
+        effort = (self.vals.keys() - starting_updates) as isize;
+
+        *fuel -= effort;
+    }
+
     /// Like `copy_range`, but uses `fuel` to bound the amount of work.
     ///
     /// Invariants:
@@ -595,6 +703,34 @@ where
 
         upper
     }
+
+    fn copy_range_retain_keys_fueled<F>(
+        &mut self,
+        other: &<Self as Builder>::Trie,
+        lower: usize,
+        mut upper: usize,
+        filter: &F,
+        fuel: usize,
+    ) -> usize
+    where
+        F: Fn(&K) -> bool,
+    {
+        assert!(lower < upper && lower < other.offs.len() && upper < other.offs.len());
+
+        let other_basis = other.offs[lower];
+
+        // Number of keys in the `[lower..upper]` range that can be copied without
+        // exceeding `fuel`.
+        let keys = advance(&other.offs[lower..upper], |offset| {
+            offset.into_usize() - other_basis.into_usize() <= fuel
+        });
+
+        upper = lower + keys;
+
+        self.copy_range_retain_keys(other, lower, upper, filter);
+
+        upper
+    }
 }
 
 impl<K, V, L, O> OrderedBuilder<K, L, O>
@@ -605,26 +741,32 @@ where
     <L as Builder>::Trie: 'static,
     for<'a, 'b> <<L as Builder>::Trie as Trie>::Cursor<'a>: Cursor<'a, Key = V>,
 {
-    /// Like `push_merge_fueled`, but also truncates values below `val_bound` in
-    /// both inputs.
-    pub fn push_merge_truncate_values_fueled<'a>(
-        &'a mut self,
+    /// Like `push_merge_fueled`, but also removes values that don't pass
+    /// `filter` in both inputs.
+    pub fn push_merge_retain_values_fueled<KF, VF>(
+        &mut self,
         (source1, lower1, upper1): (&<Self as Builder>::Trie, &mut usize, usize),
         (source2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
-        val_bound: &'a V,
+        key_filter: &KF,
+        value_filter: &VF,
         fuel: &mut isize,
-    ) {
+    ) where
+        KF: Fn(&K) -> bool,
+        VF: Fn(&V) -> bool,
+    {
         let starting_updates = self.vals.keys();
         let mut effort = 0isize;
 
         // while both mergees are still active
         while *lower1 < upper1 && *lower2 < upper2 && effort < *fuel {
-            self.merge_step_truncate_values_fueled(
+            self.merge_step_retain_values_fueled(
                 (source1, lower1, upper1),
                 (source2, lower2, upper2),
-                val_bound,
+                key_filter,
+                value_filter,
                 usize::max_value(),
             );
+            // TODO: account for filtered out keys.
             effort = (self.vals.keys() - starting_updates) as isize;
         }
 
@@ -637,11 +779,12 @@ where
                     if remaining_fuel < 1_000 {
                         remaining_fuel = 1_000;
                     }
-                    *lower1 = self.copy_range_truncate_values_fueled(
+                    *lower1 = self.copy_range_retain_values_fueled(
                         source1,
                         *lower1,
                         upper1,
-                        val_bound,
+                        key_filter,
+                        value_filter,
                         remaining_fuel as usize,
                     );
                 }
@@ -649,11 +792,12 @@ where
                     if remaining_fuel < 1_000 {
                         remaining_fuel = 1_000;
                     }
-                    *lower2 = self.copy_range_truncate_values_fueled(
+                    *lower2 = self.copy_range_retain_values_fueled(
                         source2,
                         *lower2,
                         upper2,
-                        val_bound,
+                        key_filter,
+                        value_filter,
                         remaining_fuel as usize,
                     );
                 }
@@ -664,13 +808,17 @@ where
         *fuel -= effort;
     }
 
-    fn merge_step_truncate_values_fueled(
+    fn merge_step_retain_values_fueled<KF, VF>(
         &mut self,
         (trie1, lower1, upper1): (&<Self as Builder>::Trie, &mut usize, usize),
         (trie2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
-        val_bound: &V,
+        key_filter: &KF,
+        value_filter: &VF,
         fuel: usize,
-    ) {
+    ) where
+        KF: Fn(&K) -> bool,
+        VF: Fn(&V) -> bool,
+    {
         match trie1.keys[*lower1].cmp(&trie2.keys[*lower2]) {
             Ordering::Less => {
                 // determine how far we can advance lower1 until we reach/pass lower2
@@ -678,37 +826,39 @@ where
                     x < &trie2.keys[*lower2]
                 });
                 let step = min(step, 1_000);
-                *lower1 = self.copy_range_truncate_values_fueled(
+                *lower1 = self.copy_range_retain_values_fueled(
                     trie1,
                     *lower1,
                     *lower1 + step,
-                    val_bound,
+                    key_filter,
+                    value_filter,
                     fuel,
                 );
             }
 
             Ordering::Equal => {
                 let lower = self.vals.boundary();
-                let mut cursor1 = trie1.vals.cursor_from(
+                let cursor1 = trie1.vals.cursor_from(
                     trie1.offs[*lower1].into_usize(),
                     trie1.offs[*lower1 + 1].into_usize(),
                 );
-                cursor1.seek(val_bound);
 
-                let mut cursor2 = trie2.vals.cursor_from(
+                let cursor2 = trie2.vals.cursor_from(
                     trie2.offs[*lower2].into_usize(),
                     trie2.offs[*lower2 + 1].into_usize(),
                 );
-                cursor2.seek(val_bound);
 
-                // record vals_length so we can tell if anything was pushed.
-                let upper = self.vals.push_merge(cursor1, cursor2);
+                if key_filter(&trie1.keys[*lower1]) {
+                    // record vals_length so we can tell if anything was pushed.
+                    let upper = self
+                        .vals
+                        .push_merge_retain_keys(cursor1, cursor2, value_filter);
 
-                if upper > lower {
-                    self.keys.push(trie1.keys[*lower1].clone());
-                    self.offs.push(O::from_usize(upper));
+                    if upper > lower {
+                        self.keys.push(trie1.keys[*lower1].clone());
+                        self.offs.push(O::from_usize(upper));
+                    }
                 }
-
                 *lower1 += 1;
                 *lower2 += 1;
             }
@@ -719,49 +869,62 @@ where
                     x < &trie1.keys[*lower1]
                 });
                 let step = min(step, 1_000);
-                *lower2 = self.copy_range_truncate_values_fueled(
+                *lower2 = self.copy_range_retain_values_fueled(
                     trie2,
                     *lower2,
                     *lower2 + step,
-                    val_bound,
+                    key_filter,
+                    value_filter,
                     fuel,
                 );
             }
         }
     }
 
-    fn copy_range_truncate_values_fueled(
+    fn copy_range_retain_values_fueled<KF, VF>(
         &mut self,
         other: &<Self as Builder>::Trie,
         lower: usize,
         upper: usize,
-        val_bound: &V,
+        key_filter: &KF,
+        value_filter: &VF,
         fuel: usize,
-    ) -> usize {
+    ) -> usize
+    where
+        KF: Fn(&K) -> bool,
+        VF: Fn(&V) -> bool,
+    {
         assert!(lower < upper && lower < other.offs.len() && upper < other.offs.len());
 
         let other_start = other.offs[lower].into_usize();
 
         for index in lower..upper {
-            let self_basis = self.vals.boundary();
-            let other_end = other.offs[index + 1].into_usize();
+            if key_filter(&other.keys[index]) {
+                let self_basis = self.vals.boundary();
+                let other_end = other.offs[index + 1].into_usize();
 
-            let mut cursor = other
-                .vals
-                .cursor_from(other.offs[index].into_usize(), other_end);
+                let cursor = other
+                    .vals
+                    .cursor_from(other.offs[index].into_usize(), other_end);
 
-            cursor.seek(val_bound);
-            let other_basis = cursor.position();
+                let other_basis = cursor.position();
 
-            if other_end > other_basis {
-                self.vals.copy_range(&other.vals, other_basis, other_end);
-                self.keys.push(other.keys[index].clone());
-                self.offs
-                    .push(O::from_usize(self_basis + other_end - other_basis));
-            }
+                if other_end > other_basis {
+                    self.vals.copy_range_retain_keys(
+                        &other.vals,
+                        other_basis,
+                        other_end,
+                        value_filter,
+                    );
+                    if self.vals.keys() > self_basis {
+                        self.keys.push(other.keys[index].clone());
+                        self.offs.push(O::from_usize(self.vals.keys()));
+                    }
+                }
 
-            if other_end - other_start >= fuel {
-                return index + 1;
+                if other_end - other_start >= fuel {
+                    return index + 1;
+                }
             }
         }
 
@@ -826,6 +989,32 @@ where
         );
     }
 
+    fn copy_range_retain_keys<'a, F>(
+        &mut self,
+        other: &'a Self::Trie,
+        lower: usize,
+        upper: usize,
+        filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
+        assert!(lower < upper && lower < other.offs.len() && upper < other.offs.len());
+
+        for index in lower..upper {
+            if filter(&other.keys[index]) {
+                self.keys.push(other.keys[index].clone());
+
+                self.vals.copy_range(
+                    &other.vals,
+                    other.offs[index].into_usize(),
+                    other.offs[index + 1].into_usize(),
+                );
+
+                self.offs.push(O::from_usize(self.vals.keys()));
+            }
+        }
+    }
+
     fn push_merge<'a>(
         &'a mut self,
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
@@ -851,6 +1040,41 @@ where
         }
         if lower2 < upper2 {
             self.copy_range(cursor2.storage, lower2, upper2);
+        }
+
+        self.keys.len()
+    }
+
+    fn push_merge_retain_keys<'a, F>(
+        &'a mut self,
+        cursor1: <Self::Trie as Trie>::Cursor<'a>,
+        cursor2: <Self::Trie as Trie>::Cursor<'a>,
+        filter: &F,
+    ) -> usize
+    where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
+        let (mut lower1, upper1) = cursor1.bounds;
+        let (mut lower2, upper2) = cursor2.bounds;
+
+        let capacity = (upper1 - lower1) + (upper2 - lower2);
+        self.keys.reserve(capacity);
+        self.offs.reserve(capacity);
+
+        // while both mergees are still active
+        while lower1 < upper1 && lower2 < upper2 {
+            self.merge_step_retain_keys(
+                (cursor1.storage, &mut lower1, upper1),
+                (cursor2.storage, &mut lower2, upper2),
+                filter,
+            );
+        }
+
+        if lower1 < upper1 {
+            self.copy_range_retain_keys(cursor1.storage, lower1, upper1, filter);
+        }
+        if lower2 < upper2 {
+            self.copy_range_retain_keys(cursor2.storage, lower2, upper2, filter);
         }
 
         self.keys.len()

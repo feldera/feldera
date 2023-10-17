@@ -12,7 +12,7 @@ use crate::{
             TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
-        Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
+        Batch, BatchReader, Builder, Consumer, Cursor, Filter, Merger, ValueConsumer,
     },
     DBData, DBWeight, NumEntries,
 };
@@ -369,24 +369,46 @@ where
         &mut self,
         source1: &OrdIndexedZSet<K, V, R, O>,
         source2: &OrdIndexedZSet<K, V, R, O>,
-        lower_val_bound: &Option<V>,
+        key_filter: &Option<Filter<K>>,
+        value_filter: &Option<Filter<V>>,
         fuel: &mut isize,
     ) {
         // Use the more expensive `push_merge_truncate_values_fueled`
         // method if we need to remove truncated values during merging.
-        if let Some(bound) = lower_val_bound {
-            self.result.push_merge_truncate_values_fueled(
-                (&source1.layer, &mut self.lower1, self.upper1),
-                (&source2.layer, &mut self.lower2, self.upper2),
-                bound,
-                fuel,
-            );
-        } else {
-            self.result.push_merge_fueled(
-                (&source1.layer, &mut self.lower1, self.upper1),
-                (&source2.layer, &mut self.lower2, self.upper2),
-                fuel,
-            );
+        match (key_filter, value_filter) {
+            (Some(key_filter), Some(value_filter)) => {
+                self.result.push_merge_retain_values_fueled(
+                    (&source1.layer, &mut self.lower1, self.upper1),
+                    (&source2.layer, &mut self.lower2, self.upper2),
+                    key_filter,
+                    value_filter,
+                    fuel,
+                );
+            }
+            (Some(key_filter), None) => {
+                self.result.push_merge_retain_keys_fueled(
+                    (&source1.layer, &mut self.lower1, self.upper1),
+                    (&source2.layer, &mut self.lower2, self.upper2),
+                    key_filter,
+                    fuel,
+                );
+            }
+            (None, Some(value_filter)) => {
+                self.result.push_merge_retain_values_fueled(
+                    (&source1.layer, &mut self.lower1, self.upper1),
+                    (&source2.layer, &mut self.lower2, self.upper2),
+                    &|_| true,
+                    value_filter,
+                    fuel,
+                );
+            }
+            (None, None) => {
+                self.result.push_merge_fueled(
+                    (&source1.layer, &mut self.lower1, self.upper1),
+                    (&source2.layer, &mut self.lower2, self.upper2),
+                    fuel,
+                );
+            }
         }
     }
 }

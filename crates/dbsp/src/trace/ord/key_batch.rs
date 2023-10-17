@@ -12,7 +12,7 @@ use crate::{
             TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
-        Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
+        Batch, BatchReader, Builder, Consumer, Cursor, Filter, Merger, ValueConsumer,
     },
     DBData, DBTimestamp, DBWeight, NumEntries,
 };
@@ -292,14 +292,24 @@ where
         &mut self,
         source1: &OrdKeyBatch<K, T, R, O>,
         source2: &OrdKeyBatch<K, T, R, O>,
-        _lower_val_bound: &Option<()>,
+        key_filter: &Option<Filter<K>>,
+        _value_filter: &Option<Filter<()>>,
         fuel: &mut isize,
     ) {
-        self.result.push_merge_fueled(
-            (&source1.layer, &mut self.lower1, self.upper1),
-            (&source2.layer, &mut self.lower2, self.upper2),
-            fuel,
-        );
+        if let Some(key_filter) = key_filter {
+            self.result.push_merge_retain_keys_fueled(
+                (&source1.layer, &mut self.lower1, self.upper1),
+                (&source2.layer, &mut self.lower2, self.upper2),
+                key_filter,
+                fuel,
+            );
+        } else {
+            self.result.push_merge_fueled(
+                (&source1.layer, &mut self.lower1, self.upper1),
+                (&source2.layer, &mut self.lower2, self.upper2),
+                fuel,
+            );
+        }
     }
 }
 
