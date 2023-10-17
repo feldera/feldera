@@ -50,3 +50,6 @@ openapi.json
 
 # python
 __pycache__
+
+# pg-embed directory
+/data
