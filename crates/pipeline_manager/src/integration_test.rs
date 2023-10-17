@@ -1,3 +1,41 @@
+//! Pipeline manager integration tests that test the end-to-end
+//! compiler->run->feed iinputs->receive outputs workflow.
+//!
+//! There are two ways to run these tests:
+//!
+//! 1. Self-contained mode, spinning up a pipeline manager instance on each run.
+//! This is good for running tests from a clean state, but is very slow, as it
+//! involves pre-compiling all dependencies from scratch:
+//!
+//! ```text
+//! cargo test --features integration-test --features=pg-embed integration_test::
+//! ```
+//!
+//! 2. Using an external pipeline manager instance.
+//!
+//! Start the pipeline manager by running `scripts/start_manager.sh` or using
+//! the following command line:
+//!
+//! ```text
+//! RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --db-connection-string=postgres-embed \
+//!    --bind-address=0.0.0.0 \
+//!    --compiler-working-directory=$HOME/.dbsp \
+//!    --runner-working-directory=$HOME/.dbsp \
+//!    --sql-compiler-home=sql-to-dbsp-compiler \
+//!    --dbsp-override-path=.
+//! ```
+//!
+//! or as a container
+//!
+//! ```text
+//! docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml --profile demo up --build --renew-anon-volumes --force-recreate
+//! ```
+//!
+//! Run the tests in a different terminal:
+//!
+//! ```text
+//! TEST_DBSP_URL=http://localhost:8080 cargo test integration_test:: --package=pipeline-manager --features integration-test  -- --nocapture
+//! ```
 use std::{
     process::Command,
     time::{self, Duration, Instant},
@@ -7,16 +45,22 @@ use actix_http::{encoding::Decoder, Payload, StatusCode};
 use awc::{http, ClientRequest, ClientResponse};
 use aws_sdk_cognitoidentityprovider::config::Region;
 use colored::Colorize;
+use futures_util::StreamExt;
+use pipeline_types::transport::http::Chunk;
 use serde_json::{json, Value};
 use serial_test::serial;
 use tempfile::TempDir;
-use tokio::{sync::OnceCell, time::sleep};
+use tokio::{
+    sync::OnceCell,
+    time::{sleep, timeout},
+};
 
 use crate::{
     compiler::Compiler,
     config::{ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig},
     db::{Pipeline, PipelineStatus},
 };
+use anyhow::{bail, Result as AnyResult};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -265,6 +309,43 @@ impl TestConfig {
         resp.get("json_data").unwrap().to_string()
     }
 
+    async fn delta_stream_request_json(
+        &self,
+        id: &str,
+        table: &str,
+    ) -> ClientResponse<Decoder<Payload>> {
+        let resp = self
+            .post_no_body(format!("/v0/pipelines/{id}/egress/{table}?format=json"))
+            .await;
+        assert!(resp.status().is_success());
+        resp
+    }
+
+    async fn read_response_json(
+        &self,
+        response: &mut ClientResponse<Decoder<Payload>>,
+        max_timeout: Duration,
+    ) -> AnyResult<Option<Value>> {
+        let start = Instant::now();
+
+        loop {
+            match timeout(Duration::from_millis(1_000), response.next()).await {
+                Err(_) => (),
+                Ok(Some(Ok(bytes))) => {
+                    let chunk = serde_json::from_reader::<_, Chunk>(&bytes[..])?;
+                    if let Some(json) = chunk.json_data {
+                        return Ok(Some(json));
+                    }
+                }
+                Ok(Some(Err(e))) => bail!(e.to_string()),
+                Ok(None) => return Ok(None),
+            }
+            if start.elapsed() >= max_timeout {
+                return Ok(None);
+            }
+        }
+    }
+
     async fn neighborhood_json(
         &self,
         id: &str,
@@ -308,7 +389,7 @@ impl TestConfig {
         loop {
             println!("Waiting for compilation");
             std::thread::sleep(time::Duration::from_secs(1));
-            if now.elapsed().as_secs() > 100 {
+            if now.elapsed().as_secs() > 200 {
                 panic!("Compilation timeout");
             }
             let mut resp = self.get(format!("/v0/programs/{}", program_id)).await;
@@ -1081,6 +1162,108 @@ async fn primary_keys() {
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, Duration::from_millis(30_000))
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+}
+
+#[actix_web::test]
+#[serial]
+async fn distinct_outputs() {
+    let config = setup().await;
+    let id = deploy_pipeline_without_connectors(
+        &config,
+        r#"create table t1(id bigint not null, s varchar not null); create view v1 as select s from t1;"#,
+    )
+    .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .await;
+
+    let mut response = config.delta_stream_request_json(&id, "V1").await;
+
+    // Push some data using default json config.
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
+                id
+            ),
+            r#"{"insert":{"id":1, "s": "1"}}
+{"insert":{"id":2, "s": "2"}}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let delta = config
+        .read_response_json(&mut response, Duration::from_millis(10_000))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        delta.unwrap(),
+        json!([{"insert": {"S":"1"}}, {"insert":{"S":"2"}}])
+    );
+
+    // Push some more data
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
+                id
+            ),
+            r#"{"insert":{"id":3, "s": "3"}}
+{"insert":{"id":4, "s": "4"}}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let delta = config
+        .read_response_json(&mut response, Duration::from_millis(10_000))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        delta.unwrap(),
+        json!([{"insert": {"S":"3"}}, {"insert":{"S":"4"}}])
+    );
+
+    // Push more records that will create duplicate outputs, which should be
+    // suppressed by the `outputsAreSets` SQL compiler switch.
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
+                id
+            ),
+            r#"{"insert":{"id":5, "s": "1"}}
+{"insert":{"id":6, "s": "2"}}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let delta = config
+        .read_response_json(&mut response, Duration::from_millis(10_000))
+        .await
+        .unwrap();
+
+    // Use assert_eq, so we get to see the unexpected output on error.
+    assert_eq!(delta, None);
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
