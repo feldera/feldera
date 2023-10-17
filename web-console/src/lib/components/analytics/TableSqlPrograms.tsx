@@ -5,7 +5,7 @@
 'use client'
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { DataGridColumnViewModel } from '$lib/components/common/table/DataGridPro'
+import { useGridPersistence } from '$lib/components/common/table/DataGridPro'
 import EntityTable from '$lib/components/common/table/EntityTable'
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
@@ -25,19 +25,12 @@ import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
 
-import { useLocalStorage } from '@mantine/hooks'
+// import { useLocalStorage } from '@mantine/hooks'
 import { Button } from '@mui/material'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
-import {
-  GridColDef,
-  GridColumnVisibilityModel,
-  GridFilterModel,
-  GridRenderCellParams,
-  GridToolbarFilterButton,
-  useGridApiRef
-} from '@mui/x-data-grid-pro'
+import { GridColDef, GridRenderCellParams, GridToolbarFilterButton, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 const getStatusObj = (status: ProgramStatus) =>
@@ -180,15 +173,19 @@ const TableSqlPrograms = () => {
   )
 
   const defaultColumnVisibility = { program_id: false }
-  const [columnVisibilityModel, setColumnVisibilityModel] = useLocalStorage<GridColumnVisibilityModel>({
-    key: LS_PREFIX + 'settings/analytics/programs/grid/visibility',
-    defaultValue: defaultColumnVisibility
-  })
-  const [filterModel, setFilterModel] = useLocalStorage<GridFilterModel>({
-    key: LS_PREFIX + 'settings/analytics/programs/grid/filters'
-  })
-  const [columnViewModel, setColumnViewModel] = useLocalStorage<DataGridColumnViewModel>({
-    key: LS_PREFIX + 'settings/analytics/programs/grid/columnView'
+  // const [columnVisibilityModel, setColumnVisibilityModel] = useLocalStorage<GridColumnVisibilityModel>({
+  //   key: LS_PREFIX + 'settings/analytics/programs/grid/visibility',
+  //   defaultValue: defaultColumnVisibility
+  // })
+  // const [filterModel, setFilterModel] = useLocalStorage<GridFilterModel>({
+  //   key: LS_PREFIX + 'settings/analytics/programs/grid/filters'
+  // })
+  // const [columnViewModel, setColumnViewModel] = useLocalStorage<DataGridColumnViewModel>({
+  //   key: LS_PREFIX + 'settings/analytics/programs/grid/columnView'
+  // })
+  const gridPersistence = useGridPersistence({path: LS_PREFIX + 'settings/analytics/programs/grid',
+  apiRef,
+  defaultColumnVisibility: { program_id: false }
   })
 
   const btnAdd = (
@@ -208,12 +205,13 @@ const TableSqlPrograms = () => {
           getRowId: (row: ProgramDescr) => row.program_id,
           columns,
           rows,
-          columnVisibilityModel,
-          setColumnVisibilityModel,
-          filterModel,
-          setFilterModel,
-          columnViewModel,
-          setColumnViewModel
+          // columnVisibilityModel,
+          // setColumnVisibilityModel,
+          // filterModel,
+          // setFilterModel,
+          // columnViewModel,
+          // setColumnViewModel
+          ...gridPersistence
         }}
         setRows={setRows}
         fetchRows={fetchQuery}
@@ -226,8 +224,8 @@ const TableSqlPrograms = () => {
           <GridToolbarFilterButton key='1' />,
           <ResetColumnViewButton
             key='2'
-            setColumnViewModel={setColumnViewModel}
-            setColumnVisibilityModel={() => setColumnVisibilityModel(defaultColumnVisibility)}
+            setColumnViewModel={gridPersistence.setColumnViewModel}
+            setColumnVisibilityModel={() => gridPersistence.setColumnVisibilityModel!(defaultColumnVisibility)}
           />,
           <div style={{ marginLeft: 'auto' }} key='3' />
         ]}
