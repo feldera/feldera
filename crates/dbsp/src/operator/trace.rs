@@ -687,8 +687,8 @@ where
 
         let effective_val_bound = self.bounds.effective_val_bound();
         if effective_val_bound != self.effective_val_bound {
-            if let Some(bound) = &effective_val_bound {
-                i.truncate_values_below(bound);
+            if let Some(bound) = effective_val_bound.clone() {
+                i.retain_values(Box::new(move |val| *val >= bound));
             }
         }
         self.effective_val_bound = effective_val_bound;

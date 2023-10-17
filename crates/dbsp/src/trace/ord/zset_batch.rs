@@ -11,7 +11,7 @@ use crate::{
             Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
-        Batch, BatchReader, Builder, Consumer, Cursor, Merger, ValueConsumer,
+        Batch, BatchReader, Builder, Consumer, Cursor, Filter, Merger, ValueConsumer,
     },
     DBData, DBWeight, NumEntries,
 };
@@ -321,12 +321,22 @@ where
         &mut self,
         source1: &OrdZSet<K, R>,
         source2: &OrdZSet<K, R>,
-        _lower_val_bound: &Option<()>,
+        key_filter: &Option<Filter<K>>,
+        _value_filter: &Option<Filter<()>>,
         fuel: &mut isize,
     ) {
-        *fuel -= self
-            .result
-            .push_merge(source1.layer.cursor(), source2.layer.cursor()) as isize;
+        if let Some(key_filter) = key_filter {
+            *fuel -= self.result.push_merge_retain_keys(
+                source1.layer.cursor(),
+                source2.layer.cursor(),
+                key_filter,
+            ) as isize;
+        } else {
+            *fuel -= self
+                .result
+                .push_merge(source1.layer.cursor(), source2.layer.cursor())
+                as isize;
+        }
         *fuel = max(*fuel, 1);
     }
 }

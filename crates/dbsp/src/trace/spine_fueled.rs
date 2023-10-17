@@ -106,6 +106,8 @@ use std::{
 };
 use textwrap::indent;
 
+use super::Filter;
+
 /// General-purpose [trace][crate::trace::Trace] implementation based on
 /// collection and merging immutable batches of updates.
 ///
@@ -123,7 +125,10 @@ where
     activator: Option<Activator>,
     dirty: bool,
     lower_key_bound: Option<B::Key>,
-    lower_val_bound: Option<B::Val>,
+    #[size_of(skip)]
+    key_filter: Option<Filter<B::Key>>,
+    #[size_of(skip)]
+    value_filter: Option<Filter<B::Val>>,
 }
 
 impl<B> Display for Spine<B>
@@ -762,18 +767,20 @@ where
         self.dirty
     }
 
-    fn truncate_values_below(&mut self, lower_bound: &Self::Val) {
-        // Set the bound, we postpone the actual GC till when we merge batches
-        // in the trace.
-        self.lower_val_bound = Some(if let Some(bound) = &self.lower_val_bound {
-            max(bound, lower_bound).clone()
-        } else {
-            lower_bound.clone()
-        });
+    fn retain_keys(&mut self, filter: Filter<Self::Key>) {
+        self.key_filter = Some(filter);
     }
 
-    fn lower_value_bound(&self) -> &Option<Self::Val> {
-        &self.lower_val_bound
+    fn retain_values(&mut self, filter: Filter<Self::Val>) {
+        self.value_filter = Some(filter);
+    }
+
+    fn key_filter(&self) -> &Option<Filter<Self::Key>> {
+        &self.key_filter
+    }
+
+    fn value_filter(&self) -> &Option<Filter<Self::Val>> {
+        &self.value_filter
     }
 }
 
@@ -839,7 +846,8 @@ where
             activator,
             dirty: false,
             lower_key_bound: None,
-            lower_val_bound: None,
+            key_filter: None,
+            value_filter: None,
         }
     }
 
@@ -984,7 +992,7 @@ where
             // Give each level independent fuel, for now.
             let mut fuel = *fuel;
             // Pass along various logging stuffs, in case we need to report success.
-            self.merging[index].work(&self.lower_val_bound, &mut fuel);
+            self.merging[index].work(&self.key_filter, &self.value_filter, &mut fuel);
             // `fuel` could have a deficit at this point, meaning we over-spent when
             // we took a merge step. We could ignore this, or maintain the deficit
             // and account future fuel against it before spending again. It isn't
@@ -1029,7 +1037,7 @@ where
 
     /// Completes and extracts what ever is at layer `index`.
     fn complete_at(&mut self, index: usize) -> Option<B> {
-        self.merging[index].complete(&self.lower_val_bound)
+        self.merging[index].complete(&self.key_filter, &self.value_filter)
     }
 
     /// Attempts to draw down large layers to size appropriate layers.
@@ -1099,7 +1107,7 @@ where
         for merge_state in self.merging.iter_mut() {
             if merge_state.is_inprogress() {
                 let mut fuel = isize::max_value();
-                merge_state.work(&self.lower_val_bound, &mut fuel);
+                merge_state.work(&self.key_filter, &self.value_filter, &mut fuel);
             }
         }
         assert!(self.merging.iter().all(|m| !m.is_inprogress()));
@@ -1182,11 +1190,15 @@ where
     /// which should be done with the `is_complete()` method.
     ///
     /// There is the additional option of input batches.
-    fn complete(&mut self, lower_val_bound: &Option<B::Val>) -> Option<B> {
+    fn complete(
+        &mut self,
+        key_filter: &Option<Filter<B::Key>>,
+        value_filter: &Option<Filter<B::Val>>,
+    ) -> Option<B> {
         match replace(self, MergeState::Vacant) {
             MergeState::Vacant => None,
             MergeState::Single(batch) => batch,
-            MergeState::Double(variant) => variant.complete(lower_val_bound),
+            MergeState::Double(variant) => variant.complete(key_filter, value_filter),
         }
     }
 
@@ -1205,10 +1217,15 @@ where
     /// If the merge completes, the resulting batch is returned.
     /// If a batch is returned, it is the obligation of the caller
     /// to correctly install the result.
-    fn work(&mut self, lower_val_bound: &Option<B::Val>, fuel: &mut isize) {
+    fn work(
+        &mut self,
+        key_filter: &Option<Filter<B::Key>>,
+        value_filter: &Option<Filter<B::Val>>,
+        fuel: &mut isize,
+    ) {
         // We only perform work for merges in progress.
         if let MergeState::Double(layer) = self {
-            layer.work(lower_val_bound, fuel)
+            layer.work(key_filter, value_filter, fuel)
         }
     }
 
@@ -1279,9 +1296,13 @@ where
     ///
     /// The result is either `None`, for structurally empty batches,
     /// or a batch and optionally input batches from which it derived.
-    fn complete(mut self, lower_val_bound: &Option<B::Val>) -> Option<B> {
+    fn complete(
+        mut self,
+        key_filter: &Option<Filter<B::Key>>,
+        value_filter: &Option<Filter<B::Val>>,
+    ) -> Option<B> {
         let mut fuel = isize::max_value();
-        self.work(lower_val_bound, &mut fuel);
+        self.work(key_filter, value_filter, &mut fuel);
         if let MergeVariant::Complete(batch) = self {
             batch
         } else {
@@ -1293,10 +1314,15 @@ where
     ///
     /// In case the work completes, the source batches are returned.
     /// This allows the caller to manage the released resources.
-    fn work(&mut self, lower_val_bound: &Option<B::Val>, fuel: &mut isize) {
+    fn work(
+        &mut self,
+        key_filter: &Option<Filter<B::Key>>,
+        value_filter: &Option<Filter<B::Val>>,
+        fuel: &mut isize,
+    ) {
         let variant = replace(self, MergeVariant::Complete(None));
         if let MergeVariant::InProgress(b1, b2, mut merge) = variant {
-            merge.work(&b1, &b2, lower_val_bound, fuel);
+            merge.work(&b1, &b2, key_filter, value_filter, fuel);
             if *fuel > 0 {
                 *self = MergeVariant::Complete(Some(merge.done()));
             } else {
@@ -1329,6 +1355,8 @@ where
 #[cfg(test)]
 #[allow(clippy::type_complexity)]
 mod test {
+    use std::cmp::max;
+
     use crate::{
         trace::{
             cursor::CursorPair,
@@ -1381,6 +1409,30 @@ mod test {
         .boxed()
     }
 
+    fn kvr_batches_monotone_keys(
+        window_size: i32,
+        window_step: i32,
+        max_value: i32,
+        max_tuples: usize,
+        batches: usize,
+    ) -> BoxedStrategy<Vec<Vec<((i32, i32), i32)>>> {
+        (0..batches)
+            .map(|i| {
+                vec(
+                    (
+                        (
+                            i as i32 * window_step..i as i32 * window_step + window_size,
+                            0..max_value,
+                        ),
+                        1..2,
+                    ),
+                    0..max_tuples,
+                )
+            })
+            .collect::<Vec<_>>()
+            .boxed()
+    }
+
     fn kvr_batches_monotone_values(
         max_key: i32,
         window_size: i32,
@@ -1407,6 +1459,22 @@ mod test {
 
     proptest! {
         #[test]
+        fn test_truncate_key_bounded_memory(batches in kvr_batches_monotone_keys(100, 20, 50, 20, 500)) {
+            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
+
+            for (i, tuples) in batches.into_iter().enumerate() {
+                let batch = OrdIndexedZSet::from_tuples((), tuples.clone());
+
+                test_batch_sampling(&batch);
+
+                trace.insert(batch);
+                trace.retain_keys(Box::new(move |x| *x >= ((i * 20) as i32)));
+                // println!("trace.size_of: {:?}", trace.size_of());
+                assert!(trace.size_of().total_bytes() < 20000);
+            }
+        }
+
+        #[test]
         fn test_truncate_value_bounded_memory(batches in kvr_batches_monotone_values(50, 100, 20, 20, 500)) {
             let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
 
@@ -1416,7 +1484,7 @@ mod test {
                 test_batch_sampling(&batch);
 
                 trace.insert(batch);
-                trace.truncate_values_below(&((i * 20) as i32));
+                trace.retain_values(Box::new(move |x| *x >= ((i * 20) as i32)));
                 // println!("trace.size_of: {:?}", trace.size_of());
                 assert!(trace.size_of().total_bytes() < 20000);
             }
@@ -1424,9 +1492,12 @@ mod test {
 
         #[test]
         fn test_zset_spine(batches in kr_batches(50, 2, 100, 20), seed in 0..u64::max_value()) {
-            let mut trace: Spine<OrdZSet<i32, i32>> = Spine::new(None);
+            let mut trace1: Spine<OrdZSet<i32, i32>> = Spine::new(None);
+            let mut trace2: Spine<OrdZSet<i32, i32>> = Spine::new(None);
+
             let mut ref_trace: TestBatch<i32, (), (), i32> = TestBatch::new(None);
 
+            let mut kbound = 0;
             for (tuples, bound) in batches.into_iter() {
                 let batch = OrdZSet::from_tuples((), tuples.clone());
                 let ref_batch = TestBatch::from_keys((), tuples);
@@ -1436,27 +1507,92 @@ mod test {
                 assert_batch_eq(&batch, &ref_batch);
 
                 ref_trace.insert(ref_batch);
-                assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace.cursor()), &ref_trace, seed);
+                assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace1.cursor()), &ref_trace, seed);
+                assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace2.cursor()), &ref_trace, seed);
 
-                trace.insert(batch);
-                test_trace_sampling(&trace);
+                trace1.insert(batch.clone());
+                trace2.insert(batch);
+                test_trace_sampling(&trace1);
+                test_trace_sampling(&trace2);
 
-                assert_batch_eq(&trace, &ref_trace);
+                assert_batch_eq(&trace1, &ref_trace);
+                assert_trace_eq(&trace2, &ref_trace);
 
-                trace.truncate_keys_below(&bound);
+                kbound = max(kbound, bound);
+                trace1.truncate_keys_below(&bound);
+                trace2.retain_keys(Box::new(move |key| *key >= kbound));
                 ref_trace.truncate_keys_below(&bound);
 
-                test_trace_sampling(&trace);
-                assert_batch_eq(&trace, &ref_trace);
+                test_trace_sampling(&trace1);
+                test_trace_sampling(&trace2);
+
+                assert_batch_eq(&trace1, &ref_trace);
+                assert_trace_eq(&trace2, &ref_trace);
             }
         }
 
         #[test]
         fn test_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 500, 20), seed in 0..u64::max_value()) {
+            let mut trace1: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
+            let mut trace2: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
+
+            let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None);
+
+            let mut bound = 0;
+            let mut kbound = 0;
+            for (tuples, key_bound, val_bound) in batches.into_iter() {
+                let batch = OrdIndexedZSet::from_tuples((), tuples.clone());
+                let ref_batch = TestBatch::from_tuples((), tuples);
+
+                test_batch_sampling(&batch);
+
+                assert_batch_eq(&batch, &ref_batch);
+                assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+
+                ref_trace.insert(ref_batch);
+                assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace1.cursor()), &ref_trace, seed);
+                assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace2.cursor()), &ref_trace, seed);
+
+                trace1.insert(batch.clone());
+                trace2.insert(batch);
+                test_trace_sampling(&trace1);
+                test_trace_sampling(&trace2);
+
+                assert_trace_eq(&trace1, &ref_trace);
+                assert_trace_eq(&trace2, &ref_trace);
+                assert_batch_cursors_eq(trace1.cursor(), &ref_trace, seed);
+                assert_batch_cursors_eq(trace2.cursor(), &ref_trace, seed);
+
+                kbound = max(kbound, key_bound);
+                trace1.truncate_keys_below(&key_bound);
+                trace2.retain_keys(Box::new(move|key| *key >= kbound));
+
+                ref_trace.truncate_keys_below(&key_bound);
+                test_trace_sampling(&trace1);
+
+                bound = max(bound, val_bound);
+                trace1.retain_values(Box::new(move |val| *val >= bound));
+                trace2.retain_values(Box::new(move |val| *val >= bound));
+                ref_trace.retain_values(Box::new(move |val| *val >= bound));
+                test_trace_sampling(&trace1);
+
+                assert_trace_eq(&trace1, &ref_trace);
+                assert_trace_eq(&trace2, &ref_trace);
+                assert_batch_cursors_eq(trace1.cursor(), &ref_trace, seed);
+                assert_batch_cursors_eq(trace2.cursor(), &ref_trace, seed);
+            }
+        }
+
+        // Like `test_indexed_zset_spine` but keeps even values only.
+        #[test]
+        fn test_indexed_zset_spine_even_values(batches in kvr_batches(100, 5, 2, 500, 10), seed in 0..u64::max_value()) {
             let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
             let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None);
 
-            for (tuples, key_bound, val_bound) in batches.into_iter() {
+            trace.retain_values(Box::new(move |val| *val % 2 == 0));
+            ref_trace.retain_values(Box::new(move |val| *val % 2 == 0));
+
+            for (tuples, key_bound, _val_bound) in batches.into_iter() {
                 let batch = OrdIndexedZSet::from_tuples((), tuples.clone());
                 let ref_batch = TestBatch::from_tuples((), tuples);
 
@@ -1478,8 +1614,43 @@ mod test {
                 ref_trace.truncate_keys_below(&key_bound);
                 test_trace_sampling(&trace);
 
-                trace.truncate_values_below(&val_bound);
-                ref_trace.truncate_values_below(&val_bound);
+                test_trace_sampling(&trace);
+
+                assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
+            }
+        }
+
+        #[test]
+        fn test_indexed_zset_spine_even_keys(batches in kvr_batches(100, 5, 2, 500, 10), seed in 0..u64::max_value()) {
+            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
+            let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None);
+
+            trace.retain_keys(Box::new(move |val| *val % 2 == 0));
+            ref_trace.retain_keys(Box::new(move |val| *val % 2 == 0));
+
+            for (tuples, key_bound, _val_bound) in batches.into_iter() {
+                let batch = OrdIndexedZSet::from_tuples((), tuples.clone());
+                let ref_batch = TestBatch::from_tuples((), tuples);
+
+                test_batch_sampling(&batch);
+
+                assert_batch_eq(&batch, &ref_batch);
+                assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+
+                ref_trace.insert(ref_batch);
+                assert_batch_cursors_eq(CursorPair::new(&mut batch.cursor(), &mut trace.cursor()), &ref_trace, seed);
+
+                trace.insert(batch);
+                test_trace_sampling(&trace);
+
+                assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
+
+                trace.truncate_keys_below(&key_bound);
+                ref_trace.truncate_keys_below(&key_bound);
+                test_trace_sampling(&trace);
+
                 test_trace_sampling(&trace);
 
                 assert_trace_eq(&trace, &ref_trace);
@@ -1489,9 +1660,11 @@ mod test {
 
         #[test]
         fn test_zset_trace_spine(batches in kr_batches(100, 2, 500, 20), seed in 0..u64::max_value()) {
-            let mut trace: Spine<OrdKeyBatch<i32, u32, i32>> = Spine::new(None);
+            let mut trace1: Spine<OrdKeyBatch<i32, u32, i32>> = Spine::new(None);
+            let mut trace2: Spine<OrdKeyBatch<i32, u32, i32>> = Spine::new(None);
             let mut ref_trace: TestBatch<i32, (), u32, i32> = TestBatch::new(None);
 
+            let mut kbound = 0;
             for (time, (tuples, bound)) in batches.into_iter().enumerate() {
                 let batch = OrdKeyBatch::from_tuples(time as u32, tuples.clone());
                 let ref_batch = TestBatch::from_keys(time as u32, tuples);
@@ -1499,24 +1672,81 @@ mod test {
                 assert_batch_eq(&batch, &ref_batch);
 
                 ref_trace.insert(ref_batch);
-                assert_batch_cursors_eq(CursorPair::new(&mut trace.cursor(), &mut batch.cursor()), &ref_trace, seed);
+                assert_batch_cursors_eq(CursorPair::new(&mut trace1.cursor(), &mut batch.cursor()), &ref_trace, seed);
+                assert_batch_cursors_eq(CursorPair::new(&mut trace2.cursor(), &mut batch.cursor()), &ref_trace, seed);
 
-                trace.insert(batch);
-                assert_batch_eq(&trace, &ref_trace);
+                trace1.insert(batch.clone());
+                trace2.insert(batch);
 
-                trace.truncate_keys_below(&bound);
+                assert_batch_eq(&trace1, &ref_trace);
+                assert_trace_eq(&trace2, &ref_trace);
+
+                kbound = max(bound, kbound);
+                trace1.truncate_keys_below(&bound);
+                trace2.retain_keys(Box::new(move |key| *key >= kbound));
                 ref_trace.truncate_keys_below(&bound);
 
-                assert_batch_eq(&trace, &ref_trace);
+                assert_batch_eq(&trace1, &ref_trace);
+                assert_trace_eq(&trace2, &ref_trace);
             }
         }
 
         #[test]
         fn test_indexed_zset_trace_spine(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::max_value()) {
+            // `trace1` uses `truncate_keys_below`.
+            // `trace2` uses `retain_keys`.
+            let mut trace1: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None);
+            let mut trace2: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None);
+            let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None);
+
+            let mut bound = 0;
+            let mut kbound = 0;
+            for (time, (tuples, key_bound, val_bound)) in batches.into_iter().enumerate() {
+                let batch = OrdValBatch::from_tuples(time as u32, tuples.clone());
+                let ref_batch = TestBatch::from_tuples(time as u32, tuples);
+
+                assert_batch_eq(&batch, &ref_batch);
+                assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+
+                ref_trace.insert(ref_batch);
+                assert_batch_cursors_eq(CursorPair::new(&mut trace1.cursor(), &mut batch.cursor()), &ref_trace, seed);
+                assert_batch_cursors_eq(CursorPair::new(&mut trace2.cursor(), &mut batch.cursor()), &ref_trace, seed);
+
+                trace1.insert(batch.clone());
+                trace2.insert(batch);
+
+                assert_trace_eq(&trace1, &ref_trace);
+                assert_trace_eq(&trace2, &ref_trace);
+                assert_batch_cursors_eq(trace1.cursor(), &ref_trace, seed);
+                assert_batch_cursors_eq(trace2.cursor(), &ref_trace, seed);
+
+                kbound = max(kbound, key_bound);
+                trace1.truncate_keys_below(&key_bound);
+                trace2.retain_keys(Box::new(move |key| *key >= kbound));
+                ref_trace.truncate_keys_below(&key_bound);
+
+                bound = max(bound, val_bound);
+                trace1.retain_values(Box::new(move |val| *val >= bound));
+                trace2.retain_values(Box::new(move |val| *val >= bound));
+                ref_trace.retain_values(Box::new(move |val| *val >= bound));
+
+                assert_trace_eq(&trace1, &ref_trace);
+                assert_trace_eq(&trace2, &ref_trace);
+                assert_batch_cursors_eq(trace1.cursor(), &ref_trace, seed);
+                assert_batch_cursors_eq(trace2.cursor(), &ref_trace, seed);
+            }
+        }
+
+        // Like `test_indexed_zset_trace_spine` but keeps even values only.
+        #[test]
+        fn test_indexed_zset_trace_spine_retain_even_values(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::max_value()) {
             let mut trace: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None);
             let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None);
 
-            for (time, (tuples, key_bound, val_bound)) in batches.into_iter().enumerate() {
+            trace.retain_values(Box::new(move |val| *val % 2 == 0));
+            ref_trace.retain_values(Box::new(move |val| *val % 2 == 0));
+
+            for (time, (tuples, key_bound, _val_bound)) in batches.into_iter().enumerate() {
                 let batch = OrdValBatch::from_tuples(time as u32, tuples.clone());
                 let ref_batch = TestBatch::from_tuples(time as u32, tuples);
 
@@ -1527,18 +1757,48 @@ mod test {
                 assert_batch_cursors_eq(CursorPair::new(&mut trace.cursor(), &mut batch.cursor()), &ref_trace, seed);
 
                 trace.insert(batch);
+
                 assert_trace_eq(&trace, &ref_trace);
                 assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
 
                 trace.truncate_keys_below(&key_bound);
                 ref_trace.truncate_keys_below(&key_bound);
 
-                trace.truncate_values_below(&val_bound);
-                ref_trace.truncate_values_below(&val_bound);
+                assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
+            }
+        }
+
+        #[test]
+        fn test_indexed_zset_trace_spine_retain_even_keys(batches in kvr_batches(100, 5, 2, 300, 10), seed in 0..u64::max_value()) {
+            let mut trace: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None);
+            let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None);
+
+            trace.retain_keys(Box::new(move |key| *key % 2 == 0));
+            ref_trace.retain_keys(Box::new(move |key| *key % 2 == 0));
+
+            for (time, (tuples, key_bound, _val_bound)) in batches.into_iter().enumerate() {
+                let batch = OrdValBatch::from_tuples(time as u32, tuples.clone());
+                let ref_batch = TestBatch::from_tuples(time as u32, tuples);
+
+                assert_batch_eq(&batch, &ref_batch);
+                assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+
+                ref_trace.insert(ref_batch);
+                assert_batch_cursors_eq(CursorPair::new(&mut trace.cursor(), &mut batch.cursor()), &ref_trace, seed);
+
+                trace.insert(batch);
+
+                assert_trace_eq(&trace, &ref_trace);
+                assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
+
+                trace.truncate_keys_below(&key_bound);
+                ref_trace.truncate_keys_below(&key_bound);
 
                 assert_trace_eq(&trace, &ref_trace);
                 assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
             }
         }
+
     }
 }
