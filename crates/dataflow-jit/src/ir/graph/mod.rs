@@ -43,7 +43,7 @@ impl Graph {
         &mut self.graph
     }
 
-    /// Returns the node ids of every [`Node::Source`] or [`Node::SourceMap`]
+    /// Returns the node ids of every [`Node::Source`]
     /// within the graph
     pub fn source_nodes(&self) -> Vec<(NodeId, StreamLayout)> {
         self.nodes()
