@@ -111,7 +111,8 @@ COPY sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
 COPY sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/temp
 COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
 # Run the precompile phase to speed up Rust compilations during deployment
-RUN ./compiler-server --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
+# TODO: disabling this to keep compiler image sizes small
+# RUN ./compiler-server --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
 ENTRYPOINT ["./compiler-server", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
 
 # Standalone local-runner
