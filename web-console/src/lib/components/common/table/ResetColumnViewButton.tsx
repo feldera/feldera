@@ -1,22 +1,10 @@
 import { Icon } from '@iconify/react'
 import { IconButton, Tooltip } from '@mui/material'
-import { GridCallbackDetails, GridColumnVisibilityModel } from '@mui/x-data-grid-pro'
 
-import { DataGridColumnViewModel } from './DataGridPro'
-
-export const ResetColumnViewButton = (props: {
-  setColumnViewModel?: (
-    val: DataGridColumnViewModel | ((prevState: DataGridColumnViewModel) => DataGridColumnViewModel)
-  ) => void
-  setColumnVisibilityModel?: (model: GridColumnVisibilityModel, details: GridCallbackDetails<any>) => void
-}) => {
-  const resetColumnView = () => {
-    props.setColumnViewModel?.call(undefined, [])
-    props.setColumnVisibilityModel?.call(undefined, {}, {})
-  }
+export const ResetColumnViewButton = (props: { resetGridViewModel: () => void }) => {
   return (
     <Tooltip title='Reset column headers'>
-      <IconButton onClick={resetColumnView}>
+      <IconButton onClick={props.resetGridViewModel}>
         <Icon icon='bx:move-horizontal' />
       </IconButton>
     </Tooltip>

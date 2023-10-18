@@ -5,7 +5,7 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
-import { DataGridColumnViewModel, DataGridPro, DataGridProProps } from '$lib/components/common/table/DataGridPro'
+import { useGridPersistence } from '$lib/components/common/table/DataGridPro'
 import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
@@ -62,10 +62,10 @@ import ListSubheader from '@mui/material/ListSubheader'
 import Paper from '@mui/material/Paper'
 import Tooltip from '@mui/material/Tooltip'
 import {
+  DataGridPro,
+  DataGridProProps,
   GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
   GridColDef,
-  GridColumnVisibilityModel,
-  GridFilterModel,
   GridRenderCellParams,
   GridRowId,
   GridValueSetterParams,
@@ -509,15 +509,7 @@ export default function PipelineTable() {
     setExpandedRows(newExpandedRows)
   }
 
-  const [columnVisibilityModel, setColumnVisibilityModel] = useLocalStorage<GridColumnVisibilityModel>({
-    key: LS_PREFIX + 'settings/streaming/management/grid/visibility'
-  })
-  const [columnViewModel, setColumnViewModel] = useLocalStorage<DataGridColumnViewModel>({
-    key: LS_PREFIX + 'settings/streaming/management/grid/columnView'
-  })
-  const [filterModel, setFilterModel] = useLocalStorage<GridFilterModel>({
-    key: LS_PREFIX + 'settings/streaming/management/grid/filters'
-  })
+  const gridPersistence = useGridPersistence({ key: LS_PREFIX + 'settings/streaming/management/grid', apiRef })
 
   return (
     <Card>
@@ -546,11 +538,7 @@ export default function PipelineTable() {
           toolbar: {
             children: [
               btnAdd,
-              <ResetColumnViewButton
-                key='1'
-                setColumnViewModel={setColumnViewModel}
-                setColumnVisibilityModel={setColumnVisibilityModel}
-              />,
+              <ResetColumnViewButton key='1' resetGridViewModel={gridPersistence.resetGridViewModel} />,
               <div style={{ marginLeft: 'auto' }} key='2' />,
               <DataGridSearch fetchRows={pipelineQuery} setFilteredData={setFilteredData} key='99' />
             ]
@@ -561,14 +549,7 @@ export default function PipelineTable() {
         }}
         detailPanelExpandedRowIds={expandedRows}
         onDetailPanelExpandedRowIdsChange={updateExpandedRows}
-        {...{
-          columnVisibilityModel,
-          setColumnVisibilityModel,
-          filterModel,
-          setFilterModel,
-          columnViewModel,
-          setColumnViewModel
-        }}
+        {...gridPersistence}
       />
     </Card>
   )

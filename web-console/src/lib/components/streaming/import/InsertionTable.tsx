@@ -3,7 +3,7 @@
 // The rows can be edited after generation/import and eventually be uploaded to
 // the dbsp table.
 
-import { DataGridColumnViewModel, DataGridPro } from '$lib/components/common/table/DataGridPro'
+import { useGridPersistence } from '$lib/components/common/table/DataGridPro'
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { getValueFormatter, Row, sqlTypeToDataGridType } from '$lib/functions/ddl'
 import { Field, Pipeline, PipelineRevision, Relation } from '$lib/services/manager'
@@ -12,11 +12,9 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import invariant from 'tiny-invariant'
 
-import { useLocalStorage } from '@mantine/hooks'
 import Card from '@mui/material/Card'
 import {
-  GridColumnVisibilityModel,
-  GridFilterModel,
+  DataGridPro,
   GridPreProcessEditCellProps,
   GridValueFormatterParams,
   GridValueGetterParams,
@@ -109,17 +107,10 @@ const InsertionTableImpl = ({
   const defaultColumnVisibility = {
     genId: false
   }
-  const [columnVisibilityModel, setColumnVisibilityModel] = useLocalStorage<GridColumnVisibilityModel>({
-    key:
-      LS_PREFIX + `settings/streaming/insertion/${pipelineRevision.pipeline.pipeline_id}/${relation.name}/visibility`,
-    defaultValue: defaultColumnVisibility
-  })
-  const [filterModel, setFilterModel] = useLocalStorage<GridFilterModel>({
-    key: LS_PREFIX + `settings/streaming/insertion/${pipelineRevision.pipeline.pipeline_id}/${relation.name}/filters`
-  })
-  const [columnViewModel, setColumnViewModel] = useLocalStorage<DataGridColumnViewModel>({
-    key:
-      LS_PREFIX + `settings/streaming/inspection/${pipelineRevision.pipeline.pipeline_id}/${relation.name}/columnView`
+  const gridPersistence = useGridPersistence({
+    key: LS_PREFIX + 'settings/streaming/inspection',
+    apiRef,
+    defaultColumnVisibility
   })
 
   return (
@@ -207,23 +198,11 @@ const InsertionTableImpl = ({
             pipelineRevision,
             setLoading,
             apiRef,
-            children: (
-              <ResetColumnViewButton
-                setColumnViewModel={setColumnViewModel}
-                setColumnVisibilityModel={() => setColumnVisibilityModel(defaultColumnVisibility)}
-              />
-            ),
+            children: <ResetColumnViewButton resetGridViewModel={gridPersistence.resetGridViewModel} />,
             ...insert
           }
         }}
-        {...{
-          columnVisibilityModel,
-          setColumnVisibilityModel,
-          filterModel,
-          setFilterModel,
-          columnViewModel,
-          setColumnViewModel
-        }}
+        {...gridPersistence}
       />
     </Card>
   )

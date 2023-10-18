@@ -1,7 +1,7 @@
 // Browse the contents of a table or a view.
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { DataGridColumnViewModel, DataGridPro } from '$lib/components/common/table/DataGridPro'
+import { useGridPersistence } from '$lib/components/common/table/DataGridPro'
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { InspectionToolbar } from '$lib/components/streaming/inspection/InspectionToolbar'
 import { PercentilePagination } from '$lib/components/streaming/inspection/PercentilePagination'
@@ -15,14 +15,8 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useEffect, useState } from 'react'
 import invariant from 'tiny-invariant'
 
-import { useLocalStorage } from '@mantine/hooks'
 import Card from '@mui/material/Card'
-import {
-  GridColumnVisibilityModel,
-  GridFilterModel,
-  GridPaginationModel,
-  GridRowSelectionModel
-} from '@mui/x-data-grid-pro'
+import { DataGridPro, GridPaginationModel, GridRowSelectionModel, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 
 const FETCH_QUANTILES = 100
@@ -290,15 +284,10 @@ const InspectionTableImpl = ({
     genId: false,
     rowCount: false
   }
-  const [columnVisibilityModel, setColumnVisibilityModel] = useLocalStorage<GridColumnVisibilityModel>({
-    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.pipeline_id}/${relation.name}/visibility`,
-    defaultValue: defaultColumnVisibility
-  })
-  const [filterModel, setFilterModel] = useLocalStorage<GridFilterModel>({
-    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.pipeline_id}/${relation.name}/filters`
-  })
-  const [columnViewModel, setColumnViewModel] = useLocalStorage<DataGridColumnViewModel>({
-    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.pipeline_id}/${relation.name}/columnView`
+  const gridPersistence = useGridPersistence({
+    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.pipeline_id}/${relation.name}`,
+    apiRef: useGridApiRef(),
+    defaultColumnVisibility
   })
 
   return (
@@ -362,12 +351,7 @@ const InspectionTableImpl = ({
             status: pipeline.state.current_status,
             relation: relation.name,
             isReadonly,
-            children: (
-              <ResetColumnViewButton
-                setColumnViewModel={setColumnViewModel}
-                setColumnVisibilityModel={() => setColumnVisibilityModel(defaultColumnVisibility)}
-              />
-            )
+            children: <ResetColumnViewButton resetGridViewModel={gridPersistence.resetGridViewModel} />
           }
         }}
         loading={isLoading}
@@ -388,14 +372,7 @@ const InspectionTableImpl = ({
         // This can be removed once the following issue is resolved:
         // https://github.com/mui/mui-x/issues/409
         rowCount={Number.MAX_VALUE}
-        {...{
-          columnVisibilityModel,
-          setColumnVisibilityModel,
-          filterModel,
-          setFilterModel,
-          columnViewModel,
-          setColumnViewModel
-        }}
+        {...gridPersistence}
         sx={{
           '.MuiTablePagination-displayedRows': {
             display: 'none' // 👈 hide huge pagination number

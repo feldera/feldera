@@ -183,9 +183,10 @@ const TableSqlPrograms = () => {
   // const [columnViewModel, setColumnViewModel] = useLocalStorage<DataGridColumnViewModel>({
   //   key: LS_PREFIX + 'settings/analytics/programs/grid/columnView'
   // })
-  const gridPersistence = useGridPersistence({path: LS_PREFIX + 'settings/analytics/programs/grid',
-  apiRef,
-  defaultColumnVisibility: { program_id: false }
+  const gridPersistence = useGridPersistence({
+    key: LS_PREFIX + 'settings/analytics/programs/grid',
+    apiRef,
+    defaultColumnVisibility
   })
 
   const btnAdd = (
@@ -222,11 +223,7 @@ const TableSqlPrograms = () => {
         toolbarChildren={[
           btnAdd,
           <GridToolbarFilterButton key='1' />,
-          <ResetColumnViewButton
-            key='2'
-            setColumnViewModel={gridPersistence.setColumnViewModel}
-            setColumnVisibilityModel={() => gridPersistence.setColumnVisibilityModel!(defaultColumnVisibility)}
-          />,
+          <ResetColumnViewButton key='2' resetGridViewModel={gridPersistence.resetGridViewModel} />,
           <div style={{ marginLeft: 'auto' }} key='3' />
         ]}
         footerChildren={btnAdd}
