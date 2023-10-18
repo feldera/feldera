@@ -7,8 +7,8 @@ import { PipelineStatus } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ApexOptions } from 'apexcharts'
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
+import IconChevronDown from '~icons/bx/chevron-down'
 
-import { Icon } from '@iconify/react'
 import { Accordion, AccordionDetails, AccordionSummary, ListItem } from '@mui/material'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -38,7 +38,7 @@ const Pipelines = () => {
         <ListItem></ListItem>
       </CardContent>
       <Accordion disableGutters>
-        <AccordionSummary expandIcon={<Icon icon='bx:chevron-down' fontSize={32} />}>
+        <AccordionSummary expandIcon={<IconChevronDown fontSize={32} />}>
           <Typography color='text.secondary'>and {inactive.length} inactive</Typography>
         </AccordionSummary>
         <AccordionDetails>

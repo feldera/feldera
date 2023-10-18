@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactElement, ReactNode, SVGProps } from 'react'
 import { Settings } from 'src/@core/context/settingsTypes'
 
 export type ContentWidth = 'full' | 'boxed'
@@ -14,7 +14,7 @@ export type NavLink = {
   badgeContent?: string
   externalLink?: boolean
   openInNewTab?: boolean
-  icon?: string
+  icon?: (props: SVGProps<SVGSVGElement>) => ReactElement
   badgeColor?: 'default' | 'primary' | 'secondary' | 'success' | 'error' | 'warning' | 'info'
 }
 

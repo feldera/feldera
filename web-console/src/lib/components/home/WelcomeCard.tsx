@@ -1,14 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import IconHelpCircle from '~icons/bx/help-circle'
 
-import { Icon } from '@iconify/react'
 import { Avatar, Box, Button, Card, Modal, Typography } from '@mui/material'
 
 const WelcomeCard = (props: { setCard: (card: number) => void }) => (
   <Card sx={{ p: 4, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
     <Avatar sx={{ width: 50, height: 50, mb: 2.25 }}>
-      <Icon icon='bx:help-circle' fontSize='2rem' />
+      <IconHelpCircle fontSize='2rem' />
     </Avatar>
     <Typography variant='h5' sx={{ textAlign: 'center' }}>
       <Typography color='silver' variant='h5' component='span'>

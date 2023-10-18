@@ -4,8 +4,9 @@
 import { ColumnType, Field, Relation } from '$lib/services/manager'
 import { forwardRef, ReactElement, Ref, useState } from 'react'
 import { match, P } from 'ts-pattern'
+import IconCog from '~icons/bx/cog'
+import IconX from '~icons/bx/x'
 
-import { Icon } from '@iconify/react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -121,11 +122,7 @@ export const RngSettingsDialog = (props: {
 
   return (
     <>
-      <Button
-        size='small'
-        onClick={() => setShow(true)}
-        startIcon={<Icon icon='game-icons:perspective-dice-six-faces-random' />}
-      >
+      <Button size='small' onClick={() => setShow(true)} startIcon={<IconCog />}>
         Rng Settings
       </Button>
       <Dialog
@@ -150,7 +147,7 @@ export const RngSettingsDialog = (props: {
             onClick={() => setShow(false)}
             sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
           >
-            <Icon icon='bx:x' />
+            <IconX />
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>

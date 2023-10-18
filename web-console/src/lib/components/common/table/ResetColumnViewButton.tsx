@@ -1,4 +1,5 @@
-import { Icon } from '@iconify/react'
+import IconMoveHorizontal from '~icons/bx/move-horizontal'
+
 import { IconButton, Tooltip } from '@mui/material'
 import { GridCallbackDetails, GridColumnVisibilityModel } from '@mui/x-data-grid-pro'
 
@@ -17,7 +18,7 @@ export const ResetColumnViewButton = (props: {
   return (
     <Tooltip title='Reset column headers'>
       <IconButton onClick={resetColumnView}>
-        <Icon icon='bx:move-horizontal' />
+        <IconMoveHorizontal />
       </IconButton>
     </Tooltip>
   )

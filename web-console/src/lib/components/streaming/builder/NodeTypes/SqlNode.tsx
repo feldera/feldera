@@ -6,8 +6,11 @@ import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { zipDefault } from '$lib/functions/common/tuple'
 import { memo } from 'react'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
+import { TextIcon } from 'src/lib/components/common/TextIcon'
+import IconX from '~icons/bx/x'
+import IconDatabaseExport from '~icons/mdi/database-export'
+import IconDatabaseImport from '~icons/mdi/database-import'
 
-import { Icon } from '@iconify/react'
 import { Box, CardContent, CardHeader, Stack } from '@mui/material'
 import Avatar from '@mui/material/Avatar'
 import Chip from '@mui/material/Chip'
@@ -40,7 +43,7 @@ function SqlTableNode(props: { name: string }) {
         color='secondary'
         avatar={
           <Avatar>
-            <Icon fontSize={16} icon='mdi:database-import' />
+            <IconDatabaseImport fontSize={16} />
           </Avatar>
         }
       />
@@ -79,7 +82,7 @@ function SqlViewNode(props: { name: string }) {
         color='secondary'
         avatar={
           <Avatar>
-            <Icon fontSize={16} icon='mdi:database-export' />
+            <IconDatabaseExport fontSize={16} />
           </Avatar>
         }
       />
@@ -109,7 +112,7 @@ function SqlNode({ id, data }: NodeProps) {
         title={data.label}
         sx={{ py: 5, alignItems: 'flex-start' }}
         titleTypographyProps={{ variant: 'h4' }}
-        avatar={<Icon icon='ant-design:console-sql-outlined' fontSize='2rem' />}
+        avatar={<TextIcon text='SQL' />}
         action={
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <IconButton
@@ -123,7 +126,7 @@ function SqlNode({ id, data }: NodeProps) {
                 'You can add it back later.'
               )}
             >
-              <Icon icon='bx:x' fontSize={20} />
+              <IconX fontSize={20} />
             </IconButton>
           </Box>
         }

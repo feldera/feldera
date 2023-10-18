@@ -18,6 +18,8 @@ import ReactFlow, {
   updateEdge,
   useReactFlow
 } from 'reactflow'
+import IconArrowFromLeft from '~icons/bx/arrow-from-left'
+import IconArrowFromRight from '~icons/bx/arrow-from-right'
 
 import edgeTypes from './EdgeTypes'
 import nodeTypes from './NodeTypes'
@@ -39,7 +41,7 @@ export const sqlPlaceholderNode: Node = {
 const defaultNodes: Node[] = [
   {
     id: 'inputPlaceholder',
-    data: { label: 'Add a new Input', icon: 'bx:arrow-from-left' },
+    data: { label: 'Add a new Input', icon: IconArrowFromLeft },
     position: { x: -500, y: 150 },
     type: 'ioPlaceholder',
     deletable: false
@@ -47,7 +49,7 @@ const defaultNodes: Node[] = [
   sqlPlaceholderNode,
   {
     id: 'outputPlaceholder',
-    data: { label: 'Add a new Output', icon: 'bx:arrow-to-right' },
+    data: { label: 'Add a new Output', icon: IconArrowFromRight },
     position: { x: 500, y: 150 },
     type: 'ioPlaceholder',
     deletable: false

@@ -1,7 +1,6 @@
 // The drawer component that opens when the user wants to add a connector in the
 // pipeline builder.
 
-import { AnyIcon } from '$lib/components/common/AnyIcon'
 import { DebeziumInputConnectorDialog } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
 import { KafkaInputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaInputConnector'
 import { KafkaOutputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
@@ -20,9 +19,10 @@ import { showOnHashPart } from '$lib/functions/urlHash'
 import { AttachedConnector, ConnectorDescr } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ConnectorType, Direction } from '$lib/types/connectors'
+import Image from 'next/image'
 import { useEffect, useState } from 'react'
+import IconX from '~icons/bx/x'
 
-import { Icon } from '@iconify/react'
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import { Breadcrumbs, Button, Card, CardContent, Chip, Grid, Link } from '@mui/material'
 import Box, { BoxProps } from '@mui/material/Box'
@@ -58,9 +58,9 @@ const IoSelectBox = (props: { icon: string; howMany: number; onNew: string; onSe
           }}
         >
           <CardContent sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-            <AnyIcon
-              icon={props.icon}
-              fontSize='3rem'
+            <Image
+              src={props.icon}
+              alt='An icon'
               style={{ height: 64, objectFit: 'cover', width: 'fit-content', padding: 6 }}
             />
             <Button fullWidth variant='outlined' color='secondary' href={`#${props.onNew}`}>
@@ -156,7 +156,7 @@ const SideBarAddIo = () => {
         </Typography>
 
         <IconButton size='small' href='#' sx={{ color: 'text.primary' }}>
-          <Icon icon='bx:x' fontSize={20} />
+          <IconX fontSize={20} />
         </IconButton>
       </Header>
       {drawer && !drawer.connectorType && (

@@ -6,8 +6,8 @@ import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { ReactNode } from 'react'
 import { match, P } from 'ts-pattern'
+import IconLockAlt from '~icons/bx/lock-alt'
 
-import { Icon } from '@iconify/react'
 import { Box, Button, Grid, Typography, useTheme } from '@mui/material'
 import { CredentialResponse, GoogleLogin, TokenResponse } from '@react-oauth/google'
 import { useQuery } from '@tanstack/react-query'
@@ -23,7 +23,7 @@ export default () => {
       <Grid container spacing={6} sx={{ pt: 24, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <GridItems>
           <Image src={'/images/feldera/LogoSolid.svg'} width={300} height='100' alt='AWS Cognito logo' />
-          <Icon icon='bx:lock-alt' fontSize={64}></Icon>
+          <IconLockAlt fontSize={64} />
           {match(authConfig)
             .with(undefined, () => <></>)
             .with({ AwsCognito: P.select() }, config => (

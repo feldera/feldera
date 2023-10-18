@@ -8,8 +8,8 @@ import { ApexOptions } from 'apexcharts'
 import { format } from 'numerable'
 import { useState } from 'react'
 import ReactApexcharts from 'src/@core/components/react-apexcharts'
+import IconDotsVerticalRounded from '~icons/bx/dots-vertical-rounded'
 
-import { Icon } from '@iconify/react'
 import { Box, Button, Collapse, Link, Typography } from '@mui/material'
 
 export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) => {
@@ -81,7 +81,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
                 <Typography sx={{ fontWeight: 500, color: 'text.disabled' }}>
                   {format(item.tput, '0.0 ar', { zeroFormat: '0 r' }) + 'ows/s'}
                 </Typography>
-                <Icon icon='bx:dots-vertical-rounded' fontSize={28} style={{ margin: -4, marginRight: -16 }}></Icon>
+                <IconDotsVerticalRounded fontSize={28} style={{ margin: -4, marginRight: -16 }} />
               </Box>
             </Collapse>
             <Collapse orientation='horizontal' in={sqlHover}>

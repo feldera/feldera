@@ -9,6 +9,7 @@ import { DataGridPro, DataGridProProps } from '$lib/components/common/table/Data
 import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
+import { TextIcon } from '$lib/components/common/TextIcon'
 import AnalyticsPipelineTput from '$lib/components/streaming/management/AnalyticsPipelineTput'
 import PipelineMemoryGraph from '$lib/components/streaming/management/PipelineMemoryGraph'
 import { PipelineRevisionStatusChip } from '$lib/components/streaming/management/RevisionStatus'
@@ -45,11 +46,20 @@ import Link from 'next/link'
 import React, { useCallback, useEffect, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
+import IconCalendar from '~icons/bx/calendar'
+import IconLogInCircle from '~icons/bx/log-in-circle'
+import IconPauseCircle from '~icons/bx/pause-circle'
+import IconPencil from '~icons/bx/pencil'
+import IconPlayCircle from '~icons/bx/play-circle'
+import IconShow from '~icons/bx/show'
+import IconStopCircle from '~icons/bx/stop-circle'
+import IconTrashAlt from '~icons/bx/trash-alt'
+import IconUpload from '~icons/bx/upload'
+import Icon270RingWithBg from '~icons/svg-spinners/270-ring-with-bg'
 
-import { Icon } from '@iconify/react'
 import { useLocalStorage } from '@mantine/hooks'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { Button } from '@mui/material'
+import { Button, Typography } from '@mui/material'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -196,7 +206,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                 target='_blank'
                 rel='noreferrer'
               >
-                <Icon icon='bx:show' fontSize={20} />
+                <IconShow fontSize={20} />
               </IconButton>
             </Tooltip>
             {direction === 'input' && state.current_status == PipelineStatus.RUNNING && (
@@ -207,7 +217,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                   target='_blank'
                   rel='noreferrer'
                 >
-                  <Icon icon='bx:upload' fontSize={20} />
+                  <IconUpload fontSize={20} />
                 </IconButton>
               </Tooltip>
             )}
@@ -224,23 +234,22 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           <Card>
             <List subheader={<ListSubheader>Configuration</ListSubheader>} dense>
               <ListItem>
-                <ListItemIcon>
-                  <Icon icon='fluent-emoji-high-contrast:id-button' fontSize={20} />
-                </ListItemIcon>
-                <ListItemText primary={pipelineRevisionQuery.data?.pipeline.pipeline_id || 'not set'} />
-              </ListItem>
-              <ListItem>
-                <ListItemIcon>
-                  <Icon icon='bi:filetype-sql' fontSize={20} />
-                </ListItemIcon>
-                <ListItemText primary={pipelineRevisionQuery.data?.program.name || 'not set'} />
+                <TextIcon text='SQL' />
+                <ListItemText
+                  primary={pipelineRevisionQuery.data?.program.name || 'not set'}
+                  secondary={
+                    <Typography variant='caption'>
+                      {pipelineRevisionQuery.data?.pipeline.pipeline_id || 'not set'}
+                    </Typography>
+                  }
+                />
               </ListItem>
               {state.current_status == PipelineStatus.RUNNING && (
                 <>
                   <ListItem>
                     <Tooltip title='Pipeline Running Since'>
                       <ListItemIcon>
-                        <Icon icon='clarity:date-line' fontSize={20} />
+                        <IconCalendar fontSize={20} />
                       </ListItemIcon>
                     </Tooltip>
                     <ListItemText
@@ -250,7 +259,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                   <ListItem>
                     <Tooltip title='Pipeline Port'>
                       <ListItemIcon>
-                        <Icon icon='carbon:port-input' fontSize={20} />
+                        <IconLogInCircle fontSize={20} />
                       </ListItemIcon>
                     </Tooltip>
                     <ListItemText className='pipelinePort' primary={state.location || '0000'} />
@@ -652,35 +661,35 @@ const PipelineActions = (params: { row: Pipeline }) => {
     pause: () => (
       <Tooltip title='Pause Pipeline' key='pause'>
         <IconButton className='pauseButton' size='small' onClick={() => pausePipelineClick(pipeline.pipeline_id)}>
-          <Icon icon='bx:pause-circle' fontSize={20} />
+          <IconPauseCircle fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     start: () => (
       <Tooltip title='Start Pipeline' key='start'>
         <IconButton className='startButton' size='small' onClick={() => startPipelineClick(pipeline.pipeline_id)}>
-          <Icon icon='bx:play-circle' fontSize={20} />
+          <IconPlayCircle fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     spinner: () => (
       <Tooltip title={state[0]} key='spinner'>
         <IconButton size='small'>
-          <Icon icon='svg-spinners:270-ring-with-bg' fontSize={20} />
+          <Icon270RingWithBg fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     shutdown: () => (
       <Tooltip title='Shutdown Pipeline' key='shutdown'>
         <IconButton className='shutdownButton' size='small' onClick={() => shutdownPipelineClick(pipeline.pipeline_id)}>
-          <Icon icon='bx:stop-circle' fontSize={20} />
+          <IconStopCircle fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     inspect: () => (
       <Tooltip title='Inspect' key='inspect'>
         <IconButton size='small' component={Link} href='#'>
-          <Icon icon='bx:show' fontSize={20} />
+          <IconShow fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
@@ -691,7 +700,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
           size='small'
           href={`/streaming/builder/?pipeline_id=${pipeline.pipeline_id}`}
         >
-          <Icon icon='bx:pencil' fontSize={20} />
+          <IconPencil fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
@@ -706,7 +715,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
             () => deletePipelineClick(pipeline.pipeline_id)
           )}
         >
-          <Icon icon='bx:trash-alt' fontSize={20} />
+          <IconTrashAlt fontSize={20} />
         </IconButton>
       </Tooltip>
     )

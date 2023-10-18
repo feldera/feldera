@@ -1,14 +1,13 @@
 // InputNodes are on the left and connect to tables of the program.
 
-import { AnyIcon } from '$lib/components/common/AnyIcon'
 import { Handle, Node } from '$lib/components/streaming/builder/NodeTypes'
 import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { connectorDescrToType, connectorTypeToIcon } from '$lib/functions/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
+import IconX from '~icons/bx/x'
 
-import { Icon } from '@iconify/react'
 import { Box, Link } from '@mui/material'
 import Avatar from '@mui/material/Avatar'
 import CardHeader from '@mui/material/CardHeader'
@@ -57,10 +56,9 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
           subheaderTypographyProps={{ variant: 'body1', sx: { color: 'text.disabled' } }}
           avatar={
             <Avatar variant='rounded' sx={{ mt: 1.5, width: 42, height: 42 }}>
-              <AnyIcon
-                icon={connectorTypeToIcon(connectorDescrToType(data.connector))}
-                style={{ width: '90%', height: '90%' }}
-              />
+              {(Icon => {
+                return <Icon style={{ width: '90%', height: '90%' }}></Icon>
+              })(connectorTypeToIcon(connectorDescrToType(data.connector)))}
             </Avatar>
           }
         />
@@ -80,7 +78,7 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
             'You can add it back later.'
           )}
         >
-          <Icon icon='bx:x' fontSize={20} />
+          <IconX fontSize={20} />
         </IconButton>
       </Box>
       {/* The .inputHandle is referenced by webui-tester */}

@@ -1,14 +1,13 @@
 // OutputNodes are displayed on the right and connected with views of the
 // program.
 
-import { AnyIcon } from '$lib/components/common/AnyIcon'
 import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { connectorDescrToType, connectorTypeToIcon } from '$lib/functions/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
 import { Connection, NodeProps, Position, useReactFlow } from 'reactflow'
+import IconX from '~icons/bx/x'
 
-import { Icon } from '@iconify/react'
 import { Avatar, Box, Link } from '@mui/material'
 import CardHeader from '@mui/material/CardHeader'
 import IconButton from '@mui/material/IconButton'
@@ -48,10 +47,9 @@ const OutputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
           subheaderTypographyProps={{ variant: 'body1', sx: { color: 'text.disabled' } }}
           avatar={
             <Avatar variant='rounded' sx={{ mt: 1.5, width: 42, height: 42 }}>
-              <AnyIcon
-                icon={connectorTypeToIcon(connectorDescrToType(data.connector))}
-                style={{ width: '90%', height: '90%' }}
-              />
+              {(Icon => {
+                return <Icon style={{ width: '90%', height: '90%' }}></Icon>
+              })(connectorTypeToIcon(connectorDescrToType(data.connector)))}
             </Avatar>
           }
         />
@@ -71,7 +69,7 @@ const OutputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
             'You can add it back later.'
           )}
         >
-          <Icon icon='bx:x' fontSize={20} />
+          <IconX fontSize={20} />
         </IconButton>
       </Box>
       {/* The .outputHandle is referenced by webui-tester */}
