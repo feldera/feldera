@@ -200,8 +200,7 @@ public class Utilities {
         if (exitCode != 0) {
             throw new RuntimeException("Process failed with exit code " + exitCode);
         }
-        @SuppressWarnings("unused")
-        boolean success = out.delete();
+         out.deleteOnExit();
     }
 
     public static void runProcess(String directory, String... commands) throws IOException, InterruptedException {

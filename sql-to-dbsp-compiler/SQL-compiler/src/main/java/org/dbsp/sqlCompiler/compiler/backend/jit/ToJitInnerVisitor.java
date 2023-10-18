@@ -347,17 +347,15 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
      * Insert a function call operation.
      * The function call is applied only when all arguments are non-null,
      * otherwise the result is immediately null.
-     * @param name           Name of function to call.
-     * @param resultType     Expected result type.
+     * @param functionDescription Description of the function to call.
      * @param expression     Operations which is being translated.
      *                       Usually an ApplyExpression, but not always.
      * @param arguments      Arguments to supply to the function call.
      */
-    JITInstructionPair createFunctionCall(String name,
-                            @Nullable DBSPType resultType,
+    JITInstructionPair createFunctionCall(Op functionDescription,
                             DBSPExpression expression,
                             DBSPExpression... arguments) {
-        Objects.requireNonNull(resultType);
+        DBSPType resultType = functionDescription.resultType;
         List<JITInstructionRef> nullableArgs = new ArrayList<>();
         List<JITType> argumentTypes = new ArrayList<>();
         List<JITInstructionRef> args = new ArrayList<>();
@@ -399,8 +397,16 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         }
 
         JITScalarType jitResultType = this.convertType(resultType).to(JITScalarType.class);
-        long id = this.nextInstructionId();
-        JITInstructionRef call = this.add(new JITFunctionCall(id, name, args, argumentTypes, jitResultType));
+        Call call = functionDescription.as(Call.class);
+        JITInstructionRef invocation;
+        if (call != null) {
+            String name = call.name;
+            long id = this.nextInstructionId();
+            invocation = this.add(new JITFunctionCall(id, name, args, argumentTypes, jitResultType));
+        } else {
+            OpCall opCall = functionDescription.to(OpCall.class);
+            invocation = this.insertUnary(opCall.op, args.get(0), jitResultType, "");
+        }
         JITInstructionPair result;
 
         if (isNull.isValid()) {
@@ -412,7 +418,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             JITInstructionRef param;
             if (resultType.code != VOID) {
                 param = this.addParameter(nextBlock, jitResultType);
-                next.addArgument(call);
+                next.addArgument(invocation);
             } else {
                 param = JITInstructionRef.INVALID;
             }
@@ -436,7 +442,7 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             this.setCurrentBlock(nextBlock);
             result = new JITInstructionPair(param, isNull);
         } else {
-            result = new JITInstructionPair(call);
+            result = new JITInstructionPair(invocation);
         }
         return result;
     }
@@ -453,7 +459,8 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     JITInstructionPair createFunctionCall(String name,
                                           DBSPExpression expression,
                                           DBSPExpression... arguments) {
-        return this.createFunctionCall(name, expression.getType(), expression, arguments);
+        return this.createFunctionCall(new Call(name, expression.getType().to(DBSPTypeBaseType.class)),
+                expression, arguments);
     }
 
     /////////////////////////// Code generation
@@ -473,61 +480,85 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
     }
 
     /**
-     * Function Type class.  Describes some type information about a JIT function.
-     * (Chose a short name to make the hashmap below more compact.)
+     * Describes some type information about a JIT function or operator
      */
-    static class FT {
-        /**
-         * The name of the JIT function.
-         */
-        public final String name;
-        /**
-         * Type of result produced by JIT function.
-         */
+    static class Op implements ICastable {
+        /** Type of result produced by JIT function. */
         public final DBSPTypeBaseType resultType;
 
-        FT(String name, DBSPTypeBaseType resultType) {
-            this.name = name;
+        Op(DBSPTypeBaseType resultType) {
             this.resultType = resultType;
         }
     }
+
+    /** A function call */
+    static class Call extends Op {
+        /** The name of the JIT function. */
+        public final String name;
+
+        Call(String name, DBSPTypeBaseType resultType) {
+            super(resultType);
+            this.name = name;
+        }
+    }
+
+    static class OpCall extends Op {
+        public final JITUnaryInstruction.Operation op;
+
+        OpCall(JITUnaryInstruction.Operation op, DBSPTypeBaseType resultType) {
+            super(resultType);
+            this.op = op;
+        }
+    }
     
-    static final Map<String, FT> functionTranslation = new HashMap<String, FT>() {{
-        put("extract_second_Timestamp", new FT("dbsp.timestamp.second", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_minute_Timestamp", new FT("dbsp.timestamp.minute", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_hour_Timestamp", new FT("dbsp.timestamp.hour", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_day_Timestamp", new FT("dbsp.timestamp.day", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_dow_Timestamp", new FT("dbsp.timestamp.day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_doy_Timestamp", new FT("dbsp.timestamp.day_of_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_isodow_Timestamp", new FT("dbsp.timestamp.iso_day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_week_Timestamp", new FT("dbsp.timestamp.week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_month_Timestamp", new FT("dbsp.timestamp.month", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_year_Timestamp", new FT("dbsp.timestamp.year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_isoyear_Timestamp", new FT("dbsp.timestamp.iso_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_quarter_Timestamp", new FT("dbsp.timestamp.quarter", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_decade_Timestamp", new FT("dbsp.timestamp.decade", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_century_Timestamp", new FT("dbsp.timestamp.century", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_millennium_Timestamp", new FT("dbsp.timestamp.millennium", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_epoch_Timestamp", new FT("dbsp.timestamp.epoch", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_second_Date", new FT("dbsp.date.second", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_millisecond_Date", new FT("dbsp.date.millisecond", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_microsecond_Date", new FT("dbsp.date.microsecond", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_minute_Date", new FT("dbsp.date.minute", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_hour_Date", new FT("dbsp.date.hour", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_day_Date", new FT("dbsp.date.day", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_dow_Date", new FT("dbsp.date.day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_doy_Date", new FT("dbsp.date.day_of_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_isodow_Date", new FT("dbsp.date.iso_day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_week_Date", new FT("dbsp.date.week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_month_Date", new FT("dbsp.date.month", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_year_Date", new FT("dbsp.date.year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_isoyear_Date", new FT("dbsp.date.iso_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_quarter_Date", new FT("dbsp.date.quarter", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_decade_Date", new FT("dbsp.date.decade", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_century_Date", new FT("dbsp.date.century", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_millennium_Date", new FT("dbsp.date.millennium", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_epoch_Date", new FT("dbsp.date.epoch", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("print", new FT("dbsp.io.str.print", new DBSPTypeVoid()));
+    static final Map<String, Op> functionTranslation = new HashMap<String, Op>() {{
+        put("extract_second_Timestamp", new Call("dbsp.timestamp.second", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_minute_Timestamp", new Call("dbsp.timestamp.minute", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_hour_Timestamp", new Call("dbsp.timestamp.hour", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_day_Timestamp", new Call("dbsp.timestamp.day", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_dow_Timestamp", new Call("dbsp.timestamp.day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_doy_Timestamp", new Call("dbsp.timestamp.day_of_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_isodow_Timestamp", new Call("dbsp.timestamp.iso_day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_week_Timestamp", new Call("dbsp.timestamp.week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_month_Timestamp", new Call("dbsp.timestamp.month", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_year_Timestamp", new Call("dbsp.timestamp.year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_isoyear_Timestamp", new Call("dbsp.timestamp.iso_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_quarter_Timestamp", new Call("dbsp.timestamp.quarter", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_decade_Timestamp", new Call("dbsp.timestamp.decade", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_century_Timestamp", new Call("dbsp.timestamp.century", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_millennium_Timestamp", new Call("dbsp.timestamp.millennium", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_epoch_Timestamp", new Call("dbsp.timestamp.epoch", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_second_Date", new Call("dbsp.date.second", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_millisecond_Date", new Call("dbsp.date.millisecond", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_microsecond_Date", new Call("dbsp.date.microsecond", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_minute_Date", new Call("dbsp.date.minute", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_hour_Date", new Call("dbsp.date.hour", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_day_Date", new Call("dbsp.date.day", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_dow_Date", new Call("dbsp.date.day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_doy_Date", new Call("dbsp.date.day_of_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_isodow_Date", new Call("dbsp.date.iso_day_of_week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_week_Date", new Call("dbsp.date.week", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_month_Date", new Call("dbsp.date.month", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_year_Date", new Call("dbsp.date.year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_isoyear_Date", new Call("dbsp.date.iso_year", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_quarter_Date", new Call("dbsp.date.quarter", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_decade_Date", new Call("dbsp.date.decade", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_century_Date", new Call("dbsp.date.century", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_millennium_Date", new Call("dbsp.date.millennium", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_epoch_Date", new Call("dbsp.date.epoch", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("print", new Call("dbsp.io.str.print", new DBSPTypeVoid()));
+        put("abs_decimal", new OpCall(JITUnaryInstruction.Operation.ABS, DBSPTypeDecimal.getDefault()));
+        put("abs_d", new OpCall(JITUnaryInstruction.Operation.ABS, new DBSPTypeDouble(CalciteObject.EMPTY, false)));
+        put("abs_f", new OpCall(JITUnaryInstruction.Operation.ABS, new DBSPTypeFloat(CalciteObject.EMPTY, false)));
+        put("floor_decimal", new OpCall(JITUnaryInstruction.Operation.FLOOR, DBSPTypeDecimal.getDefault()));
+        put("floor_d", new OpCall(JITUnaryInstruction.Operation.FLOOR, new DBSPTypeDouble(CalciteObject.EMPTY, false)));
+        put("floor_f", new OpCall(JITUnaryInstruction.Operation.FLOOR, new DBSPTypeFloat(CalciteObject.EMPTY, false)));
+        put("ceil_decimal", new OpCall(JITUnaryInstruction.Operation.CEIL, DBSPTypeDecimal.getDefault()));
+        put("ceil_d", new OpCall(JITUnaryInstruction.Operation.CEIL, new DBSPTypeDouble(CalciteObject.EMPTY, false)));
+        put("ceil_f", new OpCall(JITUnaryInstruction.Operation.CEIL, new DBSPTypeFloat(CalciteObject.EMPTY, false)));
+        put("sqrt_decimal", new OpCall(JITUnaryInstruction.Operation.SQRT, DBSPTypeDecimal.getDefault()));
+        put("sqrt_d", new OpCall(JITUnaryInstruction.Operation.SQRT, new DBSPTypeDouble(CalciteObject.EMPTY, false)));
+        put("sqrt_f", new OpCall(JITUnaryInstruction.Operation.SQRT, new DBSPTypeFloat(CalciteObject.EMPTY, false)));
     }};
 
     @Override
@@ -538,10 +569,10 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
             String function = path.path.toString();
             if (function.endsWith("N"))
                 function = function.substring(0, function.length() - 1);
-            FT jitFunction = functionTranslation.get(function);
+            Op jitFunction = functionTranslation.get(function);
             if (jitFunction != null) {
                 JITInstructionPair call = this.createFunctionCall(
-                        jitFunction.name, jitFunction.resultType, expression, expression.arguments);
+                            jitFunction, expression, expression.arguments);
                 JITScalarType type = this.convertType(jitFunction.resultType).to(JITScalarType.class);
                 JITInstructionRef cast = this.insertCast(call.value, type, resultType, "");
                 JITInstructionPair result = new JITInstructionPair(cast, call.isNull);
