@@ -1,5 +1,9 @@
 // Footer for a dialog with tabs it contains the next and previous buttons. The
-import { Icon } from '@iconify/react'
+
+import IconCheck from '~icons/bx/check'
+import IconLeftArrowAlt from '~icons/bx/left-arrow-alt'
+import IconRightArrowAlt from '~icons/bx/right-arrow-alt'
+
 // next button can turn into a submit button if we're on the last tab.
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -7,8 +11,6 @@ import Button from '@mui/material/Button'
 const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: string[]; isUpdate: boolean }) => {
   const { activeTab, setActiveTab, tabsArr } = props
 
-  const nextArrow = 'bx:right-arrow-alt'
-  const previousArrow = 'bx:left-arrow-alt'
   const prevTab = tabsArr[tabsArr.indexOf(activeTab) - 1]
   const nextTab = tabsArr[tabsArr.indexOf(activeTab) + 1]
   const onLastTab = activeTab === tabsArr[tabsArr.length - 1]
@@ -20,7 +22,7 @@ const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: strin
       <Button
         variant='contained'
         color='primary'
-        endIcon={<Icon icon={nextArrow} />}
+        endIcon={<IconRightArrowAlt />}
         onClick={() => {
           setActiveTab(nextTab)
         }}
@@ -30,7 +32,7 @@ const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: strin
     )
   } else {
     nextOrSaveButton = (
-      <Button variant='contained' color='success' endIcon={<Icon icon='bx:check' />} type='submit'>
+      <Button variant='contained' color='success' endIcon={<IconCheck />} type='submit'>
         {props.isUpdate ? 'Update' : 'Create'}
       </Button>
     )
@@ -43,7 +45,7 @@ const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: strin
         color='secondary'
         disabled={onFirstTab}
         onClick={() => setActiveTab(prevTab)}
-        startIcon={<Icon icon={previousArrow} />}
+        startIcon={<IconLeftArrowAlt />}
       >
         Previous
       </Button>

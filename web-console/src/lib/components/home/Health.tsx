@@ -6,8 +6,10 @@ import { nonNull } from '$lib/functions/common/function'
 import { Pipeline, ProgramDescr, ProgramsService } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { match, P } from 'ts-pattern'
+import IconChevronDown from '~icons/bx/chevron-down'
+import IconCopy from '~icons/bx/copy'
+import IconErrorCircle from '~icons/bx/error-circle'
 
-import { Icon } from '@iconify/react'
 import { useClipboard } from '@mantine/hooks'
 import {
   Accordion,
@@ -162,7 +164,7 @@ const CopyButton = (props: IconButtonProps) => {
       }}
     >
       <IconButton size='small' {...props}>
-        <Icon icon='bx:copy' fontSize={16}></Icon>
+        <IconCopy fontSize={16} />
       </IconButton>
     </Box>
   )
@@ -192,9 +194,9 @@ const Health = () => {
       >
         <CardHeader title='Feldera Health'></CardHeader>
         <Accordion disableGutters>
-          <AccordionSummary expandIcon={<Icon icon='bx:chevron-down' fontSize={32} />}>
+          <AccordionSummary expandIcon={<IconChevronDown fontSize={32} />}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, pr: 4, width: '100%' }}>
-              <Icon icon='bx:error-circle' fontSize={20} />
+              <IconErrorCircle fontSize={20} />
               <Typography>Platform errors</Typography>
               <Typography variant='h6' sx={{ ml: 'auto' }}>
                 {errors.length}
@@ -274,9 +276,9 @@ const Health = () => {
           )}
         </Accordion>
         <Accordion disableGutters>
-          <AccordionSummary expandIcon={<Icon icon='bx:chevron-down' fontSize={32} />}>
+          <AccordionSummary expandIcon={<IconChevronDown fontSize={32} />}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, pr: 4, width: '100%' }}>
-              <Icon icon='bx:error-circle' fontSize={20} />
+              <IconErrorCircle fontSize={20} />
               <Typography>Platform warnings</Typography>
               <Typography variant='h6' sx={{ ml: 'auto' }}>
                 0

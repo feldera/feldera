@@ -17,8 +17,9 @@ import {
   useState
 } from 'react'
 import { ThemeColor } from 'src/@core/layouts/types'
+import IconPlayCircle from '~icons/bx/play-circle'
+import IconX from '~icons/bx/x'
 
-import { Icon } from '@iconify/react'
 import { DiffEditor, MonacoDiffEditor } from '@monaco-editor/react'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
@@ -148,7 +149,7 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
           }}
           sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
         >
-          <Icon icon='bx:x' />
+          <IconX />
         </IconButton>
         <Box sx={{ mb: 4, textAlign: 'center' }}>
           <Typography variant='h5' sx={{ mb: 3 }}>
@@ -205,7 +206,7 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
               variant='contained'
               sx={{ mr: 1 }}
               onClick={handleStart}
-              endIcon={<Icon icon='bx:play-circle' />}
+              endIcon={<IconPlayCircle />}
               disabled={
                 pipeline.state.current_status == PipelineStatus.RUNNING ||
                 pipeline.state.current_status == PipelineStatus.PAUSED

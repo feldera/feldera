@@ -23,9 +23,13 @@ import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
 import { FormContainer } from 'react-hook-form-mui'
 import * as va from 'valibot'
+import IconCategoryAlt from '~icons/bx/category-alt'
+import IconData from '~icons/bx/data'
+import IconFile from '~icons/bx/file'
+import IconLockOpen from '~icons/bx/lock-open'
+import IconX from '~icons/bx/x'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
-import { Icon } from '@iconify/react'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
@@ -151,7 +155,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
           }}
         >
           <IconButton size='small' onClick={handleClose} sx={{ position: 'absolute', right: '1rem', top: '1rem' }}>
-            <Icon icon='bx:x' />
+            <IconX />
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>
@@ -187,7 +191,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                       title='Details'
                       subtitle='Enter Details'
                       active={activeTab === 'detailsTab'}
-                      icon={<Icon icon='bx:file' />}
+                      icon={<IconFile />}
                     />
                   }
                 />
@@ -199,7 +203,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                       title='Server'
                       active={activeTab === 'sourceTab'}
                       subtitle='Sink details'
-                      icon={<Icon icon='bx:data' />}
+                      icon={<IconData />}
                     />
                   }
                 />
@@ -211,7 +215,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                       title='Security'
                       subtitle='Authentication protocol'
                       active={activeTab === 'authTab'}
-                      icon={<Icon icon='bx:lock-open' />}
+                      icon={<IconLockOpen />}
                     />
                   }
                 />
@@ -223,7 +227,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                       title='Format'
                       active={activeTab === 'formatTab'}
                       subtitle='Data details'
-                      icon={<Icon icon='lucide:file-json-2' />}
+                      icon={<IconCategoryAlt />}
                     />
                   }
                 />

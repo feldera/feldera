@@ -6,7 +6,6 @@ import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import React, { memo, useEffect, useState } from 'react'
 import { NodeProps } from 'reactflow'
 
-import { Icon } from '@iconify/react'
 import { Autocomplete, CardContent, TextField, Typography } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
 
@@ -32,7 +31,9 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
   return (
     <PlaceholderNode>
       <CardContent sx={{ textAlign: 'center', '& svg': { mb: 2 } }}>
-        <Icon icon={props.data.icon} fontSize='2rem' />
+        {(Icon => (
+          <Icon fontSize='2rem' />
+        ))(props.data.icon)}
         <Typography variant='h6' sx={{ mb: 4 }}>
           {props.data.label}
         </Typography>

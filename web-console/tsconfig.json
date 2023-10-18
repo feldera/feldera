@@ -45,15 +45,20 @@
       {
         "name": "next"
       }
+    ],
+    "types": [
+      "unplugin-icons/types/react"
     ]
   },
   "include": [
     "src",
     "declaration.d.ts",
     ".next/types/**/*.ts",
-    "out/types/**/*.ts"
+    "out/types/**/*.ts",
+    "next-env.d.ts",
+    "additional.d.ts",
   ],
   "exclude": [
     "node_modules"
-  ]
+  ],
 }

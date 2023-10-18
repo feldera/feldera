@@ -11,9 +11,10 @@ import { useEffect, useState } from 'react'
 import { Controller } from 'react-hook-form'
 import { FormContainer, TextFieldElement, useFormContext } from 'react-hook-form-mui'
 import * as va from 'valibot'
+import IconCheck from '~icons/bx/check'
+import IconX from '~icons/bx/x'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
-import { Icon } from '@iconify/react'
 import { Editor } from '@monaco-editor/react'
 import { useTheme } from '@mui/material'
 import Box from '@mui/material/Box'
@@ -99,7 +100,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
             onClick={() => props.setShow(false)}
             sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
           >
-            <Icon icon='bx:x' />
+            <IconX />
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>
@@ -114,7 +115,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
             variant='contained'
             sx={{ mr: 1 }}
             color='success'
-            endIcon={<Icon icon='bx:check' />}
+            endIcon={<IconCheck />}
             form='generic-connector-form'
             type='submit'
           >

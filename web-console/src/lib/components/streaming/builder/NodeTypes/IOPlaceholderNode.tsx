@@ -4,7 +4,6 @@
 import React, { memo } from 'react'
 import { NodeProps } from 'reactflow'
 
-import { Icon } from '@iconify/react'
 import { CardContent, Link, Typography } from '@mui/material'
 
 import { PlaceholderNode } from './'
@@ -14,7 +13,9 @@ const IOPlaceholderNode = ({ id, data }: NodeProps) => {
     <PlaceholderNode>
       <Link href={`#${id === 'inputPlaceholder' ? 'add_input' : 'add_output'}`}>
         <CardContent sx={{ textAlign: 'center' }}>
-          <Icon icon={data.icon} fontSize='2rem' />
+          {(Icon => (
+            <Icon fontSize='2rem'></Icon>
+          ))(data.icon)}
           <Typography variant='h6'>{data.label}</Typography>
         </CardContent>
       </Link>

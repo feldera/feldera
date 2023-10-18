@@ -11,8 +11,9 @@ import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { Children, Dispatch, MutableRefObject, ReactNode, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
+import IconPencil from '~icons/bx/pencil'
+import IconTrashAlt from '~icons/bx/trash-alt'
 
-import { Icon } from '@iconify/react'
 import Card from '@mui/material/Card'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
@@ -85,14 +86,14 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
                   target='_blank'
                   rel='noreferrer'
                 >
-                  <Icon icon='bx:pencil' fontSize={20} />
+                  <IconPencil fontSize={20} />
                 </IconButton>
               </Tooltip>
             )}
             {onDeleteRow && (
               <Tooltip title='Delete'>
                 <IconButton size='small' onClick={() => onDeleteRow(params.row)}>
-                  <Icon icon='bx:trash-alt' fontSize={20} />
+                  <IconTrashAlt fontSize={20} />
                 </IconButton>
               </Tooltip>
             )}

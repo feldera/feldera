@@ -3,7 +3,7 @@
 // Also attached the dialog for the connector that opens when someone clicks
 // on Add.
 
-import { AnyIcon } from '$lib/components/common/AnyIcon'
+import Image from 'next/image'
 
 import { Box } from '@mui/material'
 import Button from '@mui/material/Button'
@@ -21,9 +21,9 @@ export const AddConnectorCard = (props: {
   return (
     <Card id={props.id}>
       <CardContent sx={{ textAlign: 'center' }}>
-        <AnyIcon
-          icon={props.icon}
-          fontSize='4rem'
+        <Image
+          src={props.icon}
+          alt='An icon'
           style={{ marginBottom: 8, height: 64, objectFit: 'cover', width: 'fit-content' }}
         />
         <Typography sx={{ mb: 3 }}>{props.title}</Typography>

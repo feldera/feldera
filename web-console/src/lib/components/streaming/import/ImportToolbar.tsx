@@ -8,8 +8,11 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import dayjs from 'dayjs'
 import Papa from 'papaparse'
 import { ChangeEvent, Dispatch, MutableRefObject, ReactNode, SetStateAction, useCallback } from 'react'
+import IconDuplicate from '~icons/bx/duplicate'
+import IconPlusCircle from '~icons/bx/plus-circle'
+import IconTrash from '~icons/bx/trash'
+import IconUpload from '~icons/bx/upload'
 
-import { Icon } from '@iconify/react'
 import { useLocalStorage } from '@mantine/hooks'
 import { Button } from '@mui/material'
 import {
@@ -112,20 +115,20 @@ const ImportToolbar = (props: {
     <GridToolbarContainer>
       <GridToolbarColumnsButton />
       <GridToolbarDensitySelector />
-      <Button size='small' onClick={handleClearData} startIcon={<Icon icon='mi:delete' />}>
+      <Button size='small' onClick={handleClearData} startIcon={<IconTrash />}>
         Clear
       </Button>
       <RngSettingsDialog relation={relation} settings={settings} setSettings={setSettings} />
-      <Button size='small' onClick={() => insertDefaultRows(1)} startIcon={<Icon icon='majesticons:add-row' />}>
+      <Button size='small' onClick={() => insertDefaultRows(1)} startIcon={<IconPlusCircle />}>
         Add Default Row
       </Button>
-      <Button size='small' onClick={() => insertRandomRows(1)} startIcon={<Icon icon='mdi:add' />}>
+      <Button size='small' onClick={() => insertRandomRows(1)} startIcon={<IconPlusCircle />}>
         1 Random Row
       </Button>
-      <Button size='small' onClick={() => insertRandomRows(5)} startIcon={<Icon icon='mdi:add-bold' />}>
+      <Button size='small' onClick={() => insertRandomRows(5)} startIcon={<IconDuplicate />}>
         5 Random Rows
       </Button>
-      <Button size='small' onClick={handleInsertRows} startIcon={<Icon icon='mdi:upload' />} color='info'>
+      <Button size='small' onClick={handleInsertRows} startIcon={<IconUpload />} color='info'>
         Insert Rows
       </Button>
       {props.children}

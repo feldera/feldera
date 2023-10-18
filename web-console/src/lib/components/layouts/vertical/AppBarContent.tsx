@@ -7,8 +7,8 @@ import { Settings } from 'src/@core/context/settingsTypes'
 import ModeToggler from 'src/@core/layouts/components/shared-components/ModeToggler'
 import UserDropdown from 'src/@core/layouts/components/shared-components/UserDropdown'
 import invariant from 'tiny-invariant'
+import IconLockOpenAlt from '~icons/bx/lock-open-alt'
 
-import { Icon } from '@iconify/react'
 import { Tooltip } from '@mui/material'
 // also has the search bar and the user dropdown and the notification dropdown.
 import Box from '@mui/material/Box'
@@ -42,7 +42,7 @@ const AppBarContent = (props: Props) => {
           {auth === 'NoAuth' ? (
             <Tooltip title='No authentication'>
               <IconButton disableRipple>
-                <Icon icon='bx:lock-open-alt'></Icon>
+                <IconLockOpenAlt />
               </IconButton>
             </Tooltip>
           ) : (

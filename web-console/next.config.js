@@ -1,6 +1,6 @@
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const path = require('path')
-const { IgnorePlugin } = require('webpack')
+
+const UnpluginIcons = require("unplugin-icons/webpack")
+const { FileSystemIconLoader } = require("unplugin-icons/loaders")
 
 /** @type {import("next").NextConfig} */
 module.exports = {
@@ -12,5 +12,27 @@ module.exports = {
   images: { unoptimized: true },
   experimental: {
     esmExternals: false,
+  },
+  webpack(config) {
+    config.plugins.push(
+      require('unplugin-icons/webpack')({
+        compiler: 'jsx',
+        jsx: 'react',
+      }),
+    )
+    config.plugins.push(
+      UnpluginIcons({
+        compiler: 'jsx', jsx: 'react',
+        customCollections: {
+          'vendors': FileSystemIconLoader(
+            "./public/icons/vendors",
+          ),
+          'generic': FileSystemIconLoader(
+            "./public/icons/generic",
+          ),
+        }
+      })
+    )
+    return config
   },
 }

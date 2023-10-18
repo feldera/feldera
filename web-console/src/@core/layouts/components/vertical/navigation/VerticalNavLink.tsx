@@ -5,7 +5,6 @@ import { ElementType } from 'react'
 import { Settings } from 'src/@core/context/settingsTypes'
 import { NavLink } from 'src/@core/layouts/types'
 
-import { Icon } from '@iconify/react'
 import Box, { BoxProps } from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import ListItem from '@mui/material/ListItem'
@@ -50,7 +49,7 @@ const MenuItemTextMetaWrapper = styled(Box)<BoxProps>({
 
 const VerticalNavLink = ({ item, navVisible, toggleNavVisibility }: Props) => {
   const pathname = usePathname()
-  const IconTag: string = item.icon || ''
+  const IconTag = item.icon || (() => <></>)
   const isNavLinkActive = () =>
     (Array.isArray(item.path) ? item.path : [item.path]).find(path => path && pathname.startsWith(path) && path !== '/')
 
@@ -90,7 +89,7 @@ const VerticalNavLink = ({ item, navVisible, toggleNavVisibility }: Props) => {
               transition: 'margin .25s ease-in-out'
             }}
           >
-            <Icon icon={IconTag} style={{ fontSize: '1.5rem' }} />
+            <IconTag style={{ fontSize: '1.5rem' }} />
           </ListItemIcon>
 
           <MenuItemTextMetaWrapper>

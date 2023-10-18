@@ -6,11 +6,17 @@ import { parseAuthParams } from '$lib/functions/kafka/authParamsSchema'
 import { ConnectorDescr } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import assert from 'assert'
-import debeziumIcon from 'public/icons/vendors/debezium-icon-color.svg'
-import debeziumLogo from 'public/icons/vendors/debezium-logo-color.svg'
-import snowflakeIcon from 'public/icons/vendors/snowflake-icon.svg'
-import snowflakeLogo from 'public/icons/vendors/snowflake-logo.svg'
+import imageBoilingFlask from 'public/icons/generic/boiling-flask.svg'
+import imageHttpGet from 'public/images/generic/http-get.svg'
+import debeziumLogo from 'public/images/vendors/debezium-logo-color.svg'
+import kafkaLogo from 'public/images/vendors/kafka-logo-black.svg'
+import snowflakeLogo from 'public/images/vendors/snowflake-logo.svg'
 import { match, P } from 'ts-pattern'
+import iconBoilingFlask from '~icons/generic/boiling-flask'
+import iconKafka from '~icons/logos/kafka-icon'
+import iconHttpGet from '~icons/tabler/http-get'
+import iconDebezium from '~icons/vendors/debezium-icon-color'
+import iconSnowflake from '~icons/vendors/snowflake-icon'
 
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
@@ -225,10 +231,10 @@ export const connectorTypeToTitle = (status: ConnectorType) =>
 export const connectorTypeToLogo = (status: ConnectorType) =>
   match(status)
     .with(ConnectorType.KAFKA_IN, () => {
-      return 'logos:kafka'
+      return kafkaLogo
     })
     .with(ConnectorType.KAFKA_OUT, () => {
-      return 'logos:kafka'
+      return kafkaLogo
     })
     .with(ConnectorType.DEBEZIUM_IN, () => {
       return debeziumLogo
@@ -237,10 +243,10 @@ export const connectorTypeToLogo = (status: ConnectorType) =>
       return snowflakeLogo
     })
     .with(ConnectorType.URL, () => {
-      return 'tabler:http-get'
+      return imageHttpGet
     })
     .with(ConnectorType.UNKNOWN, () => {
-      return 'file-icons:test-generic'
+      return imageBoilingFlask
     })
     .exhaustive()
 
@@ -248,22 +254,22 @@ export const connectorTypeToLogo = (status: ConnectorType) =>
 export const connectorTypeToIcon = (status: ConnectorType) =>
   match(status)
     .with(ConnectorType.KAFKA_IN, () => {
-      return 'logos:kafka-icon'
+      return iconKafka
     })
     .with(ConnectorType.KAFKA_OUT, () => {
-      return 'logos:kafka-icon'
+      return iconKafka
     })
     .with(ConnectorType.DEBEZIUM_IN, () => {
-      return debeziumIcon
+      return iconDebezium
     })
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
-      return snowflakeIcon
+      return iconSnowflake
     })
     .with(ConnectorType.URL, () => {
-      return 'tabler:http-get'
+      return iconHttpGet
     })
     .with(ConnectorType.UNKNOWN, () => {
-      return 'file-icons:test-generic'
+      return iconBoilingFlask
     })
     .exhaustive()
 

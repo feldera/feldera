@@ -1,12 +1,17 @@
 // The main menu that shows up on the left side of the screen.
 import { VerticalNavItemsType } from 'src/@core/layouts/types'
+import IconAlignLeft from '~icons/bx/align-left'
+import IconFile from '~icons/bx/file'
+import IconGitRepoForked from '~icons/bx/git-repo-forked'
+import IconHomeCircle from '~icons/bx/home-circle'
+import IconUnite from '~icons/bx/unite'
 
 const navigation = (): VerticalNavItemsType => {
   return [
     {
       title: 'Home',
       path: '/home',
-      icon: 'bx:home-circle'
+      icon: IconHomeCircle
     },
     {
       sectionTitle: 'Analytics'
@@ -19,7 +24,7 @@ const navigation = (): VerticalNavItemsType => {
     {
       title: 'SQL Programs',
       path: ['/analytics/programs', '/analytics/editor'],
-      icon: 'bx:align-left' // 'bx:list-ul'
+      icon: IconAlignLeft
     },
     {
       sectionTitle: 'Streaming'
@@ -32,7 +37,7 @@ const navigation = (): VerticalNavItemsType => {
     {
       title: 'Pipelines', // 'Pipeline Management',
       path: ['/streaming/management', '/streaming/builder'],
-      icon: 'bx:git-repo-forked'
+      icon: IconGitRepoForked
     },
     //{
     //title: 'Data Inspection',
@@ -50,7 +55,7 @@ const navigation = (): VerticalNavItemsType => {
     {
       title: 'Connectors', // 'Existing Connectors',
       path: ['/connectors/list', '/connectors/create'],
-      icon: 'bx:unite' // 'bx:download'
+      icon: IconUnite
     },
     //{
     //title: 'Data Browser',
@@ -63,7 +68,7 @@ const navigation = (): VerticalNavItemsType => {
     {
       title: 'Documentation',
       path: 'https://www.feldera.com/docs/',
-      icon: 'bx:file',
+      icon: IconFile,
       openInNewTab: true
     }
   ]
