@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#869](https://github.com/feldera/feldera/pull/869))
 - The compiler flag `-js` generates primary key information
   ([#772](https://github.com/feldera/feldera/issues/772))
+- Fixes a regression caused by using the --auth-provider
+  argument for the pipeline-manager in docker-compose, which
+  was backward incompatible
+  ([#900](https://github.com/feldera/feldera/pull/900))
 
 ### Added
 
