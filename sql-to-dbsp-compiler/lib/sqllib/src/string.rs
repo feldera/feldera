@@ -8,6 +8,8 @@ use crate::{
 use like::{Escape, Like};
 use regex::Regex;
 
+use md5::{Md5, Digest};
+
 pub fn concat_s_s(mut left: String, right: String) -> String {
     left.reserve(right.len());
     left.push_str(&right);
@@ -42,24 +44,24 @@ some_function2!(substring2, String, i32, String);
 
 pub fn trim_both_s_s(remove: String, value: String) -> String {
     // 'remove' always has exactly 1 character
-    let chr = remove.chars().next().unwrap();
-    value.trim_matches(chr).to_string()
+    let letters: Vec<char> = remove.chars().collect();
+    value.trim_matches(&letters as &[_]).to_string()
 }
 
 some_polymorphic_function2!(trim_both, s, String, s, String, String);
 
 pub fn trim_leading_s_s(remove: String, value: String) -> String {
     // 'remove' always has exactly 1 character
-    let chr = remove.chars().next().unwrap();
-    value.trim_start_matches(chr).to_string()
+    let letters: Vec<char> = remove.chars().collect();
+    value.trim_start_matches(&letters as &[_]).to_string()
 }
 
 some_polymorphic_function2!(trim_leading, s, String, s, String, String);
 
 pub fn trim_trailing_s_s(remove: String, value: String) -> String {
     // 'remove' always has exactly 1 character
-    let chr = remove.chars().next().unwrap();
-    value.trim_end_matches(chr).to_string()
+    let letters: Vec<char> = remove.chars().collect();
+    value.trim_end_matches(&letters as &[_]).to_string()
 }
 
 some_polymorphic_function2!(trim_trailing, s, String, s, String, String);
@@ -317,4 +319,218 @@ pub fn writelog<T: std::fmt::Display>(format: String, argument: T) -> T {
     let formatted = format.replace("%%", &format_arg);
     print!("{}", formatted);
     argument
+}
+
+pub fn md5__(value: String) -> String{
+    let mut  hasher = Md5::new();
+    hasher.input(value.as_bytes());
+    let result = hasher.result();
+    return format!("{:x}", result);
+}
+
+pub fn to_lower_hex(value: i64) -> String{
+    format!("{:x}", value)
+}
+
+pub fn to_upper_hex(value: i64) -> String{
+    format!("{:X}", value)
+}
+
+pub fn translate_(value: String, from: String, to: String) -> String{
+    let mut  index =   0;
+    let len_of_to = to.len();
+    let mut tmp_value =  (&value).to_string();
+    for x in from.chars() {
+        if index < len_of_to{
+            let inn = index.clone();
+            let char_replace = to.chars().nth(inn).unwrap().to_string();
+            tmp_value = tmp_value.replace(x, &*(char_replace));
+        }else{
+            tmp_value = tmp_value.replace(x, "");
+        }
+        index+=1;
+    }
+    tmp_value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    #[test]
+    fn test_concat_s_s() {
+        let result = concat_s_s("Post".to_string(), "greSQL".to_string());
+        assert_eq!(result, "PostgreSQL".to_string());
+    }
+
+    #[test]
+    fn test_substring3___(){
+        assert_eq!(substring3___("Thomas".to_string(), 2, 3), "hom".to_string());
+        let text = &mut "Thomas".to_string();
+        assert_eq!(substring3___(text.to_string(), 3, text.len() as i32), "omas".to_string());
+    }
+
+    #[test]
+    fn test_substring2__(){
+        assert_eq!(substring2__("Thomas".to_string(), 2), "homas".to_string());
+        assert_eq!(substring2__("Thomas".to_string(), 3), "omas".to_string());
+    }
+
+    #[test]
+    fn test_trim_both_s_s(){
+        assert_eq!(trim_both_s_s( "xyz".to_string(), "xyxTomxx".to_string() ), "Tom".to_string());
+    }
+
+    #[test]
+    fn test_trim_leading_s_s(){
+        assert_eq!(trim_leading_s_s("yx".to_string(), "yxTomxx".to_string()), "Tomxx".to_string());
+    }
+
+    #[test]
+    fn test_trim_trailing_s_s(){
+        assert_eq!(trim_trailing_s_s("xx".to_string(), "yxxTomxx".to_string()), "yxxTom".to_string());
+    }
+
+    #[test]
+    fn test_like2__(){
+        assert_eq!(like2__("Tomxx".to_string(), "%Tom%".to_string()), true);
+        assert_eq!(like2__("Tomxx".to_string(), "Tom%".to_string()), true);
+        assert_eq!(like2__("Tomxx".to_string(), "Toz".to_string()), false);
+    }
+
+    #[test]
+    fn test_like2N_(){
+        assert_eq!(like2N_(Some("Tomxx".to_string()), "%Tom%".to_string()), true);
+        assert_eq!(like2N_(None, "Tom%".to_string()), false);
+        assert_eq!(like2N_(None, "".to_string()), false);
+    }
+
+    #[test]
+    fn test_rlike__(){
+        assert_eq!(rlike__("Tomxx".to_string(), "Tom".to_string()), true);
+    }
+
+    #[test]
+    fn test_rlikeN_(){
+        assert_eq!(rlikeN_(Some("Tomxx".to_string()), "Tom".to_string()), true);
+        assert_eq!(rlikeN_(None, "Tom".to_string()), false);
+    }
+
+    #[test]
+    fn test_position__(){
+        assert_eq!(position__("Tom".to_string(), "Tomxxx".to_string()), 1);
+        assert_eq!(position__("Tom".to_string(), "testTomxxx".to_string()), 5);
+    }
+    #[test]
+    fn test_char_length_(){
+        assert_eq!(char_length_("Tom".to_string()), 3);
+    }
+
+    #[test]
+    fn test_char_length_ref(){
+        assert_eq!(char_length_ref(&"Tom"), 3);
+    }
+
+    #[test]
+    fn test_ascii_(){
+        assert_eq!(ascii_("123".to_string()), 49);
+        assert_eq!(ascii_("".to_string()), 0);
+    }
+
+    #[test]
+    fn test_chr_(){
+        assert_eq!(chr_(65), "A");
+    }
+
+    #[test]
+    fn test_repeat__(){
+        assert_eq!(repeat__("Postgre".to_string(), 4), "PostgrePostgrePostgrePostgre".to_string());
+        assert_eq!(repeat__("Postgre".to_string(), 0), "".to_string());
+    }
+
+    #[test]
+    fn test_overlay3___(){
+        assert_eq!(overlay3___("Txxxxas".to_string(), "hom".to_string(), 2), "Thomxas".to_string());
+    }
+
+    #[test]
+    fn test_overlay4___(){
+        assert_eq!(overlay4____("Txxxxas".to_string(), "hom".to_string(), 2, 4), "Thomas".to_string());
+    }
+
+    #[test]
+    fn test_lower_(){
+        assert_eq!(lower_("Thomas".to_string()), "thomas".to_string());
+    }
+
+    #[test]
+    fn test_upper_(){
+        assert_eq!(upper_("Thomas".to_string()), "THOMAS".to_string());
+    }
+
+    #[test]
+    fn test_initcap_(){
+        assert_eq!(initcap_("hi THOMAS".to_string()), "Hi Thomas".to_string());
+    }
+
+    #[test]
+    fn test_replace___(){
+        assert_eq!(replace___("hi Thomas".to_string(), "hi".to_string(), "Hello".to_string()), "Hello Thomas".to_string());
+    }
+
+    #[test]
+    fn test_left__(){
+        assert_eq!(left__("hi Thomas".to_string(), 2), "hi".to_string());
+    }
+
+    #[test]
+    fn test_split2__(){
+        assert_eq!(split2__("hi Thomas".to_string(), " ".to_string()), vec!["hi".to_string(), "Thomas".to_string()]);
+    }
+
+    #[test]
+    fn test_split1_(){
+        assert_eq!(split1_("hi,Thomas".to_string()), vec!["hi".to_string(), "Thomas".to_string()]);
+    }
+
+    #[test]
+    fn test_array_to_string2_vec__(){
+        assert_eq!(array_to_string2_vec__(vec!["John".to_string(), "Thomas".to_string()], ",".to_string()), "John,Thomas".to_string());
+    }
+
+    #[test]
+    fn test_array_to_string2Nvec__(){
+        assert_eq!(array_to_string2Nvec__(vec![Some("John".to_string()), None, Some("Thomas".to_string())], " ".to_string()), "John Thomas".to_string());
+    }
+
+    #[test]
+    fn test_array_to_string3_vec___(){
+        assert_eq!(array_to_string3_vec___(vec!["John".to_string(), "Thomas".to_string()], " ".to_string(),"".to_string()), "John Thomas".to_string());
+    }
+
+    #[test]
+    fn test_array_to_string3Nvec___(){
+        assert_eq!(array_to_string3Nvec___(vec![Some("John".to_string()), None, Some("Thomas".to_string())], " ".to_string(),"None".to_string()), "John None Thomas".to_string());
+    }
+
+    #[test]
+    fn test_to_lower_hex(){
+        assert_eq!(to_lower_hex(2147483647), "7fffffff");
+    }
+
+    #[test]
+    fn test_to_upper_hex(){
+        assert_eq!(to_upper_hex(2147483647), "7FFFFFFF");
+    }
+
+    #[test]
+    fn test_md5__(){
+        assert_eq!(md5__("Value".to_string()), "689202409e48743b914713f96d93947c".to_string());
+    }
+
+    #[test]
+    fn test_translate_(){
+        assert_eq!(translate_("12345".to_string(), "143".to_string(), "ax".to_string()), "a2x5".to_string());
+    }
 }
