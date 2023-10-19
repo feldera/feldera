@@ -34,7 +34,7 @@ public abstract class TestBatch {
         return new File(Paths.get(this.filesDirectory, name).toUri());
     }
 
-    public abstract void prepareInputs(List<SltSqlStatement> inputAndViewPreparation);
+    public abstract <T extends SltSqlStatement> void prepareInputs(Iterable<T> inputAndViewPreparation);
 
     public void setInputContents(DBSPExecutor.TableValue[] inputContents) {
         this.inputContents = inputContents;
