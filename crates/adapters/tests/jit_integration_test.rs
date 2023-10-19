@@ -181,7 +181,8 @@ fn supply_chain_test() {
 
     let expected_output = r#"{"insert":{"PART_ID":1,"PART_NAME":"Flux Capacitor","VENDOR_ID":2,"VENDOR_NAME":"HyperDrive Innovations","PRICE":10000}}
 {"insert":{"PART_ID":2,"PART_NAME":"Warp Core","VENDOR_ID":1,"VENDOR_NAME":"Gravitech Dynamics","PRICE":15000}}
-{"insert":{"PART_ID":3,"PART_NAME":"Kyber Crystal","VENDOR_ID":3,"VENDOR_NAME":"DarkMatter Devices","PRICE":9000}}"#;
+{"insert":{"PART_ID":3,"PART_NAME":"Kyber Crystal","VENDOR_ID":3,"VENDOR_NAME":"DarkMatter Devices","PRICE":9000}}
+"#;
 
     assert_eq!(
         fs::read_to_string("tests/sql_tests/supply_chain/preferred_vendor.json").unwrap(),
@@ -221,7 +222,8 @@ fn datetime_test() {
     server_thread.shutdown();
     assert_eq!(
         fs::read_to_string("tests/sql_tests/datetime/v1.json").unwrap(),
-        r#"{"insert":{"D":"2016-01-16","TS":"2018-06-20 13:37:03"}}"#
+        r#"{"insert":{"D":"2016-01-16","TS":"2018-06-20 13:37:03"}}
+"#
     );
     let mut serialized = serde_json::from_str::<serde_json::Value>(
         &fs::read_to_string("tests/sql_tests/datetime/v1-snowflake.json").unwrap(),

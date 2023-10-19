@@ -178,9 +178,8 @@ impl Encoder for JsonEncoder {
                         } else {
                             buffer.push(b',');
                         }
-                    } else if num_records > 0 {
-                        buffer.push(b'\n');
                     }
+
                     // FIXME: an alternative to building JSON manually is to create an
                     // `InsDelUpdate` instance and serialize that, but it would require
                     // packaging the serialized key as `serde_json::RawValue`, which is
@@ -248,6 +247,9 @@ impl Encoder for JsonEncoder {
                         num_records += 1;
                         self.seq_number += 1;
                     }
+                    if !self.config.array {
+                        buffer.push(b'\n');
+                    }
 
                     if num_records >= self.config.buffer_size_records || buffer_full {
                         if self.config.array {
@@ -270,7 +272,7 @@ impl Encoder for JsonEncoder {
 
         if num_records > 0 {
             if self.config.array {
-                buffer.push(b']');
+                buffer.extend_from_slice(b"]\n");
             }
             self.output_consumer.push_buffer(&buffer);
             buffer.clear();
