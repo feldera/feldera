@@ -53,3 +53,6 @@ __pycache__
 
 # pg-embed directory
 /data
+
+# clone of the benchmark repo
+gh-pages
