@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 public class ZSet<Data, Weight> {
-    /** Maps values to weight.  Invariant: weights are never zero */
+    /** Maps values to weights.  Invariant: weights are never zero */
     final Map<Data, Weight> data;
     final WeightType<Weight> weightType;
 
@@ -88,7 +88,7 @@ public class ZSet<Data, Weight> {
         return this;
     }
 
-    public ZSet<Data, Weight> distinct(boolean set) {
+    public ZSet<Data, Weight> positive(boolean set) {
         Map<Data, Weight> result = new HashMap<>();
         for (Map.Entry<Data, Weight> entry: this.data.entrySet()) {
             Weight weight = entry.getValue();
@@ -99,6 +99,10 @@ public class ZSet<Data, Weight> {
             result.put(entry.getKey(), weight);
         }
         return new ZSet<>(result, this.weightType);
+    }
+
+    public ZSet<Data, Weight> distinct() {
+        return this.positive(true);
     }
 
     /** Returns a collection of all data items.
