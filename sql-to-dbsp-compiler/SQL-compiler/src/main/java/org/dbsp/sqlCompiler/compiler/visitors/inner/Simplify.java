@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -76,7 +77,7 @@ public class Simplify extends InnerRewriteVisitor {
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = expression;
+        DBSPExpression result = source.is_null();
         if (!source.getType().mayBeNull)
             result = new DBSPBoolLiteral(false);
         this.map(expression, result);
@@ -131,6 +132,19 @@ public class Simplify extends InnerRewriteVisitor {
                 Objects.requireNonNull(i.value);
                 if (type.is(DBSPTypeDecimal.class)) {
                     result = new DBSPDecimalLiteral(source.getNode(), type, new BigDecimal(i.value));
+                }
+            } else if (lit.is(DBSPDecimalLiteral.class)) {
+                DBSPDecimalLiteral dec = lit.to(DBSPDecimalLiteral.class);
+                BigDecimal value = Objects.requireNonNull(dec.value);
+                if (type.is(DBSPTypeDecimal.class)) {
+                    // must adjust precision and scale
+                    DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
+                    value = value.setScale(decType.scale, RoundingMode.DOWN);
+                    if (value.precision() > decType.precision) {
+                        throw new IllegalArgumentException("Value " + value +
+                                " cannot be represented with precision " + decType.precision);
+                    }
+                    result = new DBSPDecimalLiteral(source.getNode(), type, value);
                 }
             }
         }

@@ -31,7 +31,12 @@ import org.dbsp.util.IIndentStream;
 public class JITUnaryInstruction extends JITInstruction {
     public enum Operation {
         NOT("Not"),
-        NEG("Neg")
+        NEG("Neg"),
+        ABS("Abs"),
+        SQRT("Sqrt"),
+        CEIL("Ceil"),
+        FLOOR("Floor"),
+        TRUNC("Trunc")
         ;
 
         private final String text;

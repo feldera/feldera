@@ -760,7 +760,7 @@ public class PostgresNumericTests extends PostgresBaseTest {
     }
 
     @Test
-    public void testSpecialValuesNumeric() {
+    public void testNumericArithmetic() {
         // Removed unsupported numeric values inf, nan, etc.
         this.q(
                 "WITH v(x) AS (VALUES('0'::numeric),(1),(-1),('4.2'::numeric))\n" +
@@ -790,7 +790,7 @@ public class PostgresNumericTests extends PostgresBaseTest {
     }
 
     @Test
-    public void testSpecialValues2() {
+    public void testFpDiv() {
         // no div or mod defined for fp, so I removed these
         this.q("WITH v(x) AS\n" +
                 "  (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE)),(CAST ('-Infinity' AS DOUBLE))," +

@@ -132,6 +132,14 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void testAbs() {
+        String query = "SELECT ABS(T.COL2) FROM T";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(e0.fields[1]),
+                new DBSPTupleExpression(e1.fields[1])));
+    }
+
+    @Test
     public void testNullableCastCompare() {
         String query = "SELECT T.COL5 > T.COL2 FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
