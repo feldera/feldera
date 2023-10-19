@@ -27,11 +27,11 @@ public class SimulatorTests {
         Assert.assertEquals("{\n[10, 'string'] => -4\n}", neg.toString());
         ZSet<SqlTuple, Integer> z = dbl.add(neg);
         Assert.assertTrue(z.isEmpty());
-        ZSet<SqlTuple, Integer> one = dbl.distinct(true);
+        ZSet<SqlTuple, Integer> one = dbl.distinct();
         Assert.assertEquals("{\n[10, 'string'] => 1\n}", one.toString());
-        ZSet<SqlTuple, Integer> four = dbl.distinct(false);
+        ZSet<SqlTuple, Integer> four = dbl.positive(false);
         Assert.assertEquals("{\n[10, 'string'] => 4\n}", four.toString());
-        ZSet<SqlTuple, Integer> none = neg.distinct(false);
+        ZSet<SqlTuple, Integer> none = neg.positive(false);
         Assert.assertTrue(none.isEmpty());
     }
 }
