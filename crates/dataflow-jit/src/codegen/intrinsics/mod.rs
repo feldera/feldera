@@ -598,6 +598,7 @@ intrinsics! {
     print_str = fn(ptr, usize),
 
     // Decimal functions
+    decimal_eq = fn(u64, u64, u64, u64) -> i8,
     decimal_lt = fn(u64, u64, u64, u64) -> bool,
     decimal_gt = fn(u64, u64, u64, u64) -> bool,
     decimal_le = fn(u64, u64, u64, u64) -> bool,
@@ -1669,6 +1670,14 @@ extern "C" fn decimal_cmp(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) ->
         decimal_from_parts(rhs_lo, rhs_hi),
     );
     lhs.cmp(&rhs)
+}
+
+extern "C" fn decimal_eq(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) -> bool {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+    lhs == rhs
 }
 
 extern "C" fn decimal_lt(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) -> bool {

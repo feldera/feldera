@@ -36,7 +36,7 @@ use crate::{
         terminator::{Branch, Terminator},
         BlockId, ColumnType, LayoutId, RowLayoutCache, RowOrScalar, Signature,
     },
-    utils::TimeExt,
+    utils::{NativeRepr, TimeExt},
     ThinStr,
 };
 use chrono::NaiveTime;
@@ -773,7 +773,7 @@ impl<'a> CodegenCtx<'a> {
 
     fn iconst(&mut self, constant: &Constant, builder: &mut FunctionBuilder<'_>) -> Value {
         if let Constant::Decimal(decimal) = constant {
-            builder.const_u128(u128::from_le_bytes(decimal.serialize()))
+            builder.const_u128(decimal.to_repr())
 
         // Other integer-like constants
         } else {
@@ -1876,7 +1876,14 @@ impl<'a> CodegenCtx<'a> {
         } else if ty.is_float() {
             self.float_eq(lhs, rhs, builder)
 
-        // Other scalar types (integers, booleans, timestamps, decimals, etc.)
+        // Decimals
+        // FIXME: Implement decimal equality within cranelift
+        // https://github.com/paupino/rust-decimal/blob/master/src/ops/cmp.rs#L7
+        // See also the comparison functions in crates/dataflow-jit/src/codegen/vtable/cmp.rs
+        } else if ty.is_decimal() {
+            self.decimal_binop("decimal_eq", lhs, rhs, builder)
+
+        // Other scalar types (integers, booleans, timestamps, etc.)
         } else {
             builder.ins().icmp(IntCC::Equal, lhs, rhs)
         }
@@ -1933,7 +1940,15 @@ impl<'a> CodegenCtx<'a> {
         } else if ty.is_float() {
             self.float_neq(lhs, rhs, builder)
 
-        // Other scalar types (integers, booleans, timestamps, decimals, etc.)
+        // Decimals
+        // FIXME: Implement decimal equality within cranelift
+        // https://github.com/paupino/rust-decimal/blob/master/src/ops/cmp.rs#L7
+        // See also the comparison functions in crates/dataflow-jit/src/codegen/vtable/cmp.rs
+        } else if ty.is_decimal() {
+            let eq = self.decimal_binop("decimal_eq", lhs, rhs, builder);
+            builder.ins().bnot(eq)
+
+        // Other scalar types (integers, booleans, timestamps, etc.)
         } else {
             builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
         }

@@ -8,9 +8,11 @@ use crate::{
     },
     row::UninitRow,
     thin_str::ThinStrRef,
-    utils, ThinStr,
+    utils::{self, NativeRepr},
+    ThinStr,
 };
 use chrono::{Datelike, Utc};
+use rust_decimal::{prelude::FromPrimitive, Decimal};
 use std::mem::transmute;
 
 #[test]
@@ -890,6 +892,83 @@ fn unwrap_optional_bool() {
             drop(Box::from_raw(optional_bool_vtable));
             drop(Box::from_raw(boolean_vtable));
         }
+    }
+    unsafe { jit.free_memory() };
+}
+
+#[test]
+fn decimal_sub() {
+    utils::test_logger();
+
+    let layout_cache = RowLayoutCache::new();
+    let layout = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::Decimal, false)
+            .build(),
+    );
+
+    let function = {
+        let mut builder =
+            FunctionBuilder::new(layout_cache.clone()).with_return_type(ColumnType::Bool);
+        let lhs = builder.add_input(layout);
+        let rhs = builder.add_input(layout);
+        let output = builder.add_output(layout);
+
+        let lhs = builder.load(lhs, 0);
+        let rhs = builder.load(rhs, 0);
+
+        let difference = builder.sub(lhs, rhs);
+        builder.store(output, 0, difference);
+
+        let zero = builder.constant(Constant::Decimal(Decimal::ZERO));
+        let eq = builder.eq(difference, zero);
+        builder.ret(eq);
+
+        builder.build()
+    };
+
+    let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
+    let function = codegen.codegen_func("decimal_sub", &function);
+    let vtable = codegen.vtable_for(layout);
+
+    let (jit, layout_cache) = codegen.finalize_definitions();
+    {
+        let vtable = Box::into_raw(Box::new(vtable.marshalled(&jit)));
+        let layout = layout_cache.layout_of(layout);
+        let offset = layout.offset_of(0) as usize;
+
+        let decimal_sub = unsafe {
+            transmute::<*const u8, extern "C" fn(*const u8, *const u8, *mut u8) -> bool>(
+                jit.get_finalized_function(function),
+            )
+        };
+
+        let (lhs, rhs) = unsafe {
+            let (mut lhs, mut rhs) = (UninitRow::new(&*vtable), UninitRow::new(&*vtable));
+
+            lhs.as_mut_ptr()
+                .add(offset)
+                .cast::<u128>()
+                .write(Decimal::from_f32(1.2).unwrap().to_repr());
+            rhs.as_mut_ptr()
+                .add(offset)
+                .cast::<u128>()
+                .write(Decimal::from_f32(1.2).unwrap().to_repr());
+
+            (lhs.assume_init(), rhs.assume_init())
+        };
+
+        let mut output = UninitRow::new(unsafe { &*vtable });
+        let are_equal = decimal_sub(lhs.as_ptr(), rhs.as_ptr(), output.as_mut_ptr());
+
+        let output = unsafe { output.assume_init() };
+        let result =
+            unsafe { Decimal::from_repr(output.as_ptr().add(offset).cast::<u128>().read()) };
+        assert!(are_equal);
+        assert_eq!(result, Decimal::ZERO);
+
+        drop((lhs, rhs, output));
+        unsafe { drop(Box::from_raw(vtable)) }
     }
     unsafe { jit.free_memory() };
 }
