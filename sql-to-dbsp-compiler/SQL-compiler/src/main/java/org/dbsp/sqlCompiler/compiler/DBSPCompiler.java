@@ -196,6 +196,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
      * an output for the circuit
      */
     public void generateOutputForNextView(boolean generate) {
+        this.frontend.generateOutputForNextView(generate);
         this.midend.generateOutputForNextView(generate);
     }
 

@@ -112,6 +112,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
     JitTestBatch runBatch(JitTestBatch batch, TestStatistics result) throws SQLException, NoSuchAlgorithmException {
         System.out.println("Running a batch of " + batch.size() + " queries");
         batch.prepareInputs(this.tablePreparation.statements);
+        batch.prepareInputs(this.viewPreparation.definitions());
         batch.setInputContents(this.getInputSets());
         boolean failed = batch.run(result);
         if (failed)
@@ -130,7 +131,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         result.incFiles();
         int queryNo = 0;
         int batchSize = 1;
-        int skip = 4428;  // used only for debugging
+        int skip = 0; // 710;  // used only for debugging
 
         int remainingInBatch = batchSize;
         JitTestBatch batch = new JitTestBatch(
