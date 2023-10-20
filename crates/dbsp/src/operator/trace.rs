@@ -193,12 +193,11 @@ where
                 let bounds = TraceBounds::new();
 
                 circuit.region("trace", || {
-                    let (ExportStream { local, export }, z1feedback) = circuit
-                        .add_feedback_with_export(Z1Trace::new(
-                            false,
-                            circuit.root_scope(),
-                            bounds.clone(),
-                        ));
+                    let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
+                        false,
+                        circuit.root_scope(),
+                        bounds.clone(),
+                    ));
                     let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<T, B, C>>::new(circuit.clone()),
                         (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
@@ -218,7 +217,6 @@ where
 
                     circuit
                         .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
-                    circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
                     (trace, bounds)
                 })
             },
@@ -658,11 +656,11 @@ where
     }
 
     fn get_final_output(&mut self) -> T {
-        if self.reset_on_clock_start {
-            self.get_output()
-        } else {
-            T::new(None)
-        }
+        // We only create the operator using `add_feedback_with_export` if
+        // `reset_on_clock_start` is true, so this should never get invoked
+        // otherwise.
+        assert!(self.reset_on_clock_start);
+        self.get_output()
     }
 }
 

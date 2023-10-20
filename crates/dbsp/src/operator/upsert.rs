@@ -2,7 +2,7 @@ use crate::{
     algebra::{AddAssignByRef, HasOne, HasZero, PartialOrder, ZRingValue},
     circuit::{
         operator_traits::{BinaryOperator, Operator},
-        ExportId, ExportStream, OwnershipPreference, Scope, WithClock,
+        OwnershipPreference, Scope, WithClock,
     },
     operator::trace::{DelayedTraceId, TraceAppend, TraceBounds, TraceId, Z1Trace},
     trace::{
@@ -61,9 +61,8 @@ where
         circuit.region("update_set", || {
             let bounds = <TraceBounds<K, ()>>::unbounded();
 
-            let (ExportStream { local, export }, z1feedback) = circuit.add_feedback_with_export(
-                Z1Trace::new(false, circuit.root_scope(), bounds.clone()),
-            );
+            let (local, z1feedback) =
+                circuit.add_feedback(Z1Trace::new(false, circuit.root_scope(), bounds.clone()));
             local.mark_sharded_if(self);
 
             let delta =
@@ -95,7 +94,6 @@ where
 
             z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
             circuit.cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
-            circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
             circuit.cache_insert(
                 TraceId::new(delta.origin_node_id().clone()),
                 (trace, bounds),
@@ -157,9 +155,8 @@ where
         circuit.region("upsert", || {
             let bounds = <TraceBounds<K, V>>::unbounded();
 
-            let (ExportStream { local, export }, z1feedback) = circuit.add_feedback_with_export(
-                Z1Trace::new(false, circuit.root_scope(), bounds.clone()),
-            );
+            let (local, z1feedback) =
+                circuit.add_feedback(Z1Trace::new(false, circuit.root_scope(), bounds.clone()));
             local.mark_sharded_if(self);
 
             let delta = circuit
@@ -190,7 +187,6 @@ where
 
             z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
             circuit.cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
-            circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
             circuit.cache_insert(
                 TraceId::new(delta.origin_node_id().clone()),
                 (trace, bounds),

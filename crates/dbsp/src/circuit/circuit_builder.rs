@@ -2810,8 +2810,19 @@ where
         O: Data,
         Op: StrictUnaryOperator<I, O>,
     {
-        let (export_stream, connector) = self.add_feedback_with_export(operator);
-        (export_stream.local, connector)
+        self.add_node(|id| {
+            self.log_circuit_event(&CircuitEvent::strict_operator_output(
+                GlobalNodeId::child_of(self, id),
+                operator.name(),
+                operator.location(),
+            ));
+
+            let operator = Rc::new(UnsafeCell::new(operator));
+            let connector = FeedbackConnector::new(id, self.clone(), operator.clone());
+            let output_node = FeedbackOutputNode::new(operator, self.clone(), id);
+            let local = output_node.output_stream();
+            (output_node, (local, connector))
+        })
     }
 
     fn add_feedback_with_export<I, O, Op>(
@@ -2832,9 +2843,9 @@ where
 
             let operator = Rc::new(UnsafeCell::new(operator));
             let connector = FeedbackConnector::new(id, self.clone(), operator.clone());
-            let output_node = FeedbackOutputNode::new(operator, self.clone(), id);
+            let output_node = FeedbackOutputNode::with_export(operator, self.clone(), id);
             let local = output_node.output_stream();
-            let export = output_node.export_stream.clone();
+            let export = output_node.export_stream.clone().unwrap();
             (output_node, (ExportStream { local, export }, connector))
         })
     }
@@ -3993,7 +4004,7 @@ where
     id: GlobalNodeId,
     operator: Rc<UnsafeCell<Op>>,
     output_stream: Stream<C, O>,
-    export_stream: Stream<C::Parent, O>,
+    export_stream: Option<Stream<C::Parent, O>>,
     phantom_input: PhantomData<I>,
 }
 
@@ -4007,13 +4018,19 @@ where
             id: circuit.global_node_id().child(id),
             operator,
             output_stream: Stream::new(circuit.clone(), id),
-            export_stream: Stream::with_origin(
-                circuit.parent(),
-                circuit.node_id(),
-                GlobalNodeId::child_of(&circuit, id),
-            ),
+            export_stream: None,
             phantom_input: PhantomData,
         }
+    }
+
+    fn with_export(operator: Rc<UnsafeCell<Op>>, circuit: C, id: NodeId) -> Self {
+        let mut result = Self::new(operator, circuit.clone(), id);
+        result.export_stream = Some(Stream::with_origin(
+            circuit.parent(),
+            circuit.node_id(),
+            GlobalNodeId::child_of(&circuit, id),
+        ));
+        result
     }
 
     fn output_stream(&self) -> Stream<C, O> {
@@ -4063,8 +4080,9 @@ where
 
     unsafe fn clock_end(&mut self, scope: Scope) {
         if scope == 0 {
-            self.export_stream
-                .put((*self.operator.get()).get_final_output());
+            if let Some(export_stream) = &mut self.export_stream {
+                export_stream.put((*self.operator.get()).get_final_output());
+            }
         }
         (*self.operator.get()).clock_end(scope);
     }
