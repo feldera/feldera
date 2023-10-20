@@ -404,7 +404,7 @@ impl<'de> de::Visitor<'de> for TimeVisitor {
     where
         E: de::Error,
     {
-        NaiveTime::parse_from_str(value, "%H-%M-%S%.f").map_err(E::custom)
+        NaiveTime::parse_from_str(value, "%H:%M:%S%.f").map_err(E::custom)
     }
 }
 

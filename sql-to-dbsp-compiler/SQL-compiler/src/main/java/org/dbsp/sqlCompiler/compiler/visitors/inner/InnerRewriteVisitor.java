@@ -532,15 +532,14 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPZSetLiteral expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
-        Map<DBSPExpression, Long> newData = new HashMap<>();
+        DBSPTypeZSet zType = type.to(DBSPTypeZSet.class);
+        DBSPZSetLiteral.Contents newContents =
+                DBSPZSetLiteral.Contents.emptyWithElementType(zType.getElementType());
         for (Map.Entry<DBSPExpression, Long> entry: expression.data.data.entrySet()) {
             DBSPExpression row = this.transform(entry.getKey());
-            newData.put(row, entry.getValue());
+            newContents.add(row, entry.getValue());
         }
-        DBSPType elementType = this.transform(expression.data.elementType);
         this.pop(expression);
-
-        DBSPZSetLiteral.Contents newContents = new DBSPZSetLiteral.Contents(newData, elementType);
         DBSPExpression result = new DBSPZSetLiteral(expression.getNode(), type, newContents);
         this.map(expression, result);
         return VisitDecision.STOP;

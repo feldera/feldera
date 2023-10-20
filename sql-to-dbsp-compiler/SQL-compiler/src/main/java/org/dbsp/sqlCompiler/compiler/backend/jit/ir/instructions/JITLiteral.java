@@ -34,6 +34,7 @@ import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import org.apache.calcite.util.DateString;
+import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.JITScalarType;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -45,6 +46,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
@@ -114,6 +116,13 @@ public class JITLiteral extends JITValue {
                 DateString ts = this.literal.to(DBSPDateLiteral.class).getDateString();
                 value = ts.toString();
                 value = value.replace(" ", "T");
+            }
+            return new TextNode(value);
+        } else if (this.literal.is(DBSPTimeLiteral.class)) {
+            String value = "";
+            if (!isNull) {
+                TimeString ts = this.literal.to(DBSPTimeLiteral.class).value;
+                value = ts.toString();
             }
             return new TextNode(value);
         } else {

@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.apache.calcite.util.DateString;
+import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
@@ -40,12 +41,14 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -117,6 +120,13 @@ public class Simplify extends InnerRewriteVisitor {
                     try {
                         LocalDate.parse(str.value, dateFormatter);
                         result = new DBSPDateLiteral(lit.getNode(), type, new DateString(str.value));
+                    } catch (DateTimeParseException ex) {
+                        result = DBSPLiteral.none(type);
+                    }
+                } else if (type.is(DBSPTypeTime.class)) {
+                    try {
+                        TimeString ts = new TimeString(str.value);
+                        result = new DBSPTimeLiteral(lit.getNode(), type, ts);
                     } catch (DateTimeParseException ex) {
                         result = DBSPLiteral.none(type);
                     }

@@ -18,7 +18,7 @@ public class PostgresTimeTests extends PostgresBaseTest {
                 "INSERT INTO TIME_TBL VALUES ('12:00:00');\n" +
                 "INSERT INTO TIME_TBL VALUES ('12:01:00');\n" +
                 "INSERT INTO TIME_TBL VALUES ('23:59:00');\n" +
-                "INSERT INTO TIME_TBL VALUES ('23:59:59.99');" +
+                "INSERT INTO TIME_TBL VALUES ('23:59:59.99');\n" +
                 "INSERT INTO TIME_TBL VALUES ('15:36:39');\n" +
                 "INSERT INTO TIME_TBL VALUES ('15:36:39');");
     }
@@ -60,12 +60,12 @@ public class PostgresTimeTests extends PostgresBaseTest {
                 " 15:36:39\n" +
                 "(7 rows)\n" +
                 "\n" +
-                "SELECT f1 AS \"None\" FROM TIME_TBL WHERE f1 < '00:00';\n" +
+                "SELECT f1 AS \"None\" FROM TIME_TBL WHERE f1 < '00:00:00';\n" +
                 " None \n" +
                 "------\n" +
                 "(0 rows)\n" +
                 "\n" +
-                "SELECT f1 AS \"Eight\" FROM TIME_TBL WHERE f1 >= '00:00';\n" +
+                "SELECT f1 AS \"Eight\" FROM TIME_TBL WHERE f1 >= '00:00:00';\n" +
                 "    Eight    \n" +
                 "-------------\n" +
                 " 00:00:00\n" +
