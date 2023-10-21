@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Preliminary support for BINARY and VARBINARY SQL
+  data types (#917](https://github.com/feldera/feldera/pull/917))
 - Experimental Snowflake sink
   ([#774](https://github.com/feldera/feldera/issues/774))
 - WebConsole: Snowflake output connector dialog and node

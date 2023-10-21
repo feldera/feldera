@@ -26,6 +26,8 @@ The compiler supports the following SQL data types:
   the specified size.
 - `VARCHAR`, or `STRING`, or `TEXT`: a string of unlimited length.  Trailing
    spaces are removed when converting a `CHAR(n)` value to this type.
+- `BINARY(n)`, a byte string with a fixed width
+- `VARBINARY`, a byte string with an unlimited width.  `BYTEA` is an alias.
 - `NULL`, a type comprising only the `NULL` value
 - `INTERVAL`, a SQL interval.  Two types of intervals are supported:
   long intervals (comprising years and months), and short intervals,
@@ -77,6 +79,8 @@ sqlTypeName:
   |   decimal [ precision [, scale] ]
   |   BOOLEAN
   |   integer
+  |   BINARY [ precision ]
+  |   varbinary [ precision ]
   |   TINYINT
   |   SMALLINT
   |   BIGINT

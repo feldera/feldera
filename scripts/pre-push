@@ -11,4 +11,5 @@ set -ex
 RUSTUP_TOOLCHAIN=nightly cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 
-RUSTDOCFLAGS="-Dwarnings" cargo doc --workspace
+RUSTDOCFLAGS="-Dwarnings" cargo doc --workspace --no-deps
+

@@ -141,6 +141,7 @@ public class RustFileWriter implements ICompilerComponent {
             "use sqllib::{\n" +
             "    *,\n" +
             "    casts::*,\n" +
+            "    binary::*,\n" +
             "    geopoint::*,\n" +
             "    timestamp::*,\n" +
             "    interval::*,\n" +

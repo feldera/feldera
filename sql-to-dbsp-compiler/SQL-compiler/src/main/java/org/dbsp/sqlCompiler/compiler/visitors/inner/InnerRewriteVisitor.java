@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.*;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
@@ -439,6 +440,17 @@ public abstract class InnerRewriteVisitor
         this.pop(expression);
         DBSPExpression result = new DBSPStringLiteral(
                 expression.getNode(), type, expression.value, expression.charset);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPBinaryLiteral expression) {
+        this.push(expression);
+        DBSPType type = this.transform(expression.getType());
+        this.pop(expression);
+        DBSPExpression result = new DBSPBinaryLiteral(
+                expression.getNode(), type, expression.value);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

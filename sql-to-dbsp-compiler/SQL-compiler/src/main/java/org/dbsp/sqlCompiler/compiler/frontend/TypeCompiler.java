@@ -131,6 +131,14 @@ public class TypeCompiler implements ICompilerComponent {
                         precision = DBSPTypeString.UNLIMITED_PRECISION;
                     return new DBSPTypeString(node, precision, tn.equals(SqlTypeName.CHAR), nullable);
                 }
+                case VARBINARY:
+                case BINARY: {
+                    int precision = dt.getPrecision();
+                    if (precision == RelDataType.PRECISION_NOT_SPECIFIED)
+                        //noinspection ReassignedVariable,DataFlowIssue
+                        precision = DBSPTypeBinary.UNLIMITED_PRECISION;
+                    return new DBSPTypeBinary(node, precision, nullable);
+                }
                 case NULL:
                     return new DBSPTypeNull(CalciteObject.EMPTY);
                 case SYMBOL:
@@ -144,8 +152,6 @@ public class TypeCompiler implements ICompilerComponent {
                 case ANY:
                     // Not sure whether this is right
                     return DBSPTypeAny.getDefault();
-                case BINARY:
-                case VARBINARY:
                 case MULTISET:
                 case MAP:
                 case DISTINCT:

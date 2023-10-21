@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.ir.type;
 public enum DBSPTypeCode {
     ANY("_", "_", ""),
     BOOL("b", "bool", "Bool"),
+    BYTES("byte[]", "ByteArray", ""),
     DATE("Date", "Date", "Date"),
     DATE_TZ("", "", ""),
     DECIMAL("decimal", "Decimal", "Decimal"),
