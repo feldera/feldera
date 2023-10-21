@@ -11,7 +11,7 @@ be stored is shorter than the declared length, values of type
 character will be space-padded; values of type character varying will
 simply store the shorter string.
 
-In addition, we provides the `text`, or `varchar` type, which stores
+In addition, we provide the `text`, or `varchar` type, which stores
 strings of any length.
 
 Trailing spaces are removed when converting a character value to one

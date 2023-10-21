@@ -45,6 +45,7 @@ import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -125,6 +126,14 @@ public class Simplify extends InnerRewriteVisitor {
                     } catch (NumberFormatException ex) {
                         // on parse error return 0.
                         result = new DBSPDecimalLiteral(type, BigDecimal.ZERO);
+                    }
+                } else if (type.is(DBSPTypeString.class)) {
+                    DBSPTypeString typeString = type.to(DBSPTypeString.class);
+                    if (typeString.precision == DBSPTypeString.UNLIMITED_PRECISION) {
+                        result = lit;
+                    } else {
+                        String value = str.value.substring(0, Math.min(str.value.length(), typeString.precision));
+                        result = new DBSPStringLiteral(value, str.charset);
                     }
                 }
             } else if (lit.is(DBSPI32Literal.class)) {

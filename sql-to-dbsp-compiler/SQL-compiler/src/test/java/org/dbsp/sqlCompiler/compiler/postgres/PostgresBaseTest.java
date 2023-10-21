@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
-import org.apache.calcite.config.Lex;
+import org.apache.calcite.util.ConversionUtil;
 import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.BaseSQLTests;
@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
@@ -34,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -335,6 +337,18 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
             DBSPExpression[] fields = Linq.map(
                     parts, p -> this.parseValue(vec.getElementType(), p), DBSPExpression.class);
             result = new DBSPVecLiteral(fields);
+        } else if (fieldType.is(DBSPTypeBinary.class)) {
+            if (!data.startsWith(" ")) {
+                if (data.equals("NULL"))
+                    result = DBSPLiteral.none(fieldType);
+                else
+                    throw new RuntimeException("Expected NULL or a space: " +
+                            Utilities.singleQuote(data));
+            } else {
+                data = data.trim();
+                byte[] bytes = ConversionUtil.toByteArrayFromString(data, 16);
+                result = new DBSPBinaryLiteral(CalciteObject.EMPTY, fieldType, bytes);
+            }
         } else {
             throw new UnimplementedException(fieldType);
         }

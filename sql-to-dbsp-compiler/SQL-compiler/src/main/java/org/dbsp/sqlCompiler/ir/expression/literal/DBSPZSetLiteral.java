@@ -108,7 +108,7 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
 
         public void add(DBSPExpression expression, long weight) {
             // We expect the expression to be a constant value (a literal)
-            if (!expression.getType().sameType(this.getElementType()))
+            if (expression.getType().code != this.getElementType().code)
                 throw new InternalCompilerError("Added element type " +
                         expression.getType() + " does not match zset type " + this.getElementType(), expression);
             if (this.data.containsKey(expression)) {

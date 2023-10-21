@@ -102,6 +102,13 @@ public class NaiveIncrementalTests extends EndToEndTests {
     }
 
     @Test @Override
+    public void testByteArray() {
+        String query = "SELECT x'012345ab'";
+        this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(new DBSPBinaryLiteral(new byte[]{ 0x01, 0x23, 0x45, (byte)0xAB }))));
+    }
+
+    @Test @Override
     public void zero() {
         String query = "SELECT 0";
         DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(

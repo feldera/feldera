@@ -309,6 +309,7 @@ public class CalciteCompiler implements IWritesLogs {
         CalciteSchema rootSchema = CalciteSchema.createRootSchema(false, false);
         rootSchema.add(catalog.schemaName, this.catalog);
         // Register new types
+        rootSchema.add("BYTEA", factory -> factory.createSqlType(SqlTypeName.VARBINARY));
         rootSchema.add("DATETIME", factory -> factory.createSqlType(SqlTypeName.TIMESTAMP));
         rootSchema.add("INT2", factory -> factory.createSqlType(SqlTypeName.SMALLINT));
         rootSchema.add("INT8", factory -> factory.createSqlType(SqlTypeName.BIGINT));

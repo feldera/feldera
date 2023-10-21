@@ -694,6 +694,13 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void testByteArray() {
+        String query = "SELECT x'012345ab'";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(new DBSPBinaryLiteral(new byte[]{ 0x01, 0x23, 0x45, (byte)0xAB }))));
+    }
+
+    @Test
     public void customDivisionTest() {
         // Use a custom division operator.
         String query = "SELECT DIVISION(1, 0)";
