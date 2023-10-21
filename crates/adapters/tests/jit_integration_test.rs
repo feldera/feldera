@@ -179,15 +179,18 @@ fn supply_chain_test() {
     sleep(Duration::from_millis(2_000));
     server_thread.shutdown();
 
-    let expected_output = r#"{"insert":{"PART_ID":1,"PART_NAME":"Flux Capacitor","VENDOR_ID":2,"VENDOR_NAME":"HyperDrive Innovations","PRICE":10000}}
-{"insert":{"PART_ID":2,"PART_NAME":"Warp Core","VENDOR_ID":1,"VENDOR_NAME":"Gravitech Dynamics","PRICE":15000}}
-{"insert":{"PART_ID":3,"PART_NAME":"Kyber Crystal","VENDOR_ID":3,"VENDOR_NAME":"DarkMatter Devices","PRICE":9000}}
-"#;
+    let expected_output = vec![
+        r#"{"insert":{"PART_ID":1,"PART_NAME":"Flux Capacitor","VENDOR_ID":2,"VENDOR_NAME":"HyperDrive Innovations","PRICE":10000}}"#.to_string(),
+        r#"{"insert":{"PART_ID":2,"PART_NAME":"Warp Core","VENDOR_ID":1,"VENDOR_NAME":"Gravitech Dynamics","PRICE":15000}}"#.to_string(),
+        r#"{"insert":{"PART_ID":3,"PART_NAME":"Kyber Crystal","VENDOR_ID":3,"VENDOR_NAME":"DarkMatter Devices","PRICE":9000}}"#.to_string(),
+    ];
 
-    assert_eq!(
-        fs::read_to_string("tests/sql_tests/supply_chain/preferred_vendor.json").unwrap(),
-        expected_output,
-    );
+    // The multithreaded circuit can produce outputs in non-deterministic order.
+    let output = fs::read_to_string("tests/sql_tests/supply_chain/preferred_vendor.json").unwrap();
+    let mut lines = output.lines().collect::<Vec<_>>();
+    lines.sort();
+
+    assert_eq!(expected_output, lines);
 }
 
 #[test]
