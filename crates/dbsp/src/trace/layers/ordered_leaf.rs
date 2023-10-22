@@ -263,7 +263,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Merge
         &'a mut self,
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
-    ) -> usize {
+    ) {
         let trie1 = cursor1.storage;
         let trie2 = cursor2.storage;
         let mut lower1 = cursor1.pos as usize;
@@ -323,8 +323,6 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Merge
         if lower2 < upper2 {
             <OrderedLeafBuilder<K, R> as MergeBuilder>::copy_range(self, trie2, lower2, upper2);
         }
-
-        self.vals.len()
     }
 
     fn push_merge_retain_keys<'a, F>(
@@ -332,8 +330,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Merge
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
         filter: &F,
-    ) -> usize
-    where
+    ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
     {
         let trie1 = cursor1.storage;
@@ -401,8 +398,6 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Merge
                 self, trie2, lower2, upper2, filter,
             );
         }
-
-        self.vals.len()
     }
 }
 

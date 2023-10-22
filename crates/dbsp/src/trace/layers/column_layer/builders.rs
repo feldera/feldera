@@ -126,7 +126,7 @@ where
         &'a mut self,
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
-    ) -> usize {
+    ) {
         unsafe { self.assume_invariants() }
 
         let (trie1, trie2) = (cursor1.storage(), cursor2.storage());
@@ -192,7 +192,6 @@ where
         }
 
         unsafe { self.assume_invariants() }
-        self.keys.len()
     }
 
     fn push_merge_retain_keys<'a, F>(
@@ -200,8 +199,7 @@ where
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
         filter: &F,
-    ) -> usize
-    where
+    ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
     {
         unsafe { self.assume_invariants() }
@@ -271,7 +269,6 @@ where
         }
 
         unsafe { self.assume_invariants() }
-        self.keys.len()
     }
 }
 

@@ -325,18 +325,21 @@ where
         _value_filter: &Option<Filter<()>>,
         fuel: &mut isize,
     ) {
+        let initial_size = self.result.keys();
+
         if let Some(key_filter) = key_filter {
-            *fuel -= self.result.push_merge_retain_keys(
+            self.result.push_merge_retain_keys(
                 source1.layer.cursor(),
                 source2.layer.cursor(),
                 key_filter,
-            ) as isize;
+            );
         } else {
-            *fuel -= self
-                .result
-                .push_merge(source1.layer.cursor(), source2.layer.cursor())
-                as isize;
+            self.result
+                .push_merge(source1.layer.cursor(), source2.layer.cursor());
         }
+        let effort = self.result.keys() - initial_size;
+        *fuel -= effort as isize;
+
         *fuel = max(*fuel, 1);
     }
 }

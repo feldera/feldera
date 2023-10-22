@@ -381,7 +381,7 @@ impl<K, L, O> OrderedBuilder<K, L, O> {
             Ordering::Equal => {
                 let lower = self.vals.boundary();
                 // record vals_length so we can tell if anything was pushed.
-                let upper = self.vals.push_merge(
+                self.vals.push_merge(
                     trie1.vals.cursor_from(
                         trie1.offs[*lower1].into_usize(),
                         trie1.offs[*lower1 + 1].into_usize(),
@@ -391,9 +391,9 @@ impl<K, L, O> OrderedBuilder<K, L, O> {
                         trie2.offs[*lower2 + 1].into_usize(),
                     ),
                 );
-                if upper > lower {
+                if self.vals.keys() > lower {
                     self.keys.push(trie1.keys[*lower1].clone());
-                    self.offs.push(O::from_usize(upper));
+                    self.offs.push(O::from_usize(self.vals.keys()));
                 }
 
                 *lower1 += 1;
@@ -438,7 +438,7 @@ impl<K, L, O> OrderedBuilder<K, L, O> {
                 let lower = self.vals.boundary();
                 if filter(&trie1.keys[*lower1]) {
                     // record vals_length so we can tell if anything was pushed.
-                    let upper = self.vals.push_merge(
+                    self.vals.push_merge(
                         trie1.vals.cursor_from(
                             trie1.offs[*lower1].into_usize(),
                             trie1.offs[*lower1 + 1].into_usize(),
@@ -448,9 +448,9 @@ impl<K, L, O> OrderedBuilder<K, L, O> {
                             trie2.offs[*lower2 + 1].into_usize(),
                         ),
                     );
-                    if upper > lower {
+                    if self.vals.keys() > lower {
                         self.keys.push(trie1.keys[*lower1].clone());
-                        self.offs.push(O::from_usize(upper));
+                        self.offs.push(O::from_usize(self.vals.keys()));
                     }
                 }
 
@@ -850,13 +850,12 @@ where
 
                 if key_filter(&trie1.keys[*lower1]) {
                     // record vals_length so we can tell if anything was pushed.
-                    let upper = self
-                        .vals
+                    self.vals
                         .push_merge_retain_keys(cursor1, cursor2, value_filter);
 
-                    if upper > lower {
+                    if self.vals.keys() > lower {
                         self.keys.push(trie1.keys[*lower1].clone());
-                        self.offs.push(O::from_usize(upper));
+                        self.offs.push(O::from_usize(self.vals.keys()));
                     }
                 }
                 *lower1 += 1;
@@ -1019,7 +1018,7 @@ where
         &'a mut self,
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
-    ) -> usize {
+    ) {
         let (mut lower1, upper1) = cursor1.bounds;
         let (mut lower2, upper2) = cursor2.bounds;
 
@@ -1041,8 +1040,6 @@ where
         if lower2 < upper2 {
             self.copy_range(cursor2.storage, lower2, upper2);
         }
-
-        self.keys.len()
     }
 
     fn push_merge_retain_keys<'a, F>(
@@ -1050,8 +1047,7 @@ where
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
         filter: &F,
-    ) -> usize
-    where
+    ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
     {
         let (mut lower1, upper1) = cursor1.bounds;
@@ -1076,8 +1072,6 @@ where
         if lower2 < upper2 {
             self.copy_range_retain_keys(cursor2.storage, lower2, upper2, filter);
         }
-
-        self.keys.len()
     }
 }
 
