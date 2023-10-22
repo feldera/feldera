@@ -1,5 +1,5 @@
 {
-  "checksum": "88260a140ded6eae695f1289e7f85f7251aecd87bf9cde756d4c474e503724a0",
+  "checksum": "a6734c8e26f6671c1e5b3944221a6286dfe202ae2ec89afced06e185f79181d0",
   "crates": {
     "actix 0.13.1": {
       "name": "actix",
@@ -5939,10 +5939,91 @@
         ],
         "crate_features": {
           "common": [
-            "serde",
-            "std"
+            "serde"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "std"
+            ],
+            "aarch64-apple-ios": [
+              "std"
+            ],
+            "aarch64-apple-ios-sim": [
+              "std"
+            ],
+            "aarch64-fuchsia": [
+              "std"
+            ],
+            "aarch64-linux-android": [
+              "std"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "std"
+            ],
+            "arm-unknown-linux-gnueabi": [
+              "std"
+            ],
+            "armv7-linux-androideabi": [
+              "std"
+            ],
+            "armv7-unknown-linux-gnueabi": [
+              "std"
+            ],
+            "i686-apple-darwin": [
+              "std"
+            ],
+            "i686-linux-android": [
+              "std"
+            ],
+            "i686-unknown-freebsd": [
+              "std"
+            ],
+            "i686-unknown-linux-gnu": [
+              "std"
+            ],
+            "powerpc-unknown-linux-gnu": [
+              "std"
+            ],
+            "riscv32imc-unknown-none-elf": [
+              "std"
+            ],
+            "riscv64gc-unknown-none-elf": [
+              "std"
+            ],
+            "s390x-unknown-linux-gnu": [
+              "std"
+            ],
+            "thumbv7em-none-eabi": [
+              "std"
+            ],
+            "thumbv8m.main-none-eabi": [
+              "std"
+            ],
+            "wasm32-wasi": [
+              "std"
+            ],
+            "x86_64-apple-darwin": [
+              "std"
+            ],
+            "x86_64-apple-ios": [
+              "std"
+            ],
+            "x86_64-fuchsia": [
+              "std"
+            ],
+            "x86_64-linux-android": [
+              "std"
+            ],
+            "x86_64-unknown-freebsd": [
+              "std"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "std"
+            ],
+            "x86_64-unknown-none": [
+              "std"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -8280,45 +8361,6 @@
         ],
         "edition": "2021",
         "version": "0.5.1"
-      },
-      "license": "MIT OR Apache-2.0"
-    },
-    "cmake 0.1.50": {
-      "name": "cmake",
-      "version": "0.1.50",
-      "repository": {
-        "Http": {
-          "url": "https://crates.io/api/v1/crates/cmake/0.1.50/download",
-          "sha256": "a31c789563b815f77f4250caee12365734369f942439b7defd71e18a48197130"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "cmake",
-            "crate_root": "src/lib.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        }
-      ],
-      "library_target_name": "cmake",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "cc 1.0.83",
-              "target": "cc"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2021",
-        "version": "0.1.50"
       },
       "license": "MIT OR Apache-2.0"
     },
@@ -12526,141 +12568,6 @@
       },
       "license": "MIT"
     },
-    "duct 0.13.6": {
-      "name": "duct",
-      "version": "0.13.6",
-      "repository": {
-        "Http": {
-          "url": "https://crates.io/api/v1/crates/duct/0.13.6/download",
-          "sha256": "37ae3fc31835f74c2a7ceda3aeede378b0ae2e74c8f1c36559fcc9ae2a4e7d3e"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "duct",
-            "crate_root": "src/lib.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "cat",
-            "crate_root": "src/bin/cat.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "child_grandchild",
-            "crate_root": "src/bin/child_grandchild.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "echo",
-            "crate_root": "src/bin/echo.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "exe_in_dir",
-            "crate_root": "src/bin/exe_in_dir.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "print_env",
-            "crate_root": "src/bin/print_env.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "pwd",
-            "crate_root": "src/bin/pwd.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "sleep",
-            "crate_root": "src/bin/sleep.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "status",
-            "crate_root": "src/bin/status.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "x_to_y",
-            "crate_root": "src/bin/x_to_y.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        }
-      ],
-      "library_target_name": "duct",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "once_cell 1.18.0",
-              "target": "once_cell"
-            },
-            {
-              "id": "os_pipe 1.1.4",
-              "target": "os_pipe"
-            },
-            {
-              "id": "shared_child 1.0.0",
-              "target": "shared_child"
-            }
-          ],
-          "selects": {
-            "cfg(unix)": [
-              {
-                "id": "libc 0.2.148",
-                "target": "libc"
-              }
-            ]
-          }
-        },
-        "edition": "2018",
-        "version": "0.13.6"
-      },
-      "license": "MIT"
-    },
     "dyn-clone 1.0.14": {
       "name": "dyn-clone",
       "version": "1.0.14",
@@ -13190,10 +13097,75 @@
           "**"
         ],
         "crate_features": {
-          "common": [
-            "std"
-          ],
-          "selects": {}
+          "common": [],
+          "selects": {
+            "aarch64-apple-darwin": [
+              "std"
+            ],
+            "aarch64-apple-ios": [
+              "std"
+            ],
+            "aarch64-apple-ios-sim": [
+              "std"
+            ],
+            "aarch64-fuchsia": [
+              "std"
+            ],
+            "aarch64-linux-android": [
+              "std"
+            ],
+            "armv7-linux-androideabi": [
+              "std"
+            ],
+            "i686-apple-darwin": [
+              "std"
+            ],
+            "i686-linux-android": [
+              "std"
+            ],
+            "i686-unknown-freebsd": [
+              "std"
+            ],
+            "powerpc-unknown-linux-gnu": [
+              "std"
+            ],
+            "riscv32imc-unknown-none-elf": [
+              "std"
+            ],
+            "riscv64gc-unknown-none-elf": [
+              "std"
+            ],
+            "s390x-unknown-linux-gnu": [
+              "std"
+            ],
+            "thumbv7em-none-eabi": [
+              "std"
+            ],
+            "thumbv8m.main-none-eabi": [
+              "std"
+            ],
+            "wasm32-wasi": [
+              "std"
+            ],
+            "x86_64-apple-darwin": [
+              "std"
+            ],
+            "x86_64-apple-ios": [
+              "std"
+            ],
+            "x86_64-fuchsia": [
+              "std"
+            ],
+            "x86_64-linux-android": [
+              "std"
+            ],
+            "x86_64-unknown-freebsd": [
+              "std"
+            ],
+            "x86_64-unknown-none": [
+              "std"
+            ]
+          }
         },
         "deps": {
           "common": [],
@@ -17866,69 +17838,6 @@
       },
       "license": "MIT"
     },
-    "krb5-src 0.3.2+1.19.2": {
-      "name": "krb5-src",
-      "version": "0.3.2+1.19.2",
-      "repository": {
-        "Http": {
-          "url": "https://crates.io/api/v1/crates/krb5-src/0.3.2+1.19.2/download",
-          "sha256": "44cd3b7e7735d48bc3793837041294f2eb747bd0f63bbc081e89972abb9e48fb"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "krb5_src",
-            "crate_root": "src/lib.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "BuildScript": {
-            "crate_name": "build_script_build",
-            "crate_root": "build.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        }
-      ],
-      "library_target_name": "krb5_src",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "krb5-src 0.3.2+1.19.2",
-              "target": "build_script_build"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2018",
-        "version": "0.3.2+1.19.2"
-      },
-      "build_script_attrs": {
-        "data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "duct 0.13.6",
-              "target": "duct"
-            }
-          ],
-          "selects": {}
-        },
-        "links": "krb5-src"
-      },
-      "license": "Apache-2.0"
-    },
     "kv-log-macro 1.0.7": {
       "name": "kv-log-macro",
       "version": "1.0.7",
@@ -18449,10 +18358,91 @@
         "crate_features": {
           "common": [
             "default",
-            "extra_traits",
             "std"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "extra_traits"
+            ],
+            "aarch64-apple-ios": [
+              "extra_traits"
+            ],
+            "aarch64-apple-ios-sim": [
+              "extra_traits"
+            ],
+            "aarch64-fuchsia": [
+              "extra_traits"
+            ],
+            "aarch64-linux-android": [
+              "extra_traits"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "extra_traits"
+            ],
+            "arm-unknown-linux-gnueabi": [
+              "extra_traits"
+            ],
+            "armv7-linux-androideabi": [
+              "extra_traits"
+            ],
+            "armv7-unknown-linux-gnueabi": [
+              "extra_traits"
+            ],
+            "i686-apple-darwin": [
+              "extra_traits"
+            ],
+            "i686-linux-android": [
+              "extra_traits"
+            ],
+            "i686-unknown-freebsd": [
+              "extra_traits"
+            ],
+            "i686-unknown-linux-gnu": [
+              "extra_traits"
+            ],
+            "powerpc-unknown-linux-gnu": [
+              "extra_traits"
+            ],
+            "riscv32imc-unknown-none-elf": [
+              "extra_traits"
+            ],
+            "riscv64gc-unknown-none-elf": [
+              "extra_traits"
+            ],
+            "s390x-unknown-linux-gnu": [
+              "extra_traits"
+            ],
+            "thumbv7em-none-eabi": [
+              "extra_traits"
+            ],
+            "thumbv8m.main-none-eabi": [
+              "extra_traits"
+            ],
+            "wasm32-wasi": [
+              "extra_traits"
+            ],
+            "x86_64-apple-darwin": [
+              "extra_traits"
+            ],
+            "x86_64-apple-ios": [
+              "extra_traits"
+            ],
+            "x86_64-fuchsia": [
+              "extra_traits"
+            ],
+            "x86_64-linux-android": [
+              "extra_traits"
+            ],
+            "x86_64-unknown-freebsd": [
+              "extra_traits"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "extra_traits"
+            ],
+            "x86_64-unknown-none": [
+              "extra_traits"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -18754,27 +18744,12 @@
         ],
         "crate_features": {
           "common": [
+            "errno",
             "general",
             "ioctl",
             "no_std"
           ],
-          "selects": {
-            "aarch64-unknown-linux-gnu": [
-              "errno"
-            ],
-            "arm-unknown-linux-gnueabi": [
-              "errno"
-            ],
-            "armv7-unknown-linux-gnueabi": [
-              "errno"
-            ],
-            "i686-unknown-linux-gnu": [
-              "errno"
-            ],
-            "x86_64-unknown-linux-gnu": [
-              "errno"
-            ]
-          }
+          "selects": {}
         },
         "edition": "2018",
         "version": "0.3.8"
@@ -21471,80 +21446,6 @@
         },
         "edition": "2018",
         "version": "0.4.3"
-      },
-      "license": "MIT"
-    },
-    "os_pipe 1.1.4": {
-      "name": "os_pipe",
-      "version": "1.1.4",
-      "repository": {
-        "Http": {
-          "url": "https://crates.io/api/v1/crates/os_pipe/1.1.4/download",
-          "sha256": "0ae859aa07428ca9a929b936690f8b12dc5f11dd8c6992a18ca93919f28bc177"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "os_pipe",
-            "crate_root": "src/lib.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "cat",
-            "crate_root": "src/bin/cat.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "cat_both",
-            "crate_root": "src/bin/cat_both.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "Binary": {
-            "crate_name": "swap",
-            "crate_root": "src/bin/swap.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        }
-      ],
-      "library_target_name": "os_pipe",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [],
-          "selects": {
-            "cfg(not(windows))": [
-              {
-                "id": "libc 0.2.148",
-                "target": "libc"
-              }
-            ],
-            "cfg(windows)": [
-              {
-                "id": "windows-sys 0.48.0",
-                "target": "windows_sys"
-              }
-            ]
-          }
-        },
-        "edition": "2018",
-        "version": "1.1.4"
       },
       "license": "MIT"
     },
@@ -25130,9 +25031,8 @@
         ],
         "crate_features": {
           "common": [
-            "cmake-build",
             "default",
-            "gssapi-vendored",
+            "dynamic-linking",
             "libz",
             "tokio"
           ],
@@ -25211,15 +25111,6 @@
               "**/*.rs"
             ]
           }
-        },
-        {
-          "BuildScript": {
-            "crate_name": "build_script_build",
-            "crate_root": "build.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
         }
       ],
       "library_target_name": "rdkafka_sys",
@@ -25229,15 +25120,9 @@
         ],
         "crate_features": {
           "common": [
-            "cmake",
-            "cmake-build",
-            "gssapi",
-            "gssapi-vendored",
+            "dynamic-linking",
             "libz",
-            "libz-sys",
-            "openssl-sys",
-            "sasl2-sys",
-            "ssl"
+            "libz-sys"
           ],
           "selects": {}
         },
@@ -25254,60 +25139,12 @@
             {
               "id": "num_enum 0.5.11",
               "target": "num_enum"
-            },
-            {
-              "id": "openssl-sys 0.9.93",
-              "target": "openssl_sys"
-            },
-            {
-              "id": "rdkafka-sys 4.6.0+2.2.0",
-              "target": "build_script_build"
-            },
-            {
-              "id": "sasl2-sys 0.1.20+2.1.28",
-              "target": "sasl2_sys"
             }
           ],
           "selects": {}
         },
         "edition": "2018",
         "version": "4.6.0+2.2.0"
-      },
-      "build_script_attrs": {
-        "data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "cmake 0.1.50",
-              "target": "cmake"
-            },
-            {
-              "id": "pkg-config 0.3.27",
-              "target": "pkg_config"
-            }
-          ],
-          "selects": {}
-        },
-        "link_deps": {
-          "common": [
-            {
-              "id": "libz-sys 1.1.12",
-              "target": "libz_sys"
-            },
-            {
-              "id": "openssl-sys 0.9.93",
-              "target": "openssl_sys"
-            },
-            {
-              "id": "sasl2-sys 0.1.20+2.1.28",
-              "target": "sasl2_sys"
-            }
-          ],
-          "selects": {}
-        },
-        "links": "rdkafka"
       },
       "license": "MIT"
     },
@@ -27463,91 +27300,76 @@
           "common": [
             "alloc",
             "default",
-            "fs",
             "std",
+            "termios",
             "use-libc-auxv"
           ],
           "selects": {
             "aarch64-apple-darwin": [
-              "termios"
+              "fs"
             ],
             "aarch64-apple-ios": [
-              "termios"
+              "fs"
             ],
             "aarch64-apple-ios-sim": [
-              "termios"
+              "fs"
             ],
             "aarch64-fuchsia": [
-              "termios"
+              "fs"
             ],
             "aarch64-linux-android": [
-              "termios"
+              "fs"
             ],
             "aarch64-unknown-linux-gnu": [
-              "termios"
+              "fs"
             ],
             "arm-unknown-linux-gnueabi": [
-              "termios"
+              "fs"
             ],
             "armv7-linux-androideabi": [
-              "termios"
+              "fs"
             ],
             "armv7-unknown-linux-gnueabi": [
-              "termios"
+              "fs"
             ],
             "i686-apple-darwin": [
-              "termios"
+              "fs"
             ],
             "i686-linux-android": [
-              "termios"
+              "fs"
             ],
             "i686-unknown-freebsd": [
-              "termios"
+              "fs"
             ],
             "i686-unknown-linux-gnu": [
-              "termios"
+              "fs"
             ],
             "powerpc-unknown-linux-gnu": [
-              "termios"
-            ],
-            "riscv32imc-unknown-none-elf": [
-              "termios"
-            ],
-            "riscv64gc-unknown-none-elf": [
-              "termios"
+              "fs"
             ],
             "s390x-unknown-linux-gnu": [
-              "termios"
-            ],
-            "thumbv7em-none-eabi": [
-              "termios"
-            ],
-            "thumbv8m.main-none-eabi": [
-              "termios"
+              "fs"
             ],
             "wasm32-wasi": [
-              "termios"
+              "fs"
             ],
             "x86_64-apple-darwin": [
-              "termios"
+              "fs"
             ],
             "x86_64-apple-ios": [
-              "termios"
+              "fs"
             ],
             "x86_64-fuchsia": [
-              "termios"
+              "fs"
             ],
             "x86_64-linux-android": [
-              "termios"
+              "fs"
             ],
             "x86_64-unknown-freebsd": [
-              "termios"
+              "fs"
             ],
             "x86_64-unknown-linux-gnu": [
-              "termios"
-            ],
-            "x86_64-unknown-none": [
-              "termios"
+              "fs"
             ]
           }
         },
@@ -28065,104 +27887,6 @@
         "version": "1.0.6"
       },
       "license": "Unlicense/MIT"
-    },
-    "sasl2-sys 0.1.20+2.1.28": {
-      "name": "sasl2-sys",
-      "version": "0.1.20+2.1.28",
-      "repository": {
-        "Http": {
-          "url": "https://crates.io/api/v1/crates/sasl2-sys/0.1.20+2.1.28/download",
-          "sha256": "9e645bd98535fc8fd251c43ba7c7c1f9be1e0369c99b6a5ea719052a773e655c"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "sasl2_sys",
-            "crate_root": "src/lib.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        },
-        {
-          "BuildScript": {
-            "crate_name": "build_script_build",
-            "crate_root": "build.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        }
-      ],
-      "library_target_name": "sasl2_sys",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "crate_features": {
-          "common": [
-            "default",
-            "gssapi-vendored",
-            "krb5-src",
-            "pkg-config",
-            "vendored"
-          ],
-          "selects": {}
-        },
-        "deps": {
-          "common": [
-            {
-              "id": "krb5-src 0.3.2+1.19.2",
-              "target": "krb5_src"
-            },
-            {
-              "id": "libc 0.2.148",
-              "target": "libc"
-            },
-            {
-              "id": "sasl2-sys 0.1.20+2.1.28",
-              "target": "build_script_build"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2018",
-        "version": "0.1.20+2.1.28"
-      },
-      "build_script_attrs": {
-        "data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "cc 1.0.83",
-              "target": "cc"
-            },
-            {
-              "id": "duct 0.13.6",
-              "target": "duct"
-            },
-            {
-              "id": "pkg-config 0.3.27",
-              "target": "pkg_config"
-            }
-          ],
-          "selects": {}
-        },
-        "link_deps": {
-          "common": [
-            {
-              "id": "krb5-src 0.3.2+1.19.2",
-              "target": "krb5_src"
-            }
-          ],
-          "selects": {}
-        },
-        "links": "sasl2"
-      },
-      "license": "Apache-2.0"
     },
     "schannel 0.1.22": {
       "name": "schannel",
@@ -29477,53 +29201,6 @@
         },
         "edition": "2018",
         "version": "0.1.7"
-      },
-      "license": "MIT"
-    },
-    "shared_child 1.0.0": {
-      "name": "shared_child",
-      "version": "1.0.0",
-      "repository": {
-        "Http": {
-          "url": "https://crates.io/api/v1/crates/shared_child/1.0.0/download",
-          "sha256": "b0d94659ad3c2137fef23ae75b03d5241d633f8acded53d672decfa0e6e0caef"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "shared_child",
-            "crate_root": "src/lib.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
-        }
-      ],
-      "library_target_name": "shared_child",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [],
-          "selects": {
-            "cfg(not(windows))": [
-              {
-                "id": "libc 0.2.148",
-                "target": "libc"
-              }
-            ],
-            "cfg(windows)": [
-              {
-                "id": "winapi 0.3.9",
-                "target": "winapi"
-              }
-            ]
-          }
-        },
-        "edition": "2018",
-        "version": "1.0.0"
       },
       "license": "MIT"
     },
@@ -38658,10 +38335,8 @@
     "clap 3.2.25",
     "clap 4.4.6",
     "dotenvy 0.15.7",
-    "duct 0.13.6",
     "geographiclib-rs 0.2.3",
     "jsonschema 0.17.1",
-    "os_pipe 1.1.4",
     "pg-client-config 0.1.2",
     "test_bin 0.4.0",
     "unsafe-libyaml 0.2.9",

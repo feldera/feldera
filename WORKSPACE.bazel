@@ -30,6 +30,9 @@ crates_repository(
         "dbsp": [crate.annotation(
             gen_binaries = True,
         )],
+        "rdkafka-sys": [crate.annotation(
+            gen_build_script = False,
+        )],
     },
     manifests = [
         "//:Cargo.toml",
@@ -50,3 +53,48 @@ crates_repository(
 
 load("@crate_index//:defs.bzl", "crate_repositories")
 crate_repositories()
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "rules_foreign_cc",
+    # TODO: Get the latest sha256 value from a bazel debug message or the latest
+    #       release on the releases page: https://github.com/bazelbuild/rules_foreign_cc/releases
+    #
+    # sha256 = "...",
+    strip_prefix = "rules_foreign_cc-0.5.1",
+    url = "https://github.com/bazelbuild/rules_foreign_cc/archive/0.5.1.tar.gz",
+)
+
+load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
+
+rules_foreign_cc_dependencies()
+
+# rdkafka source code repository
+_ALL_CONTENT = """\
+filegroup(
+    name = "all_srcs",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+"""
+http_archive(
+    name = "rdkafka",
+    build_file_content = _ALL_CONTENT,
+    strip_prefix = "librdkafka-2.2.0",
+    url = "https://github.com/confluentinc/librdkafka/archive/refs/tags/v2.2.0.tar.gz",
+)
+
+http_archive(
+    name = "bazel_pkg_config",
+    strip_prefix = "bazel_pkg_config-master",
+    urls = ["https://github.com/cherrry/bazel_pkg_config/archive/master.zip"],
+)
+
+load("@bazel_pkg_config//:pkg_config.bzl", "pkg_config")
+pkg_config(
+    name = "rdkafka",
+    version = "2.2.0",
+    # See pkg_config.bzl for more available options.
+    deps = [":rdkafka-build/lib/librdkafka.so.1", ":rdkafka-build/lib/librdkafka.so"],
+)

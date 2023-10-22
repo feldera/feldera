@@ -1,0 +1,14 @@
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
+
+cmake(
+    name = "rdkafka",
+    build_args = [
+        "--verbose",
+        "--",  # <- Pass remaining options to the native tool.
+        "-j 12",
+    ],
+    lib_source = "@rdkafka//:all_srcs",
+    visibility = ["//visibility:public"],
+    out_shared_libs = ["librdkafka.so.1", "librdkafka.so"],
+    out_data_dirs = ["lib/pkgconfig"]
+)

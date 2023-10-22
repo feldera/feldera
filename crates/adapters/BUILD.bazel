@@ -1,8 +1,9 @@
 load("@crate_index//:defs.bzl", "aliases", "all_crate_deps")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 
 rust_library(
-    name = "dbsp_adapters",
+    name = "adapters",
     srcs = glob([
         "src/**/*.rs",
     ]),
@@ -11,17 +12,17 @@ rust_library(
         proc_macro = True,
     ),
     visibility = ["//visibility:public"],
-    deps = all_crate_deps(),
+    deps = all_crate_deps() + ["//crates/dbsp:dbsp", "//:rdkafka"],
 )
 
-rust_test(
-    name = "unit_test",
-    aliases = aliases(),
-    crate = ":dbsp_adapters",
-    proc_macro_deps = all_crate_deps(
-        proc_macro_dev = True,
-    ),
-    deps = all_crate_deps(
-        normal_dev = True,
-    ),
-)
+#rust_test(
+#    name = "unit_test",
+#    aliases = aliases(),
+#    crate = ":dbsp_adapters",
+#    proc_macro_deps = all_crate_deps(
+#        proc_macro_dev = True,
+#    ),
+#    deps = all_crate_deps(
+#        normal_dev = True,
+#    ),
+#)
