@@ -153,7 +153,7 @@ pub trait MergeBuilder: Builder {
         &'a mut self,
         other1: <Self::Trie as Trie>::Cursor<'a>,
         other2: <Self::Trie as Trie>::Cursor<'a>,
-    ) -> usize;
+    );
 
     /// Merges two sub-collections into one sub-collection, only
     /// retaining entries whose keys satisfy the `filter` condition.
@@ -162,8 +162,7 @@ pub trait MergeBuilder: Builder {
         other1: <Self::Trie as Trie>::Cursor<'a>,
         other2: <Self::Trie as Trie>::Cursor<'a>,
         filter: &F,
-    ) -> usize
-    where
+    ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool;
 }
 
@@ -363,8 +362,7 @@ impl MergeBuilder for () {
         &mut self,
         _other1: <Self::Trie as Trie>::Cursor<'static>,
         _other2: <Self::Trie as Trie>::Cursor<'static>,
-    ) -> usize {
-        0
+    ) {
     }
 
     fn push_merge_retain_keys<'a, F>(
@@ -372,11 +370,9 @@ impl MergeBuilder for () {
         _other1: <Self::Trie as Trie>::Cursor<'static>,
         _other2: <Self::Trie as Trie>::Cursor<'static>,
         _filter: &F,
-    ) -> usize
-    where
+    ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
     {
-        0
     }
 }
 

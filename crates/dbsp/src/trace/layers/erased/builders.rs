@@ -84,11 +84,11 @@ where
         &'a mut self,
         lhs_cursor: <Self::Trie as Trie>::Cursor<'a>,
         rhs_cursor: <Self::Trie as Trie>::Cursor<'a>,
-    ) -> usize {
+    ) {
         let (lhs, rhs) = (lhs_cursor.storage(), rhs_cursor.storage());
         let lhs_bounds = (lhs_cursor.position(), lhs_cursor.bounds().1);
         let rhs_bounds = (rhs_cursor.position(), rhs_cursor.bounds().1);
-        self.layer.push_merge(lhs, lhs_bounds, rhs, rhs_bounds)
+        self.layer.push_merge(lhs, lhs_bounds, rhs, rhs_bounds);
     }
 
     fn push_merge_retain_keys<'a, F>(
@@ -96,8 +96,7 @@ where
         _other1: <Self::Trie as Trie>::Cursor<'a>,
         _other2: <Self::Trie as Trie>::Cursor<'a>,
         _filter: &F,
-    ) -> usize
-    where
+    ) where
         F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
     {
         todo!()
