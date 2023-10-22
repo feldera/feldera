@@ -10,5 +10,4 @@ cmake(
     lib_source = "@rdkafka//:all_srcs",
     visibility = ["//visibility:public"],
     out_shared_libs = ["librdkafka.so.1", "librdkafka.so"],
-    out_data_dirs = ["lib/pkgconfig"]
 )
