@@ -85,17 +85,3 @@ http_archive(
     strip_prefix = "librdkafka-2.2.0",
     url = "https://github.com/confluentinc/librdkafka/archive/refs/tags/v2.2.0.tar.gz",
 )
-
-http_archive(
-    name = "bazel_pkg_config",
-    strip_prefix = "bazel_pkg_config-master",
-    urls = ["https://github.com/cherrry/bazel_pkg_config/archive/master.zip"],
-)
-
-load("@bazel_pkg_config//:pkg_config.bzl", "pkg_config")
-pkg_config(
-    name = "rdkafka",
-    version = "2.2.0",
-    # See pkg_config.bzl for more available options.
-    deps = [":rdkafka-build/lib/librdkafka.so.1", ":rdkafka-build/lib/librdkafka.so"],
-)
