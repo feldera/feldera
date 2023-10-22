@@ -41,6 +41,7 @@ crates_repository(
         "//:crates/dbsp/Cargo.toml",
         "//:crates/nexmark/Cargo.toml",
         "//:crates/pipeline_manager/Cargo.toml",
+        "//:crates/pipeline-types/Cargo.toml",
         "//:crates/webui-tester/Cargo.toml",
         "//:sql-to-dbsp-compiler/lib/hashing/Cargo.toml",
         "//:sql-to-dbsp-compiler/lib/readers/Cargo.toml",

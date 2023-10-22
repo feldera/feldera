@@ -12,7 +12,7 @@ rust_library(
         proc_macro = True,
     ),
     visibility = ["//visibility:public"],
-    deps = all_crate_deps() + ["//crates/dbsp:dbsp", "//:rdkafka"],
+    deps = all_crate_deps() + ["//crates/dbsp:dbsp", "//crates/pipeline-types:pipeline_types", "//crates/dataflow-jit:dataflow_jit", "//:rdkafka"],
 )
 
 #rust_test(

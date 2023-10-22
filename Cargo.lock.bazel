@@ -1,5 +1,5 @@
 {
-  "checksum": "a6734c8e26f6671c1e5b3944221a6286dfe202ae2ec89afced06e185f79181d0",
+  "checksum": "baf35377b8a11a4768f821ba71fcdbd7244f5f048b603f3c52851e6df04a2563",
   "crates": {
     "actix 0.13.1": {
       "name": "actix",
@@ -11562,15 +11562,6 @@
               "**/*.rs"
             ]
           }
-        },
-        {
-          "BuildScript": {
-            "crate_name": "build_script_build",
-            "crate_root": "build.rs",
-            "srcs": [
-              "**/*.rs"
-            ]
-          }
         }
       ],
       "library_target_name": "dbsp_adapters",
@@ -11595,10 +11586,6 @@
             {
               "id": "actix-web 4.4.0",
               "target": "actix_web"
-            },
-            {
-              "id": "actix-web-static-files 4.0.1",
-              "target": "actix_web_static_files"
             },
             {
               "id": "anyhow 1.0.75",
@@ -11639,10 +11626,6 @@
             {
               "id": "csv-core 0.1.11",
               "target": "csv_core"
-            },
-            {
-              "id": "dbsp_adapters 0.1.0",
-              "target": "build_script_build"
             },
             {
               "id": "env_logger 0.10.0",
@@ -11689,6 +11672,10 @@
               "target": "prometheus"
             },
             {
+              "id": "rand 0.8.5",
+              "target": "rand"
+            },
+            {
               "id": "rdkafka 0.34.0",
               "target": "rdkafka"
             },
@@ -11719,10 +11706,6 @@
             {
               "id": "serde_yaml 0.9.25",
               "target": "serde_yaml"
-            },
-            {
-              "id": "static-files 0.2.3",
-              "target": "static_files"
             },
             {
               "id": "tokio 1.32.0",
@@ -11811,24 +11794,6 @@
           "selects": {}
         },
         "version": "0.1.0"
-      },
-      "build_script_attrs": {
-        "data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "change-detection 1.2.0",
-              "target": "change_detection"
-            },
-            {
-              "id": "static-files 0.2.3",
-              "target": "static_files"
-            }
-          ],
-          "selects": {}
-        }
       },
       "license": "MIT OR Apache-2.0"
     },
@@ -22816,6 +22781,60 @@
         }
       },
       "license": "MIT OR Apache-2.0"
+    },
+    "pipeline_types 0.1.0": {
+      "name": "pipeline_types",
+      "version": "0.1.0",
+      "repository": null,
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "pipeline_types",
+            "crate_root": "src/lib.rs",
+            "srcs": [
+              "**/*.rs"
+            ]
+          }
+        }
+      ],
+      "library_target_name": "pipeline_types",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "anyhow 1.0.75",
+              "target": "anyhow"
+            },
+            {
+              "id": "log 0.4.20",
+              "target": "log"
+            },
+            {
+              "id": "serde 1.0.188",
+              "target": "serde"
+            },
+            {
+              "id": "serde_json 1.0.107",
+              "target": "serde_json"
+            },
+            {
+              "id": "serde_yaml 0.9.25",
+              "target": "serde_yaml"
+            },
+            {
+              "id": "utoipa 3.5.0",
+              "target": "utoipa"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2021",
+        "version": "0.1.0"
+      },
+      "license": "MIT"
     },
     "piper 0.2.1": {
       "name": "piper",
@@ -38350,6 +38369,7 @@
     "dbsp_nexmark 0.1.0": "crates/nexmark",
     "hashing 0.1.0": "sql-to-dbsp-compiler/lib/hashing",
     "pipeline-manager 0.1.7": "crates/pipeline_manager",
+    "pipeline_types 0.1.0": "crates/pipeline-types",
     "readers 0.1.0": "sql-to-dbsp-compiler/lib/readers",
     "sqllib 0.1.0": "sql-to-dbsp-compiler/lib/sqllib",
     "sqlvalue 0.1.0": "sql-to-dbsp-compiler/lib/sqlvalue",
