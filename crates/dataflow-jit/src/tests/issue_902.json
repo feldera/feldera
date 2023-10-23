@@ -1,0 +1,602 @@
+{
+    "nodes": {
+        "929": {
+            "ConstantStream": {
+                "comment": "zset!(Tuple1::new(1.0) => 1,)",
+                "layout": {
+                    "Set": 1
+                },
+                "value": {
+                    "layout": {
+                        "Set": 1
+                    },
+                    "value": {
+                        "Set": [
+                            [
+                                {
+                                    "rows": [
+                                        {
+                                            "NonNull": {
+                                                "F64": 1.0
+                                            }
+                                        }
+                                    ]
+                                },
+                                1
+                            ]
+                        ]
+                    }
+                },
+                "consolidated": false
+            }
+        },
+        "937": {
+            "ConstantStream": {
+                "comment": "zset!(Tuple1::new(0) => 1,)",
+                "layout": {
+                    "Set": 2
+                },
+                "value": {
+                    "layout": {
+                        "Set": 2
+                    },
+                    "value": {
+                        "Set": [
+                            [
+                                {
+                                    "rows": [
+                                        {
+                                            "NonNull": {
+                                                "I32": 0
+                                            }
+                                        }
+                                    ]
+                                },
+                                1
+                            ]
+                        ]
+                    }
+                },
+                "consolidated": false
+            }
+        },
+        "1218": {
+            "Map": {
+                "input": 937,
+                "map_fn": {
+                    "args": [
+                        {
+                            "id": 1,
+                            "layout": 2,
+                            "flags": "input"
+                        },
+                        {
+                            "id": 2,
+                            "layout": 1,
+                            "flags": "output"
+                        }
+                    ],
+                    "ret": "Unit",
+                    "entry_block": 1,
+                    "blocks": {
+                        "1": {
+                            "id": 1,
+                            "body": [
+                                [
+                                    3,
+                                    {
+                                        "Constant": {
+                                            "String": "Infinity"
+                                        }
+                                    }
+                                ],
+                                [
+                                    4,
+                                    {
+                                        "Call": {
+                                            "function": "dbsp.str.parse",
+                                            "args": [
+                                                3
+                                            ],
+                                            "arg_types": [
+                                                {
+                                                    "Scalar": "String"
+                                                }
+                                            ],
+                                            "ret_ty": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    5,
+                                    {
+                                        "Store": {
+                                            "target": 2,
+                                            "target_layout": 1,
+                                            "column": 0,
+                                            "value": {
+                                                "Expr": 4
+                                            },
+                                            "value_type": "F64"
+                                        }
+                                    }
+                                ]
+                            ],
+                            "terminator": {
+                                "Return": {
+                                    "value": {
+                                        "Imm": "Unit"
+                                    }
+                                }
+                            },
+                            "params": []
+                        }
+                    }
+                },
+                "input_layout": {
+                    "Set": 2
+                },
+                "output_layout": {
+                    "Set": 1
+                }
+            }
+        },
+        "1222": {
+            "Sum": {
+                "layout": {
+                    "Set": 1
+                },
+                "inputs": [
+                    929,
+                    1218
+                ]
+            }
+        },
+        "1242": {
+            "IndexWith": {
+                "input": 1222,
+                "index_fn": {
+                    "args": [
+                        {
+                            "id": 1,
+                            "layout": 1,
+                            "flags": "input"
+                        },
+                        {
+                            "id": 2,
+                            "layout": 3,
+                            "flags": "output"
+                        },
+                        {
+                            "id": 3,
+                            "layout": 1,
+                            "flags": "output"
+                        }
+                    ],
+                    "ret": "Unit",
+                    "entry_block": 1,
+                    "blocks": {
+                        "1": {
+                            "id": 1,
+                            "body": [
+                                [
+                                    4,
+                                    {
+                                        "Load": {
+                                            "source": 1,
+                                            "source_layout": 1,
+                                            "column": 0,
+                                            "column_type": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    5,
+                                    {
+                                        "Store": {
+                                            "target": 3,
+                                            "target_layout": 1,
+                                            "column": 0,
+                                            "value": {
+                                                "Expr": 4
+                                            },
+                                            "value_type": "F64"
+                                        }
+                                    }
+                                ]
+                            ],
+                            "terminator": {
+                                "Return": {
+                                    "value": {
+                                        "Imm": "Unit"
+                                    }
+                                }
+                            },
+                            "params": []
+                        }
+                    }
+                },
+                "key_layout": 3,
+                "value_layout": 1
+            }
+        },
+        "1262": {
+            "IndexWith": {
+                "input": 1222,
+                "index_fn": {
+                    "args": [
+                        {
+                            "id": 1,
+                            "layout": 1,
+                            "flags": "input"
+                        },
+                        {
+                            "id": 2,
+                            "layout": 3,
+                            "flags": "output"
+                        },
+                        {
+                            "id": 3,
+                            "layout": 1,
+                            "flags": "output"
+                        }
+                    ],
+                    "ret": "Unit",
+                    "entry_block": 1,
+                    "blocks": {
+                        "1": {
+                            "id": 1,
+                            "body": [
+                                [
+                                    4,
+                                    {
+                                        "Load": {
+                                            "source": 1,
+                                            "source_layout": 1,
+                                            "column": 0,
+                                            "column_type": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    5,
+                                    {
+                                        "Store": {
+                                            "target": 3,
+                                            "target_layout": 1,
+                                            "column": 0,
+                                            "value": {
+                                                "Expr": 4
+                                            },
+                                            "value_type": "F64"
+                                        }
+                                    }
+                                ]
+                            ],
+                            "terminator": {
+                                "Return": {
+                                    "value": {
+                                        "Imm": "Unit"
+                                    }
+                                }
+                            },
+                            "params": []
+                        }
+                    }
+                },
+                "key_layout": 3,
+                "value_layout": 1
+            }
+        },
+        "1287": {
+            "JoinCore": {
+                "lhs": 1242,
+                "rhs": 1262,
+                "join_fn": {
+                    "args": [
+                        {
+                            "id": 1,
+                            "layout": 3,
+                            "flags": "input"
+                        },
+                        {
+                            "id": 2,
+                            "layout": 1,
+                            "flags": "input"
+                        },
+                        {
+                            "id": 3,
+                            "layout": 1,
+                            "flags": "input"
+                        },
+                        {
+                            "id": 4,
+                            "layout": 4,
+                            "flags": "output"
+                        }
+                    ],
+                    "ret": "Unit",
+                    "entry_block": 1,
+                    "blocks": {
+                        "1": {
+                            "id": 1,
+                            "body": [
+                                [
+                                    5,
+                                    {
+                                        "Load": {
+                                            "source": 2,
+                                            "source_layout": 1,
+                                            "column": 0,
+                                            "column_type": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    6,
+                                    {
+                                        "Store": {
+                                            "target": 4,
+                                            "target_layout": 4,
+                                            "column": 0,
+                                            "value": {
+                                                "Expr": 5
+                                            },
+                                            "value_type": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    7,
+                                    {
+                                        "Load": {
+                                            "source": 3,
+                                            "source_layout": 1,
+                                            "column": 0,
+                                            "column_type": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    8,
+                                    {
+                                        "Store": {
+                                            "target": 4,
+                                            "target_layout": 4,
+                                            "column": 1,
+                                            "value": {
+                                                "Expr": 7
+                                            },
+                                            "value_type": "F64"
+                                        }
+                                    }
+                                ]
+                            ],
+                            "terminator": {
+                                "Return": {
+                                    "value": {
+                                        "Imm": "Unit"
+                                    }
+                                }
+                            },
+                            "params": []
+                        }
+                    }
+                },
+                "value_layout": 5,
+                "key_layout": 4,
+                "output_kind": "Set"
+            }
+        },
+        "1315": {
+            "Map": {
+                "input": 1287,
+                "map_fn": {
+                    "args": [
+                        {
+                            "id": 1,
+                            "layout": 4,
+                            "flags": "input"
+                        },
+                        {
+                            "id": 2,
+                            "layout": 6,
+                            "flags": "output"
+                        }
+                    ],
+                    "ret": "Unit",
+                    "entry_block": 1,
+                    "blocks": {
+                        "1": {
+                            "id": 1,
+                            "body": [
+                                [
+                                    3,
+                                    {
+                                        "Load": {
+                                            "source": 1,
+                                            "source_layout": 4,
+                                            "column": 0,
+                                            "column_type": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    4,
+                                    {
+                                        "Store": {
+                                            "target": 2,
+                                            "target_layout": 6,
+                                            "column": 0,
+                                            "value": {
+                                                "Expr": 3
+                                            },
+                                            "value_type": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    5,
+                                    {
+                                        "Load": {
+                                            "source": 1,
+                                            "source_layout": 4,
+                                            "column": 1,
+                                            "column_type": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    6,
+                                    {
+                                        "Store": {
+                                            "target": 2,
+                                            "target_layout": 6,
+                                            "column": 1,
+                                            "value": {
+                                                "Expr": 5
+                                            },
+                                            "value_type": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    9,
+                                    {
+                                        "BinOp": {
+                                            "lhs": 3,
+                                            "rhs": 5,
+                                            "kind": "Div",
+                                            "operand_ty": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    10,
+                                    {
+                                        "Constant": {
+                                            "Bool": false
+                                        }
+                                    }
+                                ],
+                                [
+                                    11,
+                                    {
+                                        "Store": {
+                                            "target": 2,
+                                            "target_layout": 6,
+                                            "column": 2,
+                                            "value": {
+                                                "Expr": 9
+                                            },
+                                            "value_type": "F64"
+                                        }
+                                    }
+                                ],
+                                [
+                                    12,
+                                    {
+                                        "SetNull": {
+                                            "target": 2,
+                                            "target_layout": 6,
+                                            "column": 2,
+                                            "is_null": {
+                                                "Expr": 10
+                                            }
+                                        }
+                                    }
+                                ]
+                            ],
+                            "terminator": {
+                                "Return": {
+                                    "value": {
+                                        "Imm": "Unit"
+                                    }
+                                }
+                            },
+                            "params": []
+                        }
+                    }
+                },
+                "input_layout": {
+                    "Set": 4
+                },
+                "output_layout": {
+                    "Set": 6
+                }
+            }
+        },
+        "1323": {
+            "Sink": {
+                "input": 1315,
+                "comment": "CREATE VIEW `VV` AS\nWITH `V` (`X`) AS (VALUES ROW(1E0),\nROW(CAST('Infinity' AS DOUBLE))) SELECT `X1`, `X2`, `X1` / `X2` AS `QUOT`\nFROM `V` AS `V1` (`X1`),\n`V` AS `V2` (`X2`)",
+                "view": "VV",
+                "input_layout": {
+                    "Set": 6
+                }
+            }
+        }
+    },
+    "layouts": {
+        "5": {
+            "columns": [
+                {
+                    "nullable": false,
+                    "ty": "Unit"
+                }
+            ]
+        },
+        "3": {
+            "columns": [
+                {
+                    "nullable": false,
+                    "ty": "Unit"
+                }
+            ]
+        },
+        "6": {
+            "columns": [
+                {
+                    "nullable": false,
+                    "ty": "F64"
+                },
+                {
+                    "nullable": false,
+                    "ty": "F64"
+                },
+                {
+                    "nullable": true,
+                    "ty": "F64"
+                }
+            ]
+        },
+        "4": {
+            "columns": [
+                {
+                    "nullable": false,
+                    "ty": "F64"
+                },
+                {
+                    "nullable": false,
+                    "ty": "F64"
+                }
+            ]
+        },
+        "1": {
+            "columns": [
+                {
+                    "nullable": false,
+                    "ty": "F64"
+                }
+            ]
+        },
+        "2": {
+            "columns": [
+                {
+                    "nullable": false,
+                    "ty": "I32"
+                }
+            ]
+        }
+    }
+}
