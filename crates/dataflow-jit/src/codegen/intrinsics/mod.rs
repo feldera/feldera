@@ -1,5 +1,6 @@
 mod deserialize;
 mod serialize;
+mod time;
 
 use self::{
     deserialize::{
@@ -16,6 +17,7 @@ use self::{
         write_time_to_byte_vec, write_timestamp_to_byte_vec, write_u16_to_byte_vec,
         write_u32_to_byte_vec, write_u64_to_byte_vec, write_u8_to_byte_vec,
     },
+    time::{time_hour, time_microsecond, time_millisecond, time_minute, time_second},
 };
 use crate::{
     codegen::{
@@ -39,11 +41,11 @@ use cranelift::{
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use csv::StringRecord;
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::{prelude::ToPrimitive, Decimal, MathematicalOps};
 use std::{
     alloc::Layout,
     cell::RefCell,
-    cmp::Ordering,
+    cmp::{max, min, Ordering},
     fmt::{self, Debug, Write},
     hash::{Hash, Hasher},
     io::{self, Write as _},
@@ -604,11 +606,17 @@ intrinsics! {
     decimal_le = fn(u64, u64, u64, u64) -> bool,
     decimal_ge = fn(u64, u64, u64, u64) -> bool,
     decimal_cmp = fn(u64, u64, u64, u64) -> i8,
+    decimal_min = fn(u64, u64, u64, u64, ptr),
+    decimal_max = fn(u64, u64, u64, u64, ptr),
     decimal_add = fn(u64, u64, u64, u64, ptr),
     decimal_sub = fn(u64, u64, u64, u64, ptr),
     decimal_mul = fn(u64, u64, u64, u64, ptr),
     decimal_div = fn(u64, u64, u64, u64, ptr),
     decimal_rem = fn(u64, u64, u64, u64, ptr),
+    decimal_sqrt = fn(u64, u64, ptr),
+    decimal_floor = fn(u64, u64, ptr),
+    decimal_ceil = fn(u64, u64, ptr),
+    decimal_trunc = fn(u64, u64, ptr),
     decimal_to_f32 = fn(u64, u64) -> f32,
     decimal_to_f64 = fn(u64, u64) -> f64,
     decimal_from_f32 = fn(f32, ptr),
@@ -676,6 +684,12 @@ intrinsics! {
     write_timestamp_to_std_string = fn(ptr, timestamp),
     write_decimal_to_std_string = fn(ptr, u64, u64),
     write_escaped_string_to_std_string = fn(ptr, ptr, usize),
+
+    time_hour = fn(time) -> u32,
+    time_minute = fn(time) -> u32,
+    time_second = fn(time) -> u32,
+    time_millisecond = fn(time) -> u32,
+    time_microsecond = fn(time) -> u32,
 }
 
 /// Allocates memory with the given size and alignment
@@ -1712,6 +1726,36 @@ extern "C" fn decimal_ge(lhs_lo: u64, lhs_hi: u64, rhs_lo: u64, rhs_hi: u64) -> 
     lhs >= rhs
 }
 
+extern "C" fn decimal_min(
+    lhs_lo: u64,
+    lhs_hi: u64,
+    rhs_lo: u64,
+    rhs_hi: u64,
+    out: &mut MaybeUninit<u128>,
+) {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+
+    out.write(min(lhs, rhs).to_repr());
+}
+
+extern "C" fn decimal_max(
+    lhs_lo: u64,
+    lhs_hi: u64,
+    rhs_lo: u64,
+    rhs_hi: u64,
+    out: &mut MaybeUninit<u128>,
+) {
+    let (lhs, rhs) = (
+        decimal_from_parts(lhs_lo, lhs_hi),
+        decimal_from_parts(rhs_lo, rhs_hi),
+    );
+
+    out.write(max(lhs, rhs).to_repr());
+}
+
 extern "C" fn decimal_hash(hasher: &mut &mut dyn Hasher, lo: u64, hi: u64) {
     let decimal = decimal_from_parts(lo, hi);
     decimal.hash(hasher);
@@ -1795,6 +1839,27 @@ extern "C" fn decimal_rem(
 
     let remainder = lhs % rhs;
     out.write(remainder.to_repr());
+}
+
+extern "C" fn decimal_sqrt(lo: u64, hi: u64, out: &mut MaybeUninit<u128>) {
+    let x = decimal_from_parts(lo, hi);
+    // sqrt returns none if `x` is negative
+    out.write(x.sqrt().unwrap_or(Decimal::ZERO).to_repr());
+}
+
+extern "C" fn decimal_floor(lo: u64, hi: u64, out: &mut MaybeUninit<u128>) {
+    let x = decimal_from_parts(lo, hi);
+    out.write(x.floor().to_repr());
+}
+
+extern "C" fn decimal_ceil(lo: u64, hi: u64, out: &mut MaybeUninit<u128>) {
+    let x = decimal_from_parts(lo, hi);
+    out.write(x.ceil().to_repr());
+}
+
+extern "C" fn decimal_trunc(lo: u64, hi: u64, out: &mut MaybeUninit<u128>) {
+    let x = decimal_from_parts(lo, hi);
+    out.write(x.trunc().to_repr());
 }
 
 extern "C" fn decimal_to_f32(lo: u64, hi: u64) -> f32 {

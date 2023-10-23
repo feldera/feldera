@@ -969,4 +969,12 @@ impl CodegenCtx<'_> {
         // Divide by the factor
         builder.ins().fdiv(rounded, factor)
     }
+
+    pub(super) fn decimal_sqrt(
+        &mut self,
+        decimal: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        self.decimal_unary_output("decimal_sqrt", decimal, builder)
+    }
 }

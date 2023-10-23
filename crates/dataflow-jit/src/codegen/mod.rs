@@ -1793,7 +1793,7 @@ impl<'a> CodegenCtx<'a> {
                 if lhs_ty.is_float() {
                     self.float_min(lhs, rhs, builder)
                 } else if lhs_ty.is_decimal() {
-                    todo!()
+                    self.decimal_binop_output("decimal_min", lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() || lhs_ty.is_date() || lhs_ty.is_timestamp() {
                     builder.ins().smin(lhs, rhs)
                 } else {
@@ -1805,7 +1805,7 @@ impl<'a> CodegenCtx<'a> {
                 if lhs_ty.is_float() {
                     self.float_max(lhs, rhs, builder)
                 } else if lhs_ty.is_decimal() {
-                    todo!()
+                    self.decimal_binop_output("decimal_max", lhs, rhs, builder)
                 } else if lhs_ty.is_signed_int() || lhs_ty.is_date() || lhs_ty.is_timestamp() {
                     builder.ins().smax(lhs, rhs)
                 } else {
@@ -1998,6 +1998,30 @@ impl<'a> CodegenCtx<'a> {
         builder.ins().stack_load(types::I128, slot, 0)
     }
 
+    fn decimal_unary_output(
+        &mut self,
+        function: &str,
+        decimal: Value,
+        builder: &mut FunctionBuilder<'_>,
+    ) -> Value {
+        // Split the u128 value for the abi boundary
+        let (lo, hi) = builder.ins().isplit(decimal);
+
+        // Create a stack slot to hold the op's output
+        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            size_of::<u128>() as u32,
+        ));
+        let ptr = builder.ins().stack_addr(self.pointer_type(), slot, 0);
+
+        // Call the function, it writes its result to `ptr`
+        let func = self.imports.get(function, self.module, builder.func);
+        builder.ins().call(func, &[lo, hi, ptr]);
+
+        // Load the result from the stack slot
+        builder.ins().stack_load(types::I128, slot, 0)
+    }
+
     fn unary_op(&mut self, expr_id: ExprId, unary: &UnaryOp, builder: &mut FunctionBuilder<'_>) {
         let (value, value_ty) = {
             let value_id = unary.value();
@@ -2040,20 +2064,37 @@ impl<'a> CodegenCtx<'a> {
                 }
 
                 UnaryOpKind::Ceil => {
-                    debug_assert!(value_ty.is_float());
-                    builder.ins().ceil(value)
+                    if value_ty.is_float() {
+                        builder.ins().ceil(value)
+                    } else if value_ty.is_decimal() {
+                        self.decimal_unary_output("decimal_ceil", value, builder)
+                    } else {
+                        panic!("invalid ceil type")
+                    }
                 }
                 UnaryOpKind::Floor => {
-                    debug_assert!(value_ty.is_float());
-                    builder.ins().floor(value)
+                    if value_ty.is_float() {
+                        builder.ins().floor(value)
+                    } else if value_ty.is_decimal() {
+                        self.decimal_unary_output("decimal_floor", value, builder)
+                    } else {
+                        panic!("invalid floor type")
+                    }
                 }
                 UnaryOpKind::Trunc => {
-                    debug_assert!(value_ty.is_float());
-                    builder.ins().trunc(value)
+                    if value_ty.is_float() {
+                        builder.ins().trunc(value)
+                    } else if value_ty.is_decimal() {
+                        self.decimal_unary_output("decimal_trunc", value, builder)
+                    } else {
+                        panic!("invalid trunc type")
+                    }
                 }
                 UnaryOpKind::Sqrt => {
                     if value_ty.is_float() {
                         builder.ins().sqrt(value)
+                    } else if value_ty.is_decimal() {
+                        self.decimal_sqrt(value, builder)
                     } else {
                         todo!("integer sqrt?")
                     }
