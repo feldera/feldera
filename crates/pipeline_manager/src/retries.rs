@@ -1,4 +1,4 @@
-use std::{future::Future, time::Duration};
+use std::{fmt::Debug, future::Future, time::Duration};
 
 pub async fn retry_async<T, E, O, F: FnMut() -> O>(
     mut f: F,
@@ -7,6 +7,7 @@ pub async fn retry_async<T, E, O, F: FnMut() -> O>(
 ) -> Result<T, E>
 where
     O: Future<Output = Result<T, E>>,
+    E: Debug,
 {
     let mut count = 0;
     loop {
@@ -15,6 +16,8 @@ where
         if result.is_ok() {
             break result;
         } else {
+            let error = result.as_ref().err().unwrap();
+            log::error!("Retrying because of error: {error:?}");
             if count > retries {
                 break result;
             }
