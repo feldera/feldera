@@ -1879,7 +1879,8 @@ impl<'a> CodegenCtx<'a> {
         // Decimals
         // FIXME: Implement decimal equality within cranelift
         // https://github.com/paupino/rust-decimal/blob/master/src/ops/cmp.rs#L7
-        // See also the comparison functions in crates/dataflow-jit/src/codegen/vtable/cmp.rs
+        // See also the comparison functions in
+        // crates/dataflow-jit/src/codegen/vtable/cmp.rs
         } else if ty.is_decimal() {
             self.decimal_binop("decimal_eq", lhs, rhs, builder)
 
@@ -1943,7 +1944,8 @@ impl<'a> CodegenCtx<'a> {
         // Decimals
         // FIXME: Implement decimal equality within cranelift
         // https://github.com/paupino/rust-decimal/blob/master/src/ops/cmp.rs#L7
-        // See also the comparison functions in crates/dataflow-jit/src/codegen/vtable/cmp.rs
+        // See also the comparison functions in
+        // crates/dataflow-jit/src/codegen/vtable/cmp.rs
         } else if ty.is_decimal() {
             let eq = self.decimal_binop("decimal_eq", lhs, rhs, builder);
             builder.ins().bnot(eq)

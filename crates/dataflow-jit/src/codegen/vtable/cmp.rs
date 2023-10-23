@@ -182,7 +182,8 @@ impl Codegen {
 
                         // FIXME: Implement decimal equality within cranelift
                         // https://github.com/paupino/rust-decimal/blob/master/src/ops/cmp.rs#L7
-                        // See also the comparison functions in crates/dataflow-jit/src/codegen/mod.rs
+                        // See also the comparison functions in
+                        // crates/dataflow-jit/src/codegen/mod.rs
                         ColumnType::Decimal => {
                             let (lhs_lo, lhs_hi) = builder.ins().isplit(lhs);
                             let (rhs_lo, rhs_hi) = builder.ins().isplit(rhs);
