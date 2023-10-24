@@ -59,7 +59,7 @@ impl RowLayout {
 
     pub fn is_zero_sized(&self) -> bool {
         self.columns.is_empty()
-            || (self.columns.iter().all(ColumnType::is_unit) && self.nullability.not_any())
+            || (self.columns.iter().copied().all(ColumnType::is_unit) && self.nullability.not_any())
     }
 
     /// Returns a row containing only a single unit column

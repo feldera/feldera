@@ -314,7 +314,7 @@ impl FunctionBuilder {
         self.unary_op(value, UnaryOpKind::StringLen)
     }
 
-    fn unary_op(&mut self, value: ExprId, kind: UnaryOpKind) -> ExprId {
+    pub fn unary_op(&mut self, value: ExprId, kind: UnaryOpKind) -> ExprId {
         let value_ty = self
             .expr_types
             .get(&value)
@@ -323,13 +323,26 @@ impl FunctionBuilder {
 
         let expr = self.add_expr(UnaryOp::new(value, value_ty, kind));
 
-        // TODO: Implement all unary op kinds
         // TODO: Is this correct?
         // TODO: Make this a method on `UnaryOpKind` for reuse
+        // TODO: Should we do some validation here?
         let output_ty = match kind {
+            UnaryOpKind::Abs
+            | UnaryOpKind::Neg
+            | UnaryOpKind::Not
+            | UnaryOpKind::Ceil
+            | UnaryOpKind::Floor
+            | UnaryOpKind::Trunc
+            | UnaryOpKind::Sqrt
+            | UnaryOpKind::BitReverse
+            | UnaryOpKind::ByteReverse
+            | UnaryOpKind::CountOnes
+            | UnaryOpKind::CountZeroes
+            | UnaryOpKind::LeadingOnes
+            | UnaryOpKind::LeadingZeroes
+            | UnaryOpKind::TrailingOnes
+            | UnaryOpKind::TrailingZeroes => value_ty,
             UnaryOpKind::StringLen => ColumnType::U64,
-
-            _ => todo!(),
         };
         self.set_expr_type(expr, output_ty);
 

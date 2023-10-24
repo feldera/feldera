@@ -548,11 +548,7 @@ impl DbspCircuit {
         Ok(())
     }
 
-    /// # Safety
-    ///
-    /// The demand types must be correct for the source node
-    // TODO: Check types instead of unsafe
-    pub unsafe fn append_json_map_input<R>(
+    pub fn append_json_map_input<R>(
         &mut self,
         target: NodeId,
         key: DemandId,
@@ -705,6 +701,82 @@ impl DbspCircuit {
                 }
 
                 StreamLayout::Map(..) => todo!(),
+            };
+
+            let elapsed = start.elapsed();
+            // TODO: Log the source's name
+            tracing::info!("ingested {records} records for {target} in {elapsed:#?}");
+
+        // If the source is unused, do nothing
+        } else {
+            // TODO: Log the source's name
+            tracing::info!("appended csv file to source {target} which is unused, doing nothing");
+        }
+    }
+
+    pub fn append_csv_map_input(
+        &mut self,
+        target: NodeId,
+        key_demand: DemandId,
+        value_demand: DemandId,
+        path: &Path,
+    ) {
+        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
+
+        if let Some(input) = input {
+            let mut csv = csv::ReaderBuilder::new()
+                .has_headers(false)
+                .from_path(path)
+                .unwrap();
+
+            let start = Instant::now();
+
+            let records = match *layout {
+                StreamLayout::Map(key_layout, value_layout) => {
+                    let (key_vtable, value_vtable) = unsafe {
+                        (
+                            &*self.jit.vtables()[&key_layout],
+                            &*self.jit.vtables()[&value_layout],
+                        )
+                    };
+
+                    let (deserialize_key, deserialize_value) = unsafe {
+                        (
+                            demand_function!(
+                                self,
+                                key_demand,
+                                key_layout,
+                                unsafe extern "C" fn(*mut u8, *const StringRecord),
+                            ),
+                            demand_function!(
+                                self,
+                                value_demand,
+                                value_layout,
+                                unsafe extern "C" fn(*mut u8, *const StringRecord),
+                            ),
+                        )
+                    };
+
+                    let (mut batch, mut buf) = (Vec::new(), StringRecord::new());
+                    while csv.read_record(&mut buf).unwrap() {
+                        let (mut key, mut value) =
+                            (UninitRow::new(key_vtable), UninitRow::new(value_vtable));
+
+                        unsafe {
+                            deserialize_key(key.as_mut_ptr(), &buf);
+                            deserialize_value(value.as_mut_ptr(), &buf);
+
+                            batch.push((key.assume_init(), (value.assume_init(), 1)));
+                        }
+                    }
+
+                    let records = batch.len();
+                    input.as_indexed_zset_mut().unwrap().append(&mut batch);
+                    records
+                }
+                StreamLayout::Set(_) => todo!(),
             };
 
             let elapsed = start.elapsed();

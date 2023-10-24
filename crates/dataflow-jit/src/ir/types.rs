@@ -47,7 +47,7 @@ macro_rules! column_type {
                 $(
                     #[doc = "Returns `true` if the current column type is a [`" $column_ty "`][ColumnType::" $column_ty "]"]
                     #[must_use]
-                    pub const fn [<is_ $column_ty:lower>](&self) -> bool {
+                    pub const fn [<is_ $column_ty:lower>](self) -> bool {
                         matches!(self, Self::$column_ty)
                     }
                 )+

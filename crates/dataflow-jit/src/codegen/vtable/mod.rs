@@ -281,7 +281,12 @@ impl Codegen {
                 &mut builder,
             );
 
-            if row_layout.columns().iter().any(ColumnType::is_string) {
+            if row_layout
+                .columns()
+                .iter()
+                .copied()
+                .any(ColumnType::is_string)
+            {
                 for (idx, (ty, nullable)) in row_layout
                     .iter()
                     .enumerate()
