@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2023-10-24
+
 ### Fixed
 - Avoid shutting down pipelines when they encounter
   errors during lifecycle state changes.
@@ -25,7 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#774](https://github.com/feldera/feldera/issues/774))
 - WebConsole: Snowflake output connector dialog and node
   ([#859](https://github.com/feldera/feldera/issues/859))
-
 - Source and sink connector documentation
   ([#882](https://github.com/feldera/feldera/pull/882))
 
