@@ -76,16 +76,6 @@ public class JitPostgresNumericTests extends PostgresNumericTests {
         super.testDivisionRound();
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/902")
-    public void testFpDiv() {
-        super.testFpDiv();
-    }
-
-    @Test @Ignore("https://github.com/feldera/feldera/issues/902")
-    public void testSpecialValues() {
-        super.testSpecialValues();
-    }
-
     @Test @Ignore("https://github.com/feldera/feldera/issues/903")
     public void testSubtraction() {
         super.testSubtraction();
