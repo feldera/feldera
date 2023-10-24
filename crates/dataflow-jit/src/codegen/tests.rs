@@ -8,9 +8,11 @@ use crate::{
     },
     row::UninitRow,
     thin_str::ThinStrRef,
-    utils, ThinStr,
+    utils::{self, NativeRepr},
+    ThinStr,
 };
 use chrono::{Datelike, Utc};
+use rust_decimal::{prelude::FromPrimitive, Decimal};
 use std::mem::transmute;
 
 #[test]
@@ -894,28 +896,109 @@ fn unwrap_optional_bool() {
     unsafe { jit.free_memory() };
 }
 
+#[test]
+fn decimal_sub() {
+    utils::test_logger();
+
+    let layout_cache = RowLayoutCache::new();
+    let layout = layout_cache.add(
+        RowLayoutBuilder::new()
+            .with_column(ColumnType::Decimal, false)
+            .build(),
+    );
+
+    let function = {
+        let mut builder =
+            FunctionBuilder::new(layout_cache.clone()).with_return_type(ColumnType::Bool);
+        let lhs = builder.add_input(layout);
+        let rhs = builder.add_input(layout);
+        let output = builder.add_output(layout);
+
+        let lhs = builder.load(lhs, 0);
+        let rhs = builder.load(rhs, 0);
+
+        let difference = builder.sub(lhs, rhs);
+        builder.store(output, 0, difference);
+
+        let zero = builder.constant(Constant::Decimal(Decimal::ZERO));
+        let eq = builder.eq(difference, zero);
+        builder.ret(eq);
+
+        builder.build()
+    };
+
+    let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
+    let function = codegen.codegen_func("decimal_sub", &function);
+    let vtable = codegen.vtable_for(layout);
+
+    let (jit, layout_cache) = codegen.finalize_definitions();
+    {
+        let vtable = Box::into_raw(Box::new(vtable.marshalled(&jit)));
+        let layout = layout_cache.layout_of(layout);
+        let offset = layout.offset_of(0) as usize;
+
+        let decimal_sub = unsafe {
+            transmute::<*const u8, extern "C" fn(*const u8, *const u8, *mut u8) -> bool>(
+                jit.get_finalized_function(function),
+            )
+        };
+
+        let (lhs, rhs) = unsafe {
+            let (mut lhs, mut rhs) = (UninitRow::new(&*vtable), UninitRow::new(&*vtable));
+
+            lhs.as_mut_ptr()
+                .add(offset)
+                .cast::<u128>()
+                .write(Decimal::from_f32(1.2).unwrap().to_repr());
+            rhs.as_mut_ptr()
+                .add(offset)
+                .cast::<u128>()
+                .write(Decimal::from_f32(1.2).unwrap().to_repr());
+
+            (lhs.assume_init(), rhs.assume_init())
+        };
+
+        let mut output = UninitRow::new(unsafe { &*vtable });
+        let are_equal = decimal_sub(lhs.as_ptr(), rhs.as_ptr(), output.as_mut_ptr());
+
+        let output = unsafe { output.assume_init() };
+        let result =
+            unsafe { Decimal::from_repr(output.as_ptr().add(offset).cast::<u128>().read()) };
+        assert!(are_equal);
+        assert_eq!(result, Decimal::ZERO);
+
+        drop((lhs, rhs, output));
+        unsafe { drop(Box::from_raw(vtable)) }
+    }
+    unsafe { jit.free_memory() };
+}
+
 // TODO: Min/max with and without normalization
 // TODO: More binops
 // TODO: Test different codegen options
 mod proptests {
     use crate::{
         codegen::{Codegen, CodegenConfig},
-        ir::{BinaryOpKind, ColumnType, FunctionBuilder, RowLayoutBuilder, RowLayoutCache},
-        utils,
+        ir::{
+            BinaryOpKind, ColumnType, FunctionBuilder, RowLayoutBuilder, RowLayoutCache,
+            UnaryOpKind,
+        },
+        utils::{self, NativeRepr},
     };
     use num_integer::{div_floor, mod_floor};
     use proptest::{
         prelude::any,
         prop_assert_eq, prop_assume,
-        test_runner::{Config, TestRunner},
+        test_runner::{Config, TestCaseResult, TestRunner},
     };
+    use rust_decimal::{prelude::Zero, Decimal, MathematicalOps};
     use std::mem::transmute;
 
     macro_rules! tests {
         ($test:tt, $op:ident, $ty:ident, $col:ident, $guard:expr, $expected:expr $(,)?) => {
             paste::paste! {
                 #[test]
-                fn [<$test _ $ty>]() {
+                fn [<$test _ $ty:snake:lower>]() {
                     utils::test_logger();
 
                     let layout_cache = RowLayoutCache::new();
@@ -972,7 +1055,7 @@ mod proptests {
                             let expected = expected(lhs, rhs);
 
                             let input: [$ty; 2] = [lhs, rhs];
-                            let mut result: $ty = 0 as $ty;
+                            let mut result: $ty = <$ty>::zero();
                             jit_fn(
                                 &input as *const [$ty; 2] as *const u8,
                                 &mut result as *mut $ty as *mut u8,
@@ -1016,7 +1099,8 @@ mod proptests {
                     div_floor,
                 );
 
-                tests!(mod, Mod, $ty, $col,
+                tests!(
+                    mod, Mod, $ty, $col,
                     |lhs, rhs| {
                         prop_assume!(rhs != 0 as $ty);
                         prop_assume!(lhs != <$ty>::MIN && rhs != -1 as $ty);
@@ -1074,7 +1158,8 @@ mod proptests {
                     div_floor,
                 );
 
-                tests!(mod, Mod, $ty, $col,
+                tests!(
+                    mod, Mod, $ty, $col,
                     |_, rhs| {
                         prop_assume!(rhs != 0 as $ty);
                         Ok(())
@@ -1115,16 +1200,17 @@ mod proptests {
                 tests!(
                     div, Div, $ty, $col,
                     |lhs, rhs| {
-                        prop_assume!(rhs != 0 as $ty);
-                        prop_assume!(lhs != <$ty>::MIN && rhs != -1 as $ty);
+                        prop_assume!(rhs != <$ty>::from(0i8));
+                        prop_assume!(lhs != <$ty>::MIN && rhs != <$ty>::from(-1i8));
                         Ok(())
                     },
                     |lhs, rhs| lhs / rhs,
                 );
 
-                tests!(mod, Mod, $ty, $col,
+                tests!(
+                    mod, Mod, $ty, $col,
                     |_, rhs| {
-                        prop_assume!(rhs != 0 as $ty);
+                        prop_assume!(rhs != <$ty>::from(0i8));
                         Ok(())
                     },
                     |lhs, rhs| lhs.rem_euclid(rhs),
@@ -1133,7 +1219,7 @@ mod proptests {
                 tests!(
                     rem, Rem, $ty, $col,
                     |_, rhs| {
-                        prop_assume!(rhs != 0 as $ty);
+                        prop_assume!(rhs != <$ty>::from(0i8));
                         Ok(())
                     },
                     |lhs, rhs| lhs % rhs,
@@ -1146,4 +1232,97 @@ mod proptests {
         f32 = F32,
         f64 = F64,
     }
+
+    macro_rules! unary_tests {
+        ($test:tt, $op:ident, $ty:ident, $col:ident, $repr:ident, $guard:expr, $expected:expr $(,)?) => {
+            paste::paste! {
+                #[test]
+                fn [<$test _ $ty:snake:lower>]() {
+                    utils::test_logger();
+
+                    let layout_cache = RowLayoutCache::new();
+                    let int = layout_cache.add(
+                        RowLayoutBuilder::new()
+                            .with_column(ColumnType::$col, false)
+                            .build(),
+                    );
+
+                    let func = {
+                        let mut builder = FunctionBuilder::new(layout_cache.clone());
+                        let input = builder.add_input(int);
+                        let output = builder.add_output(int);
+
+                        let x = builder.load(input, 0);
+                        let x = builder.unary_op(x, UnaryOpKind::$op);
+                        builder.store(output, 0, x);
+                        builder.ret_unit();
+
+                        builder.build()
+                    };
+
+                    let test_name = concat!(module_path!(), "::", stringify!($test), "_", stringify!($ty));
+
+                    let mut codegen = Codegen::new(layout_cache, CodegenConfig::debug());
+                    let func = codegen.codegen_func(test_name, &func);
+
+                    let (jit, _) = codegen.finalize_definitions();
+
+                    let mut runner = TestRunner::new(Config {
+                        test_name: Some(test_name),
+                        source_file: Some(file!()),
+                        ..Config::default()
+                    });
+
+                    let result = {
+                        let jit_fn = unsafe {
+                            transmute::<*const u8, extern "C" fn(*const u8, *mut u8)>(
+                                jit.get_finalized_function(func),
+                            )
+                        };
+
+                        runner.run(&any::<$ty>(), |x| {
+                            let guard: fn($ty) -> TestCaseResult = $guard;
+                            (guard)(x)?;
+
+                            let expected: fn($ty) -> $ty = $expected;
+                            let expected = expected(x);
+
+                            let mut result = <$repr>::zero();
+                            jit_fn(
+                                &NativeRepr::to_repr(x) as *const $repr as *const u8,
+                                &mut result as *mut $repr as *mut u8,
+                            );
+
+                            let result: $ty = NativeRepr::from_repr(result);
+                            prop_assert_eq!(result, expected);
+
+                            Ok(())
+                        })
+                    };
+
+                    unsafe { jit.free_memory() }
+
+                    if let Err(error) = result {
+                        panic!("{error}\n{runner}");
+                    }
+                }
+            }
+        };
+    }
+
+    unary_tests!(
+        sqrt,
+        Sqrt,
+        Decimal,
+        Decimal,
+        u128,
+        |x| {
+            prop_assume!(x.is_sign_positive());
+            Ok(())
+        },
+        |x| x.sqrt().unwrap(),
+    );
+    unary_tests!(floor, Floor, Decimal, Decimal, u128, |_| Ok(()), |x| x
+        .floor());
+    unary_tests!(ceil, Ceil, Decimal, Decimal, u128, |_| Ok(()), |x| x.ceil());
 }

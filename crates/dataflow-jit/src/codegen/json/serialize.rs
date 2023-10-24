@@ -236,17 +236,18 @@ impl Codegen {
                         builder.ins().call(intrinsic, &[buffer, lo, hi]);
                     }
 
-                    ty @ (ColumnType::Date | ColumnType::Timestamp) => {
+                    ty @ (ColumnType::Date | ColumnType::Timestamp | ColumnType::Time) => {
                         let intrinsic = match ty {
                             ColumnType::Date => "write_date_to_byte_vec",
                             ColumnType::Timestamp => "write_timestamp_to_byte_vec",
+                            ColumnType::Time => "write_time_to_byte_vec",
                             _ => unreachable!(),
                         };
                         let intrinsic = ctx.imports.get(intrinsic, ctx.module, builder.func);
 
-                        let format = json_column
-                            .format()
-                            .expect("dates and timestamps are required to specify a parse format");
+                        let format = json_column.format().expect(
+                            "dates, times and timestamps are required to specify a parse format",
+                        );
                         let (format_ptr, format_len) = ctx.import_string(format, &mut builder);
 
                         builder

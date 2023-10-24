@@ -328,7 +328,7 @@ impl Codegen {
                     ColumnType::Timestamp => {
                         let spec = json_column
                             .spec()
-                            .expect("dates require a json parsing spec");
+                            .expect("timestamps require a json parsing spec");
 
                         let value_is_null = match spec {
                             JsonColumnParseSpec::DateTimeFromStr { format } => {
@@ -362,6 +362,85 @@ impl Codegen {
                                     }
                                     JsonColumnParseSpec::TimeFromMicros => {
                                         "deserialize_json_timestamp_from_micros"
+                                    }
+                                    _ => unreachable!(),
+                                };
+                                let deserialize =
+                                    ctx.imports.get(intrinsic, ctx.module, builder.func);
+
+                                builder.call_fn(
+                                    deserialize,
+                                    &[column_place, json_pointer, json_pointer_len, json_map],
+                                )
+                            }
+
+                            JsonColumnParseSpec::DateFromDays => unreachable!(),
+                        };
+
+                        // If the column is nullable, set its nullness
+                        if nullable {
+                            set_column_null(
+                                value_is_null,
+                                column_idx,
+                                place,
+                                MemFlags::trusted(),
+                                &layout,
+                                &mut builder,
+                            );
+
+                        // Otherwise return an error if deserialization fails or
+                        // the field is null
+                        } else {
+                            let after = builder.create_block();
+                            builder.ins().brif(
+                                value_is_null,
+                                return_error,
+                                &[json_pointer, json_pointer_len],
+                                after,
+                                &[],
+                            );
+
+                            builder.switch_to_block(after);
+                        }
+                    }
+
+                    ColumnType::Time => {
+                        let spec = json_column
+                            .spec()
+                            .expect("times require a json parsing spec");
+
+                        let value_is_null = match spec {
+                            JsonColumnParseSpec::DateTimeFromStr { format } => {
+                                let deserialize = ctx.imports.get(
+                                    "deserialize_json_time",
+                                    ctx.module,
+                                    builder.func,
+                                );
+
+                                let (format_ptr, format_len) =
+                                    ctx.import_string(format.to_string(), &mut builder);
+
+                                builder.call_fn(
+                                    deserialize,
+                                    &[
+                                        column_place,
+                                        json_pointer,
+                                        json_pointer_len,
+                                        format_ptr,
+                                        format_len,
+                                        json_map,
+                                    ],
+                                )
+                            }
+
+                            spec @ (JsonColumnParseSpec::TimeFromMicros
+                            | JsonColumnParseSpec::TimeFromMillis) => {
+                                let intrinsic = match spec {
+                                    JsonColumnParseSpec::TimeFromMillis => {
+                                        "deserialize_json_time_from_millis"
+                                    }
+                                    JsonColumnParseSpec::TimeFromMicros => {
+                                        "deserialize_json_time_from_micros"
                                     }
                                     _ => unreachable!(),
                                 };

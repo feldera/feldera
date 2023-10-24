@@ -1,5 +1,8 @@
-use crate::codegen::{intrinsics::decimal_from_parts, utils::str_from_raw_parts};
-use chrono::{TimeZone, Utc};
+use crate::{
+    codegen::{intrinsics::decimal_from_parts, utils::str_from_raw_parts},
+    utils::TimeExt,
+};
+use chrono::{NaiveTime, TimeZone, Utc};
 use std::{io::Write, slice};
 
 pub(super) unsafe extern "C" fn byte_vec_push(buffer: &mut Vec<u8>, ptr: *const u8, len: usize) {
@@ -45,6 +48,17 @@ pub(super) unsafe extern "C" fn write_timestamp_to_byte_vec(
     let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
     let timestamp = Utc.timestamp_millis_opt(timestamp).unwrap();
     write!(buffer, "\"{}\"", timestamp.format(format)).unwrap();
+}
+
+pub(super) unsafe extern "C" fn write_time_to_byte_vec(
+    buffer: &mut Vec<u8>,
+    format_ptr: *const u8,
+    format_len: usize,
+    nanos: u64,
+) {
+    let format = unsafe { str_from_raw_parts(format_ptr, format_len) };
+    let time = NaiveTime::from_nanoseconds(nanos).unwrap();
+    write!(buffer, "\"{}\"", time.format(format)).unwrap();
 }
 
 macro_rules! write_primitives_to_byte_vec {

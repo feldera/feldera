@@ -149,6 +149,30 @@ impl Codegen {
                             &mut builder,
                         );
 
+                    // Time
+                    } else if column_ty.is_time() {
+                        let format = format.as_deref().unwrap();
+                        let (format_ptr, format_len) = ctx.import_string(format, &mut builder);
+
+                        // Parse the value from the csv
+                        let func =
+                            ctx.imports
+                                .get("csv_get_nullable_time", ctx.module, builder.func);
+                        let is_null = builder.call_fn(
+                            func,
+                            &[byte_record, csv_column, format_ptr, format_len, column_ptr],
+                        );
+
+                        // Set the nullness of the column
+                        set_column_null(
+                            is_null,
+                            row_column,
+                            place,
+                            MemFlags::trusted(),
+                            &layout,
+                            &mut builder,
+                        );
+
                     // Scalars
                     } else {
                         let intrinsic = match column_ty {
@@ -181,6 +205,7 @@ impl Codegen {
                             ColumnType::Decimal => todo!(),
 
                             ColumnType::Timestamp
+                            | ColumnType::Time
                             | ColumnType::Date
                             | ColumnType::String
                             | ColumnType::Unit
@@ -232,6 +257,7 @@ impl Codegen {
                         ColumnType::F64 => "csv_get_f64",
                         ColumnType::Date => "csv_get_date",
                         ColumnType::Timestamp => "csv_get_timestamp",
+                        ColumnType::Time => "csv_get_time",
                         ColumnType::String => "csv_get_str",
                         ColumnType::Decimal => todo!(),
                         ColumnType::Unit | ColumnType::Ptr => unreachable!(),
@@ -239,13 +265,15 @@ impl Codegen {
 
                     // Parse the value from the csv
                     let func = ctx.imports.get(intrinsic, ctx.module, builder.func);
-                    let parsed = if column_ty.is_date() || column_ty.is_timestamp() {
-                        let format = format.as_deref().unwrap();
-                        let (format_ptr, format_len) = ctx.import_string(format, &mut builder);
-                        builder.call_fn(func, &[byte_record, csv_column, format_ptr, format_len])
-                    } else {
-                        builder.call_fn(func, &[byte_record, csv_column])
-                    };
+                    let parsed =
+                        if column_ty.is_date() || column_ty.is_timestamp() || column_ty.is_time() {
+                            let format = format.as_deref().unwrap();
+                            let (format_ptr, format_len) = ctx.import_string(format, &mut builder);
+                            builder
+                                .call_fn(func, &[byte_record, csv_column, format_ptr, format_len])
+                        } else {
+                            builder.call_fn(func, &[byte_record, csv_column])
+                        };
 
                     // Store the value to the row
                     builder.ins().store(

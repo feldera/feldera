@@ -25,6 +25,8 @@ impl Codegen {
         let ptr_ty = self.module.isa().pointer_type();
         let func_id = self.create_function([ptr_ty; 2], Some(types::I8));
 
+        let mut imports = self.intrinsics.import(self.comment_writer.clone());
+
         self.set_comment_writer(
             &format!("{layout_id}_vtable_eq"),
             &format!(
@@ -176,8 +178,20 @@ impl Codegen {
                         | ColumnType::Isize
                         | ColumnType::Date
                         | ColumnType::Timestamp
-                        // Decimals are represented by a 128bit integer so bitwise equality should be correct
-                        | ColumnType::Decimal => builder.ins().icmp(IntCC::Equal, lhs, rhs),
+                        | ColumnType::Time => builder.ins().icmp(IntCC::Equal, lhs, rhs),
+
+                        // FIXME: Implement decimal equality within cranelift
+                        // https://github.com/paupino/rust-decimal/blob/master/src/ops/cmp.rs#L7
+                        // See also the comparison functions in
+                        // crates/dataflow-jit/src/codegen/mod.rs
+                        ColumnType::Decimal => {
+                            let (lhs_lo, lhs_hi) = builder.ins().isplit(lhs);
+                            let (rhs_lo, rhs_hi) = builder.ins().isplit(rhs);
+
+                            let decimal_eq =
+                                imports.get("decimal_eq", &mut self.module, builder.func);
+                            builder.call_fn(decimal_eq, &[lhs_lo, lhs_hi, rhs_lo, rhs_hi])
+                        }
 
                         // Compare floats
                         ColumnType::F32 | ColumnType::F64 => {
@@ -239,12 +253,19 @@ impl Codegen {
 
                             // Get pointers to both string's data
                             // TODO: Use `CodegenCtx::string_ptr()`
-                            let offset = builder.ins().iconst(ptr_ty, ThinStr::pointer_offset() as i64);
+                            let offset = builder
+                                .ins()
+                                .iconst(ptr_ty, ThinStr::pointer_offset() as i64);
                             let lhs_ptr = builder.ins().iadd(lhs, offset);
                             let rhs_ptr = builder.ins().iadd(rhs, offset);
 
                             // Compare the innards of the strings with a `memcmp()` call
-                            let comparison = builder.call_memcmp(self.module.isa().frontend_config(), lhs_ptr, rhs_ptr, lhs_len);
+                            let comparison = builder.call_memcmp(
+                                self.module.isa().frontend_config(),
+                                lhs_ptr,
+                                rhs_ptr,
+                                lhs_len,
+                            );
                             // `memcmp()` returns -1, 0 or 1 with 0 meaning the strings are equal
                             builder.ins().icmp_imm(IntCC::Equal, comparison, 0)
                         }
@@ -455,9 +476,8 @@ impl Codegen {
                         | ColumnType::U16
                         | ColumnType::U32
                         | ColumnType::U64
-                        | ColumnType::Usize => {
-                            builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs)
-                        }
+                        | ColumnType::Usize
+                        | ColumnType::Time => builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs),
 
                         ColumnType::I8
                         | ColumnType::I16
@@ -721,7 +741,8 @@ impl Codegen {
                         | ColumnType::U16
                         | ColumnType::U32
                         | ColumnType::U64
-                        | ColumnType::Usize => {
+                        | ColumnType::Usize
+                        | ColumnType::Time => {
                             let zero = builder.ins().iconst(types::I8, 0);
 
                             let less = builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs);
@@ -802,10 +823,10 @@ impl Codegen {
                                     let ordering = builder.ins().isub(lhs_le_rhs, lhs_ge_rhs);
                                     builder.ins().brif(
                                         ordering,
-                                        next_compare,
-                                        &[],
                                         return_block,
                                         &[ordering],
+                                        next_compare,
+                                        &[],
                                     );
                                 }
 
@@ -832,10 +853,10 @@ impl Codegen {
                                     let ordering = builder.ins().select(lhs_nan, rhs_nan, less);
                                     builder.ins().brif(
                                         ordering,
-                                        next_compare,
-                                        &[],
                                         return_block,
                                         &[ordering],
+                                        next_compare,
+                                        &[],
                                     );
                                 }
 
@@ -847,10 +868,10 @@ impl Codegen {
                                 let ordering = builder.ins().select(less, less_than, greater_than);
                                 builder.ins().brif(
                                     eq,
-                                    next_compare,
-                                    &[],
                                     return_block,
                                     &[ordering],
+                                    next_compare,
+                                    &[],
                                 );
                             }
                         }

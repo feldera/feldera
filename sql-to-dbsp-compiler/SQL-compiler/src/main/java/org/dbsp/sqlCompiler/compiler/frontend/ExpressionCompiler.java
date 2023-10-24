@@ -170,6 +170,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             } else if (type.is(DBSPTypeTime.class)) {
                 return new DBSPTimeLiteral(node, type, Objects.requireNonNull(
                         literal.getValueAs(TimeString.class)));
+            } else if (type.is(DBSPTypeBinary.class)) {
+                return new DBSPBinaryLiteral(node, type, literal.getValueAs(byte[].class));
             }
         } catch (BaseCompilerException ex) {
             throw ex;

@@ -263,6 +263,24 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPBinaryLiteral literal) {
+        if (literal.isNull)
+            return this.doNull(literal);
+        if (literal.mayBeNull())
+            this.builder.append("Some(");
+        this.builder.append("ByteArray::new(&vec!(")
+                .increase();
+        for (byte b: Objects.requireNonNull(literal.value)) {
+            this.builder.append(b & 0xff)
+                    .append(" as u8, ");
+        }
+        this.builder.decrease().append("))");
+        if (literal.mayBeNull())
+            this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPZSetLiteral literal) {
         this.builder.append("zset!(")
                 .increase();

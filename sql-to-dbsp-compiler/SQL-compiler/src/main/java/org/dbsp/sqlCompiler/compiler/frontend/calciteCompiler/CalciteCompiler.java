@@ -112,11 +112,11 @@ public class CalciteCompiler implements IWritesLogs {
     public final RelDataTypeFactory typeFactory;
     private final SqlToRelConverter.Config converterConfig;
     private final RewriteDivision astRewriter;
-    /**
-     * Perform additional type validation in top of the Calcite rules.
-     */
+    /** Perform additional type validation in top of the Calcite rules. */
     private final ValidateTypes validateTypes;
     private final IErrorReporter errorReporter;
+    /** If true the next view will be an output, otherwise it's just an intermediate result */
+    boolean generateOutputForNextView = true;
 
     /**
      * This class rewrites instances of the division operator in the SQL AST
@@ -186,6 +186,10 @@ public class CalciteCompiler implements IWritesLogs {
             // https://issues.apache.org/jira/browse/CALCITE-3394 may give a solution
             return false;
         }
+    }
+
+    public void generateOutputForNextView(boolean generate) {
+        this.generateOutputForNextView = generate;
     }
 
     /**
@@ -305,6 +309,7 @@ public class CalciteCompiler implements IWritesLogs {
         CalciteSchema rootSchema = CalciteSchema.createRootSchema(false, false);
         rootSchema.add(catalog.schemaName, this.catalog);
         // Register new types
+        rootSchema.add("BYTEA", factory -> factory.createSqlType(SqlTypeName.VARBINARY));
         rootSchema.add("DATETIME", factory -> factory.createSqlType(SqlTypeName.TIMESTAMP));
         rootSchema.add("INT2", factory -> factory.createSqlType(SqlTypeName.SMALLINT));
         rootSchema.add("INT8", factory -> factory.createSqlType(SqlTypeName.BIGINT));
@@ -836,7 +841,8 @@ public class CalciteCompiler implements IWritesLogs {
                         columns, cv.query, relRoot);
                 // From Calcite's point of view we treat this view just as another table.
                 this.catalog.addTable(viewName, view.getEmulatedTable());
-                outputs.add(new OutputViewDescription(view));
+                if (this.generateOutputForNextView)
+                    outputs.add(new OutputViewDescription(view));
                 return view;
             }
         }

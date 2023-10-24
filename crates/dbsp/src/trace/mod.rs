@@ -130,6 +130,21 @@ impl<T> DBWeight for T where T: DBData + MonoidValue {}
 pub trait DBTimestamp: DBData + Timestamp {}
 impl<T> DBTimestamp for T where T: DBData + Timestamp {}
 
+pub trait FilterFunc<V>: Fn(&V) -> bool {
+    fn fork(&self) -> Filter<V>;
+}
+
+impl<V, F> FilterFunc<V> for F
+where
+    F: Fn(&V) -> bool + Clone + 'static,
+{
+    fn fork(&self) -> Filter<V> {
+        Box::new(self.clone())
+    }
+}
+
+pub type Filter<V> = Box<dyn FilterFunc<V>>;
+
 /// A set of `(key, val, time, diff)` tuples that can be read and extended.
 ///
 /// `Trace` extends [`BatchReader`], most notably with [`insert`][Self::insert]
@@ -187,23 +202,32 @@ pub trait Trace: BatchReader {
     /// Returns the value of the dirty flag.
     fn dirty(&self) -> bool;
 
-    /// Informs the trace that values smaller than `lower_bound` are no longer
+    /// Informs the trace that keys that don't pass the filter are no longer
     /// used and can be removed from the trace.
     ///
-    /// The implementation is not required to remove truncated values instantly
-    /// or at all.  This method is just a hint that values below `lower_bound`
-    /// are no longer of interest to the consumer of the trace and can be
-    /// garbage collected.
+    /// The implementation is not required to remove truncated keys instantly
+    /// or at all.  This method is just a hint that keys that don't pass the
+    /// filter are no longer of interest to the consumer of the trace and
+    /// can be garbage collected.
     // This API is similar to `BatchReader::truncate_keys_below`, however we make
     // it a method of `trait Trace` rather than `trait BatchReader`.  The difference
     // is that a batch can truncate its keys instanly by simply moving an internal
     // pointer to the first remaining key.  However, there is no similar way to
-    // truncate values instantly, this can only be done as part of trace maintenance
-    // when either merging or compacting batches.
-    fn truncate_values_below(&mut self, lower_bound: &Self::Val);
+    // retain keys based on arbitrary predicates, this can only be done efficiently
+    // as part of trace maintenance when either merging or compacting batches.
+    fn retain_keys(&mut self, filter: Filter<Self::Key>);
 
-    /// Current lower value bound.
-    fn lower_value_bound(&self) -> &Option<Self::Val>;
+    /// Informs the trace that values that don't pass the filter are no longer
+    /// used and can be removed from the trace.
+    ///
+    /// The implementation is not required to remove truncated values instantly
+    /// or at all.  This method is just a hint that values that don't pass the
+    /// filter are no longer of interest to the consumer of the trace and
+    /// can be garbage collected.
+    fn retain_values(&mut self, filter: Filter<Self::Val>);
+
+    fn key_filter(&self) -> &Option<Filter<Self::Key>>;
+    fn value_filter(&self) -> &Option<Filter<Self::Val>>;
 }
 
 /// A set of `(key, value, time, diff)` tuples whose contents may be read in
@@ -371,7 +395,7 @@ where
     fn merge(&self, other: &Self) -> Self {
         let mut fuel = isize::max_value();
         let mut merger = Self::Merger::new_merger(self, other);
-        merger.work(self, other, &None, &mut fuel);
+        merger.work(self, other, &None, &None, &mut fuel);
         merger.done()
     }
 
@@ -470,7 +494,8 @@ where
         &mut self,
         source1: &Output,
         source2: &Output,
-        lower_val_bound: &Option<V>,
+        key_filter: &Option<Filter<K>>,
+        value_filter: &Option<Filter<V>>,
         fuel: &mut isize,
     );
 

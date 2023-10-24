@@ -95,7 +95,8 @@ const sidebars = {
         'sql/integer',
         'sql/float',
         'sql/decimal',
-        'sql/string',
+        'sql/string'
+        'sql/binary',
         'sql/array',
         'sql/datetime'
       ]

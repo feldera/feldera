@@ -21,8 +21,9 @@ use crate::{
     },
     row::{row_from_literal, Row, UninitRow},
     thin_str::ThinStrRef,
+    utils::TimeExt,
 };
-use chrono::{TimeZone, Utc};
+use chrono::{NaiveTime, TimeZone, Utc};
 use cranelift_module::FuncId;
 use csv::StringRecord;
 use dbsp::{
@@ -547,6 +548,76 @@ impl DbspCircuit {
         Ok(())
     }
 
+    pub fn append_json_map_input<R>(
+        &mut self,
+        target: NodeId,
+        key: DemandId,
+        value: DemandId,
+        json: R,
+    ) -> Result<(), Box<dyn error::Error>>
+    where
+        R: Read,
+    {
+        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
+
+        if let Some(input) = input {
+            let start = Instant::now();
+
+            let records = match *layout {
+                StreamLayout::Map(key_layout, value_layout) => {
+                    let (key_vtable, value_vtable) = unsafe {
+                        (
+                            &*self.jit.vtables()[&key_layout],
+                            &*self.jit.vtables()[&value_layout],
+                        )
+                    };
+                    let (deserialize_key, deserialize_value) = unsafe {
+                        (
+                            demand_function!(self, key, key_layout, DeserializeJsonFn),
+                            demand_function!(self, value, value_layout, DeserializeJsonFn),
+                        )
+                    };
+
+                    let mut batch = Vec::new();
+                    let stream = Deserializer::from_reader(json).into_iter::<Value>();
+                    for json in stream {
+                        let json = json?;
+
+                        let (mut key, mut value) =
+                            (UninitRow::new(key_vtable), UninitRow::new(value_vtable));
+                        unsafe {
+                            call_deserialize_fn(deserialize_key, key.as_mut_ptr(), &json)?;
+                            call_deserialize_fn(deserialize_value, value.as_mut_ptr(), &json)?;
+                        }
+
+                        let (key, value) = unsafe { (key.assume_init(), value.assume_init()) };
+
+                        batch.push((key, (value, 1)));
+                    }
+
+                    let records = batch.len();
+                    input.as_indexed_zset_mut().unwrap().append(&mut batch);
+                    records
+                }
+
+                StreamLayout::Set(_) => panic!(),
+            };
+
+            let elapsed = start.elapsed();
+            // TODO: Log the source's name
+            tracing::info!("ingested {records} records for {target} in {elapsed:#?}");
+
+        // If the source is unused, do nothing
+        } else {
+            // TODO: Log the source's name
+            tracing::info!("appended json to source {target} which is unused, doing nothing");
+        }
+
+        Ok(())
+    }
+
     pub fn append_json_record(
         &mut self,
         target: NodeId,
@@ -630,6 +701,82 @@ impl DbspCircuit {
                 }
 
                 StreamLayout::Map(..) => todo!(),
+            };
+
+            let elapsed = start.elapsed();
+            // TODO: Log the source's name
+            tracing::info!("ingested {records} records for {target} in {elapsed:#?}");
+
+        // If the source is unused, do nothing
+        } else {
+            // TODO: Log the source's name
+            tracing::info!("appended csv file to source {target} which is unused, doing nothing");
+        }
+    }
+
+    pub fn append_csv_map_input(
+        &mut self,
+        target: NodeId,
+        key_demand: DemandId,
+        value_demand: DemandId,
+        path: &Path,
+    ) {
+        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
+            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
+        });
+
+        if let Some(input) = input {
+            let mut csv = csv::ReaderBuilder::new()
+                .has_headers(false)
+                .from_path(path)
+                .unwrap();
+
+            let start = Instant::now();
+
+            let records = match *layout {
+                StreamLayout::Map(key_layout, value_layout) => {
+                    let (key_vtable, value_vtable) = unsafe {
+                        (
+                            &*self.jit.vtables()[&key_layout],
+                            &*self.jit.vtables()[&value_layout],
+                        )
+                    };
+
+                    let (deserialize_key, deserialize_value) = unsafe {
+                        (
+                            demand_function!(
+                                self,
+                                key_demand,
+                                key_layout,
+                                unsafe extern "C" fn(*mut u8, *const StringRecord),
+                            ),
+                            demand_function!(
+                                self,
+                                value_demand,
+                                value_layout,
+                                unsafe extern "C" fn(*mut u8, *const StringRecord),
+                            ),
+                        )
+                    };
+
+                    let (mut batch, mut buf) = (Vec::new(), StringRecord::new());
+                    while csv.read_record(&mut buf).unwrap() {
+                        let (mut key, mut value) =
+                            (UninitRow::new(key_vtable), UninitRow::new(value_vtable));
+
+                        unsafe {
+                            deserialize_key(key.as_mut_ptr(), &buf);
+                            deserialize_value(value.as_mut_ptr(), &buf);
+
+                            batch.push((key.assume_init(), (value.assume_init(), 1)));
+                        }
+                    }
+
+                    let records = batch.len();
+                    input.as_indexed_zset_mut().unwrap().append(&mut batch);
+                    records
+                }
+                StreamLayout::Set(_) => todo!(),
             };
 
             let elapsed = start.elapsed();
@@ -846,6 +993,9 @@ unsafe fn constant_from_column(
                 .unwrap()
                 .naive_utc(),
         ),
+        ColumnType::Time => {
+            Constant::Time(NaiveTime::from_nanoseconds(ptr.cast::<u64>().read()).unwrap())
+        }
 
         ColumnType::String => Constant::String(ptr.cast::<ThinStrRef>().read().to_string()),
 

@@ -5,9 +5,12 @@ use crate::{
         GlobalNodeId, OwnershipPreference, Scope,
     },
     circuit_cache_key,
-    trace::{spine_fueled::Spine, Batch, Trace},
+    trace::{Batch, Trace},
     Circuit, Runtime, Stream,
 };
+// Import `spine_fueled::Spine`` here instead of `trace::Spine`` because it is
+// strictly used for non-persistent data-communication between threads.
+use crate::trace::spine_fueled::Spine;
 use arc_swap::ArcSwap;
 use crossbeam::atomic::AtomicConsume;
 use crossbeam_utils::CachePadded;

@@ -23,5 +23,6 @@
     },
     "editor.formatOnSave": true,
     "files.trimTrailingWhitespace": true,
-    "prettier.requireConfig": true
+    "prettier.requireConfig": true,
+    "rust-analyzer.showUnlinkedFileNotification": false
 }

@@ -45,8 +45,10 @@ import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -76,7 +78,7 @@ public class Simplify extends InnerRewriteVisitor {
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = expression;
+        DBSPExpression result = source.is_null();
         if (!source.getType().mayBeNull)
             result = new DBSPBoolLiteral(false);
         this.map(expression, result);
@@ -125,12 +127,33 @@ public class Simplify extends InnerRewriteVisitor {
                         // on parse error return 0.
                         result = new DBSPDecimalLiteral(type, BigDecimal.ZERO);
                     }
+                } else if (type.is(DBSPTypeString.class)) {
+                    DBSPTypeString typeString = type.to(DBSPTypeString.class);
+                    if (typeString.precision == DBSPTypeString.UNLIMITED_PRECISION) {
+                        result = lit;
+                    } else {
+                        String value = str.value.substring(0, Math.min(str.value.length(), typeString.precision));
+                        result = new DBSPStringLiteral(value, str.charset);
+                    }
                 }
             } else if (lit.is(DBSPI32Literal.class)) {
                 DBSPI32Literal i = lit.to(DBSPI32Literal.class);
                 Objects.requireNonNull(i.value);
                 if (type.is(DBSPTypeDecimal.class)) {
                     result = new DBSPDecimalLiteral(source.getNode(), type, new BigDecimal(i.value));
+                }
+            } else if (lit.is(DBSPDecimalLiteral.class)) {
+                DBSPDecimalLiteral dec = lit.to(DBSPDecimalLiteral.class);
+                BigDecimal value = Objects.requireNonNull(dec.value);
+                if (type.is(DBSPTypeDecimal.class)) {
+                    // must adjust precision and scale
+                    DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
+                    value = value.setScale(decType.scale, RoundingMode.DOWN);
+                    if (value.precision() > decType.precision) {
+                        throw new IllegalArgumentException("Value " + value +
+                                " cannot be represented with precision " + decType.precision);
+                    }
+                    result = new DBSPDecimalLiteral(source.getNode(), type, value);
                 }
             }
         }

@@ -3,6 +3,7 @@
 //! So far, only methods/traits used in tests have been implemented.
 #![allow(clippy::type_complexity)]
 
+use super::Filter;
 use super::{
     Activator, AntichainRef, Batch, BatchReader, Batcher, Builder, Consumer, Cursor, Merger, Trace,
     ValueConsumer,
@@ -23,6 +24,7 @@ use size_of::SizeOf;
 use std::{
     cmp::max,
     collections::{BTreeMap, BTreeSet},
+    fmt::{self, Debug},
     marker::PhantomData,
 };
 
@@ -162,15 +164,23 @@ where
     assert_eq!(tuples1, batch_to_tuples_reverse_keys(trace1));
     assert_eq!(tuples1, batch_to_tuples_reverse_keys_vals(trace1));
 
-    if let Some(bound) = trace1.lower_value_bound() {
-        tuples1.retain(|((_k, v, _t), _r)| v >= bound);
+    if let Some(filter) = trace1.value_filter() {
+        tuples1.retain(|((_k, v, _t), _r)| filter(v));
+    }
+
+    if let Some(filter) = trace1.key_filter() {
+        tuples1.retain(|((k, _v, _t), _r)| filter(k));
     }
 
     let mut tuples2 = batch_to_tuples(trace2);
     assert_eq!(tuples2, batch_to_tuples_reverse_vals(trace2));
 
-    if let Some(bound) = trace2.lower_value_bound() {
-        tuples2.retain(|((_k, v, _t), _r)| v >= bound);
+    if let Some(filter) = trace2.value_filter() {
+        tuples2.retain(|((_k, v, _t), _r)| filter(v));
+    }
+
+    if let Some(filter) = trace2.key_filter() {
+        tuples2.retain(|((k, _v, _t), _r)| filter(k));
     }
 
     assert_eq!(tuples1, tuples2);
@@ -186,6 +196,7 @@ where
         .into_iter()
         .map(|((k, v, _t), _r)| (k, v))
         .collect::<Vec<_>>();
+
     tuples.dedup();
 
     // Randomly sample 1/3 of the pairs.
@@ -248,7 +259,7 @@ where
 }
 
 /// Inefficient but simple batch implementation as a B-tree map.
-#[derive(Clone, Debug, PartialEq, Eq, SizeOf)]
+#[derive(SizeOf)]
 pub struct TestBatch<K, V, T, R>
 where
     K: Ord,
@@ -257,7 +268,56 @@ where
 {
     data: BTreeMap<(K, V, T), R>,
     lower_key_bound: Option<K>,
-    lower_val_bound: Option<V>,
+    #[size_of(skip)]
+    key_filter: Option<Filter<K>>,
+    #[size_of(skip)]
+    value_filter: Option<Filter<V>>,
+}
+
+impl<K, V, T, R> Debug for TestBatch<K, V, T, R>
+where
+    K: Ord + Debug,
+    V: Ord + Debug,
+    T: Ord + Debug,
+    R: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let key_filter = if self.key_filter.is_none() {
+            "not set".to_string()
+        } else {
+            "set".to_string()
+        };
+
+        let value_filter = if self.value_filter.is_none() {
+            "not set".to_string()
+        } else {
+            "set".to_string()
+        };
+
+        f.debug_struct("TestBatch")
+            .field("data", &self.data)
+            .field("lower_key_bound", &self.lower_key_bound)
+            .field("key_filter", &key_filter)
+            .field("value_filter", &value_filter)
+            .finish()
+    }
+}
+
+impl<K, V, T, R> Clone for TestBatch<K, V, T, R>
+where
+    K: Ord + Clone,
+    V: Ord + Clone,
+    T: Ord + Clone,
+    R: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            lower_key_bound: self.lower_key_bound.clone(),
+            key_filter: self.key_filter.as_ref().map(|filter| filter.fork()),
+            value_filter: self.value_filter.as_ref().map(|filter| filter.fork()),
+        }
+    }
 }
 
 impl<K, V, T, R> Archive for TestBatch<K, V, T, R>
@@ -336,7 +396,8 @@ where
         Self {
             data,
             lower_key_bound: None,
-            lower_val_bound: None,
+            key_filter: None,
+            value_filter: None,
         }
     }
 }
@@ -521,7 +582,8 @@ where
         &mut self,
         _source1: &TestBatch<K, V, T, R>,
         _source2: &TestBatch<K, V, T, R>,
-        _lower_val_bound: &Option<V>,
+        _key_filter: &Option<Filter<K>>,
+        _value_filter: &Option<Filter<V>>,
         _fuel: &mut isize,
     ) {
     }
@@ -874,7 +936,8 @@ where
         Self {
             data: BTreeMap::new(),
             lower_key_bound: None,
-            lower_val_bound: None,
+            key_filter: None,
+            value_filter: None,
         }
     }
 
@@ -896,8 +959,11 @@ where
         if let Some(bound) = &self.lower_key_bound {
             batch.truncate_keys_below(bound);
         }
-        if let Some(bound) = &self.lower_val_bound {
-            batch.truncate_values_below(bound);
+        if let Some(filter) = &self.value_filter {
+            batch.retain_values(filter.fork());
+        }
+        if let Some(filter) = &self.key_filter {
+            batch.retain_keys(filter.fork());
         }
 
         self.data = self.merge(&batch).data;
@@ -909,19 +975,22 @@ where
         todo!()
     }
 
-    fn truncate_values_below(&mut self, lower_bound: &Self::Val) {
-        let bound = if let Some(bound) = &self.lower_val_bound {
-            max(bound, lower_bound).clone()
-        } else {
-            lower_bound.clone()
-        };
-
-        self.data.retain(|(_k, v, _t), _r| v >= &bound);
-        self.lower_val_bound = Some(bound);
+    fn retain_keys(&mut self, filter: Filter<Self::Key>) {
+        self.data.retain(|(k, _v, _t), _r| filter(k));
+        self.key_filter = Some(filter);
     }
 
-    fn lower_value_bound(&self) -> &Option<Self::Val> {
-        &self.lower_val_bound
+    fn retain_values(&mut self, filter: Filter<Self::Val>) {
+        self.data.retain(|(_k, v, _t), _r| filter(v));
+        self.value_filter = Some(filter);
+    }
+
+    fn key_filter(&self) -> &Option<Filter<Self::Key>> {
+        &self.key_filter
+    }
+
+    fn value_filter(&self) -> &Option<Filter<Self::Val>> {
+        &self.value_filter
     }
 }
 

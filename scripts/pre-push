@@ -3,7 +3,7 @@
 # before pushing changes to github.  This will avoid CI failures due to clippy
 # lints and formatting issues.
 
-echo "Checking Rust rules prior to push.  To run this check by hand invoke 'tools/pre-push'"
+echo "Checking Rust rules prior to push.  To run this check by hand invoke 'scripts/pre-push'"
 
 set -ex
 
@@ -11,4 +11,5 @@ set -ex
 RUSTUP_TOOLCHAIN=nightly cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 
-RUSTDOCFLAGS="-Dwarnings" cargo doc --workspace
+RUSTDOCFLAGS="-Dwarnings" cargo doc --workspace --no-deps
+

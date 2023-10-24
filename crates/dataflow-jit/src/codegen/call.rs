@@ -108,6 +108,12 @@ impl CodegenCtx<'_> {
             "dbsp.date.iso_day_of_week" => self.date_iso_day_of_week(expr_id, call, builder),
             "dbsp.date.day_of_year" => self.date_day_of_year(expr_id, call, builder),
 
+            "dbsp.time.hour" => self.time_hour(expr_id, call, builder),
+            "dbsp.time.minute" => self.time_minute(expr_id, call, builder),
+            "dbsp.time.second" => self.time_second(expr_id, call, builder),
+            "dbsp.time.millisecond" => self.time_millisecond(expr_id, call, builder),
+            "dbsp.time.microsecond" => self.time_microsecond(expr_id, call, builder),
+
             // Date functions that always return zero
             function @ ("dbsp.date.hour"
             | "dbsp.date.minute"
@@ -120,6 +126,15 @@ impl CodegenCtx<'_> {
             "dbsp.math.is_power_of_two" => self.math_is_power_of_two(expr_id, call, builder),
             "dbsp.math.is_sign_positive" => self.math_is_is_sign_positive(expr_id, call, builder),
             "dbsp.math.is_sign_negative" => self.math_is_is_sign_negative(expr_id, call, builder),
+
+            "dbsp.math.sqrt"
+                if call.arg_types()[0]
+                    .as_scalar()
+                    .map_or(false, ColumnType::is_decimal) =>
+            {
+                let sqrt = self.decimal_sqrt(self.value(call.args()[0]), builder);
+                self.add_expr(expr_id, sqrt, ColumnType::Decimal, None);
+            }
 
             trig if TRIG_INTRINSICS.contains(&trig) => {
                 self.trig_intrinsic(expr_id, call, trig, builder)
@@ -639,6 +654,7 @@ impl CodegenCtx<'_> {
             | ColumnType::F64
             | ColumnType::Date
             | ColumnType::Timestamp
+            | ColumnType::Time
             | ColumnType::Decimal) => {
                 let intrinsic = match ty {
                     ColumnType::U8 => "write_i8_to_string",
@@ -667,6 +683,7 @@ impl CodegenCtx<'_> {
                     }
                     ColumnType::Date => "write_date_to_string",
                     ColumnType::Timestamp => "write_timestamp_to_string",
+                    ColumnType::Time => "write_time_to_string",
 
                     ColumnType::Decimal
                     | ColumnType::Bool
@@ -1305,10 +1322,17 @@ impl CodegenCtx<'_> {
                     builder,
                 );
             }
-
             ColumnType::Timestamp => {
                 self.parse_date_or_timestamp_from_str(
                     "parse_timestamp_from_str",
+                    expr_id,
+                    call,
+                    builder,
+                );
+            }
+            ColumnType::Time => {
+                self.parse_date_or_timestamp_from_str(
+                    "parse_time_from_str",
                     expr_id,
                     call,
                     builder,
@@ -1503,4 +1527,40 @@ date_intrinsics! {
     day_of_week,
     iso_day_of_week,
     day_of_year,
+}
+
+macro_rules! time_intrinsics {
+    ($($name:ident),+ $(,)?) => {
+        impl CodegenCtx<'_> {
+            paste::paste! {
+                $(
+                    fn [<time_ $name>](&mut self, expr_id: ExprId, call: &Call, builder: &mut FunctionBuilder<'_>) {
+                        let time = self.value(call.args()[0]);
+
+                        let intrinsic = self
+                            .imports
+                            .get(stringify!([<time_ $name>]), self.module, builder.func);
+                        let value = builder.call_fn(intrinsic, &[time]);
+                        self.add_expr(expr_id, value, ColumnType::U32, None);
+
+                        if let Some(writer) = self.comment_writer.as_deref() {
+                            let inst = builder.value_def(value);
+                            writer.borrow_mut().add_comment(
+                                inst,
+                                format!("call @dbsp.time.{}({time})", stringify!($name)),
+                            );
+                        }
+                    }
+                )+
+            }
+        }
+    };
+}
+
+time_intrinsics! {
+    hour,
+    minute,
+    second,
+    millisecond,
+    microsecond,
 }

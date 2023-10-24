@@ -33,7 +33,9 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "CREATE TABLE TEXT_TBL (f1 text);\n" +
                 "INSERT INTO TEXT_TBL VALUES\n" +
                 "  ('doh!'),\n" +
-                "  ('hi de ho neighbor');";
+                "  ('hi de ho neighbor');\n" +
+                // "CREATE TABLE byteatest (a bytea PRIMARY KEY, b int);\n"
+                "";
         compiler.compileStatements(data);
     }
 
@@ -109,6 +111,25 @@ public class PostgresStringTests extends PostgresBaseTest {
                 " ab\n" +
                 " abcd\n" +
                 " abcd");
+    }
+
+    @Test
+    public void testBinary() {
+        this.q("SELECT x'DeAdBeEf';\n" +
+                "   bytea    \n" +
+                "------------\n" +
+                " deadbeef");
+
+    }
+
+    @Test
+    public void invalidDigits() {
+        this.shouldFail("SELECT x'A b'",
+                "Binary literal string must contain only characters");
+        this.shouldFail("SELECT x'Ax'",
+                "Binary literal string must contain an even number of hexits");
+        this.shouldFail("SELECT x'A'",
+                "Binary literal string must contain an even number of hexits");
     }
 
     @Test

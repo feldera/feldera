@@ -8,9 +8,12 @@ use crate::{
     circuit::GlobalNodeId,
     circuit_cache_key, default_hash,
     operator::communication::exchange::new_exchange_operators,
-    trace::{cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace},
+    trace::{cursor::Cursor, Batch, BatchReader, Builder, Trace},
     Circuit, Runtime, Stream,
 };
+// Import `spine_fueled::Spine` here instead of `trace::Spine` because it is
+// strictly used for non-persistent data-communication between threads.
+use crate::trace::spine_fueled::Spine;
 use std::{hash::Hash, panic::Location};
 
 circuit_cache_key!(ShardId<C, D>((GlobalNodeId, ShardingPolicy) => Stream<C, D>));

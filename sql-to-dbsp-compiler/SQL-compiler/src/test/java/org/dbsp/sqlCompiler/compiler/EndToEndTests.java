@@ -132,6 +132,14 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void testAbs() {
+        String query = "SELECT ABS(T.COL2) FROM T";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(e0.fields[1]),
+                new DBSPTupleExpression(e1.fields[1])));
+    }
+
+    @Test
     public void testNullableCastCompare() {
         String query = "SELECT T.COL5 > T.COL2 FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
@@ -683,6 +691,13 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
                         new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
+    }
+
+    @Test
+    public void testByteArray() {
+        String query = "SELECT x'012345ab'";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(new DBSPBinaryLiteral(new byte[]{ 0x01, 0x23, 0x45, (byte)0xAB }))));
     }
 
     @Test

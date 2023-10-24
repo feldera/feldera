@@ -241,11 +241,29 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Merge
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
         self.vals.extend_from_slice(&other.vals[lower..upper]);
     }
+
+    fn copy_range_retain_keys<'a, F>(
+        &mut self,
+        other: &'a Self::Trie,
+        lower: usize,
+        upper: usize,
+        filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
+        self.vals.reserve(upper - lower);
+        for val in other.vals[lower..upper].iter() {
+            if filter(&val.0) {
+                self.vals.push(val.clone());
+            }
+        }
+    }
+
     fn push_merge<'a>(
         &'a mut self,
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
-    ) -> usize {
+    ) {
         let trie1 = cursor1.storage;
         let trie2 = cursor2.storage;
         let mut lower1 = cursor1.pos as usize;
@@ -305,8 +323,81 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Merge
         if lower2 < upper2 {
             <OrderedLeafBuilder<K, R> as MergeBuilder>::copy_range(self, trie2, lower2, upper2);
         }
+    }
 
-        self.vals.len()
+    fn push_merge_retain_keys<'a, F>(
+        &'a mut self,
+        cursor1: <Self::Trie as Trie>::Cursor<'a>,
+        cursor2: <Self::Trie as Trie>::Cursor<'a>,
+        filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
+        let trie1 = cursor1.storage;
+        let trie2 = cursor2.storage;
+        let mut lower1 = cursor1.pos as usize;
+        let upper1 = cursor1.bounds.1;
+        let mut lower2 = cursor2.pos as usize;
+        let upper2 = cursor2.bounds.1;
+
+        self.vals.reserve((upper1 - lower1) + (upper2 - lower2));
+
+        // while both mergees are still active
+        while lower1 < upper1 && lower2 < upper2 {
+            match trie1.vals[lower1].0.cmp(&trie2.vals[lower2].0) {
+                Ordering::Less => {
+                    // determine how far we can advance lower1 until we reach/pass lower2
+                    let step = 1 + advance(&trie1.vals[(1 + lower1)..upper1], |x| {
+                        x.0 < trie2.vals[lower2].0
+                    });
+                    let step = min(step, 1000);
+                    <OrderedLeafBuilder<K, R> as MergeBuilder>::copy_range_retain_keys(
+                        self,
+                        trie1,
+                        lower1,
+                        lower1 + step,
+                        filter,
+                    );
+                    lower1 += step;
+                }
+                Ordering::Equal => {
+                    let mut sum = trie1.vals[lower1].1.clone();
+                    sum.add_assign_by_ref(&trie2.vals[lower2].1);
+                    if !sum.is_zero() && filter(&trie1.vals[lower1].0) {
+                        self.vals.push((trie1.vals[lower1].0.clone(), sum));
+                    }
+
+                    lower1 += 1;
+                    lower2 += 1;
+                }
+                Ordering::Greater => {
+                    // determine how far we can advance lower2 until we reach/pass lower1
+                    let step = 1 + advance(&trie2.vals[(1 + lower2)..upper2], |x| {
+                        x.0 < trie1.vals[lower1].0
+                    });
+                    let step = min(step, 1000);
+                    <OrderedLeafBuilder<K, R> as MergeBuilder>::copy_range_retain_keys(
+                        self,
+                        trie2,
+                        lower2,
+                        lower2 + step,
+                        filter,
+                    );
+                    lower2 += step;
+                }
+            }
+        }
+
+        if lower1 < upper1 {
+            <OrderedLeafBuilder<K, R> as MergeBuilder>::copy_range_retain_keys(
+                self, trie1, lower1, upper1, filter,
+            );
+        }
+        if lower2 < upper2 {
+            <OrderedLeafBuilder<K, R> as MergeBuilder>::copy_range_retain_keys(
+                self, trie2, lower2, upper2, filter,
+            );
+        }
     }
 }
 

@@ -27,7 +27,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.*;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.*;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -38,12 +38,6 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ir.instructions.JITZSetLiteral;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.operators.*;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.types.*;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateMulWeight;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandClone;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveWeightType;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPasses;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
@@ -96,6 +90,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
 
     public IRTransform normalizer(boolean simpleParameters) {
         InnerPasses passes = new InnerPasses();
+        passes.add(new EliminateFunctions(this.errorReporter));
         passes.add(new ExpandClone(this.errorReporter));
         passes.add(new BetaReduction(this.errorReporter));
         passes.add(new Simplify(this.errorReporter));

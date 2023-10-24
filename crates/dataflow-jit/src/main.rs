@@ -62,8 +62,22 @@ struct Input {
 
 #[derive(Debug, Deserialize)]
 enum InputKind {
-    Json(JsonDeserConfig),
-    Csv(Vec<(usize, usize, Option<String>)>),
+    Json(JsonInput),
+    Csv(CsvInput),
+}
+
+#[derive(Debug, Deserialize)]
+enum JsonInput {
+    Set(JsonDeserConfig),
+    Map(JsonDeserConfig, JsonDeserConfig),
+}
+
+type CsvConfig = Vec<(usize, usize, Option<String>)>;
+
+#[derive(Debug, Deserialize)]
+enum CsvInput {
+    Set(CsvConfig),
+    Map(CsvConfig, CsvConfig),
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,8 +92,13 @@ enum OutputKind {
 }
 
 enum Format {
-    Json(DemandId),
-    Csv(DemandId),
+    Json(FormatDemands),
+    Csv(FormatDemands),
+}
+
+enum FormatDemands {
+    Set(DemandId),
+    Map(DemandId, DemandId),
 }
 
 fn run(program: &Path, config: &Path) -> ExitCode {
@@ -98,25 +117,49 @@ fn run(program: &Path, config: &Path) -> ExitCode {
             graph.nodes()[&node]
                 .as_source()
                 .and_then(|source| source.name())
-                .map(|source| (source.to_owned(), (node, layout.unwrap_set())))
+                .map(|source| (source.to_owned(), (node, layout)))
         })
         .collect();
 
     let (mut demands, mut inputs) = (Demands::new(), Vec::with_capacity(config.inputs.len()));
     for (name, input) in config.inputs {
-        let (node, layout) = if let Some((node, layout)) = source_names.get(&name) {
-            (node, *layout)
+        let (node, layout) = if let Some(&(node, layout)) = source_names.get(&name) {
+            (node, layout)
         } else {
             // Allow specifying unused inputs
             continue;
         };
         let format = match input.kind {
-            InputKind::Json(mut mappings) => {
-                // Correct the layout of `mappings`
-                mappings.layout = layout;
-                Format::Json(demands.add_json_deserialize(mappings))
+            InputKind::Json(input) => {
+                match input {
+                    JsonInput::Set(mut key) => {
+                        // Correct the layout of `key`
+                        key.layout = layout.unwrap_set();
+                        Format::Json(FormatDemands::Set(demands.add_json_deserialize(key)))
+                    }
+
+                    JsonInput::Map(mut key, mut value) => {
+                        // Correct the layouts of `key` and `value`
+                        (key.layout, value.layout) = layout.unwrap_map();
+                        Format::Json(FormatDemands::Map(
+                            demands.add_json_deserialize(key),
+                            demands.add_json_deserialize(value),
+                        ))
+                    }
+                }
             }
-            InputKind::Csv(mappings) => Format::Csv(demands.add_csv_deserialize(layout, mappings)),
+            InputKind::Csv(input) => match input {
+                CsvInput::Set(key) => Format::Csv(FormatDemands::Set(
+                    demands.add_csv_deserialize(layout.unwrap_set(), key),
+                )),
+                CsvInput::Map(key, value) => {
+                    let (key_layout, value_layout) = layout.unwrap_map();
+                    Format::Csv(FormatDemands::Map(
+                        demands.add_csv_deserialize(key_layout, key),
+                        demands.add_csv_deserialize(value_layout, value),
+                    ))
+                }
+            },
         };
 
         inputs.push((node, input.file, format));
@@ -140,7 +183,7 @@ fn run(program: &Path, config: &Path) -> ExitCode {
                 OutputKind::Json(mut mappings) => {
                     // Correct the layout of `mappings`
                     mappings.layout = layout;
-                    Format::Json(demands.add_json_serialize(mappings))
+                    Format::Json(FormatDemands::Set(demands.add_json_serialize(mappings)))
                 }
             };
 
@@ -163,12 +206,25 @@ fn run(program: &Path, config: &Path) -> ExitCode {
     for (target, file, format) in inputs {
         match format {
             Format::Json(demand) => {
-                // TODO: Create & append? Make it configurable?
+                // TODO: Create & append to file? Make it configurable?
                 let file = BufReader::new(File::open(file).unwrap());
-                circuit.append_json_input(*target, demand, file).unwrap();
+
+                match demand {
+                    FormatDemands::Set(key) => {
+                        circuit.append_json_input(target, key, file).unwrap()
+                    }
+                    FormatDemands::Map(key, value) => circuit
+                        .append_json_map_input(target, key, value, file)
+                        .unwrap(),
+                }
             }
 
-            Format::Csv(demand) => circuit.append_csv_input(*target, demand, &file),
+            Format::Csv(demand) => match demand {
+                FormatDemands::Set(key) => circuit.append_csv_input(target, key, &file),
+                FormatDemands::Map(key, value) => {
+                    circuit.append_csv_map_input(target, key, value, &file)
+                }
+            },
         }
     }
 
@@ -181,14 +237,13 @@ fn run(program: &Path, config: &Path) -> ExitCode {
     let mut buf = Vec::new();
     for (target, file, format) in outputs {
         match format {
-            Format::Json(demand) => {
+            Format::Json(FormatDemands::Set(demand)) => {
                 let mut file = BufWriter::new(File::create(file).unwrap());
                 circuit
                     .consolidate_json_output(target, demand, &mut buf, &mut file)
                     .unwrap();
             }
-
-            Format::Csv(_demand) => unimplemented!(),
+            Format::Json(FormatDemands::Map(..)) | Format::Csv(_) => unimplemented!(),
         }
     }
 

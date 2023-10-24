@@ -134,15 +134,36 @@ pub trait MergeBuilder: Builder {
     /// The number of keys pushed to the builder so far.
     fn keys(&self) -> usize;
 
-    /// Copies sub-collections of `other` into this collection.
+    /// Copy a range of `other` into this collection.
     fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize);
+
+    /// Copy a range of `other` into this collection, only retaining
+    /// entries whose keys satisfy the `filter` condition.
+    fn copy_range_retain_keys<'a, F>(
+        &mut self,
+        other: &'a Self::Trie,
+        lower: usize,
+        upper: usize,
+        filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool;
 
     /// Merges two sub-collections into one sub-collection.
     fn push_merge<'a>(
         &'a mut self,
         other1: <Self::Trie as Trie>::Cursor<'a>,
         other2: <Self::Trie as Trie>::Cursor<'a>,
-    ) -> usize;
+    );
+
+    /// Merges two sub-collections into one sub-collection, only
+    /// retaining entries whose keys satisfy the `filter` condition.
+    fn push_merge_retain_keys<'a, F>(
+        &'a mut self,
+        other1: <Self::Trie as Trie>::Cursor<'a>,
+        other2: <Self::Trie as Trie>::Cursor<'a>,
+        filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool;
 }
 
 /// A type used to assemble collections from ordered sequences of tuples.
@@ -239,6 +260,7 @@ pub trait Cursor<'s> {
 /// where huge batches do not occur to reduce metadata size.
 pub trait OrdOffset:
     Copy
+    + Debug
     + PartialEq
     + Add<Output = Self>
     + Sub<Output = Self>
@@ -258,6 +280,7 @@ pub trait OrdOffset:
 impl<O> OrdOffset for O
 where
     O: Copy
+        + Debug
         + PartialEq
         + Add<Output = Self>
         + Sub<Output = Self>
@@ -324,12 +347,32 @@ impl MergeBuilder for () {
 
     fn copy_range(&mut self, _other: &Self::Trie, _lower: usize, _upper: usize) {}
 
+    fn copy_range_retain_keys<'a, F>(
+        &mut self,
+        _other: &'a Self::Trie,
+        _lower: usize,
+        _upper: usize,
+        _filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
+    }
+
     fn push_merge(
         &mut self,
         _other1: <Self::Trie as Trie>::Cursor<'static>,
         _other2: <Self::Trie as Trie>::Cursor<'static>,
-    ) -> usize {
-        0
+    ) {
+    }
+
+    fn push_merge_retain_keys<'a, F>(
+        &mut self,
+        _other1: <Self::Trie as Trie>::Cursor<'static>,
+        _other2: <Self::Trie as Trie>::Cursor<'static>,
+        _filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
     }
 }
 

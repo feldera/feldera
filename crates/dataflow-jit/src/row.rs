@@ -4,7 +4,7 @@ use crate::{
         literal::{NullableConstant, RowLiteral},
         Constant,
     },
-    utils::NativeRepr,
+    utils::{NativeRepr, TimeExt},
     ThinStr,
 };
 use chrono::NaiveTime;
@@ -455,6 +455,7 @@ unsafe fn write_constant_to(constant: &Constant, ptr: *mut u8) {
             .cast::<i32>()
             .write((date.and_time(NaiveTime::MIN).timestamp_millis() / (86400 * 1000)) as i32),
         Constant::Timestamp(timestamp) => ptr.cast::<i64>().write(timestamp.timestamp_millis()),
+        Constant::Time(time) => ptr.cast::<u64>().write(time.to_nanoseconds()),
 
         Constant::Decimal(decimal) => ptr.cast::<u128>().write(decimal.to_repr()),
     }

@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+pub mod binary;
 pub mod casts;
 pub mod geopoint;
 pub mod interval;

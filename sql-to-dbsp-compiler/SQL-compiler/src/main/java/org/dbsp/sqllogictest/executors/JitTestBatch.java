@@ -46,9 +46,9 @@ public class JitTestBatch extends TestBatch {
     }
 
     @Override
-    public void prepareInputs(List<SltSqlStatement> inputAndViewPreparation) {
+    public <T extends SltSqlStatement> void prepareInputs(Iterable<T> inputAndViewPreparation) {
         this.compiler.generateOutputForNextView(false);
-        for (SltSqlStatement statement : inputAndViewPreparation) {
+        for (T statement : inputAndViewPreparation) {
             String stat = statement.statement;
             this.compiler.compileStatement(stat, stat);
             this.compiler.throwIfErrorsOccurred();

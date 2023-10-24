@@ -120,7 +120,7 @@ def prepare(args=[]):
             "buffer.flush.time": "1",
             # Additionally, we need to set the Kafka poll interval:
             # https://github.com/snowflakedb/snowflake-kafka-connector/issues/721
-            "max.poll.interval.ms": "1000",
+            "max.poll.interval.ms": "10000",
             "buffer.count.records": "10000",
         },
     }
@@ -238,7 +238,7 @@ def verify(dbsp_url, pipeline: DBSPPipelineConfig):
         if len(vendors) > 0:
             print(f"found {len(vendors)} vendors")
             break
-        if time.time() - start > 140:
+        if time.time() - start > 200:
             raise Exception(f"Timeout waiting for data ingest into Snowflake")
         print("Waiting for Snowlfake ingest")
         time.sleep(5)

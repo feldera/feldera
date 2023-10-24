@@ -22,6 +22,11 @@ public class JitTests extends EndToEndTests {
 
     // All the @Ignore-ed tests below should eventually pass.
 
+    @Test @Override @Ignore("BYTEARRAY not yet supported in JIT")
+    public void testByteArray() {
+        super.testByteArray();
+    }
+
     @Test @Override @Ignore("WINDOWS not yet implemented https://github.com/feldera/feldera/issues/158")
     public void overTest() {
         DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPI64Literal(2));

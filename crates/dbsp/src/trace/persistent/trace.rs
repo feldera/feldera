@@ -21,7 +21,7 @@ use crate::time::{Antichain, Timestamp};
 use crate::trace::cursor::Cursor;
 use crate::trace::{
     unaligned_deserialize, AntichainRef, Batch, BatchReader, Builder, Consumer, DBData,
-    DBTimestamp, DBWeight, HasZero, Trace, ValueConsumer,
+    DBTimestamp, DBWeight, Filter, HasZero, Trace, ValueConsumer,
 };
 use crate::NumEntries;
 
@@ -43,7 +43,12 @@ where
     approximate_len: usize,
 
     lower_key_bound: Option<B::Key>,
-    lower_val_bound: Option<B::Val>,
+
+    // TODO: Implement merge-time key and value filters.
+    #[size_of(skip)]
+    key_filter: Option<Filter<B::Key>>,
+    #[size_of(skip)]
+    value_filter: Option<Filter<B::Val>>,
 
     /// Where all the dataz is.
     #[size_of(skip)]
@@ -496,7 +501,8 @@ where
             upper: Antichain::new(),
             approximate_len: 0,
             lower_key_bound: None,
-            lower_val_bound: None,
+            key_filter: None,
+            value_filter: None,
             dirty: false,
             cf,
             cf_name,
@@ -581,16 +587,20 @@ where
         self.dirty
     }
 
-    fn truncate_values_below(&mut self, lower_bound: &Self::Val) {
-        self.lower_val_bound = Some(if let Some(bound) = &self.lower_val_bound {
-            max(bound, lower_bound).clone()
-        } else {
-            lower_bound.clone()
-        });
+    fn retain_keys(&mut self, filter: Filter<Self::Key>) {
+        self.key_filter = Some(filter);
     }
 
-    fn lower_value_bound(&self) -> &Option<Self::Val> {
-        &self.lower_val_bound
+    fn retain_values(&mut self, filter: Filter<Self::Val>) {
+        self.value_filter = Some(filter);
+    }
+
+    fn key_filter(&self) -> &Option<Filter<Self::Key>> {
+        &self.key_filter
+    }
+
+    fn value_filter(&self) -> &Option<Filter<Self::Val>> {
+        &self.value_filter
     }
 }
 

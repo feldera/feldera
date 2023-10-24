@@ -253,19 +253,40 @@ where
         unsafe { self.leaf.assume_invariants() }
     }
 
+    fn copy_range_retain_keys<'a, F>(
+        &mut self,
+        _other: &'a Self::Trie,
+        _lower: usize,
+        _upper: usize,
+        _filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
+        todo!()
+    }
+
     fn push_merge<'a>(
         &'a mut self,
         left: <Self::Trie as Trie>::Cursor<'a>,
         right: <Self::Trie as Trie>::Cursor<'a>,
-    ) -> usize {
+    ) {
         // Reserve enough space for both cursor's values
         self.reserve(left.remaining() + right.remaining());
 
         // Copy the values into the current leaf
         self.copy_range(left.leaf, left.current, left.end);
         self.copy_range(right.leaf, right.current, right.end);
+    }
 
-        self.len()
+    fn push_merge_retain_keys<'a, F>(
+        &'a mut self,
+        _other1: <Self::Trie as Trie>::Cursor<'a>,
+        _other2: <Self::Trie as Trie>::Cursor<'a>,
+        _filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
+        todo!()
     }
 }
 

@@ -95,11 +95,38 @@ where
         unsafe { self.assume_invariants() }
     }
 
+    fn copy_range_retain_keys<'a, F>(
+        &mut self,
+        other: &'a Self::Trie,
+        lower: usize,
+        upper: usize,
+        filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
+        unsafe {
+            self.assume_invariants();
+            other.assume_invariants();
+        }
+
+        self.keys.reserve(upper - lower);
+        self.diffs.reserve(upper - lower);
+
+        assert!(lower <= other.keys.len() && upper <= other.keys.len());
+        for index in lower..upper {
+            if filter(&other.keys[index]) {
+                self.keys.push(other.keys[index].clone());
+                self.diffs.push(other.diffs[index].clone());
+            }
+        }
+        unsafe { self.assume_invariants() }
+    }
+
     fn push_merge<'a>(
         &'a mut self,
         cursor1: <Self::Trie as Trie>::Cursor<'a>,
         cursor2: <Self::Trie as Trie>::Cursor<'a>,
-    ) -> usize {
+    ) {
         unsafe { self.assume_invariants() }
 
         let (trie1, trie2) = (cursor1.storage(), cursor2.storage());
@@ -165,7 +192,83 @@ where
         }
 
         unsafe { self.assume_invariants() }
-        self.keys.len()
+    }
+
+    fn push_merge_retain_keys<'a, F>(
+        &'a mut self,
+        cursor1: <Self::Trie as Trie>::Cursor<'a>,
+        cursor2: <Self::Trie as Trie>::Cursor<'a>,
+        filter: &F,
+    ) where
+        F: Fn(&<<Self::Trie as Trie>::Cursor<'a> as Cursor<'a>>::Key) -> bool,
+    {
+        unsafe { self.assume_invariants() }
+
+        let (trie1, trie2) = (cursor1.storage(), cursor2.storage());
+        unsafe {
+            trie1.assume_invariants();
+            trie2.assume_invariants();
+        }
+
+        let (_, upper1) = cursor1.bounds();
+        let mut lower1 = cursor1.position();
+        let (_, upper2) = cursor2.bounds();
+        let mut lower2 = cursor2.position();
+
+        let reserved = (upper1 - lower1) + (upper2 - lower2);
+        self.reserve(reserved);
+
+        // while both mergees are still active
+        while lower1 < upper1 && lower2 < upper2 {
+            match trie1.keys[lower1].cmp(&trie2.keys[lower2]) {
+                Ordering::Less => {
+                    // determine how far we can advance lower1 until we reach/pass lower2
+                    let step = 1 + advance(&trie1.keys[(1 + lower1)..upper1], |x| {
+                        x < &trie2.keys[lower2]
+                    });
+
+                    let step = min(step, 1000);
+                    self.copy_range_retain_keys(trie1, lower1, lower1 + step, filter);
+
+                    lower1 += step;
+                }
+
+                Ordering::Equal => {
+                    if filter(&trie1.keys[lower1]) {
+                        let mut sum = trie1.diffs[lower1].clone();
+                        sum.add_assign_by_ref(&trie2.diffs[lower2]);
+
+                        if !sum.is_zero() {
+                            self.push_tuple((trie1.keys[lower1].clone(), sum));
+                        }
+                    }
+
+                    lower1 += 1;
+                    lower2 += 1;
+                }
+
+                Ordering::Greater => {
+                    // determine how far we can advance lower2 until we reach/pass lower1
+                    let step = 1 + advance(&trie2.keys[(1 + lower2)..upper2], |x| {
+                        x < &trie1.keys[lower1]
+                    });
+
+                    let step = min(step, 1000);
+                    self.copy_range_retain_keys(trie2, lower2, lower2 + step, filter);
+
+                    lower2 += step;
+                }
+            }
+        }
+
+        if lower1 < upper1 {
+            self.copy_range_retain_keys(trie1, lower1, upper1, filter);
+        }
+        if lower2 < upper2 {
+            self.copy_range_retain_keys(trie2, lower2, upper2, filter);
+        }
+
+        unsafe { self.assume_invariants() }
     }
 }
 

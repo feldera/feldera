@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.type.RelDataType;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.json.simple.JSONObject;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -95,10 +96,12 @@ public class JitCsvInputDescription extends JitIODescription {
     }
 
     final List<Column> columns;
+    final List<Column> keyColumns;
 
     public JitCsvInputDescription(String relation, String path) {
         super(relation, path);
         this.columns = new ArrayList<>();
+        this.keyColumns = new ArrayList<>();
     }
 
     public void addColumn(Column column) {
@@ -109,9 +112,20 @@ public class JitCsvInputDescription extends JitIODescription {
         ObjectNode result = jsonFactory().createObjectNode();
         result.put("file", this.path);
         ObjectNode kind = result.putObject("kind");
-        ArrayNode csv = kind.putArray("Csv");
-        for (Column column: this.columns)
-            csv.add(column.asJson());
+        ObjectNode csv = kind.putObject("Csv");
+        if (this.keyColumns.isEmpty()) {
+            ArrayNode set = csv.putArray("Set");
+            for (Column column: this.columns)
+                set.add(column.asJson());
+        } else {
+            ArrayNode map = csv.putArray("Map");
+            ArrayNode columns = map.addArray();
+            for (Column column: this.columns)
+                columns.add(column.asJson());
+            ArrayNode keys = map.addArray();
+            for (Column column: this.keyColumns)
+                keys.add(column.asJson());
+        }
         return result;
     }
 }

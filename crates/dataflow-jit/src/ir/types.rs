@@ -47,7 +47,7 @@ macro_rules! column_type {
                 $(
                     #[doc = "Returns `true` if the current column type is a [`" $column_ty "`][ColumnType::" $column_ty "]"]
                     #[must_use]
-                    pub const fn [<is_ $column_ty:lower>](&self) -> bool {
+                    pub const fn [<is_ $column_ty:lower>](self) -> bool {
                         matches!(self, Self::$column_ty)
                     }
                 )+
@@ -91,6 +91,8 @@ column_type! {
     Date = ("date", I32),
     /// Represents the milliseconds since January 1, 1970 as an `i64`
     Timestamp = ("timestamp", I64),
+    /// A time represented as nanoseconds since midnight
+    Time = ("time", U64),
 
     /// A string encoded as UTF-8
     String = ("str", Ptr),
