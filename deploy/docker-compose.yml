@@ -64,7 +64,7 @@ services:
       # Mode dev-container uses well-known configuration properties for development in containers.
       - --mode dev-container
       # enable logs for debugging.
-      # - --default-log-level=debug
+      - --default-log-level=error
     image: docker.redpanda.com/vectorized/redpanda:v23.2.3
     ports:
       - 18081:18081
@@ -98,6 +98,7 @@ services:
       CONFIG_STORAGE_TOPIC: "inventory.configs"
       OFFSET_STORAGE_TOPIC: "inventory.offset"
       STATUS_STORAGE_TOPIC: "inventory.status"
+      CONNECT_LOG4J_LOGGERS: "org.apache.kafka.connect=ERROR"
 
   demo:
     profiles: [ "demo" ]
