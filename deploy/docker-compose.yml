@@ -130,13 +130,13 @@ services:
         condition: service_started
     image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.1.7}
     environment:
-      RUST_BACKTRACE: "1"
-      REDPANDA_BROKERS: "redpanda:9092"
-      RUST_LOG: "info"
-      KAFKA_CONNECT_SERVER: "http://connect:8083"
-      SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE: "${SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE}"
-      SNOWFLAKE_CI_USER_PRIVATE_KEY: "${SNOWFLAKE_CI_USER_PRIVATE_KEY}"
-      SNOWFLAKE_CI_USER_PASSWORD: "${SNOWFLAKE_CI_USER_PASSWORD}"
+      - RUST_BACKTRACE=1
+      - REDPANDA_BROKERS=redpanda:9092
+      - RUST_LOG=info
+      - KAFKA_CONNECT_SERVER=http://connect:8083
+      - SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE
+      - SNOWFLAKE_CI_USER_PRIVATE_KEY
+      - SNOWFLAKE_CI_USER_PASSWORD
     command:
       - bash
       - -c
