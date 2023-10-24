@@ -563,7 +563,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatements("CREATE VIEW V AS SELECT ROW(2, 2);\n");
         String errors = compiler.messages.toString();
-        Assert.assertTrue(errors.contains("error: Not yet implemented: ROW(2, 2)"));
+        Assert.assertTrue(errors.contains("error: Not yet implemented: ROW"));
     }
 
     @Test

@@ -439,7 +439,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
     @Override
     public DBSPExpression visitCall(RexCall call) {
-        CalciteObject node = new CalciteObject(call);
+        CalciteObject node = new CalciteObject(call.getOperator());
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(call.toString())
                 .append(" ")
@@ -595,7 +595,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "truncate":
                     case "round": {
                         DBSPExpression right;
-                        if (call.operands.size() < 1)
+                        if (call.operands.isEmpty())
                             throw new UnimplementedException(node);
                         DBSPExpression left = ops.get(0);
                         if (call.operands.size() == 1)
@@ -662,7 +662,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return new DBSPApplyExpression(node, method, type, arg);
                     }
                     case "substring": {
-                        if (ops.size() < 1)
+                        if (ops.isEmpty())
                             throw new UnimplementedException(node);
                         DBSPType baseType = ops.get(0).getType();
                         String functionName = opName + baseType.nullableSuffix();
