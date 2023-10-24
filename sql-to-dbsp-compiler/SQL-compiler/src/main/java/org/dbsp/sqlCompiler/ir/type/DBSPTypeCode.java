@@ -26,7 +26,7 @@ public enum DBSPTypeCode {
     TIMESTAMP_TZ("", "", ""),
     UNIT("", "()", "Unit"),  // JIT use only
     UINT16("u16", "u16", ""),
-    UINT32("u32", "u32", ""),
+    UINT32("u32", "u32", "U32"),
     UINT64("u64", "u64", ""),
     USIZE("u", "usize", "Usize"),
     VOID("void", "", ""),

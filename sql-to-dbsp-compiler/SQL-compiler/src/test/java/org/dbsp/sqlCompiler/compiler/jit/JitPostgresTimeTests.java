@@ -12,9 +12,4 @@ public class JitPostgresTimeTests extends PostgresTimeTests {
         options.ioOptions.jit = true;
         return options;
     }
-
-    @Test @Ignore("Time functions not yet implemented in JIT https://github.com/feldera/feldera/issues/913")
-    public void testUnits() {
-        super.testUnits();
-    }
 }
