@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.jit;
 
 import org.apache.calcite.util.DateString;
+import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -20,12 +21,14 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.Linq;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
@@ -41,7 +44,7 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
         super(reporter);
     }
 
-    void constant(String type, DBSPLiteral literal, DBSPExpression rustValue) {
+    void constant(DBSPTypeCode type, DBSPLiteral literal, DBSPExpression rustValue) {
         DBSPExpression result;
         if (literal.isNull) {
             result = new DBSPConstructorExpression(
@@ -49,7 +52,7 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
                     DBSPTypeAny.getDefault());
         } else {
             result = new DBSPConstructorExpression(
-                    new DBSPPath("Constant", type).toExpression(),
+                    new DBSPPath("Constant", type.jitName).toExpression(),
                     DBSPTypeAny.getDefault(),
                     rustValue);
             if (literal.mayBeNull()) {
@@ -65,8 +68,19 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
         this.map(literal, result);
     }
 
-    void constant(String type, DBSPLiteral literal) {
+    void constant(DBSPTypeCode type, DBSPLiteral literal) {
         this.constant(type, literal, literal.isNull ? literal : literal.getWithNullable(false));
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTimeLiteral node) {
+        TimeString str = node.value;
+        DBSPStrLiteral rustLiteral = new DBSPStrLiteral(str == null ? "" : str.toString().trim());
+        DBSPExpression expression = new DBSPConstructorExpression(
+                new DBSPPath("NaiveTime", "parse_from_str").toExpression(),
+                DBSPTypeAny.getDefault(), rustLiteral, new DBSPStrLiteral("%H:%M:%S%.f"));
+        this.constant(node.getType().code, node, expression.unwrap());
+        return VisitDecision.STOP;
     }
 
     @Override
@@ -76,7 +90,7 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
         DBSPExpression expression = new DBSPConstructorExpression(
                 new DBSPPath("NaiveDateTime", "parse_from_str").toExpression(),
                 DBSPTypeAny.getDefault(), rustLiteral, new DBSPStrLiteral("%Y-%m-%d %H:%M:%S%.f"));
-        this.constant("Timestamp", node, expression.unwrap());
+        this.constant(node.getType().code, node, expression.unwrap());
         return VisitDecision.STOP;
     }
 
@@ -87,61 +101,61 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
         DBSPExpression expression = new DBSPConstructorExpression(
                 new DBSPPath("NaiveDate", "parse_from_str").toExpression(),
                 DBSPTypeAny.getDefault(), rustLiteral, new DBSPStrLiteral("%F"));
-        this.constant("Date", node, expression.unwrap());
+        this.constant(node.getType().code, node, expression.unwrap());
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPDecimalLiteral node) {
-        this.constant("Decimal", node);
+        this.constant(node.getType().code, node);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPUSizeLiteral node) {
-         this.constant("Usize", node);
+         this.constant(node.getType().code, node);
          return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPISizeLiteral node) {
-        this.constant("Isize", node);
+        this.constant(node.getType().code, node);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPI64Literal node) {
-        this.constant("I64", node);
+        this.constant(node.getType().code, node);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPI32Literal node) {
-        this.constant("I32", node);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPFloatLiteral node) {
-        this.constant("F32", node.raw());
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPDoubleLiteral node) {
-        this.constant("F64", node.raw());
+        this.constant(node.getType().code, node);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPBoolLiteral node) {
-        this.constant("Bool", node);
+        this.constant(node.getType().code, node);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPStringLiteral node) {
-        this.constant("String", node);
+        this.constant(node.getType().code, node);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPFloatLiteral node) {
+        this.constant(node.getType().code, node.raw());
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDoubleLiteral node) {
+        this.constant(node.getType().code, node.raw());
         return VisitDecision.STOP;
     }
 

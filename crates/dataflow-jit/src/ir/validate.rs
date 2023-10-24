@@ -1188,6 +1188,30 @@ impl FunctionValidator {
                 }
             }
 
+            "dbsp.time.hour"
+            | "dbsp.time.minute"
+            | "dbsp.time.second"
+            | "dbsp.time.millisecond"
+            | "dbsp.time.microsecond" => {
+                if call.args().len() != 1 {
+                    return Err(ValidationError::IncorrectFunctionArgLen {
+                        expr_id,
+                        function: call.function().to_owned(),
+                        expected_args: 1,
+                        args: call.args().len(),
+                    });
+                }
+
+                if actual_arg_types[0] != RowOrScalar::Scalar(ColumnType::Time) {
+                    todo!(
+                        "mismatched argument type in {expr_id}, should be a Time but instead got {:?}",
+                        actual_arg_types[0],
+                    );
+                }
+
+                assert_eq!(call.ret_ty(), ColumnType::U32);
+            }
+
             "dbsp.date.hour"
             | "dbsp.date.minute"
             | "dbsp.date.second"

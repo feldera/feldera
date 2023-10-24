@@ -145,7 +145,9 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
         return builder.append("vec!(")
                 .increase()
                 .intercalateI(System.lineSeparator(), this.data)
-                .append(")");
+                .append(")")
+                .decrease()
+                .newline();
     }
 
     @Override

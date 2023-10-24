@@ -528,9 +528,10 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         put("extract_century_Timestamp", new Call("dbsp.timestamp.century", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_millennium_Timestamp", new Call("dbsp.timestamp.millennium", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_epoch_Timestamp", new Call("dbsp.timestamp.epoch", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
-        put("extract_second_Date", new Call("dbsp.date.second", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+
         put("extract_millisecond_Date", new Call("dbsp.date.millisecond", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_microsecond_Date", new Call("dbsp.date.microsecond", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        put("extract_second_Date", new Call("dbsp.date.second", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_minute_Date", new Call("dbsp.date.minute", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_hour_Date", new Call("dbsp.date.hour", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_day_Date", new Call("dbsp.date.day", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
@@ -546,6 +547,13 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         put("extract_century_Date", new Call("dbsp.date.century", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_millennium_Date", new Call("dbsp.date.millennium", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
         put("extract_epoch_Date", new Call("dbsp.date.epoch", new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false)));
+        
+        put("extract_millisecond_Time", new Call("dbsp.time.millisecond", new DBSPTypeInteger(CalciteObject.EMPTY, UINT32,32, true,false)));
+        put("extract_microsecond_Time", new Call("dbsp.time.microsecond", new DBSPTypeInteger(CalciteObject.EMPTY, UINT32,32, true,false)));
+        put("extract_second_Time", new Call("dbsp.time.second", new DBSPTypeInteger(CalciteObject.EMPTY, UINT32,32, true,false)));
+        put("extract_minute_Time", new Call("dbsp.time.minute", new DBSPTypeInteger(CalciteObject.EMPTY, UINT32,32, true,false)));
+        put("extract_hour_Time", new Call("dbsp.time.hour", new DBSPTypeInteger(CalciteObject.EMPTY, UINT32,32, true,false)));
+        
         put("print", new Call("dbsp.io.str.print", new DBSPTypeVoid()));
         put("abs_decimal", new OpCall(JITUnaryInstruction.Operation.ABS, DBSPTypeDecimal.getDefault()));
         put("abs_d", new OpCall(JITUnaryInstruction.Operation.ABS, new DBSPTypeDouble(CalciteObject.EMPTY, false)));
