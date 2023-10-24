@@ -21,7 +21,7 @@ public class JitFpTests extends PostgresBaseTest {
                 "  0    | Infinity");
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/902")
+    @Test
     public void testSimpleFp() {
         this.q("WITH v(x) AS\n" +
                 "  (VALUES(1E0),(CAST ('Infinity' AS DOUBLE)))\n" +
@@ -52,7 +52,7 @@ public class JitFpTests extends PostgresBaseTest {
     }
 
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/903")
+    @Test
     public void testDiff() {
         this.q("SELECT (1.2 - 1.2) = 0;\n" +
                 "r \n" +
