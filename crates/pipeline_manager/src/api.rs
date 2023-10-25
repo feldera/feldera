@@ -178,6 +178,7 @@ request is rejected."
         pipeline_types::config::ConnectorConfig,
         pipeline_types::config::TransportConfig,
         pipeline_types::config::FormatConfig,
+        pipeline_types::config::ResourceConfig,
         pipeline_types::transport::file::FileInputConfig,
         pipeline_types::transport::file::FileOutputConfig,
         pipeline_types::transport::url::UrlInputConfig,

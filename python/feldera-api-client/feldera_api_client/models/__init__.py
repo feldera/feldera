@@ -62,6 +62,7 @@ from .program_status_type_7 import ProgramStatusType7
 from .provider_aws_cognito import ProviderAwsCognito
 from .provider_google_identity import ProviderGoogleIdentity
 from .relation import Relation
+from .resource_config import ResourceConfig
 from .runtime_config import RuntimeConfig
 from .sql_compiler_message import SqlCompilerMessage
 from .transport_config import TransportConfig
@@ -137,6 +138,7 @@ __all__ = (
     "ProviderAwsCognito",
     "ProviderGoogleIdentity",
     "Relation",
+    "ResourceConfig",
     "RuntimeConfig",
     "SqlCompilerMessage",
     "TransportConfig",

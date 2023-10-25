@@ -42,6 +42,11 @@ pub struct PipelineConfig {
     /// Output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+
+    /// Resource reservations and limits. This is enforced
+    /// only in Feldera Cloud.
+    #[serde(default)]
+    pub resources: ResourceConfig,
 }
 
 /// Global pipeline configuration settings.
@@ -166,4 +171,32 @@ pub struct FormatConfig {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub config: YamlValue,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
+pub struct ResourceConfig {
+    /// The minimum number of CPU cores to reserve
+    /// for an instance of this pipeline
+    #[serde(default)]
+    pub cpu_cores_min: Option<u64>,
+
+    /// The maximum number of CPU cores to reserve
+    /// for an instance of this pipeline
+    #[serde(default)]
+    pub cpu_cores_max: Option<u64>,
+
+    /// The minimum memory in Megabytes to reserve
+    /// for an instance of this pipeline
+    #[serde(default)]
+    pub memory_mb_min: Option<u64>,
+
+    /// The maximum memory in Megabytes to reserve
+    /// for an instance of this pipeline
+    #[serde(default)]
+    pub memory_mb_max: Option<u64>,
+
+    /// The total storage in Megabytes to reserve
+    /// for an instance of this pipeline
+    #[serde(default)]
+    pub storage_mb_max: Option<u64>,
 }

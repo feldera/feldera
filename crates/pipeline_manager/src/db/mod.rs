@@ -12,7 +12,8 @@ use futures_util::TryFutureExt;
 use log::{debug, error, info};
 use openssl::sha;
 use pipeline_types::config::{
-    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
+    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, ResourceConfig,
+    RuntimeConfig,
 };
 use pipeline_types::error::ErrorResponse;
 use pipeline_types::query::OutputQuery;
@@ -708,6 +709,7 @@ impl PipelineRevision {
             global: pipeline.config.clone(),
             inputs: expanded_inputs,
             outputs: expanded_outputs,
+            resources: ResourceConfig::default(),
         };
 
         Ok(pc)
