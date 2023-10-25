@@ -68,17 +68,18 @@ public class ExpandWritelog extends InnerRewriteVisitor {
                                     expression.getNode(), arguments[1], stringType);
                             // do not print argument first time around the loop
                         } else {
+                            String printFunction = type.mayBeNull ? "print_opt" : "print";
                             DBSPExpression print = new DBSPApplyExpression(
-                                    expression.getNode(), "print", new DBSPTypeVoid(), castToStr.deepCopy());
+                                    expression.getNode(), printFunction, new DBSPTypeVoid(), castToStr.deepCopy().applyCloneIfNeeded());
                             statements.add(new DBSPExpressionStatement(print));
                         }
-                        if (part.length() > 0) {
+                        if (!part.isEmpty()) {
                             DBSPExpression print = new DBSPApplyExpression(
                                     expression.getNode(), "print", new DBSPTypeVoid(), new DBSPStringLiteral(part));
                             statements.add(new DBSPExpressionStatement(print));
                         }
                     }
-                    result = new DBSPBlockExpression(statements, arguments[1].deepCopy());
+                    result = new DBSPBlockExpression(statements, arguments[1].deepCopy().applyCloneIfNeeded());
                 }
             }
         }

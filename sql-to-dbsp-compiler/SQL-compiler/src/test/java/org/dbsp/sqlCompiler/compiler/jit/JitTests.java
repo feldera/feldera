@@ -22,6 +22,11 @@ public class JitTests extends EndToEndTests {
 
     // All the @Ignore-ed tests below should eventually pass.
 
+    @Test
+    public void testBoolean() {
+        super.testBoolean();
+    }
+
     @Test @Override @Ignore("BYTEARRAY not yet supported in JIT")
     public void testByteArray() {
         super.testByteArray();

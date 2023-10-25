@@ -27,10 +27,13 @@ package org.dbsp.sqllogictest;
 
 import net.hydromatic.sqllogictest.OptionsParser;
 import net.hydromatic.sqllogictest.TestStatistics;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPasses;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqllogictest.executors.DBSPExecutor;
 import org.dbsp.sqllogictest.executors.DbspJdbcExecutor;
 import org.dbsp.sqllogictest.executors.JitDbspExecutor;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -44,7 +47,7 @@ public class Main {
     @SuppressWarnings("SpellCheckingInspection")
     public static void main(String[] argv) throws IOException {
         List<String> files = Linq.list(
-                //"test/index/between/100/slt_good_3.test"
+                "test/index/between/100/slt_good_3.test"
                 /*
                 "select1.test"
                 "select2.test",
@@ -68,8 +71,10 @@ public class Main {
                  */
         );
 
+        Logger.INSTANCE.setLoggingLevel(Passes.class, 2);
+        Logger.INSTANCE.setLoggingLevel(InnerPasses.class, 2);
         String[] args = {
-                "-v", "-v", "-x",
+                "-v", "-x",
                 "-e", "jit",      // executor
         };
         if (argv.length > 0) {

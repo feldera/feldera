@@ -132,7 +132,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         result.incFiles();
         int queryNo = 0;
         int batchSize = 1;
-        int skip = 0; // 710;  // used only for debugging
+        int toSkip = 710;  // used only for debugging
 
         int remainingInBatch = batchSize;
         JitTestBatch batch = new JitTestBatch(
@@ -167,8 +167,8 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                     result.incIgnored();
                     continue;
                 }
-                if (skip > 0) {
-                    skip--;
+                if (toSkip > 0) {
+                    toSkip--;
                     continue;
                 }
                 // Debugging code commented-out.

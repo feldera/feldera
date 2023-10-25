@@ -277,6 +277,8 @@ where
     }
 }
 
+/// MulByRef<isize>
+
 impl MulByRef<isize> for i32 {
     type Output = Self;
 
@@ -340,7 +342,7 @@ impl MulByRef<isize> for Decimal {
     }
 }
 
-/////////// same for i64
+/////////// MulByRef<i64>
 
 impl MulByRef<i64> for i32 {
     type Output = Self;
@@ -401,6 +403,73 @@ impl MulByRef<i64> for Decimal {
 
     #[inline]
     fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        *self * Decimal::from(*w)
+    }
+}
+
+/////////// MulByRef<i32>
+// We don't expect to use i32 for weights, but the JIT does, and we
+// want to be able to compare executions.
+
+impl MulByRef<i32> for i64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i32) -> Self::Output {
+        (*self as i32 * w) as Self
+    }
+}
+
+impl MulByRef<i32> for isize {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i32) -> Self::Output {
+        (*self as i32 * w) as Self
+    }
+}
+
+impl MulByRef<i32> for f32 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i32) -> Self::Output {
+        *self * ((*w) as f32)
+    }
+}
+
+impl MulByRef<i32> for f64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i32) -> Self::Output {
+        *self * ((*w) as f64)
+    }
+}
+
+impl MulByRef<i32> for F32 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i32) -> Self::Output {
+        *self * ((*w) as f32)
+    }
+}
+
+impl MulByRef<i32> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i32) -> Self::Output {
+        *self * ((*w) as f64)
+    }
+}
+
+impl MulByRef<i32> for Decimal {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i32) -> Self::Output {
         *self * Decimal::from(*w)
     }
 }

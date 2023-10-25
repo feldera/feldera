@@ -1132,3 +1132,22 @@ where
 {
     vector[0..limit].to_vec()
 }
+
+pub fn dump<T>(prefix: String, data: &T) -> T
+where
+    T: Debug + Clone,
+{
+    println!("{}: {:?}", prefix, data);
+    data.clone()
+}
+
+pub fn print(str: String) {
+    print!("{}", str)
+}
+
+pub fn print_opt(str: Option<String>) {
+    match str {
+        None => print!("NULL"),
+        Some(x) => print!("{}", x),
+    }
+}

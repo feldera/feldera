@@ -357,7 +357,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     public TestStatistics execute(SltTestFile file, OptionsParser.SuppliedOptions options)
             throws SQLException {
         this.startTest();
-        int batchSize = 500;
+        int batchSize = 1;
         String name = file.toString();
         if (name.contains("/"))
             name = name.substring(name.lastIndexOf('/') + 1);
@@ -398,6 +398,10 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 if (this.buggyOperations.contains(query.getQuery())) {
                     options.message("Skipping " + query.getQuery(), 2);
                     result.incIgnored();
+                    continue;
+                }
+                if (toSkip > 0) {
+                    toSkip--;
                     continue;
                 }
                 seenQueries = true;
