@@ -7,6 +7,7 @@ from ..types import UNSET, Unset
 if TYPE_CHECKING:
     from ..models.pipeline_config_inputs import PipelineConfigInputs
     from ..models.pipeline_config_outputs import PipelineConfigOutputs
+    from ..models.resource_config import ResourceConfig
 
 
 T = TypeVar("T", bound="PipelineConfig")
@@ -33,6 +34,7 @@ class PipelineConfig:
             workers (Union[Unset, int]): Number of DBSP worker threads.
             name (Union[Unset, None, str]): Pipeline name
             outputs (Union[Unset, PipelineConfigOutputs]): Output endpoint configuration.
+            resources (Union[Unset, ResourceConfig]):
     """
 
     inputs: "PipelineConfigInputs"
@@ -42,6 +44,7 @@ class PipelineConfig:
     workers: Union[Unset, int] = UNSET
     name: Union[Unset, None, str] = UNSET
     outputs: Union[Unset, "PipelineConfigOutputs"] = UNSET
+    resources: Union[Unset, "ResourceConfig"] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -55,6 +58,10 @@ class PipelineConfig:
         outputs: Union[Unset, Dict[str, Any]] = UNSET
         if not isinstance(self.outputs, Unset):
             outputs = self.outputs.to_dict()
+
+        resources: Union[Unset, Dict[str, Any]] = UNSET
+        if not isinstance(self.resources, Unset):
+            resources = self.resources.to_dict()
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -75,6 +82,8 @@ class PipelineConfig:
             field_dict["name"] = name
         if outputs is not UNSET:
             field_dict["outputs"] = outputs
+        if resources is not UNSET:
+            field_dict["resources"] = resources
 
         return field_dict
 
@@ -82,6 +91,7 @@ class PipelineConfig:
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         from ..models.pipeline_config_inputs import PipelineConfigInputs
         from ..models.pipeline_config_outputs import PipelineConfigOutputs
+        from ..models.resource_config import ResourceConfig
 
         d = src_dict.copy()
         inputs = PipelineConfigInputs.from_dict(d.pop("inputs"))
@@ -103,6 +113,13 @@ class PipelineConfig:
         else:
             outputs = PipelineConfigOutputs.from_dict(_outputs)
 
+        _resources = d.pop("resources", UNSET)
+        resources: Union[Unset, ResourceConfig]
+        if isinstance(_resources, Unset):
+            resources = UNSET
+        else:
+            resources = ResourceConfig.from_dict(_resources)
+
         pipeline_config = cls(
             inputs=inputs,
             cpu_profiler=cpu_profiler,
@@ -111,6 +128,7 @@ class PipelineConfig:
             workers=workers,
             name=name,
             outputs=outputs,
+            resources=resources,
         )
 
         pipeline_config.additional_properties = d
