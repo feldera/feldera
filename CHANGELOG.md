@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Reduce Docker logging noise from Kafka connect and Redpanda.
+
 ## [0.2.0] - 2023-10-24
 
 ### Fixed
