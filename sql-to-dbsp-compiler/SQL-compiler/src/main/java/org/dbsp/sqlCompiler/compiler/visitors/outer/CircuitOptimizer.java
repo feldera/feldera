@@ -47,8 +47,10 @@ public class CircuitOptimizer implements ICompilerComponent {
         List<CircuitTransform> passes = new ArrayList<>();
         IErrorReporter reporter = this.getCompiler();
 
+        passes.add(new IndexedInputs(reporter));
         if (this.getCompiler().options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));
+        passes.add(new RemoveDeindexOperator(reporter));
         if (this.compiler.options.languageOptions.optimizationLevel < 2) {
             if (this.compiler.options.languageOptions.incrementalize) {
                 passes.add(new IncrementalizeVisitor(this.getCompiler()));

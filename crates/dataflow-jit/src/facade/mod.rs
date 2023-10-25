@@ -339,7 +339,7 @@ impl DbspCircuit {
         Some(JsonZSetHandle::new(handle, deserialize_fn, vtable))
     }
 
-    /// Creates a new [`JsonSetHandle`] for ingesting json
+    /// Creates a new `JsonSetHandle` for ingesting json
     ///
     /// Returns [`None`] if the target source node is unreachable
     ///
@@ -373,7 +373,7 @@ impl DbspCircuit {
         Some(JsonSetHandle::new(handle, deserialize_fn, vtable))
     }
 
-    /// Creates a new [`JsonIndexedZSetHandle`] for ingesting json
+    /// Creates a new `JsonIndexedZSetHandle` for ingesting json
     ///
     /// Returns [`None`] if the target source node is unreachable
     ///
@@ -419,7 +419,7 @@ impl DbspCircuit {
         ))
     }
 
-    /// Creates a new [`JsonMapHandle`] for ingesting json
+    /// Creates a new `JsonMapHandle` for ingesting json
     ///
     /// Returns [`None`] if the target source node is unreachable
     ///

@@ -37,13 +37,22 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
         super(reporter, false);
     }
 
-    @Override
-    public void postorder(DBSPSourceMultisetOperator operator) {
+    public void input(DBSPSourceBaseOperator operator) {
         if (this.visited.contains(operator))
             return;
         this.addOperator(operator);
         DBSPIntegralOperator integral = new DBSPIntegralOperator(operator.getNode(), operator);
         this.map(operator, integral);
+    }
+
+    @Override
+    public void postorder(DBSPSourceMapOperator operator) {
+        this.input(operator);
+    }
+
+    @Override
+    public void postorder(DBSPSourceMultisetOperator operator) {
+        this.input(operator);
     }
 
     @Override
