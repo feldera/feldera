@@ -260,6 +260,15 @@ impl RootCircuit {
     /// partitioned across all worker threads based on the hash of the
     /// value.  Insert/delete commands are routed to the worker in charge of
     /// the given value.
+    ///
+    /// # Data retention
+    ///
+    /// Applying [`Stream::integrate_trace_retain_keys`], and
+    /// [`Stream::integrate_trace_with_bound`] methods to the stream has the
+    /// additional effect of filtering out all values that don't satisfy the
+    /// retention policy configured by these methods from the stream.
+    /// Specifically, retention conditions configured at logical time `t`
+    /// are applied starting from logical time `t+1`.
     // TODO: Add a version that takes a custom hash function.
     pub fn add_input_set<K, R>(&self) -> (ZSetStream<K, R>, UpsertHandle<K, bool>)
     where
@@ -342,6 +351,16 @@ impl RootCircuit {
     /// partitioned across all worker threads based on the hash of the
     /// key.  Upsert/delete commands are routed to the worker in charge of
     /// the given key.
+    ///
+    /// # Data retention
+    ///
+    /// Applying [`Stream::integrate_trace_retain_keys`],
+    /// [`Stream::integrate_trace_retain_values`], and
+    /// [`Stream::integrate_trace_with_bound`] methods to the stream has the
+    /// additional effect of filtering out all values that don't satisfy the
+    /// retention policy configured by these methods from the stream.
+    /// Specifically, retention conditions configured at logical time `t`
+    /// are applied starting from logical time `t+1`.
     // TODO: Add a version that takes a custom hash function.
     pub fn add_input_map<K, V, R>(&self) -> (IndexedZSetStream<K, V, R>, UpsertHandle<K, Option<V>>)
     where
@@ -1017,7 +1036,7 @@ mod test {
         UpsertHandle,
     };
     use anyhow::Result as AnyResult;
-    use std::{iter::once, ops::Mul};
+    use std::{cmp::max, iter::once, ops::Mul};
 
     fn input_batches() -> Vec<OrdZSet<usize, isize>> {
         vec![
@@ -1305,6 +1324,10 @@ mod test {
             vec![(1, false), (2, true), (3, true), (4, true)],
             vec![(2, false), (2, true), (3, true), (4, false)],
             vec![(2, true), (2, false)],
+            vec![(100, true)],
+            vec![(95, true)],
+            // below watermark
+            vec![(80, true)],
         ]
     }
 
@@ -1314,11 +1337,16 @@ mod test {
             zset! { 1 => -1, 3 => 1,  4 => 1 },
             zset! { 4 => -1 },
             zset! { 2 => -1 },
+            zset! { 100 => 1 },
+            zset! { 95 => 1 },
+            zset! {},
         ]
     }
 
     fn set_test_circuit(circuit: &RootCircuit) -> AnyResult<UpsertHandle<usize, bool>> {
         let (stream, handle) = circuit.add_input_set::<usize, isize>();
+        let watermark = stream.watermark(|| 0, |k, ()| *k, |k1, k2| max(*k1, *k2));
+        stream.integrate_trace_retain_keys(&watermark, |ts, k| *k >= ts.saturating_sub(10));
 
         let mut expected_batches = output_set_updates().into_iter();
 
@@ -1399,6 +1427,16 @@ mod test {
                 (4, Some(5)),
             ],
             vec![(1, Some(5)), (1, Some(6)), (3, None), (4, Some(6))],
+            // bump watermark
+            vec![(1, Some(100))],
+            // below watermark
+            vec![(1, Some(80))],
+            vec![(1, Some(91))],
+            // bump watermark more
+            vec![(1, Some(200))],
+            // below watermark
+            vec![(1, Some(91))],
+            vec![(1, Some(191))],
         ]
     }
 
@@ -1407,11 +1445,23 @@ mod test {
             indexed_zset! { 1 => {2 => 1},  3 => {3 => 1}},
             indexed_zset! { 1 => {2 => -1}, 2 => {2 => 1}, 3 => {3 => -1, 4 => 1}, 4 => {5 => 1}},
             indexed_zset! { 1 => {6 => 1},  3 => {4 => -1}, 4 => {5 => -1, 6 => 1}},
+            indexed_zset! { 1 => {6 => -1, 100 => 1}},
+            indexed_zset! {},
+            indexed_zset! { 1 => {91 => 1, 100 => -1}},
+            indexed_zset! { 1 => {200 => 1, 91 => -1}},
+            indexed_zset! {},
+            indexed_zset! { 1 => {191 => 1, 200 => -1}},
         ]
     }
 
     fn map_test_circuit(circuit: &RootCircuit) -> AnyResult<UpsertHandle<usize, Option<usize>>> {
         let (stream, handle) = circuit.add_input_map::<usize, usize, isize>();
+        let watermark = stream.watermark(
+            || (0, 0),
+            |k, v| (*k, *v),
+            |ts1, ts2| (max(ts1.0, ts2.0), max(ts1.1, ts2.1)),
+        );
+        stream.integrate_trace_retain_values(&watermark, |ts, v| *v >= ts.1.saturating_sub(10));
 
         let mut expected_batches = output_map_updates().into_iter();
 

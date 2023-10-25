@@ -1,7 +1,7 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{operator::FilterMap, RootCircuit, OrdIndexedZSet, OrdZSet, Stream};
 use dbsp::algebra::ArcStr;
+use dbsp::{operator::FilterMap, OrdIndexedZSet, OrdZSet, RootCircuit, Stream};
 
 ///
 /// Query 8: Monitor New Users
@@ -61,7 +61,7 @@ pub fn q8(input: NexmarkStream) -> Q8Stream {
 
     // Use the latest auction for the watermark
     let watermark =
-        auctions_by_time.watermark_monotonic(|date_time| date_time - TUMBLE_SECONDS * 1000);
+        auctions_by_time.watermark_monotonic(|| 0, |date_time| date_time - TUMBLE_SECONDS * 1000);
     let window_bounds = watermark.apply(|watermark| {
         let watermark_rounded = *watermark - (*watermark % (TUMBLE_SECONDS * 1000));
         (
@@ -78,16 +78,20 @@ pub fn q8(input: NexmarkStream) -> Q8Stream {
     let windowed_people = people_by_time.window(&window_bounds);
     let windowed_auctions = auctions_by_time.window(&window_bounds);
 
-    let people_by_id = windowed_people.map_index(|(date_time, (id, name))| (*id, (name.clone(), *date_time)));
+    let people_by_id =
+        windowed_people.map_index(|(date_time, (id, name))| (*id, (name.clone(), *date_time)));
 
     // Re-calculate the window start-time to include in the output.
-    people_by_id.join(&windowed_auctions.map(|(_date_time, seller)| *seller), |&p_id, (p_name, p_date_time), ()| {
-        (
-            p_id,
-            p_name.clone(),
-            *p_date_time - (*p_date_time % (TUMBLE_SECONDS * 1000)),
-        )
-    })
+    people_by_id.join(
+        &windowed_auctions.map(|(_date_time, seller)| *seller),
+        |&p_id, (p_name, p_date_time), ()| {
+            (
+                p_id,
+                p_name.clone(),
+                *p_date_time - (*p_date_time % (TUMBLE_SECONDS * 1000)),
+            )
+        },
+    )
 }
 
 #[cfg(test)]
@@ -97,9 +101,9 @@ mod tests {
         generator::tests::{make_auction, make_person},
         model::{Auction, Event, Person},
     };
-    use dbsp::{zset, RootCircuit};
     use dbsp::algebra::ArcStr;
     use dbsp::arcstr_literal;
+    use dbsp::{zset, RootCircuit};
     use rstest::rstest;
 
     #[rstest]

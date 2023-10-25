@@ -729,7 +729,7 @@ mod test {
                 input_stream.map_index(|(partition, (ts, val))| (*ts, (*partition, *val)));
 
             let watermark =
-                input_by_time.watermark_monotonic(move |ts| ts.saturating_sub(lateness));
+                input_by_time.watermark_monotonic(|| 0, move |ts| ts.saturating_sub(lateness));
 
             let aggregator = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
                 0i64,

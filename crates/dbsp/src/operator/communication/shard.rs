@@ -133,6 +133,7 @@ where
                                 &runtime,
                                 Runtime::worker_index(),
                                 Some(location),
+                                Default::default,
                                 move |batch: IB, batches: &mut Vec<OB>| {
                                     Self::shard_batch(&batch, num_workers, &mut builders, batches);
                                 },
