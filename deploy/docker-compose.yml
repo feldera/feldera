@@ -98,7 +98,7 @@ services:
       CONFIG_STORAGE_TOPIC: "inventory.configs"
       OFFSET_STORAGE_TOPIC: "inventory.offset"
       STATUS_STORAGE_TOPIC: "inventory.status"
-      CONNECT_LOG4J_LOGGERS: "org.apache.kafka.connect=ERROR"
+      LOG_LEVEL: "ERROR"
 
   demo:
     profiles: [ "demo" ]
