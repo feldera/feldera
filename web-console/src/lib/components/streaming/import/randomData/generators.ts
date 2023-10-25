@@ -1,14 +1,23 @@
 // Contains a lists of random generators for every SQL type, each random
 // generator may have custom generation and validation methods.
 
+import {
+  randomExponentialBigNumber,
+  randomIntBigNumber,
+  randomNormalBigNumber
+} from '$lib/functions/common/d3-random-bignumber'
 import { getRandomDate } from '$lib/functions/common/date'
-import { dateTimeRange, findBaseType, typeRange } from '$lib/functions/ddl'
+import { bignumber, maxBigNumber, minBigNumber } from '$lib/functions/common/valibot'
+import { dateTimeRange, findBaseType, numericRange } from '$lib/functions/ddl'
 import { ColumnType, Field } from '$lib/services/manager'
 import assert from 'assert'
+import BigNumber from 'bignumber.js'
 import * as d3 from 'd3-random'
-import dayjs, { Dayjs } from 'dayjs'
+import dayjs from 'dayjs'
+import { BigNumberInput } from 'src/lib/components/input/BigNumberInput'
+import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
-import * as yup from 'yup'
+import * as va from 'valibot'
 
 import { faker } from '@faker-js/faker'
 import { SwitchProps, TextField, TextFieldProps } from '@mui/material'
@@ -28,7 +37,7 @@ import {
 import { FieldNames } from './'
 import { BooleanSwitch } from './BooleanSwitch'
 
-type NestedArray<T> = T | NestedArray<T>[]
+import type { ColumnTypeJS } from '$lib/functions/ddl'
 type AddFieldName<T> = { name: FieldNames } & Partial<T>
 
 // A list of categories for grouping the generators in the selector.
@@ -56,18 +65,7 @@ export interface IRngGenMethod {
   // The random generator function, receives the type, plus additional
   // properties (coming from the defined `form_fields` see below) to generate a
   // random value.
-  generator: (
-    config: ColumnType,
-    settings?: Partial<Record<FieldNames, any>>
-  ) =>
-    | boolean
-    | number
-    | string
-    | Dayjs
-    | NestedArray<boolean>
-    | NestedArray<number>
-    | NestedArray<string>
-    | NestedArray<Dayjs>
+  generator: (config: ColumnType, settings?: Partial<Record<FieldNames, any>>) => ColumnTypeJS
   // Additional form fields that are displayed when this generation method is
   // selected.
   //
@@ -90,7 +88,7 @@ export interface IRngGenMethod {
   }[]
   // A validation schema for the form fields to display errors in case an
   // invalid value is entered in a form.
-  validationSchema?: (field: ColumnType) => yup.ObjectSchema<any>
+  validationSchema?: (field: ColumnType) => va.ObjectSchema<any>
 }
 
 const getDefaultRngMethodName = (sqlType: ColumnType): string =>
@@ -101,6 +99,7 @@ const getDefaultRngMethodName = (sqlType: ColumnType): string =>
     .with({ type: 'INTEGER' }, () => 'Uniform')
     .with({ type: 'BIGINT' }, () => 'Uniform')
     .with({ type: 'DECIMAL' }, () => 'Uniform')
+    .with({ type: 'NUMERIC' }, () => 'Uniform')
     .with({ type: 'FLOAT' }, () => 'Uniform')
     .with({ type: 'DOUBLE' }, () => 'Uniform')
     .with({ type: 'VARCHAR' }, () => 'Word')
@@ -146,15 +145,12 @@ const transformToArrayGenerator = (type: ColumnType, generators: IRngGenMethod[]
       }
     }
 
-    const generator = (ct: ColumnType, settings: Record<string, any> | undefined): NestedArray<any> => {
-      const [min, max] = typeRange(ct)
-      const length = d3.randomInt(min, max)()
-      const value = []
-      for (let i = 0; i < length; i++) {
-        assert(ct.component !== undefined && ct.component !== null)
-        value.push(rgm.generator(ct.component, settings))
-      }
-      return value
+    const generator = (ct: ColumnType, settings: Record<string, any> | undefined): ColumnTypeJS[] => {
+      invariant(ct.component)
+      const c = ct.component
+      const [min, max] = numericRange(ct)!
+      const length = d3.randomInt(min.toNumber(), max.toNumber())()
+      return Array.from({ length }, () => rgm.generator(c, settings))
     }
 
     return {
@@ -181,13 +177,14 @@ export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
       // precision numbers. So we just use the same generators as FLOAT and
       // DOUBLE for now.
       .with({ type: 'DECIMAL' }, () => FLOAT_GENERATORS)
+      .with({ type: 'NUMERIC' }, () => FLOAT_GENERATORS)
       .with({ type: 'VARCHAR' }, { type: 'TEXT' }, { type: 'CHAR' }, () => STRING_GENERATORS)
       .with({ type: 'BOOLEAN' }, () => BOOLEAN_GENERATORS)
       .with({ type: 'TIME' }, () => TIME_GENERATORS)
       .with({ type: 'DATE' }, () => DATE_GENERATORS)
       .with({ type: 'TIMESTAMP' }, () => TIMESTAMP_GENERATORS)
       .with({ type: 'ARRAY' }, () => {
-        assert(type.component !== undefined && type.component !== null)
+        invariant(type.component)
         return transformToArrayGenerator(type, columnTypeToRngOptions(type.component))
       })
       .otherwise(() => UNSUPPORTED_TYPE_GENERATORS)
@@ -210,8 +207,8 @@ const UNSUPPORTED_TYPE_GENERATORS: IRngGenMethod[] = [
       }
     ],
     validationSchema: () => {
-      return yup.object().shape({
-        value: yup.string()
+      return va.object({
+        value: va.string()
       })
     }
   }
@@ -231,8 +228,8 @@ const BOOLEAN_GENERATORS: IRngGenMethod[] = [
       }
     ],
     validationSchema: () => {
-      return yup.object().shape({
-        bool_const: yup.bool()
+      return va.object({
+        bool_const: va.boolean()
       })
     }
   },
@@ -253,19 +250,22 @@ const BOOLEAN_GENERATORS: IRngGenMethod[] = [
       }
     ],
     validationSchema: () => {
-      return yup.object().shape({
-        true_pct: yup.number().min(0).max(1).required('Percentage required.')
+      return va.object({
+        true_pct: va.nonOptional(va.number([va.minValue(0), va.maxValue(1)]), 'Percentage required.')
       })
     }
   }
 ]
+
+const rangeBigNumber = (range: [BigNumber, BigNumber] | null) =>
+  range ? [minBigNumber(range[0]), maxBigNumber(range[1])] : []
 
 // Generic generators for integer (and floating point) numbers.
 const NUMBER_GENERATORS: IRngGenMethod[] = [
   {
     title: 'Constant',
     category: Categories.DEFAULT,
-    generator: (ct, settings) => Number(settings?.value) || 0,
+    generator: (ct, settings) => new BigNumber(settings?.value) || 0,
     form_fields: () => [
       {
         sm: 4,
@@ -274,52 +274,57 @@ const NUMBER_GENERATORS: IRngGenMethod[] = [
       }
     ],
     validationSchema: ct => {
-      const [min, max] = typeRange(ct)
-      return yup.object().shape({
-        value: yup.number().min(min).max(max).required('Constant value is required.')
+      const range = rangeBigNumber(numericRange(ct))
+      return va.object({
+        value: va.nonOptional(bignumber(range), 'Constant value is required.')
       })
     }
   },
   {
     title: 'Normal',
     category: Categories.DISTRIBUTION,
-    generator: (ct, props) => Math.floor(d3.randomNormal(props?.mu ?? 100, props?.sigma ?? 10)()),
+    generator: (ct, props) =>
+      randomNormalBigNumber(props?.mu ?? new BigNumber(100), props?.sigma ?? new BigNumber(10))().decimalPlaces(
+        0,
+        BigNumber.ROUND_FLOOR
+      ),
     form_fields: () => [
       {
         sm: 2,
-        component: TextField,
+        component: BigNumberInput,
         props: {
           fullWidth: true,
-          type: 'number',
           name: FieldNames.MU,
           label: 'μ'
         }
       },
       {
         sm: 2,
-        component: TextField,
-        props: { fullWidth: true, type: 'number', name: FieldNames.SIGMA, label: 'σ', inputProps: { step: 0.1 } }
+        component: BigNumberInput,
+        props: { fullWidth: true, name: FieldNames.SIGMA, label: 'σ', inputProps: { step: 0.1 } }
       }
     ],
     validationSchema: ct => {
-      const [min, max] = typeRange(ct)
-      return yup.object().shape({
-        mu: yup.number().min(min).max(max).required('Mu value is required.'),
-        sigma: yup.number().min(min).max(max).required('Sigma is required.')
+      const range = rangeBigNumber(numericRange(ct))
+      return va.object({
+        mu: va.nonOptional(bignumber(range), 'Mu value is required.'),
+        sigma: va.nonOptional(bignumber(range), 'Sigma is required.')
       })
     }
   },
   {
     title: 'Exponential',
     category: Categories.DISTRIBUTION,
-    generator: (ct, props) => Math.floor(d3.randomExponential(props?.lambda || 0.1)()),
+    generator: (ct, props) => {
+      return randomExponentialBigNumber(props?.lambda ?? new BigNumber(0.1))().decimalPlaces(0, BigNumber.ROUND_FLOOR)
+    },
     form_fields: () => [
       {
         sm: 2,
-        component: TextField,
+        // TODO: refactor to BigNumber input
+        component: BigNumberInput,
         props: {
           fullWidth: true,
-          type: 'number',
           name: FieldNames.LAMBDA,
           label: 'λ',
           inputProps: { step: 0.1 }
@@ -327,8 +332,8 @@ const NUMBER_GENERATORS: IRngGenMethod[] = [
       }
     ],
     validationSchema: () =>
-      yup.object().shape({
-        lambda: yup.number().required('Lambda is required.')
+      va.object({
+        lambda: va.nonOptional(bignumber(), 'Lambda is required.')
       })
   }
 ]
@@ -338,33 +343,33 @@ const INTEGER_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
     title: 'Uniform',
     category: Categories.DISTRIBUTION,
     generator: (ct, props) => {
-      const [typeMin, typeMax] = typeRange(ct)
-      const min = Math.ceil(props?.min ?? typeMin)
-      const max = Math.floor(props?.max ?? typeMax)
-      return d3.randomInt(min, max)()
+      const [typeMin, typeMax] = numericRange(ct)
+      const min = ((props?.min as BigNumber | undefined) ?? typeMin).decimalPlaces(0, BigNumber.ROUND_CEIL)
+      const max = ((props?.max as BigNumber | undefined) ?? typeMax).decimalPlaces(0, BigNumber.ROUND_FLOOR)
+      return randomIntBigNumber(min, max)()
     },
-    form_fields: () => [
+    form_fields: ({ columntype: ct }) => [
       {
         sm: 2,
-        component: TextField,
+        component: BigNumberInput,
         props: {
           fullWidth: true,
-          type: 'number',
           name: FieldNames.MIN,
-          label: 'Minimum'
+          label: 'Minimum',
+          ...(([min, max]) => ({ min, max }))(numericRange(ct))
         }
       },
       {
         sm: 2,
-        component: TextField,
-        props: { fullWidth: true, type: 'number', name: FieldNames.MAX, label: 'Maximum' }
+        component: BigNumberInput,
+        props: { fullWidth: true, name: FieldNames.MAX, label: 'Maximum' }
       }
     ],
     validationSchema: ct => {
-      const [min, max] = typeRange(ct)
-      return yup.object().shape({
-        min: yup.number().min(min).max(max),
-        max: yup.number().min(min).max(max)
+      const [min, max] = numericRange(ct)
+      return va.object({
+        min: bignumber([minBigNumber(min), maxBigNumber(max)]),
+        max: bignumber([minBigNumber(min), maxBigNumber(max)])
       })
     }
   }
@@ -381,9 +386,10 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
       if (props?.min && props.max) {
         // We use d3.randomUniform for generating floating point numbers as long
         // as the user set a range for the values.
-        const min = props?.min
-        const max = props?.max
-        return d3.randomUniform(min, max)()
+        const min = props?.min as BigNumber | undefined
+        const max = props?.max as BigNumber | undefined
+        // TODO: refactor from casting to actual BigNumber implementation of randomUniform
+        return new BigNumber(d3.randomUniform(min?.toNumber() as any, max?.toNumber() as any)())
       } else {
         // Because it's surprisingly difficult to generate floating point
         // numbers with a max range of -Inf..Inf, we just default to 0..1 for
@@ -391,45 +397,46 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
         //
         // See also:
         // https://stackoverflow.com/questions/28461796/randomint-function-that-can-uniformly-handle-the-full-range-of-min-and-max-safe
-        return d3.randomUniform()()
+        return new BigNumber(d3.randomUniform()())
       }
     },
     form_fields: () => [
       {
         sm: 2,
-        component: TextField,
+        component: BigNumberInput,
         props: {
           fullWidth: true,
-          type: 'number',
           name: FieldNames.MIN,
           label: 'Minimum'
         }
       },
       {
         sm: 2,
-        component: TextField,
-        props: { fullWidth: true, type: 'number', name: FieldNames.MAX, label: 'Maximum' }
+        component: BigNumberInput,
+        props: { fullWidth: true, name: FieldNames.MAX, label: 'Maximum' }
       }
     ],
     validationSchema: ct => {
-      const [min, max] = typeRange(ct)
-      return yup.object().shape({
-        min: yup.number().min(min).max(max),
-        max: yup.number().min(min).max(max)
+      const [min, max] = numericRange(ct)
+      return va.object({
+        min: bignumber([minBigNumber(min), maxBigNumber(max)]),
+        max: bignumber([minBigNumber(min), maxBigNumber(max)])
       })
     }
   },
   {
     title: 'Beta',
     category: Categories.DISTRIBUTION,
-    generator: (ct, props) => d3.randomBeta(props?.alpha ?? 1, props?.beta ?? 1)(),
+    // TODO: refactor from casting to actual BigNumber implementation of randomBeta
+    generator: (ct, props) => {
+      return new BigNumber(d3.randomBeta(props?.alpha?.toNumber() ?? 1, props?.beta?.toNumber() ?? 1)())
+    },
     form_fields: () => [
       {
         sm: 2,
-        component: TextField,
+        component: BigNumberInput,
         props: {
           fullWidth: true,
-          type: 'number',
           name: FieldNames.ALPHA,
           label: 'α',
           inputProps: { min: 0, step: 0.1 }
@@ -437,10 +444,9 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
       },
       {
         sm: 2,
-        component: TextField,
+        component: BigNumberInput,
         props: {
           fullWidth: true,
-          type: 'number',
           name: FieldNames.BETA,
           label: 'β',
           inputProps: { min: 0, step: 0.1 }
@@ -448,9 +454,9 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
       }
     ],
     validationSchema: () =>
-      yup.object().shape({
-        alpha: yup.number().min(0).required('Constant value is required.'),
-        beta: yup.number().min(0).required('Constant value is required.')
+      va.object({
+        alpha: va.nonOptional(bignumber([minBigNumber(new BigNumber(0))]), 'Constant value is required.'),
+        beta: va.nonOptional(bignumber([minBigNumber(new BigNumber(0))]), 'Constant value is required.')
       })
   }
 ])

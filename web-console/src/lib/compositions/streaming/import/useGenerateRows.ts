@@ -2,7 +2,7 @@
 
 import { getDefaultRngMethod, getRngMethodByName } from '$lib/components/streaming/import/randomData/generators'
 import { StoredFieldSettings } from '$lib/components/streaming/import/RngSettingsDialog'
-import { getValueParser, Row } from '$lib/functions/ddl'
+import { Row } from '$lib/functions/ddl'
 import { Field, Relation } from '$lib/services/manager'
 import { Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
 
@@ -28,8 +28,7 @@ function useGenerateRows(
             if (fieldSettings && fieldSettings.method) {
               rngMethod = getRngMethodByName(fieldSettings.method, field.columntype) || rngMethod
             }
-            const valueParser = getValueParser(field.columntype)
-            row.record[field.name] = valueParser(rngMethod.generator(field.columntype, fieldSettings?.config))
+            row.record[field.name] = rngMethod.generator(field.columntype, fieldSettings?.config)
           })
           newRows.push(row)
         }

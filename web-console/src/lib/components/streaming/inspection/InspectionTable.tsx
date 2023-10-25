@@ -313,7 +313,9 @@ const InspectionTableImpl = ({
               headerName: col.name,
               description: col.name,
               flex: 1,
-              valueGetter: (params: any) => params.row.record[col.name]
+              valueGetter: (params: any) => {
+                return params.row.record[col.name]
+              }
             }
           })
           .concat([
