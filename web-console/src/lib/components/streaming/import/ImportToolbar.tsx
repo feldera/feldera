@@ -6,9 +6,11 @@ import { PipelineRevision, Relation } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { PipelineStatus } from '$lib/types/pipeline'
+import BigNumber from 'bignumber.js'
 import dayjs from 'dayjs'
 import Papa from 'papaparse'
 import { ChangeEvent, Dispatch, MutableRefObject, ReactNode, SetStateAction, useCallback } from 'react'
+import JSONbig from 'true-json-bigint'
 import IconDuplicate from '~icons/bx/duplicate'
 import IconPlusCircle from '~icons/bx/plus-circle'
 import IconTrash from '~icons/bx/trash'
@@ -49,13 +51,13 @@ const ImportToolbar = (props: {
   const [settings, setSettings] = useLocalStorage<Map<string, StoredFieldSettings>>({
     key: [LS_PREFIX, 'rng-settings', pipelineRevision.program.program_id, relation.name].join('-'),
     serialize: value => {
-      return JSON.stringify(Array.from(value.entries()))
+      return JSONbig.stringify(Array.from(value.entries()))
     },
     deserialize: localStorageValue => {
       if (!localStorageValue) {
         return new Map()
       }
-      const parsed: [string, StoredFieldSettings][] = JSON.parse(localStorageValue)
+      const parsed: [string, StoredFieldSettings][] = JSONbig.parse(localStorageValue)
       parsed.map(v => {
         v[1].config.time = dayjs(new Date(v[1].config.time))
         v[1].config.time2 = dayjs(new Date(v[1].config.time2))
@@ -63,6 +65,11 @@ const ImportToolbar = (props: {
           dayjs(new Date(v[1].config.date_range[0])),
           dayjs(new Date(v[1].config.date_range[1]))
         ]
+        for (const field of ['alpha', 'beta', 'lambda', 'mu', 'sigma', 'min', 'max'] as const) {
+          if (field in v[1].config) {
+            v[1].config[field] = new BigNumber(v[1].config[field])
+          }
+        }
       })
       const deserializedMap = new Map(parsed)
       return deserializedMap

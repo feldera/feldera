@@ -31,6 +31,7 @@ const RNG_SUPPORTED_TYPES = [
   'DOUBLE',
   'FLOAT',
   'DECIMAL',
+  'NUMERIC',
   'TIME',
   'DATE',
   'TIMESTAMP',

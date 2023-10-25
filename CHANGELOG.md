@@ -97,6 +97,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Regression in pipeline shutdown logic
   ([#961](https://github.com/feldera/feldera/pull/961))
 
+### Added
+- WebConsole: Support of big numeric SQL types in Data Browser, Data Import and Data Generator
+  ([#851](https://github.com/feldera/feldera/issues/851))
+
 ## [0.2.0] - 2023-10-24
 
 ### Fixed

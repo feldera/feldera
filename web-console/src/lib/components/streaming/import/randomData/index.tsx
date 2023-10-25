@@ -1,12 +1,14 @@
 // Displays a form with random settings to configure what values are generated
 // for a given field in a table.
 
-import { useCustomForm } from '$lib/compositions/streaming/import/useCustomForm'
-import { getValueParser } from '$lib/functions/ddl'
+import { useDynamicValidationForm } from '$lib/compositions/streaming/import/useDynamicValidationForm/valibot'
+import { clampToSQL, ColumnTypeJS } from '$lib/functions/ddl'
 import { Field } from '$lib/services/manager'
-import dayjs, { Dayjs } from 'dayjs'
+import { BigNumber } from 'bignumber.js'
+import dayjs from 'dayjs'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Controller, useWatch } from 'react-hook-form'
+import * as va from 'valibot'
 
 import { Autocomplete, FormHelperText, Grid, TextField } from '@mui/material'
 
@@ -43,14 +45,14 @@ export const RngFieldSettings = (props: {
     return {
       bool_const: false,
       true_pct: '0.5',
-      value: '0',
-      min: '0',
-      max: '100',
-      mu: '100',
-      sigma: '10',
-      lambda: '0.1',
-      alpha: '0.1',
-      beta: '0.1',
+      value: new BigNumber('0'),
+      min: new BigNumber('0'),
+      max: new BigNumber('100'),
+      mu: new BigNumber('100'),
+      sigma: new BigNumber('10'),
+      lambda: new BigNumber('0.1'),
+      alpha: new BigNumber('0.1'),
+      beta: new BigNumber('0.1'),
       time: dayjs(new Date(2023, 1, 1, 0, 0)),
       time2: dayjs(new Date(2023, 12, 1, 23, 59, 59)),
       date_range: [dayjs(new Date(2023, 1, 1, 0, 0)), dayjs(new Date(2023, 12, 1, 23, 59, 59))]
@@ -62,8 +64,8 @@ export const RngFieldSettings = (props: {
     fieldSettings ? getRngMethodByName(fieldSettings.method, field.columntype) : null
   )
   // An random example value that is generated if a method is selected.
-  const [example, setExample] = useState<boolean | number | string | object | Dayjs | undefined>(undefined)
-  const [parsedExample, setParsedExample] = useState<boolean | number | string | undefined>(undefined)
+  const [example, setExample] = useState<ColumnTypeJS | undefined>(undefined)
+  const [parsedExample, setParsedExample] = useState<ColumnTypeJS | undefined>(undefined)
 
   // Instantiate a react hook form.
   //
@@ -74,7 +76,7 @@ export const RngFieldSettings = (props: {
     updateSchema,
     clearErrors,
     formState: { errors, isValid, isDirty }
-  } = useCustomForm({
+  } = useDynamicValidationForm({
     mode: 'onChange',
     schema: selectedMethod?.validationSchema?.(field.columntype),
     defaultValues: fieldSettings?.config ?? defaultValues
@@ -84,18 +86,19 @@ export const RngFieldSettings = (props: {
   const handleCategoryChange = useCallback(
     (event: React.SyntheticEvent<Element, Event>, method: IRngGenMethod | null) => {
       setSelectedMethod(method)
-      if (method && method.validationSchema) {
-        updateSchema(method.validationSchema(field.columntype))
-        clearErrors()
-        setSettings(prev => {
-          const newSettings = new Map(prev)
-          newSettings.set(field.name, {
-            method: method.title,
-            config: defaultValues
-          })
-          return newSettings
-        })
+      if (!method?.validationSchema) {
+        return
       }
+      updateSchema(method.validationSchema(field.columntype))
+      clearErrors()
+      setSettings(prev => {
+        const newSettings = new Map(prev)
+        newSettings.set(field.name, {
+          method: method.title,
+          config: defaultValues
+        })
+        return newSettings
+      })
     },
     [updateSchema, field, clearErrors, setSettings, defaultValues]
   )
@@ -114,16 +117,8 @@ export const RngFieldSettings = (props: {
   const validateCallback = useCallback(
     (data: any) => {
       if (selectedMethod && selectedMethod.validationSchema && selectedMethod.validationSchema(field.columntype)) {
-        try {
-          const objectSchema = selectedMethod.validationSchema(field.columntype)
-          if (objectSchema) {
-            // will throw an error if validation fails
-            objectSchema.validateSync(data)
-          }
-          return true
-        } catch (e) {
-          return false
-        }
+        const objectSchema = selectedMethod.validationSchema(field.columntype)
+        return !objectSchema || va.is(objectSchema, data)
       } else {
         return true
       }
@@ -138,7 +133,7 @@ export const RngFieldSettings = (props: {
     if (selectedMethod && validateCallback(myFormData)) {
       const newExample = selectedMethod.generator(field.columntype, myFormData)
       setExample(newExample)
-      setParsedExample(getValueParser(field.columntype)(newExample))
+      setParsedExample(clampToSQL(field.columntype)(newExample))
       setSettings(prev => {
         const newSettings = new Map(prev)
         newSettings.set(field.name, { method: selectedMethod.title, config: myFormData })

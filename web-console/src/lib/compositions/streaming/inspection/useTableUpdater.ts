@@ -8,6 +8,7 @@ import { csvLineToRow, Row } from '$lib/functions/ddl'
 import { NeighborhoodQuery, Relation } from '$lib/services/manager'
 import { parse } from 'csv-parse'
 import { Dispatch, SetStateAction, useCallback, useMemo, useState } from 'react'
+import JSONbig from 'true-json-bigint'
 
 /**
  * Mutate the oldRows to reflect the computed integral with all deltaRows
@@ -92,7 +93,7 @@ export function useTableUpdater() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(requestedNeighborhood),
+        body: JSONbig.stringify(requestedNeighborhood),
         signal: controller.signal
       }).catch(error => {
         return Promise.reject(error)
@@ -129,11 +130,12 @@ export function useTableUpdater() {
           parse(
             obj.text_data,
             {
-              delimiter: ','
+              delimiter: ',',
+              cast: false
             },
             (error, result: string[][]) => {
               if (error) {
-                console.error(error)
+                console.error('useTableUpdater error', error)
               }
               const parsedRows = result.map(row => csvLineToRow(relation, row))
 

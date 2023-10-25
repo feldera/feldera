@@ -14,17 +14,17 @@ type WidenSchema<T> = T extends (...args: any[]) => any
   ? T
   : { [K in keyof T]: T[K] extends Record<string, unknown> ? WidenSchema<T[K]> : any }
 
-export type useCustomFormSchema<TFieldValues> = yup.ObjectSchema<
+export type useDynamicValidationFormSchema<TFieldValues> = yup.ObjectSchema<
   object | undefined,
   Partial<WidenSchema<TFieldValues>>,
   object
 >
 
-export type UseCustomFormReturn<TFieldValues extends FieldValues = FieldValues, TContext = any> = UseFormReturn<
-  TFieldValues,
-  TContext
-> & {
-  updateSchema: (newSchema: useCustomFormSchema<TFieldValues>) => void
+export type UseDynamicValidationFormReturn<
+  TFieldValues extends FieldValues = FieldValues,
+  TContext = any
+> = UseFormReturn<TFieldValues, TContext> & {
+  updateSchema: (newSchema: useDynamicValidationFormSchema<TFieldValues>) => void
 }
 
 /**
@@ -37,7 +37,7 @@ export type UseCustomFormReturn<TFieldValues extends FieldValues = FieldValues, 
  * }
  *
  * // And we setup the form with the following schema (only validating the name)
- * const { updateSchema, ...otherMethods } = useCustomForm<FormValues>({
+ * const { updateSchema, ...otherMethods } = useDynamicValidationForm<FormValues>({
  *  schema: yup.object().shape({})
  * })
  *
@@ -51,14 +51,14 @@ export type UseCustomFormReturn<TFieldValues extends FieldValues = FieldValues, 
  *   age: yup.number().required()
  * })
  */
-export const useCustomForm = <TFieldValues extends FieldValues = FieldValues, TContext = any>(
+export const useDynamicValidationForm = <TFieldValues extends FieldValues = FieldValues, TContext = any>(
   props?: Omit<UseFormProps<TFieldValues, TContext>, 'resolver'> & {
-    schema?: useCustomFormSchema<TFieldValues>
+    schema?: useDynamicValidationFormSchema<TFieldValues>
   }
-): UseCustomFormReturn<TFieldValues> => {
-  const [schema, setSchema] = useState<useCustomFormSchema<TFieldValues> | null>(props?.schema ?? null)
+): UseDynamicValidationFormReturn<TFieldValues> => {
+  const [schema, setSchema] = useState<useDynamicValidationFormSchema<TFieldValues> | null>(props?.schema ?? null)
 
-  const updateSchema = useCallback((newSchema: useCustomFormSchema<TFieldValues>) => {
+  const updateSchema = useCallback((newSchema: useDynamicValidationFormSchema<TFieldValues>) => {
     setSchema(oldSchema => {
       if (oldSchema) {
         return yup.object<Partial<WidenSchema<TFieldValues>>>().shape({

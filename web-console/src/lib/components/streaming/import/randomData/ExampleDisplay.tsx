@@ -4,17 +4,22 @@
 // Also indicates if the example was modified after generation due to type
 // constraints (overflow etc.).
 
-import { getValueFormatter, typeRange } from '$lib/functions/ddl'
+import { inRangeInclusive } from '$lib/functions/common/bigNumber'
+import { ColumnTypeJS, getValueFormatter, numericRange } from '$lib/functions/ddl'
 import { Field } from '$lib/services/manager'
+import { BigNumber } from 'bignumber.js'
 
 import { Grid, Typography } from '@mui/material'
 
-export const ExampleDisplay = (props: {
+export const ExampleDisplay = ({
+  example,
+  field,
+  parsed
+}: {
   field: Field
-  parsed: boolean | number | string
-  example: boolean | number | string | object
+  parsed: ColumnTypeJS
+  example: ColumnTypeJS
 }) => {
-  const { example, field, parsed } = props
   const toDisplay = getValueFormatter(field.columntype)
 
   let beforeParsedValue = ''
@@ -30,8 +35,8 @@ export const ExampleDisplay = (props: {
       field.columntype.type
     )
   ) {
-    const [min, max] = typeRange(field.columntype)
-    if (example < min || example > max) {
+    const range = numericRange(field.columntype)
+    if (!inRangeInclusive(range)(example)) {
       adjustments.push('clamp')
     }
   }
@@ -62,10 +67,10 @@ export const ExampleDisplay = (props: {
   }
 
   if (
-    typeof example === 'number' &&
+    BigNumber.isBigNumber(example) &&
     typeof parsed === 'string' &&
-    ['DECIMAL'].includes(field.columntype.type) &&
-    parsed.length != example.toString().length
+    ['DECIMAL', 'NUMERIC'].includes(field.columntype.type) &&
+    parsed.length != example.toFixed().length
   ) {
     adjustments.push('trimmed')
   }
