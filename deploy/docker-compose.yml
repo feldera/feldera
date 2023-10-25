@@ -85,7 +85,7 @@ services:
   # Kafka connect.
   # TODO: add a healthcheck to this container.
   connect:
-    profiles: [ "demo", "debezium", "snowflake" ]
+    profiles: [ "debezium", "snowflake" ]
     image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.2.0}
     depends_on:
       redpanda:
