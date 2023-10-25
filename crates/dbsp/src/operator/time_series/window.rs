@@ -458,7 +458,7 @@ mod test {
         let (mut dbsp, input_handle) = Runtime::init_circuit(8, |circuit| {
             let (input, input_handle) = circuit.add_input_zset::<isize, isize>();
             let bounds = input
-                .watermark_monotonic(|ts| *ts)
+                .watermark_monotonic(|| 0, |ts| *ts)
                 .apply(|ts| (*ts - 1000, *ts));
 
             let bound = TraceBound::new();

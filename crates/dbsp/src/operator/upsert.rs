@@ -71,7 +71,7 @@ where
                         <Upsert<
                             Spine<<<C as WithClock>::Time as Timestamp>::OrdKeyBatch<K, B::R>>,
                             B,
-                        >>::new(),
+                        >>::new(bounds.clone()),
                         &local,
                         &self.try_sharded_version(),
                     )
@@ -164,7 +164,7 @@ where
                     <Upsert<
                         Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<K, V, B::R>>,
                         B,
-                    >>::new(),
+                    >>::new(bounds.clone()),
                     &local,
                     &self.try_sharded_version(),
                 )
@@ -201,6 +201,7 @@ where
     T: BatchReader,
 {
     time: T::Time,
+    bounds: TraceBounds<T::Key, T::Val>,
     phantom: PhantomData<B>,
 }
 
@@ -208,20 +209,12 @@ impl<T, B> Upsert<T, B>
 where
     T: BatchReader,
 {
-    pub fn new() -> Self {
+    pub fn new(bounds: TraceBounds<T::Key, T::Val>) -> Self {
         Self {
             time: T::Time::clock_start(),
+            bounds,
             phantom: PhantomData,
         }
-    }
-}
-
-impl<T, B> Default for Upsert<T, B>
-where
-    T: BatchReader,
-{
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -259,8 +252,30 @@ where
         let mut builder = B::Builder::with_capacity((), updates.len() * 2);
         let mut key_updates: Vec<(T::Val, T::R)> = Vec::new();
 
+        let val_filter = self.bounds.effective_val_filter();
+        let key_filter = self.bounds.key_filter();
+        let key_bound = self.bounds.effective_key_bound();
+
         for (key, val) in updates {
+            if let Some(key_bound) = &key_bound {
+                if key < key_bound {
+                    continue;
+                }
+            }
+
+            if let Some(key_filter) = &key_filter {
+                if !key_filter(key) {
+                    continue;
+                }
+            }
+
             if let Some(val) = val {
+                if let Some(val_filter) = &val_filter {
+                    if !val_filter(val) {
+                        continue;
+                    }
+                }
+
                 key_updates.push((val.clone(), HasOne::one()));
             }
 

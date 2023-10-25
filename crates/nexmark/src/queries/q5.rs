@@ -1,9 +1,9 @@
 use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
+use crate::model::Event;
 use dbsp::{
     operator::{FilterMap, Max},
-    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
-use crate::model::Event;
 
 /// Query 5: Hot Items
 ///
@@ -83,8 +83,10 @@ pub fn q5(input: NexmarkStream) -> Q5Stream {
 
     // Extract the largest timestamp from the input stream. We will use it as
     // current time. Set watermark to `WATERMARK_INTERVAL_SECONDS` in the past.
-    let watermark =
-        bids_by_time.watermark_monotonic(|date_time| date_time - WATERMARK_INTERVAL_SECONDS * 1000);
+    let watermark = bids_by_time.watermark_monotonic(
+        || 0,
+        |date_time| date_time - WATERMARK_INTERVAL_SECONDS * 1000,
+    );
 
     // 10-second window with 2-second step.
     let window_bounds = watermark.apply(|watermark| {
@@ -96,7 +98,9 @@ pub fn q5(input: NexmarkStream) -> Q5Stream {
     });
 
     // Only consider bids within the current window.
-    let windowed_bids = bids_by_time.window(&window_bounds).map(|(_time, auction)| *auction);
+    let windowed_bids = bids_by_time
+        .window(&window_bounds)
+        .map(|(_time, auction)| *auction);
 
     // Count the number of bids per auction.
     let auction_counts = windowed_bids.weighted_count();

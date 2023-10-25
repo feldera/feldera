@@ -1,10 +1,10 @@
 use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::model::Event;
+use dbsp::algebra::ArcStr;
 use dbsp::{
     operator::{FilterMap, Min},
-    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
-use dbsp::algebra::ArcStr;
 
 ///
 /// Query 7: Highest Bid
@@ -46,10 +46,7 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
     // All bids indexed by date time to be able to window the result.
     let bids_by_time: Stream<_, OrdIndexedZSet<u64, _, _>> =
         input.flat_map_index(|event| match event {
-            Event::Bid(b) => Some((
-                b.date_time,
-                (b.auction, b.bidder, b.price, b.extra.clone()),
-            )),
+            Event::Bid(b) => Some((b.date_time, (b.auction, b.bidder, b.price, b.extra.clone()))),
             _ => None,
         });
 
@@ -57,8 +54,10 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
     // from the input stream for the current time, with the window ending at the
     // previous 10 second multiple.
     // Set the watermark to `WATERMARK_INTERVAL_SECONDS` in the past.
-    let watermark =
-        bids_by_time.watermark_monotonic(|date_time| date_time - WATERMARK_INTERVAL_SECONDS * 1000);
+    let watermark = bids_by_time.watermark_monotonic(
+        || 0,
+        |date_time| date_time - WATERMARK_INTERVAL_SECONDS * 1000,
+    );
 
     // In this case we have a 10-second window with 10-second steps (tumbling).
     let window_bounds = watermark.apply(|watermark| {

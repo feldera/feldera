@@ -730,6 +730,7 @@ where
 ///             &Runtime::runtime().unwrap(),
 ///             Runtime::worker_index(),
 ///             None,
+///             || Vec::new(),
 ///             // Partitioning function sends a copy of the input `n` to each peer.
 ///             |n, output| {
 ///                 for _ in 0..WORKERS {
@@ -867,6 +868,10 @@ where
 /// Operator that receives values sent by the `ExchangeSender` operator and
 /// assembles them into a single output value.
 ///
+/// The `init` closure returns the initial value for the result.  This value
+/// is updated by the `combine` closure with each value received from a remote
+/// peer.
+///
 /// See [`ExchangeSender`] documentation for details.
 ///
 /// `ExchangeReceiver` is an asynchronous operator., i.e.,
@@ -875,17 +880,18 @@ where
 /// for this worker in the current clock cycle.  The scheduler should use
 /// [`ExchangeReceiver::register_ready_callback`] to get notified when the
 /// operator becomes schedulable.
-pub struct ExchangeReceiver<T, L>
+pub struct ExchangeReceiver<IF, T, L>
 where
     T: Send + 'static + Clone,
 {
     worker_index: usize,
     location: OperatorLocation,
+    init: IF,
     combine: L,
     exchange: Arc<Exchange<T>>,
 }
 
-impl<T, L> ExchangeReceiver<T, L>
+impl<IF, T, L> ExchangeReceiver<IF, T, L>
 where
     T: Send + Rkyv + 'static + Clone,
 {
@@ -894,6 +900,7 @@ where
         worker_index: usize,
         location: OperatorLocation,
         exchange_id: ExchangeId,
+        init: IF,
         combine: L,
     ) -> Self {
         debug_assert!(worker_index < runtime.num_workers());
@@ -901,14 +908,16 @@ where
         Self {
             worker_index,
             location,
+            init,
             combine,
             exchange: Exchange::with_runtime(runtime, exchange_id),
         }
     }
 }
 
-impl<T, L> Operator for ExchangeReceiver<T, L>
+impl<D, T, L> Operator for ExchangeReceiver<D, T, L>
 where
+    D: 'static,
     T: Send + Rkyv + 'static + Clone,
     L: 'static,
 {
@@ -941,15 +950,16 @@ where
     }
 }
 
-impl<D, T, L> SourceOperator<D> for ExchangeReceiver<T, L>
+impl<D, IF, T, L> SourceOperator<D> for ExchangeReceiver<IF, T, L>
 where
-    D: Default + Clone,
+    D: 'static,
     T: Clone + Send + Rkyv + 'static,
+    IF: Fn() -> D + 'static,
     L: Fn(&mut D, T) + 'static,
 {
     fn eval(&mut self) -> D {
         debug_assert!(self.ready());
-        let mut combined = Default::default();
+        let mut combined = (self.init)();
         let res = self
             .exchange
             .try_receive_all(self.worker_index, |x| (self.combine)(&mut combined, x));
@@ -1001,24 +1011,28 @@ impl TypedMapKey<LocalStoreMarker> for DirectoryId {
 /// * `PL` - Type of closure that splits a value of type `TI` into
 ///   `runtime.num_workers()` values of type `TE`.
 /// * `I` - Iterator returned by `PL`.
+/// * `IF` - Type of closure used to initialize the output value of type `TO`.
 /// * `CL` - Type of closure that folds `num_workers` values of type `TE` into a
 ///   value of type `TO`.
-pub fn new_exchange_operators<TI, TO, TE, PL, CL>(
+pub fn new_exchange_operators<TI, TO, TE, IF, PL, CL>(
     runtime: &Runtime,
     worker_index: usize,
     location: OperatorLocation,
+    init: IF,
     partition: PL,
     combine: CL,
-) -> (ExchangeSender<TI, TE, PL>, ExchangeReceiver<TE, CL>)
+) -> (ExchangeSender<TI, TE, PL>, ExchangeReceiver<IF, TE, CL>)
 where
-    TO: Default + Clone,
+    TO: Clone,
     TE: Send + Rkyv + 'static + Clone,
+    IF: Fn() -> TO + 'static,
     PL: FnMut(TI, &mut Vec<TE>) + 'static,
     CL: Fn(&mut TO, TE) + 'static,
 {
     let exchange_id = runtime.sequence_next(worker_index);
     let sender = ExchangeSender::new(runtime, worker_index, location, exchange_id, partition);
-    let receiver = ExchangeReceiver::new(runtime, worker_index, location, exchange_id, combine);
+    let receiver =
+        ExchangeReceiver::new(runtime, worker_index, location, exchange_id, init, combine);
     (sender, receiver)
 }
 
@@ -1118,6 +1132,7 @@ mod tests {
                         &Runtime::runtime().unwrap(),
                         Runtime::worker_index(),
                         None,
+                        || Vec::new(),
                         move |n, vals| {
                             for _ in 0..workers {
                                 vals.push(n)
