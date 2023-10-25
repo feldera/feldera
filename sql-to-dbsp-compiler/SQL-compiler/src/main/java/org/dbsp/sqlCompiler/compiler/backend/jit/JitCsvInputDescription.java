@@ -108,6 +108,10 @@ public class JitCsvInputDescription extends JitIODescription {
         this.columns.add(column);
     }
 
+    public void addKeyColumn(Column column) {
+        this.keyColumns.add(column);
+    }
+
     public JsonNode asJson() {
         ObjectNode result = jsonFactory().createObjectNode();
         result.put("file", this.path);
@@ -119,12 +123,12 @@ public class JitCsvInputDescription extends JitIODescription {
                 set.add(column.asJson());
         } else {
             ArrayNode map = csv.putArray("Map");
-            ArrayNode columns = map.addArray();
-            for (Column column: this.columns)
-                columns.add(column.asJson());
             ArrayNode keys = map.addArray();
             for (Column column: this.keyColumns)
                 keys.add(column.asJson());
+            ArrayNode columns = map.addArray();
+            for (Column column: this.columns)
+                columns.add(column.asJson());
         }
         return result;
     }

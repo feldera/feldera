@@ -155,7 +155,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
             String name = field.name;
             boolean quoted = field.nameIsQuoted;
             if (output) {
-                name = name.toUpperCase(Locale.ENGLISH);
+                name = name.toUpperCase();
                 quoted = false;
             }
             this.builder.append("(")

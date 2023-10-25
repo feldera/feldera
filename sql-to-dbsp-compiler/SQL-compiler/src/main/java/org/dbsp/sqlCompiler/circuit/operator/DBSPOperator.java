@@ -120,8 +120,8 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
      */
     public abstract DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType);
 
-    public DBSPTypeTuple getOutputZSetElementType() {
-        return this.outputType.to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
+    public DBSPType getOutputZSetElementType() {
+        return this.outputType.to(DBSPTypeZSet.class).elementType;
     }
 
     /**

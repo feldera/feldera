@@ -25,11 +25,7 @@ package org.dbsp.sqlCompiler.compiler.backend;
 
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
@@ -60,7 +56,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public VisitDecision preorder(DBSPSourceMultisetOperator node) {
+    public VisitDecision preorder(DBSPSourceBaseOperator node) {
         this.stream.append(node.outputName)
                 .append(" [ shape=box,label=\"")
                 .append(node.id)

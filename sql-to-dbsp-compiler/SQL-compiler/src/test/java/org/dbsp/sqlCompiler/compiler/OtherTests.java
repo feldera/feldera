@@ -76,6 +76,7 @@ import org.junit.Test;
 import javax.imageio.ImageIO;
 import javax.sql.DataSource;
 import java.io.*;
+import java.nio.file.Paths;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -89,12 +90,12 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 public class OtherTests extends BaseSQLTests implements IWritesLogs {
     static final String ddl = "CREATE TABLE T (\n" +
-            "COL1 INT NOT NULL" +
-            ", COL2 DOUBLE NOT NULL" +
-            ", COL3 BOOLEAN NOT NULL" +
-            ", COL4 VARCHAR NOT NULL" +
-            ", COL5 INT" +
-            ", COL6 DOUBLE" +
+            "COL1 INT NOT NULL\n" +
+            ", COL2 DOUBLE NOT NULL\n" +
+            ", COL3 BOOLEAN NOT NULL\n" +
+            ", COL4 VARCHAR NOT NULL\n" +
+            ", COL5 INT\n" +
+            ", COL6 DOUBLE\n" +
             ")";
 
     private DBSPCompiler compileDef() {
@@ -103,35 +104,27 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         return compiler;
     }
 
-    // Test using the JIT executor as a service.
-    @Test
-    public void runJitServiceTest() throws IOException, InterruptedException {
-        // Input query
-        String query = "CREATE VIEW V AS SELECT T.COL2 FROM T";
-        // Input test data
-        InputOutputPair data = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(EndToEndTests.e0, EndToEndTests.e1),
-                new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(new DBSPDoubleLiteral(12)),
-                        new DBSPTupleExpression(new DBSPDoubleLiteral(1))));
-        // Compile query, generate circuit.
+    File fileFromName(String name) {
+        return new File(Paths.get(rustDirectory, name).toUri());
+    }
+
+    void runJitServiceProgram(String[] statements, InputOutputPair data) throws IOException, InterruptedException {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.ioOptions.jit = true;
-        compiler.compileStatement(ddl);
-        compiler.compileStatements(query);
+        compiler.compileStatements(String.join(";\n", statements));
+        compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
         // Serialize circuit as JSON for the JIT executor
         JITProgram program = ToJitVisitor.circuitToJIT(compiler, circuit);
         String json = program.asJson().toPrettyString();
-        File baseDirectory = new File(BaseSQLTests.rustDirectory);
-        File programFile = File.createTempFile("program", ".json", baseDirectory);
-        programFile.deleteOnExit();
+        File programFile = this.fileFromName("program.json");
         Utilities.writeFile(programFile.toPath(), json);
 
         // Prepare input files for the JIT runtime
         List<JitFileAndSerialization> inputFiles = new ArrayList<>();
+        int index = 0;
         for (DBSPZSetLiteral.Contents inputData: data.inputs) {
-            File input = File.createTempFile("input", ".csv", baseDirectory);
+            File input = this.fileFromName("input" + index++ + ".csv");
             input.deleteOnExit();
             ToCsvVisitor.toCsv(compiler, input, new DBSPZSetLiteral(compiler.getWeightTypeImplementation(), inputData));
             inputFiles.add(new JitFileAndSerialization(
@@ -141,9 +134,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         List<JitIODescription> inputDescriptions = compiler.getInputDescriptions(inputFiles);
 
         // Allocate output files
+        index = 0;
         List<JitFileAndSerialization> outputFiles = new ArrayList<>();
         for (DBSPZSetLiteral.Contents ignored1 : data.outputs) {
-            File output = File.createTempFile("output", ".json", baseDirectory);
+            File output = this.fileFromName("output" + index++ + ".json");
             outputFiles.add(new JitFileAndSerialization(
                     output.getAbsolutePath(),
                     JitSerializationKind.Json));
@@ -154,11 +148,13 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         // Invoke the JIT runtime with the program and the configuration file describing inputs and outputs
         JsonNode jitInputDescription = compiler.createJitRuntimeConfig(inputDescriptions, outputDescriptions);
         String s = jitInputDescription.toPrettyString();
-        File configFile = File.createTempFile("config", ".json", baseDirectory);
-        configFile.deleteOnExit();
+        File configFile = this.fileFromName("config.json");
         Utilities.writeFile(configFile.toPath(), s);
         Utilities.runJIT(BaseSQLTests.projectDirectory, programFile.getAbsolutePath(), configFile.getAbsolutePath());
 
+        // If we don't reach this point these files won't be deleted
+        programFile.deleteOnExit();
+        configFile.deleteOnExit();
         // Validate outputs and delete them
         for (int i = 0; i < data.outputs.length; i++) {
             DBSPZSetLiteral.Contents expected = data.outputs[i];
@@ -169,6 +165,45 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
             Assert.assertTrue(diff.isEmpty());
             file.deleteOnExit();
         }
+    }
+
+    // Test using the JIT executor as a service.
+    @Test
+    public void runJitServiceTest() throws IOException, InterruptedException {
+        String[] statements = new String[]{
+                ddl,
+                "CREATE VIEW V AS SELECT T.COL2 FROM T"
+        };
+        // Input test data
+        InputOutputPair data = new InputOutputPair(
+                new DBSPZSetLiteral.Contents(EndToEndTests.e0, EndToEndTests.e1),
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(new DBSPDoubleLiteral(12)),
+                        new DBSPTupleExpression(new DBSPDoubleLiteral(1))));
+        this.runJitServiceProgram(statements, data);
+    }
+
+    // Test using the JIT executor as a service with a table with a primary key.
+    @Test 
+    public void runJitServiceTestKey() throws IOException, InterruptedException {
+        String[] statements = new String[]{
+                "CREATE TABLE T (\n" +
+                "COL1 INT NOT NULL PRIMARY KEY\n" +
+                ", COL2 DOUBLE NOT NULL PRIMARY KEY\n" +
+                ", COL3 BOOLEAN NOT NULL PRIMARY KEY\n" +
+                ", COL4 VARCHAR NOT NULL\n" +
+                ", COL5 INT\n" +
+                ", COL6 DOUBLE\n" +
+                ")",
+                "CREATE VIEW V AS SELECT T.COL2 FROM T"
+        };
+        // Input test data
+        InputOutputPair data = new InputOutputPair(
+                new DBSPZSetLiteral.Contents(EndToEndTests.e0, EndToEndTests.e1),
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(new DBSPDoubleLiteral(12)),
+                        new DBSPTupleExpression(new DBSPDoubleLiteral(1))));
+        this.runJitServiceProgram(statements, data);
     }
 
     @Test
@@ -199,12 +234,12 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    // DBSPSourceMultisetOperator 53\n" +
                 "    // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)\n" +
                 "    let T = T();\n" +
-                "    // DBSPMapOperator 113\n" +
+                "    // DBSPMapOperator 115\n" +
                 "    let stream1: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2))));\n" +
                 "    // CREATE VIEW `V` AS\n" +
                 "    // SELECT `T`.`COL3`\n" +
                 "    // FROM `T`\n" +
-                "    // DBSPSinkOperator 119\n" +
+                "    // DBSPSinkOperator 121\n" +
                 "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream1;\n" +
                 "}\n";
         Assert.assertEquals(expected, str);
@@ -479,7 +514,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
             if (!subdir.getName().contains("project_"))
                 continue;
             String path = subdir.getPath() + "/project.sql";
-            CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, path);
+            CompilerMessages messages = CompilerMain.execute(
+                    "-i", "--alltables", "-o", BaseSQLTests.testFilePath, path);
             Assert.assertEquals(0, messages.errorCount());
             if (!subdir.getName().contains("demo02"))
                 // TODO: Waiting for https://issues.apache.org/jira/browse/CALCITE-5861

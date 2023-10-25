@@ -1,12 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -72,7 +66,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
                     return;
                 }
             } else if (!source.hasFunction() &&
-                    !source.is(DBSPSourceMultisetOperator.class)) {
+                    !source.is(DBSPSourceBaseOperator.class)) {
                 // For all such operators we can swap them with the projection
                 List<DBSPOperator> newSources = new ArrayList<>();
                 for (DBSPOperator sourceSource: source.inputs) {

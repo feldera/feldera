@@ -34,6 +34,8 @@ public class InputTableDescription {
                 for (RelColumnMetadata columnMeta: createTableStatement.columns) {
                     JitCsvInputDescription.Column column = new JitCsvInputDescription.Column(index, index, columnMeta.getType());
                     result.addColumn(column);
+                    if (columnMeta.isPrimaryKey)
+                        result.addKeyColumn(column);
                     index++;
                 }
                 return result;

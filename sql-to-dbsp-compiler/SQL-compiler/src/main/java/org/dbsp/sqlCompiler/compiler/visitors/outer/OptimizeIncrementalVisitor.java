@@ -26,7 +26,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Linq;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import java.util.List;
 
@@ -61,6 +60,9 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
         }
         super.postorder(operator);
     }
+
+    @Override
+    public void postorder(DBSPDeindexOperator operator) { this.linear(operator); }
 
     @Override
     public void postorder(DBSPMapOperator operator) { this.linear(operator); }
@@ -171,10 +173,5 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
         this.addOperator(diff);
         DBSPIntegralOperator integral = new DBSPIntegralOperator(operator.getNode(), diff);
         this.map(operator, integral);
-    }
-
-    @Override
-    public void postorder(DBSPOperator operator) {
-        throw new UnimplementedException(operator.getNode());
     }
 }

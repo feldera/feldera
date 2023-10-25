@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -12,9 +13,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
 /**
  * This operator produces an IndexedZSet as a result, indexed on the table keys.
@@ -47,7 +46,8 @@ public class DBSPSourceMapOperator extends DBSPSourceBaseOperator {
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.postorder(this);
     }
 

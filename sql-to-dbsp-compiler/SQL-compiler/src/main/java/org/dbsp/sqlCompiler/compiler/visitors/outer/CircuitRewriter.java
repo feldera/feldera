@@ -283,17 +283,14 @@ public class CircuitRewriter extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPMapOperator operator) {
-        DBSPType outputElementType = this.transform(operator.outputElementType);
-        DBSPType weightType = this.transform(operator.weightType);
+        DBSPType type = this.transform(operator.getType());
         DBSPOperator input = this.mapped(operator.input());
         DBSPExpression function = this.transform(operator.getFunction());
         DBSPOperator result = operator;
-        if (!outputElementType.sameType(operator.outputElementType)
-                || !weightType.sameType(operator.weightType)
+        if (!type.sameType(operator.getType())
                 || input != operator.input()
                 || function != operator.getFunction()) {
-            result = new DBSPMapOperator(operator.getNode(), function,
-                    outputElementType, weightType, input);
+            result = new DBSPMapOperator(operator.getNode(), function, type, input);
         }
         this.map(operator, result);
     }
