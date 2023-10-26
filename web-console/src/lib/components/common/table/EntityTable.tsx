@@ -83,8 +83,6 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
                   size='small'
                   href={(href => (href ? href(params.row) : ''))(editRowBtnProps?.href)}
                   onClick={(onClick => (onClick ? () => onClick(params.row) : undefined))(editRowBtnProps?.onClick)}
-                  target='_blank'
-                  rel='noreferrer'
                 >
                   <IconPencil fontSize={20} />
                 </IconButton>

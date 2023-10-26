@@ -203,8 +203,6 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               <IconButton
                 size='small'
                 href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}`}
-                target='_blank'
-                rel='noreferrer'
               >
                 <IconShow fontSize={20} />
               </IconButton>
@@ -214,8 +212,6 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                 <IconButton
                   size='small'
                   href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}&tab=insert`}
-                  target='_blank'
-                  rel='noreferrer'
                 >
                   <IconUpload fontSize={20} />
                 </IconButton>
@@ -580,41 +576,39 @@ const usePipelineState = (params: { row: Pipeline }) => {
 }
 
 const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) => {
-  const state = usePipelineState(params)
+  const [status, isReady] = usePipelineState(params)
 
   const shutdownPipelineClick = useShutdownPipeline()
 
-  const chip = match(state)
-    .with([ClientPipelineStatus.UNKNOWN, P._], () => <CustomChip rounded size='small' skin='light' label={state[0]} />)
-    .with([ClientPipelineStatus.INACTIVE, true], () => (
-      <CustomChip rounded size='small' skin='light' label={state[0]} />
-    ))
+  const chip = match([status, isReady])
+    .with([ClientPipelineStatus.UNKNOWN, P._], () => <CustomChip rounded size='small' skin='light' label={status} />)
+    .with([ClientPipelineStatus.INACTIVE, true], () => <CustomChip rounded size='small' skin='light' label={status} />)
     .with([ClientPipelineStatus.INACTIVE, false], () => (
       <CustomChip rounded size='small' skin='light' color='info' label='Compiling' />
     ))
     .with([ClientPipelineStatus.INITIALIZING, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={state[0]} />
+      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
     .with([ClientPipelineStatus.PROVISIONING, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={state[0]} />
+      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
     .with([ClientPipelineStatus.CREATE_FAILURE, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='error' label={state[0]} />
+      <CustomChip rounded size='small' skin='light' color='error' label={status} />
     ))
     .with([ClientPipelineStatus.STARTING, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={state[0]} />
+      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
     .with([ClientPipelineStatus.STARTUP_FAILURE, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='error' label={state[0]} />
+      <CustomChip rounded size='small' skin='light' color='error' label={status} />
     ))
     .with([ClientPipelineStatus.RUNNING, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='success' label={state[0]} />
+      <CustomChip rounded size='small' skin='light' color='success' label={status} />
     ))
     .with([ClientPipelineStatus.PAUSING, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label={state[0]} />
+      <CustomChip rounded size='small' skin='light' color='info' label={status} />
     ))
     .with([ClientPipelineStatus.PAUSED, true], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label={state[0]} />
+      <CustomChip rounded size='small' skin='light' color='info' label={status} />
     ))
     .with([ClientPipelineStatus.PAUSED, false], () => (
       <CustomChip rounded size='small' skin='light' color='info' label='Compiling' />
@@ -626,13 +620,13 @@ const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) =>
           size='small'
           skin='light'
           color='error'
-          label={state[0]}
+          label={status}
           onDelete={() => shutdownPipelineClick(params.row.descriptor.pipeline_id)}
         />
       </Tooltip>
     ))
     .with([ClientPipelineStatus.SHUTTING_DOWN, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={state[0]} />
+      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
     .exhaustive()
 
