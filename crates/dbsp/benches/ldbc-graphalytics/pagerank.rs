@@ -240,6 +240,7 @@ fn count_vertices(vertices: &Vertices<()>) -> Streamed<(), u64> {
             &runtime,
             Runtime::worker_index(),
             Some(Location::caller()),
+            || 0,
             move |count: u64, counts: &mut Vec<u64>| counts.extend((0..num_workers).map(|_| count)),
             |result, count| *result += count,
         );
