@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     let database_config = DatabaseConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
-    let _: Result<ProjectDB, DBError> = pipeline_manager::retries::retry_async(
+    let ret: Result<(), DBError> = pipeline_manager::retries::retry_async(
         || async {
             let db = ProjectDB::connect(
                 &database_config,
@@ -27,11 +27,11 @@ async fn main() -> anyhow::Result<()> {
             )
             .await?;
             db.run_migrations().await?;
-            Ok(db)
+            Ok(())
         },
         30,
         Duration::from_secs(1),
     )
     .await;
-    Ok(())
+    Ok(ret?)
 }
