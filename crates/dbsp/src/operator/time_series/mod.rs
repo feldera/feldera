@@ -2,7 +2,7 @@ mod partitioned;
 mod radix_tree;
 mod range;
 mod rolling_aggregate;
-mod watermark;
+mod waterline;
 mod window;
 
 pub use partitioned::{

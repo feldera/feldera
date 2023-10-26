@@ -83,7 +83,7 @@ pub fn q5(input: NexmarkStream) -> Q5Stream {
 
     // Extract the largest timestamp from the input stream. We will use it as
     // current time. Set watermark to `WATERMARK_INTERVAL_SECONDS` in the past.
-    let watermark = bids_by_time.watermark_monotonic(
+    let watermark = bids_by_time.waterline_monotonic(
         || 0,
         |date_time| date_time - WATERMARK_INTERVAL_SECONDS * 1000,
     );

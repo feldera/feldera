@@ -334,19 +334,18 @@ where
     ///
     /// ## Arguments
     ///
-    /// * `watermark_stream` - This stream carries scalar values (i.e., single
+    /// * `bounds_stream` - This stream carries scalar values (i.e., single
     ///   records, not Z-sets).  The key retainment condition is defined
     ///   relative to the last value received from this stream. Typically, this
     ///   value represents the lowest upper bound of all partially ordered
     ///   timestamps in `self` or some other stream, computed with the help of
-    ///   the [`watermark`](`Stream::watermark`) operator and adjusted by some
+    ///   the [`waterline`](`Stream::waterline`) operator and adjusted by some
     ///   contstant offsets, dictated, e.g., by window sizes used in the queries
     ///   and the maximal out-of-ordedness of data in the input streams.
     ///
-    /// * `retain_key_func` - given the value received from the
-    ///   `watermark_stream` at the last clock cycle and a key, returns `true`
-    ///   if the key should be retained in the trace and `false` if it should be
-    ///   discarded.
+    /// * `retain_key_func` - given the value received from the `bounds_stream`
+    ///   at the last clock cycle and a key, returns `true` if the key should be
+    ///   retained in the trace and `false` if it should be discarded.
     ///
     /// ## Correctness
     ///
@@ -373,11 +372,11 @@ where
     ///   timestamp `ts1` and key `k` such that `retain_key_func(ts1, k) =
     ///   false`, and for any `ts2 >= ts1` it must hold that
     ///   `retain_key_func(ts2, k) = false`, i.e., once a key is rejected, it
-    ///   will remain rejected as the watermark increases.
+    ///   will remain rejected as the bound increases.
     #[track_caller]
     pub fn integrate_trace_retain_keys<TS, RK>(
         &self,
-        watermark_stream: &Stream<C, TS>,
+        bounds_stream: &Stream<C, TS>,
         retain_key_func: RK,
     ) -> Stream<C, Spine<B>>
     where
@@ -387,7 +386,7 @@ where
     {
         let (trace, bounds) = self.integrate_trace_inner();
 
-        watermark_stream.inspect(move |ts| {
+        bounds_stream.inspect(move |ts| {
             let ts = ts.clone();
             let retain_key_func = retain_key_func.clone();
             bounds.set_key_filter(Box::new(move |key| retain_key_func(&ts, key)));
@@ -402,7 +401,7 @@ where
     #[track_caller]
     pub fn integrate_trace_retain_values<TS, RV>(
         &self,
-        watermark_stream: &Stream<C, TS>,
+        bounds_stream: &Stream<C, TS>,
         retain_value: RV,
     ) -> Stream<C, Spine<B>>
     where
@@ -412,7 +411,7 @@ where
     {
         let (trace, bounds) = self.integrate_trace_inner();
 
-        watermark_stream.inspect(move |ts| {
+        bounds_stream.inspect(move |ts| {
             let ts = ts.clone();
             let retain_value = retain_value.clone();
             bounds.set_val_filter(Box::new(move |val| retain_value(&ts, val)));
@@ -946,7 +945,7 @@ mod test {
                 let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32, i32>();
                 let stream = stream.shard();
                 let watermark: Stream<_, (i32, i32)> = stream
-                    .watermark(
+                    .waterline(
                         || (i32::MIN, i32::MIN),
                         |k, v| (*k, *v),
                         |(ts1_left, ts2_left), (ts1_right, ts2_right)| {

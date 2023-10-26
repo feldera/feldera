@@ -527,17 +527,17 @@ impl<D> StreamValue<D> {
 ///     over a partition.
 ///
 ///   * If the application can discard data that arrives too out-of-order, use
-///     [`Stream::partitioned_rolling_aggregate_with_watermark`], which can be
+///     [`Stream::partitioned_rolling_aggregate_with_waterline`], which can be
 ///     more memory-efficient.  This form of rolling aggregation requires a
-///     "watermark" stream, which is a stream of times (scalars, not batches or
+///     "waterline" stream, which is a stream of times (scalars, not batches or
 ///     Z sets) that reports the earliest time that can be updated.  Use
-///     [`Stream::watermark_monotonic`] to conveniently produce the watermark
+///     [`Stream::waterline_monotonic`] to conveniently produce the waterline
 ///     stream.
 ///
-///     [`Stream::partitioned_rolling_aggregate_with_watermark`] operates on an
-///     `IndexedZSet` and, in addition to the aggregrator, range, and watermark
+///     [`Stream::partitioned_rolling_aggregate_with_waterline`] operates on an
+///     `IndexedZSet` and, in addition to the aggregrator, range, and waterline
 ///     stream, it takes a function to map a record to a partition. It discards
-///     input before the watermark, partitions it, aggregates it, and returns
+///     input before the waterline, partitions it, aggregates it, and returns
 ///     the result as a `PartitionedIndexedZSet`.
 ///
 /// ## Windowing

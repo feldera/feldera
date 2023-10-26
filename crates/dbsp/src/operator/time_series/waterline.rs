@@ -10,51 +10,55 @@ impl<B> Stream<RootCircuit, B>
 where
     B: BatchReader + Clone + 'static,
 {
-    /// Compute the watermark of a time series, where the watermark function is
+    /// Compute the waterline of a time series, where the waterline function is
     /// monotonic in event time.  The notion of time here is distinct from the
     /// DBSP logical time and can be modeled using any type that implements
     /// `Ord`.
     ///
-    /// Watermark is an attribute of a time series that indicates the latest
-    /// timestamp such that no data points with timestamps older than the
-    /// watermark should appear in the stream. Every record in the time
-    /// series carries watermark information that can be extracted by
-    /// applying a user-provided function to it.  The watermark of the time
-    /// series is the maximum of watermarks of all its data points.
+    /// We use the term "waterline" instead of the more conventional
+    /// "watermark", to avoid confusion with watermarks in systems like
+    /// Flink.
     ///
-    /// This method computes the watermark of a time series assuming that the
-    /// watermark function is monotonic in the event time, e.g., `watermark
-    /// = event_time - 5s`.  Such watermarks are the most common in practice
+    /// Waterline is an attribute of a time series that indicates the latest
+    /// timestamp such that no data points with timestamps older than the
+    /// waterlind should appear in the stream. Every record in the time
+    /// series carries waterlind information that can be extracted by
+    /// applying a user-provided function to it.  The waterline of the time
+    /// series is the maximum of waterlines of all its data points.
+    ///
+    /// This method computes the waterline of a time series assuming that the
+    /// waterline function is monotonic in the event time, e.g., `waterline
+    /// = event_time - 5s`.  Such waterlines are the most common in practice
     /// and can be computed efficiently by only considering the latest
     /// timestamp in each input batch.   The method takes a stream of batches
-    /// indexed by timestamp and outputs a stream of watermarks (scalar
+    /// indexed by timestamp and outputs a stream of waterlines (scalar
     /// values).  Its output at each timestamp is a scalar (not a Z-set),
-    /// computed as the maximum of the previous watermark and the largest
-    /// watermark in the new input batch.
+    /// computed as the maximum of the previous waterline and the largest
+    /// waterline in the new input batch.
     #[track_caller]
-    pub fn watermark_monotonic<WF, IF, TS>(
+    pub fn waterline_monotonic<WF, IF, TS>(
         &self,
         init: IF,
-        watermark_func: WF,
+        waterline_func: WF,
     ) -> Stream<RootCircuit, TS>
     where
         IF: Fn() -> TS + 'static,
         WF: Fn(&B::Key) -> TS + 'static,
         TS: Ord + Clone + SizeOf + NumEntries + Send + Rkyv + 'static,
     {
-        let local_watermark = self.stream_fold(init(), move |old_watermark, batch| {
+        let local_waterline = self.stream_fold(init(), move |old_waterline, batch| {
             let mut cursor = batch.cursor();
             cursor.fast_forward_keys();
             match cursor.get_key() {
-                Some(key) => max(old_watermark, watermark_func(key)),
-                None => old_watermark,
+                Some(key) => max(old_waterline, waterline_func(key)),
+                None => old_waterline,
             }
         });
 
         if let Some(runtime) = Runtime::runtime() {
             let num_workers = runtime.num_workers();
             if num_workers == 1 {
-                return local_watermark;
+                return local_waterline;
             }
 
             let (sender, receiver) = new_exchange_operators(
@@ -62,22 +66,22 @@ where
                 Runtime::worker_index(),
                 Some(Location::caller()),
                 init,
-                move |watermark: TS, watermarks: &mut Vec<TS>| {
+                move |waterline: TS, waterlines: &mut Vec<TS>| {
                     for _ in 0..num_workers {
-                        watermarks.push(watermark.clone());
+                        waterlines.push(waterline.clone());
                     }
                 },
-                |result, watermark| {
-                    if &watermark > result {
-                        *result = watermark;
+                |result, waterline| {
+                    if &waterline > result {
+                        *result = waterline;
                     }
                 },
             );
 
             self.circuit()
-                .add_exchange(sender, receiver, &local_watermark)
+                .add_exchange(sender, receiver, &local_waterline)
         } else {
-            local_watermark
+            local_waterline
         }
     }
 }
@@ -88,6 +92,10 @@ where
 {
     /// Computes the least upper bound over all records that occurred in the
     /// stream with respect to some user-defined lattice.
+    ///
+    /// We use the term "waterline" instead of the more conventional
+    /// "watermark", to avoid confusion with watermarks in systems like
+    /// Flink.
     ///
     /// The primary use of this function is in time series analytics in
     /// computing the largest timestamp observed in the stream, which can in
@@ -102,7 +110,7 @@ where
     ///
     /// In the special case where timestamps form a total order and the input
     /// stream is indexed by time, the
-    /// [`watermark_monotonic`](`Stream::watermark_monotonic`) function can
+    /// [`waterline_monotonic`](`Stream::waterline_monotonic`) function can
     /// be used instead of this method to compute the bound more
     /// efficiently.
     ///
@@ -114,7 +122,7 @@ where
     /// * `least_upper_bound` - computes the least upper bound of two
     ///   timestamps.
     #[track_caller]
-    pub fn watermark<TS, WF, IF, LB>(
+    pub fn waterline<TS, WF, IF, LB>(
         &self,
         init: IF,
         extract_ts: WF,
@@ -128,28 +136,28 @@ where
     {
         let least_upper_bound_clone = least_upper_bound.clone();
 
-        let local_watermark = self.stream_fold(init(), move |old_watermark, batch| {
-            let mut watermark = old_watermark;
+        let local_waterline = self.stream_fold(init(), move |old_waterline, batch| {
+            let mut waterline = old_waterline;
 
             let mut cursor = batch.cursor();
 
             while cursor.key_valid() {
                 while cursor.val_valid() {
-                    watermark = least_upper_bound_clone(
-                        &watermark,
+                    waterline = least_upper_bound_clone(
+                        &waterline,
                         &extract_ts(cursor.key(), cursor.val()),
                     );
                     cursor.step_val();
                 }
                 cursor.step_key();
             }
-            watermark
+            waterline
         });
 
         if let Some(runtime) = Runtime::runtime() {
             let num_workers = runtime.num_workers();
             if num_workers == 1 {
-                return local_watermark;
+                return local_waterline;
             }
 
             let (sender, receiver) = new_exchange_operators(
@@ -157,20 +165,20 @@ where
                 Runtime::worker_index(),
                 Some(Location::caller()),
                 init,
-                move |watermark: TS, watermarks: &mut Vec<TS>| {
+                move |waterline: TS, waterlines: &mut Vec<TS>| {
                     for _ in 0..num_workers {
-                        watermarks.push(watermark.clone());
+                        waterlines.push(waterline.clone());
                     }
                 },
-                move |result, watermark| {
-                    *result = least_upper_bound(result, &watermark);
+                move |result, waterline| {
+                    *result = least_upper_bound(result, &waterline);
                 },
             );
 
             self.circuit()
-                .add_exchange(sender, receiver, &local_watermark)
+                .add_exchange(sender, receiver, &local_waterline)
         } else {
-            local_watermark
+            local_waterline
         }
     }
 }
@@ -181,16 +189,16 @@ mod tests {
 
     use crate::Runtime;
 
-    fn test_watermark_monotonic(workers: usize) {
-        let mut expected_watermarks = vec![115, 115, 125, 145].into_iter();
+    fn test_warerline_monotonic(workers: usize) {
+        let mut expected_warerlines = vec![115, 115, 125, 145].into_iter();
 
         let (mut dbsp, input_handle) = Runtime::init_circuit(workers, move |circuit| {
             let (stream, handle) = circuit.add_input_zset();
             stream
-                .watermark_monotonic(|| 0, |ts| ts + 5)
-                .inspect(move |watermark| {
+                .waterline_monotonic(|| 0, |ts| ts + 5)
+                .inspect(move |warerline| {
                     if Runtime::worker_index() == 0 {
-                        assert_eq!(watermark, &expected_watermarks.next().unwrap());
+                        assert_eq!(warerline, &expected_warerlines.next().unwrap());
                     }
                 });
             Ok(handle)
@@ -213,31 +221,31 @@ mod tests {
     }
 
     #[test]
-    fn test_watermark_monotonic1() {
-        test_watermark_monotonic(1);
+    fn test_warerline_monotonic1() {
+        test_warerline_monotonic(1);
     }
 
     #[test]
-    fn test_watermark_monotonic4() {
-        test_watermark_monotonic(4);
+    fn test_warerline_monotonic4() {
+        test_warerline_monotonic(4);
     }
 
-    fn test_watermark(workers: usize) {
-        let mut expected_watermarks = vec![(-10, 1), (100, 3), (100, 7), (250, 7)].into_iter();
+    fn test_warerline(workers: usize) {
+        let mut expected_warerlines = vec![(-10, 1), (100, 3), (100, 7), (250, 7)].into_iter();
 
         let (mut dbsp, input_handle) = Runtime::init_circuit(workers, move |circuit| {
             let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32, _>();
             stream
-                .watermark(
+                .waterline(
                     || (i32::MIN, i32::MIN),
                     |k, v| (*k, *v),
                     |(ts1_left, ts2_left), (ts1_right, ts2_right)| {
                         (max(*ts1_left, *ts1_right), max(*ts2_left, *ts2_right))
                     },
                 )
-                .inspect(move |watermark| {
+                .inspect(move |warerline| {
                     if Runtime::worker_index() == 0 {
-                        assert_eq!(watermark, &expected_watermarks.next().unwrap());
+                        assert_eq!(warerline, &expected_warerlines.next().unwrap());
                     }
                 });
             Ok(handle)
@@ -260,12 +268,12 @@ mod tests {
     }
 
     #[test]
-    fn test_watermark1() {
-        test_watermark(1);
+    fn test_warerline1() {
+        test_warerline(1);
     }
 
     #[test]
-    fn test_watermark4() {
-        test_watermark(4);
+    fn test_warerline4() {
+        test_warerline(4);
     }
 }

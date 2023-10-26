@@ -54,7 +54,7 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
     // from the input stream for the current time, with the window ending at the
     // previous 10 second multiple.
     // Set the watermark to `WATERMARK_INTERVAL_SECONDS` in the past.
-    let watermark = bids_by_time.watermark_monotonic(
+    let watermark = bids_by_time.waterline_monotonic(
         || 0,
         |date_time| date_time - WATERMARK_INTERVAL_SECONDS * 1000,
     );
