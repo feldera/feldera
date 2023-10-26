@@ -768,12 +768,15 @@ impl DbspCircuit {
                             deserialize_key(key.as_mut_ptr(), &buf);
                             deserialize_value(value.as_mut_ptr(), &buf);
 
-                            batch.push((key.assume_init(), (value.assume_init(), 1)));
+                            batch.push((key.assume_init(), Some(value.assume_init())));
                         }
                     }
 
                     let records = batch.len();
-                    input.as_indexed_zset_mut().unwrap().append(&mut batch);
+                    input
+                        .as_upsert_indexed_zset_mut()
+                        .unwrap()
+                        .append(&mut batch);
                     records
                 }
                 StreamLayout::Set(_) => todo!(),

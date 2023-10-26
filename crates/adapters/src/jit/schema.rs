@@ -26,6 +26,7 @@ pub struct ProgramSchema {
 pub struct TableSchema {
     pub name: String,
     pub fields: Vec<ColumnSchema>,
+    pub primary_key: Option<Vec<String>>,
 }
 
 /// Table column schema.
