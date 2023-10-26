@@ -14,7 +14,7 @@ publish = false
 default = ["with-kafka"]
 with-kafka = ["rdkafka"]
 test-utils = ["size-of", "proptest", "proptest-derive"]
-
+with-jit = ["dataflow-jit"]
 
 [dependencies]
 pipeline_types = { path = "../pipeline-types/" }
@@ -26,7 +26,7 @@ anyhow = { version = "1.0.57", features = ["backtrace"] }
 circular-queue = { version = "0.2.6", features = ["serde_support"] }
 crossbeam = "0.8.2"
 dbsp = { path = "../dbsp" }
-dataflow-jit = { path = "../dataflow-jit"}
+dataflow-jit = { path = "../dataflow-jit", optional = true}
 serde = { version = "1.0", features = ["derive", "rc"] }
 erased-serde = "0.3.23"
 once_cell = "1.9.0"
@@ -37,8 +37,8 @@ form_urlencoded = "1.2.0"
 csv = "1.2.2"
 # cmake-build is required on Windows.
 rdkafka = { version = "0.34.0", features = ["cmake-build", "ssl-vendored", "gssapi-vendored"], optional = true }
-actix = "0.13"
-actix-web = { version = "4.3", default-features = false, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
+actix = "0.13.1"
+actix-web = { version = "4.4.0", default-features = false, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
 mime = "0.3.16"
 log = "0.4.20"
 size-of = { version = "0.1.2", features = ["time-std"], optional = true }
@@ -79,10 +79,11 @@ actix-codec = "0.5.0"
 async-stream = "0.3.5"
 futures-timer = "3.0.2"
 test_bin = "0.4.0"
-reqwest = "0.11.20"
+reqwest = { version = "0.11.20", features = ["blocking"] }
 serial_test = "2.0.0"
 rust_decimal_macros = "1.32"
 
 [[bin]]
 name = "pipeline"
 path = "src/jit/pipeline.rs"
+required-features = ["with-kafka", "with-jit"]
