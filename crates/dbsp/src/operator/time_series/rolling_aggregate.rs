@@ -110,7 +110,7 @@ where
 {
     /// Similar to
     /// [`partitioned_rolling_aggregate`](`Stream::partitioned_rolling_aggregate`),
-    /// but uses `watermark` to bound its memory footprint.
+    /// but uses `warerline` to bound its memory footprint.
     ///
     /// Splits the input stream into non-overlapping
     /// partitions using `partition_func` and for each input record
@@ -123,11 +123,11 @@ where
     /// a data point arriving out-of-order may affect previously
     /// computed rolling aggregate values at future times.
     ///
-    /// The `watermark` stream bounds the out-of-orderedness of the input
+    /// The `warerline` stream bounds the out-of-orderedness of the input
     /// data by providing a monotonically growing lower bound on
     /// timestamps that can appear in the input stream.  The operator
     /// does not expect inputs with timestamps smaller than the current
-    /// watermark.  The `watermark` value is used to bound the amount of
+    /// warerline.  The `warerline` value is used to bound the amount of
     /// state maintained by the operator.
     ///
     /// # Background
@@ -141,22 +141,22 @@ where
     /// the state needed to recompute these aggregates, which allows us to
     /// bound the amount of state maintained by this operator.
     ///
-    /// The bound `ts - b` is known as "watermark" and can be computed, e.g., by
-    /// the [`watermark_monotonic`](`Stream::watermark_monotonic`) operator.
+    /// The bound `ts - b` is known as "warerline" and can be computed, e.g., by
+    /// the [`waterline_monotonic`](`Stream::waterline_monotonic`) operator.
     ///
     /// # Arguments
     ///
     /// * `self` - time series data indexed by time.
-    /// * `watermark` - monotonically growing lower bound on timestamps in the
+    /// * `warerline` - monotonically growing lower bound on timestamps in the
     ///   input stream.
     /// * `partition_func` - function used to split inputs into non-overlapping
     ///   partitions indexed by partition key of type `PK`.
     /// * `aggregator` - aggregator used to summarize values within the relative
     ///   time range `range` of each input timestamp.
     /// * `range` - relative time range to aggregate over.
-    pub fn partitioned_rolling_aggregate_with_watermark<PK, TS, V, Agg, PF>(
+    pub fn partitioned_rolling_aggregate_with_waterline<PK, TS, V, Agg, PF>(
         &self,
-        watermark: &Stream<RootCircuit, TS>,
+        warerline: &Stream<RootCircuit, TS>,
         partition_func: PF,
         aggregator: Agg,
         range: RelRange<TS>,
@@ -173,7 +173,7 @@ where
         V: DBData,
     {
         self.circuit()
-            .region("partitioned_rolling_aggregate_with_watermark", || {
+            .region("partitioned_rolling_aggregate_with_warerline", || {
                 // Shift the aggregation window so that its right end is at 0.
                 let shifted_range =
                     RelRange::new(range.from - range.to, RelOffset::Before(TS::zero()));
@@ -185,10 +185,10 @@ where
                 let bound_clone = bound.clone();
 
                 // Restrict the input stream to the `[lb -> ∞)` time window,
-                // where `lb = watermark - (range.to - range.from)` is the lower
+                // where `lb = warerline - (range.to - range.from)` is the lower
                 // bound on input timestamps that may be used to compute
                 // changes to the rolling aggregate operator.
-                let bounds = watermark.apply(move |wm| {
+                let bounds = warerline.apply(move |wm| {
                     let lower = shifted_range
                         .range_of(wm)
                         .map(|range| range.from)
@@ -728,8 +728,8 @@ mod test {
             let input_by_time =
                 input_stream.map_index(|(partition, (ts, val))| (*ts, (*partition, *val)));
 
-            let watermark =
-                input_by_time.watermark_monotonic(|| 0, move |ts| ts.saturating_sub(lateness));
+            let warerline =
+                input_by_time.waterline_monotonic(|| 0, move |ts| ts.saturating_sub(lateness));
 
             let aggregator = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
                 0i64,
@@ -746,9 +746,9 @@ mod test {
                 assert_eq!(expected, actual)
             });
 
-            let output_1000_0_watermark = input_by_time
-                .partitioned_rolling_aggregate_with_watermark(
-                    &watermark,
+            let output_1000_0_warerline = input_by_time
+                .partitioned_rolling_aggregate_with_waterline(
+                    &warerline,
                     |(partition, val)| (*partition, *val),
                     aggregator.clone(),
                     range_spec,
@@ -756,7 +756,7 @@ mod test {
                 .gather(0)
                 .integrate();
 
-            expected_1000_0.apply2(&output_1000_0_watermark, |expected, actual| {
+            expected_1000_0.apply2(&output_1000_0_warerline, |expected, actual| {
                 assert_eq!(expected, actual)
             });
 
@@ -781,19 +781,19 @@ mod test {
                 assert_eq!(expected, actual)
             });
 
-            let aggregate_500_500_watermark = input_by_time
-                .partitioned_rolling_aggregate_with_watermark(
-                    &watermark,
+            let aggregate_500_500_warerline = input_by_time
+                .partitioned_rolling_aggregate_with_waterline(
+                    &warerline,
                     |(partition, val)| (*partition, *val),
                     aggregator.clone(),
                     range_spec,
                 );
-            let output_500_500_watermark = aggregate_500_500_watermark.gather(0).integrate();
+            let output_500_500_warerline = aggregate_500_500_warerline.gather(0).integrate();
 
             let bound = TraceBound::new();
             bound.set((u64::max_value(), None));
 
-            aggregate_500_500_watermark
+            aggregate_500_500_warerline
                 .integrate_trace_with_bound(TraceBound::new(), bound)
                 .apply(move |trace| {
                     if let Some(bound) = size_bound {
@@ -801,7 +801,7 @@ mod test {
                     }
                 });
 
-            expected_500_500.apply2(&output_500_500_watermark, |expected, actual| {
+            expected_500_500.apply2(&output_500_500_warerline, |expected, actual| {
                 assert_eq!(expected, actual)
             });
 

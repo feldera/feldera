@@ -61,7 +61,7 @@ pub fn q8(input: NexmarkStream) -> Q8Stream {
 
     // Use the latest auction for the watermark
     let watermark =
-        auctions_by_time.watermark_monotonic(|| 0, |date_time| date_time - TUMBLE_SECONDS * 1000);
+        auctions_by_time.waterline_monotonic(|| 0, |date_time| date_time - TUMBLE_SECONDS * 1000);
     let window_bounds = watermark.apply(|watermark| {
         let watermark_rounded = *watermark - (*watermark % (TUMBLE_SECONDS * 1000));
         (
