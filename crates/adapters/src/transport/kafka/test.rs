@@ -2,7 +2,7 @@ use crate::{
     test::{
         generate_test_batches,
         kafka::{BufferConsumer, KafkaResources, TestProducer},
-        mock_input_pipeline, test_circuit, wait, MockDeZSet, TestStruct,
+        mock_input_pipeline, test_circuit, wait, MockDeZSet, TestStruct, DEFAULT_TIMEOUT_MS,
     },
     Controller, PipelineConfig,
 };
@@ -23,7 +23,10 @@ use std::{
 fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct>]) {
     let num_records: usize = data.iter().map(Vec::len).sum();
 
-    wait(|| zset.state().flushed.len() == num_records, None);
+    wait(
+        || zset.state().flushed.len() == num_records,
+        DEFAULT_TIMEOUT_MS,
+    );
 
     for (i, val) in data.iter().flat_map(|data| data.iter()).enumerate() {
         assert_eq!(&zset.state().flushed[i].0, val);
@@ -34,7 +37,10 @@ fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct
 fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct>]) {
     let num_records: usize = data.iter().map(Vec::len).sum();
 
-    wait(|| zset.state().flushed.len() == num_records, None);
+    wait(
+        || zset.state().flushed.len() == num_records,
+        DEFAULT_TIMEOUT_MS,
+    );
 
     let mut data_sorted = data
         .iter()
