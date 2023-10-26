@@ -177,7 +177,6 @@ fn supply_chain_test() {
         .is_success());
 
     sleep(Duration::from_millis(2_000));
-    server_thread.shutdown();
 
     let expected_output = vec![
         r#"{"insert":{"PART_ID":1,"PART_NAME":"Flux Capacitor","VENDOR_ID":2,"VENDOR_NAME":"HyperDrive Innovations","PRICE":10000}}"#.to_string(),
@@ -191,6 +190,46 @@ fn supply_chain_test() {
     lines.sort();
 
     assert_eq!(expected_output, lines);
+
+    // Test primary key behavior: delete
+    assert!(client
+        .post(endpoint("ingress/PART?format=json"))
+        .body(
+            r#"{"delete": {"ID": 1}}
+{"insert": {"ID": 4, "NAME": "Part 4"}}"#
+        )
+        .send()
+        .unwrap()
+        .status()
+        .is_success());
+
+    // Test primary key behavior: upsert
+    assert!(client
+            .post(endpoint("ingress/VENDOR?format=json"))
+            .body(
+                r#"{"insert": {"ID": 1, "NAME": "Gravitech Dynamics-2", "ADDRESS": "222 Graviton Lane-2"}}"#
+            )
+            .send()
+            .unwrap()
+            .status()
+            .is_success());
+
+    sleep(Duration::from_millis(2_000));
+
+    let expected_output: Vec<String> = vec![
+        r#"{"delete":{"PART_ID":1,"PART_NAME":"Flux Capacitor","VENDOR_ID":2,"VENDOR_NAME":"HyperDrive Innovations","PRICE":10000}}"#.to_string(),
+        r#"{"delete":{"PART_ID":2,"PART_NAME":"Warp Core","VENDOR_ID":1,"VENDOR_NAME":"Gravitech Dynamics","PRICE":15000}}"#.to_string(),
+        r#"{"insert":{"PART_ID":2,"PART_NAME":"Warp Core","VENDOR_ID":1,"VENDOR_NAME":"Gravitech Dynamics-2","PRICE":15000}}"#.to_string(),
+    ];
+
+    // The multithreaded circuit can produce outputs in non-deterministic order.
+    let output = fs::read_to_string("tests/sql_tests/supply_chain/preferred_vendor.json").unwrap();
+    let mut lines = output.lines().skip(3).collect::<Vec<_>>();
+    lines.sort();
+
+    assert_eq!(expected_output, lines);
+
+    server_thread.shutdown();
 }
 
 #[test]

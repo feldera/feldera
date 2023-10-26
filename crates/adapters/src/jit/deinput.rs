@@ -1,5 +1,7 @@
 use anyhow::Result as AnyResult;
-use dataflow_jit::facade::{DeCollectionStream as JitDeCollectionStream, JsonZSetHandle};
+use dataflow_jit::facade::{
+    DeCollectionStream as JitDeCollectionStream, JsonMapHandle, JsonZSetHandle,
+};
 use pipeline_types::format::json::JsonFlavor;
 
 use crate::{catalog::RecordFormat, ControllerError, DeCollectionHandle, DeCollectionStream};
@@ -49,6 +51,43 @@ impl DeZSetHandles {
 }
 
 impl DeCollectionHandle for DeZSetHandles {
+    fn configure_deserializer(
+        &self,
+        record_format: RecordFormat,
+    ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
+        match record_format {
+            RecordFormat::Json(JsonFlavor::Default) => Ok(Box::new(self.default_json.clone())),
+            RecordFormat::Json(JsonFlavor::DebeziumMySql) => {
+                Ok(Box::new(self.debezium_mysql_json.clone()))
+            }
+            RecordFormat::Json(JsonFlavor::Snowflake) => {
+                Err(ControllerError::input_format_not_supported(
+                    "unknown endpoint",
+                    "Snowflake JSON input format is not supported in JIT mode",
+                ))
+            }
+            RecordFormat::Csv => {
+                todo!()
+            }
+        }
+    }
+}
+
+pub struct DeMapHandles {
+    default_json: JsonMapHandle,
+    debezium_mysql_json: JsonMapHandle,
+}
+
+impl DeMapHandles {
+    pub fn new(default_json: JsonMapHandle, debezium_mysql_json: JsonMapHandle) -> Self {
+        Self {
+            default_json,
+            debezium_mysql_json,
+        }
+    }
+}
+
+impl DeCollectionHandle for DeMapHandles {
     fn configure_deserializer(
         &self,
         record_format: RecordFormat,
