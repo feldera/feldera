@@ -21,7 +21,7 @@
     </properties>
 
     <build>
-        <finalName>sql2dbsp</finalName>
+        <finalName>slt</finalName>
         <plugins>
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
@@ -29,7 +29,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>org.dbsp.sqlCompiler.CompilerMain</mainClass>
+                            <mainClass>org.dbsp.sqllogictest.Main</mainClass>
                         </manifest>
                     </archive>
                     <descriptorRefs>
@@ -46,19 +46,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.0.0-M7</version>
-                <configuration>
-                    <properties>
-                        <property>
-                            <name>listener</name>
-                            <value>org.dbsp.sqlCompiler.compiler.TestListener</value>
-                        </property>
-                    </properties>
-                </configuration>
-            </plugin>
         </plugins>
     </build>
 
@@ -72,12 +59,6 @@
             <groupId>net.hydromatic</groupId>
             <artifactId>sql-logic-test</artifactId>
             <version>0.3</version>
-        </dependency>
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>4.13.2</version>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>
