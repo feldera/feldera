@@ -62,7 +62,7 @@ public class BaseSQLTests {
         }
     };
 
-    public static final String projectDirectory = "..";
+    public static final String projectDirectory = "../";
     public static final String rustDirectory = projectDirectory + "/temp/src";
     public static final String testFilePath = rustDirectory + "/lib.rs";
 
