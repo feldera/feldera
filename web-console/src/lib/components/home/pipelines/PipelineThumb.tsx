@@ -50,9 +50,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
       >
         <Box sx={{ mr: 2, display: 'flex', flexDirection: 'column' }}>
           <Typography sx={{ mb: 0.5, fontWeight: 500 }}>
-            <Link href={'/streaming/management/#' + props.descriptor.pipeline_id} target='_blank' rel='noreferrer'>
-              {item.name}
-            </Link>
+            <Link href={'/streaming/management/#' + props.descriptor.pipeline_id}>{item.name}</Link>
           </Typography>
           <Typography variant='body2' sx={{ color: 'text.disabled' }}>
             {item.description}
@@ -71,8 +69,6 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
             size='small'
             disabled={!props.descriptor.program_id}
             href={`/analytics/editor/?program_id=${props.descriptor.program_id}`}
-            target='_blank'
-            rel='noreferrer'
             onMouseEnter={() => setSqlHover(true)}
             onMouseLeave={() => setSqlHover(false)}
           >
@@ -90,13 +86,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
           </Button>
         </>
       ) : (
-        <Button
-          variant='outlined'
-          size='small'
-          href={`/analytics/editor/?program_id=${props.descriptor.program_id}`}
-          target='_blank'
-          rel='noreferrer'
-        >
+        <Button variant='outlined' size='small' href={`/analytics/editor/?program_id=${props.descriptor.program_id}`}>
           SQL
         </Button>
       )}
