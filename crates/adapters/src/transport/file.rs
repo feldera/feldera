@@ -218,7 +218,7 @@ impl OutputEndpoint for FileOutputEndpoint {
 mod test {
     use crate::{
         deserialize_without_context,
-        test::{mock_input_pipeline, wait},
+        test::{mock_input_pipeline, wait, DEFAULT_TIMEOUT_MS},
     };
     use csv::WriterBuilder as CsvWriterBuilder;
     use serde::{Deserialize, Serialize};
@@ -285,7 +285,10 @@ format:
 
         // Unpause the endpoint, wait for the data to appear at the output.
         endpoint.start().unwrap();
-        wait(|| zset.state().flushed.len() == test_data.len(), None);
+        wait(
+            || zset.state().flushed.len() == test_data.len(),
+            DEFAULT_TIMEOUT_MS,
+        );
         for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
             assert!(polarity);
             assert_eq!(val, &test_data[i]);
@@ -340,7 +343,10 @@ format:
 
             // Unpause the endpoint, wait for the data to appear at the output.
             endpoint.start().unwrap();
-            wait(|| zset.state().flushed.len() == test_data.len(), None);
+            wait(
+                || zset.state().flushed.len() == test_data.len(),
+                DEFAULT_TIMEOUT_MS,
+            );
             for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
                 assert!(polarity);
                 assert_eq!(val, &test_data[i]);
@@ -364,7 +370,7 @@ format:
                 // println!("result: {:?}", state.parser_result);
                 state.parser_result.is_some() && !state.parser_result.as_ref().unwrap().1.is_empty()
             },
-            None,
+            DEFAULT_TIMEOUT_MS,
         );
 
         assert!(zset.state().buffered.is_empty());

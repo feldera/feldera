@@ -247,7 +247,7 @@ fn rustls_config() -> Arc<ClientConfig> {
 mod test {
     use crate::{
         deserialize_without_context,
-        test::{mock_input_pipeline, wait, MockDeZSet, MockInputConsumer},
+        test::{mock_input_pipeline, wait, MockDeZSet, MockInputConsumer, DEFAULT_TIMEOUT_MS},
         InputEndpoint,
     };
     use actix::System;
@@ -361,7 +361,7 @@ bar,false,-10
 
         // Unpause the endpoint, wait for the data to appear at the output.
         endpoint.start().unwrap();
-        wait(|| n_recs(&zset) == test_data.len(), None);
+        wait(|| n_recs(&zset) == test_data.len(), DEFAULT_TIMEOUT_MS);
         for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
             assert!(polarity);
             assert_eq!(val, &test_data[i]);
@@ -386,7 +386,10 @@ bar,false,-10
 
         // Unpause the endpoint, wait for the error.
         endpoint.start().unwrap();
-        wait(|| consumer.state().endpoint_error.is_some(), None);
+        wait(
+            || consumer.state().endpoint_error.is_some(),
+            DEFAULT_TIMEOUT_MS,
+        );
         Ok(())
     }
 
@@ -431,7 +434,7 @@ bar,false,-10
         // The first 10 records should take about 100 ms to arrive.  In practice
         // on busy CI systems it often seems to take longer, so be generous.
         let timeout_ms = 2000;
-        let n1_time = wait(|| n_recs(&zset) >= 10, Some(timeout_ms))
+        let n1_time = wait(|| n_recs(&zset) >= 10, timeout_ms)
             .unwrap_or_else(|| panic!("only {} records after {timeout_ms} ms", n_recs(&zset)));
         let n1 = n_recs(&zset);
         println!("{n1} records took {n1_time} ms to arrive");
@@ -455,7 +458,7 @@ bar,false,-10
         );
 
         // Wait for the first 50 records to arrive.
-        let n4_time = wait(|| n_recs(&zset) >= 50, Some(350))
+        let n4_time = wait(|| n_recs(&zset) >= 50, 350)
             .unwrap_or_else(|| panic!("only {} records after 350 ms", n_recs(&zset)));
         let n4 = n_recs(&zset);
         println!("{} records took {n4_time} ms longer to arrive", n4 - n3);
@@ -493,7 +496,7 @@ bar,false,-10
 
         // Within 600 ms more, though, we should get all 100 records, but fudge
         // it to 1000 ms.
-        let n6_time = wait(|| n_recs(&zset) >= 100, Some(1000))
+        let n6_time = wait(|| n_recs(&zset) >= 100, 1000)
             .unwrap_or_else(|| panic!("only {} records after 1000 ms", n_recs(&zset)));
         let n6 = n_recs(&zset);
         println!("{} more records took {n6_time} ms to arrive", n6 - n5);

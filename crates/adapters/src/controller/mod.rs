@@ -1403,7 +1403,7 @@ impl OutputConsumer for OutputProbe {
 #[cfg(test)]
 mod test {
     use crate::{
-        test::{generate_test_batch, test_circuit, wait, TestStruct},
+        test::{generate_test_batch, test_circuit, wait, TestStruct, DEFAULT_TIMEOUT_MS},
         Controller, PipelineConfig,
     };
     use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
@@ -1484,7 +1484,7 @@ outputs:
             controller.start();
 
             // Wait for the pipeline to output all records.
-            wait(|| controller.pipeline_complete(), None);
+            wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS);
 
             assert_eq!(controller.status().output_status().get(&0).unwrap().transmitted_records(), data.len() as u64);
 

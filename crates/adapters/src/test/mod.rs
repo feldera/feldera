@@ -33,6 +33,8 @@ pub use mock_output_consumer::MockOutputConsumer;
 pub struct TestLogger;
 pub static TEST_LOGGER: TestLogger = TestLogger;
 
+pub static DEFAULT_TIMEOUT_MS: u128 = 600_000;
+
 impl Log for TestLogger {
     fn enabled(&self, _metadata: &Metadata) -> bool {
         true
@@ -48,17 +50,15 @@ impl Log for TestLogger {
 /// Wait for `predicate` to become `true`.
 ///
 /// Returns the number of milliseconds elapsed or `None` on timeout.
-pub fn wait<P>(mut predicate: P, timeout_ms: Option<u128>) -> Option<u128>
+pub fn wait<P>(mut predicate: P, timeout_ms: u128) -> Option<u128>
 where
     P: FnMut() -> bool,
 {
     let start = Instant::now();
 
     while !predicate() {
-        if let Some(timeout_ms) = timeout_ms {
-            if start.elapsed().as_millis() >= timeout_ms {
-                return None;
-            }
+        if start.elapsed().as_millis() >= timeout_ms {
+            return None;
         }
         sleep(Duration::from_millis(10));
     }
