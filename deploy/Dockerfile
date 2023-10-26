@@ -68,7 +68,7 @@ ENV PATH="$PATH:/root/.cargo/bin"
 COPY --from=builder /app/target/release/pipeline-manager pipeline-manager
 # SQL compiler uber jar
 RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
-COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
+COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/sql-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-compiler/target/sql2dbsp-jar-with-dependencies.jar
 # The crates needed for the SQL compiler
 COPY crates/dbsp database-stream-processor/crates/dbsp
 COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
@@ -98,7 +98,7 @@ ENV PATH="$PATH:/root/.cargo/bin"
 COPY --from=builder /app/target/release/compiler-server compiler-server
 # SQL compiler uber jar
 RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
-COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
+COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/sql-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-compiler/target/sql2dbsp-jar-with-dependencies.jar
 # The crates needed for the SQL compiler
 COPY crates/dbsp database-stream-processor/crates/dbsp
 COPY crates/pipeline-types database-stream-processor/crates/pipeline-types

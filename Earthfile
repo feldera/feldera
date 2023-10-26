@@ -296,7 +296,7 @@ build-sql:
 
     COPY sql-to-dbsp-compiler sql-to-dbsp-compiler
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package -DskipTests --no-transfer-progress
-    SAVE ARTIFACT sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies.jar
+    SAVE ARTIFACT sql-to-dbsp-compiler/SQL-compiler/sql-compiler/target/sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies.jar
     SAVE ARTIFACT sql-to-dbsp-compiler
 
 build-adapters:
@@ -514,7 +514,7 @@ build-pipeline-manager-container:
     # First, copy over the artifacts built from previous stages
     RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
     COPY +build-manager/pipeline-manager .
-    COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
+    COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-compiler/target/
 
     # Then copy over the crates needed by the sql compiler
     COPY crates/dbsp database-stream-processor/crates/dbsp
