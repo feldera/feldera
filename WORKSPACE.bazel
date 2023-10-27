@@ -55,8 +55,6 @@ crates_repository(
 load("@crate_index//:defs.bzl", "crate_repositories")
 crate_repositories()
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
 http_archive(
     name = "rules_foreign_cc",
     # TODO: Get the latest sha256 value from a bazel debug message or the latest
@@ -85,3 +83,20 @@ http_archive(
     strip_prefix = "librdkafka-2.2.0",
     url = "https://github.com/confluentinc/librdkafka/archive/refs/tags/v2.2.0.tar.gz",
 )
+
+
+#
+# NodeJS
+#
+load("@rules_nodejs//nodejs:repositories.bzl", "node_repositories")
+node_repositories(
+  name = "nodejs",
+  node_version = "8.10.0",
+)
+#load("@npm_bazel_rules_nodejs//:defs.bzl", "yarn_install")
+#yarn_install(
+#    name = "web-console-dependencies",
+#    package_json = "//web-console:package.json",
+#    yarn_lock = "//web-console:yarn.lock",
+#)
+
