@@ -67,6 +67,8 @@ pub struct PipelineExecutionDesc {
     pub program_id: ProgramId,
     pub version: Version,
     pub config: PipelineConfig,
+    pub jit_mode: bool,
+    pub code: String,
     pub binary_ref: String,
 }
 
@@ -77,6 +79,9 @@ fn to_execution_desc(pr: PipelineRevision, binary_ref: String) -> PipelineExecut
         program_id: pr.program.program_id,
         version: pr.program.version,
         config: pr.config,
+        jit_mode: pr.program.jit_mode,
+        // PipelineRevision always contains program code.
+        code: pr.program.code.as_ref().unwrap().clone(),
         binary_ref,
     }
 }
@@ -180,19 +185,22 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .await?;
                 // txn.commit();
                 // Locate project executable.
-                let executable_ref = db
-                    .get_compiled_binary_ref(revision.program.program_id, revision.program.version)
-                    .await?;
                 let pipeline_id = self.pipeline_id;
-                if executable_ref.is_none() {
-                    return Err(RunnerError::BinaryFetchError {
+                let executable_ref = if !revision.program.jit_mode {
+                    db.get_compiled_binary_ref(
+                        revision.program.program_id,
+                        revision.program.version,
+                    )
+                    .await?
+                    .ok_or_else(|| RunnerError::BinaryFetchError {
                         pipeline_id,
                         error: format!("Did not receieve a compiled binary URL for {pipeline_id}"),
-                    }
-                    .into());
-                }
+                    })?
+                } else {
+                    String::new()
+                };
                 drop(db);
-                let execution_desc = to_execution_desc(revision, executable_ref.unwrap());
+                let execution_desc = to_execution_desc(revision, executable_ref);
 
                 match self.pipeline_handle.start(execution_desc).await {
                     Ok(_) => {

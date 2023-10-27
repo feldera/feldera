@@ -86,6 +86,7 @@ if __name__ == "__main__":
     run_demo(
         "Feldera Basics Tutorial",
         os.path.join(SCRIPT_DIR, "project.sql"),
+        False,
         make_config,
         prepare,
     )

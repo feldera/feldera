@@ -4,8 +4,15 @@ THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 ROOT_DIR="${THIS_DIR}/.."
 SQL_COMPILER_DIR="${ROOT_DIR}/sql-to-dbsp-compiler"
 MANAGER_DIR="${ROOT_DIR}/crates/pipeline_manager"
+ADAPTERS_DIR="${ROOT_DIR}/crates/adapters"
 if [[ -z "${RUST_BUILD_PROFILE+set}" ]]; then
     RUST_BUILD_PROFILE='--release'
+fi
+
+if [ "${RUST_BUILD_PROFILE}" == "--release" ]; then
+    JIT_PIPELINE_RUNNER_PATH='../../target/release/pipeline'
+else
+    JIT_PIPELINE_RUNNER_PATH='../../target/debug/pipeline'
 fi
 
 # if [ "$#" -lt 1 ]; then
@@ -41,6 +48,7 @@ if [ -n "$manager_pid" ]; then
     exit 1
 fi
 
+cd "${ADAPTERS_DIR}" && ~/.cargo/bin/cargo build $RUST_BUILD_PROFILE --features="with-jit"
 cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build $RUST_BUILD_PROFILE $PG_EMBED
 cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --bin pipeline-manager $RUST_BUILD_PROFILE $PG_EMBED -- \
     --bind-address="${BIND_ADDRESS}" \
@@ -49,4 +57,5 @@ cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --bin pipeline-manager $RUST_BUILD
     --runner-working-directory="${WORKING_DIR_ABS}" \
     --sql-compiler-home="${SQL_COMPILER_DIR}" \
     --dbsp-override-path="${ROOT_DIR}" \
+    --jit-pipeline-runner-path="${JIT_PIPELINE_RUNNER_PATH}" \
     ${DB_CONNECTION_STRING}

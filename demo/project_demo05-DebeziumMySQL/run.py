@@ -190,6 +190,7 @@ if __name__ == "__main__":
     run_demo(
         "Debezium MySQL Demo",
         os.path.join(SCRIPT_DIR, "project.sql"),
+        False,
         make_config,
         prepare,
     )
