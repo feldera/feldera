@@ -47,6 +47,7 @@ pub use delta0::Delta0;
 pub use distinct::Distinct;
 pub use filter_map::{FilterKeys, FilterMap, FilterVals, FlatMap, Map, MapKeys};
 pub use generator::{Generator, GeneratorNested};
+pub use group::CmpFunc;
 pub use index::Index;
 use input::Mailbox;
 pub use input::{CollectionHandle, InputHandle, UpsertHandle};

@@ -16,11 +16,14 @@ use crate::{
 };
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
+mod custom_ord;
 mod lag;
 mod topk;
 
 #[cfg(test)]
 mod test;
+
+pub use custom_ord::CmpFunc;
 
 /// Specifies the order in which a group transformer produces output tuples.
 #[derive(PartialEq, Eq)]
