@@ -361,7 +361,7 @@ bar,false,-10
 
         // Unpause the endpoint, wait for the data to appear at the output.
         endpoint.start().unwrap();
-        wait(|| n_recs(&zset) == test_data.len(), DEFAULT_TIMEOUT_MS);
+        wait(|| n_recs(&zset) == test_data.len(), DEFAULT_TIMEOUT_MS).unwrap();
         for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
             assert!(polarity);
             assert_eq!(val, &test_data[i]);
@@ -389,7 +389,8 @@ bar,false,-10
         wait(
             || consumer.state().endpoint_error.is_some(),
             DEFAULT_TIMEOUT_MS,
-        );
+        )
+        .unwrap();
         Ok(())
     }
 
