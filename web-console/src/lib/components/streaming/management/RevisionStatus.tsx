@@ -1,9 +1,10 @@
 // Displays a button that displays if the pipeline has changes since the last
 // revision. If clicked, a dialog is opened that shows the changes.
 
-import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
-import { ErrorResponse, Pipeline, PipelineStatus } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { usePipelineMutation } from '$lib/compositions/streaming/management/usePipelineMutation'
+import { ErrorResponse } from '$lib/services/manager'
+import { mutationStartPipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { Change, diffLines } from 'diff'
 import {
   Dispatch,
@@ -110,7 +111,7 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
   const initialTab = diffCount.config.length == 0 && diffCount.program.length > 0 ? '2' : '1'
   const [value, setValue] = useState<string>(initialTab)
 
-  const startPipelineClick = useStartPipeline()
+  const startPipelineClick = usePipelineMutation(mutationStartPipeline)
 
   const handleStart = () => {
     startPipelineClick(pipeline.descriptor.pipeline_id)
@@ -127,7 +128,7 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
   }
 
   const tooltipText =
-    pipeline.state.current_status == (PipelineStatus.RUNNING || pipeline.state.current_status == PipelineStatus.PAUSED)
+    pipeline.state.current_status == PipelineStatus.RUNNING || pipeline.state.current_status == PipelineStatus.PAUSED
       ? 'Shutdown the pipeline first before you can deploy the new changes.'
       : 'Start the pipeline with the new changes.'
 

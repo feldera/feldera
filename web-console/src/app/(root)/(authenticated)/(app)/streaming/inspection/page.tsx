@@ -6,8 +6,9 @@ import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
-import { Pipeline, PipelineId, PipelineStatus } from '$lib/services/manager'
+import { PipelineId } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { useSearchParams } from 'next/navigation'
 import { SyntheticEvent, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
@@ -21,7 +22,6 @@ import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
 
 import type { Row } from '$lib/components/streaming/import/InsertionTable'
-
 const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
   return (
     <BreadcrumbSelect label='Relation' value={props.relation}>

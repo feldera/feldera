@@ -47,10 +47,10 @@ const getStatusObj = (status: ProgramStatus) =>
       return { title: 'Compiling', color: 'primary' as const }
     })
     .with('CompilingSql', () => {
-      return { title: 'Compiling', color: 'primary' as const }
+      return { title: 'Compiling sql', color: 'primary' as const }
     })
     .with('CompilingRust', () => {
-      return { title: 'Building Pipeline', color: 'primary' as const }
+      return { title: 'Compiling binary', color: 'primary' as const }
     })
     .with('Success', () => {
       return { title: 'Ready', color: 'success' as const }

@@ -30,8 +30,15 @@ export const mkQuery = <U extends Record<string, FunctionType>>(
 export const invalidateQuery = (queryClient: QueryClient, query: { queryKey: readonly unknown[] }) =>
   queryClient.invalidateQueries(query.queryKey)
 
+export type QueryData<Query extends { queryFn: (...args: any) => any }> = Awaited<ReturnType<Query['queryFn']>>
+
 export const setQueryData = <R>(
   queryClient: QueryClient,
   query: { queryKey: readonly unknown[]; queryFn: () => Promise<R> },
   data: Updater<R | undefined, R | undefined>
 ) => queryClient.setQueryData(query.queryKey, data)
+
+export const getQueryData = <R>(
+  queryClient: QueryClient,
+  query: { queryKey: readonly unknown[]; queryFn: () => Promise<R> }
+) => queryClient.getQueryData<R>(query.queryKey)

@@ -7,9 +7,10 @@ import { DataGridPro } from '$lib/components/common/table/DataGridProDeclarative
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { getValueFormatter, Row, sqlTypeToDataGridType } from '$lib/functions/ddl'
-import { Field, Pipeline, PipelineRevision, Relation } from '$lib/services/manager'
+import { Field, PipelineRevision, Relation } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
+import { Pipeline } from '$lib/types/pipeline'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import invariant from 'tiny-invariant'
 

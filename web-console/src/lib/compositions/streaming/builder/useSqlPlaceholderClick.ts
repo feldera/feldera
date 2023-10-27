@@ -3,7 +3,7 @@
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
 import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
 import { setQueryData } from '$lib/functions/common/tanstack'
-import { Pipeline, ProgramDescr } from '$lib/services/manager'
+import { ProgramDescr } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { useCallback } from 'react'
 import { NodeProps, useReactFlow } from 'reactflow'
@@ -76,7 +76,7 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
       const pipelineId = null
       if (pipelineId) {
         // TODO: figure out if it's better to optimistically update query here?
-        setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId), (oldData: Pipeline | undefined) => {
+        setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId), oldData => {
           if (!oldData) {
             return oldData
           }

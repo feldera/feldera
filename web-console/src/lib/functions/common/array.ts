@@ -57,13 +57,31 @@ export function reorderElement<T>(array: T[], fromIndex: number, toIndex: number
  * @param replacement
  * @returns
  */
-export function replaceElement<T>(array: T[], replacement: (t: T) => T | null) {
+export function replaceElementInplace<T>(array: T[], replacement: (t: T) => T | null) {
   let value = null as T | null
   for (const [i, e] of array.entries()) {
     value = replacement(e)
     if (value !== null) {
       array[i] = value
       break
+    }
+  }
+  return array
+}
+
+/**
+ * Replaces the first element in the array for which the replacement result isn't null
+ * Returns a new array
+ * @param array
+ * @param replacement
+ * @returns
+ */
+export function replaceElement<T>(array: T[], replacement: (t: T) => T | null) {
+  let value = null as T | null
+  for (const [i, e] of array.entries()) {
+    value = replacement(e)
+    if (value !== null) {
+      return array.slice(0, i).concat([value], array.slice(i + 1))
     }
   }
   return array

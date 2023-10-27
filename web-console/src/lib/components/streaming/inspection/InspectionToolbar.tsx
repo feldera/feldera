@@ -1,5 +1,5 @@
 import { useInsertDeleteRows } from '$lib/compositions/streaming/inspection/useDeleteRows'
-import { PipelineStatus } from '$lib/services/manager'
+import { PipelineStatus } from '$lib/types/pipeline'
 import { useCallback } from 'react'
 
 import {
