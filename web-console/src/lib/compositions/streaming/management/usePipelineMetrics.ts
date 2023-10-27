@@ -1,7 +1,12 @@
 import { nonNull } from '$lib/functions/common/function'
-import { PipelineStatus } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
-import { ConnectorStatus, GlobalMetrics, InputConnectorMetrics, OutputConnectorMetrics } from '$lib/types/pipeline'
+import {
+  ConnectorStatus,
+  GlobalMetrics,
+  InputConnectorMetrics,
+  OutputConnectorMetrics,
+  PipelineStatus
+} from '$lib/types/pipeline'
 import { useEffect, useState } from 'react'
 
 import { useQuery } from '@tanstack/react-query'

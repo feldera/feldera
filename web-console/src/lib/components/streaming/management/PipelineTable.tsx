@@ -14,12 +14,8 @@ import AnalyticsPipelineTput from '$lib/components/streaming/management/Analytic
 import PipelineMemoryGraph from '$lib/components/streaming/management/PipelineMemoryGraph'
 import { PipelineRevisionStatusChip } from '$lib/components/streaming/management/RevisionStatus'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
-import { ClientPipelineStatus, usePipelineStateStore } from '$lib/compositions/streaming/management/StatusContext'
-import useDeletePipeline from '$lib/compositions/streaming/management/useDeletePipeline'
-import usePausePipeline from '$lib/compositions/streaming/management/usePausePipeline'
 import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
-import useShutdownPipeline from '$lib/compositions/streaming/management/useShutdownPipeline'
-import useStartPipeline from '$lib/compositions/streaming/management/useStartPipeline'
+import { usePipelineMutation } from '$lib/compositions/streaming/management/usePipelineMutation'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { useHashPart } from '$lib/compositions/useHashPart'
 import { humanSize } from '$lib/functions/common/string'
@@ -29,17 +25,22 @@ import {
   ApiError,
   AttachedConnector,
   ConnectorDescr,
-  Pipeline,
   PipelineId,
   PipelineRevision,
   PipelinesService,
-  PipelineStatus,
   Relation,
   UpdatePipelineRequest,
   UpdatePipelineResponse
 } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import {
+  mutationDeletePipeline,
+  mutationPausePipeline,
+  mutationShutdownPipeline,
+  mutationStartPipeline,
+  PipelineManagerQuery
+} from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
+import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { format } from 'd3-format'
 import dayjs from 'dayjs'
 import Link from 'next/link'
@@ -77,6 +78,7 @@ import {
   GridColDef,
   GridRenderCellParams,
   GridRowId,
+  GridToolbarFilterButton,
   GridValueSetterParams,
   useGridApiRef
 } from '@mui/x-data-grid-pro'
@@ -309,18 +311,6 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   )
 }
 
-const pipelineStatusToClientStatus = (status: PipelineStatus) => {
-  return match(status)
-    .with(PipelineStatus.SHUTDOWN, () => ClientPipelineStatus.INACTIVE)
-    .with(PipelineStatus.PROVISIONING, () => ClientPipelineStatus.PROVISIONING)
-    .with(PipelineStatus.INITIALIZING, () => ClientPipelineStatus.INITIALIZING)
-    .with(PipelineStatus.PAUSED, () => ClientPipelineStatus.PAUSED)
-    .with(PipelineStatus.RUNNING, () => ClientPipelineStatus.RUNNING)
-    .with(PipelineStatus.SHUTTING_DOWN, () => ClientPipelineStatus.SHUTTING_DOWN)
-    .with(PipelineStatus.FAILED, () => ClientPipelineStatus.FAILED)
-    .exhaustive()
-}
-
 // Only show the details tab button if this pipeline has a revision
 function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value' | 'row'>) {
   const { value: isExpanded, row: row } = props
@@ -357,34 +347,24 @@ function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value
 export default function PipelineTable() {
   const [rows, setRows] = useState<Pipeline[]>([])
   const [filteredData, setFilteredData] = useState<Pipeline[]>([])
-  const setPipelineStatus = usePipelineStateStore(state => state.setStatus)
   const [paginationModel, setPaginationModel] = useState({
     pageSize: 7,
     page: 0
   })
 
   const pipelineQuery = useQuery({
-    ...PipelineManagerQuery.pipeline(),
+    ...PipelineManagerQuery.pipelines(),
     refetchInterval: 2000
   })
   const { isLoading, isError, data, error } = pipelineQuery
   useEffect(() => {
     if (!isLoading && !isError) {
       setRows(data)
-      for (const { descriptor, state } of data) {
-        // If we're not in the desired status, we know better what to display as
-        // status in the client (something pending), so we don't reset it until
-        // desired status is reached and rely on whatever we set with
-        // `setPipelineStatus` in the start/stop/pause hooks.
-        if (state.current_status == state.desired_status || state.current_status == PipelineStatus.FAILED) {
-          setPipelineStatus(descriptor.pipeline_id, pipelineStatusToClientStatus(state.current_status))
-        }
-      }
     }
     if (isError) {
       throw error
     }
-  }, [isLoading, isError, data, setRows, setPipelineStatus, error])
+  }, [isLoading, isError, data, setRows, error])
 
   const getDetailPanelContent = useCallback<NonNullable<DataGridProProps['getDetailPanelContent']>>(
     ({ row }) => <DetailPanelContent row={row} />,
@@ -463,7 +443,7 @@ export default function PipelineTable() {
       },
       {
         onError: (error: ApiError) => {
-          invalidateQuery(queryClient, PipelineManagerQuery.pipeline())
+          invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
           invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(newRow.descriptor.pipeline_id))
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
@@ -544,8 +524,9 @@ export default function PipelineTable() {
           toolbar: {
             children: [
               btnAdd,
-              <ResetColumnViewButton key='1' {...gridPersistence} />,
-              <div style={{ marginLeft: 'auto' }} key='2' />,
+              <GridToolbarFilterButton key='1' />,
+              <ResetColumnViewButton key='2' {...gridPersistence} />,
+              <div style={{ marginLeft: 'auto' }} key='3' />,
               <DataGridSearch fetchRows={pipelineQuery} setFilteredData={setFilteredData} key='99' />
             ]
           },
@@ -563,57 +544,61 @@ export default function PipelineTable() {
 
 const usePipelineState = (params: { row: Pipeline }) => {
   const pipeline = params.row.descriptor
-  const pipelineStatus = usePipelineStateStore(state => state.clientStatus)
   const curProgramQuery = useQuery({
     ...PipelineManagerQuery.programCode(pipeline.program_id!),
     enabled: pipeline.program_id != null
   })
+  const { data: pipelines } = useQuery({
+    ...PipelineManagerQuery.pipelines()
+  })
 
   const programReady =
     !curProgramQuery.isLoading && !curProgramQuery.isError && curProgramQuery.data.status === 'Success'
-  const currentStatus = pipelineStatus.get(pipeline.pipeline_id) ?? ClientPipelineStatus.UNKNOWN
+  const currentStatus =
+    pipelines?.find(p => p.descriptor.pipeline_id === pipeline.pipeline_id)?.state.current_status ??
+    PipelineStatus.UNKNOWN
   return tuple(currentStatus, programReady)
 }
 
 const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) => {
   const [status, isReady] = usePipelineState(params)
 
-  const shutdownPipelineClick = useShutdownPipeline()
+  const shutdownPipelineClick = usePipelineMutation(mutationShutdownPipeline)
 
   const chip = match([status, isReady])
-    .with([ClientPipelineStatus.UNKNOWN, P._], () => <CustomChip rounded size='small' skin='light' label={status} />)
-    .with([ClientPipelineStatus.INACTIVE, true], () => <CustomChip rounded size='small' skin='light' label={status} />)
-    .with([ClientPipelineStatus.INACTIVE, false], () => (
+    .with([PipelineStatus.UNKNOWN, P._], () => <CustomChip rounded size='small' skin='light' label={status} />)
+    .with([PipelineStatus.SHUTDOWN, true], () => <CustomChip rounded size='small' skin='light' label={status} />)
+    .with([PipelineStatus.SHUTDOWN, false], () => (
       <CustomChip rounded size='small' skin='light' color='info' label='Compiling' />
     ))
-    .with([ClientPipelineStatus.INITIALIZING, P._], () => (
+    .with([PipelineStatus.INITIALIZING, P._], () => (
       <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
-    .with([ClientPipelineStatus.PROVISIONING, P._], () => (
+    .with([PipelineStatus.PROVISIONING, P._], () => (
       <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
-    .with([ClientPipelineStatus.CREATE_FAILURE, P._], () => (
+    .with([PipelineStatus.CREATE_FAILURE, P._], () => (
       <CustomChip rounded size='small' skin='light' color='error' label={status} />
     ))
-    .with([ClientPipelineStatus.STARTING, P._], () => (
+    .with([PipelineStatus.STARTING, P._], () => (
       <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
-    .with([ClientPipelineStatus.STARTUP_FAILURE, P._], () => (
+    .with([PipelineStatus.STARTUP_FAILURE, P._], () => (
       <CustomChip rounded size='small' skin='light' color='error' label={status} />
     ))
-    .with([ClientPipelineStatus.RUNNING, P._], () => (
+    .with([PipelineStatus.RUNNING, P._], () => (
       <CustomChip rounded size='small' skin='light' color='success' label={status} />
     ))
-    .with([ClientPipelineStatus.PAUSING, P._], () => (
+    .with([PipelineStatus.PAUSING, P._], () => (
       <CustomChip rounded size='small' skin='light' color='info' label={status} />
     ))
-    .with([ClientPipelineStatus.PAUSED, true], () => (
+    .with([PipelineStatus.PAUSED, true], () => (
       <CustomChip rounded size='small' skin='light' color='info' label={status} />
     ))
-    .with([ClientPipelineStatus.PAUSED, false], () => (
+    .with([PipelineStatus.PAUSED, false], () => (
       <CustomChip rounded size='small' skin='light' color='info' label='Compiling' />
     ))
-    .with([ClientPipelineStatus.FAILED, P._], () => (
+    .with([PipelineStatus.FAILED, P._], () => (
       <Tooltip title={params.row.state.error?.message || 'Unknown Error'} disableInteractive>
         <CustomChip
           rounded
@@ -625,7 +610,7 @@ const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) =>
         />
       </Tooltip>
     ))
-    .with([ClientPipelineStatus.SHUTTING_DOWN, P._], () => (
+    .with([PipelineStatus.SHUTTING_DOWN, P._], () => (
       <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
     .exhaustive()
@@ -642,12 +627,12 @@ const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) =>
 const PipelineActions = (params: { row: Pipeline }) => {
   const pipeline = params.row.descriptor
 
-  const state = usePipelineState(params)
+  const [status, isReady] = usePipelineState(params)
 
-  const startPipelineClick = useStartPipeline()
-  const pausePipelineClick = usePausePipeline()
-  const shutdownPipelineClick = useShutdownPipeline()
-  const deletePipelineClick = useDeletePipeline()
+  const startPipelineClick = usePipelineMutation(mutationStartPipeline)
+  const pausePipelineClick = usePipelineMutation(mutationPausePipeline)
+  const shutdownPipelineClick = usePipelineMutation(mutationShutdownPipeline)
+  const deletePipelineClick = usePipelineMutation(mutationDeletePipeline)
 
   const { showDeleteDialog } = useDeleteDialog()
 
@@ -667,7 +652,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
       </Tooltip>
     ),
     spinner: () => (
-      <Tooltip title={state[0]} key='spinner'>
+      <Tooltip title={status} key='spinner'>
         <IconButton size='small'>
           <Icon270RingWithBg fontSize={20} />
         </IconButton>
@@ -715,18 +700,18 @@ const PipelineActions = (params: { row: Pipeline }) => {
     )
   }
 
-  const enabled = match(state)
+  const enabled = match([status, isReady])
     .returnType<(keyof typeof actions)[]>()
-    .with([ClientPipelineStatus.INACTIVE, true], () => ['start', 'edit', 'delete'])
-    .with([ClientPipelineStatus.INACTIVE, false], () => ['edit', 'delete'])
-    .with([ClientPipelineStatus.PROVISIONING, P._], () => ['spinner', 'edit'])
-    .with([ClientPipelineStatus.INITIALIZING, P._], () => ['spinner', 'edit'])
-    .with([ClientPipelineStatus.STARTING, P._], () => ['spinner', 'edit'])
-    .with([ClientPipelineStatus.RUNNING, P._], () => ['pause', 'shutdown', 'edit'])
-    .with([ClientPipelineStatus.PAUSING, P._], () => ['spinner', 'edit'])
-    .with([ClientPipelineStatus.PAUSED, true], () => ['start', 'shutdown', 'edit'])
-    .with([ClientPipelineStatus.SHUTTING_DOWN, P._], () => ['spinner', 'edit'])
-    .with([ClientPipelineStatus.FAILED, P._], () => ['shutdown', 'edit'])
+    .with([PipelineStatus.SHUTDOWN, true], () => ['start', 'edit', 'delete'])
+    .with([PipelineStatus.SHUTDOWN, false], () => ['edit', 'delete'])
+    .with([PipelineStatus.PROVISIONING, P._], () => ['spinner', 'edit'])
+    .with([PipelineStatus.INITIALIZING, P._], () => ['spinner', 'edit'])
+    .with([PipelineStatus.STARTING, P._], () => ['spinner', 'edit'])
+    .with([PipelineStatus.RUNNING, P._], () => ['pause', 'shutdown', 'edit'])
+    .with([PipelineStatus.PAUSING, P._], () => ['spinner', 'edit'])
+    .with([PipelineStatus.PAUSED, true], () => ['start', 'shutdown', 'edit'])
+    .with([PipelineStatus.SHUTTING_DOWN, P._], () => ['spinner', 'edit'])
+    .with([PipelineStatus.FAILED, P._], () => ['shutdown', 'edit'])
     .otherwise(() => ['edit'])
 
   return (

@@ -3,8 +3,8 @@
 
 import { PipelineThumb } from '$lib/components/home/pipelines/PipelineThumb'
 import { partition } from '$lib/functions/common/array'
-import { PipelineStatus } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { PipelineStatus } from '$lib/types/pipeline'
 import { ApexOptions } from 'apexcharts'
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
 import IconChevronDown from '~icons/bx/chevron-down'
@@ -22,7 +22,7 @@ const Pipelines = () => {
   const apexOptions = apexChartsOptions(theme)
 
   const fetchQuery = useQuery({
-    ...PipelineManagerQuery.pipeline(),
+    ...PipelineManagerQuery.pipelines(),
     refetchInterval: 1000
   })
   const [active, inactive] = partition(fetchQuery.data ?? [], p => p.state.current_status === PipelineStatus.RUNNING)

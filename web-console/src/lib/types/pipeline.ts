@@ -1,3 +1,5 @@
+import { Pipeline as RawPipeline, PipelineRuntimeState } from '$lib/services/manager'
+
 export interface GlobalConfig {
   workers: number
   cpu_profiler: boolean
@@ -40,7 +42,33 @@ export interface ConnectorStatus {
   fatal_error: string | null
 }
 
-export type PipelineAction = {
-  command: 'pause' | 'start' | 'shutdown'
-  pipeline_id: string
+export enum PipelineStatus {
+  // Shouldn't happen, means we haven't put it in the map
+  UNKNOWN = 'Unknown',
+  // Maps to PipelineStatus.SHUTDOWN
+  SHUTDOWN = 'Inactive',
+  // Maps to PipelineStatus.PROVISIONING
+  PROVISIONING = 'Provisioning …',
+  // Maps to PipelineStatus.INITIALIZING
+  INITIALIZING = 'Creating …',
+  CREATE_FAILURE = 'Create failed',
+  STARTING = 'Starting …',
+  STARTUP_FAILURE = 'Starting failed',
+  // Maps to PipelineStatus.RUNNING
+  RUNNING = 'Running',
+  PAUSING = 'Pausing …',
+  // Maps to PipelineStatus.PAUSED
+  PAUSED = 'Paused',
+  // Maps to PipelineStatus.FAILED
+  FAILED = 'Failed',
+  // Maps to PipelineStatus.SHUTTING_DOWN
+  SHUTTING_DOWN = 'Shutting down …'
 }
+
+export type PipelineWithStatus<Field extends string, Status> = Omit<RawPipeline, 'state'> & {
+  state: Omit<PipelineRuntimeState, Field> & {
+    [status in Field]: Status
+  }
+}
+
+export type Pipeline = PipelineWithStatus<'current_status', PipelineStatus>

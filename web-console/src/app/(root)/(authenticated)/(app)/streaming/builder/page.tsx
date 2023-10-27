@@ -20,7 +20,6 @@ import {
   AttachedConnector,
   NewPipelineRequest,
   NewPipelineResponse,
-  Pipeline,
   PipelineId,
   PipelinesService,
   UpdatePipelineRequest,
@@ -287,26 +286,22 @@ const PipelineWithProvider = (props: {
           // It's important to update the query cache here because otherwise
           // sometimes the query cache will be out of date and the UI will
           // show the old connectors again after deletion.
-          setQueryData(
-            queryClient,
-            PipelineManagerQuery.pipelineStatus(pipelineId),
-            (oldData: Pipeline | undefined) => {
-              if (!oldData) {
-                return oldData
-              }
-              return {
-                ...oldData,
-                descriptor: {
-                  ...oldData.descriptor,
-                  name,
-                  description,
-                  program_id: project?.program_id,
-                  config,
-                  attached_connectors: connectors
-                }
+          setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId), oldData => {
+            if (!oldData) {
+              return oldData
+            }
+            return {
+              ...oldData,
+              descriptor: {
+                ...oldData.descriptor,
+                name,
+                description,
+                program_id: project?.program_id,
+                config,
+                attached_connectors: connectors
               }
             }
-          )
+          })
           setSaveState('isUpToDate')
         }
       }

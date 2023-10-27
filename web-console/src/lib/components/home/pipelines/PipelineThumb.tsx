@@ -2,8 +2,7 @@
 
 import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import { discreteDerivative } from '$lib/functions/common/math'
-import { PipelineStatus } from '$lib/services/manager'
-import { Pipeline } from '$lib/services/manager/models/Pipeline'
+import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { ApexOptions } from 'apexcharts'
 import { format } from 'numerable'
 import { useState } from 'react'
