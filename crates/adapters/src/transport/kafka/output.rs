@@ -4,11 +4,8 @@ use crate::{
     OutputEndpointConfig, OutputTransport,
 };
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
-use crossbeam::{
-    queue::ArrayQueue,
-    sync::{Parker, Unparker},
-};
-use log::{debug, error};
+use crossbeam::sync::{Parker, Unparker};
+use log::debug;
 use pipeline_types::secret_ref::MaybeSecretRef;
 use pipeline_types::transport::kafka::default_redpanda_server;
 use pipeline_types::transport::kafka::KafkaLogLevel;
@@ -17,16 +14,10 @@ use rdkafka::{
     error::KafkaError,
     producer::{BaseRecord, DeliveryResult, Producer, ProducerContext, ThreadedProducer},
     types::RDKafkaErrorCode,
-    ClientConfig, ClientContext, Statistics,
+    ClientConfig, ClientContext,
 };
 use serde::Deserialize;
-use std::{
-    borrow::Cow,
-    collections::BTreeMap,
-    sync::RwLock,
-    thread::sleep,
-    time::{Duration, Instant},
-};
+use std::{borrow::Cow, collections::BTreeMap, sync::RwLock, time::Duration};
 use utoipa::{
     openapi::{
         schema::{KnownFormat, Schema},
@@ -36,8 +27,6 @@ use utoipa::{
 };
 
 const OUTPUT_POLLING_INTERVAL: Duration = Duration::from_millis(100);
-
-const ERROR_BUFFER_SIZE: usize = 1000;
 
 const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
 
@@ -188,14 +177,6 @@ struct KafkaOutputContext {
 
     /// Callback to notify the controller about delivery failure.
     async_error_callback: RwLock<Option<AsyncErrorCallback>>,
-
-    /// Errors encountered during initialization, i.e., before an error
-    /// callback is connected to the context.
-    errors: ArrayQueue<(bool, String)>,
-
-    /// The latest snapshot of Kafka producer statistics obtained
-    /// via the `stats` callback.
-    stats: RwLock<Option<Statistics>>,
 }
 
 impl KafkaOutputContext {
@@ -203,18 +184,7 @@ impl KafkaOutputContext {
         Self {
             unparker,
             async_error_callback: RwLock::new(None),
-            errors: ArrayQueue::new(ERROR_BUFFER_SIZE),
-            stats: RwLock::new(None),
         }
-    }
-
-    fn push_error(&self, fatal: bool, reason: &str) {
-        // `force_push` makes the queue operate as a circular buffer.
-        self.errors.force_push((fatal, reason.to_string()));
-    }
-
-    fn pop_error(&self) -> Option<(bool, String)> {
-        self.errors.pop()
     }
 }
 
@@ -229,13 +199,7 @@ impl ClientContext for KafkaOutputContext {
 
         if let Some(cb) = self.async_error_callback.read().unwrap().as_ref() {
             cb(fatal, anyhow!(reason.to_string()));
-        } else {
-            self.push_error(fatal, reason);
         }
-    }
-
-    fn stats(&self, statistics: Statistics) {
-        *self.stats.write().unwrap() = Some(statistics);
     }
 }
 
@@ -288,14 +252,6 @@ impl KafkaOutputEndpoint {
             }
         }
 
-        // This is needed to activate the `KafkaOutputContext::stats` callback.
-        // We currently only use the stats during initialization, but we
-        // may want to surface it in the future as part of endpoint
-        // statistics.  It doesn't seem possible to adjust this parameter at
-        // runtime, so we pick a value that shouldn't slow down the initialization
-        // too much while also not causing significant runtime overhead.
-        client_config.set("statistics.interval.ms", "1000");
-
         if let Some(log_level) = config.log_level {
             client_config.set_log_level(rdkafka_loglevel_from(log_level));
         }
@@ -326,49 +282,20 @@ impl KafkaOutputEndpoint {
             max_message_size,
         })
     }
-
-    /// Determines from producer stats whether the producer can be
-    /// considered successfully initialized.
-    ///
-    /// This is not a well-defined notion in Kafka, but as a good-enough
-    /// approximation, we check that the producer is connected to at least
-    /// one broker whose status is "UP".  Together with the
-    /// `KafkaOutputContext::error` callback this should at least detect
-    /// invalid broker address type of issue.
-    fn status_ok(stats: &Statistics) -> bool {
-        stats.brokers.values().any(|broker| broker.state == "UP")
-    }
 }
 
 impl OutputEndpoint for KafkaOutputEndpoint {
     fn connect(&self, async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
-        let start = Instant::now();
-        loop {
-            // Treat all errors as fatal during initialization.
-            if let Some((_fatal, error)) = self.kafka_producer.context().pop_error() {
-                bail!(error);
-            }
-
-            if let Some(stats) = self.kafka_producer.context().stats.read().unwrap().as_ref() {
-                if Self::status_ok(stats) {
-                    // debug!("Kafka output endpoint initialization complete. Stats: {stats:?}");
-                    break;
-                }
-            }
-
-            if start.elapsed() > Duration::from_secs(self.config.initialization_timeout_secs as u64)
-            {
-                if let Some(stats) = self.kafka_producer.context().stats.read().unwrap().as_ref() {
-                    error!("Timeout initializing Kafka producer. Producer stats: {stats:?}");
-                }
-                bail!(
-                    "failed to initialize Kafka producer, giving up after {}s",
-                    self.config.initialization_timeout_secs
-                );
-            }
-
-            sleep(Duration::from_millis(100));
-        }
+        // Retrieve metadata for our producer.  This makes first contact with
+        // the broker, which allows us to limit the time for initialization to
+        // make sure that the configuration is correct.  After this, Kafka will
+        // retry indefinitely.
+        //
+        // We don't actually care about the metadata.
+        self.kafka_producer.client().fetch_metadata(
+            Some(&self.config.topic),
+            Duration::from_secs(self.config.initialization_timeout_secs as u64),
+        )?;
         *self
             .kafka_producer
             .context()
