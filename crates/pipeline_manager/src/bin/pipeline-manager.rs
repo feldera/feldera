@@ -75,14 +75,15 @@ async fn main() -> anyhow::Result<()> {
     db.run_migrations().await?;
     let db = Arc::new(Mutex::new(db));
     let db_clone = db.clone();
+    let compiler_config_clone = compiler_config.clone();
     let _compiler = tokio::spawn(async move {
-        Compiler::run(&compiler_config.clone(), db_clone)
+        Compiler::run(&compiler_config_clone, db_clone)
             .await
             .unwrap();
     });
     let db_clone = db.clone();
     let _local_runner = tokio::spawn(async move {
-        local_runner::run(db_clone, &local_runner_config.clone()).await;
+        local_runner::run(db_clone, &local_runner_config, &compiler_config).await;
     });
     // The api-server blocks forever
     pipeline_manager::api::run(db, api_config).await.unwrap();

@@ -723,6 +723,9 @@ struct NewProgramRequest {
     /// SQL code of the program.
     #[schema(example = "CREATE TABLE Example(name varchar);")]
     code: String,
+    /// Compile the program in JIT mode.
+    #[serde(default)]
+    jit_mode: bool,
 }
 
 /// Response to a new program request.
@@ -772,6 +775,7 @@ async fn do_new_program(
             &request.name,
             &request.description,
             &request.code,
+            request.jit_mode,
         )
         .await
         .map(|(program_id, version)| {
@@ -799,6 +803,8 @@ struct UpdateProgramRequest {
     /// New SQL code for the program or `None` to keep existing program
     /// code unmodified.
     code: Option<String>,
+    /// Compile the program in JIT mode.
+    jit_mode: bool,
 }
 
 /// Response to a program update request.
@@ -853,6 +859,7 @@ async fn update_program(
             &body.name,
             &body.description,
             &body.code,
+            body.jit_mode,
         )
         .await?;
     info!(

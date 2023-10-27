@@ -117,6 +117,7 @@ pub(crate) trait Storage {
         program_name: &str,
         program_description: &str,
         program_code: &str,
+        jit_mode: bool,
     ) -> Result<(ProgramId, Version), DBError>;
 
     /// Update program name, description and, optionally, code.
@@ -128,6 +129,7 @@ pub(crate) trait Storage {
         program_name: &str,
         program_description: &str,
         program_code: &Option<String>,
+        jit_mode: bool,
     ) -> Result<Version, DBError>;
 
     /// Retrieve program descriptor.
@@ -212,7 +214,7 @@ pub(crate) trait Storage {
     ///
     /// Returns a pending program with the most recent `status_since` or `None`
     /// if there are no pending programs in the DB.
-    async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version)>, DBError>;
+    async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version, bool)>, DBError>;
 
     /// Version the configuration for a pipeline.
     ///

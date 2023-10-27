@@ -618,6 +618,7 @@ impl Compiler {
             // for compilation again. TODO: this behavior will change when the compiler uploads
             // artifacts remotely and not on its local filesystem.
             else if (program.status.is_compiling() || program.status == ProgramStatus::Success)
+                && !program.jit_mode
                 && !map.contains(&(program.program_id.0, program.version.0))
             {
                 info!(
@@ -700,7 +701,6 @@ impl Compiler {
                             // - We hold the db lock so we are executing this
                             // update in the same transaction as the program
                             // status above.
-
                             let schema_path = config.schema_path(program_id);
                             let schema_json = fs::read_to_string(&schema_path).await
                                 .map_err(|e| {
@@ -710,9 +710,18 @@ impl Compiler {
                             let schema = serde_json::from_str(&schema_json)
                                 .map_err(|e| { ManagerError::invalid_program_schema(e.to_string()) })?;
                             db.set_program_schema(tenant_id, program_id, schema).await?;
-                            info!("Invoking rust compiler for program {program_id} version {version} (tenant {tenant_id}). This will take a while.");
-                            debug!("Set ProgramStatus::CompilingRust '{program_id}', version '{version}'");
-                            job = Some(CompilationJob::rust(tenant_id, &config, program_id, version).await?);
+
+                            if job.as_ref().unwrap().is_sql_to_rust() {
+                                info!("Invoking rust compiler for program {program_id} version {version} (tenant {tenant_id}). This will take a while.");
+                                debug!("Set ProgramStatus::CompilingRust '{program_id}', version '{version}'");
+                                job = Some(CompilationJob::rust(tenant_id, &config, program_id, version).await?);
+                            } else {
+                                // SQL-to-JIT compiler succeeded -- declare victory.
+                                db.set_program_status_guarded(tenant_id, program_id, version, ProgramStatus::Success).await?;
+                                info!("Successfully invoked SQL compiler for program {program_id} version {version} in JIT mode (tenant {tenant_id}).");
+                                debug!("Set ProgramStatus::Success '{program_id}', version '{version}'");
+                                job = None;
+                            }
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
                             Self::version_binary(&config, &db, program_id, version).await?;
@@ -756,7 +765,7 @@ impl Compiler {
             if job.is_none() {
                 let program = {
                     let db = db.lock().await;
-                    if let Some((tenant_id, program_id, version)) = db.next_job().await? {
+                    if let Some((tenant_id, program_id, version, jit_mode)) = db.next_job().await? {
                         trace!("Next program in the queue: '{program_id}', version '{version}'");
                         let program = db
                             .get_program_if_exists(tenant_id, program_id, true)
@@ -765,6 +774,7 @@ impl Compiler {
                             tenant_id,
                             program_id,
                             version,
+                            jit_mode,
                             program.unwrap().code.unwrap(),
                         ))
                     } else {
@@ -772,10 +782,22 @@ impl Compiler {
                     }
                 };
 
-                if let Some((tenant_id, program_id, version, code)) = program {
-                    job = Some(
-                        CompilationJob::sql(tenant_id, &config, &code, program_id, version).await?,
-                    );
+                if let Some((tenant_id, program_id, version, jit_mode, code)) = program {
+                    job = if jit_mode {
+                        Some(
+                            CompilationJob::sql_to_jit_ir(
+                                tenant_id, &config, &code, program_id, version,
+                            )
+                            .await?,
+                        )
+                    } else {
+                        Some(
+                            CompilationJob::sql_to_rust(
+                                tenant_id, &config, &code, program_id, version,
+                            )
+                            .await?,
+                        )
+                    };
                     db.lock()
                         .await
                         .set_program_status_guarded(
@@ -793,7 +815,8 @@ impl Compiler {
 
 #[derive(Eq, PartialEq)]
 enum Stage {
-    Sql,
+    SqlToRust,
+    SqlToJit,
     Rust,
 }
 
@@ -806,23 +829,31 @@ struct CompilationJob {
 }
 
 impl CompilationJob {
+    fn is_sql_to_rust(&self) -> bool {
+        self.stage == Stage::SqlToRust
+    }
+
+    fn is_sql_to_jit(&self) -> bool {
+        self.stage == Stage::SqlToJit
+    }
+
     fn is_sql(&self) -> bool {
-        self.stage == Stage::Sql
+        self.is_sql_to_jit() || self.is_sql_to_rust()
     }
 
     fn is_rust(&self) -> bool {
         self.stage == Stage::Rust
     }
 
-    /// Run SQL-to-DBSP compiler.
-    async fn sql(
+    /// Compiler SQL to Rust.
+    async fn sql_to_rust(
         tenant_id: TenantId,
         config: &CompilerConfig,
         code: &str,
         program_id: ProgramId,
         version: Version,
     ) -> Result<Self, ManagerError> {
-        debug!("Running SQL compiler on program '{program_id}', version '{version}'");
+        debug!("Running SQL-to-Rust compiler on program '{program_id}', version '{version}'");
 
         // Create project directory.
         let sql_file_path = config.sql_file_path(program_id);
@@ -885,7 +916,72 @@ impl CompilationJob {
 
         Ok(Self {
             tenant_id,
-            stage: Stage::Sql,
+            stage: Stage::SqlToRust,
+            program_id,
+            version,
+            compiler_process,
+        })
+    }
+
+    /// Compile SQL to JIT IR.
+    async fn sql_to_jit_ir(
+        tenant_id: TenantId,
+        config: &CompilerConfig,
+        code: &str,
+        program_id: ProgramId,
+        version: Version,
+    ) -> Result<Self, ManagerError> {
+        debug!("Running SQL compiler on program '{program_id}', version '{version}'");
+
+        // Create project directory.
+        let sql_file_path = config.sql_file_path(program_id);
+        let project_directory = sql_file_path.parent().unwrap();
+        fs::create_dir_all(&project_directory).await.map_err(|e| {
+            ManagerError::io_error(
+                format!(
+                    "creating project directory '{}'",
+                    project_directory.display()
+                ),
+                e,
+            )
+        })?;
+
+        // Write SQL code to file.
+        fs::write(&sql_file_path, code).await.map_err(|e| {
+            ManagerError::io_error(format!("writing '{}'", sql_file_path.display()), e)
+        })?;
+
+        let stderr_path = config.compiler_stderr_path(program_id);
+        let err_file = File::create(&stderr_path).await.map_err(|e| {
+            ManagerError::io_error(format!("creating error log '{}'", stderr_path.display()), e)
+        })?;
+
+        // Run compiler, direct output to `main.rs`.
+        let schema_path = config.schema_path(program_id);
+        let compiler_process = Command::new(config.sql_compiler_path())
+            .arg("-js")
+            .arg(schema_path)
+            .arg(sql_file_path.as_os_str())
+            .arg("-i")
+            .arg("-je")
+            .arg("-j")
+            .arg("--alltables")
+            .arg("--outputsAreSets")
+            .arg("--ignoreOrder")
+            .stdin(Stdio::null())
+            .stderr(Stdio::from(err_file.into_std().await))
+            .stdout(Stdio::null())
+            .spawn()
+            .map_err(|e| {
+                ManagerError::io_error(
+                    format!("starting SQL compiler '{}'", sql_file_path.display()),
+                    e,
+                )
+            })?;
+
+        Ok(Self {
+            tenant_id,
+            stage: Stage::SqlToJit,
             program_id,
             version,
             compiler_process,
@@ -945,7 +1041,7 @@ impl CompilationJob {
     /// Read error output of (Rust or SQL) compiler.
     async fn error_output(&self, config: &CompilerConfig) -> Result<String, ManagerError> {
         let output = match self.stage {
-            Stage::Sql => {
+            Stage::SqlToRust | Stage::SqlToJit => {
                 let stderr_path = config.compiler_stderr_path(self.program_id);
                 fs::read_to_string(&stderr_path).await.map_err(|e| {
                     ManagerError::io_error(format!("reading '{}'", stderr_path.display()), e)
@@ -992,7 +1088,14 @@ mod test {
         let tenant_id = TenantRecord::default().id;
         db.lock()
             .await
-            .new_program(tenant_id, Uuid::now_v7(), pname, "program desc", "ignored")
+            .new_program(
+                tenant_id,
+                Uuid::now_v7(),
+                pname,
+                "program desc",
+                "ignored",
+                false,
+            )
             .await
             .unwrap()
     }
