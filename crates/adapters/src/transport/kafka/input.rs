@@ -1,4 +1,4 @@
-use super::refine_kafka_error;
+use super::{refine_kafka_error, DeferredLogging};
 use crate::transport::secret_resolver::MaybeSecret;
 use crate::{
     transport::kafka::rdkafka_loglevel_from, InputConsumer, InputEndpoint, InputTransport,
@@ -10,6 +10,7 @@ use log::debug;
 use num_traits::FromPrimitive;
 use pipeline_types::secret_ref::MaybeSecretRef;
 use pipeline_types::transport::kafka::KafkaInputConfig;
+use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::{
     config::FromClientConfigAndContext,
     consumer::{BaseConsumer, Consumer, ConsumerContext, Rebalance, RebalanceProtocol},
@@ -81,12 +82,15 @@ struct KafkaInputContext {
     // We keep a weak reference to the endpoint to avoid a reference cycle:
     // endpoint->BaseConsumer->context->endpoint.
     endpoint: Mutex<Weak<KafkaInputEndpointInner>>,
+
+    deferred_logging: DeferredLogging,
 }
 
 impl KafkaInputContext {
     fn new() -> Self {
         Self {
             endpoint: Mutex::new(Weak::new()),
+            deferred_logging: DeferredLogging::new(),
         }
     }
 }
@@ -99,13 +103,9 @@ impl ClientContext for KafkaInputContext {
         }
     }
 
-    /*fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
-        println!("log: {} {}", fac, log_message);
+    fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
+        self.deferred_logging.log(level, fac, log_message);
     }
-
-    fn stats(&self, statistics: rdkafka::Statistics) {
-        println!("stats: {:?}", statistics)
-    }*/
 }
 
 impl ConsumerContext for KafkaInputContext {
@@ -308,7 +308,7 @@ impl InputEndpoint for KafkaInputEndpoint {
             .map(String::as_str)
             .collect::<Vec<_>>();
 
-        // Subscibe consumer to `topics`.
+        // Subscribe consumer to `topics`.
         self.0.kafka_consumer.subscribe(&topics)?;
 
         let start = Instant::now();
@@ -318,7 +318,13 @@ impl InputEndpoint for KafkaInputEndpoint {
         loop {
             // We must poll in order to receive connection failures; otherwise
             // we'd have to rely on timeouts only.
-            match self.0.kafka_consumer.poll(POLL_TIMEOUT) {
+            match self
+                .0
+                .kafka_consumer
+                .context()
+                .deferred_logging
+                .with_deferred_logging(|| self.0.kafka_consumer.poll(POLL_TIMEOUT))
+            {
                 Some(Err(e)) => {
                     // Topic-does-not-exist error will be reported here.
                     bail!(

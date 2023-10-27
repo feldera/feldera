@@ -1,14 +1,12 @@
+use super::{DeferredLogging, KafkaLogLevel};
+use crate::transport::kafka::rdkafka_loglevel_from;
 use crate::transport::secret_resolver::MaybeSecret;
-use crate::{
-    transport::kafka::rdkafka_loglevel_from, AsyncErrorCallback, OutputEndpoint,
-    OutputEndpointConfig, OutputTransport,
-};
+use crate::{AsyncErrorCallback, OutputEndpoint, OutputEndpointConfig, OutputTransport};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use log::debug;
 use pipeline_types::secret_ref::MaybeSecretRef;
 use pipeline_types::transport::kafka::default_redpanda_server;
-use pipeline_types::transport::kafka::KafkaLogLevel;
 use rdkafka::{
     config::FromClientConfigAndContext,
     error::KafkaError,
@@ -177,6 +175,8 @@ struct KafkaOutputContext {
 
     /// Callback to notify the controller about delivery failure.
     async_error_callback: RwLock<Option<AsyncErrorCallback>>,
+
+    deferred_logging: DeferredLogging,
 }
 
 impl KafkaOutputContext {
@@ -184,6 +184,7 @@ impl KafkaOutputContext {
         Self {
             unparker,
             async_error_callback: RwLock::new(None),
+            deferred_logging: DeferredLogging::new(),
         }
     }
 }
@@ -200,6 +201,10 @@ impl ClientContext for KafkaOutputContext {
         if let Some(cb) = self.async_error_callback.read().unwrap().as_ref() {
             cb(fatal, anyhow!(reason.to_string()));
         }
+    }
+
+    fn log(&self, level: rdkafka::config::RDKafkaLogLevel, fac: &str, log_message: &str) {
+        self.deferred_logging.log(level, fac, log_message);
     }
 }
 
@@ -292,10 +297,15 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         // retry indefinitely.
         //
         // We don't actually care about the metadata.
-        self.kafka_producer.client().fetch_metadata(
-            Some(&self.config.topic),
-            Duration::from_secs(self.config.initialization_timeout_secs as u64),
-        )?;
+        self.kafka_producer
+            .context()
+            .deferred_logging
+            .with_deferred_logging(|| {
+                self.kafka_producer.client().fetch_metadata(
+                    Some(&self.config.topic),
+                    Duration::from_secs(self.config.initialization_timeout_secs as u64),
+                )
+            })?;
         *self
             .kafka_producer
             .context()
