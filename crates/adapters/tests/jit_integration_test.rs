@@ -8,9 +8,9 @@ use serde_json::json;
 use serial_test::serial;
 use std::{
     fs::{self},
-    io::Error as IoError,
+    io::{BufRead, BufReader, Error as IoError, Read},
     path::Path,
-    process::{Command, ExitStatus},
+    process::{Command, ExitStatus, Stdio},
     thread::{self, sleep, JoinHandle},
     time::{Duration, Instant},
 };
@@ -50,7 +50,7 @@ fn start_pipeline(test_dir: &str) -> JoinHandle<Result<ExitStatus, IoError>> {
 
     // Start the server it will run until we invoke the `/shutdown` endpoint.
     let server_thread = thread::spawn(move || {
-        get_test_bin("pipeline")
+        let mut child = get_test_bin("pipeline")
             .current_dir(test_dir)
             .args([
                 "--ir",
@@ -62,9 +62,31 @@ fn start_pipeline(test_dir: &str) -> JoinHandle<Result<ExitStatus, IoError>> {
                 "--default-port",
                 PIPELINE_PORT,
             ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
-            .unwrap()
-            .wait()
+            .unwrap();
+
+        // Take all of the stdout and stderr output from the subprocess and push
+        // it through println!().  This may seem silly but it is the magical way
+        // to get the unit test output capturing code to work; otherwise you get
+        // huge spew all over stdout of `cargo test` that can't even be easily
+        // attributed to a particular test.
+        fn print_subprocess_output<R: Read + Send + 'static>(r: R, name: &'static str) {
+            thread::spawn(move || {
+                let buf_reader = BufReader::new(r);
+                for line in buf_reader.lines() {
+                    match line {
+                        Ok(string) => println!("pipeline {name}: {string}"),
+                        Err(error) => println!("pipeline {name} error: {error}"),
+                    }
+                }
+            });
+        }
+        print_subprocess_output(child.stdout.take().unwrap(), "stdout");
+        print_subprocess_output(child.stderr.take().unwrap(), "stderr");
+
+        child.wait()
     });
 
     let client = Client::new();
