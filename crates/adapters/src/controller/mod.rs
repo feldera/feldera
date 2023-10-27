@@ -1484,7 +1484,7 @@ outputs:
             controller.start();
 
             // Wait for the pipeline to output all records.
-            wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS);
+            wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
 
             assert_eq!(controller.status().output_status().get(&0).unwrap().transmitted_records(), data.len() as u64);
 

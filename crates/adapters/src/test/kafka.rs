@@ -282,7 +282,7 @@ impl BufferConsumer {
         let num_records: usize = data.iter().map(Vec::len).sum();
 
         // println!("waiting for {num_records} records");
-        wait(|| self.len() == num_records, DEFAULT_TIMEOUT_MS);
+        wait(|| self.len() == num_records, DEFAULT_TIMEOUT_MS).unwrap();
         //println!("{num_records} records received: {:?}",
         // received_data.lock().unwrap().iter().map(|r| r.id).collect::<Vec<_>>());
 

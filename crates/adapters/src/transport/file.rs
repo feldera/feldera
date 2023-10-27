@@ -288,7 +288,8 @@ format:
         wait(
             || zset.state().flushed.len() == test_data.len(),
             DEFAULT_TIMEOUT_MS,
-        );
+        )
+        .unwrap();
         for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
             assert!(polarity);
             assert_eq!(val, &test_data[i]);
@@ -346,7 +347,8 @@ format:
             wait(
                 || zset.state().flushed.len() == test_data.len(),
                 DEFAULT_TIMEOUT_MS,
-            );
+            )
+            .unwrap();
             for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
                 assert!(polarity);
                 assert_eq!(val, &test_data[i]);
@@ -371,7 +373,8 @@ format:
                 state.parser_result.is_some() && !state.parser_result.as_ref().unwrap().1.is_empty()
             },
             DEFAULT_TIMEOUT_MS,
-        );
+        )
+        .unwrap();
 
         assert!(zset.state().buffered.is_empty());
         assert!(zset.state().flushed.is_empty());
