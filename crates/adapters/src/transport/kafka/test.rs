@@ -64,6 +64,7 @@ fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStru
 
 fn init_test_logger() {
     let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+        .is_test(true)
         .format(move |buf, record| {
             let t = chrono::Utc::now();
             let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
