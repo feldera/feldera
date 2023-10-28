@@ -968,59 +968,38 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     public void visitSort(LogicalSort sort) {
-        // Aggregate in a single group.
         CalciteObject node = new CalciteObject(sort);
         RelNode input = sort.getInput();
-        DBSPType inputRowType = this.convertType(input.getRowType(), false);
         DBSPOperator opInput = this.getOperator(input);
         if (this.options.languageOptions.ignoreOrderBy && sort.fetch == null) {
             this.assignOperator(sort, opInput);
             return;
         }
-
         if (sort.offset != null)
             throw new UnimplementedException(node);
 
+        DBSPExpression limit = null;
+        if (sort.fetch != null) {
+            ExpressionCompiler expressionCompiler = new ExpressionCompiler(null, this.compiler);
+            // We expect the limit to be a constant
+            limit = expressionCompiler.compile(sort.fetch);
+        }
+
+        DBSPType inputRowType = this.convertType(input.getRowType(), false);
         DBSPVariablePath t = inputRowType.var("t");
         DBSPExpression emptyGroupKeys =
                 new DBSPRawTupleExpression(
                         new DBSPRawTupleExpression(),
                         DBSPTupleExpression.flatten(t)).closure(t.asRefParameter());
-        DBSPIndexOperator index = new DBSPIndexOperator(
+        DBSPOperator index = new DBSPIndexOperator(
                 node, emptyGroupKeys,
                 new DBSPTypeRawTuple(), inputRowType, new DBSPTypeWeight(),
                 opInput.isMultiset, opInput);
         this.circuit.addOperator(index);
-        // apply an aggregation function that just creates a vector.
-        DBSPTypeVec vecType = new DBSPTypeVec(inputRowType, false);
-        DBSPExpression zero = new DBSPPath(vecType.name, "new").toExpression().call();
-        DBSPVariablePath accum = vecType.var("a");
-        DBSPVariablePath row = inputRowType.var("v");
-        // An element with weight 'w' is pushed 'w' times into the vector
-        DBSPExpression wPush = new DBSPApplyExpression(node,
-                "weighted_push", new DBSPTypeVoid(), accum, row, this.compiler.weightVar);
-        DBSPExpression push = wPush.closure(
-                accum.asRefParameter(true), row.asRefParameter(),
-                this.compiler.weightVar.asParameter());
-        DBSPExpression constructor =
-            new DBSPPath(
-                    new DBSPSimplePathSegment("Fold",
-                            DBSPTypeAny.getDefault(),
-                        new DBSPTypeUser(node, USER, "UnimplementedSemigroup",
-                                false, DBSPTypeAny.getDefault()),
-                            DBSPTypeAny.getDefault(),
-                            DBSPTypeAny.getDefault()),
-                    new DBSPSimplePathSegment("new")).toExpression();
-
-        DBSPExpression folder = constructor.call(zero, push);
-        DBSPAggregateOperator agg = new DBSPAggregateOperator(node,
-                new DBSPTypeRawTuple(), new DBSPTypeVec(inputRowType, false), new DBSPTypeWeight(),
-                folder, null, index, false);
-        this.circuit.addOperator(agg);
 
         // Generate comparison function for sorting the vector
         DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, inputRowType);
-        for (RelFieldCollation collation: sort.getCollation().getFieldCollations()) {
+        for (RelFieldCollation collation : sort.getCollation().getFieldCollations()) {
             int field = collation.getFieldIndex();
             RelFieldCollation.Direction direction = collation.getDirection();
             boolean ascending;
@@ -1039,21 +1018,56 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
             comparator = new DBSPFieldComparatorExpression(node, comparator, field, ascending);
         }
+
+        if (sort.fetch != null) {
+            // TopK operator.
+            // Since TopK is always incremental we have to wrap it into a D-I pair
+            DBSPDifferentialOperator diff = new DBSPDifferentialOperator(node, index);
+            this.circuit.addOperator(diff);
+            DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(node, comparator, limit, diff);
+            this.circuit.addOperator(topK);
+            DBSPIntegralOperator integral = new DBSPIntegralOperator(node, topK);
+            // If we ignore ORDER BY this is the result.
+            if (this.options.languageOptions.ignoreOrderBy) {
+                this.assignOperator(sort, integral);
+                return;
+            }
+            // Otherwise we have to sort again in a vector!
+            // Fall through, continuing from the integral.
+            this.circuit.addOperator(integral);
+            index = integral;
+        }
+        // Global sort.  Implemented by aggregate in a single Vec<> which is then sorted.
+        // Apply an aggregation function that just creates a vector.
+        DBSPTypeVec vecType = new DBSPTypeVec(inputRowType, false);
+        DBSPExpression zero = new DBSPPath(vecType.name, "new").toExpression().call();
+        DBSPVariablePath accum = vecType.var("a");
+        DBSPVariablePath row = inputRowType.var("v");
+        // An element with weight 'w' is pushed 'w' times into the vector
+        DBSPExpression wPush = new DBSPApplyExpression(node,
+                "weighted_push", new DBSPTypeVoid(), accum, row, this.compiler.weightVar);
+        DBSPExpression push = wPush.closure(
+                accum.asRefParameter(true), row.asRefParameter(),
+                this.compiler.weightVar.asParameter());
+        DBSPExpression constructor =
+                new DBSPPath(
+                        new DBSPSimplePathSegment("Fold",
+                                DBSPTypeAny.getDefault(),
+                                new DBSPTypeUser(node, USER, "UnimplementedSemigroup",
+                                        false, DBSPTypeAny.getDefault()),
+                                DBSPTypeAny.getDefault(),
+                                DBSPTypeAny.getDefault()),
+                        new DBSPSimplePathSegment("new")).toExpression();
+
+        DBSPExpression folder = constructor.call(zero, push);
+        DBSPAggregateOperator agg = new DBSPAggregateOperator(node,
+                new DBSPTypeRawTuple(), new DBSPTypeVec(inputRowType, false), new DBSPTypeWeight(),
+                folder, null, index, false);
+        this.circuit.addOperator(agg);
+
         DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator);
         DBSPOperator result = new DBSPMapOperator(
                 node, sorter, this.makeZSet(vecType), agg);
-        if (sort.fetch != null) {
-            // TODO: sort with limit should be compiled into a TopK operator instead.
-            this.circuit.addOperator(result);
-            ExpressionCompiler expressionCompiler = new ExpressionCompiler(null, this.compiler);
-            DBSPExpression limit = expressionCompiler.compile(sort.fetch);
-            DBSPVariablePath v = new DBSPVariablePath("v", vecType);
-            DBSPExpression truncate =
-                    new DBSPApplyExpression(node, "limit", vecType, v,
-                            new DBSPCastExpression(node, limit, new DBSPTypeUSize(node, false)));
-            DBSPExpression limiter = truncate.closure(v.asRefParameter());
-            result = new DBSPMapOperator(node, limiter, this.makeZSet(vecType), result);
-        }
         this.assignOperator(sort, result);
     }
 

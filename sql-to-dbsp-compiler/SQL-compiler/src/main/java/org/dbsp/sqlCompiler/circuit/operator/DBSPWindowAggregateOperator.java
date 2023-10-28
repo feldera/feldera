@@ -37,6 +37,8 @@ import java.util.List;
  * This operator does not correspond to any standard DBSP operator currently.
  * It is implemented as a sequence of 2 DBSP operators: partitioned_rolling_aggregate and
  * map_index.
+ * This operator only operates correctly on deltas.  To operate on collections it
+ * must differentiate its input, and integrate its output.
  */
 public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
     public final DBSPType partitionKeyType;

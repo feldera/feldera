@@ -112,6 +112,7 @@ public class RustFileWriter implements ICompilerComponent {
             "        time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},\n" +
             "        MaxSemigroup,\n" +
             "        MinSemigroup,\n" +
+            "        CmpFunc,\n" +
             "    },\n" +
             "    trace::ord::{OrdIndexedZSet, OrdZSet},\n" +
             "    zset,\n" +
@@ -136,6 +137,7 @@ public class RustFileWriter implements ICompilerComponent {
             "    marker::PhantomData,\n" +
             "    str::FromStr,\n" +
             "};\n" +
+            "use core::cmp::Ordering;\n" +
             "use rust_decimal::Decimal;\n" +
             "use tuple::declare_tuples;\n" +
             "use sqllib::{\n" +

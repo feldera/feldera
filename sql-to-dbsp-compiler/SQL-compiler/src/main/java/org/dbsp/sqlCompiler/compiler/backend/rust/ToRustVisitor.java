@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.circuit.*;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -33,10 +34,17 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.type.*;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.util.*;
 
 import javax.annotation.Nullable;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * This visitor generate a Rust implementation of the program.
@@ -238,6 +246,121 @@ public class ToRustVisitor extends CircuitVisitor {
                 builder.append(", ");
             operator.function.accept(this.innerVisitor);
         }
+        builder.append(");");
+        return VisitDecision.STOP;
+    }
+
+    /**
+     * Helper function for generateComparator and generateCmpFunc.
+     * @param fieldNo  Field index that is compared.
+     */
+    void emitCompareField(int fieldNo) {
+        this.builder.append("let ord = left.")
+                .append(fieldNo)
+                .append(".cmp(&right.")
+                .append(fieldNo)
+                .append(");")
+                .newline();
+        this.builder.append("if ord != Ordering::Equal { return ord; };")
+                .newline();
+    }
+
+    /**
+     * Helper function for generateCmpFunc.
+     * This could be part of an inner visitor too.
+     * But we don't handle DBSPComparatorExpressions in the same way in
+     * any context: we do it differently in TopK and Sort.
+     * This is for TopK.
+     * @param comparator  Comparator expression to generate Rust for.
+     * @param fieldsCompared  Accumulate here a list of all fields compared.
+     */
+    void generateComparator(DBSPComparatorExpression comparator, Set<Integer> fieldsCompared) {
+        // This could be done with a visitor... but there are only two cases
+        if (comparator.is(DBSPNoComparatorExpression.class))
+            return;
+        DBSPFieldComparatorExpression fieldComparator = comparator.to(DBSPFieldComparatorExpression.class);
+        this.generateComparator(fieldComparator.source, fieldsCompared);
+        if (fieldsCompared.contains(fieldComparator.fieldNo))
+            throw new InternalCompilerError("Field " + fieldComparator.fieldNo + " used twice in sorting");
+        fieldsCompared.add(fieldComparator.fieldNo);
+        this.emitCompareField(fieldComparator.fieldNo);
+    }
+
+    void generateCmpFunc(DBSPExpression function, String structName) {
+        //    impl CmpFunc<(String, i32, i32)> for AscDesc {
+        //        fn cmp(left: &(String, i32, i32), right: &(String, i32, i32)) -> std::cmp::Ordering {
+        //            let ord = left.1.cmp(&right.1);
+        //            if ord != Ordering::Equal { return ord; }
+        //            let ord = right.2.cmp(&left.2);
+        //            if ord != Ordering::Equal { return ord; }
+        //            let ord = left.3.cmp(&right.3);
+        //            if ord != Ordering::Equal { return ord; }
+        //            return Ordering::Equal;
+        //        }
+        //    }
+        DBSPComparatorExpression comparator = function.to(DBSPComparatorExpression.class);
+        DBSPType type = comparator.tupleType();
+        this.builder.append("impl CmpFunc<");
+        type.accept(this.innerVisitor);
+        this.builder.append("> for ")
+                .append(structName)
+                .append(" {")
+                .increase()
+                .append("fn cmp(left: &");
+        type.accept(this.innerVisitor);
+        this.builder.append(", right: &");
+        type.accept(this.innerVisitor);
+        this.builder.append(") -> std::cmp::Ordering {")
+                .increase();
+        // This is a subtle aspect. The comparator compares on some fields,
+        // but we have to generate a comparator on ALL the fields, to avoid
+        // declaring values as equal when they aren't really.
+        Set<Integer> fieldsCompared = new HashSet<>();
+        this.generateComparator(comparator, fieldsCompared);
+        // Now compare on the fields that we didn't compare on.
+        // The order doesn't really matter.
+        for (int i = 0; i < type.to(DBSPTypeTuple.class).size(); i++) {
+            if (fieldsCompared.contains(i)) continue;
+            this.emitCompareField(i);
+        }
+        this.builder.append("return Ordering::Equal;")
+                .newline();
+        this.builder.append("}")
+                .decrease()
+                .newline()
+                .append("}")
+                .decrease()
+                .newline();
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIndexedTopKOperator operator) {
+        // TODO: this should be a fresh identifier.
+        String structName = "Cmp" + operator.outputName;
+        this.builder.append("struct ")
+                .append(structName)
+                .append(";")
+                .newline();
+
+        // Generate a CmpFunc impl for the new struct.
+        this.generateCmpFunc(operator.getFunction(), structName);
+
+        DBSPType streamType = new DBSPTypeStream(operator.outputType);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getName())
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
+                .append(operator.input().getName())
+                .append(".")
+                .append(operator.operation)
+                .append("::<")
+                .append(structName)
+                .append(">(");
+        DBSPExpression cast = operator.limit.cast(
+                new DBSPTypeUSize(CalciteObject.EMPTY, operator.limit.getType().mayBeNull));
+        cast.accept(this.innerVisitor);
         builder.append(");");
         return VisitDecision.STOP;
     }
