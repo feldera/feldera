@@ -253,15 +253,19 @@ public class ToRustVisitor extends CircuitVisitor {
     /**
      * Helper function for generateComparator and generateCmpFunc.
      * @param fieldNo  Field index that is compared.
+     * @param ascending Comparison direction.
      */
-    void emitCompareField(int fieldNo) {
+    void emitCompareField(int fieldNo, boolean ascending) {
         this.builder.append("let ord = left.")
                 .append(fieldNo)
                 .append(".cmp(&right.")
                 .append(fieldNo)
                 .append(");")
                 .newline();
-        this.builder.append("if ord != Ordering::Equal { return ord; };")
+        this.builder.append("if ord != Ordering::Equal { return ord");
+        if (!ascending)
+            this.builder.append(".reverse()");
+        this.builder.append("};")
                 .newline();
     }
 
@@ -283,7 +287,7 @@ public class ToRustVisitor extends CircuitVisitor {
         if (fieldsCompared.contains(fieldComparator.fieldNo))
             throw new InternalCompilerError("Field " + fieldComparator.fieldNo + " used twice in sorting");
         fieldsCompared.add(fieldComparator.fieldNo);
-        this.emitCompareField(fieldComparator.fieldNo);
+        this.emitCompareField(fieldComparator.fieldNo, fieldComparator.ascending);
     }
 
     void generateCmpFunc(DBSPExpression function, String structName) {
@@ -321,15 +325,16 @@ public class ToRustVisitor extends CircuitVisitor {
         // The order doesn't really matter.
         for (int i = 0; i < type.to(DBSPTypeTuple.class).size(); i++) {
             if (fieldsCompared.contains(i)) continue;
-            this.emitCompareField(i);
+            this.emitCompareField(i, true);
         }
         this.builder.append("return Ordering::Equal;")
                 .newline();
-        this.builder.append("}")
+        this.builder
                 .decrease()
-                .newline()
                 .append("}")
+                .newline()
                 .decrease()
+                .append("}")
                 .newline();
     }
 

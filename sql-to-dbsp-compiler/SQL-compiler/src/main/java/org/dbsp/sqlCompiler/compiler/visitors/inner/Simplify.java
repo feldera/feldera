@@ -34,21 +34,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.*;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -118,7 +108,8 @@ public class Simplify extends InnerRewriteVisitor {
                     DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.US)
                             .withResolverStyle(ResolverStyle.STRICT);
                     try {
-                        LocalDate.parse(str.value, dateFormatter);
+                        //noinspection ResultOfMethodCallIgnored
+                        LocalDate.parse(str.value, dateFormatter); // executed for exception
                         result = new DBSPDateLiteral(lit.getNode(), type, new DateString(str.value));
                     } catch (DateTimeParseException ex) {
                         result = DBSPLiteral.none(type);
@@ -144,6 +135,34 @@ public class Simplify extends InnerRewriteVisitor {
                     } else {
                         String value = str.value.substring(0, Math.min(str.value.length(), typeString.precision));
                         result = new DBSPStringLiteral(value, str.charset);
+                    }
+                } else if (type.is(DBSPTypeInteger.class)) {
+                    DBSPTypeInteger ti = type.to(DBSPTypeInteger.class);
+                    try {
+                        switch (ti.getWidth()) {
+                            case 8: {
+                                byte value = Byte.parseByte(str.value);
+                                result = new DBSPI8Literal(lit.getNode(), type, value);
+                                break;
+                            }
+                            case 16: {
+                                short value = Short.parseShort(str.value);
+                                result = new DBSPI16Literal(lit.getNode(), type, value);
+                                break;
+                            }
+                            case 32: {
+                                int value = Integer.parseInt(str.value);
+                                result = new DBSPI32Literal(lit.getNode(), type, value);
+                                break;
+                            }
+                            case 64: {
+                                long value = Long.parseLong(str.value);
+                                result = new DBSPI64Literal(lit.getNode(), type, value);
+                                break;
+                            }
+                        }
+                    } catch (NumberFormatException ex) {
+                        result = DBSPLiteral.none(type);
                     }
                 }
             } else if (lit.is(DBSPI32Literal.class)) {

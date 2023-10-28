@@ -3,10 +3,7 @@ package org.dbsp.sqlCompiler.compiler.postgres;
 import org.apache.calcite.util.ConversionUtil;
 import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.InputOutputPair;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.*;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -52,6 +49,7 @@ import org.dbsp.util.Utilities;
 import org.junit.Assert;
 
 import javax.annotation.Nullable;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
@@ -99,6 +97,28 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
             new SimpleDateFormat("EEE MMM d HH:mm:ss yyyy")
     };
     static final SimpleDateFormat TIMESTAMP_OUTPUT_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.S");
+
+    /**
+     * Generate and compile SQL to populate the specified table with data read from a resource file.
+     * The resource file has the name table .csv.  This generates andd compiles a bunch of "INSERT" statements.
+     * We expect that the data is tab-separated.
+     * @param table Table to populate.
+     * @param compiler Compiler that processes the data.
+     */
+    void insertFromResource(String table, DBSPCompiler compiler) {
+        try {
+            String data = TestUtil.readStringFromResourceFile(table + ".csv");
+            String[] rows = data.split("\n");
+            for (String row : rows) {
+                String[] fields = row.split("\t");
+                String insert = "INSERT INTO " + table + " VALUES('" +
+                        String.join("', '", fields) + "')";
+                compiler.compileStatement(insert);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     /**
      * Convert a timestamp from a format like Sat Feb 16 17:32:01 1996 to

@@ -19,7 +19,7 @@ public class TestUtil {
              BufferedReader reader = new BufferedReader(streamReader)) {
             String line;
             while ((line = reader.readLine()) != null)
-                result.append(line);
+                result.append(line).append("\n");
         }
         return result.toString();
     }

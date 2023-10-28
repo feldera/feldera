@@ -1027,14 +1027,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(node, comparator, limit, diff);
             this.circuit.addOperator(topK);
             DBSPIntegralOperator integral = new DBSPIntegralOperator(node, topK);
+            this.circuit.addOperator(integral);
             // If we ignore ORDER BY this is the result.
             if (this.options.languageOptions.ignoreOrderBy) {
-                this.assignOperator(sort, integral);
+                // We must drop the index we built.
+                DBSPDeindexOperator deindex = new DBSPDeindexOperator(node, integral);
+                this.assignOperator(sort, deindex);
                 return;
             }
             // Otherwise we have to sort again in a vector!
             // Fall through, continuing from the integral.
-            this.circuit.addOperator(integral);
             index = integral;
         }
         // Global sort.  Implemented by aggregate in a single Vec<> which is then sorted.

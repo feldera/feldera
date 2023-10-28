@@ -37,13 +37,7 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPathSegment;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.pattern.*;
-import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
-import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
-import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
+import org.dbsp.sqlCompiler.ir.statement.*;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.util.IWritesLogs;
@@ -205,6 +199,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public VisitDecision preorder(DBSPConstItem node) {
+        return this.preorder((DBSPItem) node);
+    }
+
+    public VisitDecision preorder(DBSPFunctionItem node) {
         return this.preorder((DBSPItem) node);
     }
 
@@ -657,6 +655,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPConstItem node) {
+        this.postorder((DBSPItem) node);
+    }
+
+    public void postorder(DBSPFunctionItem node) {
         this.postorder((DBSPItem) node);
     }
 

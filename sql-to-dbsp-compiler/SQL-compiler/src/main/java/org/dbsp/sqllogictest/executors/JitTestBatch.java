@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.util.Linq;
+import org.dbsp.util.TableValue;
 import org.dbsp.util.Utilities;
 
 import java.io.File;
@@ -375,7 +376,7 @@ public class JitTestBatch extends TestBatch {
 
             List<JitFileAndSerialization> inputFiles = new ArrayList<>();
             int index = 0;
-            for (DBSPExecutor.TableValue inputData : this.inputContents) {
+            for (TableValue inputData : this.inputContents) {
                 File input = this.fileFromName("input" + index++ + ".csv");
                 ToCsvVisitor.toCsv(compiler, input, new DBSPZSetLiteral(
                         compiler.getWeightTypeImplementation(), inputData.contents.data));

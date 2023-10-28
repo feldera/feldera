@@ -1,0 +1,97 @@
+package org.dbsp.util;
+
+import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
+import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.sqlCompiler.ir.expression.*;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
+
+public class TableValue {
+    public final String tableName;
+    public final DBSPZSetLiteral contents;
+
+    public TableValue(String tableName, DBSPZSetLiteral contents) {
+        this.tableName = tableName;
+        this.contents = contents;
+    }
+
+    public DBSPExpression generateReadDbCall(String connectionString) {
+        // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
+        DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
+        DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType);
+        DBSPTypeTuple tupleType = this.contents.zsetType.elementType.to(DBSPTypeTuple.class);
+        final List<DBSPExpression> rowGets = new ArrayList<>(tupleType.tupFields.length);
+        for (int i = 0; i < tupleType.tupFields.length; i++) {
+            DBSPApplyMethodExpression rowGet =
+                    new DBSPApplyMethodExpression("get",
+                            tupleType.tupFields[i],
+                            rowVariable, new DBSPUSizeLiteral(i));
+            rowGets.add(rowGet);
+        }
+        DBSPTupleExpression tuple = new DBSPTupleExpression(rowGets, false);
+        DBSPClosureExpression mapClosure = new DBSPClosureExpression(CalciteObject.EMPTY, tuple,
+                rowVariable.asRefParameter());
+        return new DBSPApplyExpression("read_db", this.contents.zsetType,
+                new DBSPStrLiteral(connectionString), new DBSPStrLiteral(this.tableName),
+                mapClosure);
+    }
+
+    /**
+     * Generate a Rust function which produces the inputs specified by 'tables'.
+     * @param tables  Values that produce the input
+     * @param directory  Directory where temporary files can be written
+     * @param connectionString  Connection string that specified whether a database should be used for the data.
+     *                          If the value is 'csv' temporary files may be used.
+     */
+    public static DBSPFunction createInputFunction(
+            TableValue[] tables, String directory, String connectionString) throws IOException {
+        DBSPExpression[] fields = new DBSPExpression[tables.length];
+        int totalSize = 0;
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < tables.length; i++) {
+            totalSize += tables[i].contents.size();
+            fields[i] = tables[i].contents;
+            if (seen.contains(tables[i].tableName))
+                throw new RuntimeException("Table " + tables[i].tableName + " already in input");
+            seen.add(tables[i].tableName);
+        }
+
+        if (totalSize > 10) {
+            if (connectionString.equals("csv")) {
+                // If the data is large write, it to a set of CSV files and read it at runtime.
+                for (int i = 0; i < tables.length; i++) {
+                    String fileName = (Paths.get(directory, tables[i].tableName)).toString() + ".csv";
+                    File file = new File(fileName);
+                    file.deleteOnExit();
+                    ToCsvVisitor.toCsv(new StderrErrorReporter(), file, tables[i].contents);
+                    fields[i] = new DBSPApplyExpression(CalciteObject.EMPTY, "read_csv",
+                            tables[i].contents.getType(),
+                            new DBSPStrLiteral(fileName));
+                }
+            } else {
+                // read from DB
+                for (int i = 0; i < tables.length; i++) {
+                    fields[i] = tables[i].generateReadDbCall(connectionString);
+                }
+            }
+        }
+        DBSPRawTupleExpression result = new DBSPRawTupleExpression(fields);
+        return new DBSPFunction("input", new ArrayList<>(),
+                result.getType(), result, Linq.list());
+    }
+}

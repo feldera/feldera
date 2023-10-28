@@ -16,7 +16,7 @@ import java.util.Objects;
  * Apply a topK operation to each of the groups in an indexed collection.
  * This always sorts the elements of each group.
  * To sort the entire collection just group by ().
- * The function is a DBSPSortExpression used to compare two elements.
+ * The function is a DBSPComparatorExpression used to compare two elements.
  */
 public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     public final DBSPExpression limit;
