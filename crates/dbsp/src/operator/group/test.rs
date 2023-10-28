@@ -1,7 +1,11 @@
 #![allow(clippy::type_complexity)]
 
+use std::cmp::Ordering;
+
 use crate::{
     algebra::ZRingValue,
+    indexed_zset,
+    operator::CmpFunc,
     trace::{
         cursor::Cursor,
         test_batch::{assert_batch_eq, TestBatch},
@@ -143,6 +147,38 @@ fn topk_test_circuit(
     Ok((input_handle, topk_asc_handle, topk_desc_handle))
 }
 
+fn topk_custom_ord_test_circuit(
+    circuit: &mut RootCircuit,
+) -> AnyResult<(
+    CollectionHandle<i32, ((String, i32, i32), i32)>,
+    OutputHandle<OrdIndexedZSet<i32, (String, i32, i32), i32>>,
+)> {
+    let (input_stream, input_handle) =
+        circuit.add_input_indexed_zset::<i32, (String, i32, i32), i32>();
+
+    // Sort by the 2nd column ascending and by the 3rd column descending.
+    struct AscDesc;
+
+    impl CmpFunc<(String, i32, i32)> for AscDesc {
+        fn cmp(left: &(String, i32, i32), right: &(String, i32, i32)) -> std::cmp::Ordering {
+            let ord = left.1.cmp(&right.1);
+            let res = if ord == Ordering::Equal {
+                right.2.cmp(&left.2)
+            } else {
+                ord
+            };
+            res
+        }
+    }
+
+    let topk_handle = input_stream
+        .topk_custom_order::<AscDesc>(5)
+        .integrate()
+        .output();
+
+    Ok((input_handle, topk_handle))
+}
+
 fn lag_test_circuit(
     circuit: &mut RootCircuit,
 ) -> AnyResult<(
@@ -167,6 +203,58 @@ fn lead_test_circuit(
     let lead_handle = input_stream.lead(3, |v| v.cloned()).integrate().output();
 
     Ok((input_handle, lead_handle))
+}
+
+#[test]
+fn test_topk_custom_ord() {
+    let (mut dbsp, (input_handle, topk_handle)) =
+        Runtime::init_circuit(4, topk_custom_ord_test_circuit).unwrap();
+
+    let trace = vec![
+        vec![
+            (1, ("foo".to_string(), 10, 100), 1),
+            (1, ("foo".to_string(), 9, 99), 1),
+            (1, ("foo".to_string(), 8, 98), 1),
+            (1, ("foo".to_string(), 10, 90), 1),
+            (1, ("foo".to_string(), 9, 98), 1),
+            (1, ("foo".to_string(), 8, 97), 1),
+        ],
+        vec![
+            (1, ("foo".to_string(), 10, 80), 1),
+            (1, ("foo".to_string(), 9, 97), 1),
+            (1, ("foo".to_string(), 8, 96), 1),
+            (1, ("foo".to_string(), 10, 79), 1),
+            (1, ("foo".to_string(), 9, 96), 1),
+            (1, ("foo".to_string(), 8, 95), 1),
+        ],
+        vec![
+            (1, ("foo".to_string(), 9, 99), -1),
+            (1, ("foo".to_string(), 8, 98), -1),
+            (1, ("foo".to_string(), 9, 98), -1),
+            (1, ("foo".to_string(), 8, 97), -1),
+        ],
+    ];
+    let mut expected_output = vec![indexed_zset! {
+        1 => {{("foo".to_string(), 8, 98)} => 1, {("foo".to_string(), 8, 97)} => 1, {("foo".to_string(), 9, 99)} => 1, {("foo".to_string(), 9, 98)} => 1, {("foo".to_string(), 10, 100)} => 1},
+    },
+    indexed_zset! {
+        1 => {{("foo".to_string(), 8, 98)} => 1, {("foo".to_string(), 8, 97)} => 1, {("foo".to_string(), 8, 96)} => 1, {("foo".to_string(), 8, 95)} => 1, {("foo".to_string(), 9, 99)} => 1},
+    },
+    indexed_zset! {
+        1 => {{("foo".to_string(), 8, 96)} => 1, {("foo".to_string(), 8, 95)} => 1, {("foo".to_string(), 9, 97)} => 1, {("foo".to_string(), 9, 96)} => 1, {("foo".to_string(), 10, 100)} => 1},
+    }]
+    .into_iter();
+
+    for batch in trace.into_iter() {
+        for (k, v, r) in batch.into_iter() {
+            input_handle.push(k, (v, r));
+        }
+        dbsp.step().unwrap();
+
+        let topk_result = topk_handle.consolidate();
+
+        assert_batch_eq(&topk_result, &expected_output.next().unwrap());
+    }
 }
 
 proptest! {

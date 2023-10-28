@@ -1,7 +1,10 @@
-use super::{DiffGroupTransformer, Monotonicity, NonIncrementalGroupTransformer};
+use super::{
+    custom_ord::{CmpFunc, WithCustomOrd},
+    DiffGroupTransformer, Monotonicity, NonIncrementalGroupTransformer,
+};
 use crate::{
-    algebra::ZRingValue, trace::Cursor, DBData, DBWeight, IndexedZSet, OrdIndexedZSet, RootCircuit,
-    Stream,
+    algebra::ZRingValue, operator::FilterMap, trace::Cursor, DBData, DBWeight, IndexedZSet,
+    OrdIndexedZSet, RootCircuit, Stream,
 };
 use std::marker::PhantomData;
 
@@ -29,6 +32,28 @@ where
         B::R: ZRingValue,
     {
         self.group_transform(DiffGroupTransformer::new(TopK::desc(k)))
+    }
+}
+
+impl<K, V, R> Stream<RootCircuit, OrdIndexedZSet<K, V, R>>
+where
+    K: DBData,
+    V: DBData,
+    R: DBWeight + ZRingValue,
+{
+    /// Pick `k` smallest values in each group based on a custom comparison
+    /// function.
+    ///
+    /// This method is similar to [`topk_asc`](`Stream::topk_asc`), but instead
+    /// of ordering elements according to `trait Ord for V`, it uses a
+    /// user-defined comparison function `F`.
+    pub fn topk_custom_order<F>(&self, k: usize) -> Self
+    where
+        F: CmpFunc<V>,
+    {
+        self.map_index(|(k, v)| (k.clone(), <WithCustomOrd<V, F>>::new(v.clone())))
+            .group_transform(DiffGroupTransformer::new(TopK::asc(k)))
+            .map_index(|(k, v)| (k.clone(), v.val.clone()))
     }
 }
 
