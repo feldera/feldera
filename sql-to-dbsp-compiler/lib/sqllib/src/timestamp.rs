@@ -112,14 +112,14 @@ impl<'de> Deserialize<'de> for Timestamp {
         // and can only deserialize into an owned string.
         let timestamp_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
 
-        let timestamp = NaiveDateTime::parse_from_str(&timestamp_str.trim(), "%F %T%.f").map_err(|e| {
-            D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
-        })?;
+        let timestamp =
+            NaiveDateTime::parse_from_str(timestamp_str.trim(), "%F %T%.f").map_err(|e| {
+                D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
+            })?;
 
         Ok(Self::new(timestamp.timestamp_millis()))
     }
 }
-
 
 impl Timestamp {
     pub const fn new(milliseconds: i64) -> Self {
