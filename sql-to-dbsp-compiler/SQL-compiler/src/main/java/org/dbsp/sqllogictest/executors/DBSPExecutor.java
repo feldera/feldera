@@ -182,7 +182,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             // Create function which generates inputs for all tests in this batch.
             // We know that all these tests consume the same input tables.
             TableValue[] inputSets = this.getInputSets(compiler);
-            DBSPFunction inputFunction = TableValue.createInputFunction(
+            DBSPFunction inputFunction = TableValue.createInputFunction("input",
                     inputSets, rustDirectory, this.connectionString);
             DBSPFunction streamInputFunction = this.createStreamInputFunction(inputFunction);
 

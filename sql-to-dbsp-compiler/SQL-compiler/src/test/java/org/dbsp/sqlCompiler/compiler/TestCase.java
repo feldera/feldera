@@ -53,7 +53,7 @@ class TestCase {
      */
     public final DBSPCircuit circuit;
     /**
-     * Supplied input and expected outputs for the circuit.
+     * Supplied input and expected corresponding outputs for the circuit.
      */
     public final InputOutputPair[] data;
 
@@ -72,7 +72,8 @@ class TestCase {
      * @return The code for a function that runs the circuit with the specified
      * input and tests the produced output.
      */
-    DBSPFunction createTesterCode(int testNumber, String codeDirectory) throws IOException {
+    DBSPFunction createTesterCode(int testNumber,
+                                  @SuppressWarnings("SameParameterValue") String codeDirectory) throws IOException {
         List<DBSPStatement> list = new ArrayList<>();
         if (!this.name.isEmpty())
             list.add(new DBSPComment(this.name));
@@ -80,6 +81,7 @@ class TestCase {
                 new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.getDefault()), true);
         list.add(circuit);
         Simplify simplify = new Simplify(new StderrErrorReporter());
+        int pair = 0;
         for (InputOutputPair pairs : this.data) {
             DBSPZSetLiteral[] inputs = pairs.getInputs();
             inputs = Linq.map(inputs, t -> simplify.apply(t).to(DBSPZSetLiteral.class), DBSPZSetLiteral.class);
@@ -89,9 +91,11 @@ class TestCase {
             TableValue[] tableValues = new TableValue[inputs.length];
             for (int i = 0; i < inputs.length; i++)
                 tableValues[i] = new TableValue("t" + i, inputs[i]);
-            DBSPFunction inputFunction = TableValue.createInputFunction(tableValues, codeDirectory, "csv");
+            String functionName = "input" + pair;
+            DBSPFunction inputFunction = TableValue.createInputFunction(
+                    functionName, tableValues, codeDirectory, "csv");
             list.add(new DBSPFunctionItem(inputFunction));
-            DBSPLetStatement in = new DBSPLetStatement("input", inputFunction.call());
+            DBSPLetStatement in = new DBSPLetStatement(functionName, inputFunction.call());
             list.add(in);
             DBSPExpression[] arguments = new DBSPExpression[inputs.length];
             for (int i = 0; i < inputs.length; i++)
@@ -112,6 +116,7 @@ class TestCase {
                                 new DBSPStrLiteral(message, false, true)));
                 list.add(compare);
             }
+            pair++;
         }
         DBSPExpression body = new DBSPBlockExpression(list, null);
         return new DBSPFunction("test" + testNumber, new ArrayList<>(),

@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
+import org.apache.commons.lang3.StringUtils;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
@@ -39,6 +40,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
+import org.dbsp.util.Utilities;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -88,7 +90,9 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
             DBSPType litType = lit.getType();
-            if (type.setMayBeNull(false).sameType(litType)) {
+            if (type.setMayBeNull(false).sameType(litType) &&
+                    !type.is(DBSPTypeString.class)) {
+                // Casting to VARCHAR may change a string even if the source is the same type
                 // Cast from type to Option<type>
                 result = lit.getWithNullable(type.mayBeNull);
             } else if (lit.isNull) {
@@ -131,12 +135,21 @@ public class Simplify extends InnerRewriteVisitor {
                 } else if (type.is(DBSPTypeString.class)) {
                     DBSPTypeString typeString = type.to(DBSPTypeString.class);
                     if (typeString.precision == DBSPTypeString.UNLIMITED_PRECISION) {
-                        result = lit;
+                        String value = Utilities.trimRight(str.value);
+                        result = new DBSPStringLiteral(value, str.charset, type.mayBeNull);
                     } else {
-                        String value = str.value.substring(0, Math.min(str.value.length(), typeString.precision));
-                        result = new DBSPStringLiteral(value, str.charset);
+                        String value;
+                        if (!typeString.fixed) {
+                            value = Utilities.trimRight(str.value);
+                        } else if (str.value.length() < typeString.precision) {
+                            value = StringUtils.rightPad(str.value, typeString.precision);
+                        } else {
+                            value = str.value.substring(0, typeString.precision);
+                        }
+                        result = new DBSPStringLiteral(value, str.charset, type.mayBeNull);
                     }
-                } else if (type.is(DBSPTypeInteger.class)) {
+                } else
+                    if (type.is(DBSPTypeInteger.class)) {
                     DBSPTypeInteger ti = type.to(DBSPTypeInteger.class);
                     try {
                         switch (ti.getWidth()) {

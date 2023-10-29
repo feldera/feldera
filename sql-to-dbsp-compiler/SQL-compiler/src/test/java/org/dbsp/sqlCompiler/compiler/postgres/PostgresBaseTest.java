@@ -100,7 +100,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
 
     /**
      * Generate and compile SQL to populate the specified table with data read from a resource file.
-     * The resource file has the name table .csv.  This generates andd compiles a bunch of "INSERT" statements.
+     * The resource file has the name table .csv.  This generates and compiles a bunch of "INSERT" statements.
      * We expect that the data is tab-separated.
      * @param table Table to populate.
      * @param compiler Compiler that processes the data.

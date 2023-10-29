@@ -60,11 +60,11 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_add VALUES (0,0,'0');\n" +
                 "INSERT INTO num_exp_sub VALUES (0,0,'0');\n" +
                 "INSERT INTO num_exp_mul VALUES (0,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,0,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (0,0,NULL);\n" +  // No NaN
                 "INSERT INTO num_exp_add VALUES (0,1,'0');\n" +
                 "INSERT INTO num_exp_sub VALUES (0,1,'0');\n" +
                 "INSERT INTO num_exp_mul VALUES (0,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,1,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (0,1,NULL);\n" +  // No NaN
                 "INSERT INTO num_exp_add VALUES (0,2,'-34338492.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (0,2,'34338492.215397047');\n" +
                 "INSERT INTO num_exp_mul VALUES (0,2,'0');\n" +
@@ -140,11 +140,11 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_add VALUES (2,0,'-34338492.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,0,'-34338492.215397047');\n" +
                 "INSERT INTO num_exp_mul VALUES (2,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (2,0,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (2,0,NULL);\n" +  // No NaN
                 "INSERT INTO num_exp_add VALUES (2,1,'-34338492.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,1,'-34338492.215397047');\n" +
                 "INSERT INTO num_exp_mul VALUES (2,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (2,1,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (2,1,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (2,2,'-68676984.430794094');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,2,'0');\n" +
                 "INSERT INTO num_exp_mul VALUES (2,2,'1179132047626883.596862135856320209');\n" +
@@ -180,11 +180,11 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_add VALUES (3,0,'4.31');\n" +
                 "INSERT INTO num_exp_sub VALUES (3,0,'4.31');\n" +
                 "INSERT INTO num_exp_mul VALUES (3,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (3,0,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (3,0,NULL);\n" + // No NaN for numeric
                 "INSERT INTO num_exp_add VALUES (3,1,'4.31');\n" +
                 "INSERT INTO num_exp_sub VALUES (3,1,'4.31');\n" +
                 "INSERT INTO num_exp_mul VALUES (3,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (3,1,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (3,1,Null);\n" +  // No NaN for numeric
                 "INSERT INTO num_exp_add VALUES (3,2,'-34338487.905397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (3,2,'34338496.525397047');\n" +
                 "INSERT INTO num_exp_mul VALUES (3,2,'-147998901.44836127257');\n" +
@@ -220,11 +220,11 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_add VALUES (4,0,'7799461.4119');\n" +
                 "INSERT INTO num_exp_sub VALUES (4,0,'7799461.4119');\n" +
                 "INSERT INTO num_exp_mul VALUES (4,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (4,0,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (4,0,NULL);\n" + // No NaN for numeric
                 "INSERT INTO num_exp_add VALUES (4,1,'7799461.4119');\n" +
                 "INSERT INTO num_exp_sub VALUES (4,1,'7799461.4119');\n" +
                 "INSERT INTO num_exp_mul VALUES (4,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (4,1,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (4,1,NULL);\n" +  // No NaN for numeric
                 "INSERT INTO num_exp_add VALUES (4,2,'-26539030.803497047');\n" +
                 "INSERT INTO num_exp_sub VALUES (4,2,'42137953.627297047');\n" +
                 "INSERT INTO num_exp_mul VALUES (4,2,'-267821744976817.8111137106593');\n" +
@@ -260,11 +260,11 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_add VALUES (5,0,'16397.038491');\n" +
                 "INSERT INTO num_exp_sub VALUES (5,0,'16397.038491');\n" +
                 "INSERT INTO num_exp_mul VALUES (5,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (5,0,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (5,0,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (5,1,'16397.038491');\n" +
                 "INSERT INTO num_exp_sub VALUES (5,1,'16397.038491');\n" +
                 "INSERT INTO num_exp_mul VALUES (5,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (5,1,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (5,1,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (5,2,'-34322095.176906047');\n" +
                 "INSERT INTO num_exp_sub VALUES (5,2,'34354889.253888047');\n" +
                 "INSERT INTO num_exp_mul VALUES (5,2,'-563049578578.769242506736077');\n" +
@@ -300,11 +300,11 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_add VALUES (6,0,'93901.57763026');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,0,'93901.57763026');\n" +
                 "INSERT INTO num_exp_mul VALUES (6,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (6,0,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (6,0,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (6,1,'93901.57763026');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,1,'93901.57763026');\n" +
                 "INSERT INTO num_exp_mul VALUES (6,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (6,1,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (6,1,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (6,2,'-34244590.637766787');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,2,'34432393.793027307');\n" +
                 "INSERT INTO num_exp_mul VALUES (6,2,'-3224438592470.18449811926184222');\n" +
@@ -340,11 +340,11 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_add VALUES (7,0,'-83028485');\n" +
                 "INSERT INTO num_exp_sub VALUES (7,0,'-83028485');\n" +
                 "INSERT INTO num_exp_mul VALUES (7,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (7,0,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (7,0,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (7,1,'-83028485');\n" +
                 "INSERT INTO num_exp_sub VALUES (7,1,'-83028485');\n" +
                 "INSERT INTO num_exp_mul VALUES (7,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (7,1,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (7,1,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (7,2,'-117366977.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (7,2,'-48689992.784602953');\n" +
                 "INSERT INTO num_exp_mul VALUES (7,2,'2851072985828710.485883795');\n" +
@@ -380,11 +380,11 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_add VALUES (8,0,'74881');\n" +
                 "INSERT INTO num_exp_sub VALUES (8,0,'74881');\n" +
                 "INSERT INTO num_exp_mul VALUES (8,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (8,0,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (8,0,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (8,1,'74881');\n" +
                 "INSERT INTO num_exp_sub VALUES (8,1,'74881');\n" +
                 "INSERT INTO num_exp_mul VALUES (8,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (8,1,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (8,1,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (8,2,'-34263611.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (8,2,'34413373.215397047');\n" +
                 "INSERT INTO num_exp_mul VALUES (8,2,'-2571300635581.146276407');\n" +
@@ -420,11 +420,11 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_add VALUES (9,0,'-24926804.045047420');\n" +
                 "INSERT INTO num_exp_sub VALUES (9,0,'-24926804.045047420');\n" +
                 "INSERT INTO num_exp_mul VALUES (9,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (9,0,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (9,0,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (9,1,'-24926804.045047420');\n" +
                 "INSERT INTO num_exp_sub VALUES (9,1,'-24926804.045047420');\n" +
                 "INSERT INTO num_exp_mul VALUES (9,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (9,1,'NaN');\n" +
+                "INSERT INTO num_exp_div VALUES (9,1,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (9,2,'-59265296.260444467');\n" +
                 "INSERT INTO num_exp_sub VALUES (9,2,'9411688.170349627');\n" +
                 "INSERT INTO num_exp_mul VALUES (9,2,'855948866655588.453741509242968740');\n" +
@@ -467,8 +467,8 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_sqrt VALUES (7,'9111.99676251039939975230');\n" +
                 "INSERT INTO num_exp_sqrt VALUES (8,'273.64392922189960397542');\n" +
                 "INSERT INTO num_exp_sqrt VALUES (9,'4992.67503899937593364766');\n" +
-                "INSERT INTO num_exp_ln VALUES (0,'NaN');\n" +
-                "INSERT INTO num_exp_ln VALUES (1,'NaN');\n" +
+                "INSERT INTO num_exp_ln VALUES (0,NULL);\n" + // No NaN
+                "INSERT INTO num_exp_ln VALUES (1,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_ln VALUES (2,'17.35177750493897715514');\n" +
                 "INSERT INTO num_exp_ln VALUES (3,'1.46093790411565641971');\n" +
                 "INSERT INTO num_exp_ln VALUES (4,'15.86956523951936572464');\n" +
@@ -477,8 +477,8 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_ln VALUES (7,'18.23469429965478772991');\n" +
                 "INSERT INTO num_exp_ln VALUES (8,'11.22365546576315513668');\n" +
                 "INSERT INTO num_exp_ln VALUES (9,'17.03145425013166006962');\n" +
-                "INSERT INTO num_exp_log10 VALUES (0,'NaN');\n" +
-                "INSERT INTO num_exp_log10 VALUES (1,'NaN');\n" +
+                "INSERT INTO num_exp_log10 VALUES (0,NULL);\n" +  // No NaN
+                "INSERT INTO num_exp_log10 VALUES (1,NULL);\n" +  // No NaN
                 "INSERT INTO num_exp_log10 VALUES (2,'7.53578122160797276459');\n" +
                 "INSERT INTO num_exp_log10 VALUES (3,'.63447727016073160075');\n" +
                 "INSERT INTO num_exp_log10 VALUES (4,'6.89206461372691743345');\n" +
@@ -487,8 +487,8 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "INSERT INTO num_exp_log10 VALUES (7,'7.91922711353275546914');\n" +
                 "INSERT INTO num_exp_log10 VALUES (8,'4.87437163556421004138');\n" +
                 "INSERT INTO num_exp_log10 VALUES (9,'7.39666659961986567059');\n" +
-                "INSERT INTO num_exp_power_10_ln VALUES (0,'NaN');\n" +
-                "INSERT INTO num_exp_power_10_ln VALUES (1,'NaN');\n" +
+                "INSERT INTO num_exp_power_10_ln VALUES (0,NULL);\n" + // No NaN
+                "INSERT INTO num_exp_power_10_ln VALUES (1,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_power_10_ln VALUES (2,'224790267919917955.13261618583642653184');\n" +
                 "INSERT INTO num_exp_power_10_ln VALUES (3,'28.90266599445155957393');\n" +
                 "INSERT INTO num_exp_power_10_ln VALUES (4,'7405685069594999.07733999469386277636');\n" +
