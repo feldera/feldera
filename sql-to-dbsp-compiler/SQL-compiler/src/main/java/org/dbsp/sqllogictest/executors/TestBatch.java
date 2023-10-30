@@ -4,6 +4,7 @@ import net.hydromatic.sqllogictest.OptionsParser;
 import net.hydromatic.sqllogictest.SltSqlStatement;
 import net.hydromatic.sqllogictest.SqlTestQuery;
 import net.hydromatic.sqllogictest.TestStatistics;
+import org.dbsp.util.TableValue;
 
 import java.io.File;
 import java.io.IOException;
@@ -21,7 +22,7 @@ public abstract class TestBatch {
     final List<SqlTestQuery> queries;
     final int firstQueryNo;
     final String filesDirectory;
-    DBSPExecutor.TableValue[] inputContents = new DBSPExecutor.TableValue[0];
+    TableValue[] inputContents = new TableValue[0];
 
     protected TestBatch(OptionsParser.SuppliedOptions options, String filesDirectory, int firstQueryNo) {
         this.options = options;
@@ -36,7 +37,7 @@ public abstract class TestBatch {
 
     public abstract <T extends SltSqlStatement> void prepareInputs(Iterable<T> inputAndViewPreparation);
 
-    public void setInputContents(DBSPExecutor.TableValue[] inputContents) {
+    public void setInputContents(TableValue[] inputContents) {
         this.inputContents = inputContents;
     }
 

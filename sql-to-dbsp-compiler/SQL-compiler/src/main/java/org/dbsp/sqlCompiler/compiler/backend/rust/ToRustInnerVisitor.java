@@ -95,7 +95,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 comp.compare(a, b)
             };
             let mut v = v.clone();
-            v.sort_unstable_by(ec);
+            v.sort_by(ec);
             v
         }
          */
@@ -113,7 +113,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
         expression.elementType.accept(this);
         this.builder.append("| { ec.compare(a, b) };");
         this.builder.append("let mut v = v.clone();").newline()
-                .append("v.sort_unstable_by(comp);").newline()
+                // we don't use sort_unstable_by because it is
+                // non-deterministic
+                .append("v.sort_by(comp);").newline()
                 .append("v").newline()
                 .decrease()
                 .append("}");

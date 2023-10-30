@@ -121,7 +121,7 @@ public class BaseSQLTests {
                 jitTestsExecuted++;
             } else {
                 // Standard test
-                pt = new ProgramAndTester(test.circuit, test.createTesterCode(testNumber));
+                pt = new ProgramAndTester(test.circuit, test.createTesterCode(testNumber, rustDirectory));
                 testsExecuted++;
             }
             writer.add(pt);

@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqllogictest.SqlTestPrepareInput;
 import org.dbsp.sqllogictest.SqlTestPrepareTables;
 import org.dbsp.sqllogictest.SqlTestPrepareViews;
+import org.dbsp.util.TableValue;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -92,12 +93,12 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         return true;
     }
 
-    public DBSPExecutor.TableValue[] getInputSets() throws SQLException {
-        DBSPExecutor.TableValue[] result = new DBSPExecutor.TableValue[this.tablesCreated.size()];
+    public TableValue[] getInputSets() throws SQLException {
+        TableValue[] result = new TableValue[this.tablesCreated.size()];
         int i = 0;
         for (String table: this.tablesCreated) {
             DBSPZSetLiteral lit = this.getTableContents(table);
-            result[i++] = new DBSPExecutor.TableValue(table, lit);
+            result[i++] = new TableValue(table, lit);
         }
         return result;
     }

@@ -55,6 +55,24 @@ public class ToCsvVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPI8Literal literal) {
+        if (literal.value != null)
+            this.appendable.append(literal.value);
+        else
+            this.appendable.append(this.nullRepresentation.get());
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPI16Literal literal) {
+        if (literal.value != null)
+            this.appendable.append(literal.value);
+        else
+            this.appendable.append(this.nullRepresentation.get());
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPI32Literal literal) {
         if (literal.value != null)
             this.appendable.append(literal.value);
@@ -75,6 +93,24 @@ public class ToCsvVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPTimestampLiteral literal) {
         if (!literal.isNull)
+            this.appendable.append(Objects.requireNonNull(literal.getTimestampString()));
+        else
+            this.appendable.append(this.nullRepresentation.get());
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDateLiteral literal) {
+        if (!literal.isNull)
+            this.appendable.append(Objects.requireNonNull(literal.getDateString()));
+        else
+            this.appendable.append(this.nullRepresentation.get());
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTimeLiteral literal) {
+        if (!literal.isNull)
             this.appendable.append(Objects.requireNonNull(literal.value));
         else
             this.appendable.append(this.nullRepresentation.get());
@@ -85,6 +121,15 @@ public class ToCsvVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPFloatLiteral literal) {
         if (literal.value != null)
             this.appendable.append(literal.value);
+        else
+            this.appendable.append(this.nullRepresentation.get());
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDecimalLiteral literal) {
+        if (literal.value != null)
+            this.appendable.append(literal.value.toPlainString());
         else
             this.appendable.append(this.nullRepresentation.get());
         return VisitDecision.STOP;

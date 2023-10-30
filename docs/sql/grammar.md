@@ -53,6 +53,7 @@ query
       |   query INTERSECT [ ALL | DISTINCT ] query
       }
       [ ORDER BY orderItem [, orderItem ]* ]
+      [ LIMIT { count | ALL } ]      
 
 
 values

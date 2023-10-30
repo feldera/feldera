@@ -291,4 +291,8 @@ public class Utilities {
         time = time * 1_000_000_000 + ns;
         return time;
     }
+
+    public static String trimRight(String value) {
+        return value.replaceAll("[ ]*$", "");
+    }
 }

@@ -101,6 +101,26 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Timestamp {
     }
 }
 
+/// Deserialize timestamp from the `YYYY-MM-DD HH:MM:SS.fff` format.
+/// For a flexible deserialization framework use deserialize_with_context.
+impl<'de> Deserialize<'de> for Timestamp {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // `timestamp_str: &'de` doesn't work for JSON, which escapes strings
+        // and can only deserialize into an owned string.
+        let timestamp_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+
+        let timestamp =
+            NaiveDateTime::parse_from_str(timestamp_str.trim(), "%F %T%.f").map_err(|e| {
+                D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
+            })?;
+
+        Ok(Self::new(timestamp.timestamp_millis()))
+    }
+}
+
 impl Timestamp {
     pub const fn new(milliseconds: i64) -> Self {
         Self { milliseconds }
@@ -440,6 +460,21 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Date {
     }
 }
 
+/// Deserialize date from the `YYYY-MM-DD` format.
+impl<'de> Deserialize<'de> for Date {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let str: &'de str = Deserialize::deserialize(deserializer)?;
+        let date = NaiveDate::parse_from_str(str.trim(), "%Y-%m-%d")
+            .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
+        Ok(Self::new(
+            (date.and_time(NaiveTime::default()).timestamp() / 86400) as i32,
+        ))
+    }
+}
+
 some_operator!(lt, Date, Date, bool);
 some_operator!(gt, Date, Date, bool);
 some_operator!(eq, Date, Date, bool);
@@ -728,6 +763,18 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Time {
                 nanoseconds: u64::deserialize(deserializer)? * 1_000,
             }),
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for Time {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let str: &'de str = Deserialize::deserialize(deserializer)?;
+        let time = NaiveTime::parse_from_str(str.trim(), "%H:%M:%S%.f")
+            .map_err(|e| D::Error::custom(format!("invalid time string '{str}': {e}")))?;
+        Ok(Self::from_time(time))
     }
 }
 

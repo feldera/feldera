@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
+import org.apache.commons.lang3.StringUtils;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
@@ -34,21 +35,12 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.*;
+import org.dbsp.util.Utilities;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -98,7 +90,9 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
             DBSPType litType = lit.getType();
-            if (type.setMayBeNull(false).sameType(litType)) {
+            if (type.setMayBeNull(false).sameType(litType) &&
+                    !type.is(DBSPTypeString.class)) {
+                // Casting to VARCHAR may change a string even if the source is the same type
                 // Cast from type to Option<type>
                 result = lit.getWithNullable(type.mayBeNull);
             } else if (lit.isNull) {
@@ -118,7 +112,8 @@ public class Simplify extends InnerRewriteVisitor {
                     DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.US)
                             .withResolverStyle(ResolverStyle.STRICT);
                     try {
-                        LocalDate.parse(str.value, dateFormatter);
+                        //noinspection ResultOfMethodCallIgnored
+                        LocalDate.parse(str.value, dateFormatter); // executed for exception
                         result = new DBSPDateLiteral(lit.getNode(), type, new DateString(str.value));
                     } catch (DateTimeParseException ex) {
                         result = DBSPLiteral.none(type);
@@ -132,7 +127,9 @@ public class Simplify extends InnerRewriteVisitor {
                     }
                 } else if (type.is(DBSPTypeDecimal.class)) {
                     try {
-                        result = new DBSPDecimalLiteral(type, new BigDecimal(str.value));
+                        DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
+                        BigDecimal value = new BigDecimal(str.value).setScale(decType.scale, RoundingMode.HALF_EVEN);
+                        result = new DBSPDecimalLiteral(type, value);
                     } catch (NumberFormatException ex) {
                         // on parse error return 0.
                         result = new DBSPDecimalLiteral(type, BigDecimal.ZERO);
@@ -140,10 +137,47 @@ public class Simplify extends InnerRewriteVisitor {
                 } else if (type.is(DBSPTypeString.class)) {
                     DBSPTypeString typeString = type.to(DBSPTypeString.class);
                     if (typeString.precision == DBSPTypeString.UNLIMITED_PRECISION) {
-                        result = lit;
+                        String value = Utilities.trimRight(str.value);
+                        result = new DBSPStringLiteral(value, str.charset, type.mayBeNull);
                     } else {
-                        String value = str.value.substring(0, Math.min(str.value.length(), typeString.precision));
-                        result = new DBSPStringLiteral(value, str.charset);
+                        String value;
+                        if (!typeString.fixed) {
+                            value = Utilities.trimRight(str.value);
+                        } else if (str.value.length() < typeString.precision) {
+                            value = StringUtils.rightPad(str.value, typeString.precision);
+                        } else {
+                            value = str.value.substring(0, typeString.precision);
+                        }
+                        result = new DBSPStringLiteral(value, str.charset, type.mayBeNull);
+                    }
+                } else
+                    if (type.is(DBSPTypeInteger.class)) {
+                    DBSPTypeInteger ti = type.to(DBSPTypeInteger.class);
+                    try {
+                        switch (ti.getWidth()) {
+                            case 8: {
+                                byte value = Byte.parseByte(str.value);
+                                result = new DBSPI8Literal(lit.getNode(), type, value);
+                                break;
+                            }
+                            case 16: {
+                                short value = Short.parseShort(str.value);
+                                result = new DBSPI16Literal(lit.getNode(), type, value);
+                                break;
+                            }
+                            case 32: {
+                                int value = Integer.parseInt(str.value);
+                                result = new DBSPI32Literal(lit.getNode(), type, value);
+                                break;
+                            }
+                            case 64: {
+                                long value = Long.parseLong(str.value);
+                                result = new DBSPI64Literal(lit.getNode(), type, value);
+                                break;
+                            }
+                        }
+                    } catch (NumberFormatException ex) {
+                        result = DBSPLiteral.none(type);
                     }
                 }
             } else if (lit.is(DBSPI32Literal.class)) {

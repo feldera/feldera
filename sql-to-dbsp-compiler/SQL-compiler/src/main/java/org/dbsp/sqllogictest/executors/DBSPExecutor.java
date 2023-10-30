@@ -34,7 +34,6 @@ import net.hydromatic.sqllogictest.executors.SqlSltTestExecutor;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.*;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
@@ -51,6 +50,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.sqllogictest.*;
 import org.dbsp.util.Linq;
 import org.dbsp.util.ProgramAndTester;
+import org.dbsp.util.TableValue;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -59,8 +59,6 @@ import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
-
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 /**
  * Sql test executor that uses DBSP for query execution.
@@ -95,16 +93,6 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         this.connectionString = connectionString;
     }
 
-    public static class TableValue {
-        public final String tableName;
-        public final DBSPZSetLiteral contents;
-
-        public TableValue(String tableName, DBSPZSetLiteral contents) {
-            this.tableName = tableName;
-            this.contents = contents;
-        }
-    }
-
     public TableValue[] getInputSets(DBSPCompiler compiler) throws SQLException {
         for (SltSqlStatement statement : this.inputPreparation.statements)
             compiler.compileStatement(statement.statement, null);
@@ -116,62 +104,6 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     new DBSPZSetLiteral(new DBSPTypeWeight(), tables.getTableContents(table)));
         }
         return tableValues;
-    }
-
-    DBSPFunction createInputFunction(DBSPCompiler compiler, TableValue[] tables) throws IOException {
-        DBSPExpression[] fields = new DBSPExpression[tables.length];
-        int totalSize = 0;
-        Set<String> seen = new HashSet<>();
-        for (int i = 0; i < tables.length; i++) {
-            totalSize += tables[i].contents.size();
-            fields[i] = tables[i].contents;
-            if (seen.contains(tables[i].tableName))
-                throw new RuntimeException("Table " + tables[i].tableName + " already in input");
-            seen.add(tables[i].tableName);
-        }
-
-        if (totalSize > 10) {
-            if (this.connectionString.equals("csv")) {
-                // If the data is large write, it to a set of CSV files and read it at runtime.
-                for (int i = 0; i < tables.length; i++) {
-                    String fileName = (rustDirectory + tables[i].tableName) + ".csv";
-                    File file = new File(fileName);
-                    ToCsvVisitor.toCsv(compiler, file, tables[i].contents);
-                    fields[i] = new DBSPApplyExpression(CalciteObject.EMPTY, "read_csv",
-                            tables[i].contents.getType(),
-                            new DBSPStrLiteral(fileName));
-                }
-            } else {
-                // read from DB
-                for (int i = 0; i < tables.length; i++) {
-                    fields[i] = generateReadDbCall(tables[i]);
-                }
-            }
-        }
-        DBSPRawTupleExpression result = new DBSPRawTupleExpression(fields);
-        return new DBSPFunction("input", new ArrayList<>(),
-                result.getType(), result, Linq.list());
-    }
-
-    private DBSPExpression generateReadDbCall(TableValue tableValue) {
-        // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
-        DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
-        DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType);
-        DBSPTypeTuple tupleType = tableValue.contents.zsetType.elementType.to(DBSPTypeTuple.class);
-        final List<DBSPExpression> rowGets = new ArrayList<>(tupleType.tupFields.length);
-        for (int i = 0; i <  tupleType.tupFields.length; i++) {
-            DBSPApplyMethodExpression rowGet =
-                    new DBSPApplyMethodExpression("get",
-                            tupleType.tupFields[i],
-                            rowVariable, new DBSPUSizeLiteral(i));
-            rowGets.add(rowGet);
-        }
-        DBSPTupleExpression tuple = new DBSPTupleExpression(rowGets, false);
-        DBSPClosureExpression mapClosure = new DBSPClosureExpression(CalciteObject.EMPTY, tuple,
-                rowVariable.asRefParameter());
-        return new DBSPApplyExpression("read_db", tableValue.contents.zsetType,
-                new DBSPStrLiteral(this.connectionString), new DBSPStrLiteral(tableValue.tableName),
-                mapClosure);
     }
 
     /**
@@ -250,7 +182,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             // Create function which generates inputs for all tests in this batch.
             // We know that all these tests consume the same input tables.
             TableValue[] inputSets = this.getInputSets(compiler);
-            DBSPFunction inputFunction = this.createInputFunction(compiler, inputSets);
+            DBSPFunction inputFunction = TableValue.createInputFunction("input",
+                    inputSets, rustDirectory, this.connectionString);
             DBSPFunction streamInputFunction = this.createStreamInputFunction(inputFunction);
 
             // Generate a function and a tester for each query.
@@ -432,8 +365,6 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             batchSize = 20;
         if (name.startsWith("select5"))
             batchSize = 5;
-        // Used for debugging
-        int toSkip = 0;
 
         TestStatistics result = new TestStatistics(options.stopAtFirstError, options.verbosity);
         boolean seenQueries = false;
