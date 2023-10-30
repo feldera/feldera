@@ -64,6 +64,12 @@ public class TableValue {
         }
 
         @Override
+        public VisitDecision preorder(DBSPCastExpression node) {
+            this.found = true;
+            return VisitDecision.STOP;
+        }
+
+        @Override
         public VisitDecision preorder(DBSPTypeDate node) {
             this.found = true;
             return VisitDecision.STOP;

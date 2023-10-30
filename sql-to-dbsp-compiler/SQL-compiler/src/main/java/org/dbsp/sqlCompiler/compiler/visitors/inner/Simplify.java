@@ -127,7 +127,9 @@ public class Simplify extends InnerRewriteVisitor {
                     }
                 } else if (type.is(DBSPTypeDecimal.class)) {
                     try {
-                        result = new DBSPDecimalLiteral(type, new BigDecimal(str.value));
+                        DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
+                        BigDecimal value = new BigDecimal(str.value).setScale(decType.scale, RoundingMode.HALF_EVEN);
+                        result = new DBSPDecimalLiteral(type, value);
                     } catch (NumberFormatException ex) {
                         // on parse error return 0.
                         result = new DBSPDecimalLiteral(type, BigDecimal.ZERO);
