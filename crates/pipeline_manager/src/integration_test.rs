@@ -186,6 +186,7 @@ struct TestConfig {
     dbsp_url: String,
     client: awc::Client,
     bearer_token: Option<String>,
+    start_timeout: Duration,
     shutdown_timeout: Duration,
     failed_timeout: Duration,
 }
@@ -509,6 +510,12 @@ async fn setup() -> TestConfig {
         .timeout(Duration::from_secs(10))
         .finish();
     let bearer_token = bearer_token().await;
+    let start_timeout = Duration::from_secs(
+        std::env::var("TEST_START_TIMEOUT")
+            .unwrap_or("60".to_string())
+            .parse::<u64>()
+            .unwrap(),
+    );
     let shutdown_timeout = Duration::from_secs(
         std::env::var("TEST_SHUTDOWN_TIMEOUT")
             .unwrap_or("120".to_string())
@@ -525,6 +532,7 @@ async fn setup() -> TestConfig {
         dbsp_url,
         client,
         bearer_token,
+        start_timeout,
         shutdown_timeout,
         failed_timeout,
     };
@@ -1297,5 +1305,44 @@ async fn distinct_outputs(jit_mode: bool) {
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
         .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+}
+
+#[actix_web::test]
+#[serial]
+async fn pipeline_restart() {
+    let config = setup().await;
+    let id = deploy_pipeline_without_connectors(
+        &config,
+        "create table t1(c1 integer); create view v1 as select * from t1;",
+        false,
+    )
+    .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Running, config.start_timeout)
+        .await;
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Running, config.start_timeout)
         .await;
 }
