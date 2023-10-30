@@ -100,7 +100,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     const PROVISIONING_POLL_PERIOD: Duration = Duration::from_millis(300);
 
     /// Max time to wait for the pipeline to initialize all connectors.
-    const INITIALIZATION_TIMEOUT: Duration = Duration::from_millis(20_000);
+    const INITIALIZATION_TIMEOUT: Duration = Duration::from_millis(60_000);
 
     /// How often to poll for the pipeline initialization status.
     const INITIALIZATION_POLL_PERIOD: Duration = Duration::from_millis(300);
@@ -421,7 +421,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 // Shutdown in progress. Wait for the pipeline process to terminate.
                 (PipelineStatus::ShuttingDown, _) => {
                     if self.pipeline_handle.check_if_shutdown().await {
-                        let _ = self.pipeline_handle.shutdown().await;
                         self.update_pipeline_status(&mut pipeline, PipelineStatus::Shutdown, None)
                             .await;
                         self.update_pipeline_runtime_state(&pipeline).await?;
@@ -438,85 +437,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         poll_timeout = Self::SHUTDOWN_POLL_PERIOD;
                     }
                 }
-                // Steady-state operation.  Periodically poll the pipeline.
-                (PipelineStatus::Running, _) | (PipelineStatus::Paused, _) => {
-                    match pipeline_http_request_json_response(
-                        self.pipeline_id,
-                        Method::GET,
-                        "stats",
-                        &pipeline.location,
-                    )
-                    .await
-                    {
-                        Err(e) => {
-                            // Cannot reach the pipeline.
-                            self.mark_pipeline_as_failed(&mut pipeline, Some(e)).await?;
-                        }
-                        Ok((status, body)) => {
-                            if !status.is_success() {
-                                // Pipeline responds with an error, meaning that the pipeline
-                                // HTTP server is still running, but the pipeline itself failed --
-                                // save it out of its misery.
-                                self.mark_pipeline_as_failed_on_error(&mut pipeline, status, &body)
-                                    .await?;
-                            } else {
-                                let global_metrics = if let Some(metrics) =
-                                    body.get("global_metrics")
-                                {
-                                    metrics
-                                } else {
-                                    Err(RunnerError::HttpForwardError {
-                                        pipeline_id: self.pipeline_id,
-                                        error: format!("Pipeline status descriptor doesn't contain 'global_metrics' field: '{body}'")
-                                    })?
-                                };
-                                let state = if let Some(state) = global_metrics.get("state") {
-                                    state
-                                } else {
-                                    Err(RunnerError::HttpForwardError {
-                                        pipeline_id: self.pipeline_id,
-                                        error: format!("Pipeline status descriptor doesn't contain 'global_metrics.state' field: '{body}'")
-                                    })?
-                                };
-                                let state = if let Some(state) = state.as_str() {
-                                    state
-                                } else {
-                                    Err(RunnerError::HttpForwardError {
-                                        pipeline_id: self.pipeline_id,
-                                        error: format!("Pipeline status descriptor contains invalid 'global_metrics.state' field: '{body}'")
-                                    })?
-                                };
-
-                                if state == "Paused"
-                                    && pipeline.current_status != PipelineStatus::Paused
-                                {
-                                    self.update_pipeline_status(
-                                        &mut pipeline,
-                                        PipelineStatus::Paused,
-                                        None,
-                                    )
-                                    .await;
-                                    self.update_pipeline_runtime_state(&pipeline).await?;
-                                } else if state == "Running"
-                                    && pipeline.current_status != PipelineStatus::Running
-                                {
-                                    self.update_pipeline_status(
-                                        &mut pipeline,
-                                        PipelineStatus::Running,
-                                        None,
-                                    )
-                                    .await;
-                                    self.update_pipeline_runtime_state(&pipeline).await?;
-                                } else if state != "Paused" && state != "Running" {
-                                    self.mark_pipeline_as_failed(&mut pipeline, Some(RunnerError::HttpForwardError {
-                                        pipeline_id: self.pipeline_id,
-                                        error: format!("Pipeline reported unexpected status '{state}', expected 'Paused' or 'Running'")
-                                    })).await?;
-                                }
-                            }
-                        }
-                    }
-                }
                 // User acknowledges pipeline failure by invoking the `/shutdown` endpoint.
                 // Move to the `Shutdown` state so that the pipeline can be started again.
                 (PipelineStatus::Failed, PipelineStatus::Shutdown) => {
@@ -526,7 +446,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         .await;
                     self.update_pipeline_runtime_state(&pipeline).await?;
                 }
-                (PipelineStatus::Failed | PipelineStatus::Shutdown, _) => {}
+                // Steady-state operation.  Periodically poll the pipeline.
+                (PipelineStatus::Running, _)
+                | (PipelineStatus::Paused, _)
+                | (PipelineStatus::Failed, _) => {
+                    self.probe(&mut pipeline).await?;
+                }
+                (PipelineStatus::Shutdown, _) => {}
                 _ => {
                     error!(
                         "Unexpected current/desired pipeline status combination {:?}/{:?}",
@@ -535,6 +461,74 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 }
             }
         }
+    }
+
+    async fn probe(&mut self, pipeline: &mut PipelineRuntimeState) -> Result<(), ManagerError> {
+        match pipeline_http_request_json_response(
+            self.pipeline_id,
+            Method::GET,
+            "stats",
+            &pipeline.location,
+        )
+        .await
+        {
+            Err(e) => {
+                // Cannot reach the pipeline.
+                self.mark_pipeline_as_failed(pipeline, Some(e)).await?;
+            }
+            Ok((status, body)) => {
+                if !status.is_success() {
+                    // Pipeline responds with an error, meaning that the pipeline
+                    // HTTP server is still running, but the pipeline itself failed --
+                    // save it out of its misery.
+                    self.mark_pipeline_as_failed_on_error(pipeline, status, &body)
+                        .await?;
+                } else {
+                    let global_metrics = if let Some(metrics) = body.get("global_metrics") {
+                        metrics
+                    } else {
+                        Err(RunnerError::HttpForwardError {
+                                        pipeline_id: self.pipeline_id,
+                                        error: format!("Pipeline status descriptor doesn't contain 'global_metrics' field: '{body}'")
+                                    })?
+                    };
+                    let state = if let Some(state) = global_metrics.get("state") {
+                        state
+                    } else {
+                        Err(RunnerError::HttpForwardError {
+                                        pipeline_id: self.pipeline_id,
+                                        error: format!("Pipeline status descriptor doesn't contain 'global_metrics.state' field: '{body}'")
+                                    })?
+                    };
+                    let state = if let Some(state) = state.as_str() {
+                        state
+                    } else {
+                        Err(RunnerError::HttpForwardError {
+                                        pipeline_id: self.pipeline_id,
+                                        error: format!("Pipeline status descriptor contains invalid 'global_metrics.state' field: '{body}'")
+                                    })?
+                    };
+
+                    if state == "Paused" && pipeline.current_status != PipelineStatus::Paused {
+                        self.update_pipeline_status(pipeline, PipelineStatus::Paused, None)
+                            .await;
+                        self.update_pipeline_runtime_state(pipeline).await?;
+                    } else if state == "Running"
+                        && pipeline.current_status != PipelineStatus::Running
+                    {
+                        self.update_pipeline_status(pipeline, PipelineStatus::Running, None)
+                            .await;
+                        self.update_pipeline_runtime_state(pipeline).await?;
+                    } else if state != "Paused" && state != "Running" {
+                        self.mark_pipeline_as_failed(pipeline, Some(RunnerError::HttpForwardError {
+                                        pipeline_id: self.pipeline_id,
+                                        error: format!("Pipeline reported unexpected status '{state}', expected 'Paused' or 'Running'")
+                                    })).await?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     async fn update_pipeline_status(
