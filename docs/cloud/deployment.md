@@ -1,4 +1,4 @@
-# Feldera Cloud
+# Step 2: Deployment
 
 These instructions explain how to install and run our enterprise offering,
 *Feldera Cloud*, on Amazon's Elastic Kubernetes Service (EKS). Contact us at
@@ -70,7 +70,7 @@ eksctl create cluster -f eks-config.yaml
 ```
 
 This uses CloudFormation behind-the-scenes to bring up an EKS cluster named
-`feldera-eks` with three EC2 on-demand instances as worker nodes, 
+`feldera-eks` with three EC2 instances as worker nodes,
 running in a newly created dedicated VPC. It should take
 roughly 15-20 minutes.
 
@@ -114,7 +114,7 @@ You should see a three node cluster, all with the status `Ready`.
 To allow external access to Feldera and other services running inside the EKS
 cluster, we recommend setting up a Kubernetes Ingress controller. This is
 useful to allow access to the Feldera Web Console or to issue REST API calls
-directly. 
+directly.
 
 :::tip
 When you install an ingress controller, it uses an AWS load balancer to expose
@@ -165,23 +165,22 @@ helm upgrade --install ingress-nginx-internal ingress-nginx/ingress-nginx \
   -n ingress-nginx-internal \
   -f ingress-nginx.yaml
 ```
- 
+
 ## Installing Feldera Cloud
 
-To install Feldera Cloud, first get the Helm package and container images that
-are provided with our license. Please contact `support@feldera.com` if you do
-not already have these artifacts for your install. The typical workflow for
-customers would be to host the Feldera-supplied artifacts in their own
-container registry (like ECR). Customers will also have direct access to the
-Feldera registry using IAM credentials.
+:::tip
+This is the point at which you require the Feldera assets, most notably
+its Helm packages and container images. [Instructions how to acquire them
+can be found here.](assets)
+:::
 
-Next, let's create a Kubernetes namespace to deploy Feldera Cloud in.
+First, create a Kubernetes namespace to deploy Feldera Cloud in.
 
 ```
 kubectl create ns feldera
 ```
 
-Next, let's use Helm to install Feldera. We will create a Helm release named 
+Next, let's use Helm to install Feldera. We will create a Helm release named
 `feldera` in the `feldera` namespace we just created.
 
 ```
