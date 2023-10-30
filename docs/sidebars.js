@@ -17,7 +17,15 @@ const sidebars = {
     'what-is-feldera',
     'intro',
     'tour/tour',
-    'cloud',
+    {
+      type: 'category',
+      label: 'Feldera Cloud',
+      link: { type: 'doc', id: 'cloud/index' },
+      items: [
+        'cloud/assets',
+        'cloud/deployment'
+      ]
+    },
     {
       type: 'category',
       label: 'Tutorials',
@@ -95,7 +103,7 @@ const sidebars = {
         'sql/integer',
         'sql/float',
         'sql/decimal',
-        'sql/string'
+        'sql/string',
         'sql/binary',
         'sql/array',
         'sql/datetime'

@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Allow configuring resource requirements per pipeline
   ([940](https://github.com/feldera/feldera/pull/940))
+- Restructure and expansion of cloud documentation
+  ([#957](https://github.com/feldera/feldera/pull/957))
 
 ### Fixed
 - Reduce Docker logging noise from Kafka connect and Redpanda.
