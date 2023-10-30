@@ -2423,6 +2423,7 @@ dependencies = [
  "psutil",
  "rand",
  "rdkafka",
+ "regex",
  "reqwest",
  "rkyv",
  "rust_decimal",

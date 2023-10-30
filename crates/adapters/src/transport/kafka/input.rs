@@ -1,4 +1,5 @@
 use super::refine_kafka_error;
+use crate::transport::secret_resolver::MaybeSecret;
 use crate::{
     transport::kafka::rdkafka_loglevel_from, InputConsumer, InputEndpoint, InputTransport,
     PipelineState,
@@ -7,6 +8,7 @@ use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
 use log::debug;
 use num_traits::FromPrimitive;
+use pipeline_types::secret_ref::MaybeSecretRef;
 use pipeline_types::transport::kafka::KafkaInputConfig;
 use rdkafka::{
     config::FromClientConfigAndContext,
@@ -139,7 +141,17 @@ impl KafkaInputEndpointInner {
         let mut client_config = ClientConfig::new();
 
         for (key, value) in config.kafka_options.iter() {
-            client_config.set(key, value);
+            // If it is a secret reference, resolve it to the actual secret string
+            match MaybeSecret::new_with_default_volume(MaybeSecretRef::new_using_pattern_match(
+                value.clone(),
+            ))? {
+                MaybeSecret::String(simple_string) => {
+                    client_config.set(key, simple_string);
+                }
+                MaybeSecret::Secret(secret_string) => {
+                    client_config.set(key, secret_string);
+                }
+            }
         }
 
         if let Some(log_level) = config.log_level {

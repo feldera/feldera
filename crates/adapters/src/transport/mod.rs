@@ -43,6 +43,8 @@ pub mod http;
 
 pub mod url;
 
+mod secret_resolver;
+
 #[cfg(feature = "with-kafka")]
 pub(crate) mod kafka;
 

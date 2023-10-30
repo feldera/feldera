@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([940](https://github.com/feldera/feldera/pull/940))
 - Restructure and expansion of cloud documentation
   ([#957](https://github.com/feldera/feldera/pull/957))
+- Secrets can be referenced using a string pattern
+  in the Kafka connector input and output configuration
+  ([#949](https://github.com/feldera/feldera/pull/949))
 
 ### Fixed
 - Reduce Docker logging noise from Kafka connect and Redpanda.

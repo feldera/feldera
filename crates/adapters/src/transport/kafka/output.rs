@@ -1,3 +1,4 @@
+use crate::transport::secret_resolver::MaybeSecret;
 use crate::{
     transport::kafka::rdkafka_loglevel_from, AsyncErrorCallback, OutputEndpoint,
     OutputEndpointConfig, OutputTransport,
@@ -8,6 +9,7 @@ use crossbeam::{
     sync::{Parker, Unparker},
 };
 use log::{debug, error};
+use pipeline_types::secret_ref::MaybeSecretRef;
 use pipeline_types::transport::kafka::default_redpanda_server;
 use pipeline_types::transport::kafka::KafkaLogLevel;
 use rdkafka::{
@@ -273,7 +275,17 @@ impl KafkaOutputEndpoint {
         let mut client_config = ClientConfig::new();
 
         for (key, value) in config.kafka_options.iter() {
-            client_config.set(key, value);
+            // If it is a secret reference, resolve it to the actual secret string
+            match MaybeSecret::new_with_default_volume(MaybeSecretRef::new_using_pattern_match(
+                value.clone(),
+            ))? {
+                MaybeSecret::String(simple_string) => {
+                    client_config.set(key, simple_string);
+                }
+                MaybeSecret::Secret(secret_string) => {
+                    client_config.set(key, secret_string);
+                }
+            }
         }
 
         // This is needed to activate the `KafkaOutputContext::stats` callback.
