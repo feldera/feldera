@@ -255,7 +255,10 @@ where
 
                 // Output retractions in output trace.
                 while output_trace.key_valid() {
-                    output_cb(output_trace.key().clone(), output_trace.weight().neg());
+                    let w = output_trace.weight();
+                    if !w.is_zero() {
+                        output_cb(output_trace.key().clone(), w.neg());
+                    }
                     output_trace.step_key();
                 }
             }

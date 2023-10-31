@@ -152,6 +152,9 @@ fn topk_custom_ord_test_circuit(
 ) -> AnyResult<(
     CollectionHandle<i32, ((String, i32, i32), i32)>,
     OutputHandle<OrdIndexedZSet<i32, (String, i32, i32), i32>>,
+    OutputHandle<OrdIndexedZSet<i32, (i64, String, i32, i32), i32>>,
+    OutputHandle<OrdIndexedZSet<i32, (i64, String, i32, i32), i32>>,
+    OutputHandle<OrdIndexedZSet<i32, (i64, String, i32, i32), i32>>,
 )> {
     let (input_stream, input_handle) =
         circuit.add_input_indexed_zset::<i32, (String, i32, i32), i32>();
@@ -163,7 +166,12 @@ fn topk_custom_ord_test_circuit(
         fn cmp(left: &(String, i32, i32), right: &(String, i32, i32)) -> std::cmp::Ordering {
             let ord = left.1.cmp(&right.1);
             let res = if ord == Ordering::Equal {
-                right.2.cmp(&left.2)
+                let ord = right.2.cmp(&left.2);
+                if ord == Ordering::Equal {
+                    left.0.cmp(&right.0)
+                } else {
+                    ord
+                }
             } else {
                 ord
             };
@@ -176,7 +184,38 @@ fn topk_custom_ord_test_circuit(
         .integrate()
         .output();
 
-    Ok((input_handle, topk_handle))
+    let topk_rank_handle = input_stream
+        .topk_rank_custom_order::<AscDesc, _, _, _>(
+            5,
+            |(_, x1, y1), (_, x2, y2)| x1 == x2 && y1 == y2,
+            |rank, (s, x, y)| (rank, s.clone(), *x, *y),
+        )
+        .integrate()
+        .output();
+
+    let topk_dense_rank_handle = input_stream
+        .topk_dense_rank_custom_order::<AscDesc, _, _, _>(
+            5,
+            |(_, x1, y1), (_, x2, y2)| x1 == x2 && y1 == y2,
+            |rank, (s, x, y)| (rank, s.clone(), *x, *y),
+        )
+        .integrate()
+        .output();
+
+    let topk_row_number_handle = input_stream
+        .topk_row_number_custom_order::<AscDesc, _, _>(5, |rank, (s, x, y)| {
+            (rank, s.clone(), *x, *y)
+        })
+        .integrate()
+        .output();
+
+    Ok((
+        input_handle,
+        topk_handle,
+        topk_rank_handle,
+        topk_dense_rank_handle,
+        topk_row_number_handle,
+    ))
 }
 
 fn lag_test_circuit(
@@ -207,8 +246,16 @@ fn lead_test_circuit(
 
 #[test]
 fn test_topk_custom_ord() {
-    let (mut dbsp, (input_handle, topk_handle)) =
-        Runtime::init_circuit(4, topk_custom_ord_test_circuit).unwrap();
+    let (
+        mut dbsp,
+        (
+            input_handle,
+            topk_handle,
+            topk_rank_handle,
+            topk_dense_rank_handle,
+            topk_row_number_handle,
+        ),
+    ) = Runtime::init_circuit(4, topk_custom_ord_test_circuit).unwrap();
 
     let trace = vec![
         vec![
@@ -233,6 +280,16 @@ fn test_topk_custom_ord() {
             (1, ("foo".to_string(), 9, 98), -1),
             (1, ("foo".to_string(), 8, 97), -1),
         ],
+        // Two values with the same rank
+        vec![(1, ("bar".to_string(), 8, 96), 1)],
+        vec![(1, ("foo".to_string(), 7, 96), 1)],
+        // >5 elements with the same rank.
+        vec![
+            (1, ("baz".to_string(), 8, 96), 1),
+            (1, ("buzz".to_string(), 8, 96), 1),
+            (1, ("foobar".to_string(), 8, 96), 1),
+            (1, ("fubar".to_string(), 8, 96), 1),
+        ],
     ];
     let mut expected_output = vec![indexed_zset! {
         1 => {{("foo".to_string(), 8, 98)} => 1, {("foo".to_string(), 8, 97)} => 1, {("foo".to_string(), 9, 99)} => 1, {("foo".to_string(), 9, 98)} => 1, {("foo".to_string(), 10, 100)} => 1},
@@ -242,6 +299,75 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {{("foo".to_string(), 8, 96)} => 1, {("foo".to_string(), 8, 95)} => 1, {("foo".to_string(), 9, 97)} => 1, {("foo".to_string(), 9, 96)} => 1, {("foo".to_string(), 10, 100)} => 1},
+    },
+    indexed_zset! {
+        1 => {{("bar".to_string(), 8, 96)} => 1, {("foo".to_string(), 8, 96)} => 1, {("foo".to_string(), 8, 95)} => 1, {("foo".to_string(), 9, 97)} => 1, {("foo".to_string(), 9, 96)} => 1}
+    },
+    indexed_zset! {
+        1 => {{("foo".to_string(), 7, 96)} => 1, {("bar".to_string(), 8, 96)} => 1, {("foo".to_string(), 8, 96)} => 1, {("foo".to_string(), 8, 95)} => 1, {("foo".to_string(), 9, 97)} => 1},
+    },
+    indexed_zset! {
+        1 => {{("foo".to_string(), 7, 96)} => 1, {("bar".to_string(), 8, 96)} => 1, {("baz".to_string(), 8, 96)} => 1, {("buzz".to_string(), 8, 96)} => 1, {("foo".to_string(), 8, 96)} => 1},
+    }]
+    .into_iter();
+
+    let mut expected_ranked_output = vec![indexed_zset! {
+        1 => {{(1, "foo".to_string(), 8, 98)} => 1, {(2, "foo".to_string(), 8, 97)} => 1, {(3, "foo".to_string(), 9, 99)} => 1, {(4, "foo".to_string(), 9, 98)} => 1, {(5, "foo".to_string(), 10, 100)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 8, 98)} => 1, {(2, "foo".to_string(), 8, 97)} => 1, {(3, "foo".to_string(), 8, 96)} => 1, {(4, "foo".to_string(), 8, 95)} => 1, {(5, "foo".to_string(), 9, 99)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 95)} => 1, {(3, "foo".to_string(), 9, 97)} => 1, {(4, "foo".to_string(), 9, 96)} => 1, {(5, "foo".to_string(), 10, 100)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "bar".to_string(), 8, 96)} => 1, {(1, "foo".to_string(), 8, 96)} => 1, {(3, "foo".to_string(), 8, 95)} => 1, {(4, "foo".to_string(), 9, 97)} => 1, {(5, "foo".to_string(), 9, 96)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 7, 96)} => 1, {(2, "bar".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 96)} => 1, {(4, "foo".to_string(), 8, 95)} => 1, {(5, "foo".to_string(), 9, 97)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 7, 96)} => 1, {(2, "bar".to_string(), 8, 96)} => 1, {(2, "baz".to_string(), 8, 96)} => 1, {(2, "buzz".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 96)} => 1, {(2, "foobar".to_string(), 8, 96)} => 1, {(2, "fubar".to_string(), 8, 96)} => 1},
+    }]
+    .into_iter();
+
+    let mut expected_dense_ranked_output = vec![indexed_zset! {
+        1 => {{(1, "foo".to_string(), 8, 98)} => 1, {(2, "foo".to_string(), 8, 97)} => 1, {(3, "foo".to_string(), 9, 99)} => 1, {(4, "foo".to_string(), 9, 98)} => 1, {(5, "foo".to_string(), 10, 100)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 8, 98)} => 1, {(2, "foo".to_string(), 8, 97)} => 1, {(3, "foo".to_string(), 8, 96)} => 1, {(4, "foo".to_string(), 8, 95)} => 1, {(5, "foo".to_string(), 9, 99)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 95)} => 1, {(3, "foo".to_string(), 9, 97)} => 1, {(4, "foo".to_string(), 9, 96)} => 1, {(5, "foo".to_string(), 10, 100)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "bar".to_string(), 8, 96)} => 1, {(1, "foo".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 95)} => 1, {(3, "foo".to_string(), 9, 97)} => 1, {(4, "foo".to_string(), 9, 96)} => 1, {(5, "foo".to_string(), 10, 100)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 7, 96)} => 1, {(2, "bar".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 96)} => 1, {(3, "foo".to_string(), 8, 95)} => 1, {(4, "foo".to_string(), 9, 97)} => 1, {(5, "foo".to_string(), 9, 96)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 7, 96)} => 1, {(2, "bar".to_string(), 8, 96)} => 1, {(2, "baz".to_string(), 8, 96)} => 1, {(2, "buzz".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 96)} => 1, {(2, "foobar".to_string(), 8, 96)} => 1, {(2, "fubar".to_string(), 8, 96)} => 1, {(3, "foo".to_string(), 8, 95)} => 1, {(4, "foo".to_string(), 9, 97)} => 1, {(5, "foo".to_string(), 9, 96)} => 1},
+    }]
+    .into_iter();
+
+    let mut expected_row_number_output = vec![indexed_zset! {
+        1 => {{(1, "foo".to_string(), 8, 98)} => 1, {(2, "foo".to_string(), 8, 97)} => 1, {(3, "foo".to_string(), 9, 99)} => 1, {(4, "foo".to_string(), 9, 98)} => 1, {(5, "foo".to_string(), 10, 100)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 8, 98)} => 1, {(2, "foo".to_string(), 8, 97)} => 1, {(3, "foo".to_string(), 8, 96)} => 1, {(4, "foo".to_string(), 8, 95)} => 1, {(5, "foo".to_string(), 9, 99)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 95)} => 1, {(3, "foo".to_string(), 9, 97)} => 1, {(4, "foo".to_string(), 9, 96)} => 1, {(5, "foo".to_string(), 10, 100)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "bar".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 96)} => 1, {(3, "foo".to_string(), 8, 95)} => 1, {(4, "foo".to_string(), 9, 97)} => 1, {(5, "foo".to_string(), 9, 96)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 7, 96)} => 1, {(2, "bar".to_string(), 8, 96)} => 1, {(3, "foo".to_string(), 8, 96)} => 1, {(4, "foo".to_string(), 8, 95)} => 1, {(5, "foo".to_string(), 9, 97)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 7, 96)} => 1, {(2, "bar".to_string(), 8, 96)} => 1, {(3, "baz".to_string(), 8, 96)} => 1, {(4, "buzz".to_string(), 8, 96)} => 1, {(5, "foo".to_string(), 8, 96)} => 1},
     }]
     .into_iter();
 
@@ -254,6 +380,24 @@ fn test_topk_custom_ord() {
         let topk_result = topk_handle.consolidate();
 
         assert_batch_eq(&topk_result, &expected_output.next().unwrap());
+
+        let topk_rank_result = topk_rank_handle.consolidate();
+
+        assert_batch_eq(&topk_rank_result, &expected_ranked_output.next().unwrap());
+
+        let topk_dense_rank_result = topk_dense_rank_handle.consolidate();
+
+        assert_batch_eq(
+            &topk_dense_rank_result,
+            &expected_dense_ranked_output.next().unwrap(),
+        );
+
+        let topk_row_number_result = topk_row_number_handle.consolidate();
+
+        assert_batch_eq(
+            &topk_row_number_result,
+            &expected_row_number_output.next().unwrap(),
+        );
     }
 }
 
