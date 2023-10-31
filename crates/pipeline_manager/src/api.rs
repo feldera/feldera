@@ -804,6 +804,7 @@ struct UpdateProgramRequest {
     /// code unmodified.
     code: Option<String>,
     /// Compile the program in JIT mode.
+    #[serde(default)]
     jit_mode: bool,
 }
 
