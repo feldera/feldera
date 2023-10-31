@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Reduce Docker logging noise from Kafka connect and Redpanda.
+- Regression in pipeline shutdown logic
+  ([#961](https://github.com/feldera/feldera/pull/961))
 
 ## [0.2.0] - 2023-10-24
 
