@@ -142,7 +142,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.inputTables = new ArrayList<>();
         this.outputViews = new ArrayList<>();
 
-        if (true || options.ioOptions.jit) {
+        if (options.ioOptions.jit) {
             // The JIT has hardwired I32 for the weight type.
             this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false);
         } else {
