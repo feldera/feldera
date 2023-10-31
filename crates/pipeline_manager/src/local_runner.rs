@@ -35,7 +35,16 @@ pub struct ProcessRunner {
 
 impl Drop for ProcessRunner {
     fn drop(&mut self) {
-        let _ = self.pipeline_process.as_mut().map(|p| p.kill());
+        self.kill_pipeline();
+    }
+}
+
+impl ProcessRunner {
+    fn kill_pipeline(&mut self) {
+        if let Some(mut p) = self.pipeline_process.take() {
+            let _ = p.kill();
+            let _ = p.wait();
+        }
     }
 }
 
@@ -122,7 +131,7 @@ impl PipelineExecutor for ProcessRunner {
     }
 
     async fn shutdown(&mut self) -> Result<(), ManagerError> {
-        self.pipeline_process = None;
+        self.kill_pipeline();
         match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
             Ok(_) => (),
             Err(e) => {
