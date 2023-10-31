@@ -36,20 +36,22 @@ pub struct ProcessRunner {
 
 impl Drop for ProcessRunner {
     fn drop(&mut self) {
-        self.kill_pipeline();
+        // This shouldn't normally happen, as the runner should shutdown the
+        // pipeline before destroying the automaton, but we make sure that the
+        // pipeline process is still killed on error.  We use `start_kill`
+        // to avoid blocking in `drop`.
+        self.pipeline_process.as_mut().map(|p| p.start_kill());
     }
 }
 
 impl ProcessRunner {
-    fn kill_pipeline(&mut self) {
+    async fn kill_pipeline(&mut self) {
         if let Some(mut p) = self.pipeline_process.take() {
-            let _ = p.kill();
-            let _ = p.wait();
+            let _ = p.kill().await;
+            let _ = p.wait().await;
         }
     }
-}
 
-impl ProcessRunner {
     async fn start_binary(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError> {
         let pipeline_id = ped.pipeline_id;
         let program_id = ped.program_id;
@@ -214,7 +216,7 @@ impl PipelineExecutor for ProcessRunner {
     }
 
     async fn shutdown(&mut self) -> Result<(), ManagerError> {
-        self.kill_pipeline();
+        self.kill_pipeline().await;
         match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
             Ok(_) => (),
             Err(e) => {
