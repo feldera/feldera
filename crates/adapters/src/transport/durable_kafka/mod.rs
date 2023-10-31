@@ -16,7 +16,7 @@ mod output;
 
 use crate::transport::kafka::refine_kafka_error;
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
-use log::warn;
+use log::{debug, error, warn};
 use pipeline_types::transport::{
     durable_kafka::CommonConfigSchema, kafka::default_redpanda_server,
 };
@@ -308,14 +308,64 @@ impl<'a, T: Consumer<C> + AsKafkaClient<C>, C: ClientContext + ConsumerContext> 
 }
 
 impl<'a, C: ClientContext + ConsumerContext> Ctp<'a, BaseConsumer<C>, C> {
-    fn read(&self) -> KafkaResult<BorrowedMessage<'a>> {
-        self.client
-            .poll(None)
-            .expect("poll(None) should always return a message or an error")
+    /// Finds and returns the position for `self`.
+    fn position(&self) -> KafkaResult<i64> {
+        let list = self.client.position().map_err(|error| {
+            warn!("Failed to obtain position for {self} ({error})");
+            error
+        })?;
+        let elem = list
+            .find_partition(self.topic, self.partition)
+            .ok_or_else(|| {
+                warn!("Client lacks position for {self}");
+                KafkaError::OffsetFetch(RDKafkaErrorCode::UnknownTopicOrPartition)
+            })?;
+        match elem.offset() {
+            Offset::Offset(offset) => Ok(offset),
+            other => {
+                warn!("Client reports invalid position {other:?} for {self}");
+                Err(KafkaError::OffsetFetch(RDKafkaErrorCode::InvalidArgument))
+            }
+        }
+    }
+
+    /// Reads a message from `self`.  Returns the message.
+    ///
+    /// Occasionally, librdkafka does something really weird.  It hangs without
+    /// ever returning either a message or an EOF or other error.  I don't know
+    /// why it does this.  In this case, librdkafka can't even report the
+    /// current position for `self`.  This code detects the problem and recovers
+    /// by seeking to `start_offset` and trying again, which in practice works
+    /// OK.
+    fn read_toward_end(&self, start_offset: i64) -> KafkaResult<BorrowedMessage<'a>> {
+        let timeout = Duration::from_millis(100);
+        for loops in 0u128.. {
+            if let Some(result) = self.client.poll(timeout) {
+                return result;
+            }
+            if loops > 50 && loops.is_power_of_two() {
+                // Never seen yet in practice.
+                error!(
+                    "Waited over {} ms for librdkafka to read a message",
+                    timeout.as_millis() * loops
+                );
+            }
+
+            if self.position().is_err() {
+                warn!("Can't get current position for {self}, starting over from offset {start_offset}");
+                self.assign(start_offset)?;
+            }
+        }
+        unreachable!();
     }
     fn read_at_offset(&self, offset: i64) -> AnyResult<BorrowedMessage<'a>> {
         self.assign(offset)?;
-        self.while_resumed(|| self.read().map_err(|err| err.into()))
+        self.while_resumed(|| {
+            self.client
+                .poll(None)
+                .expect("poll(None) should always return a message or an error")
+                .map_err(|err| err.into())
+        })
     }
 
     // Read the last message in the partition, which has the given `watermarks`.
@@ -341,7 +391,7 @@ impl<'a, C: ClientContext + ConsumerContext> Ctp<'a, BaseConsumer<C>, C> {
             let last_message = self.while_resumed(|| {
                 let mut last_message = None;
                 loop {
-                    match self.read() {
+                    match self.read_toward_end(offset) {
                         Ok(message) => last_message = Some(message),
                         Err(KafkaError::PartitionEOF(p)) if p == self.partition => {
                             break Ok(last_message)
@@ -402,7 +452,7 @@ fn count_partitions_in_topic<C: ConsumerContext>(
     if metadata_topic.partitions().is_empty() {
         bail!("Kafka server reports {topic} has zero partitions but it should have at least one");
     }
-    warn!(
+    debug!(
         "{topic} has {} partitions",
         metadata_topic.partitions().len()
     );
