@@ -147,7 +147,7 @@ public class CompilerMain {
                         "Must specify an output file when outputting jpeg or png");
                 return compiler.messages;
             }
-            ToDotVisitor.toDot(compiler, this.options.ioOptions.outputFile, dotFormat, dbsp);
+            ToDotVisitor.toDot(compiler, this.options.ioOptions.outputFile, true, dotFormat, dbsp);
             return compiler.messages;
         }
         try {

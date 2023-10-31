@@ -90,7 +90,6 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
 
     public IRTransform normalizer(boolean simpleParameters) {
         InnerPasses passes = new InnerPasses();
-        passes.add(new EliminateFunctions(this.errorReporter));
         passes.add(new ExpandClone(this.errorReporter));
         passes.add(new BetaReduction(this.errorReporter));
         passes.add(new Simplify(this.errorReporter));
@@ -554,7 +553,6 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
 
     public static JITProgram circuitToJIT(DBSPCompiler compiler, DBSPCircuit circuit) {
         Passes rewriter = new Passes(compiler);
-        rewriter.add(new ExpandWritelog(compiler));
         rewriter.add(new BlockClosures(compiler));
         rewriter.add(new ResolveWeightType(compiler, compiler.getWeightTypeImplementation()));
         rewriter.add(new EliminateMulWeight(compiler));

@@ -69,6 +69,8 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
     @Nullable
     public final String comment;
 
+    public final DBSPType outputStreamType;
+
     protected DBSPOperator(CalciteObject node, String operation,
                            @Nullable DBSPExpression function, DBSPType outputType,
                            boolean isMultiset, @Nullable String comment, String outputName) {
@@ -80,6 +82,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
         this.outputType = outputType;
         this.isMultiset = isMultiset;
         this.comment = comment;
+        this.outputStreamType = new DBSPTypeStream(this.outputType);
     }
 
     public DBSPOperator(CalciteObject node, String operation,
@@ -232,12 +235,11 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        DBSPType streamType = new DBSPTypeStream(this.outputType);
         this.writeComments(builder)
                 .append("let ")
                 .append(this.getName())
                 .append(": ")
-                .append(streamType)
+                .append(this.outputStreamType)
                 .append(" = ");
         if (!this.inputs.isEmpty())
             builder.append(this.inputs.get(0).getName())

@@ -171,7 +171,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             List<AggregateCall> aggregates, DBSPTypeTuple resultType,
             DBSPType inputRowType, int groupCount) {
         DBSPVariablePath rowVar = inputRowType.ref().var("v");
-        DBSPAggregate result = new DBSPAggregate(node, rowVar, aggregates.size());
+        DBSPAggregate.Implementation[] implementations = new DBSPAggregate.Implementation[aggregates.size()];
         int aggIndex = 0;
 
         for (AggregateCall call: aggregates) {
@@ -179,10 +179,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             AggregateCompiler compiler = new AggregateCompiler(node,
                     this.getCompiler(), call, resultFieldType, rowVar);
             DBSPAggregate.Implementation implementation = compiler.compile();
-            result.set(aggIndex, implementation);
+            implementations[aggIndex] =  implementation;
             aggIndex++;
         }
-        return result;
+        return new DBSPAggregate(new CalciteObject(node), rowVar, implementations, false);
     }
 
     /**
@@ -421,8 +421,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // LogicalProject is not really SQL project, it is rather map.
         RelNode input = project.getInput();
         DBSPOperator opInput = this.getInputAs(input, true);
-        DBSPType outputType = this.convertType(project.getRowType(), false);
-        DBSPTypeTuple tuple = outputType.to(DBSPTypeTuple.class);
+        DBSPType outputElementType = this.convertType(project.getRowType(), false);
+        DBSPTypeTuple tuple = outputElementType.to(DBSPTypeTuple.class);
         DBSPType inputType = this.convertType(project.getInput().getRowType(), false);
         DBSPVariablePath row = inputType.ref().var("t");
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(row, this.compiler);
@@ -446,7 +446,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         DBSPExpression exp = new DBSPTupleExpression(node, resultColumns);
         DBSPExpression mapFunc = new DBSPClosureExpression(node, exp, row.asParameter());
-        DBSPMapOperator op = new DBSPMapOperator(node, mapFunc, this.makeZSet(outputType), opInput);
+        DBSPMapOperator op = new DBSPMapOperator(
+                node, mapFunc, this.makeZSet(outputElementType), opInput);
         // No distinct needed - in SQL project may produce a multiset.
         this.assignOperator(project, op);
     }
@@ -456,7 +457,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (inputElementType.sameType(outputElementType))
             return operator;
         DBSPExpression function = inputElementType.caster(outputElementType);
-        DBSPOperator map = new DBSPMapOperator(node, function, this.makeZSet(outputElementType), operator);
+        DBSPOperator map = new DBSPMapOperator(
+                node, function, this.makeZSet(outputElementType), operator);
         this.circuit.addOperator(map);
         return map;
     }

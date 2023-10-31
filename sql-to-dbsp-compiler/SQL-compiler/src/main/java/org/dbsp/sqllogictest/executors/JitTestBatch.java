@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.JitIODescription;
 import org.dbsp.sqlCompiler.compiler.backend.jit.JitSerializationKind;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.SQLException;
 import java.util.*;
 
 /**
@@ -361,7 +363,9 @@ public class JitTestBatch extends TestBatch {
 
             this.compiler.optimize();
 
-            DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
+            DBSPCircuit circuit = compiler.getFinalCircuit("gen0");
+            DBSPNode.done();
+
             // Serialize circuit as JSON for the JIT executor
             JITProgram program = ToJitVisitor.circuitToJIT(compiler, circuit);
             String json = program.asJson().toPrettyString();
@@ -376,7 +380,7 @@ public class JitTestBatch extends TestBatch {
 
             List<JitFileAndSerialization> inputFiles = new ArrayList<>();
             int index = 0;
-            for (TableValue inputData : this.inputContents) {
+            for (TableValue inputData : this.inputGenerator.getInputs()) {
                 File input = this.fileFromName("input" + index++ + ".csv");
                 ToCsvVisitor.toCsv(compiler, input, new DBSPZSetLiteral(
                         compiler.getWeightTypeImplementation(), inputData.contents.data));
@@ -430,7 +434,7 @@ public class JitTestBatch extends TestBatch {
                 }
             }
             return failed;
-        } catch (InterruptedException | IOException ex) {
+        } catch (InterruptedException | IOException | SQLException ex) {
             throw new RuntimeException(ex);
         }
     }

@@ -25,6 +25,14 @@ package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.Utilities;
+
+import javax.annotation.Nullable;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Base interface for all DBSP nodes.
@@ -41,9 +49,88 @@ public abstract class DBSPNode
     private final
     CalciteObject node;
 
+    /** Controls the debugging for deterministic executions. */
+    static boolean DEBUG_DETERMINISM = false;
+
+    // If this is not null all created nodes are logged here.
+    // Used for debugging the deterministic execution of the compiler.
+    // The log is written when the "done()" method is called.
+    @Nullable
+    static List<DBSPNode> log;
+    // If this list is not null each created node is compared with
+    // the version from the previous log.
+    @Nullable
+    static List<String> previousLog;
+
+    static final String logName = "node.log";
+
+    static {
+        startLog();
+    }
+
+    @Nullable
+    static List<String> readLog() {
+        File log = new File(logName);
+        if (log.exists()) {
+            try {
+                return Files.readAllLines(log.toPath());
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        } else {
+            return null;
+        }
+    }
+
+    static void saveLog() throws IOException {
+        if (log == null)
+            return;
+        File file = new File(logName);
+        StringBuilder lines = new StringBuilder();
+        for (DBSPNode node: log) {
+            lines.append(toStringOneLine(node));
+            lines.append("\n");
+        }
+        Utilities.writeFile(file.toPath(), lines.toString());
+    }
+
+    public static void startLog() {
+        DEBUG_DETERMINISM = true;
+        log = new ArrayList<>();
+        previousLog = readLog();
+    }
+
+    public static void done() {
+        try {
+            DEBUG_DETERMINISM = false;
+            // compare the current log with the previous one
+            if (log != null && previousLog != null) {
+                for (int i = 0; i < Math.min(log.size(), previousLog.size()); i++) {
+                    DBSPNode node = log.get(i);
+                    String previous = previousLog.get(i);
+                    String str = toStringOneLine(node);
+                    if (!str.equals(previous)) {
+                        throw new RuntimeException("Node " + i +
+                                " differs between runs: " + previous + " vs " + str);
+                    }
+                }
+            }
+            // save the log
+            saveLog();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static String toStringOneLine(DBSPNode node) {
+        return node.getClass().getSimpleName() + " " + node.toString().replace("\n", "\\n");
+    }
+
     protected DBSPNode(CalciteObject node) {
         this.node = node;
         this.id = crtId++;
+        if (log != null)
+            log.add(this);
     }
 
     /**

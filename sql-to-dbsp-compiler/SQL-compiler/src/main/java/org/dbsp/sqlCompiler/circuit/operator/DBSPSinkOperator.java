@@ -73,13 +73,12 @@ public class DBSPSinkOperator extends DBSPOperator {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        DBSPType streamType = new DBSPTypeStream(this.outputType);
         this.writeComments(builder, this.query);
         return this.writeComments(builder)
                 .append("let ")
                 .append(this.getName())
                 .append(": ")
-                .append(streamType)
+                .append(this.outputStreamType)
                 .append(" = ")
                 .append(this.input().getName())
                 .append(";");

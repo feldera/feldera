@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 
 /**
@@ -33,6 +34,8 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
     protected final CompilerOptions compilerOptions;
     static final String rustDirectory = "../temp/src/";
     static final String jitExecutableDirectory = "..";
+    int toSkip = 0;
+    int batchSize = 10000;
 
     public JitDbspExecutor(JdbcExecutor executor,
                            OptionsParser.SuppliedOptions options,
@@ -44,6 +47,12 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         this.inputPreparation = new SqlTestPrepareInput();
         this.tablePreparation = new SqlTestPrepareTables();
         this.viewPreparation = new SqlTestPrepareViews();
+    }
+
+    void skip(int toSkip) {
+        this.toSkip = toSkip;
+        if (toSkip != 0)
+            this.batchSize = 1;
     }
 
     Connection getStatementExecutorConnection() {
@@ -105,6 +114,12 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
 
     // These should be reused from JdbcExecutor, but are not public there.
 
+    class JitInputGenerator implements InputGenerator {
+        public TableValue[] getInputs() throws SQLException {
+            return JitDbspExecutor.this.getInputSets();
+        }
+    }
+
     /**
      * Run a batch of queries accumulated
      * @return null if we have to stop immediately, or a new batch otherwise.
@@ -114,7 +129,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         System.out.println("Running a batch of " + batch.size() + " queries");
         batch.prepareInputs(this.tablePreparation.statements);
         batch.prepareInputs(this.viewPreparation.definitions());
-        batch.setInputContents(this.getInputSets());
+        batch.setInputGenerator(new JitInputGenerator());
         boolean failed = batch.run(result);
         if (failed)
             return null;
@@ -131,10 +146,8 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 options.stopAtFirstError, options.verbosity);
         result.incFiles();
         int queryNo = 0;
-        int batchSize = 1;
-        int skip = 0; // 710;  // used only for debugging
 
-        int remainingInBatch = batchSize;
+        int remainingInBatch = this.batchSize;
         JitTestBatch batch = new JitTestBatch(
                 this.compilerOptions, this.options, rustDirectory, jitExecutableDirectory, queryNo);
         for (ISqlTestOperation operation: testFile.fileContents) {
@@ -144,7 +157,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                     batch = this.runBatch(batch, result);
                     if (batch == null)
                         return result;
-                    remainingInBatch = batchSize;
+                    remainingInBatch = this.batchSize;
                 }
                 try {
                     if (this.buggyOperations.contains(stat.statement)) {
@@ -167,8 +180,8 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                     result.incIgnored();
                     continue;
                 }
-                if (skip > 0) {
-                    skip--;
+                if (toSkip > 0) {
+                    toSkip--;
                     continue;
                 }
                 // Debugging code commented-out.
@@ -194,7 +207,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
         return result;
     }
 
-    public static void register(OptionsParser parser) {
+    public static void register(OptionsParser parser, AtomicReference<Integer> skip) {
         parser.registerExecutor("jit", () -> {
             OptionsParser.SuppliedOptions options = parser.getOptions();
             try {
@@ -203,10 +216,12 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
                 CompilerOptions compilerOptions = new CompilerOptions();
                 compilerOptions.ioOptions.jit = true;
                 compilerOptions.languageOptions.throwOnError = options.stopAtFirstError;
+                compilerOptions.languageOptions.generateInputForEveryTable = true;
                 compilerOptions.languageOptions.lenient = true;
                 compilerOptions.ioOptions.quiet = true;
                 JitDbspExecutor result = new JitDbspExecutor(
                         Objects.requireNonNull(inner), options, compilerOptions);
+                result.skip(skip.get());
                 Set<String> bugs = options.readBugsFile();
                 result.avoid(bugs);
                 return result;

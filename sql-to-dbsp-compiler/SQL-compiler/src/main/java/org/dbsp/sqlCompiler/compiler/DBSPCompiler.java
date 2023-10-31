@@ -231,8 +231,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 return;
             for (SqlNode node : parsed) {
                 Logger.INSTANCE.belowLevel(this, 2)
-                        .append("Parsing result")
-                        .newline()
+                        .append("Parsing result: ")
                         .append(node.toString())
                         .newline();
                 FrontEndStatement fe = this.frontend.compile(

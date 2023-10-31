@@ -36,6 +36,8 @@ import java.util.List;
 public class Passes implements IWritesLogs, CircuitTransform {
     final IErrorReporter errorReporter;
     public final List<CircuitTransform> passes;
+    // Generate a new name for each dumped circuit.
+    static int dumped = 0;
 
     public Passes(IErrorReporter reporter, CircuitTransform... passes) {
         this.errorReporter = reporter;
@@ -57,14 +59,15 @@ public class Passes implements IWritesLogs, CircuitTransform {
 
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
-        int count = 0;
+        boolean details = this.getDebugLevel() >= 4;
         if (this.getDebugLevel() >= 3) {
+            String name = dumped++ + "before.png";
             Logger.INSTANCE.belowLevel(this, 3)
-                    .append("Writing circuit to before.png")
+                    .append("Writing circuit to ")
+                    .append(name)
                     .newline();
-            ToDotVisitor.toDot(this.errorReporter, "0before.png", "png", circuit);
+            ToDotVisitor.toDot(this.errorReporter, name, details, "png", circuit);
         }
-        ++count;
         for (CircuitTransform pass: this.passes) {
             Logger.INSTANCE.belowLevel(this, 1)
                     .append("Executing ")
@@ -72,14 +75,13 @@ public class Passes implements IWritesLogs, CircuitTransform {
                     .newline();
             circuit = pass.apply(circuit);
             if (this.getDebugLevel() >= 3) {
-                String name = count + pass.toString().replace(" ", "_") + ".png";
+                String name = dumped++ + pass.toString().replace(" ", "_") + ".png";
                 Logger.INSTANCE.belowLevel(this, 3)
                         .append("Writing circuit to ")
                         .append(name)
                         .newline();
-                ToDotVisitor.toDot(this.errorReporter, name, "png", circuit);
+                ToDotVisitor.toDot(this.errorReporter, name, details, "png", circuit);
             }
-            ++count;
         }
         return circuit;
     }

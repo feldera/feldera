@@ -194,7 +194,8 @@ public class CalciteCompiler implements IWritesLogs {
 
     /**
      * WRITELOG(format, arg) returns its argument 'arg' unchanged but also logs
-     * its value to stdout.  Used for debugging. */
+     * its value to stdout.  Used for debugging.  In the format string
+     * each occurrence of %% is replaced with the arg */
     public static class WriteLogFunction extends SqlFunction {
         public WriteLogFunction() {
             super("WRITELOG",
@@ -787,6 +788,10 @@ public class CalciteCompiler implements IWritesLogs {
             List<InputTableDescription> inputs,
             List<OutputViewDescription> outputs) {
         CalciteObject object = new CalciteObject(node);
+        Logger.INSTANCE.belowLevel(this, 2)
+                .append("Compiling ")
+                .append(sqlStatement)
+                .newline();
         if (SqlKind.DDL.contains(node.getKind())) {
             if (node.getKind().equals(SqlKind.DROP_TABLE)) {
                 SqlDropTable dt = (SqlDropTable) node;

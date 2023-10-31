@@ -1010,6 +1010,12 @@ pub fn power_decimal_decimal(left: Decimal, right: Decimal) -> F64 {
 
 some_polymorphic_function2!(power, decimal, Decimal, decimal, Decimal, F64);
 
+pub fn sqrt_decimal(left: Decimal) -> F64 {
+    F64::from(left.sqrt().unwrap().to_f64().unwrap())
+}
+
+some_polymorphic_function1!(sqrt, decimal, Decimal, F64);
+
 //////////////////// floor /////////////////////
 
 #[inline(always)]
@@ -1131,4 +1137,23 @@ where
     T: Clone,
 {
     vector[0..limit].to_vec()
+}
+
+pub fn dump<T>(prefix: String, data: &T) -> T
+where
+    T: Debug + Clone,
+{
+    println!("{}: {:?}", prefix, data);
+    data.clone()
+}
+
+pub fn print(str: String) {
+    print!("{}", str)
+}
+
+pub fn print_opt(str: Option<String>) {
+    match str {
+        None => print!("NULL"),
+        Some(x) => print!("{}", x),
+    }
 }

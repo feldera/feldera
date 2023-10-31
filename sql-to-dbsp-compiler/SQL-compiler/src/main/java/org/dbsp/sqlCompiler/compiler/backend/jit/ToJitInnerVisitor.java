@@ -554,7 +554,6 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         put("extract_minute_Time", new Call("dbsp.time.minute", new DBSPTypeInteger(CalciteObject.EMPTY, UINT32,32, true,false)));
         put("extract_hour_Time", new Call("dbsp.time.hour", new DBSPTypeInteger(CalciteObject.EMPTY, UINT32,32, true,false)));
         
-        put("print", new Call("dbsp.io.str.print", new DBSPTypeVoid()));
         put("abs_decimal", new OpCall(JITUnaryInstruction.Operation.ABS, DBSPTypeDecimal.getDefault()));
         put("abs_d", new OpCall(JITUnaryInstruction.Operation.ABS, new DBSPTypeDouble(CalciteObject.EMPTY, false)));
         put("abs_f", new OpCall(JITUnaryInstruction.Operation.ABS, new DBSPTypeFloat(CalciteObject.EMPTY, false)));
@@ -569,12 +568,64 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         put("sqrt_f", new OpCall(JITUnaryInstruction.Operation.SQRT, new DBSPTypeFloat(CalciteObject.EMPTY, false)));
     }};
 
+    void generatePrint(DBSPExpression argument) {
+        // Generate a call to PRINT.
+        // What we do depends on the nullability of the single string argument.
+        JITInstructionPair argPair = this.accept(argument);
+        DBSPType argType = argument.getType();
+        List<JITInstructionRef> args = new ArrayList<>();
+        List<JITType> argumentTypes = new ArrayList<>();
+        args.add(argPair.value);
+        argumentTypes.add(this.convertType(argType));
+        JITType jitResultType = JITUnitType.INSTANCE;
+        String name = "dbsp.io.str.print";
+
+        if (argPair.hasNull()) {
+            JITInstructionRef isNull = argPair.isNull;
+            JITBlock onNullBlock = this.newBlock();
+            JITBlock onNonNullBlock = this.newBlock();
+            JITBlock nextBlock = this.newBlock();
+            JITBranchTerminator branch = new JITBranchTerminator(
+                    isNull, onNullBlock.createDestination(),
+                    onNonNullBlock.createDestination());
+            this.getCurrentBlock().terminate(branch);
+            this.setCurrentBlock(onNonNullBlock);
+
+            long id = this.nextInstructionId();
+            this.add(new JITFunctionCall(id, name, args, argumentTypes, jitResultType));
+            JITBlockDestination next = nextBlock.createDestination();
+            JITJumpTerminator terminator = new JITJumpTerminator(next);
+            onNonNullBlock.terminate(terminator);
+
+            next = nextBlock.createDestination();
+            this.setCurrentBlock(onNullBlock);
+            id = this.nextInstructionId();
+            List<JITInstructionRef> constantArgs = new ArrayList<>();
+            DBSPStringLiteral nullLiteral = new DBSPStringLiteral("NULL");
+            JITInstructionPair nullArg = this.accept(nullLiteral);
+            constantArgs.add(nullArg.value);
+            this.add(new JITFunctionCall(id, name, constantArgs, argumentTypes, jitResultType));
+            terminator = new JITJumpTerminator(next);
+            onNullBlock.terminate(terminator);
+
+            this.setCurrentBlock(nextBlock);
+        } else {
+            long id = this.nextInstructionId();
+            this.add(new JITFunctionCall(id, name, args, argumentTypes, jitResultType));
+        }
+    }
+
     @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
         JITScalarType resultType = this.convertScalarType(expression);
         DBSPPathExpression path = expression.function.as(DBSPPathExpression.class);
         if (path != null) {
             String function = path.path.toString();
+            if (function.startsWith("print")) {
+                assert expression.arguments.length == 1: "Expected 1 argument for " + function;
+                this.generatePrint(expression.arguments[0]);
+                return VisitDecision.STOP;
+            }
             if (function.endsWith("N"))
                 function = function.substring(0, function.length() - 1);
             Op jitFunction = functionTranslation.get(function);

@@ -27,6 +27,8 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.jit.ir.ExpandWritelog;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 
 import java.util.ArrayList;
@@ -70,7 +72,12 @@ public class CircuitOptimizer implements ICompilerComponent {
             if (this.getCompiler().options.languageOptions.incrementalize)
                 passes.add(new NoIntegralVisitor(reporter));
             passes.add(new Simplify(reporter).circuitRewriter());
+            // The predicate below controls which nodes have their output dumped at runtime
+            passes.add(new InstrumentDump(reporter, t -> false));
         }
+        // debugging aid
+        passes.add(new EliminateFunctions(reporter).circuitRewriter());
+        passes.add(new ExpandWritelog(reporter).circuitRewriter());
         return new Passes(reporter, passes);
     }
 

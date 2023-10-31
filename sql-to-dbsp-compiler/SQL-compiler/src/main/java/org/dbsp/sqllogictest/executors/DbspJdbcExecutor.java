@@ -50,6 +50,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -277,7 +278,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
         return super.execute(file, options);
     }
 
-    public static void register(OptionsParser parser) {
+    public static void register(OptionsParser parser, AtomicReference<Integer> skip) {
         parser.registerExecutor("hybrid", () -> {
             OptionsParser.SuppliedOptions options = parser.getOptions();
             try {
@@ -292,6 +293,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                         Objects.requireNonNull(inner), options, compilerOptions);
                 Set<String> bugs = options.readBugsFile();
                 result.avoid(bugs);
+                result.skip(skip.get());
                 return result;
             } catch (IOException e) {
                 throw new RuntimeException(e);

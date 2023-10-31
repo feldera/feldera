@@ -660,8 +660,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPExpressionStatement statement) {
         statement.expression.accept(this);
-        if (!statement.expression.is(DBSPBlockExpression.class))
-            this.builder.append(";");
+        this.builder.append(";");
         return VisitDecision.STOP;
     }
 

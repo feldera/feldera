@@ -38,9 +38,9 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
-import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
@@ -75,6 +75,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     final SqlTestPrepareViews viewPreparation;
     private final List<SqlTestQuery> queriesToRun;
 
+    public int toSkip = 0;
+
     /**
      * Create an executor that executes SqlLogicTest queries directly compiling to
      * Rust and using the DBSP library.
@@ -93,6 +95,10 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         this.connectionString = connectionString;
     }
 
+    public void skip(int toSkip) {
+        this.toSkip = toSkip;
+    }
+
     public TableValue[] getInputSets(DBSPCompiler compiler) throws SQLException {
         for (SltSqlStatement statement : this.inputPreparation.statements)
             compiler.compileStatement(statement.statement, null);
@@ -106,72 +112,20 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         return tableValues;
     }
 
-    /**
-     * Example generated code for the function body:
-     *     let mut vec = Vec::new();
-     *     vec.push((data.0, zset!(), zset!(), zset!()));
-     *     vec.push((zset!(), data.1, zset!(), zset!()));
-     *     vec.push((zset!(), zset!(), data.2, zset!()));
-     *     vec.push((zset!(), zset!(), zset!(), data.3));
-     *     vec
-     */
-    DBSPFunction createStreamInputFunction(
-            DBSPFunction inputGeneratingFunction) {
-        DBSPTypeRawTuple inputType = Objects.requireNonNull(inputGeneratingFunction.returnType).to(DBSPTypeRawTuple.class);
-        DBSPType returnType = new DBSPTypeVec(inputType, false);
-        DBSPVariablePath vec = returnType.var("vec");
-        DBSPLetStatement input = new DBSPLetStatement("data", inputGeneratingFunction.call());
-        List<DBSPStatement> statements = new ArrayList<>();
-        statements.add(input);
-        DBSPLetStatement let = new DBSPLetStatement(vec.variable,
-                new DBSPPath("Vec", "new").toExpression().call(), true);
-        statements.add(let);
-        if (this.compilerOptions.languageOptions.incrementalize) {
-            for (int i = 0; i < inputType.tupFields.length; i++) {
-                DBSPExpression field = input.getVarReference().field(i);
-                DBSPExpression elems = new DBSPApplyExpression("to_elements",
-                        DBSPTypeAny.getDefault(), field.borrow());
+    class ExecutorInputGenerator implements InputGenerator {
+        final DBSPCompiler compiler;
 
-                DBSPVariablePath e = DBSPTypeAny.getDefault().var("e");
-                DBSPExpression[] fields = new DBSPExpression[inputType.tupFields.length];
-                for (int j = 0; j < inputType.tupFields.length; j++) {
-                    DBSPType fieldType = inputType.tupFields[j];
-                    if (i == j) {
-                        fields[j] = e.applyClone();
-                    } else {
-                        fields[j] = new DBSPApplyExpression("zset!", fieldType);
-                    }
-                }
-                DBSPExpression projected = new DBSPRawTupleExpression(fields);
-                DBSPExpression lambda = projected.closure(e.asParameter());
-                DBSPExpression iter = new DBSPApplyMethodExpression(
-                        "iter", DBSPTypeAny.getDefault(), elems);
-                DBSPExpression map = new DBSPApplyMethodExpression(
-                        "map", DBSPTypeAny.getDefault(), iter, lambda);
-                DBSPExpression expr = new DBSPApplyMethodExpression(
-                        "extend", new DBSPTypeVoid(), vec, map);
-                DBSPStatement statement = new DBSPExpressionStatement(expr);
-                statements.add(statement);
-            }
-            if (inputType.tupFields.length == 0) {
-                // This case will cause no invocation of the circuit, but we need
-                // at least one.
-                DBSPExpression expr = new DBSPApplyMethodExpression(
-                        "push", new DBSPTypeVoid(), vec, new DBSPRawTupleExpression());
-                DBSPStatement statement = new DBSPExpressionStatement(expr);
-                statements.add(statement);
-            }
-        } else {
-            DBSPExpression expr = new DBSPApplyMethodExpression(
-                    "push", new DBSPTypeVoid(), vec, input.getVarReference());
-            DBSPStatement statement = new DBSPExpressionStatement(expr);
-            statements.add(statement);
+        ExecutorInputGenerator(DBSPCompiler compiler) {
+            this.compiler = compiler;
         }
-        DBSPBlockExpression block = new DBSPBlockExpression(statements, vec);
-        return new DBSPFunction("stream_input", Linq.list(), returnType, block, Linq.list());
+
+        @Override
+        public TableValue[] getInputs() throws SQLException {
+            return DBSPExecutor.this.getInputSets(this.compiler);
+        }
     }
 
-    boolean runBatch(TestStatistics result) {
+    boolean runBatch(TestStatistics result, boolean cleanup) {
         try {
             final List<ProgramAndTester> codeGenerated = new ArrayList<>();
 
@@ -181,20 +135,21 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             compiler.throwIfErrorsOccurred();
             // Create function which generates inputs for all tests in this batch.
             // We know that all these tests consume the same input tables.
-            TableValue[] inputSets = this.getInputSets(compiler);
-            DBSPFunction inputFunction = TableValue.createInputFunction("input",
-                    inputSets, rustDirectory, this.connectionString);
-            DBSPFunction streamInputFunction = this.createStreamInputFunction(inputFunction);
+            ExecutorInputGenerator egen = new ExecutorInputGenerator(compiler);
+            InputFunctionGenerator gen = new InputFunctionGenerator(compiler, egen, this.connectionString);
 
             // Generate a function and a tester for each query.
             int queryNo = 0;
             for (SqlTestQuery testQuery : this.queriesToRun) {
                 try {
                     // Create input tables in circuit
-                    compiler = new DBSPCompiler(this.compilerOptions);
-                    this.createTables(compiler);
+                    if (queryNo > 0) {
+                        // Allocate a fresh compiler
+                        compiler = new DBSPCompiler(this.compilerOptions);
+                        this.createTables(compiler);
+                    }
                     ProgramAndTester pc = this.generateTestCase(
-                            compiler, streamInputFunction, this.viewPreparation, testQuery, queryNo);
+                            compiler, gen, this.viewPreparation, testQuery, queryNo);
                     codeGenerated.add(pc);
                 } catch (Throwable ex) {
                     System.err.println("Error while compiling " + testQuery.getQuery() + ": " +
@@ -209,6 +164,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             }
 
             // Write the code to Rust files on the filesystem.
+            DBSPFunction inputFunction = gen.getInputFunction();
+            DBSPFunction streamInputFunction = gen.getStreamInputFunction();
             this.writeCodeToFile(compiler,
                     Linq.list(inputFunction, streamInputFunction), codeGenerated);
             this.startTest();
@@ -223,13 +180,14 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             }
             this.queriesToRun.clear();
             System.out.println(elapsedTime(queryNo));
-            this.cleanupFilesystem();
+            if (cleanup)
+                this.cleanupFilesystem();
             if (this.execute)
                 // This is not entirely correct, but I am not parsing the rust output
                 result.setPassedTestCount(result.getPassedTestCount() + queryNo);
             else
                 result.setIgnoredTestCount(result.getIgnoredTestCount() + queryNo);
-        } catch (SQLException | IOException | InterruptedException e) {
+        } catch (IOException | InterruptedException | SQLException e) {
             throw new RuntimeException(e);
         }
         return true;
@@ -296,13 +254,13 @@ public class DBSPExecutor extends SqlSltTestExecutor {
 
     ProgramAndTester generateTestCase(
             DBSPCompiler compiler,
-            DBSPFunction inputGeneratingFunction,
+            InputFunctionGenerator gen,
             SqlTestPrepareViews viewPreparation,
-            SqlTestQuery testQuery, int suffix) {
+            SqlTestQuery testQuery, int suffix) throws IOException, SQLException {
         String origQuery = testQuery.getQuery();
         String dbspQuery = origQuery;
         if (!dbspQuery.toLowerCase().contains("create view"))
-            dbspQuery = "CREATE VIEW V AS (" + origQuery + ")";
+            dbspQuery = "CREATE VIEW V" + suffix + " AS (" + origQuery + ")";
         this.options.message("Query " + suffix + ":\n"
                         + dbspQuery + "\n", 2);
         compiler.generateOutputForNextView(false);
@@ -315,6 +273,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         compiler.throwIfErrorsOccurred();
         compiler.optimize();
         DBSPCircuit dbsp = compiler.getFinalCircuit("gen" + suffix);
+        DBSPNode.done();
+
         if (dbsp.getOutputCount() != 1)
             throw new RuntimeException(
                     "Didn't expect a query to have " + dbsp.getOutputCount() + " outputs");
@@ -328,7 +288,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
 
         return createTesterCode(
                     "tester" + suffix, dbsp,
-                    inputGeneratingFunction,
+                    gen.getStreamInputFunction(),
                     compiler.getTableContents(),
                     expectedOutput, testQuery.outputDescription);
     }
@@ -357,7 +317,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     public TestStatistics execute(SltTestFile file, OptionsParser.SuppliedOptions options)
             throws SQLException {
         this.startTest();
-        int batchSize = 500;
+        int batchSize = 1;
         String name = file.toString();
         if (name.contains("/"))
             name = name.substring(name.lastIndexOf('/') + 1);
@@ -365,15 +325,18 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             batchSize = 20;
         if (name.startsWith("select5"))
             batchSize = 5;
+        if (this.toSkip > 0)
+            batchSize = 1;
 
         TestStatistics result = new TestStatistics(options.stopAtFirstError, options.verbosity);
         boolean seenQueries = false;
         int remainingInBatch = batchSize;
+        boolean skipped = this.toSkip > 0;
         for (ISqlTestOperation operation: file.fileContents) {
             SltSqlStatement stat = operation.as(SltSqlStatement.class);
             if (stat != null) {
                 if (seenQueries) {
-                    boolean success = this.runBatch(result);
+                    boolean success = this.runBatch(result, !skipped);
                     if (options.stopAtFirstError && !success)
                         return result;
                     remainingInBatch = batchSize;
@@ -400,20 +363,27 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     result.incIgnored();
                     continue;
                 }
+                if (this.toSkip > 0) {
+                    this.toSkip--;
+                    continue;
+                }
                 seenQueries = true;
                 this.queriesToRun.add(query);
                 remainingInBatch--;
                 if (remainingInBatch == 0) {
-                    boolean success = this.runBatch(result);
+                    boolean success = this.runBatch(result, !skipped);
                     if (!success && options.stopAtFirstError)
                         return result;
                     remainingInBatch = batchSize;
                     seenQueries = false;
                 }
+                if (skipped)
+                    // stop after the first test
+                    return result;
             }
         }
         if (remainingInBatch != batchSize)
-            this.runBatch(result);
+            this.runBatch(result, !skipped);
         // Make sure there are no left-overs if this executor
         // is invoked to process a new file.
         this.reset();
@@ -587,7 +557,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         rust.writeAndClose();
     }
 
-    public static void register(OptionsParser parser) {
+    public static void register(OptionsParser parser, AtomicReference<Integer> skip) {
         AtomicReference<Boolean> incremental = new AtomicReference<>();
         incremental.set(false);
         parser.registerOption("-inc", null, "Incremental validation", o -> {
@@ -603,6 +573,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 compilerOptions.languageOptions.lenient = true;
                 compilerOptions.languageOptions.generateInputForEveryTable = true;
                 DBSPExecutor result = new DBSPExecutor(options, compilerOptions, "csv");
+                result.skip(skip.get());
                 Set<String> bugs = options.readBugsFile();
                 result.avoid(bugs);
                 return result;
