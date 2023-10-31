@@ -171,7 +171,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             List<AggregateCall> aggregates, DBSPTypeTuple resultType,
             DBSPType inputRowType, int groupCount) {
         DBSPVariablePath rowVar = inputRowType.ref().var("v");
-        DBSPAggregate result = new DBSPAggregate(node, rowVar, aggregates.size());
+        DBSPAggregate.Implementation[] implementations = new DBSPAggregate.Implementation[aggregates.size()];
         int aggIndex = 0;
 
         for (AggregateCall call: aggregates) {
@@ -179,10 +179,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             AggregateCompiler compiler = new AggregateCompiler(node,
                     this.getCompiler(), call, resultFieldType, rowVar);
             DBSPAggregate.Implementation implementation = compiler.compile();
-            result.set(aggIndex, implementation);
+            implementations[aggIndex] =  implementation;
             aggIndex++;
         }
-        return result;
+        return new DBSPAggregate(new CalciteObject(node), rowVar, implementations, false);
     }
 
     /**

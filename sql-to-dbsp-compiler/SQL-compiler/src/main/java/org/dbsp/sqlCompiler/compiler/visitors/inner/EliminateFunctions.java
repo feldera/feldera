@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 
 import java.math.BigDecimal;
@@ -24,7 +25,6 @@ import java.util.function.Function;
 /*
  * Eliminate some function implementations.
  * For now just:
- * - sign_*
  * - power(a, .5)
  * - dump(x)
  */
@@ -44,31 +44,7 @@ public class EliminateFunctions extends InnerRewriteVisitor {
         DBSPPathExpression path = function.as(DBSPPathExpression.class);
         if (path != null) {
             String functionName = path.path.toString();
-            if (functionName.startsWith("sign_")) {
-                assert arguments.length == 1: "Expected one argument for sign function";
-                // sign(x) =>
-                // { let tmp = x;
-                //   if tmp < 0 { -1 } else { if tmp > 0 { 1 } else { 0 }
-                // }
-                DBSPExpression argument = arguments[0];
-                DBSPType argType = argument.getType();
-                IsNumericType resultNumericType = type.to(IsNumericType.class);
-                DBSPExpression zero = argType.to(IsNumericType.class).getZero();
-                List<DBSPStatement> statements = new ArrayList<>();
-                String tmpName = "tmp";
-                statements.add(new DBSPLetStatement(tmpName, argument));
-                DBSPVariablePath var = new DBSPVariablePath(tmpName, argument.getType());
-                DBSPExpression compare = new DBSPBinaryExpression(node, new DBSPTypeBool(node, argType.mayBeNull),
-                        DBSPOpcode.GT, var, zero);
-                DBSPExpression rightResult = new DBSPIfExpression(
-                        node, compare, resultNumericType.getOne(), resultNumericType.getZero());
-                DBSPExpression minusOne = new DBSPUnaryExpression(
-                        node, type, DBSPOpcode.NEG, resultNumericType.getOne());
-                DBSPExpression leftCompare = new DBSPBinaryExpression(node, compare.getType(),
-                        DBSPOpcode.LT, var, zero.deepCopy());
-                DBSPExpression mux = new DBSPIfExpression(node, leftCompare, minusOne, rightResult);
-                result = new DBSPBlockExpression(statements, mux);
-            } else if (functionName.startsWith("power_")) {
+            if (functionName.startsWith("power_")) {
                 // power_base_exp(a, .5) -> sqrt_base(a).
                 String tail = functionName.split("_")[1];
                 assert arguments.length == 2: "Expected two arguments for power function";

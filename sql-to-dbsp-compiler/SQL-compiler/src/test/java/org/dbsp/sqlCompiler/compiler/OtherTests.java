@@ -234,13 +234,13 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    // DBSPSourceMultisetOperator 53\n" +
                 "    // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)\n" +
                 "    let T = T();\n" +
-                "    // DBSPMapOperator 115\n" +
-                "    let stream1: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2))));\n" +
+                "    // DBSPMapOperator 185\n" +
+                "    let stream3: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2))));\n" +
                 "    // CREATE VIEW `V` AS\n" +
                 "    // SELECT `T`.`COL3`\n" +
                 "    // FROM `T`\n" +
-                "    // DBSPSinkOperator 121\n" +
-                "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream1;\n" +
+                "    // DBSPSinkOperator 192\n" +
+                "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream3;\n" +
                 "}\n";
         Assert.assertEquals(expected, str);
     }

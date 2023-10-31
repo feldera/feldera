@@ -49,10 +49,13 @@ import java.io.PrintWriter;
  */
 public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     private final IndentStream stream;
+    // If true show code, otherwise just topology
+    private final boolean details;
 
-    public ToDotVisitor(IErrorReporter reporter, IndentStream stream) {
+    public ToDotVisitor(IErrorReporter reporter, IndentStream stream, boolean details) {
         super(reporter);
         this.stream = stream;
+        this.details = details;
     }
 
     @Override
@@ -107,7 +110,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         }
         String function = ToRustInnerVisitor.toRustString(this.errorReporter, expression, true);
         // Graphviz left-justify using \l.
-        String result = function.replace("\n", "\\l");
+        String result = function; // .replace("\n", "\\l");
         return Utilities.escape(result);
     }
 
@@ -117,11 +120,15 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(" [ shape=box,label=\"")
                 .append(node.id)
                 .append(" ")
-                .append(node.operation)
-                .append("(")
-                .append(this.getFunction(node))
-                // For some reason there needs to be one \\l at the very end.
-                .append(")\\l\" ]")
+                .append(node.operation);
+        if (this.details) {
+            this.stream
+                    .append("(")
+                    .append(this.getFunction(node))
+                    // For some reason there needs to be one \\l at the very end.
+                    .append(")\\l");
+        }
+        this.stream.append("\" ]")
                 .newline();
         this.addInputs(node);
         return VisitDecision.STOP;
@@ -150,7 +157,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .newline();
     }
 
-    public static void toDot(IErrorReporter reporter, String fileName,
+    public static void toDot(IErrorReporter reporter, String fileName, boolean details,
                              @Nullable String outputFormat, DBSPCircuit circuit) {
         try {
             Logger.INSTANCE.belowLevel("ToDotVisitor", 1)
@@ -161,7 +168,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             tmp.deleteOnExit();
             PrintWriter writer = new PrintWriter(tmp.getAbsolutePath());
             IndentStream stream = new IndentStream(writer);
-            circuit.accept(new ToDotVisitor(reporter, stream));
+            circuit.accept(new ToDotVisitor(reporter, stream, details));
             writer.close();
             if (outputFormat != null)
                 Utilities.runProcess(".", "dot", "-T", outputFormat,

@@ -1010,6 +1010,12 @@ pub fn power_decimal_decimal(left: Decimal, right: Decimal) -> F64 {
 
 some_polymorphic_function2!(power, decimal, Decimal, decimal, Decimal, F64);
 
+pub fn sqrt_decimal(left: Decimal) -> F64 {
+    F64::from(left.sqrt().unwrap().to_f64().unwrap())
+}
+
+some_polymorphic_function1!(sqrt, decimal, Decimal, F64);
+
 //////////////////// floor /////////////////////
 
 #[inline(always)]

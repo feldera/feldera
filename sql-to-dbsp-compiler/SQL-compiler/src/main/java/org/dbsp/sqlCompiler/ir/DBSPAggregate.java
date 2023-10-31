@@ -37,23 +37,12 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
     public final Implementation[] components;
     public final boolean isWindowAggregate;
 
-    public DBSPAggregate(RelNode node, DBSPVariablePath rowVar, int size) {
-        super(new CalciteObject(node));
-        this.rowVar = rowVar;
-        this.components = new Implementation[size];
-        this.isWindowAggregate = !(node instanceof LogicalAggregate);
-    }
-
     public DBSPAggregate(CalciteObject node, DBSPVariablePath rowVar,
                          Implementation[] components, boolean isWindowAggregate) {
         super(node);
         this.rowVar = rowVar;
         this.components = components;
         this.isWindowAggregate = isWindowAggregate;
-    }
-
-    public void set(int i, Implementation implementation) {
-        this.components[i] = implementation;
     }
 
     public DBSPTypeTuple defaultZeroType() {
@@ -457,8 +446,9 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         builder.append("Aggregate:").increase();
-        for (DBSPAggregate.Implementation impl : this.components)
+        for (DBSPAggregate.Implementation impl : this.components) {
             builder.append(impl);
+        }
         return builder.decrease();
     }
 

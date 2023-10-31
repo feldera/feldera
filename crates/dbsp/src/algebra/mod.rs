@@ -277,7 +277,7 @@ where
     }
 }
 
-/// MulByRef<isize>
+/// `MulByRef<isize>`
 
 impl MulByRef<isize> for i32 {
     type Output = Self;
@@ -342,7 +342,7 @@ impl MulByRef<isize> for Decimal {
     }
 }
 
-/////////// MulByRef<i64>
+/////////// `MulByRef<i64>`
 
 impl MulByRef<i64> for i32 {
     type Output = Self;
@@ -407,7 +407,7 @@ impl MulByRef<i64> for Decimal {
     }
 }
 
-/////////// MulByRef<i32>
+/////////// `MulByRef<i32>`
 // We don't expect to use i32 for weights, but the JIT does, and we
 // want to be able to compare executions.
 

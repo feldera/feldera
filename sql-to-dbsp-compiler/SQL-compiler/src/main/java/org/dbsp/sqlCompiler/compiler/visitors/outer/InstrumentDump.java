@@ -1,8 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -62,4 +60,16 @@ public class InstrumentDump extends CircuitCloneVisitor {
     public void postorder(DBSPMapOperator map) {
         this.instrument(map);
     }
+
+    @Override
+    public void postorder(DBSPSumOperator sum) { this.instrument(sum); }
+
+    @Override
+    public void postorder(DBSPDistinctOperator distinct) { this.instrument(distinct); }
+
+    @Override
+    public void postorder(DBSPSubtractOperator sub) { this.instrument(sub); }
+
+    @Override
+    public void postorder(DBSPJoinOperator join) { this.instrument(join); }
 }

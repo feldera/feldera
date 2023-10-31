@@ -27,6 +27,8 @@ package org.dbsp.sqllogictest;
 
 import net.hydromatic.sqllogictest.OptionsParser;
 import net.hydromatic.sqllogictest.TestStatistics;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPasses;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqllogictest.executors.DBSPExecutor;
@@ -39,6 +41,7 @@ import java.io.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Execute all SqlLogicTest tests.
@@ -71,11 +74,11 @@ public class Main {
                  */
         );
 
-        Logger.INSTANCE.setLoggingLevel(Passes.class, 2);
-        Logger.INSTANCE.setLoggingLevel(InnerPasses.class, 2);
+        // Logger.INSTANCE.setLoggingLevel(Passes.class, 3);
         String[] args = {
                 "-v", "-x",
-                "-e", "jit",      // executor
+                "-e", "hybrid",      // executor
+                "-skip", "710"
         };
         if (argv.length > 0) {
             args = argv;
@@ -87,9 +90,16 @@ public class Main {
         }
         System.out.println(Arrays.toString(args));
         OptionsParser parser = new OptionsParser(true, System.out, System.err);
-        DBSPExecutor.register(parser);
-        DbspJdbcExecutor.register(parser);
-        JitDbspExecutor.register(parser);
+        // Used for debugging: how many tests to skip from the first file
+        AtomicReference<Integer> skip = new AtomicReference<>();
+        skip.set(0);
+        parser.registerOption("-skip", "skipCount", "How many tests to skip (for debugging)", o -> {
+            skip.set(Integer.parseInt(o));
+            return true;
+        });
+        DBSPExecutor.register(parser, skip);
+        DbspJdbcExecutor.register(parser, skip);
+        JitDbspExecutor.register(parser, skip);
         TestStatistics results = net.hydromatic.sqllogictest.Main.execute(parser, args);
         results.printStatistics(System.out);
     }
