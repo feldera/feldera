@@ -201,7 +201,8 @@ fn run(program: &Path, config: &Path) -> ExitCode {
             CodegenConfig::debug()
         },
         demands,
-    );
+    )
+    .unwrap();
 
     for (target, file, format) in inputs {
         match format {

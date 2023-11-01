@@ -82,11 +82,12 @@ fn issue_288() {
         .unwrap()
         .rematerialize();
 
-    let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
+    let mut circuit =
+        DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new()).unwrap();
 
     circuit.step().unwrap();
 
-    let result = circuit.consolidate_output(NodeId::new(2));
+    let result = circuit.consolidate_output(NodeId::new(2)).unwrap();
     assert!(must_equal_sc(
         &result,
         &StreamCollection::Set(vec![(

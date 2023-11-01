@@ -264,27 +264,30 @@ fn issue_338() {
         .unwrap()
         .rematerialize();
 
-    let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
+    let mut circuit =
+        DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new()).unwrap();
 
-    circuit.append_input(
-        NodeId::new(168),
-        &StreamCollection::Set(vec![(
-            RowLiteral::new(vec![
-                NullableConstant::NonNull(Constant::I32(10)),
-                NullableConstant::NonNull(Constant::F64(12.0)),
-                NullableConstant::NonNull(Constant::String(String::from("100100"))),
-                NullableConstant::null(),
-                NullableConstant::NonNull(Constant::Decimal(
-                    Decimal::from_str("100103123").unwrap(),
-                )),
-            ]),
-            1i32,
-        )]),
-    );
+    circuit
+        .append_input(
+            NodeId::new(168),
+            &StreamCollection::Set(vec![(
+                RowLiteral::new(vec![
+                    NullableConstant::NonNull(Constant::I32(10)),
+                    NullableConstant::NonNull(Constant::F64(12.0)),
+                    NullableConstant::NonNull(Constant::String(String::from("100100"))),
+                    NullableConstant::null(),
+                    NullableConstant::NonNull(Constant::Decimal(
+                        Decimal::from_str("100103123").unwrap(),
+                    )),
+                ]),
+                1i32,
+            )]),
+        )
+        .unwrap();
 
     circuit.step().unwrap();
 
-    let output = circuit.consolidate_output(NodeId::new(293));
+    let output = circuit.consolidate_output(NodeId::new(293)).unwrap();
     assert!(must_equal_sc(
         &output,
         &StreamCollection::Set(vec![(

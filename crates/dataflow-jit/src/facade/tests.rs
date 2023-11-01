@@ -38,25 +38,29 @@ fn time_series_enrich_e2e() {
         demands.add_csv_deserialize(demographics_layout.unwrap_set(), demographic_mappings());
 
     // Create the circuit
-    let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), demands);
+    let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), demands).unwrap();
 
     // Ingest data
-    circuit.append_csv_input(
-        TRANSACTIONS_ID,
-        transactions_demand,
-        &Path::new(PATH).join("transactions_20K.csv"),
-    );
-    circuit.append_csv_input(
-        DEMOGRAPHICS_ID,
-        demographics_demand,
-        &Path::new(PATH).join("demographics.csv"),
-    );
+    circuit
+        .append_csv_input(
+            TRANSACTIONS_ID,
+            transactions_demand,
+            &Path::new(PATH).join("transactions_20K.csv"),
+        )
+        .unwrap();
+    circuit
+        .append_csv_input(
+            DEMOGRAPHICS_ID,
+            demographics_demand,
+            &Path::new(PATH).join("demographics.csv"),
+        )
+        .unwrap();
 
     // Step the circuit
     circuit.step().unwrap();
 
     // TODO: Inspect outputs
-    let _output = circuit.consolidate_output(SINK_ID);
+    let _output = circuit.consolidate_output(SINK_ID).unwrap();
 
     // Shut down the circuit
     circuit.kill().unwrap();
@@ -217,25 +221,29 @@ fn time_series_enrich_e2e_2() {
         demands.add_csv_deserialize(demographics_layout, demographic_mappings());
 
     // Create the circuit
-    let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), demands);
+    let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), demands).unwrap();
 
     // Ingest data
-    circuit.append_csv_input(
-        transactions_src,
-        transactions_demand,
-        &Path::new(PATH).join("transactions_20K.csv"),
-    );
-    circuit.append_csv_input(
-        demographics_src,
-        demographics_demand,
-        &Path::new(PATH).join("demographics.csv"),
-    );
+    circuit
+        .append_csv_input(
+            transactions_src,
+            transactions_demand,
+            &Path::new(PATH).join("transactions_20K.csv"),
+        )
+        .unwrap();
+    circuit
+        .append_csv_input(
+            demographics_src,
+            demographics_demand,
+            &Path::new(PATH).join("demographics.csv"),
+        )
+        .unwrap();
 
     // Step the circuit
     circuit.step().unwrap();
 
     // TODO: Inspect outputs
-    let _output = circuit.consolidate_output(sink);
+    let _output = circuit.consolidate_output(sink).unwrap();
 
     // Shut down the circuit
     circuit.kill().unwrap();
@@ -296,13 +304,14 @@ fn constant_stream() {
         .rematerialize();
 
     // Create the circuit
-    let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
+    let mut circuit =
+        DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new()).unwrap();
 
     // Step the circuit
     circuit.step().unwrap();
 
     // Inspect outputs
-    let output = circuit.consolidate_output(NodeId::new(2));
+    let output = circuit.consolidate_output(NodeId::new(2)).unwrap();
 
     // Shut down the circuit
     circuit.kill().unwrap();
@@ -325,28 +334,31 @@ fn append_unused_source() {
         .rematerialize();
 
     // Create the circuit
-    let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
+    let mut circuit =
+        DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new()).unwrap();
 
     // Feed data to our unused input
-    circuit.append_input(
-        NodeId::new(1),
-        &StreamCollection::Set(vec![(
-            RowLiteral::new(vec![
-                NullableConstant::NonNull(Constant::I32(1)),
-                NullableConstant::NonNull(Constant::F64(1.0)),
-                NullableConstant::NonNull(Constant::Bool(true)),
-                NullableConstant::NonNull(Constant::String("foobar".into())),
-                NullableConstant::Nullable(Some(Constant::I32(1))),
-                NullableConstant::Nullable(Some(Constant::F64(1.0))),
-            ]),
-            1,
-        )]),
-    );
+    circuit
+        .append_input(
+            NodeId::new(1),
+            &StreamCollection::Set(vec![(
+                RowLiteral::new(vec![
+                    NullableConstant::NonNull(Constant::I32(1)),
+                    NullableConstant::NonNull(Constant::F64(1.0)),
+                    NullableConstant::NonNull(Constant::Bool(true)),
+                    NullableConstant::NonNull(Constant::String("foobar".into())),
+                    NullableConstant::Nullable(Some(Constant::I32(1))),
+                    NullableConstant::Nullable(Some(Constant::F64(1.0))),
+                ]),
+                1,
+            )]),
+        )
+        .unwrap();
 
     // Step the circuit
     circuit.step().unwrap();
 
-    let output = circuit.consolidate_output(NodeId::new(3));
+    let output = circuit.consolidate_output(NodeId::new(3)).unwrap();
 
     // Kill the circuit
     circuit.kill().unwrap();

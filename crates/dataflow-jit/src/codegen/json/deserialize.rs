@@ -7,7 +7,7 @@ use crate::{
     ir::{ColumnType, LayoutId},
     utils::HashMap,
 };
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, Context, Error as AnyError, Result as AnyResult};
 use cranelift::prelude::FunctionBuilder;
 use cranelift_codegen::ir::{types, Block, InstBuilder, MemFlags, Type, Value};
 use cranelift_module::{FuncId, Module};
@@ -45,7 +45,7 @@ pub unsafe fn call_deserialize_fn(
     // to address https://github.com/feldera/feldera/issues/718
     let value: serde_json::Value = value
         .as_object()
-        .unwrap()
+        .context("expected a json object")?
         .into_iter()
         .map(|(key, value)| (key.to_uppercase(), value.to_owned()))
         .collect();

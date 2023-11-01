@@ -23,6 +23,7 @@ use crate::{
     thin_str::ThinStrRef,
     utils::TimeExt,
 };
+use anyhow::{Context, Result};
 use chrono::{NaiveTime, TimeZone, Utc};
 use cranelift_module::FuncId;
 use csv::StringRecord;
@@ -34,8 +35,7 @@ use rust_decimal::Decimal;
 use serde_json::{Deserializer, Value};
 use std::{
     collections::BTreeMap,
-    error,
-    io::{self, Read, Write},
+    io::{Read, Write},
     ops::Not,
     path::{Path, PathBuf},
     thread,
@@ -70,7 +70,7 @@ impl DbspCircuit {
         workers: usize,
         config: CodegenConfig,
         demands: Demands,
-    ) -> Self {
+    ) -> Result<Self> {
         tracing::info!(
             ?optimize,
             ?workers,
@@ -95,7 +95,7 @@ impl DbspCircuit {
             let mut validator = Validator::new(graph.layout_cache().clone());
             validator
                 .validate_graph(&graph)
-                .expect("failed to validate graph before optimization");
+                .context("failed to validate graph before optimization")?;
 
             if optimize {
                 graph.optimize();
@@ -103,7 +103,7 @@ impl DbspCircuit {
 
                 validator
                     .validate_graph(&graph)
-                    .expect("failed to validate graph after optimization");
+                    .context("failed to validate graph after optimization")?;
 
                 tracing::trace!(
                     "optimized graph:\n{}",
@@ -137,7 +137,7 @@ impl DbspCircuit {
 
         let (runtime, (inputs, outputs)) =
             Runtime::init_circuit(workers, move |circuit| dataflow.construct(circuit))
-                .expect("failed to construct runtime");
+                .context("failed to construct runtime")?;
 
         // Account for unused sources
         let mut inputs: BTreeMap<_, _> = inputs
@@ -160,7 +160,7 @@ impl DbspCircuit {
         let elapsed = start.elapsed();
         tracing::info!("creating jit'd circuit took {elapsed:#?}");
 
-        Self {
+        Ok(Self {
             jit,
             runtime,
             inputs,
@@ -168,7 +168,7 @@ impl DbspCircuit {
             demands: demand_functions,
             demand_layouts: demands.demand_layouts,
             layout_cache,
-        }
+        })
     }
 
     /// Returns the vtable associated with the given layout
@@ -234,32 +234,37 @@ macro_rules! demand_function {
     ($self:ident, $demand:ident, $layout:expr, $type:ty $(,)?) => {{
         let (demand, layout): (DemandId, LayoutId) = ($demand, $layout);
 
-        let expected_layout = $self.demand_layouts[&demand];
-        assert_eq!(
-            expected_layout, layout,
-            "incorrect demand, demand {} is associated with \
-             layout {} but it was requested with layout {}",
-            demand, expected_layout, layout,
-        );
+        if let Some(&expected_layout) = $self.demand_layouts.get(&demand) {
+            if expected_layout != layout {
+                anyhow::bail!(
+                    "incorrect demand, demand {demand} is associated with layout {expected_layout} but it was requested with layout {layout}\n\
+                    expected: {expected_layout}\n\
+                    received: {layout}",
+                );
+            }
 
-        ::std::mem::transmute::<*const u8, $type>(
-            $self.jit.jit.get_finalized_function($self.demands[&demand]),
-        )
+            ::std::mem::transmute::<*const u8, $type>(
+                $self.jit.jit.get_finalized_function($self.demands[&demand]),
+            )
+        } else {
+            anyhow::bail!("attempted to get demand that doesn't exist: {demand} couldn't be found");
+        }
     }};
 }
 
 impl DbspCircuit {
-    pub fn append_input(&mut self, target: NodeId, data: &StreamCollection) {
-        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
-            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
-        });
+    pub fn append_input(&mut self, target: NodeId, data: &StreamCollection) -> Result<()> {
+        let (input, layout) = self.inputs.get_mut(&target)
+            .with_context(|| format!("attempted to append to {target}, but {target} is not a source node or doesn't exist"))?;
 
         if let Some(input) = input {
             match data {
                 StreamCollection::Set(set) => {
                     tracing::trace!("appending a set with {} values to {target}", set.len());
 
-                    let key_layout = layout.unwrap_set();
+                    let key_layout = layout
+                        .as_set()
+                        .context("expected source to have a set layout")?;
                     let key_vtable = unsafe { &*self.jit.vtables()[&key_layout] };
                     let key_layout = self.layout_cache.layout_of(key_layout);
 
@@ -269,13 +274,18 @@ impl DbspCircuit {
                         batch.push((key, *diff));
                     }
 
-                    input.as_zset_mut().unwrap().append(&mut batch);
+                    input
+                        .as_zset_mut()
+                        .with_context(|| format!("the source node {target} isn't a set"))?
+                        .append(&mut batch);
                 }
 
                 StreamCollection::Map(map) => {
                     tracing::trace!("appending a map with {} values to {target}", map.len());
 
-                    let (key_layout, value_layout) = layout.unwrap_map();
+                    let (key_layout, value_layout) = layout
+                        .as_map()
+                        .context("expected source to have a map layout")?;
                     let (key_vtable, value_vtable) = unsafe {
                         (
                             &*self.jit.vtables()[&key_layout],
@@ -295,7 +305,10 @@ impl DbspCircuit {
                         batch.push((key, (value, *diff)));
                     }
 
-                    input.as_indexed_zset_mut().unwrap().append(&mut batch);
+                    input
+                        .as_indexed_zset_mut()
+                        .with_context(|| format!("the source node {target} isn't an map"))?
+                        .append(&mut batch);
                 }
             }
 
@@ -303,6 +316,8 @@ impl DbspCircuit {
         } else {
             tracing::info!("appended csv file to source {target} which is unused, doing nothing");
         }
+
+        Ok(())
     }
 
     /// Creates a new [`JsonZSetHandle`] for ingesting json
@@ -322,21 +337,30 @@ impl DbspCircuit {
         &mut self,
         target: NodeId,
         demand: DemandId,
-    ) -> Option<JsonZSetHandle> {
-        let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
-            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
-        });
-        let layout = layout.as_set().unwrap_or_else(|| {
-            panic!(
+    ) -> Result<Option<JsonZSetHandle>> {
+        let (input, layout) = self.inputs.get(&target).with_context(|| {
+            format!("attempted to append to {target}, but {target} is not a source node or doesn't exist")
+        })?;
+        let layout = layout.as_set().with_context(|| {
+            format!(
                 "called `DbspCircuit::json_input_zset()` on node {target} which is a map, not a set",
             )
-        });
+        })?;
 
-        let handle = input.as_ref()?.as_zset().unwrap().clone();
+        let handle = if let Some(handle) = input.as_ref() {
+            handle
+                .as_zset()
+                .with_context(|| {
+                    format!("the source {target} in `DbspCircuit::json_input_zset()` isn't a zset")
+                })?
+                .clone()
+        } else {
+            return Ok(None);
+        };
         let vtable = unsafe { &*self.jit.vtables()[&layout] };
         let deserialize_fn = unsafe { demand_function!(self, demand, layout, DeserializeJsonFn) };
 
-        Some(JsonZSetHandle::new(handle, deserialize_fn, vtable))
+        Ok(Some(JsonZSetHandle::new(handle, deserialize_fn, vtable)))
     }
 
     /// Creates a new `JsonSetHandle` for ingesting json
@@ -356,21 +380,30 @@ impl DbspCircuit {
         &mut self,
         target: NodeId,
         demand: DemandId,
-    ) -> Option<JsonSetHandle> {
-        let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
-            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
-        });
-        let layout = layout.as_set().unwrap_or_else(|| {
-            panic!(
+    ) -> Result<Option<JsonSetHandle>> {
+        let (input, layout) = self.inputs.get(&target).with_context(|| {
+            format!("attempted to append to {target}, but {target} is not a source node or doesn't exist")
+        })?;
+        let layout = layout.as_set().with_context(|| {
+            format!(
                 "called `DbspCircuit::json_input_set()` on node {target} which is a map, not a set",
             )
-        });
+        })?;
 
-        let handle = input.as_ref()?.as_upsert_zset().unwrap().clone();
+        let handle = if let Some(handle) = input.as_ref() {
+            handle
+                .as_upsert_zset()
+                .with_context(|| {
+                    format!("the source {target} in `DbspCircuit::json_input_set()` isn't an upsert set")
+                })?
+                .clone()
+        } else {
+            return Ok(None);
+        };
         let vtable = unsafe { &*self.jit.vtables()[&layout] };
         let deserialize_fn = unsafe { demand_function!(self, demand, layout, DeserializeJsonFn) };
 
-        Some(JsonSetHandle::new(handle, deserialize_fn, vtable))
+        Ok(Some(JsonSetHandle::new(handle, deserialize_fn, vtable)))
     }
 
     /// Creates a new `JsonIndexedZSetHandle` for ingesting json
@@ -387,17 +420,26 @@ impl DbspCircuit {
         target: NodeId,
         key_demand: DemandId,
         value_demand: DemandId,
-    ) -> Option<JsonIndexedZSetHandle> {
-        let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
-            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
-        });
-        let (key_layout, value_layout) = layout.as_map().unwrap_or_else(|| {
-            panic!(
+    ) -> Result<Option<JsonIndexedZSetHandle>> {
+        let (input, layout) = self.inputs.get(&target).with_context(|| {
+            format!("attempted to append to {target}, but {target} is not a source node or doesn't exist")
+        })?;
+        let (key_layout, value_layout) = layout.as_map().with_context(|| {
+            format!(
                 "called `DbspCircuit::json_input_indexed_zset()` on node {target} which is a set, not a map",
             )
-        });
+        })?;
 
-        let handle = input.as_ref()?.as_indexed_zset().unwrap().clone();
+        let handle = if let Some(handle) = input.as_ref() {
+            handle
+                .as_indexed_zset()
+                .with_context(|| {
+                    format!("the source {target} in `DbspCircuit::json_input_indexed_zset()` isn't an indexed zset")
+                })?
+                .clone()
+        } else {
+            return Ok(None);
+        };
         let (key_vtable, value_vtable) = unsafe {
             (
                 &*self.jit.vtables()[&key_layout],
@@ -410,13 +452,13 @@ impl DbspCircuit {
         let deserialize_value =
             unsafe { demand_function!(self, value_demand, value_layout, DeserializeJsonFn) };
 
-        Some(JsonIndexedZSetHandle::new(
+        Ok(Some(JsonIndexedZSetHandle::new(
             handle,
             key_vtable,
             deserialize_key,
             value_vtable,
             deserialize_value,
-        ))
+        )))
     }
 
     /// Creates a new `JsonMapHandle` for ingesting json
@@ -433,17 +475,26 @@ impl DbspCircuit {
         target: NodeId,
         key_demand: DemandId,
         value_demand: DemandId,
-    ) -> Option<JsonMapHandle> {
-        let (input, layout) = self.inputs.get(&target).unwrap_or_else(|| {
-            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
-        });
-        let (key_layout, value_layout) = layout.as_map().unwrap_or_else(|| {
-            panic!(
+    ) -> Result<Option<JsonMapHandle>> {
+        let (input, layout) = self.inputs.get(&target).with_context(|| {
+            format!("attempted to append to {target}, but {target} is not a source node or doesn't exist")
+        })?;
+        let (key_layout, value_layout) = layout.as_map().with_context(|| {
+            format!(
                 "called `DbspCircuit::json_input_map()` on node {target} which is a set, not a map",
             )
-        });
+        })?;
 
-        let handle = input.as_ref()?.as_upsert_indexed_zset().unwrap().clone();
+        let handle = if let Some(handle) = input.as_ref() {
+            handle
+                .as_upsert_indexed_zset()
+                .with_context(|| {
+                    format!("the source {target} in `DbspCircuit::json_input_map()` isn't an upsert indexed zset")
+                })?
+                .clone()
+        } else {
+            return Ok(None);
+        };
         let (key_vtable, value_vtable) = unsafe {
             (
                 &*self.jit.vtables()[&key_layout],
@@ -456,13 +507,13 @@ impl DbspCircuit {
         let deserialize_value =
             unsafe { demand_function!(self, value_demand, value_layout, DeserializeJsonFn) };
 
-        Some(JsonMapHandle::new(
+        Ok(Some(JsonMapHandle::new(
             handle,
             key_vtable,
             deserialize_key,
             value_vtable,
             deserialize_value,
-        ))
+        )))
     }
 
     /// Fetches a serialization function and turns it into a function
@@ -495,18 +546,13 @@ impl DbspCircuit {
 
     // TODO: We probably want other ways to ingest json, e.g. `&[u8]`, `R: Read`,
     // etc.
-    pub fn append_json_input<R>(
-        &mut self,
-        target: NodeId,
-        demand: DemandId,
-        json: R,
-    ) -> Result<(), Box<dyn error::Error>>
+    pub fn append_json_input<R>(&mut self, target: NodeId, demand: DemandId, json: R) -> Result<()>
     where
         R: Read,
     {
-        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
-            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
-        });
+        let (input, layout) = self.inputs.get_mut(&target).with_context(|| {
+            format!("attempted to append to {target}, but {target} is not a source node or doesn't exist")
+        })?;
 
         if let Some(input) = input {
             let start = Instant::now();
@@ -528,7 +574,9 @@ impl DbspCircuit {
                     }
 
                     let records = batch.len();
-                    input.as_zset_mut().unwrap().append(&mut batch);
+                    input.as_zset_mut()
+                        .with_context(|| format!("the source {target} in `DbspCircuit::append_json_input()` isn't an zset"))?
+                        .append(&mut batch);
                     records
                 }
 
@@ -554,13 +602,13 @@ impl DbspCircuit {
         key: DemandId,
         value: DemandId,
         json: R,
-    ) -> Result<(), Box<dyn error::Error>>
+    ) -> Result<()>
     where
         R: Read,
     {
-        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
-            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
-        });
+        let (input, layout) = self.inputs.get_mut(&target).with_context(|| {
+            format!("attempted to append to {target}, but {target} is not a source node or doesn't exist")
+        })?;
 
         if let Some(input) = input {
             let start = Instant::now();
@@ -588,8 +636,10 @@ impl DbspCircuit {
                         let (mut key, mut value) =
                             (UninitRow::new(key_vtable), UninitRow::new(value_vtable));
                         unsafe {
-                            call_deserialize_fn(deserialize_key, key.as_mut_ptr(), &json)?;
-                            call_deserialize_fn(deserialize_value, value.as_mut_ptr(), &json)?;
+                            call_deserialize_fn(deserialize_key, key.as_mut_ptr(), &json)
+                                .context("failed to deserialize key")?;
+                            call_deserialize_fn(deserialize_value, value.as_mut_ptr(), &json)
+                                .context("failed to deserialize value")?;
                         }
 
                         let (key, value) = unsafe { (key.assume_init(), value.assume_init()) };
@@ -598,7 +648,10 @@ impl DbspCircuit {
                     }
 
                     let records = batch.len();
-                    input.as_indexed_zset_mut().unwrap().append(&mut batch);
+                    input
+                        .as_indexed_zset_mut()
+                        .with_context(|| format!("the source {target} in `DbspCircuit::append_json_map_input()` isn't an indexed zset"))?
+                        .append(&mut batch);
                     records
                 }
 
@@ -623,10 +676,10 @@ impl DbspCircuit {
         target: NodeId,
         demand: DemandId,
         record: &[u8],
-    ) -> Result<(), Box<dyn error::Error>> {
-        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
-            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
-        });
+    ) -> Result<()> {
+        let (input, layout) = self.inputs.get_mut(&target).with_context(|| {
+            format!("attempted to append to {target}, but {target} is not a source node or doesn't exist")
+        })?;
 
         if let Some(input) = input {
             let start = Instant::now();
@@ -663,10 +716,15 @@ impl DbspCircuit {
         Ok(())
     }
 
-    pub fn append_csv_input(&mut self, target: NodeId, demand: DemandId, path: &Path) {
-        let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
-            panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
-        });
+    pub fn append_csv_input(
+        &mut self,
+        target: NodeId,
+        demand: DemandId,
+        path: &Path,
+    ) -> Result<()> {
+        let (input, layout) = self.inputs.get_mut(&target).with_context(|| {
+            format!("attempted to append to {target}, but {target} is not a source node or doesn't exist")
+        })?;
 
         if let Some(input) = input {
             let mut csv = csv::ReaderBuilder::new()
@@ -712,6 +770,8 @@ impl DbspCircuit {
             // TODO: Log the source's name
             tracing::info!("appended csv file to source {target} which is unused, doing nothing");
         }
+
+        Ok(())
     }
 
     pub fn append_csv_map_input(
@@ -720,7 +780,7 @@ impl DbspCircuit {
         key_demand: DemandId,
         value_demand: DemandId,
         path: &Path,
-    ) {
+    ) -> Result<()> {
         let (input, layout) = self.inputs.get_mut(&target).unwrap_or_else(|| {
             panic!("attempted to append to {target}, but {target} is not a source node or doesn't exist");
         });
@@ -791,12 +851,14 @@ impl DbspCircuit {
             // TODO: Log the source's name
             tracing::info!("appended csv file to source {target} which is unused, doing nothing");
         }
+
+        Ok(())
     }
 
-    pub fn consolidate_output(&mut self, output: NodeId) -> StreamCollection {
-        let (output, layout) = self.outputs.get(&output).unwrap_or_else(|| {
-            panic!("attempted to consolidate data from {output}, but {output} is not a sink node or doesn't exist");
-        });
+    pub fn consolidate_output(&mut self, output: NodeId) -> Result<StreamCollection> {
+        let (output, layout) = self.outputs.get(&output).with_context(|| {
+            format!("attempted to consolidate data from {output}, but {output} is not a sink node or doesn't exist")
+        })?;
 
         if let Some(output) = output {
             match output {
@@ -820,7 +882,7 @@ impl DbspCircuit {
                         cursor.step_key();
                     }
 
-                    StreamCollection::Set(contents)
+                    Ok(StreamCollection::Set(contents))
                 }
 
                 RowOutput::Map(output) => {
@@ -862,7 +924,7 @@ impl DbspCircuit {
                         cursor.step_key();
                     }
 
-                    StreamCollection::Map(contents)
+                    Ok(StreamCollection::Map(contents))
                 }
             }
 
@@ -872,7 +934,7 @@ impl DbspCircuit {
             tracing::info!(
                 "consolidating output from an unreachable sink, returning an empty stream",
             );
-            StreamCollection::empty(*layout)
+            Ok(StreamCollection::empty(*layout))
         }
     }
 
@@ -883,14 +945,14 @@ impl DbspCircuit {
         demand: DemandId,
         buffer: &mut Vec<u8>,
         mut write: W,
-    ) -> io::Result<()>
+    ) -> Result<()>
     where
         W: Write,
     {
         buffer.clear();
-        let (output, layout) = self.outputs.get(&output).unwrap_or_else(|| {
-            panic!("attempted to consolidate data from {output}, but {output} is not a sink node or doesn't exist");
-        });
+        let (output, layout) = self.outputs.get(&output).with_context(|| {
+            format!("attempted to consolidate data from {output}, but {output} is not a sink node or doesn't exist")
+        })?;
 
         if let Some(output) = output {
             match output {
@@ -918,7 +980,9 @@ impl DbspCircuit {
 
                         // TODO: Should the newline be configurable?
                         buffer.push(b'\n');
-                        write.write_all(buffer)?;
+                        write
+                            .write_all(buffer)
+                            .context("failed to write from buffer to output")?;
 
                         // Clear the buffer
                         buffer.clear();

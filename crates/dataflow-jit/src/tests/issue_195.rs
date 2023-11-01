@@ -99,22 +99,25 @@ fn issue_195() {
 
     let _sink = graph.sink(printed, "V", StreamLayout::Set(layout));
 
-    let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
+    let mut circuit =
+        DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new()).unwrap();
 
-    circuit.append_input(
-        source,
-        &StreamCollection::Set(vec![(
-            RowLiteral::new(vec![
-                NullableConstant::NonNull(Constant::I32(-10)),
-                NullableConstant::NonNull(Constant::U32(10)),
-                NullableConstant::NonNull(Constant::F32(f32::MIN)),
-                NullableConstant::NonNull(Constant::F64(12.0)),
-                NullableConstant::NonNull(Constant::Bool(true)),
-                NullableConstant::NonNull(Constant::String("foobar".into())),
-            ]),
-            1,
-        )]),
-    );
+    circuit
+        .append_input(
+            source,
+            &StreamCollection::Set(vec![(
+                RowLiteral::new(vec![
+                    NullableConstant::NonNull(Constant::I32(-10)),
+                    NullableConstant::NonNull(Constant::U32(10)),
+                    NullableConstant::NonNull(Constant::F32(f32::MIN)),
+                    NullableConstant::NonNull(Constant::F64(12.0)),
+                    NullableConstant::NonNull(Constant::Bool(true)),
+                    NullableConstant::NonNull(Constant::String("foobar".into())),
+                ]),
+                1,
+            )]),
+        )
+        .unwrap();
 
     circuit.step().unwrap();
     circuit.kill().unwrap();

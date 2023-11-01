@@ -143,108 +143,111 @@ fn issue_400() {
         .unwrap()
         .rematerialize();
 
-    let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
+    let mut circuit =
+        DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new()).unwrap();
 
-    circuit.append_input(
-        NodeId::new(594),
-        &StreamCollection::Set(vec![
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("2038-04-08", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("1996-03-01", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("1996-02-28", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("1957-04-09", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("1997-02-28", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("1996-03-02", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("2000-04-03", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("1996-02-29", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("2000-04-01", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (RowLiteral::new(vec![NullableConstant::null()]), 1i32),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("1997-03-01", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("1957-06-13", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("2039-04-09", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("2000-04-02", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("1997-03-02", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-            (
-                RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
-                    NaiveDate::parse_from_str("2040-04-10", "%F").unwrap(),
-                )))]),
-                1,
-            ),
-        ]),
-    );
+    circuit
+        .append_input(
+            NodeId::new(594),
+            &StreamCollection::Set(vec![
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("2038-04-08", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("1996-03-01", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("1996-02-28", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("1957-04-09", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("1997-02-28", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("1996-03-02", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("2000-04-03", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("1996-02-29", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("2000-04-01", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (RowLiteral::new(vec![NullableConstant::null()]), 1i32),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("1997-03-01", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("1957-06-13", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("2039-04-09", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("2000-04-02", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("1997-03-02", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+                (
+                    RowLiteral::new(vec![NullableConstant::Nullable(Some(Constant::Date(
+                        NaiveDate::parse_from_str("2040-04-10", "%F").unwrap(),
+                    )))]),
+                    1,
+                ),
+            ]),
+        )
+        .unwrap();
 
     circuit.step().unwrap();
 
-    let output = circuit.consolidate_output(NodeId::new(660));
+    let output = circuit.consolidate_output(NodeId::new(660)).unwrap();
     assert!(must_equal_sc(
         &output,
         &StreamCollection::Set(vec![

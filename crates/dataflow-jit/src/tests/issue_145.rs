@@ -1258,39 +1258,42 @@ fn issue_145() {
         .unwrap()
         .rematerialize();
 
-    let mut circuit = DbspCircuit::new(graph, true, 1usize, CodegenConfig::debug(), Demands::new());
+    let mut circuit =
+        DbspCircuit::new(graph, true, 1usize, CodegenConfig::debug(), Demands::new()).unwrap();
 
-    circuit.append_input(
-        NodeId::new(15748u32),
-        &StreamCollection::Set(vec![
-            (
-                RowLiteral::new(vec![
-                    NullableConstant::NonNull(Constant::I32(10i32)),
-                    NullableConstant::NonNull(Constant::F64(1.0)),
-                    NullableConstant::NonNull(Constant::Bool(false)),
-                    NullableConstant::NonNull(Constant::String(String::from("Hi"))),
-                    NullableConstant::Nullable(Some(Constant::I32(1i32))),
-                    NullableConstant::Nullable(Some(Constant::F64(0.0))),
-                ]),
-                1i32,
-            ),
-            (
-                RowLiteral::new(vec![
-                    NullableConstant::NonNull(Constant::I32(10i32)),
-                    NullableConstant::NonNull(Constant::F64(12.0)),
-                    NullableConstant::NonNull(Constant::Bool(true)),
-                    NullableConstant::NonNull(Constant::String(String::from("Hi"))),
-                    NullableConstant::null(),
-                    NullableConstant::null(),
-                ]),
-                1i32,
-            ),
-        ]),
-    );
+    circuit
+        .append_input(
+            NodeId::new(15748u32),
+            &StreamCollection::Set(vec![
+                (
+                    RowLiteral::new(vec![
+                        NullableConstant::NonNull(Constant::I32(10i32)),
+                        NullableConstant::NonNull(Constant::F64(1.0)),
+                        NullableConstant::NonNull(Constant::Bool(false)),
+                        NullableConstant::NonNull(Constant::String(String::from("Hi"))),
+                        NullableConstant::Nullable(Some(Constant::I32(1i32))),
+                        NullableConstant::Nullable(Some(Constant::F64(0.0))),
+                    ]),
+                    1i32,
+                ),
+                (
+                    RowLiteral::new(vec![
+                        NullableConstant::NonNull(Constant::I32(10i32)),
+                        NullableConstant::NonNull(Constant::F64(12.0)),
+                        NullableConstant::NonNull(Constant::Bool(true)),
+                        NullableConstant::NonNull(Constant::String(String::from("Hi"))),
+                        NullableConstant::null(),
+                        NullableConstant::null(),
+                    ]),
+                    1i32,
+                ),
+            ]),
+        )
+        .unwrap();
 
     circuit.step().unwrap();
 
-    let result = circuit.consolidate_output(NodeId::new(15759u32));
+    let result = circuit.consolidate_output(NodeId::new(15759u32)).unwrap();
     assert!(must_equal_sc(
         &result,
         &StreamCollection::Set(vec!(

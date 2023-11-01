@@ -166,7 +166,8 @@ pub fn start_circuit(
             CodegenConfig::debug()
         },
         demands,
-    );
+    )
+    .unwrap();
 
     let mut catalog = Catalog::new();
 

@@ -15,10 +15,11 @@ fn issue_902() {
         .unwrap()
         .rematerialize();
 
-    let mut circuit = DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new());
+    let mut circuit =
+        DbspCircuit::new(graph, true, 1, CodegenConfig::debug(), Demands::new()).unwrap();
     circuit.step().unwrap();
 
-    let result = circuit.consolidate_output(NodeId::new(1323));
+    let result = circuit.consolidate_output(NodeId::new(1323)).unwrap();
     #[rustfmt::skip]
     let expected = vec![
         (row![std::f64::INFINITY, std::f64::INFINITY, ?std::f64::NAN], 1),
