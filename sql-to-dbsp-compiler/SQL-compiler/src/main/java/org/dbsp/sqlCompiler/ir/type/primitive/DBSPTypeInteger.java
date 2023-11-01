@@ -43,7 +43,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     private final int width;
     public final boolean signed;
 
-    public DBSPTypeCode getCode(int width, boolean signed) {
+    public static DBSPTypeCode getCode(int width, boolean signed) {
         if (signed) {
             switch (width) {
                 case 8: return INT8;
@@ -61,8 +61,8 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
         throw new InternalCompilerError("Unexpected width " + width);
     }
 
-    public DBSPTypeInteger(CalciteObject node, DBSPTypeCode code, int width, boolean signed, boolean mayBeNull) {
-        super(node, code, mayBeNull);
+    public DBSPTypeInteger(CalciteObject node, int width, boolean signed, boolean mayBeNull) {
+        super(node, getCode(width, signed), mayBeNull);
         this.width = width;
         this.signed = signed;
     }
@@ -122,7 +122,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
-        return new DBSPTypeInteger(this.getNode(), this.code, this.width, this.signed, mayBeNull);
+        return new DBSPTypeInteger(this.getNode(), this.width, this.signed, mayBeNull);
     }
 
     @Override

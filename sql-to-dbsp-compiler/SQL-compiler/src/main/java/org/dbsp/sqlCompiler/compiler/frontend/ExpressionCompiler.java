@@ -49,7 +49,6 @@ import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Objects;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.NULL;
 
 public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implements IWritesLogs, ICompilerComponent {
@@ -208,9 +207,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         if (li != null) {
             if (ri != null) {
                 int width = Math.max(li.getWidth(), ri.getWidth());
-                return new DBSPTypeInteger(left.getNode(),
-                        new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,true).getCode(width, true),
-                        width, true, false);
+                return new DBSPTypeInteger(left.getNode(), width, true, false);
             }
             if (rf != null || rd != null)
                 return right.setMayBeNull(false);

@@ -34,11 +34,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.*;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.*;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.util.*;
 
@@ -338,6 +337,23 @@ public class ToRustVisitor extends CircuitVisitor {
                 .newline();
     }
 
+    DBSPClosureExpression generateEqualityComparison(DBSPExpression comparator) {
+        CalciteObject node = comparator.getNode();
+        DBSPExpression result = new DBSPBoolLiteral(true);
+        DBSPComparatorExpression comp = comparator.to(DBSPComparatorExpression.class);
+        DBSPType type = comp.tupleType();
+        DBSPVariablePath left = new DBSPVariablePath("left", type);
+        DBSPVariablePath right = new DBSPVariablePath("right", type);
+        while (comparator.is(DBSPFieldComparatorExpression.class)) {
+            DBSPFieldComparatorExpression fc = comparator.to(DBSPFieldComparatorExpression.class);
+            DBSPExpression eq = new DBSPBinaryExpression(node, new DBSPTypeBool(node, false),
+                    DBSPOpcode.IS_NOT_DISTINCT, left.field(fc.fieldNo), right.field(fc.fieldNo));
+            result = new DBSPBinaryExpression(node, eq.getType(), DBSPOpcode.AND, result, eq);
+            comparator = fc.source;
+        }
+        return result.closure(left.asRefParameter(), right.asRefParameter());
+    }
+
     @Override
     public VisitDecision preorder(DBSPIndexedTopKOperator operator) {
         // TODO: this should be a fresh identifier.
@@ -361,11 +377,21 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(".")
                 .append(operator.operation)
                 .append("::<")
-                .append(structName)
-                .append(">(");
+                .append(structName);
+                if (operator.outputProducer != null)
+                    this.builder.append(", _, _, _");
+                this.builder.append(">(");
         DBSPExpression cast = operator.limit.cast(
                 new DBSPTypeUSize(CalciteObject.EMPTY, operator.limit.getType().mayBeNull));
         cast.accept(this.innerVisitor);
+        if (operator.outputProducer != null) {
+            this.builder.append(", ");
+            DBSPExpression equalityComparison = this.generateEqualityComparison(
+                    operator.getFunction());
+            equalityComparison.accept(this.innerVisitor);
+            this.builder.append(", ");
+            operator.outputProducer.accept(this.innerVisitor);
+        }
         builder.append(");");
         return VisitDecision.STOP;
     }

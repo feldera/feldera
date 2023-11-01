@@ -155,7 +155,16 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         if (date == null || date.isEmpty() || date.equalsIgnoreCase("null"))
             return DBSPLiteral.none(new DBSPTypeDate(CalciteObject.EMPTY, mayBeNull));
         try {
-            Date converted = DATE_INPUT_FORMAT.parse(date);
+            if (date.length() != 10)
+                throw new RuntimeException("Unexpected date " + date);
+            SimpleDateFormat inputFormat;
+            if (date.charAt(2) == '-' && date.charAt(5) == '-')
+                inputFormat = DATE_INPUT_FORMAT;
+            else if (date.charAt(4) == '-' && date.charAt(7) == '-')
+                inputFormat = DATE_OUTPUT_FORMAT;
+            else
+                throw new RuntimeException("Unexpected date " + date);
+            Date converted = inputFormat.parse(date);
             String out = DATE_OUTPUT_FORMAT.format(converted);
             return new DBSPDateLiteral(out, mayBeNull);
         } catch (ParseException ex) {
@@ -502,14 +511,19 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
      * Runs two test cases, one with optimizations and one without.
      * This makes sure that constant queries still exercise the runtime.
      */
-    public void q(String queryAndOutput) {
+    public void q(String queryAndOutput, boolean twoWays) {
         int semicolon = queryAndOutput.indexOf(';');
         if (semicolon < 0)
             throw new RuntimeException("Could not parse query and output");
         String query = queryAndOutput.substring(0, semicolon);
         String expected = queryAndOutput.substring(semicolon + 1);
         this.compare(query, expected, true);
-        this.compare(query, expected, false);
+        if (twoWays)
+            this.compare(query, expected, false);
+    }
+
+    public void q(String queryAndOutput) {
+        this.q(queryAndOutput, true);
     }
 
     /**
@@ -546,7 +560,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
      *  1.2345679e-20
      * (3 rows)
      */
-    public void qs(String queriesWithOutputs) {
+    public void qs(String queriesWithOutputs, boolean twoWays) {
         String[] parts = queriesWithOutputs.split("\n\n");
         // From each part drop the last line (N rows) *and* its last newline.
         Pattern regex = Pattern.compile("^(.*)\\n\\(\\d+ rows?\\)$", Pattern.DOTALL);
@@ -554,10 +568,14 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
             Matcher regexMatcher = regex.matcher(part);
             if (regexMatcher.find()) {
                 String result = regexMatcher.group(1);
-                this.q(result);
+                this.q(result, twoWays);
             } else {
                 throw new RuntimeException("Could not understand test: " + part);
             }
         }
+    }
+
+    public void qs(String queriesWithOutputs) {
+        this.qs(queriesWithOutputs, true);
     }
 }

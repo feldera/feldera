@@ -135,16 +135,6 @@ columnOrList
 exprOrList
   :   expr
   |   '(' expr [, expr ]* ')'
-
-windowSpec
-  :   '('
-      [ windowName ]
-      [ ORDER BY orderItem [, orderItem ]* ]
-      [ PARTITION BY expression [, expression ]* ]
-      [
-          RANGE numericOrIntervalExpression { PRECEDING | FOLLOWING }
-      ]
-      ')'
 ```
 
 Note: `PRIMARY KEY` and `FOREIGN KEY` information is parsed, but
@@ -181,3 +171,102 @@ to `GROUP BY`.
 
 `MINUS` is equivalent to `EXCEPT`.
 
+### Window aggregates
+
+One type of expression that can appear in a `SELECT` statement is a
+window aggregate.  The grammar for window aggregates is:
+
+```
+windowedAggregateCall
+  : agg '(' [ ALL | DISTINCT ] value [, value ]* ')'
+      [ RESPECT NULLS | IGNORE NULLS ]
+      [ WITHIN GROUP '(' ORDER BY orderItem [, orderItem ]* ')' ]
+      [ FILTER '(' WHERE condition ')' ]
+      OVER windowSpec
+  | agg '(' '*' ')'
+      [ FILTER  '(' WHERE condition ')' ]
+      OVER windowSpec
+
+windowSpec
+  :   '('
+      [ windowName ]
+      PARTITION BY expression [, expression ]*
+      [ ORDER BY orderItem [, orderItem ]* ]
+      [
+          RANGE BETWEEN windowRange AND windowRange
+      ]
+      ')'
+
+windowRange
+  :   CURRENT
+  |   ( UNBOUNDED | expression ) ( PRECEDING | FOLLOWING )
+```
+
+where `agg` is one of the operators in the following table.
+
+<table>
+  <tr>
+    <th>Aggregate</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td><code>COUNT(</code>value [, value ]*<code>)</code></td>
+    <td>Returns the number of rows in window for which value is not null</td>
+  </tr>
+  <tr>
+    <td><CODE>COUNT(*)</code></td>
+    <td>Returns the number of rows in window</td>
+  </tr>
+  <tr>
+    <td>AVG(numeric)</td>
+    <td>Returns the average (arithmetic mean) of numeric across all values in window</td>
+  </tr>
+  <tr>
+    <td><code>SUM</code>(numeric)</td>
+    <td>Returns the sum of numeric across all values in window</td>
+  </tr>
+  <tr>
+    <td><code>MAX</code>(value)</td>
+    <td>Returns the maximum value of value across all values in window</td>
+  </tr>
+  <tr>
+    <td><code>MIN</code>(value)</td>
+    <td>Returns the minimum value of value across all values in window</td>
+  </tr>
+  <tr>
+    <td><code>RANK()</code></td>
+    <td>Returns the rank of the current row with gaps</td>
+  </tr>
+  <tr>
+    <td><code>DENSE_RANK()</code></td>
+    <td>Returns the rank of the current row without gaps</td>
+  </tr>
+  <tr>
+    <td><code>ROW_NUMBER()</code></td>
+    <td>Returns the number of the current row within its partition, counting from 1</td>
+  </tr>
+  <tr>
+    <td><code>FIRST_VALUE</code>(value)</td>
+    <td>Returns value evaluated at the row that is the first row of the window frame</td>
+  </tr>
+  <tr>
+    <td><code>LAST_VALUE</code>(value)</td>
+    <td>Returns value evaluated at the row that is the last row of the window frame</td>
+  </tr>
+  <tr>
+    <td><code>LEAD</code>(value, offset, default)</td>
+    <td>Returns value evaluated at the row that is offset rows after the current row within the partition; if there is no such row, instead returns default. Both offset and default are evaluated with respect to the current row. If omitted, offset defaults to 1 and default to <code>NULL</code></td>
+  </tr>
+  <tr>
+    <td><code>LAG</code>(value, offset, default)</td>
+    <td>Returns value evaluated at the row that is offset rows before the current row within the partition; if there is no such row, instead returns default. Both offset and default are evaluated with respect to the current row. If omitted, offset defaults to 1 and default to <code>NULL</code></td>
+  </tr>
+  <tr>
+    <td><code>NTH_VALUE</code>(value, nth)</td>
+    <td>Returns value evaluated at the row that is the nth row of the window frame</td>
+  </tr>
+  <tr>
+    <td><code>NTILE</code>(value)</td>
+    <td>Returns an integer ranging from 1 to value, dividing the partition as equally as possible</td>
+  </tr>
+</table>

@@ -1,7 +1,5 @@
 package org.dbsp.sqlCompiler.ir;
 
-import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.rel.logical.LogicalAggregate;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
@@ -79,20 +77,6 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         return Linq.list(tuple.tupFields);
     }
 
-    /**
-     * If the expression has a tuple type, return the list of fields.
-     * Else return the expression itself.
-     */
-    List<DBSPExpression> flatten(DBSPExpression expression) {
-        DBSPTypeTupleBase tuple = expression.getType().as(DBSPTypeTupleBase.class);
-        if (tuple == null)
-            return Linq.list(expression);
-        List<DBSPExpression> fields = new ArrayList<>();
-        for (int i = 0; i < tuple.size(); i++)
-            fields.add(expression.field(i));
-        return fields;
-    }
-
     public DBSPClosureExpression getIncrement() {
         // Here we rely on the fact that all increment functions have the following signature:
         // closure0 = (a0: AType0, v: Row, w: Weight) -> AType0 { body0 }
@@ -155,7 +139,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                     accumulatorArgs, row.asVariableReference(), weight.asVariableReference());
             DBSPLetStatement stat = new DBSPLetStatement(tmp, init);
             DBSPVariablePath tmpI = new DBSPVariablePath(tmp, init.getType());
-            tmpVars.addAll(this.flatten(tmpI));
+            tmpVars.addAll(DBSPTypeTupleBase.flatten(tmpI));
             body.add(stat);
         }
 

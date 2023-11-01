@@ -67,6 +67,7 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put("min", DBSPOpcode.MIN);
         this.arithmeticFunctions.put("max", DBSPOpcode.MAX);
         this.arithmeticFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
+        this.arithmeticFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
         this.arithmeticFunctions.put("mul_by_ref", DBSPOpcode.MUL_WEIGHT);
 
         this.dateFunctions.put("plus", DBSPOpcode.ADD);
@@ -78,6 +79,8 @@ public class RustSqlRuntimeLibrary {
         this.dateFunctions.put("gt", DBSPOpcode.GT);
         this.dateFunctions.put("lte", DBSPOpcode.LTE);
         this.dateFunctions.put("gte", DBSPOpcode.GTE);
+        this.dateFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
+        this.dateFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
 
         this.stringFunctions.put("concat", DBSPOpcode.CONCAT);
         this.stringFunctions.put("eq", DBSPOpcode.EQ);
@@ -86,6 +89,8 @@ public class RustSqlRuntimeLibrary {
         this.stringFunctions.put("gt", DBSPOpcode.GT);
         this.stringFunctions.put("lte", DBSPOpcode.LTE);
         this.stringFunctions.put("gte", DBSPOpcode.GTE);
+        this.stringFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
+        this.stringFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
 
         this.booleanFunctions.put("eq", DBSPOpcode.EQ);
         this.booleanFunctions.put("neq", DBSPOpcode.NEQ);
@@ -99,6 +104,8 @@ public class RustSqlRuntimeLibrary {
         this.booleanFunctions.put("is_not_false", DBSPOpcode.IS_NOT_FALSE);
         this.booleanFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
         this.booleanFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
+        this.booleanFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
+        this.booleanFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
     }
 
     public static class FunctionDescription {
@@ -161,15 +168,20 @@ public class RustSqlRuntimeLibrary {
             returnType = returnType.setMayBeNull(true);
         if (opcode.equals(DBSPOpcode.IS_TRUE) || opcode.equals(DBSPOpcode.IS_NOT_TRUE) ||
                 opcode.equals(DBSPOpcode.IS_FALSE) || opcode.equals(DBSPOpcode.IS_NOT_FALSE) ||
-                opcode.equals(DBSPOpcode.IS_DISTINCT))
+                opcode.equals(DBSPOpcode.IS_DISTINCT) || opcode.equals(DBSPOpcode.IS_NOT_DISTINCT))
             returnType = new DBSPTypeBool(CalciteObject.EMPTY, false);
         String suffixl = ltype.nullableSuffix();
         String suffixr = rtype == null ? "" : rtype.nullableSuffix();
         String tsuffixl;
         String tsuffixr;
-        if (isAggregate || opcode.equals(DBSPOpcode.IS_DISTINCT)) {
+        if (isAggregate) {
             tsuffixl = "";
             tsuffixr = "";
+        } else if (opcode.equals(DBSPOpcode.IS_DISTINCT) || opcode.equals(DBSPOpcode.IS_NOT_DISTINCT)) {
+            tsuffixl = "";
+            tsuffixr = "";
+            suffixl = "";
+            suffixr = "";
         } else {
             tsuffixl = ltype.to(DBSPTypeBaseType.class).shortName();
             tsuffixr = (rtype == null) ? "" : rtype.to(DBSPTypeBaseType.class).shortName();
