@@ -26,10 +26,10 @@ export const InspectionToolbar = (
 ) => {
   const { csvOptions, printOptions, excelOptions } = props
   const gridRef = useGridApiContext()
-  const deleteRows = useInsertDeleteRows()
+  const updateRows = useInsertDeleteRows()
   const onDeleteRows = useCallback(
     (rows: Map<GridRowId, GridValidRowModel>) => {
-      deleteRows(
+      updateRows(
         props.pipelineId,
         props.relation,
         props.status !== PipelineStatus.RUNNING,
@@ -37,7 +37,7 @@ export const InspectionToolbar = (
       )
       gridRef.current.setRowSelectionModel([])
     },
-    [props.pipelineId, props.relation, props.status, deleteRows, gridRef]
+    [props.pipelineId, props.relation, props.status, updateRows, gridRef]
   )
   return (
     <GridToolbarContainer>

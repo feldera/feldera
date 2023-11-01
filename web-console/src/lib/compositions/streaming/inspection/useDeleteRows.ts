@@ -1,6 +1,7 @@
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { ApiError, PipelinesService } from '$lib/services/manager'
 import { useCallback } from 'react'
+import JSONbig from 'true-json-bigint'
 
 import { useMutation } from '@tanstack/react-query'
 
@@ -18,8 +19,14 @@ export function useInsertDeleteRows() {
   const { mutate: pipelineDelete, isPending } = useMutation<string, ApiError, Args>({
     mutationFn: ([pipelineId, relation, force, rows, isArray]) => {
       return isArray
-        ? PipelinesService.httpInput(pipelineId, relation, force, 'json', JSON.stringify(rows), true)
-        : PipelinesService.httpInput(pipelineId, relation, force, 'json', rows.map(row => JSON.stringify(row)).join(''))
+        ? PipelinesService.httpInput(pipelineId, relation, force, 'json', JSONbig.stringify(rows), true)
+        : PipelinesService.httpInput(
+            pipelineId,
+            relation,
+            force,
+            'json',
+            rows.map(row => JSONbig.stringify(row)).join('')
+          )
     }
   })
 

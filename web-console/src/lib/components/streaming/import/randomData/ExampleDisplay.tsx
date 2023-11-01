@@ -31,9 +31,7 @@ export const ExampleDisplay = ({
   const adjustments: string[] = []
   if (
     typeof example === 'number' &&
-    ['TINYINT', 'SMALLINT', 'INTEGER', 'BIGINT', 'DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE'].includes(
-      field.columntype.type
-    )
+    ['TINYINT', 'SMALLINT', 'INTEGER', 'BIGINT', 'DECIMAL', 'FLOAT', 'DOUBLE'].includes(field.columntype.type)
   ) {
     const range = numericRange(field.columntype)
     if (!inRangeInclusive(range)(example)) {
@@ -69,7 +67,7 @@ export const ExampleDisplay = ({
   if (
     BigNumber.isBigNumber(example) &&
     typeof parsed === 'string' &&
-    ['DECIMAL', 'NUMERIC'].includes(field.columntype.type) &&
+    ['DECIMAL'].includes(field.columntype.type) &&
     parsed.length != example.toFixed().length
   ) {
     adjustments.push('trimmed')

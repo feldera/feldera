@@ -1,4 +1,6 @@
+import { nonNull } from '$lib/functions/common/function'
 import { BigNumber } from 'bignumber.js'
+import invariant from 'tiny-invariant'
 
 import { TextField, TextFieldProps } from '@mui/material'
 
@@ -12,27 +14,52 @@ const callOnChange = <E1 extends { target: any }, E2 extends { target: { value: 
   cb?.({ ...(event as any), target: { ...event.target, value } })
 }
 
+const validValue = (value: BigNumber | undefined, props: { precision?: number | null; scale?: number | null }) => {
+  if (!nonNull(value)) {
+    return true
+  }
+  // Ensure value and defaultValue fit within precision and scale
+  return (
+    (!nonNull(props.scale) || value.decimalPlaces(props.scale).eq(value)) &&
+    (!nonNull(props.precision) || value.precision(true) <= props.precision)
+  )
+}
+
 export const BigNumberInput = ({
+  sx,
   ...props
 }: Omit<TextFieldProps, 'type' | 'value' | 'defaultValue' | 'onChange' | 'min' | 'max'> &
   Partial<{
     value: BigNumber
     defaultValue: BigNumber
+    precision: number | null
+    scale: number | null
     onChange: React.ChangeEventHandler<EventElementType>
     min: BigNumber.Value
     max: BigNumber.Value
   }>) => {
+  invariant(
+    validValue(props.value, props),
+    `BigNumber input value ${props.value} doesn't fit precision ${props.precision} scale ${props.scale}`
+  )
+  invariant(
+    validValue(props.defaultValue, props),
+    `BigNumber input default value ${props.defaultValue} doesn't fit ${{
+      precision: props.precision,
+      scale: props.scale
+    }}`
+  )
+
   const handleChange = (event: any, value: string, cb: any) => {
-    console.log('handleChange', value, event, event.currentTarget.value)
     if (value === '') {
       callOnChange(cb, event, undefined)
       return
     }
 
     const newValue = new BigNumber(value)
-    console.log('handleChange 2', newValue)
 
-    const isInvalidValue = (props.min && newValue.lt(props.min)) || (props.max && newValue.gt(props.max))
+    const isInvalidValue =
+      (props.min && newValue.lt(props.min)) || (props.max && newValue.gt(props.max)) || !validValue(newValue, props)
     if (isInvalidValue) {
       return
     }
@@ -46,15 +73,32 @@ export const BigNumberInput = ({
   const onInput: TextFieldProps['onInput'] = !props.onInput
     ? undefined
     : event => handleChange(event, (event.target as any).value, props.onInput)
+  const onWheel: TextFieldProps['onWheel'] = event => {
+    handleChange(event, (props.value ?? new BigNumber(0)).plus(event.deltaY < 0 ? 1 : -1).toFixed(), props.onChange)
+  }
 
   return (
     <TextField
       {...props}
+      onWheel={onWheel}
       type='number'
       value={props.value?.toFixed()}
       defaultValue={props.defaultValue?.toFixed()}
-      onChange={onChange}
-      onInput={onInput}
+      onChange={e => {
+        onChange?.(e)
+      }}
+      onInput={e => {
+        onInput?.(e)
+      }}
+      sx={{
+        ...sx,
+        '& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button': {
+          display: 'none'
+        },
+        '& input[type=number]': {
+          MozAppearance: 'textfield'
+        }
+      }}
     ></TextField>
   )
 }

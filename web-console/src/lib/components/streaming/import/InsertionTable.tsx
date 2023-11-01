@@ -5,9 +5,10 @@
 
 import { DataGridPro } from '$lib/components/common/table/DataGridProDeclarative'
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
+import { SQLTypeHeader } from '$lib/components/streaming/inspection/SQLTypeHeader'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
-import { getValueFormatter, Row, sqlTypeToDataGridType } from '$lib/functions/ddl'
-import { Field, PipelineRevision, Relation } from '$lib/services/manager'
+import { getValueFormatter, Row } from '$lib/functions/ddl'
+import { ColumnType, Field, PipelineRevision, Relation } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline } from '$lib/types/pipeline'
@@ -17,6 +18,8 @@ import invariant from 'tiny-invariant'
 import Card from '@mui/material/Card'
 import {
   GridPreProcessEditCellProps,
+  GridRenderCellParams,
+  GridRenderEditCellParams,
   GridValueFormatterParams,
   GridValueGetterParams,
   GridValueSetterParams,
@@ -25,6 +28,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 
 import ImportToolbar from './ImportToolbar'
+import { SQLValueInput } from './SQLValueInput'
 
 export type { Row } from '$lib/functions/ddl'
 
@@ -95,6 +99,15 @@ export const InsertionTable = (props: {
   return <InsertionTableImpl {...{ relation, ...data }} />
 }
 
+const EditSQLCell =
+  (ct: ColumnType) =>
+  ({ id, field, value, ...props }: GridRenderEditCellParams) => {
+    const onChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+      props.api.setEditCellValue({ id, field, value: event.target.value })
+    }
+    return <SQLValueInput columnType={ct} value={value} onChange={onChange} sx={{ width: '100%' }} />
+  }
+
 const InsertionTableImpl = ({
   relation,
   pipelineRevision,
@@ -137,14 +150,15 @@ const InsertionTableImpl = ({
               description: col.name,
               flex: 1,
               editable: true,
-              type: sqlTypeToDataGridType(col),
               preProcessEditCellProps: (params: GridPreProcessEditCellProps) => {
                 // We'll add support for this once we have JSON format + better
                 // errors from backend
                 const hasError = false
                 return { ...params.props, error: hasError }
               },
-              valueGetter: (params: GridValueGetterParams) => params.row.record[col.name],
+              valueGetter: (params: GridValueGetterParams) => {
+                return params.row.record[col.name]
+              },
               valueFormatter: (params: GridValueFormatterParams<any>) => {
                 return getValueFormatter(col.columntype)(params.value)
               },
@@ -160,7 +174,10 @@ const InsertionTableImpl = ({
                 const row = params.row
                 row.record[col.name] = params.value
                 return row
-              }
+              },
+              renderHeader: () => <SQLTypeHeader col={col}></SQLTypeHeader>,
+              renderCell: (props: GridRenderCellParams) => <>{props.formattedValue}</>,
+              renderEditCell: EditSQLCell(col.columntype)
             }
           })
           .concat([
@@ -170,7 +187,6 @@ const InsertionTableImpl = ({
               description: 'Index relative to the current set of rows we are adding.',
               flex: 0.5,
               editable: false,
-              type: 'number',
               preProcessEditCellProps: (params: GridPreProcessEditCellProps) => {
                 const hasError = false
                 return { ...params.props, error: hasError }
@@ -184,7 +200,10 @@ const InsertionTableImpl = ({
               valueGetter: (params: any) => params.row.genId,
               valueSetter: (params: GridValueSetterParams) => {
                 return params.row
-              }
+              },
+              renderHeader: () => <></>,
+              renderCell: () => <></>,
+              renderEditCell: () => <></>
             }
           ])}
         slots={{

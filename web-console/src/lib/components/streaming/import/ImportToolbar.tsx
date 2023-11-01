@@ -65,7 +65,7 @@ const ImportToolbar = (props: {
           dayjs(new Date(v[1].config.date_range[0])),
           dayjs(new Date(v[1].config.date_range[1]))
         ]
-        for (const field of ['alpha', 'beta', 'lambda', 'mu', 'sigma', 'min', 'max'] as const) {
+        for (const field of ['alpha', 'beta', 'lambda', 'mu', 'sigma', 'min', 'max', 'value'] as const) {
           if (field in v[1].config) {
             v[1].config[field] = new BigNumber(v[1].config[field])
           }
