@@ -8,7 +8,7 @@ import {
 } from '$lib/functions/common/d3-random-bignumber'
 import { getRandomDate } from '$lib/functions/common/date'
 import { bignumber, maxBigNumber, minBigNumber } from '$lib/functions/common/valibot'
-import { dateTimeRange, findBaseType, numericRange } from '$lib/functions/ddl'
+import { clampToSQL, dateTimeRange, findBaseType, numericRange } from '$lib/functions/ddl'
 import { ColumnType, Field } from '$lib/services/manager'
 import assert from 'assert'
 import BigNumber from 'bignumber.js'
@@ -99,7 +99,6 @@ const getDefaultRngMethodName = (sqlType: ColumnType): string =>
     .with({ type: 'INTEGER' }, () => 'Uniform')
     .with({ type: 'BIGINT' }, () => 'Uniform')
     .with({ type: 'DECIMAL' }, () => 'Uniform')
-    .with({ type: 'NUMERIC' }, () => 'Uniform')
     .with({ type: 'FLOAT' }, () => 'Uniform')
     .with({ type: 'DOUBLE' }, () => 'Uniform')
     .with({ type: 'VARCHAR' }, () => 'Word')
@@ -148,7 +147,7 @@ const transformToArrayGenerator = (type: ColumnType, generators: IRngGenMethod[]
     const generator = (ct: ColumnType, settings: Record<string, any> | undefined): ColumnTypeJS[] => {
       invariant(ct.component)
       const c = ct.component
-      const [min, max] = numericRange(ct)!
+      const { min, max } = numericRange(ct)
       const length = d3.randomInt(min.toNumber(), max.toNumber())()
       return Array.from({ length }, () => rgm.generator(c, settings))
     }
@@ -177,7 +176,6 @@ export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
       // precision numbers. So we just use the same generators as FLOAT and
       // DOUBLE for now.
       .with({ type: 'DECIMAL' }, () => FLOAT_GENERATORS)
-      .with({ type: 'NUMERIC' }, () => FLOAT_GENERATORS)
       .with({ type: 'VARCHAR' }, { type: 'TEXT' }, { type: 'CHAR' }, () => STRING_GENERATORS)
       .with({ type: 'BOOLEAN' }, () => BOOLEAN_GENERATORS)
       .with({ type: 'TIME' }, () => TIME_GENERATORS)
@@ -188,6 +186,10 @@ export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
         return transformToArrayGenerator(type, columnTypeToRngOptions(type.component))
       })
       .otherwise(() => UNSUPPORTED_TYPE_GENERATORS)
+      .map(({ generator, ...rng }) => ({
+        ...rng,
+        generator: (ct, settings) => clampToSQL(ct)(generator(ct, settings))
+      }))
   )
 }
 
@@ -257,27 +259,35 @@ const BOOLEAN_GENERATORS: IRngGenMethod[] = [
   }
 ]
 
-const rangeBigNumber = (range: [BigNumber, BigNumber] | null) =>
-  range ? [minBigNumber(range[0]), maxBigNumber(range[1])] : []
+const rangeBigNumber = ({ min, max }: { min: BigNumber; max: BigNumber }) => [minBigNumber(min), maxBigNumber(max)]
 
 // Generic generators for integer (and floating point) numbers.
 const NUMBER_GENERATORS: IRngGenMethod[] = [
   {
     title: 'Constant',
     category: Categories.DEFAULT,
-    generator: (ct, settings) => new BigNumber(settings?.value) || 0,
+    generator: (ct, settings) => {
+      return new BigNumber(settings?.value || 0)
+    },
     form_fields: () => [
       {
         sm: 4,
-        component: TextField,
-        props: { name: FieldNames.VALUE, label: 'Constant Value', type: 'number' }
+        component: BigNumberInput,
+        props: { name: FieldNames.VALUE, label: 'Constant Value' }
       }
     ],
     validationSchema: ct => {
       const range = rangeBigNumber(numericRange(ct))
-      return va.object({
-        value: va.nonOptional(bignumber(range), 'Constant value is required.')
-      })
+      return va.object(
+        {
+          value: va.optional(bignumber(range))
+        },
+        [
+          (v: any) => {
+            return v
+          }
+        ]
+      )
     }
   },
   {
@@ -343,7 +353,7 @@ const INTEGER_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
     title: 'Uniform',
     category: Categories.DISTRIBUTION,
     generator: (ct, props) => {
-      const [typeMin, typeMax] = numericRange(ct)
+      const { min: typeMin, max: typeMax } = numericRange(ct)
       const min = ((props?.min as BigNumber | undefined) ?? typeMin).decimalPlaces(0, BigNumber.ROUND_CEIL)
       const max = ((props?.max as BigNumber | undefined) ?? typeMax).decimalPlaces(0, BigNumber.ROUND_FLOOR)
       return randomIntBigNumber(min, max)()
@@ -356,20 +366,25 @@ const INTEGER_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
           fullWidth: true,
           name: FieldNames.MIN,
           label: 'Minimum',
-          ...(([min, max]) => ({ min, max }))(numericRange(ct))
+          ...numericRange(ct)
         }
       },
       {
         sm: 2,
         component: BigNumberInput,
-        props: { fullWidth: true, name: FieldNames.MAX, label: 'Maximum' }
+        props: {
+          fullWidth: true,
+          name: FieldNames.MAX,
+          label: 'Maximum',
+          ...numericRange(ct)
+        }
       }
     ],
     validationSchema: ct => {
-      const [min, max] = numericRange(ct)
+      const range = rangeBigNumber(numericRange(ct))
       return va.object({
-        min: bignumber([minBigNumber(min), maxBigNumber(max)]),
-        max: bignumber([minBigNumber(min), maxBigNumber(max)])
+        min: bignumber(range),
+        max: bignumber(range)
       })
     }
   }
@@ -382,23 +397,19 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
   {
     title: 'Uniform',
     category: Categories.DISTRIBUTION,
-    generator: (ct, props) => {
-      if (props?.min && props.max) {
-        // We use d3.randomUniform for generating floating point numbers as long
-        // as the user set a range for the values.
-        const min = props?.min as BigNumber | undefined
-        const max = props?.max as BigNumber | undefined
-        // TODO: refactor from casting to actual BigNumber implementation of randomUniform
-        return new BigNumber(d3.randomUniform(min?.toNumber() as any, max?.toNumber() as any)())
-      } else {
-        // Because it's surprisingly difficult to generate floating point
-        // numbers with a max range of -Inf..Inf, we just default to 0..1 for
-        // this one.
-        //
-        // See also:
-        // https://stackoverflow.com/questions/28461796/randomint-function-that-can-uniformly-handle-the-full-range-of-min-and-max-safe
-        return new BigNumber(d3.randomUniform()())
-      }
+    generator: (ct, props?: { min?: BigNumber; max?: BigNumber }) => {
+      return props?.min && props.max
+        ? // We use d3.randomUniform for generating floating point numbers as long
+          // as the user set a range for the values.
+          // TODO: refactor from casting to actual BigNumber implementation of randomUniform
+          new BigNumber(d3.randomUniform(props.min.toNumber(), props.max.toNumber())())
+        : // Because it's surprisingly difficult to generate floating point
+          // numbers with a max range of -Inf..Inf, we just default to 0..1 for
+          // this one.
+          //
+          // See also:
+          // https://stackoverflow.com/questions/28461796/randomint-function-that-can-uniformly-handle-the-full-range-of-min-and-max-safe
+          new BigNumber(d3.randomUniform()())
     },
     form_fields: () => [
       {
@@ -417,10 +428,10 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
       }
     ],
     validationSchema: ct => {
-      const [min, max] = numericRange(ct)
+      const range = rangeBigNumber(numericRange(ct))
       return va.object({
-        min: bignumber([minBigNumber(min), maxBigNumber(max)]),
-        max: bignumber([minBigNumber(min), maxBigNumber(max)])
+        min: bignumber(range),
+        max: bignumber(range)
       })
     }
   },

@@ -5,15 +5,16 @@
 // etc. This issue will go away once we support JSON for the data format. But
 // until then we do the type conversion here.
 
+import { nonNull } from '$lib/functions/common/function'
 import assert from 'assert'
 import { BigNumber } from 'bignumber.js'
 import dayjs, { Dayjs } from 'dayjs'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 
-import { GridCellParams, GridNativeColTypes } from '@mui/x-data-grid-pro'
+import { GridCellParams } from '@mui/x-data-grid-pro'
 
-import { ColumnType, Field, Relation } from '../services/manager'
+import { ColumnType, Relation } from '../services/manager'
 import { clampBigNumber } from './common/bigNumber'
 
 // Representing we get back from the ingress rest API.
@@ -76,41 +77,45 @@ export function clampToSQL(columntype: ColumnType) {
   return match(columntype)
     .with({ type: 'VARCHAR', precision: P.when(value => (value ?? -1) >= 0) }, () => (value: string | string[]) => {
       invariant(typeof value === 'string' || Array.isArray(value), `clampToSQL VARCHAR: ${typeof value} ${value}`)
-      return value.toString().substring(0, columntype.precision!)
+      invariant(nonNull(columntype.precision))
+      return value.toString().substring(0, columntype.precision)
     })
     .with({ type: 'CHAR', precision: P.when(value => (value ?? -1) >= 0) }, () => (value: string | string[]) => {
       invariant(typeof value === 'string' || Array.isArray(value), `clampToSQL CHAR: ${typeof value} ${value}`)
-      return value.toString().substring(0, columntype.precision!).padEnd(columntype.precision!)
+      invariant(nonNull(columntype.precision))
+      return value.toString().substring(0, columntype.precision).padEnd(columntype.precision)
     })
     .with({ type: 'TINYINT' }, { type: 'SMALLINT' }, { type: 'INTEGER' }, () => (value: BigNumber) => {
       invariant(BigNumber.isBigNumber(value), `clampToSQL TINYINT: ${typeof value} ${value}`)
       const number = value
-      const [min, max] = numericRange(columntype)!
+      const { min, max } = numericRange(columntype)
       return clampBigNumber(min, max, number.decimalPlaces(0, BigNumber.ROUND_HALF_UP))
     })
     .with({ type: 'BIGINT' }, () => (value: BigNumber) => {
       invariant(BigNumber.isBigNumber(value), `clampToSQL BIGINT: ${typeof value} ${value}`)
       const number = value
-      const [min, max] = numericRange(columntype)!
+      const { min, max } = numericRange(columntype)
       return clampBigNumber(min, max, number.decimalPlaces(0, BigNumber.ROUND_HALF_UP))
     })
     .with({ type: 'FLOAT' }, () => (value: BigNumber) => {
       invariant(BigNumber.isBigNumber(value), `clampToSQL FLOAT: ${typeof value} ${value}`)
-      const [min, max] = numericRange(columntype)!
+      const { min, max } = numericRange(columntype)
       return new BigNumber(Float32Array.from([clampBigNumber(min, max, value).toNumber()])[0])
     })
     .with({ type: 'DOUBLE' }, () => (value: BigNumber) => {
       invariant(BigNumber.isBigNumber(value), `clampToSQL DOUBLE: ${typeof value} ${value}`)
-      const [min, max] = numericRange(columntype)!
+      const { min, max } = numericRange(columntype)
       return new BigNumber(clampBigNumber(min, max, value).toNumber())
     })
-    .with({ type: 'DECIMAL' }, { type: 'NUMERIC' }, () => (value: BigNumber) => {
-      invariant(BigNumber.isBigNumber(value), `clampToSQL DECIMAL,NUMERIC: ${typeof value} ${value}`)
-      const [precision, scale] = [columntype.precision ?? 1024, columntype.scale ?? 0]
-      assert(precision >= scale, 'Precision must be greater or equal than scale')
+    .with({ type: 'DECIMAL' }, () => (value: BigNumber) => {
+      invariant(BigNumber.isBigNumber(value), `clampToSQL DECIMAL: ${typeof value} ${value}`)
+      // const [precision, scale] = [columntype.precision ?? 1024, columntype.scale ?? 0]
+      invariant(nonNull(columntype.precision))
+      invariant(nonNull(columntype.scale))
+      assert(columntype.precision >= columntype.scale, 'Precision must be greater or equal than scale')
       // We want to limit the number of digits that are displayed in the UI to
       // fit the column decimal type.
-      return new BigNumber(value).decimalPlaces(scale, BigNumber.ROUND_HALF_UP)
+      return new BigNumber(value).decimalPlaces(columntype.scale, BigNumber.ROUND_HALF_UP)
     })
     .with({ type: 'TIME' }, () => (value: string) => {
       invariant(typeof value === 'string', `clampToSQL TIME: ${typeof value} ${value}`)
@@ -200,7 +205,6 @@ export const parseValueSafe = (sqlType: ColumnType, value: string) => {
     .with({ type: 'FLOAT' }, () => new BigNumber(value))
     .with({ type: 'DOUBLE' }, () => new BigNumber(value))
     .with({ type: 'DECIMAL' }, () => new BigNumber(value))
-    .with({ type: 'NUMERIC' }, () => new BigNumber(value))
     .with({ type: 'TIMESTAMP', nullable: P.select() }, (nullable: boolean) => {
       if (!value && nullable) {
         return null
@@ -215,23 +219,24 @@ export const parseValueSafe = (sqlType: ColumnType, value: string) => {
 // Throws an error if the type does not have a range.
 export const numericRange = (sqlType: ColumnType) =>
   match(sqlType)
-    .returnType<[BigNumber, BigNumber]>()
-    .with({ type: 'TINYINT' }, () => [new BigNumber(-128), new BigNumber(127)])
-    .with({ type: 'SMALLINT' }, () => [new BigNumber(-32768), new BigNumber(32767)])
-    .with({ type: 'INTEGER' }, () => [new BigNumber(-2147483648), new BigNumber(2147483647)])
-    .with({ type: 'BIGINT' }, () => [new BigNumber(-2).pow(63), new BigNumber(2).pow(63).minus(1)])
-    .with({ type: 'FLOAT' }, () => [new BigNumber('3.402823466e38'), new BigNumber('3.402823466e38')])
-    .with({ type: 'DOUBLE' }, () => [
-      new BigNumber('2.2250738585072014e-308'),
-      new BigNumber('1.7976931348623158e+308')
-    ])
-    .with({ type: 'DECIMAL' }, { type: 'NUMERIC' }, ct => {
+    .with({ type: 'TINYINT' }, () => ({ min: new BigNumber(-128), max: new BigNumber(127) }))
+    .with({ type: 'SMALLINT' }, () => ({ min: new BigNumber(-32768), max: new BigNumber(32767) }))
+    .with({ type: 'INTEGER' }, () => ({ min: new BigNumber(-2147483648), max: new BigNumber(2147483647) }))
+    .with({ type: 'BIGINT' }, () => ({ min: new BigNumber(-2).pow(63), max: new BigNumber(2).pow(63).minus(1) }))
+    .with({ type: 'FLOAT' }, () => ({ min: new BigNumber('-3.402823466e38'), max: new BigNumber('3.402823466e38') }))
+    .with({ type: 'DOUBLE' }, () => ({
+      min: new BigNumber('2.2250738585072014e-308'),
+      max: new BigNumber('1.7976931348623158e+308')
+    }))
+    .with({ type: 'DECIMAL' }, ct => {
+      invariant(nonNull(ct.precision))
+      invariant(nonNull(ct.scale))
       const max = new BigNumber(10).pow(ct.precision!).minus(1).div(new BigNumber(10).pow(ct.scale!))
       const min = max.negated()
-      return [min, max]
+      return { min, max }
     })
     // Limit array lengths to 0-5 for random generation.
-    .with({ type: 'ARRAY' }, () => [new BigNumber(0), new BigNumber(5)])
+    .with({ type: 'ARRAY' }, () => ({ min: new BigNumber(0), max: new BigNumber(5) }))
     .otherwise(() => {
       console.log('Not a numeric type:', sqlType)
       throw new Error(`Not a numeric type: ${sqlType.type}`)
@@ -252,29 +257,3 @@ export const dateTimeRange = (sqlType: ColumnType): Dayjs[] =>
     .otherwise(() => {
       throw new Error('Not a date/time type')
     })
-
-/**
- * SQL to MUI DataGrid type conversion
- * @param sqlType
- * @returns
- */
-export const sqlTypeToDataGridType = (sqlType: Field) =>
-  match(sqlType.columntype)
-    .returnType<GridNativeColTypes>()
-    .with({ type: 'BOOLEAN' }, { type: 'BOOL' }, () => 'boolean')
-    .with({ type: 'TINYINT' }, () => 'number')
-    .with({ type: 'SMALLINT' }, () => 'number')
-    .with({ type: 'INTEGER' }, () => 'number')
-    .with({ type: 'BIGINT' }, () => 'number')
-    .with({ type: 'DECIMAL' }, () => 'string')
-    .with({ type: 'NUMERIC' }, () => 'string')
-    .with({ type: 'FLOAT' }, () => 'number')
-    .with({ type: 'DOUBLE' }, () => 'number')
-    .with({ type: 'VARCHAR' }, () => 'string')
-    .with({ type: 'CHAR' }, () => 'string')
-    .with({ type: 'TIME' }, () => 'string')
-    .with({ type: 'TIMESTAMP' }, () => 'dateTime')
-    .with({ type: 'DATE' }, () => 'date')
-    .with({ type: 'GEOMETRY' }, () => 'string')
-    .with({ type: 'ARRAY' }, () => 'string')
-    .otherwise(() => 'string')

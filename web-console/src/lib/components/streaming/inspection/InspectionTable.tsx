@@ -5,12 +5,13 @@ import { DataGridPro } from '$lib/components/common/table/DataGridProDeclarative
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { InspectionToolbar } from '$lib/components/streaming/inspection/InspectionToolbar'
 import { PercentilePagination } from '$lib/components/streaming/inspection/PercentilePagination'
+import { SQLTypeHeader } from '$lib/components/streaming/inspection/SQLTypeHeader'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
 import { useTableUpdater } from '$lib/compositions/streaming/inspection/useTableUpdater'
 import { useAsyncError } from '$lib/functions/common/react'
 import { Row, rowToAnchor } from '$lib/functions/ddl'
-import { NeighborhoodQuery, OpenAPI, Relation } from '$lib/services/manager'
+import { Field, NeighborhoodQuery, OpenAPI, Relation } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline } from '$lib/types/pipeline'
@@ -307,7 +308,7 @@ const InspectionTableImpl = ({
         density='compact'
         getRowId={(row: Row) => row.genId}
         columns={relation.fields
-          .map((col: any) => {
+          .map((col: Field) => {
             return {
               field: col.name,
               headerName: col.name,
@@ -315,7 +316,8 @@ const InspectionTableImpl = ({
               flex: 1,
               valueGetter: (params: any) => {
                 return params.row.record[col.name]
-              }
+              },
+              renderHeader: () => <SQLTypeHeader col={col}></SQLTypeHeader>
             }
           })
           .concat([
@@ -324,14 +326,16 @@ const InspectionTableImpl = ({
               headerName: 'genId',
               description: 'Index relative to the current paginated set of rows.',
               flex: 0.5,
-              valueGetter: (params: any) => params.row.genId
+              valueGetter: (params: any) => params.row.genId,
+              renderHeader: () => <></>
             },
             {
               field: 'rowCount',
               headerName: 'Row Count',
               description: 'Counts how many times this row appears in the database.',
               flex: 0.5,
-              valueGetter: (params: any) => params.row.weight
+              valueGetter: (params: any) => params.row.weight,
+              renderHeader: () => <></>
             }
           ])}
         slots={{

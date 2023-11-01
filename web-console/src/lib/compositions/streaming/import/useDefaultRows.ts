@@ -12,7 +12,7 @@ export const getDefaultValue = (columntype: ColumnType) =>
   match(columntype)
     .with({ type: 'BOOLEAN' }, () => false)
     .with({ type: 'TINYINT' }, { type: 'SMALLINT' }, { type: 'INTEGER' }, { type: 'BIGINT' }, () => 0)
-    .with({ type: 'DECIMAL' }, { type: 'NUMERIC' }, { type: 'FLOAT' }, { type: 'DOUBLE' }, () => 0.0)
+    .with({ type: 'DECIMAL' }, { type: 'FLOAT' }, { type: 'DOUBLE' }, () => 0.0)
     .with({ type: 'VARCHAR' }, { type: 'CHAR' }, () => '')
     .with({ type: 'TIME' }, () => dayjs(new Date()))
     .with({ type: 'TIMESTAMP' }, () => dayjs(new Date()))

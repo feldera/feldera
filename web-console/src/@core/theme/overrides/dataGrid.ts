@@ -55,15 +55,6 @@ const DataGrid = (theme: Theme) => {
         cell: {
           lineHeight: '20px !important',
           borderColor: theme.palette.divider,
-          '&:not(.MuiDataGrid-cellCheckbox)': {
-            padding: theme.spacing(4),
-            '&:first-of-type': {
-              paddingLeft: theme.spacing(5)
-            }
-          },
-          '&:last-of-type': {
-            paddingRight: theme.spacing(5)
-          },
           '&:focus, &:focus-within': {
             outline: 'none'
           }
