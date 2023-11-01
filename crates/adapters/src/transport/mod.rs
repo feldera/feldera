@@ -214,9 +214,12 @@ pub trait InputReader: Send {
     /// consumer passed to [`InputEndpoint::open`].
     ///
     /// A durable endpoint must not push data for a step greater than `step`.
-    /// (If `step` commits, then it must still report it by calling
-    /// `InputConsumer::start_step(step + 1)`.)  A non-durable endpoint may
-    /// ignore `step`.
+    /// If `step` commits, then it must still report it by calling
+    /// `InputConsumer::start_step(step + 1)`, but it must not subsequently call
+    /// [`InputConsumer::input_fragment`] or [`InputConsumer::input_chunk`]
+    /// before the client calls [`InputReader::start(step + 1)`].
+    ///
+    /// A non-durable endpoint may ignore `step`.
     fn start(&self, step: Step) -> AnyResult<()>;
 
     /// Pause the endpoint.
