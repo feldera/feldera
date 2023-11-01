@@ -173,7 +173,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               direction === 'input'
                 ? metrics.input.get(params.row.relation.name)?.total_records
                 : metrics.output.get(params.row.relation.name)?.transmitted_records
-            return format('.1s')(records || 0)
+            return format(',')(records || 0)
           } else {
             // TODO: we need to count records also when relation doesn't have
             // connections in the backend.

@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Secrets can be referenced using a string pattern
   in the Kafka connector input and output configuration
   ([#949](https://github.com/feldera/feldera/pull/949))
+- Number of records in the pipeline table in the web
+  console is no longer rounded
+  ([#967](https://github.com/feldera/feldera/pull/967))
 
 ### Fixed
 - Reduce Docker logging noise from Kafka connect and Redpanda.
