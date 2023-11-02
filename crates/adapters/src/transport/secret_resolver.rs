@@ -43,8 +43,8 @@ impl Debug for MaybeSecret {
 }
 
 impl MaybeSecret {
-    /// Path to the default secret volume.
-    pub const DEFAULT_SECRET_VOLUME_PATH: &'static str = "/etc/secret-volume";
+    /// Path of the default secrets directory.
+    pub const DEFAULT_SECRETS_DIRECTORY_PATH: &'static str = "/etc/secrets";
 
     /// Regex pattern for a valid secret reference name.
     ///
@@ -68,25 +68,26 @@ impl MaybeSecret {
     }
 
     /// Resolves a potential secret reference to a secret or simply return the
-    /// string if it is a string. The default secret volume is used.
+    /// string if it is a string. The default secrets directory is used.
     /// More information regarding resolution is detailed in
     /// [MaybeSecret::new].
-    pub fn new_with_default_volume(value: MaybeSecretRef) -> AnyResult<Self> {
-        Self::new(Path::new(Self::DEFAULT_SECRET_VOLUME_PATH), value)
+    pub fn new_using_default_directory(value: MaybeSecretRef) -> AnyResult<Self> {
+        Self::new(Path::new(Self::DEFAULT_SECRETS_DIRECTORY_PATH), value)
     }
 
     /// Resolves a potential secret reference to a secret or simply return the
     /// string if it is a string.
     ///
-    /// The current resolution method is through the mounted secret volume
-    /// ("/path/to/secret/volume"). A secret reference "example" will have the
-    /// secret string fetched from the file at
-    /// "/path/to/secret/volume/.example".
+    /// The current resolution method is through files within the secrets
+    /// directory ("/path/to/secrets"). A secret reference "example" will have
+    /// the secret string fetched from the file at
+    /// "/path/to/secrets/.example".
     ///
-    /// Note: prefixing each file with a dot is a convention from the Kubernetes
-    /// documentation for secret keys: https://kubernetes.io/docs/concepts/configuration/secret/
+    /// Note: prefixing each secret file with a dot is a convention from the
+    /// Kubernetes documentation for mounted secret files:
+    /// https://kubernetes.io/docs/concepts/configuration/secret/
     /// (such that they are are hidden in `ls -l` and require `ls -la` to show).
-    pub fn new(secret_volume_path: &Path, value: MaybeSecretRef) -> AnyResult<Self> {
+    pub fn new(secrets_directory_path: &Path, value: MaybeSecretRef) -> AnyResult<Self> {
         match value {
             MaybeSecretRef::String(simple_string) => Ok(Self::String(simple_string)),
             MaybeSecretRef::SecretRef(secret_ref) => {
@@ -98,9 +99,9 @@ impl MaybeSecret {
                     ));
                 }
 
-                // Create the file path by appending the filename
+                // Create the file path by appending the filename to the secrets directory path
                 let filename = ".".to_string() + &secret_ref;
-                let file_path = secret_volume_path.join(filename);
+                let file_path = secrets_directory_path.join(filename);
 
                 // Check that metadata can be retrieved before actually trying to read
                 // from it. This provides a more user-friendly distinguishing error message
@@ -113,12 +114,12 @@ impl MaybeSecret {
                             Ok(Self::Secret(content))
                         },
                         Err(err) => Err(anyhow!(
-                                "Could not resolve secret reference {} as file: {:?} (is it readable on the mounted secret volume?) -- read failed: {}",
+                                "Could not resolve secret reference {} as file: {:?} (is it readable?) -- read failed: {}",
                                 secret_ref, file_path, err
                         ))
                     },
                     Err(err) => Err(anyhow!(
-                        "Could not resolve secret reference {} as file: {:?} (was it added to the mounted secret volume?) -- metadata check failed: {}",
+                        "Could not resolve secret reference {} as file: {:?} (was it added to the secrets directory?) -- metadata check failed: {}",
                         secret_ref, file_path, err
                     ))
                 }
@@ -138,7 +139,9 @@ mod tests {
 
     #[test]
     fn test_new_string() {
-        match MaybeSecret::new_with_default_volume(MaybeSecretRef::String("example".to_string())) {
+        match MaybeSecret::new_using_default_directory(MaybeSecretRef::String(
+            "example".to_string(),
+        )) {
             Ok(MaybeSecret::String(simple_string)) => {
                 assert_eq!("example", simple_string);
             }
@@ -150,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_new_secret_success() {
-        // Create a temporary directory which acts as the mounted secret volume.
+        // Create a temporary directory which acts as the secrets directory.
         // Create a file there with the secret reference name ".the-secret".
         // The file contains the secret string "example".
         let dir = tempfile::tempdir().unwrap();
@@ -213,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_new_secret_failure_invalid_format() {
-        match MaybeSecret::new_with_default_volume(MaybeSecretRef::SecretRef(
+        match MaybeSecret::new_using_default_directory(MaybeSecretRef::SecretRef(
             "-example".to_string(),
         )) {
             Ok(_) => {
@@ -230,7 +233,7 @@ mod tests {
 
     #[test]
     fn test_new_secret_failure_file_does_not_exist() {
-        // Create a temporary directory which acts as the mounted secret volume.
+        // Create a temporary directory which acts as the secrets directory.
         // No file is created inside explicitly.
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
@@ -247,7 +250,7 @@ mod tests {
             Err(err) => {
                 let err_string = err.to_string();
                 assert!(err_string.starts_with(format!(
-                    "Could not resolve secret reference {} as file: {:?} (was it added to the mounted secret volume?) -- metadata check failed: ",
+                    "Could not resolve secret reference {} as file: {:?} (was it added to the secrets directory?) -- metadata check failed: ",
                     "the-secret", dir_path.join(".the-secret")
                 ).as_str()));
                 // The exact string of the file system error is not matched, as
@@ -258,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_new_secret_failure_file_is_a_dir() {
-        // Create a temporary directory which acts as the mounted secret volume.
+        // Create a temporary directory which acts as the secrets directory.
         // A directory is created inside.
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
@@ -278,7 +281,7 @@ mod tests {
             Err(err) => {
                 let err_string = err.to_string();
                 assert!(err_string.starts_with(format!(
-                    "Could not resolve secret reference {} as file: {:?} (is it readable on the mounted secret volume?) -- read failed: ",
+                    "Could not resolve secret reference {} as file: {:?} (is it readable?) -- read failed: ",
                     "the-secret", dir_path.join(".the-secret")
                 ).as_str()));
                 // The exact string of the file system error is not matched, as
