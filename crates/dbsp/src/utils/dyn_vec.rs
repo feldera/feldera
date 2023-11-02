@@ -16,7 +16,6 @@ use std::{
     ptr::NonNull,
 };
 
-// TODO: Drop, Clone, Debug
 pub struct DynVec<VTable: DynVecVTable> {
     ptr: NonNull<u8>,
     length: usize,
@@ -56,6 +55,7 @@ where
     ///
     /// [`self.capacity()`]: DynVec::capacity
     pub unsafe fn set_len(&mut self, new_len: usize) {
+        debug_assert!(new_len <= self.capacity);
         self.length = new_len;
     }
 
@@ -79,6 +79,11 @@ where
         self.ptr.as_ptr()
     }
 
+    /// Reserves capacity for at least `additional` more elements to be inserted
+    /// in the given `Vec<T>`. The collection may reserve more space to
+    /// speculatively avoid frequent reallocations. After calling `reserve`,
+    /// capacity will be greater than or equal to `self.len() + additional`.
+    /// Does nothing if capacity is already sufficient.
     pub fn reserve(&mut self, additional: usize) {
         let required = self.len() + additional;
         if required <= self.capacity() {
@@ -94,6 +99,18 @@ where
         self.grow(new_capacity);
     }
 
+    /// Reserves the minimum capacity for at least `additional` more elements to
+    /// be inserted in the given `Vec<T>`. Unlike [`reserve`], this will not
+    /// deliberately over-allocate to speculatively avoid frequent allocations.
+    /// After calling `reserve_exact`, capacity will be greater than or equal to
+    /// `self.len() + additional`. Does nothing if the capacity is already
+    /// sufficient.
+    ///
+    /// Note that the allocator may give the collection more space than it
+    /// requests. Therefore, capacity can not be relied upon to be precisely
+    /// minimal. Prefer [`reserve`] if future insertions are expected.
+    ///
+    /// [`reserve`]: Vec::reserve
     pub fn reserve_exact(&mut self, additional: usize) {
         let required = self.len() + additional;
         if required <= self.capacity() {
@@ -103,6 +120,10 @@ where
         self.grow(required);
     }
 
+    /// Clears the vector, removing all values.
+    ///
+    /// Note that this method has no effect on the allocated capacity
+    /// of the vector.
     pub fn clear(&mut self) {
         if self.is_empty() {
             return;
@@ -126,6 +147,11 @@ where
     //     DynIterMut::new(self)
     // }
 
+    /// Return raw pointer to the element at index `idx`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `idx >= self.len()`.
     pub fn index(&self, idx: usize) -> *const u8 {
         if idx < self.len() {
             // Safety: The index is inbounds
@@ -135,6 +161,12 @@ where
         }
     }
 
+    /// Return pointer to the element at index `idx`
+    ///
+    /// # Panics
+    ///
+    /// Panics if `idx >= self.len()` or
+    /// `self.vtable().type_id() != TypeId::of::<T>()`.
     pub fn index_as<T: 'static>(&self, idx: usize) -> &T {
         if TypeId::of::<T>() != self.vtable().type_id() {
             mismatched_index_type_ids(any::type_name::<T>(), self.vtable().type_name())
@@ -143,6 +175,11 @@ where
         unsafe { &*(self.index(idx) as *const T) }
     }
 
+    /// Return raw mutable pointer to the element at index `idx`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `idx >= self.len()`.
     pub fn index_mut(&mut self, idx: usize) -> *mut u8 {
         if idx < self.len() {
             // Safety: The index is inbounds
@@ -225,6 +262,8 @@ where
 
         // Copy the element into the vector
         // Safety: The caller guarantees that the given pointer is valid
+        // FIXME: this doesn't seem optimal.  I'd like to benchmark this against
+        // adding a method to copy a single record to the vtable.
         unsafe {
             ptr::copy_nonoverlapping(
                 value,
@@ -237,6 +276,7 @@ where
         self.length += 1;
     }
 
+    /// Append elements in range `[start..end]` of `other` to `self`.
     pub fn clone_from_range(&mut self, other: &Self, Range { start, end }: Range<usize>) {
         if self.vtable().type_id() != other.vtable().type_id() {
             mismatched_push_type_ids(other.vtable().type_name(), self.vtable().type_name());
@@ -352,6 +392,7 @@ where
         }
     }
 
+    /*
     fn realloc_with_new_vtable(&mut self, new_vtable: &'static VTable, new_capacity: usize) {
         debug_assert_eq!(self.len(), 0);
 
@@ -410,6 +451,7 @@ where
         // - The sizes of the two element types can't be rectified
         *self = Self::with_capacity(new_vtable, new_capacity);
     }
+    */
 
     fn range_inner(
         &self,
@@ -481,6 +523,7 @@ where
         clone
     }
 
+    /*
     fn clone_from(&mut self, source: &Self) {
         // Clear the current vector's contents
         self.clear();
@@ -497,6 +540,7 @@ where
             self.set_len(source.len());
         }
     }
+    */
 }
 
 impl<VTable> Drop for DynVec<VTable>
