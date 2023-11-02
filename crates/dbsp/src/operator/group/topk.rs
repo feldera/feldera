@@ -100,6 +100,7 @@ where
         CF: CmpFunc<V>,
         EF: Fn(&V, &V) -> bool + 'static,
         OF: Fn(i64, &V) -> OV + 'static,
+        i64: From<R>,
     {
         self.map_index(|(k, v)| (k.clone(), <WithCustomOrd<V, CF>>::new(v.clone())))
             .group_transform(DiffGroupTransformer::new(TopKRank::sparse(
@@ -127,6 +128,7 @@ where
         CF: CmpFunc<V>,
         EF: Fn(&V, &V) -> bool + 'static,
         OF: Fn(i64, &V) -> OV + 'static,
+        i64: From<R>,
     {
         self.map_index(|(k, v)| (k.clone(), <WithCustomOrd<V, CF>>::new(v.clone())))
             .group_transform(DiffGroupTransformer::new(TopKRank::dense(
@@ -288,6 +290,7 @@ where
     EF: Fn(&I, &I) -> bool + 'static,
     OF: Fn(i64, &I) -> OV + 'static,
     R: DBWeight,
+    i64: From<R>,
 {
     fn name(&self) -> &str {
         self.name.as_str()
@@ -309,8 +312,9 @@ where
         let mut prev_key = None;
         while cursor.key_valid() {
             let w = cursor.weight();
-            if !w.is_zero() {
-                count += 1;
+            let wi64 = i64::from(w.clone());
+            if wi64 > 0 {
+                count += wi64 as usize;
                 let key = cursor.key();
                 if let Some(prev_key) = &prev_key {
                     if !(self.rank_eq_func)(key, prev_key) {
@@ -359,7 +363,7 @@ where
     I: DBData,
     OV: DBData,
     OF: Fn(i64, &I) -> OV + 'static,
-    R: DBWeight,
+    R: DBWeight + ZRingValue,
 {
     fn name(&self) -> &str {
         self.name.as_str()
@@ -378,10 +382,14 @@ where
         let mut count = 0usize;
 
         while cursor.key_valid() && count < self.k {
-            let w = cursor.weight();
-            if !w.is_zero() {
+            let mut w = cursor.weight();
+            while w.ge0() && !w.is_zero() {
                 count += 1;
-                output_cb((self.output_func)(count as i64, cursor.key()), w);
+                if count > self.k {
+                    break;
+                }
+                output_cb((self.output_func)(count as i64, cursor.key()), R::one());
+                w.add_assign(R::one().neg());
             }
             cursor.step_key();
         }
