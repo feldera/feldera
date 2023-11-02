@@ -411,9 +411,8 @@ pub struct LocalRunnerConfig {
 
     /// Location of the 'pipeline' executable used to run Feldera pipelines in
     /// JIT mode.
-    #[serde(default = "default_jit_pipeline_runner_path")]
-    #[arg(long, default_value_t = default_jit_pipeline_runner_path())]
-    pub jit_pipeline_runner_path: String,
+    #[arg(long)]
+    pub jit_pipeline_runner_path: Option<String>,
 }
 
 impl LocalRunnerConfig {
@@ -439,22 +438,40 @@ impl LocalRunnerConfig {
             .to_string_lossy()
             .into_owned();
 
-        self.jit_pipeline_runner_path = canonicalize(&self.jit_pipeline_runner_path)
-            .map_err(|e| {
-                AnyError::msg(format!(
-                    "failed to access JIT pipeline runner executable '{}': {e}",
-                    self.jit_pipeline_runner_path
-                ))
-            })?
-            .to_string_lossy()
-            .into_owned();
+        self.jit_pipeline_runner_path = if let Some(jit_pipeline_runner_path) =
+            self.jit_pipeline_runner_path
+        {
+            Some(
+                canonicalize(&jit_pipeline_runner_path)
+                    .map_err(|e| {
+                        AnyError::msg(format!(
+                            "failed to access JIT pipeline runner executable '{}': {e}",
+                            jit_pipeline_runner_path
+                        ))
+                    })?
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        } else {
+            canonicalize(default_jit_pipeline_runner_path())
+                    .map_err(|e| {
+                        eprintln!("Path to the JIT pipeline runner was not specified and it could not be found at the default path '{}'. Running with JIT support disabled.", default_jit_pipeline_runner_path());
+                        e
+                    })
+                    .ok()
+                    .map(|path| path.to_string_lossy().into_owned())
+        };
 
         Ok(self)
     }
 
     /// JIT pipeline runner executable.
-    pub(crate) fn jit_pipeline_runner_path(&self) -> PathBuf {
-        PathBuf::from(&self.jit_pipeline_runner_path)
+    pub(crate) fn jit_pipeline_runner_path(&self) -> Option<PathBuf> {
+        self.jit_pipeline_runner_path.as_ref().map(PathBuf::from)
+    }
+
+    pub(crate) fn jit_support_enabled(&self) -> bool {
+        self.jit_pipeline_runner_path.is_some()
     }
 
     /// Location to store pipeline files at runtime.

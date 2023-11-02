@@ -69,6 +69,7 @@ pub enum RunnerError {
         status: Option<i32>,
         stderr: String,
     },
+    JitSupportDisabled,
 }
 
 impl DetailedError for RunnerError {
@@ -89,6 +90,7 @@ impl DetailedError for RunnerError {
             }
             Self::BinaryFetchError { .. } => Cow::from("BinaryFetchError"),
             Self::SqlToJitCompilerError { .. } => Cow::from("SqlCompilerError"),
+            Self::JitSupportDisabled => Cow::from("JitSupportDisabled"),
         }
     }
 }
@@ -171,6 +173,12 @@ impl Display for RunnerError {
                     "Error compiling SQL program to JIT IR for pipeline {pipeline_id}.{status_string}\nSQL compiler stderr: {stderr}"
                 )
             }
+            Self::JitSupportDisabled => {
+                write!(
+                    f,
+                    "Cannot execute pipeline in JIT mode when running with JIT support disabled. Please update program configuration to have 'jit_mode' set to false."
+                )
+            }
         }
     }
 }
@@ -194,6 +202,7 @@ impl ResponseError for RunnerError {
             // compilation service.  SQL compiler errors are not supposed to happen
             // at this point and are reported as internal server errors.
             Self::SqlToJitCompilerError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::JitSupportDisabled => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
