@@ -23,14 +23,17 @@ use std::{
     ops::{Add, AddAssign, Neg, RangeBounds},
 };
 
+// TODO: the `diff` type is fixed in most use cases (the `weighted` operator being the only exception I can think of,
+// so it will probably pay off to have a verson of this with a statically typed diff type).
+
 #[derive(Clone, SizeOf)]
-pub struct ErasedLayer {
+pub struct ErasedLeaf {
     keys: DynVec<DataVTable>,
     diffs: DynVec<DiffVTable>,
     lower_bound: usize,
 }
 
-impl Debug for ErasedLayer {
+impl Debug for ErasedLeaf {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct DebugPtr(
             *const u8,
@@ -58,8 +61,8 @@ impl Debug for ErasedLayer {
     }
 }
 
-impl ErasedLayer {
-    pub fn new(key_vtable: &'static DataVTable, diff_vtable: &'static DiffVTable) -> ErasedLayer {
+impl ErasedLeaf {
+    pub fn new(key_vtable: &'static DataVTable, diff_vtable: &'static DiffVTable) -> ErasedLeaf {
         Self {
             keys: DynVec::new(key_vtable),
             diffs: DynVec::new(diff_vtable),
@@ -71,7 +74,7 @@ impl ErasedLayer {
         key_vtable: &'static DataVTable,
         diff_vtable: &'static DiffVTable,
         capacity: usize,
-    ) -> ErasedLayer {
+    ) -> ErasedLeaf {
         Self {
             keys: DynVec::with_capacity(key_vtable, capacity),
             diffs: DynVec::with_capacity(diff_vtable, capacity),
@@ -108,7 +111,7 @@ impl ErasedLayer {
     /// # Safety
     ///
     /// The key and diff types of both layers must be the same
-    unsafe fn extend_from_range(&mut self, source: &ErasedLayer, lower: usize, upper: usize) {
+    unsafe fn extend_from_range(&mut self, source: &ErasedLeaf, lower: usize, upper: usize) {
         debug_assert!(lower <= source.len() && upper <= source.len());
         if lower == upper {
             return;
@@ -299,7 +302,7 @@ impl ErasedLayer {
     }
 }
 
-impl PartialEq for ErasedLayer {
+impl PartialEq for ErasedLeaf {
     fn eq(&self, other: &Self) -> bool {
         self.value_types() == other.value_types()
             && self.len() == other.len()
@@ -316,11 +319,11 @@ impl PartialEq for ErasedLayer {
     }
 }
 
-impl Eq for ErasedLayer {}
+impl Eq for ErasedLeaf {}
 
 #[derive(Debug, Clone, PartialEq, Eq, SizeOf)]
 pub struct TypedLayer<K, R> {
-    layer: ErasedLayer,
+    layer: ErasedLeaf,
     __type: PhantomData<(K, R)>,
 }
 
@@ -331,7 +334,7 @@ impl<K, R> TypedLayer<K, R> {
         R: IntoErasedDiff,
     {
         Self {
-            layer: ErasedLayer::new(
+            layer: ErasedLeaf::new(
                 &<K as IntoErasedData>::DATA_VTABLE,
                 &<R as IntoErasedDiff>::DIFF_VTABLE,
             ),
@@ -345,7 +348,7 @@ impl<K, R> TypedLayer<K, R> {
         R: IntoErasedDiff,
     {
         Self {
-            layer: ErasedLayer::with_capacity(
+            layer: ErasedLeaf::with_capacity(
                 &<K as IntoErasedData>::DATA_VTABLE,
                 &<R as IntoErasedDiff>::DIFF_VTABLE,
                 capacity,

@@ -1,7 +1,7 @@
 use crate::trace::{
     consolidation::consolidate_from,
     layers::{
-        erased::{ErasedLayer, IntoErasedData, IntoErasedDiff, TypedLayer},
+        erased::{ErasedLeaf, IntoErasedData, IntoErasedDiff, TypedLayer},
         Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
     },
 };
@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 /// A builder for ordered values
 #[derive(SizeOf)]
 pub struct TypedLayerBuilder<K, R> {
-    layer: ErasedLayer,
+    layer: ErasedLeaf,
     __type: PhantomData<(K, R)>,
 }
 
@@ -46,7 +46,7 @@ where
 
     fn with_key_capacity(capacity: usize) -> Self {
         Self {
-            layer: ErasedLayer::with_capacity(
+            layer: ErasedLeaf::with_capacity(
                 &<K as IntoErasedData>::DATA_VTABLE,
                 &<R as IntoErasedDiff>::DIFF_VTABLE,
                 capacity,
@@ -112,7 +112,7 @@ where
 
     fn new() -> Self {
         Self {
-            layer: ErasedLayer::new(
+            layer: ErasedLeaf::new(
                 &<K as IntoErasedData>::DATA_VTABLE,
                 &<R as IntoErasedDiff>::DIFF_VTABLE,
             ),
@@ -122,7 +122,7 @@ where
 
     fn with_capacity(capacity: usize) -> Self {
         Self {
-            layer: ErasedLayer::with_capacity(
+            layer: ErasedLeaf::with_capacity(
                 &<K as IntoErasedData>::DATA_VTABLE,
                 &<R as IntoErasedDiff>::DIFF_VTABLE,
                 capacity,
@@ -183,7 +183,7 @@ where
         self.boundary();
 
         let mut layer =
-            ErasedLayer::with_capacity(&K::DATA_VTABLE, &R::DIFF_VTABLE, self.tuples.len());
+            ErasedLeaf::with_capacity(&K::DATA_VTABLE, &R::DIFF_VTABLE, self.tuples.len());
         layer.extend(self.tuples);
 
         // TODO: The tuples buffer is dropped here, can we reuse it for other builders?
