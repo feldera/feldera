@@ -128,8 +128,10 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
     let local_runner_config = LocalRunnerConfig {
         runner_working_directory: workdir.to_owned(),
         pipeline_host: "127.0.0.1".to_owned(),
-        jit_pipeline_runner_path: std::env::var("JIT_PIPELINE_RUNNER_PATH")
-            .unwrap_or_else(|_| "../../target/debug/pipeline".to_owned()),
+        jit_pipeline_runner_path: Some(
+            std::env::var("JIT_PIPELINE_RUNNER_PATH")
+                .unwrap_or_else(|_| "../../target/debug/pipeline".to_owned()),
+        ),
     }
     .canonicalize()
     .unwrap();

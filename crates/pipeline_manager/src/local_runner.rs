@@ -135,7 +135,7 @@ impl ProcessRunner {
         }
 
         // Run pipeline.
-        let pipeline_process = Command::new(self.config.jit_pipeline_runner_path())
+        let pipeline_process = Command::new(self.config.jit_pipeline_runner_path().unwrap())
             .current_dir(&pipeline_dir)
             .arg("--ir")
             .arg(&ir_file_path)
@@ -159,6 +159,10 @@ impl PipelineExecutor for ProcessRunner {
         let pipeline_id = ped.pipeline_id;
 
         log::debug!("Pipeline config is '{:?}'", ped.config);
+
+        if ped.jit_mode && !self.config.jit_support_enabled() {
+            Err(RunnerError::JitSupportDisabled)?;
+        }
 
         // Create pipeline directory (delete old directory if exists); write metadata
         // and config files to it.
