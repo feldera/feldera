@@ -85,7 +85,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 public class OtherTests extends BaseSQLTests implements IWritesLogs {
@@ -234,13 +233,13 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    // DBSPSourceMultisetOperator 53\n" +
                 "    // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)\n" +
                 "    let T = T();\n" +
-                "    // DBSPMapOperator 185\n" +
-                "    let stream3: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2))));\n" +
+                "    // DBSPMapOperator 74\n" +
+                "    let stream0: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2))));\n" +
                 "    // CREATE VIEW `V` AS\n" +
                 "    // SELECT `T`.`COL3`\n" +
                 "    // FROM `T`\n" +
-                "    // DBSPSinkOperator 192\n" +
-                "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream3;\n" +
+                "    // DBSPSinkOperator 80\n" +
+                "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream0;\n" +
                 "}\n";
         Assert.assertEquals(expected, str);
     }
@@ -439,7 +438,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 new DBSPTypeWeight(),
                 new DBSPTupleExpression(new DBSPI32Literal(1, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(2, true)),
-                new DBSPTupleExpression(DBSPI32Literal.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))
+                new DBSPTupleExpression(DBSPI32Literal.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))
         );
         File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.rustDirectory));
         file.deleteOnExit();

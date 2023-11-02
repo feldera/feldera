@@ -34,8 +34,6 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
-
 public class DBSPI64Literal extends DBSPIntLiteral {
     @Nullable
     public final Long value;
@@ -58,7 +56,7 @@ public class DBSPI64Literal extends DBSPIntLiteral {
     }
 
     public DBSPI64Literal(CalciteObject node, @Nullable Long value, boolean nullable) {
-        this(node, new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true, nullable), value);
+        this(node, new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

@@ -19,6 +19,20 @@ where
 
 for_all_compare!(eq, bool);
 
+pub fn is_same__<T>(left: T, right: T) -> bool
+where
+    T: Eq,
+{
+    left == right
+}
+
+pub fn is_distinct__<T>(left: T, right: T) -> bool
+where
+    T: Eq,
+{
+    !(left == right)
+}
+
 #[inline(always)]
 pub(crate) fn neq<T>(left: T, right: T) -> bool
 where

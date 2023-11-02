@@ -25,6 +25,10 @@ package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.util.Linq;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public abstract class DBSPTypeTupleBase extends DBSPType {
     public final DBSPType[] tupFields;
@@ -35,6 +39,20 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         for (DBSPType type: this.tupFields)
             if (type == null)
                 throw new NullPointerException();
+    }
+
+    /**
+     * If the expression has a tuple type, return the list of fields.
+     * Else return the expression itself.
+     */
+    public static List<DBSPExpression> flatten(DBSPExpression expression) {
+        DBSPTypeTupleBase tuple = expression.getType().as(DBSPTypeTupleBase.class);
+        if (tuple == null)
+            return Linq.list(expression);
+        List<DBSPExpression> fields = new ArrayList<>();
+        for (int i = 0; i < tuple.size(); i++)
+            fields.add(expression.field(i).applyCloneIfNeeded());
+        return fields;
     }
 
     public DBSPType getFieldType(int index) {

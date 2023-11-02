@@ -2,6 +2,7 @@
 
 use crate::interval::{LongInterval, ShortInterval};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
+use core::fmt::Formatter;
 use dbsp_adapters::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
@@ -357,7 +358,6 @@ some_polymorphic_function1!(floor_week, Timestamp, Timestamp, Timestamp);
 //////////////////////////// Date
 
 #[derive(
-    Debug,
     Default,
     Clone,
     Copy,
@@ -399,6 +399,17 @@ impl Date {
         // This should depend on the SQL dialect, but the calcite
         // optimizer seems to imply this for all dialects.
         1
+    }
+}
+
+impl fmt::Debug for Date {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let millis = (self.days as i64) * 86400 * 1000;
+        let ndt = NaiveDateTime::from_timestamp_millis(millis);
+        match ndt {
+            Some(ndt) => ndt.date().fmt(f),
+            _ => write!(f, "date value '{}' out of range", self.days),
+        }
     }
 }
 

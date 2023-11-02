@@ -46,7 +46,6 @@ import java.io.IOException;
 public class ComplexQueriesTest extends BaseSQLTests {
     @Test @Ignore("Waiting for https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-5861")
     public void testDateDiff() {
-        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 3);
         String sql = "create table PART_ORDER (\n" +
                 "    id bigint,\n" +
                 "    part bigint,\n" +
@@ -75,6 +74,17 @@ public class ComplexQueriesTest extends BaseSQLTests {
         compiler.compileStatements(sql);
         Assert.assertFalse(compiler.hasErrors());
         this.addRustTestCase("ComplexQueriesTest.testDateDiff", compiler, getCircuit(compiler));
+    }
+
+    @Test @Ignore("Not yet tested")
+    public void testCrossApply() {
+        String query = " select d.DocumentID, ds.Status, ds.DateCreated \n" +
+                " from Documents as d \n" +
+                " cross apply \n" +
+                "     (select top 1 Status, DateCreated\n" +
+                "      from DocumentStatusLogs \n" +
+                "      where DocumentID = d.DocumentId\n" +
+                "      order by DateCreated desc) as ds";
     }
 
     @Test

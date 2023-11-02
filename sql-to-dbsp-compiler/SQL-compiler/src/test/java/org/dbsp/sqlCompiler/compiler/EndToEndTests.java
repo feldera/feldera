@@ -40,8 +40,6 @@ import org.junit.Test;
 
 import java.math.BigDecimal;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
-
 /**
  * Test end-to-end by compiling some DDL statements and view
  * queries by compiling them to rust and executing them
@@ -90,7 +88,7 @@ public class EndToEndTests extends BaseSQLTests {
             new DBSPDoubleLiteral(12.0),
             new DBSPBoolLiteral(true),
             new DBSPStringLiteral("Hi"),
-            DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)),
+            DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
             DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true))
     );
     public static final DBSPTupleExpression e1 = new DBSPTupleExpression(
@@ -106,7 +104,7 @@ public class EndToEndTests extends BaseSQLTests {
             new DBSPI32Literal(10),
             new DBSPBoolLiteral(true),
             new DBSPStringLiteral("Hi"),
-            DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true))
+            DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))
     );
     public static final DBSPTupleExpression e1NoDouble = new DBSPTupleExpression(
             new DBSPI32Literal(10),
@@ -239,7 +237,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testArrayIndexOutOfBounds() {
         String query = "SELECT (ARRAY [2])[3]";
-        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true))));
+        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
         this.testQuery(query, result);
     }
 
@@ -250,7 +248,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void testArrayElement() {
         String query = "SELECT ELEMENT(ARRAY [2, 3])";
         DBSPZSetLiteral.Contents result =
-                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true))));
+                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
         this.testQuery(query, result);
     }
 
@@ -315,7 +313,7 @@ public class EndToEndTests extends BaseSQLTests {
                 "0.5 * (SELECT Sum(r1.COL5) FROM T r1) =\n" +
                 "(SELECT Sum(r2.COL5) FROM T r2 WHERE r2.COL1 = r.COL1)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
-                DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
+                DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
 
         // TODO
         query = "SELECT Sum(b.price * b.volume) FROM bids b\n" +
@@ -375,10 +373,10 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
                         new DBSPBoolLiteral(true),
-                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false))
+                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false))
                 ),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false),
-                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false))
+                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false))
                 )));
     }
 
@@ -407,11 +405,11 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPTupleExpression(
                         new DBSPBoolLiteral(true),
                         new DBSPI64Literal(0, false),
-                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false))
+                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false))
                 ),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false),
                         new DBSPI64Literal(0, false),
-                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false))
+                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false))
                 )));
     }
 
@@ -437,7 +435,7 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query,
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(new DBSPI32Literal(11, true)),
-                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
+                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
 
     @Test
@@ -446,7 +444,7 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query,
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(new DBSPI32Literal(-1, true)),
-                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
+                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
 
     @Test
@@ -455,7 +453,7 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query,
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(new DBSPI32Literal(1, true)),
-                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
+                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
 
     @Test
@@ -633,7 +631,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT T.COL1 / T.COL5 FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true))),
+                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))),
                 new DBSPTupleExpression(new DBSPI32Literal(10, true))));
     }
 
@@ -673,7 +671,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT T.COL5 / T.COL5 FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true))),
+                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))),
                 new DBSPTupleExpression(new DBSPI32Literal(1, true))));
     }
 
@@ -682,7 +680,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT 1 / 0";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
+                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
 
     @Test
@@ -690,7 +688,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT 2 / (1 / 0)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
+                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
 
     @Test
@@ -706,7 +704,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT DIVISION(1, 0)";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
-                        new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
+                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
 
     @Test
@@ -843,7 +841,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT SUM(T.COL1) FROM T WHERE FALSE";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                  new DBSPTupleExpression(
-                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)))));
+                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
 
     @Test

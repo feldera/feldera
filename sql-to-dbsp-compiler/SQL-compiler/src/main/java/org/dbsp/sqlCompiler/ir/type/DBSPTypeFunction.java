@@ -71,7 +71,7 @@ public class DBSPTypeFunction extends DBSPType {
         if (!type.is(DBSPTypeFunction.class))
             return false;
         DBSPTypeFunction other = type.to(DBSPTypeFunction.class);
-        if (this.resultType.sameType(other.resultType))
+        if (!this.resultType.sameType(other.resultType))
             return false;
         return DBSPType.sameTypes(this.argumentTypes, other.argumentTypes);
     }

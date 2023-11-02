@@ -1,3 +1,5 @@
+-*-text-mode-*-
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -8,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Support various forms of TopK computations in SQL
+  ([#968](https://github.com/feldera/feldera/pull/968))
+- Support for ORDER BY with LIMIT
+  ([#954](https://github.com/feldera/feldera/pull/954))
 - Allow configuring resource requirements per pipeline
   ([940](https://github.com/feldera/feldera/pull/940))
 - Restructure and expansion of cloud documentation
@@ -39,8 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Support for ORDER BY with LIMIT
-  ([#954](https://github.com/feldera/feldera/pull/954))
 - Preliminary support for BINARY and VARBINARY SQL
   data types
   ([#917](https://github.com/feldera/feldera/pull/917))

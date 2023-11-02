@@ -38,8 +38,6 @@ import org.junit.Test;
 
 import java.util.Objects;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
-
 public class ArrayTests extends BaseSQLTests {
     public DBSPCompiler compileQuery(String statements, String query) {
         DBSPCompiler compiler = this.testCompiler();
@@ -108,7 +106,7 @@ public class ArrayTests extends BaseSQLTests {
             else
                 Objects.requireNonNull(result).add(tuple);
         }
-        result.add(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true))));
+        result.add(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
         this.testQuery("", query, new InputOutputPair(
                 new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
     }
@@ -144,7 +142,7 @@ public class ArrayTests extends BaseSQLTests {
                 Objects.requireNonNull(result).add(tuple);
         }
         result.add(new DBSPTupleExpression(
-                DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)),
+                DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
                 new DBSPI32Literal(6)));
 
         this.testQuery("", query, new InputOutputPair(
@@ -159,7 +157,7 @@ public class ArrayTests extends BaseSQLTests {
             DBSPTupleExpression tuple = new DBSPTupleExpression(
                     new DBSPI32Literal(i),
                     i < 4 ? new DBSPI32Literal(4 - 1, true) :
-                            DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true)));
+                            DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)));
             if (i == 1)
                 result = new DBSPZSetLiteral.Contents(tuple);
             else
@@ -233,7 +231,7 @@ public class ArrayTests extends BaseSQLTests {
                         new DBSPI32Literal(14))
         );
         DBSPZSetLiteral.Contents result = DBSPZSetLiteral.Contents.emptyWithElementType(
-            new DBSPTypeTuple(new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false), new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false), new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false))
+            new DBSPTypeTuple(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false), new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false), new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false))
         );
         for (int i = 1; i < 4; i++)
             for (int j = 4; j < 7; j++) {

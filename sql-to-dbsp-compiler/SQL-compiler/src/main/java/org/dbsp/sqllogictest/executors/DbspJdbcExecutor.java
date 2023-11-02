@@ -54,8 +54,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
-
 /**
  * This is a hybrid test executor which keeps all the state in a
  * database using JDBC and executes all queries using DBSP>
@@ -103,7 +101,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                     nullable = false;
                 switch (columnType) {
                     case INTEGER:
-                        colTypes[i1] = new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true, nullable);
+                        colTypes[i1] = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, nullable);
                         break;
                     case REAL:
                     case DOUBLE:
@@ -127,7 +125,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                         int value = rs.getInt(i + 1);
                         if (rs.wasNull())
                             exp = DBSPLiteral.none(
-                                    new DBSPTypeInteger(CalciteObject.EMPTY, INT32,32, true,true));
+                                    new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true));
                         else
                             exp = new DBSPI32Literal(value, type.mayBeNull);
                     } else if (type.is(DBSPTypeDouble.class)) {

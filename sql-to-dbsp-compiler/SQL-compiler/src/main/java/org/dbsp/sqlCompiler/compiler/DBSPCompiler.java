@@ -63,8 +63,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode.jsonFactory;
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
 
 /**
  * This class compiles SQL statements into DBSP circuits.
@@ -144,9 +142,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
         if (options.ioOptions.jit) {
             // The JIT has hardwired I32 for the weight type.
-            this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false);
+            this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false);
         } else {
-            this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false);
+            this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false);
         }
         this.weightVar = new DBSPTypeWeight().var("w");
     }

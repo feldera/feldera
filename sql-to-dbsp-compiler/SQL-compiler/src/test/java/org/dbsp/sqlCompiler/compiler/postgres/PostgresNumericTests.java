@@ -34,9 +34,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT32;
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
-
 /**
  * Tests manually adapted from
  * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/numeric.out
@@ -528,8 +525,8 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 this.getPreparedInputs(compiler),
                 new DBSPZSetLiteral.Contents[] {
                         DBSPZSetLiteral.Contents.emptyWithElementType(new DBSPTypeTuple(
-                                new DBSPTypeInteger(CalciteObject.EMPTY, INT32, 32, true,false),
-                                new DBSPTypeInteger(CalciteObject.EMPTY, INT64,64, true,false),
+                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false),
+                                new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false),
                     new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false),
                     new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false))
                 )}
