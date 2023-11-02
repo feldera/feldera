@@ -1,7 +1,7 @@
 use crate::{
     trace::layers::{
         advance_erased,
-        erased::{ErasedLayer, TypedLayer},
+        erased::{ErasedLeaf, TypedLayer},
         Cursor,
     },
     utils::cursor_position_oob,
@@ -20,7 +20,7 @@ where
     R: Clone,
 {
     current: usize,
-    storage: &'a ErasedLayer,
+    storage: &'a ErasedLeaf,
     bounds: (usize, usize),
     __type: PhantomData<(K, R)>,
 }
@@ -39,7 +39,7 @@ where
         }
     }
 
-    pub(super) const fn storage(&self) -> &'a ErasedLayer {
+    pub(super) const fn storage(&self) -> &'a ErasedLeaf {
         self.storage
     }
 

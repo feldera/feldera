@@ -2,7 +2,7 @@ use crate::{
     trace::{
         layers::{
             advance_erased,
-            erased::{ErasedLayer, TypedLayer},
+            erased::{ErasedLeaf, TypedLayer},
         },
         Consumer, ValueConsumer,
     },
@@ -20,7 +20,7 @@ pub struct TypedLayerConsumer<K, R> {
     // exhausted
     position: usize,
     // Invariant: `storage.keys[position..]` and `storage.diffs[position..]` are all valid
-    storage: ManuallyDrop<ErasedLayer>,
+    storage: ManuallyDrop<ErasedLeaf>,
     __type: PhantomData<(K, R)>,
 }
 
