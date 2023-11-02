@@ -290,6 +290,11 @@ fn test_topk_custom_ord() {
             (1, ("foobar".to_string(), 8, 96), 1),
             (1, ("fubar".to_string(), 8, 96), 1),
         ],
+        // non-unit weights
+        vec![
+            (1, ("foo".to_string(), 7, 96), 1),
+            (1, ("baz".to_string(), 8, 96), 1),
+        ],
     ];
     let mut expected_output = vec![indexed_zset! {
         1 => {{("foo".to_string(), 8, 98)} => 1, {("foo".to_string(), 8, 97)} => 1, {("foo".to_string(), 9, 99)} => 1, {("foo".to_string(), 9, 98)} => 1, {("foo".to_string(), 10, 100)} => 1},
@@ -308,6 +313,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {{("foo".to_string(), 7, 96)} => 1, {("bar".to_string(), 8, 96)} => 1, {("baz".to_string(), 8, 96)} => 1, {("buzz".to_string(), 8, 96)} => 1, {("foo".to_string(), 8, 96)} => 1},
+    },
+    indexed_zset! {
+        1 => {{("foo".to_string(), 7, 96)} => 2, {("bar".to_string(), 8, 96)} => 1, {("baz".to_string(), 8, 96)} => 2, {("buzz".to_string(), 8, 96)} => 1, {("foo".to_string(), 8, 96)} => 1},
     }]
     .into_iter();
 
@@ -328,6 +336,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {{(1, "foo".to_string(), 7, 96)} => 1, {(2, "bar".to_string(), 8, 96)} => 1, {(2, "baz".to_string(), 8, 96)} => 1, {(2, "buzz".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 96)} => 1, {(2, "foobar".to_string(), 8, 96)} => 1, {(2, "fubar".to_string(), 8, 96)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 7, 96)} => 2, {(3, "bar".to_string(), 8, 96)} => 1, {(3, "baz".to_string(), 8, 96)} => 2, {(3, "buzz".to_string(), 8, 96)} => 1, {(3, "foo".to_string(), 8, 96)} => 1, {(3, "foobar".to_string(), 8, 96)} => 1, {(3, "fubar".to_string(), 8, 96)} => 1},
     }]
     .into_iter();
 
@@ -348,6 +359,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {{(1, "foo".to_string(), 7, 96)} => 1, {(2, "bar".to_string(), 8, 96)} => 1, {(2, "baz".to_string(), 8, 96)} => 1, {(2, "buzz".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 96)} => 1, {(2, "foobar".to_string(), 8, 96)} => 1, {(2, "fubar".to_string(), 8, 96)} => 1, {(3, "foo".to_string(), 8, 95)} => 1, {(4, "foo".to_string(), 9, 97)} => 1, {(5, "foo".to_string(), 9, 96)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 7, 96)} => 2, {(2, "bar".to_string(), 8, 96)} => 1, {(2, "baz".to_string(), 8, 96)} => 2, {(2, "buzz".to_string(), 8, 96)} => 1, {(2, "foo".to_string(), 8, 96)} => 1, {(2, "foobar".to_string(), 8, 96)} => 1, {(2, "fubar".to_string(), 8, 96)} => 1, {(3, "foo".to_string(), 8, 95)} => 1, {(4, "foo".to_string(), 9, 97)} => 1, {(5, "foo".to_string(), 9, 96)} => 1},
     }]
     .into_iter();
 
@@ -368,6 +382,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {{(1, "foo".to_string(), 7, 96)} => 1, {(2, "bar".to_string(), 8, 96)} => 1, {(3, "baz".to_string(), 8, 96)} => 1, {(4, "buzz".to_string(), 8, 96)} => 1, {(5, "foo".to_string(), 8, 96)} => 1},
+    },
+    indexed_zset! {
+        1 => {{(1, "foo".to_string(), 7, 96)} => 1, {(2, "foo".to_string(), 7, 96)} => 1, {(3, "bar".to_string(), 8, 96)} => 1, {(4, "baz".to_string(), 8, 96)} => 1, {(5, "baz".to_string(), 8, 96)} => 1},
     }]
     .into_iter();
 
