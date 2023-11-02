@@ -142,9 +142,9 @@ impl KafkaInputEndpointInner {
 
         for (key, value) in config.kafka_options.iter() {
             // If it is a secret reference, resolve it to the actual secret string
-            match MaybeSecret::new_with_default_volume(MaybeSecretRef::new_using_pattern_match(
-                value.clone(),
-            ))? {
+            match MaybeSecret::new_using_default_directory(
+                MaybeSecretRef::new_using_pattern_match(value.clone()),
+            )? {
                 MaybeSecret::String(simple_string) => {
                     client_config.set(key, simple_string);
                 }
