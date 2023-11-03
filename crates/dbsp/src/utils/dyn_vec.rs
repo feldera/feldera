@@ -554,7 +554,9 @@ where
         // Deallocate all allocated memory
         let layout = self.layout_for(self.capacity());
         // Safety: The current pointer was allocated with the given layout
-        unsafe { alloc::dealloc(self.as_mut_ptr(), layout) };
+        if self.capacity > 0 {
+            unsafe { alloc::dealloc(self.as_mut_ptr(), layout) };
+        }
     }
 }
 
