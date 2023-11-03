@@ -9,6 +9,7 @@ use dbsp::{
         },
     },
 };
+use pprof::criterion::{Output, PProfProfiler};
 use rand::{distributions::Standard, prelude::Distribution, Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 
@@ -183,25 +184,29 @@ macro_rules! leaf_benches {
 }
 
 leaf_benches! {
-    "0" = [ColumnLayer]0,
+    "0-static" = [ColumnLayer]0,
     "0-erased" = [TypedLayer]0,
-    "10" = [ColumnLayer]10,
+    "10-static" = [ColumnLayer]10,
     "10-erased" = [TypedLayer]10,
-    "100" = [ColumnLayer]100,
+    "100-static" = [ColumnLayer]100,
     "100-erased" = [TypedLayer]100,
-    "1000" = [ColumnLayer]1000,
+    "1000-static" = [ColumnLayer]1000,
     "1000-erased" = [TypedLayer]1000,
-    "10,000" = [ColumnLayer]10_000,
+    "10,000-static" = [ColumnLayer]10_000,
     "10,000-erased" = [TypedLayer]10_000,
-    "100,000" = [ColumnLayer]100_000,
+    "100,000-static" = [ColumnLayer]100_000,
     "100,000-erased" = [TypedLayer]100_000,
-    "1,000,000" = [ColumnLayer]1_000_000,
+    "1,000,000-static" = [ColumnLayer]1_000_000,
     "1,000,000-erased" = [TypedLayer]1_000_000,
-    "10,000,000" = [ColumnLayer]10_000_000,
+    "10,000,000-static" = [ColumnLayer]10_000_000,
     "10,000,000-erased" = [TypedLayer]10_000_000,
-    "100,000,000" = [ColumnLayer]100_000_000,
+    "100,000,000-static" = [ColumnLayer]100_000_000,
     "100,000,000-erased" = [TypedLayer]100_000_000,
 }
 
-criterion_group!(benches, column_leaf, merge_ordered_column_leaf_builder,);
+criterion_group!(
+    name = benches;
+    config = Criterion::default().with_profiler(PProfProfiler::new(300, Output::Flamegraph(None)));
+    targets = column_leaf, merge_ordered_column_leaf_builder
+);
 criterion_main!(benches);
