@@ -153,10 +153,11 @@ pub fn advance_erased<F>(slice: &[MaybeUninit<u8>], size: usize, function: F) ->
 where
     F: Fn(*const u8) -> bool,
 {
-    let slice = SlicePtr::new(slice, size);
-    if slice.is_empty() {
+    if size == 0 {
         return 0;
     }
+
+    let slice = SlicePtr::new(slice, size);
 
     // We have to use `.get_unchecked()` here since otherwise LLVM's not smart
     // enough to elide bounds checking (we still get checks in debug mode though)
@@ -208,7 +209,7 @@ struct SlicePtr {
 impl SlicePtr {
     #[inline]
     fn new(slice: &[MaybeUninit<u8>], element_size: usize) -> Self {
-        assert!(slice.len() % element_size == 0);
+        debug_assert!(slice.len() % element_size == 0);
 
         Self {
             ptr: slice.as_ptr().cast(),
@@ -222,10 +223,10 @@ impl SlicePtr {
         self.elements
     }
 
-    #[inline]
+    /*#[inline]
     const fn is_empty(&self) -> bool {
         self.elements == 0
-    }
+    }*/
 
     #[inline]
     unsafe fn get_unchecked(&self, idx: usize) -> *const u8 {
