@@ -9,6 +9,7 @@ import org.dbsp.sqllogictest.SqlTestPrepareInput;
 import org.dbsp.sqllogictest.SqlTestPrepareTables;
 import org.dbsp.sqllogictest.SqlTestPrepareViews;
 import org.dbsp.util.TableValue;
+import org.dbsp.sqllogictest.Main;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -32,10 +33,9 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
     final SqlTestPrepareTables tablePreparation;
     final SqlTestPrepareViews viewPreparation;
     protected final CompilerOptions compilerOptions;
-    static final String rustDirectory = "../temp/src/";
-    static final String jitExecutableDirectory = "..";
     int toSkip = 0;
     int batchSize = 10000;
+    static final String jitExecutableDirectory = Main.rustDirectory + "../../..";
 
     public JitDbspExecutor(JdbcExecutor executor,
                            OptionsParser.SuppliedOptions options,
@@ -149,7 +149,7 @@ public class JitDbspExecutor extends SqlSltTestExecutor {
 
         int remainingInBatch = this.batchSize;
         JitTestBatch batch = new JitTestBatch(
-                this.compilerOptions, this.options, rustDirectory, jitExecutableDirectory, queryNo);
+                this.compilerOptions, this.options, Main.rustDirectory, jitExecutableDirectory, queryNo);
         for (ISqlTestOperation operation: testFile.fileContents) {
             SltSqlStatement stat = operation.as(SltSqlStatement.class);
             if (stat != null) {

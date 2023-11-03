@@ -64,8 +64,6 @@ import java.util.concurrent.atomic.AtomicReference;
  * Sql test executor that uses DBSP for query execution.
  */
 public class DBSPExecutor extends SqlSltTestExecutor {
-    static final String rustDirectory = "../temp/src/";
-    static final String testFileName = "lib";
     private final boolean execute;
     public final CompilerOptions compilerOptions;
 
@@ -176,7 +174,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     extraArgs[0] = "--features";
                     extraArgs[1] = "jit";
                 }
-                Utilities.compileAndTestRust(rustDirectory, true, extraArgs);
+                Utilities.compileAndTestRust(Main.rustDirectory, true, extraArgs);
             }
             this.queriesToRun.clear();
             System.out.println(elapsedTime(queryNo));
@@ -294,8 +292,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     }
 
     void cleanupFilesystem() {
-        File directory = new File(rustDirectory);
-        FilenameFilter filter = (dir, name) -> name.startsWith(testFileName) || name.endsWith("csv");
+        File directory = new File(Main.rustDirectory);
+        FilenameFilter filter = (dir, name) -> name.startsWith(Main.testFileName) || name.endsWith("csv");
         File[] files = directory.listFiles(filter);
         if (files == null)
             return;
@@ -543,8 +541,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             List<DBSPFunction> inputFunctions,
             List<ProgramAndTester> functions
     ) throws FileNotFoundException, UnsupportedEncodingException {
-        String genFileName = testFileName + ".rs";
-        String testFilePath = rustDirectory + "/" + genFileName;
+        String genFileName = Main.testFileName + ".rs";
+        String testFilePath = Main.rustDirectory + "/" + genFileName;
         PrintStream stream = new PrintStream(testFilePath, "UTF-8");
         RustFileWriter rust = new RustFileWriter(compiler, stream);
 

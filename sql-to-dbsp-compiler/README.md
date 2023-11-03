@@ -23,7 +23,7 @@ to also install graphviz as described here <https://graphviz.org/download/>.
 
 ## Building
 
-To build the compiler, `cd` into the `SQL-compiler` directory and run:
+To build the compiler run:
 ```
 mvn -DskipTests package
 ```
@@ -90,7 +90,7 @@ See the [documentation](https://www.feldera.com/docs/sql/intro)
 
 ## Compiler architecture
 
-[A presentation](https://github.com/feldera/feldera/blob/main/docs/static/sql-compiler-architecture.pptx)
+[A presentation](https://mihaibudiu.github.io/work/sql-compiler-architecture23.pptx)
 about the internals of the compiler implementation.
 
 Compilation proceeds in several stages:
@@ -153,7 +153,6 @@ We hope to speed that up at some point.
 To start running these tests:
 
 ```
-$ cd SQL-compiler
 $ ./run-tests.sh
 ```
 
