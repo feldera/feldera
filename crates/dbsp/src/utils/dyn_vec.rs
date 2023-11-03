@@ -168,7 +168,7 @@ where
     /// Panics if `idx >= self.len()` or
     /// `self.vtable().type_id() != TypeId::of::<T>()`.
     pub fn index_as<T: 'static>(&self, idx: usize) -> &T {
-        if TypeId::of::<T>() != self.vtable().type_id() {
+        if cfg!(debug_assertions) && TypeId::of::<T>() != self.vtable().type_id() {
             mismatched_index_type_ids(any::type_name::<T>(), self.vtable().type_name())
         }
 
@@ -215,7 +215,7 @@ where
 
     /// Push a value to the current vector
     pub fn push<T: 'static>(&mut self, value: T) {
-        if !self.contains_type::<T>() {
+        if cfg!(debug_assertions) && !self.contains_type::<T>() {
             mismatched_push_type_ids(any::type_name::<T>(), self.vtable().type_name());
         }
 
@@ -278,7 +278,7 @@ where
 
     /// Append elements in range `[start..end]` of `other` to `self`.
     pub fn clone_from_range(&mut self, other: &Self, Range { start, end }: Range<usize>) {
-        if self.vtable().type_id() != other.vtable().type_id() {
+        if cfg!(debug_assertions) && self.vtable().type_id() != other.vtable().type_id() {
             mismatched_push_type_ids(other.vtable().type_name(), self.vtable().type_name());
         } else if start == end {
             return;
@@ -644,7 +644,7 @@ where
     VTable: DynVecVTable,
 {
     fn eq(&self, other: &Self) -> bool {
-        if self.vtable().type_id() != other.vtable().type_id() {
+        if cfg!(debug_assertions) && self.vtable().type_id() != other.vtable().type_id() {
             mismatched_push_type_ids(other.vtable().type_name(), self.vtable().type_name());
         } else if self.len() != other.len() {
             return false;
