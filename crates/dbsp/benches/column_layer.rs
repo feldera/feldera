@@ -4,8 +4,8 @@ use dbsp::{
     trace::{
         consolidation::consolidate,
         layers::{
-            column_layer::{ColumnLayer, ColumnLayerBuilder},
-            Builder, MergeBuilder, Trie, TupleBuilder,
+            column_layer::ColumnLayer, erased::TypedLayer, Builder, MergeBuilder, Trie,
+            TupleBuilder,
         },
     },
 };
@@ -17,10 +17,11 @@ const SEED: [u8; 32] = [
     0x11, 0x7d, 0xc, 0xe4, 0x64, 0xbf, 0x72, 0x17, 0x46, 0x28, 0x46, 0x42, 0xb2, 0x4b, 0x72, 0x18,
 ];
 
-fn data_leaf<K, R>(length: usize) -> ColumnLayer<K, R>
+fn data_leaf<K, R, L>(length: usize) -> L
 where
     K: Ord + Clone,
     R: MonoidValue,
+    L: Trie<Item = (K, R)>,
     Standard: Distribution<(K, R)>,
 {
     let mut rng = Xoshiro256StarStar::from_seed(SEED);
@@ -31,15 +32,16 @@ where
     }
     consolidate(&mut data);
 
-    let mut builder = <ColumnLayerBuilder<K, R> as TupleBuilder>::with_capacity(length);
+    let mut builder = <L::TupleBuilder>::with_capacity(length);
     builder.extend_tuples(data.into_iter());
     builder.done()
 }
 
-fn data_leaves<K, R>(length: usize) -> (ColumnLayer<K, R>, ColumnLayer<K, R>)
+fn data_leaves<K, R, L>(length: usize) -> (L, L)
 where
     K: Ord + Clone,
     R: MonoidValue,
+    L: Trie<Item = (K, R)>,
     Standard: Distribution<(K, R)>,
 {
     let mut rng = Xoshiro256StarStar::from_seed(SEED);
@@ -55,8 +57,8 @@ where
     consolidate(&mut right);
 
     let (mut right_builder, mut left_builder) = (
-        <ColumnLayerBuilder<K, R> as TupleBuilder>::with_capacity(length / 2),
-        <ColumnLayerBuilder<K, R> as TupleBuilder>::with_capacity(length / 2),
+        <L::TupleBuilder>::with_capacity(length / 2),
+        <L::TupleBuilder>::with_capacity(length / 2),
     );
 
     left_builder.extend_tuples(left.into_iter());
@@ -66,17 +68,17 @@ where
 }
 
 macro_rules! leaf_benches {
-    ($($name:literal = $size:literal),* $(,)?) => {
+    ($($name:literal = [$layer:ident]$size:literal),* $(,)?) => {
         fn merge_ordered_column_leaf_builder(c: &mut Criterion) {
             let mut group = c.benchmark_group("ordered-builder-push-merge");
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<usize, isize>($size);
+                    let (left, right) = data_leaves::<usize, isize, $layer<_,_>>($size);
 
                     b.iter_batched(
                         || (left.cursor(), right.cursor()),
                         |(left, right)| {
-                            let mut builder = ColumnLayerBuilder::new();
+                            let mut builder = <$layer<_,_> as Trie>::MergeBuilder::new();
                             builder.push_merge(left, right);
                         },
                         BatchSize::PerIteration,
@@ -91,7 +93,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<usize, isize>($size);
+                    let (left, right) = data_leaves::<usize, isize, $layer<_,_>>($size);
 
                     b.iter_batched(
                         || (left.clone(), right.clone()),
@@ -106,7 +108,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<usize, isize>($size);
+                    let (left, right) = data_leaves::<usize, isize, $layer<_,_>>($size);
 
                     b.iter_batched(
                         || (&left, &right),
@@ -121,7 +123,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<usize, isize>($size);
+                    let (left, right) = data_leaves::<usize, isize, $layer<_,_>>($size);
 
                     b.iter_batched(
                         || (left.clone(), right.clone()),
@@ -136,7 +138,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<usize, isize>($size);
+                    let (left, right) = data_leaves::<usize, isize, $layer<_,_>>($size);
 
                     b.iter_batched(
                         || (left.clone(), &right),
@@ -151,7 +153,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let leaf = data_leaf::<usize, isize>($size);
+                    let leaf = data_leaf::<usize, isize, $layer<usize, isize>>($size);
 
                     b.iter_batched(
                         || leaf.clone(),
@@ -166,7 +168,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let leaf = data_leaf::<usize, isize>($size);
+                    let leaf = data_leaf::<usize, isize, $layer<usize, isize>>($size);
 
                     b.iter_batched(
                         || &leaf,
@@ -181,15 +183,24 @@ macro_rules! leaf_benches {
 }
 
 leaf_benches! {
-    "0" = 0,
-    "10" = 10,
-    "100" = 100,
-    "1000" = 1000,
-    "10,000" = 10_000,
-    "100,000" = 100_000,
-    "1,000,000" = 1_000_000,
-    "10,000,000" = 10_000_000,
-    "100,000,000" = 100_000_000,
+    "0" = [ColumnLayer]0,
+    "0-erased" = [TypedLayer]0,
+    "10" = [ColumnLayer]10,
+    "10-erased" = [TypedLayer]10,
+    "100" = [ColumnLayer]100,
+    "100-erased" = [TypedLayer]100,
+    "1000" = [ColumnLayer]1000,
+    "1000-erased" = [TypedLayer]1000,
+    "10,000" = [ColumnLayer]10_000,
+    "10,000-erased" = [TypedLayer]10_000,
+    "100,000" = [ColumnLayer]100_000,
+    "100,000-erased" = [TypedLayer]100_000,
+    "1,000,000" = [ColumnLayer]1_000_000,
+    "1,000,000-erased" = [TypedLayer]1_000_000,
+    "10,000,000" = [ColumnLayer]10_000_000,
+    "10,000,000-erased" = [TypedLayer]10_000_000,
+    "100,000,000" = [ColumnLayer]100_000_000,
+    "100,000,000-erased" = [TypedLayer]100_000_000,
 }
 
 criterion_group!(benches, column_leaf, merge_ordered_column_leaf_builder,);
