@@ -474,7 +474,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         {
             Err(e) => {
                 // Cannot reach the pipeline.
-                self.mark_pipeline_as_failed(pipeline, Some(e)).await?;
+                if pipeline.current_status != PipelineStatus::Failed {
+                    self.mark_pipeline_as_failed(pipeline, Some(e)).await?;
+                }
             }
             Ok((status, body)) => {
                 if !status.is_success() {
@@ -519,7 +521,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         self.update_pipeline_status(pipeline, PipelineStatus::Running, None)
                             .await;
                         self.update_pipeline_runtime_state(pipeline).await?;
-                    } else if state != "Paused" && state != "Running" {
+                    } else if state != "Paused"
+                        && state != "Running"
+                        && pipeline.current_status != PipelineStatus::Failed
+                    {
                         self.mark_pipeline_as_failed(pipeline, Some(RunnerError::HttpForwardError {
                                         pipeline_id: self.pipeline_id,
                                         error: format!("Pipeline reported unexpected status '{state}', expected 'Paused' or 'Running'")
