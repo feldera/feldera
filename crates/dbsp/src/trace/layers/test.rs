@@ -1,10 +1,17 @@
 //! Test various implementations of `trait Trie`.
 
 use super::{
-    column_layer::ColumnLayer, ordered::OrderedLayer, ordered_leaf::OrderedLeaf, Builder, Cursor,
-    Trie, TupleBuilder,
+    column_layer::ColumnLayer,
+    erased::{IntoErasedDiff, TypedErasedLeaf},
+    ordered::OrderedLayer,
+    ordered_leaf::OrderedLeaf,
+    Builder, Cursor, Trie, TupleBuilder,
 };
-use crate::{algebra::HasZero, trace::consolidation::consolidate, DBData, DBWeight};
+use crate::{
+    algebra::HasZero,
+    trace::{consolidation::consolidate, layers::erased::TypedErasedKeyLeaf},
+    DBData, DBWeight,
+};
 use proptest::{collection::vec, prelude::*};
 use std::collections::BTreeMap;
 
@@ -236,6 +243,80 @@ fn column_layer_to_map1_reverse<T, R>(trie: &ColumnLayer<T, R>) -> Map1<T, R>
 where
     T: DBData,
     R: DBWeight,
+{
+    let mut result: Map1<T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+    cursor.fast_forward();
+
+    while cursor.valid() {
+        let (t, r) = Cursor::item(&cursor);
+        result.insert(t.clone(), r.clone());
+        cursor.step_reverse();
+    }
+
+    result
+}
+
+fn typed_erased_leaf_to_map1<T, R>(trie: &TypedErasedLeaf<T, R>) -> Map1<T, R>
+where
+    T: DBData,
+    R: DBWeight + IntoErasedDiff,
+{
+    let mut result: Map1<T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+
+    while cursor.valid() {
+        let (t, r) = Cursor::item(&cursor);
+        result.insert(t.clone(), r.clone());
+        cursor.step();
+    }
+
+    result
+}
+
+fn typed_erased_leaf_to_map1_reverse<T, R>(trie: &TypedErasedLeaf<T, R>) -> Map1<T, R>
+where
+    T: DBData,
+    R: DBWeight + IntoErasedDiff,
+{
+    let mut result: Map1<T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+    cursor.fast_forward();
+
+    while cursor.valid() {
+        let (t, r) = Cursor::item(&cursor);
+        result.insert(t.clone(), r.clone());
+        cursor.step_reverse();
+    }
+
+    result
+}
+
+fn typed_erased_key_leaf_to_map1<T, R>(trie: &TypedErasedKeyLeaf<T, R>) -> Map1<T, R>
+where
+    T: DBData,
+    R: DBWeight + IntoErasedDiff,
+{
+    let mut result: Map1<T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+
+    while cursor.valid() {
+        let (t, r) = Cursor::item(&cursor);
+        result.insert(t.clone(), r.clone());
+        cursor.step();
+    }
+
+    result
+}
+
+fn typed_erased_key_leaf_to_map1_reverse<T, R>(trie: &TypedErasedKeyLeaf<T, R>) -> Map1<T, R>
+where
+    T: DBData,
+    R: DBWeight + IntoErasedDiff,
 {
     let mut result: Map1<T, R> = BTreeMap::new();
 
@@ -757,6 +838,7 @@ where
 
     // Truncate tries at the start, middle, and end.
     for lower_bound in [0, merged_trie.keys() >> 1, merged_trie.keys()] {
+        println!("lower_bound: {lower_bound}");
         merged_trie.truncate_below(lower_bound);
         assert_eq_trie_map1(
             &merged_trie,
@@ -859,6 +941,14 @@ proptest! {
         test_trie1::<_, _, OrderedLeaf<_, _>, _>(&left, &right, &ordered_leaf_to_map1_reverse);
         test_trie1::<_, _, ColumnLayer<_, _>, _>(&left, &right, &column_layer_to_map1);
         test_trie1::<_, _, ColumnLayer<_, _>, _>(&left, &right, &column_layer_to_map1_reverse);
+    }
+
+    #[test]
+    fn test_erased_leaf_layers(left in tuples1(10, 3, 5000), right in tuples1(10, 3, 5000)) {
+        test_trie1::<_, _, TypedErasedLeaf<_, _>, _>(&left, &right, &typed_erased_leaf_to_map1);
+        test_trie1::<_, _, TypedErasedLeaf<_, _>, _>(&left, &right, &typed_erased_leaf_to_map1_reverse);
+        test_trie1::<_, _, TypedErasedKeyLeaf<_, _>, _>(&left, &right, &typed_erased_key_leaf_to_map1);
+        test_trie1::<_, _, TypedErasedKeyLeaf<_, _>, _>(&left, &right, &typed_erased_key_leaf_to_map1_reverse);
     }
 
     #[test]
