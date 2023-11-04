@@ -1,6 +1,6 @@
 import { useInsertDeleteRows } from '$lib/compositions/streaming/inspection/useDeleteRows'
 import { PipelineStatus } from '$lib/types/pipeline'
-import { useCallback } from 'react'
+import { ReactNode, useCallback } from 'react'
 
 import {
   GridRowId,
@@ -16,7 +16,13 @@ import {
 import { RowDeleteButton } from './RowDeleteButton'
 
 export const InspectionToolbar = (
-  props: GridToolbarProps & { pipelineId: string; status: PipelineStatus; relation: string; isReadonly: boolean }
+  props: GridToolbarProps & {
+    pipelineId: string
+    status: PipelineStatus
+    relation: string
+    isReadonly: boolean
+    before: ReactNode
+  }
 ) => {
   const { csvOptions, printOptions, excelOptions } = props
   const gridRef = useGridApiContext()
@@ -35,6 +41,7 @@ export const InspectionToolbar = (
   )
   return (
     <GridToolbarContainer>
+      {props.before}
       <GridToolbarColumnsButton />
       <GridToolbarDensitySelector />
       <GridToolbarExport

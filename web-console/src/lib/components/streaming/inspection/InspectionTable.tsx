@@ -7,7 +7,7 @@ import { InspectionToolbar } from '$lib/components/streaming/inspection/Inspecti
 import { PercentilePagination } from '$lib/components/streaming/inspection/PercentilePagination'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
-import useTableUpdater from '$lib/compositions/streaming/inspection/useTableUpdater'
+import { useTableUpdater } from '$lib/compositions/streaming/inspection/useTableUpdater'
 import { useAsyncError } from '$lib/functions/common/react'
 import { Row, rowToAnchor } from '$lib/functions/ddl'
 import { NeighborhoodQuery, OpenAPI, Relation } from '$lib/services/manager'
@@ -16,7 +16,10 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline } from '$lib/types/pipeline'
 import { useCallback, useEffect, useState } from 'react'
 import invariant from 'tiny-invariant'
+import IconResume from '~icons/bx/caret-right-circle'
+import IconPause from '~icons/bx/pause-circle'
 
+import { IconButton, Tooltip } from '@mui/material'
 import Card from '@mui/material/Card'
 import { GridPaginationModel, GridRowSelectionModel } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
@@ -58,7 +61,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   const [isLoading, setLoading] = useState<boolean>(true)
 
   const { pushMessage } = useStatusNotification()
-  const tableUpdater = useTableUpdater()
+  const { updateTable, pause, resume } = useTableUpdater()
 
   const throwError = useAsyncError()
   const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.descriptor.pipeline_id))
@@ -103,7 +106,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
         name +
         '?format=csv&query=neighborhood&mode=watch'
     )
-    tableUpdater(url, neighborhood, setRows, setLoading, relation, controller).then(
+    updateTable(url, neighborhood, setRows, setLoading, relation, controller).then(
       () => {
         // nothing to do here, the tableUpdater will update the table
       },
@@ -124,7 +127,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
       // requests and we don't want to exhaust that limit)
       controller.abort()
     }
-  }, [pipeline, name, relation, tableUpdater, throwError, neighborhood])
+  }, [pipeline, name, relation, updateTable, throwError, neighborhood])
 
   // Load quantiles for the relation we're displaying.
   const quantileLoader = useQuantiles()
@@ -243,7 +246,9 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
     isLoading,
     handlePaginationModelChange,
     paginationModel,
-    pipelineRevisionQuery
+    pipelineRevisionQuery,
+    pause,
+    resume
   }
 }
 
@@ -273,7 +278,9 @@ const InspectionTableImpl = ({
   isLoading,
   handlePaginationModelChange,
   paginationModel,
-  pipelineRevisionQuery
+  pipelineRevisionQuery,
+  pause,
+  resume
 }: ReturnType<typeof useInspectionTable>) => {
   invariant(relation)
   const [rowSelectionModel, setRowSelectionModel] = useState<GridRowSelectionModel>([])
@@ -352,12 +359,29 @@ const InspectionTableImpl = ({
             status: pipeline.state.current_status,
             relation: relation.name,
             isReadonly,
-            children: (
+            before: [
+              !!pause && (
+                <Tooltip title='Pause streaming row updates' key='pause'>
+                  <IconButton onClick={pause}>
+                    <IconPause></IconPause>
+                  </IconButton>
+                </Tooltip>
+              ),
+              !!resume && (
+                <Tooltip title='Resume streaming row updates' key='resume'>
+                  <IconButton onClick={resume}>
+                    <IconResume></IconResume>
+                  </IconButton>
+                </Tooltip>
+              )
+            ],
+            children: [
               <ResetColumnViewButton
+                key='resetColumnView'
                 setColumnViewModel={gridPersistence.setColumnViewModel}
                 setColumnVisibilityModel={() => gridPersistence.setColumnVisibilityModel(defaultColumnVisibility)}
               />
-            )
+            ]
           }
         }}
         loading={isLoading}
