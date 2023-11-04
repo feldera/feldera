@@ -68,6 +68,7 @@ actix-http = "3.3.1"
 serial_test = "2.0.0"
 aws-sdk-cognitoidentityprovider = "0.28.0"
 aws-config = "0.55.3"
+wiremock = "0.5"
 
 # Used in integration tests
 [dev-dependencies.tokio]
