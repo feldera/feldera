@@ -1,7 +1,0 @@
-// This file contains a list of SqlLogicTest which I believe are
-// buggy when using Postgres.  Each line is a statement or query that
-// is buggy, without newlines.  Lines starting with // are ignored.
-INSERT OR REPLACE INTO t1 VALUES(2, 'insert or replace')
-// Expected to fail
-REPLACE INTO t1 VALUES(2, 'replace')
-// Expected to pass

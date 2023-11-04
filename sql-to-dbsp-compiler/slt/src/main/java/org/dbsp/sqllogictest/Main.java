@@ -47,8 +47,12 @@ import java.util.concurrent.atomic.AtomicReference;
  * Execute all SqlLogicTest tests.
  */
 public class Main {
+    public static final String rustDirectory = "./temp/src/";
+    public static final String testFileName = "lib";
+
     @SuppressWarnings("SpellCheckingInspection")
-    public static void main(String[] argv) throws IOException {
+    public static void main(String[] argv) throws IOException, ClassNotFoundException {
+        Class.forName("org.hsqldb.jdbcDriver");
         List<String> files = Linq.list(
                 "test/index/between/100/slt_good_3.test"
                 /*
@@ -78,7 +82,6 @@ public class Main {
         String[] args = {
                 "-v", "-x",
                 "-e", "hybrid",      // executor
-                "-skip", "710"
         };
         if (argv.length > 0) {
             args = argv;

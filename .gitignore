@@ -19,7 +19,7 @@ lcov.info
 #
 # already existing elements were commented out
 
-/target
+**/target
 #Cargo.lock
 
 # vim swap files
