@@ -62,7 +62,7 @@ impl Debug for ErasedLeaf {
 }
 
 impl ErasedLeaf {
-    pub fn new(key_vtable: &'static DataVTable, diff_vtable: &'static DiffVTable) -> ErasedLeaf {
+    pub fn new(key_vtable: &DataVTable, diff_vtable: &DiffVTable) -> ErasedLeaf {
         Self {
             keys: DynVec::new(key_vtable),
             diffs: DynVec::new(diff_vtable),
@@ -71,8 +71,8 @@ impl ErasedLeaf {
     }
 
     pub fn with_capacity(
-        key_vtable: &'static DataVTable,
-        diff_vtable: &'static DiffVTable,
+        key_vtable: &DataVTable,
+        diff_vtable: &DiffVTable,
         capacity: usize,
     ) -> ErasedLeaf {
         Self {
@@ -174,8 +174,6 @@ impl ErasedLeaf {
         debug_assert_eq!(self.value_types(), lhs.value_types());
         debug_assert_eq!(self.value_types(), rhs.value_types());
 
-        let (key_common, diff_common) = (self.keys.vtable().common, self.diffs.vtable().common);
-
         let reserved = (upper1 - lower1) + (upper2 - lower2);
         self.reserve(reserved);
 
@@ -186,7 +184,9 @@ impl ErasedLeaf {
         // while both mergees are still active
         while lower1 < upper1 && lower2 < upper2 {
             // Safety: All involved types are the same
-            let order = unsafe { (key_common.cmp)(lhs.keys.index(lower1), rhs.keys.index(lower2)) };
+            let order = unsafe {
+                (self.keys.vtable().common.cmp)(lhs.keys.index(lower1), rhs.keys.index(lower2))
+            };
 
             match order {
                 Ordering::Less => {
@@ -194,7 +194,7 @@ impl ErasedLeaf {
                     let step = 1 + advance_erased(
                         lhs.keys.range(lower1 + 1..upper1),
                         self.key_size(),
-                        |x| unsafe { (key_common.lt)(x, rhs.keys.index(lower2)) },
+                        |x| unsafe { (self.keys.vtable().common.lt)(x, rhs.keys.index(lower2)) },
                     );
 
                     unsafe { self.extend_from_range(lhs, lower1, lower1 + step) };
@@ -215,7 +215,10 @@ impl ErasedLeaf {
                         // If the produced diff is not zero, push the key and its merged diff
                         if !(self.diffs.vtable().is_zero)(diff_buf.as_ptr().cast()) {
                             // Clone the element at `lhs[lower1]` into `key_buf`
-                            (key_common.clone)(lhs.keys.index(lower1), key_buf.as_mut_ptr().cast());
+                            (self.keys.vtable().common.clone)(
+                                lhs.keys.index(lower1),
+                                key_buf.as_mut_ptr().cast(),
+                            );
 
                             // Push the raw values to the layer
                             self.push_raw(key_buf.as_ptr().cast(), diff_buf.as_ptr().cast());
@@ -224,7 +227,9 @@ impl ErasedLeaf {
                         } else {
                             // FIXME: If `is_zero` or `clone` panic, the value within `diff_buf` can
                             // potentially leak
-                            (diff_common.drop_in_place)(diff_buf.as_mut_ptr().cast());
+                            (self.diffs.vtable().common.drop_in_place)(
+                                diff_buf.as_mut_ptr().cast(),
+                            );
                         }
                     }
 
@@ -237,7 +242,7 @@ impl ErasedLeaf {
                     let step = 1 + advance_erased(
                         rhs.keys.range(lower2 + 1..upper2),
                         self.key_size(),
-                        |x| unsafe { (key_common.lt)(x, lhs.keys.index(lower1)) },
+                        |x| unsafe { (self.keys.vtable().common.lt)(x, lhs.keys.index(lower1)) },
                     );
 
                     unsafe { self.extend_from_range(rhs, lower2, lower2 + step) };

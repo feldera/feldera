@@ -20,23 +20,23 @@ pub struct DynVec<VTable: DynVecVTable> {
     ptr: NonNull<u8>,
     length: usize,
     capacity: usize,
-    vtable: &'static VTable,
+    vtable: VTable,
 }
 
 impl<VTable> DynVec<VTable>
 where
     VTable: DynVecVTable,
 {
-    pub fn new(vtable: &'static VTable) -> Self {
+    pub fn new(vtable: &VTable) -> Self {
         Self {
             ptr: vtable.dangling(),
             length: 0,
             capacity: if vtable.is_zst() { usize::MAX } else { 0 },
-            vtable,
+            vtable: vtable.clone(),
         }
     }
 
-    pub fn with_capacity(vtable: &'static VTable, capacity: usize) -> Self {
+    pub fn with_capacity(vtable: &VTable, capacity: usize) -> Self {
         let mut this = Self::new(vtable);
         this.reserve_exact(capacity);
         this
@@ -67,8 +67,8 @@ where
         self.capacity
     }
 
-    pub const fn vtable(&self) -> &'static VTable {
-        self.vtable
+    pub const fn vtable(&self) -> &VTable {
+        &self.vtable
     }
 
     pub const fn as_ptr(&self) -> *const u8 {
@@ -135,7 +135,7 @@ where
             self.set_len(0);
 
             // Drop all elements
-            self.vtable().drop_slice_in_place(self.as_mut_ptr(), length);
+            self.vtable.drop_slice_in_place(self.ptr.as_ptr(), length);
         }
     }
 
@@ -294,7 +294,7 @@ where
         unsafe {
             self.vtable().clone_slice(
                 range_start,
-                self.as_mut_ptr().add(self.len() * self.vtable().size_of()),
+                self.ptr.as_ptr().add(self.len() * self.vtable().size_of()),
                 elements,
             );
         }
@@ -583,7 +583,7 @@ where
         }
 
         f.debug_list()
-            .entries(self.iter().map(|x| DebugErased(x, self.vtable)))
+            .entries(self.iter().map(|x| DebugErased(x, &self.vtable)))
             .finish()
     }
 }
@@ -675,7 +675,7 @@ where
 ///
 /// - [`DynVecVTable::align_of`] must return a non-zero power of two
 /// - The type the vtable is associated with must be [`Send`] and [`Sync`]
-pub unsafe trait DynVecVTable: Copy + Send + Sync + Sized + 'static {
+pub unsafe trait DynVecVTable: Clone + Send + Sync + Sized + 'static {
     fn size_of(&self) -> usize;
 
     fn align_of(&self) -> NonZeroUsize;
@@ -746,7 +746,7 @@ pub struct DynIter<'a, VTable: DynVecVTable> {
     // for both ZST and non-ZST types.
     end: *const u8,
     size_of: usize,
-    vtable: &'static VTable,
+    vtable: &'a VTable,
     __marker: PhantomData<&'a ()>,
 }
 

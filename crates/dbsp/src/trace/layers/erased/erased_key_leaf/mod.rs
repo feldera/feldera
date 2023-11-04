@@ -169,8 +169,6 @@ impl<R> ErasedKeyLeaf<R> {
         // Ensure all the vtables are for the same type
         debug_assert_eq!(self.key_type(), lhs.key_type());
 
-        let key_common = self.keys.vtable().common;
-
         let reserved = (upper1 - lower1) + (upper2 - lower2);
         self.reserve(reserved);
 
@@ -180,7 +178,9 @@ impl<R> ErasedKeyLeaf<R> {
         // while both mergees are still active
         while lower1 < upper1 && lower2 < upper2 {
             // Safety: All involved types are the same
-            let order = unsafe { (key_common.cmp)(lhs.keys.index(lower1), rhs.keys.index(lower2)) };
+            let order = unsafe {
+                (self.keys.vtable().common.cmp)(lhs.keys.index(lower1), rhs.keys.index(lower2))
+            };
 
             match order {
                 Ordering::Less => {
@@ -188,7 +188,7 @@ impl<R> ErasedKeyLeaf<R> {
                     let step = 1 + advance_erased(
                         lhs.keys.range(lower1 + 1..upper1),
                         self.key_size(),
-                        |x| unsafe { (key_common.lt)(x, rhs.keys.index(lower2)) },
+                        |x| unsafe { (self.keys.vtable().common.lt)(x, rhs.keys.index(lower2)) },
                     );
 
                     unsafe { self.extend_from_range(lhs, lower1, lower1 + step) };
@@ -205,7 +205,10 @@ impl<R> ErasedKeyLeaf<R> {
                         // If the produced diff is not zero, push the key and its merged diff
                         if !w.is_zero() {
                             // Clone the element at `lhs[lower1]` into `key_buf`
-                            (key_common.clone)(lhs.keys.index(lower1), key_buf.as_mut_ptr().cast());
+                            (self.keys.vtable().common.clone)(
+                                lhs.keys.index(lower1),
+                                key_buf.as_mut_ptr().cast(),
+                            );
 
                             // Push the raw values to the layer
                             self.push_raw(key_buf.as_ptr().cast(), w);
@@ -221,7 +224,7 @@ impl<R> ErasedKeyLeaf<R> {
                     let step = 1 + advance_erased(
                         rhs.keys.range(lower2 + 1..upper2),
                         self.key_size(),
-                        |x| unsafe { (key_common.lt)(x, lhs.keys.index(lower1)) },
+                        |x| unsafe { (self.keys.vtable().common.lt)(x, lhs.keys.index(lower1)) },
                     );
 
                     unsafe { self.extend_from_range(rhs, lower2, lower2 + step) };
