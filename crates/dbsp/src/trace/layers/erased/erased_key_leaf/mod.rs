@@ -1,14 +1,12 @@
 mod builders;
-mod consumer;
 mod cursor;
 
-use super::{DataVTable, DiffVTable, IntoErasedData, IntoErasedDiff};
-pub use builders::{TypedErasedLeafBuilder, UnorderedTypedLayerBuilder};
-pub use consumer::{TypedLayerConsumer, TypedLayerValues};
-pub use cursor::TypedLayerCursor;
+use super::{DataVTable, IntoErasedData};
+pub use builders::{TypedErasedKeyLeafBuilder, UnorderedTypedLayerBuilder};
+pub use cursor::TypedKeyLeafCursor;
 
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, NegByRef},
+    algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     trace::layers::{advance_erased, Trie},
     utils::{uninit_vec, DynVec, DynVecVTable},
     NumEntries,
@@ -19,7 +17,7 @@ use std::{
     cmp::{min, Ordering},
     fmt::{self, Debug},
     marker::PhantomData,
-    ops::{Add, AddAssign, Neg, RangeBounds},
+    ops::{Add, AddAssign, Index, Neg},
 };
 
 // TODO: the `diff` type is fixed in most use cases (the `weighted` operator
@@ -27,13 +25,13 @@ use std::{
 // a verson of this with a statically typed diff type).
 
 #[derive(Clone, SizeOf)]
-pub struct ErasedLeaf {
+pub struct ErasedKeyLeaf<R> {
     keys: DynVec<DataVTable>,
-    diffs: DynVec<DiffVTable>,
+    diffs: Vec<R>,
     lower_bound: usize,
 }
 
-impl Debug for ErasedLeaf {
+impl<R: Debug> Debug for ErasedKeyLeaf<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct DebugPtr(
             *const u8,
@@ -53,7 +51,7 @@ impl Debug for ErasedLeaf {
         let mut map = f.debug_map();
         for idx in 0..self.len() {
             let key = DebugPtr(self.keys.index(idx), self.keys.vtable().common.debug);
-            let diff = DebugPtr(self.diffs.index(idx), self.diffs.vtable().common.debug);
+            let diff = self.diffs.index(idx);
             map.entry(&key, &diff);
         }
 
@@ -61,23 +59,19 @@ impl Debug for ErasedLeaf {
     }
 }
 
-impl ErasedLeaf {
-    pub fn new(key_vtable: &'static DataVTable, diff_vtable: &'static DiffVTable) -> ErasedLeaf {
+impl<R> ErasedKeyLeaf<R> {
+    pub fn new(key_vtable: &'static DataVTable) -> ErasedKeyLeaf<R> {
         Self {
             keys: DynVec::new(key_vtable),
-            diffs: DynVec::new(diff_vtable),
+            diffs: Vec::new(),
             lower_bound: 0,
         }
     }
 
-    pub fn with_capacity(
-        key_vtable: &'static DataVTable,
-        diff_vtable: &'static DiffVTable,
-        capacity: usize,
-    ) -> ErasedLeaf {
+    pub fn with_capacity(key_vtable: &'static DataVTable, capacity: usize) -> ErasedKeyLeaf<R> {
         Self {
             keys: DynVec::with_capacity(key_vtable, capacity),
-            diffs: DynVec::with_capacity(diff_vtable, capacity),
+            diffs: Vec::with_capacity(capacity),
             lower_bound: 0,
         }
     }
@@ -96,10 +90,6 @@ impl ErasedLeaf {
         self.keys.vtable().common.size_of
     }
 
-    const fn diff_size(&self) -> usize {
-        self.diffs.vtable().common.size_of
-    }
-
     fn reserve(&mut self, additional: usize) {
         self.keys.reserve(additional);
         self.diffs.reserve(additional);
@@ -111,7 +101,10 @@ impl ErasedLeaf {
     /// # Safety
     ///
     /// The key and diff types of both layers must be the same
-    unsafe fn extend_from_range(&mut self, source: &ErasedLeaf, lower: usize, upper: usize) {
+    unsafe fn extend_from_range(&mut self, source: &ErasedKeyLeaf<R>, lower: usize, upper: usize)
+    where
+        R: Clone,
+    {
         debug_assert!(lower <= source.len() && upper <= source.len());
         if lower == upper {
             return;
@@ -121,16 +114,16 @@ impl ErasedLeaf {
         self.keys.clone_from_range(&source.keys, lower..upper);
 
         // Extend with the given diffs
-        self.diffs.clone_from_range(&source.diffs, lower..upper);
+        self.diffs.extend_from_slice(&source.diffs[lower..upper]);
     }
 
-    fn push<K: 'static, R: 'static>(&mut self, (key, diff): (K, R)) {
+    fn push<K: 'static>(&mut self, (key, diff): (K, R)) {
         debug_assert_eq!(self.keys.len(), self.diffs.len());
         self.keys.push(key);
         self.diffs.push(diff);
     }
 
-    fn extend<K, R, I>(&mut self, tuples: I)
+    fn extend<K, I>(&mut self, tuples: I)
     where
         K: 'static,
         R: 'static,
@@ -142,25 +135,25 @@ impl ErasedLeaf {
         let extra = max.unwrap_or(min);
         self.reserve(extra);
 
-        assert!(self.keys.contains_type::<K>() && self.diffs.contains_type::<R>());
+        assert!(self.keys.contains_type::<K>());
         for (key, diff) in tuples {
             // Safety: We checked that the types are correct earlier
             unsafe {
                 self.keys.push_untypechecked(key);
-                self.diffs.push_untypechecked(diff);
+                self.diffs.push(diff);
             }
         }
     }
 
-    unsafe fn push_raw(&mut self, key: *const u8, diff: *const u8) {
+    unsafe fn push_raw(&mut self, key: *const u8, diff: R) {
         debug_assert_eq!(self.keys.len(), self.diffs.len());
         self.keys.push_raw(key);
-        self.diffs.push_raw(diff);
+        self.diffs.push(diff);
     }
 
-    /// Returns the [`TypeId`]s of the current layer's key and difference
-    fn value_types(&self) -> (TypeId, TypeId) {
-        (self.keys.vtable().type_id(), self.diffs.vtable().type_id())
+    /// Returns the [`TypeId`]s of the current layer's key.
+    fn key_type(&self) -> TypeId {
+        self.keys.vtable().type_id()
     }
 
     fn push_merge(
@@ -169,19 +162,20 @@ impl ErasedLeaf {
         (mut lower1, upper1): (usize, usize),
         rhs: &Self,
         (mut lower2, upper2): (usize, usize),
-    ) -> usize {
+    ) -> usize
+    where
+        R: Eq + HasZero + AddByRef + Clone,
+    {
         // Ensure all the vtables are for the same type
-        debug_assert_eq!(self.value_types(), lhs.value_types());
-        debug_assert_eq!(self.value_types(), rhs.value_types());
+        debug_assert_eq!(self.key_type(), lhs.key_type());
 
-        let (key_common, diff_common) = (self.keys.vtable().common, self.diffs.vtable().common);
+        let key_common = self.keys.vtable().common;
 
         let reserved = (upper1 - lower1) + (upper2 - lower2);
         self.reserve(reserved);
 
         // Create a buffer to hold any intermediate values we have to create
         let mut key_buf = uninit_vec::<u8>(self.key_size()).into_boxed_slice();
-        let mut diff_buf = uninit_vec::<u8>(self.diff_size()).into_boxed_slice();
 
         // while both mergees are still active
         while lower1 < upper1 && lower2 < upper2 {
@@ -206,25 +200,15 @@ impl ErasedLeaf {
                     // Safety: All involved types are the same
                     unsafe {
                         // Add `lhs[lower1]` and `rhs[lower2]`, storing the result in `diff_buf`
-                        (self.diffs.vtable().add_by_ref)(
-                            lhs.diffs.index(lower1),
-                            rhs.diffs.index(lower2),
-                            diff_buf.as_mut_ptr().cast(),
-                        );
+                        let w = lhs.diffs.index(lower1).add_by_ref(rhs.diffs.index(lower2));
 
                         // If the produced diff is not zero, push the key and its merged diff
-                        if !(self.diffs.vtable().is_zero)(diff_buf.as_ptr().cast()) {
+                        if !w.is_zero() {
                             // Clone the element at `lhs[lower1]` into `key_buf`
                             (key_common.clone)(lhs.keys.index(lower1), key_buf.as_mut_ptr().cast());
 
                             // Push the raw values to the layer
-                            self.push_raw(key_buf.as_ptr().cast(), diff_buf.as_ptr().cast());
-
-                        // Otherwise, drop the difference value
-                        } else {
-                            // FIXME: If `is_zero` or `clone` panic, the value within `diff_buf` can
-                            // potentially leak
-                            (diff_common.drop_in_place)(diff_buf.as_mut_ptr().cast());
+                            self.push_raw(key_buf.as_ptr().cast(), w);
                         }
                     }
 
@@ -260,99 +244,85 @@ impl ErasedLeaf {
         self.len()
     }
 
-    unsafe fn drop_range<R>(&mut self, range: R)
+    /*
+    unsafe fn drop_range<Rg>(&mut self, range: Rg)
     where
-        R: RangeBounds<usize> + Clone,
+        Rg: RangeBounds<usize> + Clone,
     {
         let (ptr, len) = self.keys.range_mut(range.clone());
         unsafe { self.keys.vtable().drop_slice_in_place(ptr, len) }
 
         let (ptr, len) = self.diffs.range_mut(range);
         unsafe { self.diffs.vtable().drop_slice_in_place(ptr, len) }
-    }
-
-    fn neg(mut self) -> Self {
-        unsafe {
-            (self.diffs.vtable().neg_slice)(self.diffs.as_mut_ptr(), self.diffs.len());
-        }
-
-        self
-    }
-
-    fn neg_by_ref(&self) -> Self {
-        let mut diffs = DynVec::with_capacity(self.diffs.vtable(), self.diffs.len());
-
-        unsafe {
-            (self.diffs.vtable().neg_slice_by_ref)(
-                self.diffs.as_ptr(),
-                diffs.as_mut_ptr(),
-                self.diffs.len(),
-            );
-
-            diffs.set_len(self.diffs.len());
-        }
-
-        // TODO: We can eliminate elements from `0..lower_bound` when creating the
-        // negated layer
-        Self {
-            keys: self.keys.clone(),
-            diffs,
-            lower_bound: self.lower_bound,
-        }
-    }
+    }*/
 }
 
-impl PartialEq for ErasedLeaf {
+impl<R: PartialEq> PartialEq for ErasedKeyLeaf<R> {
     fn eq(&self, other: &Self) -> bool {
-        self.value_types() == other.value_types()
+        self.key_type() == other.key_type()
             && self.len() == other.len()
             && self
                 .keys
                 .iter()
                 .zip(other.keys.iter())
                 .all(|(lhs, rhs)| unsafe { (self.keys.vtable().common.eq)(lhs, rhs) })
-            && self
-                .diffs
-                .iter()
-                .zip(other.diffs.iter())
-                .all(|(lhs, rhs)| unsafe { (self.diffs.vtable().common.eq)(lhs, rhs) })
+            && (self.diffs == other.diffs)
     }
 }
 
-impl Eq for ErasedLeaf {}
+impl<R: Eq> Eq for ErasedKeyLeaf<R> {}
+
+impl<R> NegByRef for ErasedKeyLeaf<R>
+where
+    R: NegByRef,
+{
+    fn neg_by_ref(&self) -> Self {
+        Self {
+            keys: self.keys.clone(),
+            diffs: self.diffs.iter().map(NegByRef::neg_by_ref).collect(),
+            lower_bound: self.lower_bound,
+        }
+    }
+}
+
+impl<R> Neg for ErasedKeyLeaf<R>
+where
+    R: Neg<Output = R>,
+{
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        Self {
+            keys: self.keys,
+            diffs: self.diffs.into_iter().map(Neg::neg).collect(),
+            lower_bound: self.lower_bound,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, SizeOf)]
-pub struct TypedErasedLeaf<K, R> {
-    layer: ErasedLeaf,
+pub struct TypedErasedKeyLeaf<K, R> {
+    layer: ErasedKeyLeaf<R>,
     __type: PhantomData<(K, R)>,
 }
 
-impl<K, R> TypedErasedLeaf<K, R> {
+impl<K, R> TypedErasedKeyLeaf<K, R> {
     pub fn new() -> Self
     where
         K: IntoErasedData,
-        R: IntoErasedDiff,
     {
         Self {
-            layer: ErasedLeaf::new(
-                &<K as IntoErasedData>::DATA_VTABLE,
-                &<R as IntoErasedDiff>::DIFF_VTABLE,
-            ),
+            layer: ErasedKeyLeaf::new(&<K as IntoErasedData>::DATA_VTABLE),
             __type: PhantomData,
         }
     }
 
-    pub fn with_capacity(capacity: usize) -> TypedErasedLeaf<K, R>
+    pub fn with_capacity(capacity: usize) -> TypedErasedKeyLeaf<K, R>
     where
         K: IntoErasedData,
-        R: IntoErasedDiff,
     {
         Self {
-            layer: ErasedLeaf::with_capacity(
-                &<K as IntoErasedData>::DATA_VTABLE,
-                &<R as IntoErasedDiff>::DIFF_VTABLE,
-                capacity,
-            ),
+            layer: ErasedKeyLeaf::with_capacity(&<K as IntoErasedData>::DATA_VTABLE, capacity),
             __type: PhantomData,
         }
     }
@@ -366,17 +336,17 @@ impl<K, R> TypedErasedLeaf<K, R> {
     }
 }
 
-impl<K, R> Trie for TypedErasedLeaf<K, R>
+impl<K, R> Trie for TypedErasedKeyLeaf<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: Clone + Eq + AddAssign + AddByRef + HasZero + 'static,
 {
     type Item = (K, R);
-    type Cursor<'s> = TypedLayerCursor<'s, K, R>
+    type Cursor<'s> = TypedKeyLeafCursor<'s, K, R>
     where
         K: 's,
         R: 's;
-    type MergeBuilder = TypedErasedLeafBuilder<K, R>;
+    type MergeBuilder = TypedErasedKeyLeafBuilder<K, R>;
     type TupleBuilder = UnorderedTypedLayerBuilder<K, R>;
 
     fn keys(&self) -> usize {
@@ -388,7 +358,7 @@ where
     }
 
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
-        TypedLayerCursor::new(lower, self, (lower, upper))
+        TypedKeyLeafCursor::new(lower, self, (lower, upper))
     }
 
     fn truncate_below(&mut self, lower_bound: usize) {
@@ -403,10 +373,10 @@ where
 }
 
 // TODO: by-value merge
-impl<K, R> Add<Self> for TypedErasedLeaf<K, R>
+impl<K, R> Add<Self> for TypedErasedKeyLeaf<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
 {
     type Output = Self;
 
@@ -422,10 +392,10 @@ where
     }
 }
 
-impl<K, R> AddAssign<Self> for TypedErasedLeaf<K, R>
+impl<K, R> AddAssign<Self> for TypedErasedKeyLeaf<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
 {
     fn add_assign(&mut self, rhs: Self) {
         if !rhs.is_empty() {
@@ -435,10 +405,10 @@ where
     }
 }
 
-impl<K, R> AddAssignByRef for TypedErasedLeaf<K, R>
+impl<K, R> AddAssignByRef for TypedErasedKeyLeaf<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
         if !other.is_empty() {
@@ -448,20 +418,20 @@ where
     }
 }
 
-impl<K, R> AddByRef for TypedErasedLeaf<K, R>
+impl<K, R> AddByRef for TypedErasedKeyLeaf<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
 {
     fn add_by_ref(&self, rhs: &Self) -> Self {
         self.merge(rhs)
     }
 }
 
-impl<K, R> NegByRef for TypedErasedLeaf<K, R>
+impl<K, R> NegByRef for TypedErasedKeyLeaf<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: NegByRef,
 {
     fn neg_by_ref(&self) -> Self {
         Self {
@@ -471,10 +441,10 @@ where
     }
 }
 
-impl<K, R> Neg for TypedErasedLeaf<K, R>
+impl<K, R> Neg for TypedErasedKeyLeaf<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: Neg<Output = R>,
 {
     type Output = Self;
 
@@ -486,7 +456,7 @@ where
     }
 }
 
-impl<K, R> NumEntries for TypedErasedLeaf<K, R> {
+impl<K, R> NumEntries for TypedErasedKeyLeaf<K, R> {
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
     fn num_entries_shallow(&self) -> usize {
@@ -499,10 +469,9 @@ impl<K, R> NumEntries for TypedErasedLeaf<K, R> {
     }
 }
 
-impl<K, R> Default for TypedErasedLeaf<K, R>
+impl<K, R> Default for TypedErasedKeyLeaf<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
 {
     fn default() -> Self {
         Self::new()

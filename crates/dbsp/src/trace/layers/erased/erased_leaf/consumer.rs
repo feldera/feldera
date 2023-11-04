@@ -2,7 +2,7 @@ use crate::{
     trace::{
         layers::{
             advance_erased,
-            erased::{ErasedLeaf, TypedLayer},
+            erased::{ErasedLeaf, TypedErasedLeaf},
         },
         Consumer, ValueConsumer,
     },
@@ -82,9 +82,9 @@ impl<K, R> Consumer<K, (), R, ()> for TypedLayerConsumer<K, R> {
     }
 }
 
-impl<K, R> From<TypedLayer<K, R>> for TypedLayerConsumer<K, R> {
+impl<K, R> From<TypedErasedLeaf<K, R>> for TypedLayerConsumer<K, R> {
     #[inline]
-    fn from(layer: TypedLayer<K, R>) -> Self {
+    fn from(layer: TypedErasedLeaf<K, R>) -> Self {
         Self {
             position: 0,
             storage: ManuallyDrop::new(layer.layer),
