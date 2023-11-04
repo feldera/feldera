@@ -380,11 +380,11 @@ where
     type TupleBuilder = UnorderedTypedLayerBuilder<K, R>;
 
     fn keys(&self) -> usize {
-        self.len()
+        self.len() - self.layer.lower_bound
     }
 
     fn tuples(&self) -> usize {
-        self.len()
+        self.len() - self.layer.lower_bound
     }
 
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
