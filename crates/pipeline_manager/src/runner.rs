@@ -183,6 +183,12 @@ impl Display for RunnerError {
     }
 }
 
+impl From<RunnerError> for ErrorResponse {
+    fn from(val: RunnerError) -> Self {
+        ErrorResponse::from(&val)
+    }
+}
+
 impl StdError for RunnerError {}
 
 impl ResponseError for RunnerError {
