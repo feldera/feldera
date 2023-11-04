@@ -1,43 +1,46 @@
-use crate::trace::{
-    consolidation::consolidate_from,
-    layers::{
-        erased::{ErasedLeaf, IntoErasedData, IntoErasedDiff, TypedErasedLeaf},
-        Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
+use crate::{
+    algebra::{AddByRef, HasZero},
+    trace::{
+        consolidation::consolidate_from,
+        layers::{
+            erased::{ErasedKeyLeaf, IntoErasedData, TypedErasedKeyLeaf},
+            Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
+        },
     },
 };
 use size_of::SizeOf;
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops::AddAssign};
 
 /// A builder for ordered values
 #[derive(SizeOf)]
-pub struct TypedErasedLeafBuilder<K, R> {
-    layer: ErasedLeaf,
+pub struct TypedErasedKeyLeafBuilder<K, R> {
+    layer: ErasedKeyLeaf<R>,
     __type: PhantomData<(K, R)>,
 }
 
-impl<K, R> Builder for TypedErasedLeafBuilder<K, R>
+impl<K, R> Builder for TypedErasedKeyLeafBuilder<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: Clone + HasZero + Eq + AddAssign + AddByRef + 'static,
 {
-    type Trie = TypedErasedLeaf<K, R>;
+    type Trie = TypedErasedKeyLeaf<K, R>;
 
     fn boundary(&mut self) -> usize {
         self.layer.len()
     }
 
     fn done(self) -> Self::Trie {
-        TypedErasedLeaf {
+        TypedErasedKeyLeaf {
             layer: self.layer,
             __type: PhantomData,
         }
     }
 }
 
-impl<K, R> MergeBuilder for TypedErasedLeafBuilder<K, R>
+impl<K, R> MergeBuilder for TypedErasedKeyLeafBuilder<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: Clone + Eq + HasZero + AddByRef + AddAssign + 'static,
 {
     fn with_capacity(left: &Self::Trie, right: &Self::Trie) -> Self {
         let capacity = Trie::keys(left) + Trie::keys(right);
@@ -46,11 +49,7 @@ where
 
     fn with_key_capacity(capacity: usize) -> Self {
         Self {
-            layer: ErasedLeaf::with_capacity(
-                &<K as IntoErasedData>::DATA_VTABLE,
-                &<R as IntoErasedDiff>::DIFF_VTABLE,
-                capacity,
-            ),
+            layer: ErasedKeyLeaf::with_capacity(&<K as IntoErasedData>::DATA_VTABLE, capacity),
             __type: PhantomData,
         }
     }
@@ -103,30 +102,23 @@ where
     }
 }
 
-impl<K, R> TupleBuilder for TypedErasedLeafBuilder<K, R>
+impl<K, R> TupleBuilder for TypedErasedKeyLeafBuilder<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: Clone + HasZero + Eq + AddAssign + AddByRef + 'static,
 {
     type Item = (K, R);
 
     fn new() -> Self {
         Self {
-            layer: ErasedLeaf::new(
-                &<K as IntoErasedData>::DATA_VTABLE,
-                &<R as IntoErasedDiff>::DIFF_VTABLE,
-            ),
+            layer: ErasedKeyLeaf::new(&<K as IntoErasedData>::DATA_VTABLE),
             __type: PhantomData,
         }
     }
 
     fn with_capacity(capacity: usize) -> Self {
         Self {
-            layer: ErasedLeaf::with_capacity(
-                &<K as IntoErasedData>::DATA_VTABLE,
-                &<R as IntoErasedDiff>::DIFF_VTABLE,
-                capacity,
-            ),
+            layer: ErasedKeyLeaf::with_capacity(&<K as IntoErasedData>::DATA_VTABLE, capacity),
             __type: PhantomData,
         }
     }
@@ -169,9 +161,9 @@ impl<K, R> UnorderedTypedLayerBuilder<K, R> {
 impl<K, R> Builder for UnorderedTypedLayerBuilder<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
 {
-    type Trie = TypedErasedLeaf<K, R>;
+    type Trie = TypedErasedKeyLeaf<K, R>;
 
     fn boundary(&mut self) -> usize {
         consolidate_from(&mut self.tuples, self.boundary);
@@ -182,12 +174,11 @@ where
     fn done(mut self) -> Self::Trie {
         self.boundary();
 
-        let mut layer =
-            ErasedLeaf::with_capacity(&K::DATA_VTABLE, &R::DIFF_VTABLE, self.tuples.len());
+        let mut layer = ErasedKeyLeaf::with_capacity(&K::DATA_VTABLE, self.tuples.len());
         layer.extend(self.tuples);
 
         // TODO: The tuples buffer is dropped here, can we reuse it for other builders?
-        TypedErasedLeaf {
+        TypedErasedKeyLeaf {
             layer,
             __type: PhantomData,
         }
@@ -197,7 +188,7 @@ where
 impl<K, R> TupleBuilder for UnorderedTypedLayerBuilder<K, R>
 where
     K: IntoErasedData,
-    R: IntoErasedDiff,
+    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
 {
     type Item = (K, R);
 

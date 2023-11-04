@@ -1,7 +1,7 @@
 use crate::{
     trace::layers::{
         advance_erased,
-        erased::{ErasedLeaf, TypedErasedLeaf},
+        erased::{ErasedKeyLeaf, TypedErasedKeyLeaf},
         Cursor,
     },
     utils::cursor_position_oob,
@@ -10,29 +10,30 @@ use crate::{
 use std::{
     fmt::{self, Display},
     marker::PhantomData,
+    ops::Index,
 };
 
-/// A cursor for walking through an [`TypedLayer`].
+/// A cursor for walking through an [`TypedKeyLeaf`].
 #[derive(Debug, Clone)]
-pub struct TypedLayerCursor<'a, K, R>
+pub struct TypedKeyLeafCursor<'a, K, R>
 where
     K: Ord + Clone,
     R: Clone,
 {
     pos: isize,
-    storage: &'a ErasedLeaf,
+    storage: &'a ErasedKeyLeaf<R>,
     bounds: (usize, usize),
     __type: PhantomData<(K, R)>,
 }
 
-impl<'a, K, R> TypedLayerCursor<'a, K, R>
+impl<'a, K, R> TypedKeyLeafCursor<'a, K, R>
 where
     K: Ord + Clone + 'static,
     R: Clone + 'static,
 {
     pub const fn new(
         pos: usize,
-        storage: &'a TypedErasedLeaf<K, R>,
+        storage: &'a TypedErasedKeyLeaf<K, R>,
         bounds: (usize, usize),
     ) -> Self {
         Self {
@@ -43,7 +44,7 @@ where
         }
     }
 
-    pub(super) const fn storage(&self) -> &'a ErasedLeaf {
+    pub(super) const fn storage(&self) -> &'a ErasedKeyLeaf<R> {
         self.storage
     }
 
@@ -77,11 +78,11 @@ where
         R: 'static,
     {
         debug_assert!(self.pos >= 0);
-        self.storage.diffs.index_as(self.pos as usize)
+        self.storage.diffs.index(self.pos as usize)
     }
 }
 
-impl<'s, K, R> Cursor<'s> for TypedLayerCursor<'s, K, R>
+impl<'s, K, R> Cursor<'s> for TypedKeyLeafCursor<'s, K, R>
 where
     K: Ord + Clone + 'static,
     R: Clone + 'static,
@@ -161,13 +162,13 @@ where
     }
 }
 
-impl<'a, K, R> Display for TypedLayerCursor<'a, K, R>
+impl<'a, K, R> Display for TypedKeyLeafCursor<'a, K, R>
 where
     K: DBData,
     R: DBWeight,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut cursor: TypedLayerCursor<K, R> = self.clone();
+        let mut cursor: TypedKeyLeafCursor<K, R> = self.clone();
 
         while cursor.valid() {
             let (key, val) = cursor.item();
