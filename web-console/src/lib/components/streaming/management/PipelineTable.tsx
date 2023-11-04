@@ -5,7 +5,7 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { DataGridFooter } from '$lib/components/common/table/DataGridFooter'
-import { DataGridPro, DataGridProProps } from '$lib/components/common/table/DataGridProDeclarative'
+import { DataGridPro } from '$lib/components/common/table/DataGridProDeclarative'
 import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
@@ -46,6 +46,7 @@ import dayjs from 'dayjs'
 import Link from 'next/link'
 import React, { useCallback, useEffect, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
+import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 import IconCalendar from '~icons/bx/calendar'
 import IconLogInCircle from '~icons/bx/log-in-circle'
@@ -74,6 +75,7 @@ import ListSubheader from '@mui/material/ListSubheader'
 import Paper from '@mui/material/Paper'
 import Tooltip from '@mui/material/Tooltip'
 import {
+  DataGridProProps,
   GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
   GridColDef,
   GridRenderCellParams,
@@ -105,15 +107,12 @@ function getConnectorData(revision: PipelineRevision, direction: InputOrOutput):
   const connectors = revision.connectors
 
   return relations.map(relation => {
-    const connections: [AttachedConnector, ConnectorDescr][] = attachedConnectors
+    const connections = attachedConnectors
       .filter(ac => ac.relation_name === relation.name)
       .map(ac => {
         const connector = connectors.find(c => c.connector_id === ac?.connector_id)
-        if (!connector) {
-          // This can't happen in a revision
-          throw Error('Attached connector has no connector.')
-        }
-        return [ac, connector] as [AttachedConnector, ConnectorDescr]
+        invariant(connector, 'Attached connector has no connector.') // This can't happen in a revision
+        return tuple(ac, connector)
       })
 
     return { relation, connections }
@@ -142,7 +141,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   const metrics = usePipelineMetrics({
     pipelineId: descriptor.pipeline_id,
     status: state.current_status,
-    refetchMs: 1000
+    refetchMs: 3000
   })
 
   function getRelationColumns(direction: InputOrOutput): GridColDef<ConnectorData>[] {
@@ -365,12 +364,10 @@ export default function PipelineTable() {
       throw error
     }
   }, [isLoading, isError, data, setRows, error])
-
   const getDetailPanelContent = useCallback<NonNullable<DataGridProProps['getDetailPanelContent']>>(
     ({ row }) => <DetailPanelContent row={row} />,
     []
   )
-
   const columns: GridColDef[] = [
     {
       ...GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
@@ -697,21 +694,26 @@ const PipelineActions = (params: { row: Pipeline }) => {
           <IconTrashAlt fontSize={20} />
         </IconButton>
       </Tooltip>
+    ),
+    spacer: () => (
+      <IconButton size='small' sx={{ opacity: 0 }} disabled key='spacer'>
+        <IconStopCircle fontSize={20} />
+      </IconButton>
     )
   }
 
   const enabled = match([status, isReady])
     .returnType<(keyof typeof actions)[]>()
     .with([PipelineStatus.SHUTDOWN, true], () => ['start', 'edit', 'delete'])
-    .with([PipelineStatus.SHUTDOWN, false], () => ['edit', 'delete'])
+    .with([PipelineStatus.SHUTDOWN, false], () => ['spacer', 'edit', 'delete'])
     .with([PipelineStatus.PROVISIONING, P._], () => ['spinner', 'edit'])
     .with([PipelineStatus.INITIALIZING, P._], () => ['spinner', 'edit'])
     .with([PipelineStatus.STARTING, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.RUNNING, P._], () => ['pause', 'shutdown', 'edit'])
+    .with([PipelineStatus.RUNNING, P._], () => ['pause', 'edit', 'shutdown'])
     .with([PipelineStatus.PAUSING, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.PAUSED, true], () => ['start', 'shutdown', 'edit'])
+    .with([PipelineStatus.PAUSED, true], () => ['start', 'edit', 'shutdown'])
     .with([PipelineStatus.SHUTTING_DOWN, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.FAILED, P._], () => ['shutdown', 'edit'])
+    .with([PipelineStatus.FAILED, P._], () => ['spacer', 'edit', 'shutdown'])
     .otherwise(() => ['edit'])
 
   return (

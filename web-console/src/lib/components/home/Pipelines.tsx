@@ -23,7 +23,7 @@ const Pipelines = () => {
 
   const fetchQuery = useQuery({
     ...PipelineManagerQuery.pipelines(),
-    refetchInterval: 1000
+    refetchInterval: 2000
   })
   const [active, inactive] = partition(fetchQuery.data ?? [], p => p.state.current_status === PipelineStatus.RUNNING)
   const thumbs = active.map(p => (

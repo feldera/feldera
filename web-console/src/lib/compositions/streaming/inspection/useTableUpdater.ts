@@ -7,21 +7,68 @@ import { readLineFromStream } from '$lib/functions/common/stream'
 import { csvLineToRow, Row } from '$lib/functions/ddl'
 import { NeighborhoodQuery, Relation } from '$lib/services/manager'
 import { parse } from 'csv-parse'
-import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
+import { Dispatch, SetStateAction, useCallback, useMemo, useState } from 'react'
 
-function useTableUpdater() {
+/**
+ * Mutate the oldRows to reflect the computed integral with all deltaRows
+ * Idempotent
+ * @param oldRows
+ * @param deltaRows
+ */
+const updateRowsIntegral = (oldRows: Map<number, Row>, deltaRows: Row[]) => {
+  for (const row of deltaRows) {
+    const curRow = oldRows.get(row.genId)
+    if (curRow && curRow.weight + row.weight > 0) {
+      oldRows.set(row.genId, { ...row, weight: curRow.weight + row.weight })
+    } else if (curRow && curRow.weight + row.weight <= 0) {
+      oldRows.delete(row.genId)
+    } else {
+      oldRows.set(row.genId, row)
+    }
+  }
+  return oldRows
+}
+
+const computeAndSet = (prev: Map<number, Row>) => (setRows: Dispatch<SetStateAction<Row[]>>, parsedRows: Row[]) => {
+  updateRowsIntegral(prev, parsedRows)
+  setRows(Array.from(prev.values()).sort((a, b) => a.genId - b.genId))
+  return prev
+}
+
+const computeInBackground = (prev: Map<number, Row>) => (_: Dispatch<SetStateAction<Row[]>>, parsedRows: Row[]) => {
+  return updateRowsIntegral(prev, parsedRows)
+}
+
+type StateType = {
+  rowsCallback: (setRows: Dispatch<SetStateAction<Row[]>>, parsedRows: Row[]) => Map<number, Row>
+} & {
+  [_ in 'pause' | 'resume']?: (setState: Dispatch<SetStateAction<StateType>>) => () => void
+}
+
+const paused: (prevState: StateType) => StateType = old => ({
+  rowsCallback: computeInBackground(old.rowsCallback(() => {}, [])),
+  resume: setState => () => setState(resumed)
+})
+
+const resumed: (prevState: StateType) => StateType = old => ({
+  rowsCallback: computeAndSet(old.rowsCallback(() => {}, [])),
+  pause: setState => () => setState(paused)
+})
+
+export function useTableUpdater() {
   const utf8Decoder = useMemo(() => new TextDecoder('utf-8'), [])
+  const [{ rowsCallback, pause, resume }, setState] = useState(resumed({ rowsCallback: () => new Map() }))
   const readStream = useCallback(
     async (
       url: URL,
       requestedNeighborhood: NeighborhoodQuery,
-      setRows: Dispatch<SetStateAction<any[]>>,
+      setRows: Dispatch<SetStateAction<Row[]>>,
       setLoading: Dispatch<SetStateAction<boolean>>,
       relation: Relation,
       controller: AbortController
     ) => {
-      // We try and fetch one more row than requested, this helps to detect if
-      // this is the last page.
+      // We try and fetch one more row than requested,
+      // this helps to detect if this is the last page.
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -70,25 +117,10 @@ function useTableUpdater() {
               if (error) {
                 console.error(error)
               }
-              const typedRecords: Row[] = result.map(row => csvLineToRow(relation, row))
+              const parsedRows = result.map(row => csvLineToRow(relation, row))
 
               setLoading(false)
-              // We compute the integral and store it in rows
-              setRows(curRows => {
-                const rows = new Map()
-                curRows.forEach(row => rows.set(row.genId, row))
-                for (const row of typedRecords) {
-                  const curRow = rows.get(row.genId)
-                  if (curRow && curRow.weight + row.weight > 0) {
-                    rows.set(row.genId, { ...row, weight: curRow.weight + row.weight })
-                  } else if (curRow && curRow.weight + row.weight <= 0) {
-                    rows.delete(row.genId)
-                  } else {
-                    rows.set(row.genId, row)
-                  }
-                }
-                return Array.from(rows.values()).sort((a, b) => a.genId - b.genId)
-              })
+              rowsCallback(setRows, parsedRows)
             }
           )
         }
@@ -105,10 +137,12 @@ function useTableUpdater() {
         }
       }
     },
-    [utf8Decoder]
+    [utf8Decoder, rowsCallback]
   )
 
-  return readStream
+  return {
+    updateTable: readStream,
+    pause: pause?.(setState),
+    resume: resume?.(setState)
+  }
 }
-
-export default useTableUpdater
