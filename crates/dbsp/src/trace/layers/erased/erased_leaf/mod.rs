@@ -52,7 +52,7 @@ impl Debug for ErasedLeaf {
 
         let mut map = f.debug_map();
         for idx in 0..self.len() {
-            let key = DebugPtr(self.keys.index(idx), self.diffs.vtable().common.debug);
+            let key = DebugPtr(self.keys.index(idx), self.keys.vtable().common.debug);
             let diff = DebugPtr(self.diffs.index(idx), self.diffs.vtable().common.debug);
             map.entry(&key, &diff);
         }
