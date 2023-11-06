@@ -20,7 +20,7 @@ pub use differentiate::{Differentiate, Integrate};
 pub use filter_map::{Filter, FilterMap, Map};
 pub use flat_map::FlatMap;
 pub use index::{IndexByColumn, IndexWith, UnitMapToSet};
-pub use io::{Export, ExportedNode, Sink, Source, SourceKind};
+pub use io::{Export, ExportedNode, Inspect, Sink, Source, SourceKind};
 pub use join::{Antijoin, JoinCore, MonotonicJoin};
 pub use subgraph::Subgraph;
 pub use sum::{Minus, Sum};
@@ -71,6 +71,7 @@ pub enum Node {
     IndexByColumn(IndexByColumn),
     UnitMapToSet(UnitMapToSet),
     Topk(TopK),
+    Inspect(Inspect),
     // TODO: OrderBy, Windows
 }
 
@@ -143,6 +144,7 @@ where
             Node::IndexByColumn(index_by_column) => index_by_column.pretty(alloc, cache),
             Node::UnitMapToSet(unit_map_to_set) => unit_map_to_set.pretty(alloc, cache),
             Node::Topk(topk) => topk.pretty(alloc, cache),
+            Node::Inspect(inspect) => inspect.pretty(alloc, cache),
 
             Node::Subgraph(_) | Node::Export(_) | Node::ExportedNode(_) => alloc.nil(),
             // Node::Subgraph(subgraph) => subgraph.pretty(alloc, cache),
@@ -195,6 +197,10 @@ pub trait DataflowNode {
         F: FnMut(LayoutId) + ?Sized;
 
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>);
+
+    fn has_side_effects(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema)]

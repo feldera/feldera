@@ -8,9 +8,9 @@ use crate::{
     codegen::{Codegen, CodegenConfig, LayoutVTable, NativeLayoutCache, VTable},
     dataflow::nodes::{
         Antijoin, DataflowSubgraph, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
-        FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, IndexByColumn, Integrate,
-        JoinCore, MapFn, Max, Min, Minus, Noop, PartitionedRollingFold, StreamDistinct, Topk,
-        UnitMapToSet,
+        FilterFn, FilterMap, FilterMapIndex, FlatMap, FlatMapFn, Fold, IndexByColumn, Inspect,
+        Integrate, JoinCore, MapFn, Max, Min, Minus, Noop, PartitionedRollingFold, StreamDistinct,
+        Topk, UnitMapToSet,
     },
     ir::{
         graph,
@@ -230,6 +230,7 @@ impl CompiledDataflow {
                     self.unit_map_to_set(node_id, map_to_set, &mut streams);
                 }
                 DataflowNode::Fold(fold) => self.fold(node_id, fold, &mut streams),
+                DataflowNode::Inspect(inspect) => self.inspect(node_id, inspect, &mut streams),
 
                 DataflowNode::FilterMap(map) => {
                     let input = &streams[&map.input];
@@ -705,6 +706,7 @@ impl CompiledDataflow {
                             self.unit_map_to_set(node_id, map_to_set, &mut substreams);
                         }
                         DataflowNode::Fold(fold) => self.fold(node_id, fold, &mut substreams),
+                        DataflowNode::Inspect(inspect) => self.inspect(node_id, inspect, &mut substreams),
 
                         DataflowNode::FilterMap(map) => {
                             let input = &substreams[&map.input];
@@ -1558,6 +1560,50 @@ impl CompiledDataflow {
 
         streams.insert(node_id, topk);
     }
+
+    // TODO: Should inspect buffer against stdout? Should it feed to stderr? Should
+    // users be able to point it to files?
+    fn inspect<C>(
+        &self,
+        node_id: NodeId,
+        inspect: Inspect,
+        streams: &mut BTreeMap<NodeId, RowStream<C>>,
+    ) where
+        C: Circuit,
+    {
+        match &streams[&inspect.input] {
+            RowStream::Set(set) => {
+                set.inspect(move |set| {
+                    let mut cursor = set.cursor();
+                    while cursor.key_valid() {
+                        let weight = cursor.weight();
+                        let key = cursor.key();
+                        println!("[{node_id}] {key}: {weight:+}");
+
+                        cursor.step_key();
+                    }
+                });
+            }
+
+            RowStream::Map(map) => {
+                map.inspect(move |map| {
+                    let mut cursor = map.cursor();
+                    while cursor.key_valid() {
+                        while cursor.val_valid() {
+                            let weight = cursor.weight();
+                            let key = cursor.key();
+                            let value = cursor.val();
+                            println!("[{node_id}] ({key}, {value}): {weight:+}");
+
+                            cursor.step_val();
+                        }
+
+                        cursor.step_key();
+                    }
+                });
+            }
+        }
+    }
 }
 
 #[inline]
@@ -1784,7 +1830,8 @@ fn collect_functions(
             | Node::ExportedNode(_)
             | Node::Minus(_)
             | Node::Antijoin(_)
-            | Node::Topk(_) => {}
+            | Node::Topk(_)
+            | Node::Inspect(_) => {}
         }
     }
 }
@@ -2309,6 +2356,13 @@ fn compile_nodes(
                 };
 
                 let node = DataflowNode::Constant(nodes::Constant { value });
+                nodes.insert(*node_id, node);
+            }
+
+            Node::Inspect(inspect) => {
+                let node = DataflowNode::Inspect(nodes::Inspect {
+                    input: inspect.input(),
+                });
                 nodes.insert(*node_id, node);
             }
         }

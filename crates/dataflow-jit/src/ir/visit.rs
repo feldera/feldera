@@ -1,9 +1,9 @@
 use crate::ir::{
     nodes::{
         Antijoin, ConstantStream, DelayedFeedback, Delta0, Differentiate, Distinct, Export,
-        ExportedNode, Filter, FilterMap, FlatMap, Fold, IndexByColumn, IndexWith, Integrate,
-        JoinCore, Map, Max, Min, Minus, MonotonicJoin, Neg, Node, PartitionedRollingFold, Sink,
-        Source, StreamDistinct, Subgraph, Sum, TopK, UnitMapToSet,
+        ExportedNode, Filter, FilterMap, FlatMap, Fold, IndexByColumn, IndexWith, Inspect,
+        Integrate, JoinCore, Map, Max, Min, Minus, MonotonicJoin, Neg, Node,
+        PartitionedRollingFold, Sink, Source, StreamDistinct, Subgraph, Sum, TopK, UnitMapToSet,
     },
     GraphExt, NodeId,
 };
@@ -45,6 +45,7 @@ pub trait NodeVisitor {
     fn visit_index_by_column(&mut self, _node_id: NodeId, _index_by_column: &IndexByColumn) {}
     fn visit_unit_map_to_set(&mut self, _node_id: NodeId, _unit_map_to_set: &UnitMapToSet) {}
     fn visit_topk(&mut self, _node_id: NodeId, _topk: &TopK) {}
+    fn visit_inspect(&mut self, _node_id: NodeId, _inspect: &Inspect) {}
 
     fn visit_subgraph(&mut self, node_id: NodeId, subgraph: &Subgraph) {
         self.enter_subgraph(node_id, subgraph);
@@ -97,6 +98,7 @@ pub trait MutNodeVisitor {
     fn visit_index_by_column(&mut self, _node_id: NodeId, _index_by_column: &mut IndexByColumn) {}
     fn visit_unit_map_to_set(&mut self, _node_id: NodeId, _unit_map_to_set: &mut UnitMapToSet) {}
     fn visit_topk(&mut self, _node_id: NodeId, _topk: &mut TopK) {}
+    fn visit_inspect(&mut self, _node_id: NodeId, _inspect: &mut Inspect) {}
 
     fn visit_subgraph(&mut self, node_id: NodeId, subgraph: &mut Subgraph) {
         self.enter_subgraph(node_id, subgraph);
@@ -159,6 +161,7 @@ impl Node {
                 visitor.visit_unit_map_to_set(node_id, unit_map_to_set);
             }
             Self::Topk(topk) => visitor.visit_topk(node_id, topk),
+            Self::Inspect(inspect) => visitor.visit_inspect(node_id, inspect),
         }
     }
 
@@ -211,6 +214,7 @@ impl Node {
                 visitor.visit_unit_map_to_set(node_id, unit_map_to_set);
             }
             Self::Topk(topk) => visitor.visit_topk(node_id, topk),
+            Self::Inspect(inspect) => visitor.visit_inspect(node_id, inspect),
         }
     }
 }

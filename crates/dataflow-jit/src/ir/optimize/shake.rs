@@ -136,6 +136,7 @@ impl Subgraph {
         for &node_id in order.iter().rev() {
             if let Some(node) = self.nodes().get(&node_id) {
                 if node.is_sink()
+                    || node.is_inspect()
                     || self
                         .edges()
                         .edges_directed(node_id, Direction::Outgoing)

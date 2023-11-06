@@ -221,10 +221,10 @@ fn run(program: &Path, config: &Path) -> ExitCode {
             }
 
             Format::Csv(demand) => match demand {
-                FormatDemands::Set(key) => circuit.append_csv_input(target, key, &file),
-                FormatDemands::Map(key, value) => {
-                    circuit.append_csv_map_input(target, key, value, &file)
-                }
+                FormatDemands::Set(key) => circuit.append_csv_input(target, key, &file).unwrap(),
+                FormatDemands::Map(key, value) => circuit
+                    .append_csv_map_input(target, key, value, &file)
+                    .unwrap(),
             },
         }
     }

@@ -13,7 +13,7 @@ use size_of::SizeOf;
 use std::{
     alloc::Layout,
     cmp::Ordering,
-    fmt::{self, Debug},
+    fmt::{self, Debug, Display},
     hash::{Hash, Hasher},
     ptr::NonNull,
     slice,
@@ -385,6 +385,16 @@ impl Debug for Row {
 
         // Otherwise debug normally
         } else if unsafe { (self.vtable().debug)(self.as_ptr(), f) } {
+            Ok(())
+        } else {
+            Err(fmt::Error)
+        }
+    }
+}
+
+impl Display for Row {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if unsafe { (self.vtable().debug)(self.as_ptr(), f) } {
             Ok(())
         } else {
             Err(fmt::Error)

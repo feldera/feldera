@@ -340,6 +340,10 @@ impl DataflowNode for Sink {
     fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
         self.input_layout.remap_layouts(mappings);
     }
+
+    fn has_side_effects(&self) -> bool {
+        true
+    }
 }
 
 impl<'a, D, A> Pretty<'a, D, A> for &Sink
@@ -350,6 +354,90 @@ where
     fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
         alloc
             .text("sink")
+            .append(alloc.space())
+            .append(self.input_layout.pretty(alloc, cache))
+            .append(alloc.space())
+            .append(self.input.pretty(alloc, cache))
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct Inspect {
+    input: NodeId,
+    input_layout: StreamLayout,
+}
+
+impl Inspect {
+    pub fn new(input: NodeId, input_layout: StreamLayout) -> Self {
+        Self {
+            input,
+            input_layout,
+        }
+    }
+
+    pub const fn input(&self) -> NodeId {
+        self.input
+    }
+
+    pub const fn input_layout(&self) -> StreamLayout {
+        self.input_layout
+    }
+}
+
+impl DataflowNode for Inspect {
+    fn map_inputs<F>(&self, map: &mut F)
+    where
+        F: FnMut(NodeId) + ?Sized,
+    {
+        map(self.input);
+    }
+
+    fn map_inputs_mut<F>(&mut self, map: &mut F)
+    where
+        F: FnMut(&mut NodeId) + ?Sized,
+    {
+        map(&mut self.input);
+    }
+
+    fn output_stream(
+        &self,
+        _inputs: &[StreamLayout],
+        _layout_cache: &RowLayoutCache,
+    ) -> Option<StreamLayout> {
+        None
+    }
+
+    fn validate(&self, inputs: &[StreamLayout], _layout_cache: &RowLayoutCache) {
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(self.input_layout, inputs[0]);
+    }
+
+    fn optimize(&mut self, _layout_cache: &RowLayoutCache) {}
+
+    fn map_layouts<F>(&self, map: &mut F)
+    where
+        F: FnMut(LayoutId) + ?Sized,
+    {
+        self.input_layout.map_layouts(map);
+    }
+
+    fn remap_layouts(&mut self, mappings: &BTreeMap<LayoutId, LayoutId>) {
+        self.input_layout.remap_layouts(mappings);
+    }
+
+    fn has_side_effects(&self) -> bool {
+        true
+    }
+}
+
+impl<'a, D, A> Pretty<'a, D, A> for &Inspect
+where
+    A: 'a,
+    D: DocAllocator<'a, A> + ?Sized,
+{
+    fn pretty(self, alloc: &'a D, cache: &RowLayoutCache) -> DocBuilder<'a, D, A> {
+        alloc
+            .text("inspect")
             .append(alloc.space())
             .append(self.input_layout.pretty(alloc, cache))
             .append(alloc.space())

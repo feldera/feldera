@@ -49,6 +49,7 @@ pub enum DataflowNode {
     IndexByColumn(IndexByColumn),
     UnitMapToSet(UnitMapToSet),
     Topk(Topk),
+    Inspect(Inspect),
 }
 
 #[derive(Debug, Clone)]
@@ -337,5 +338,10 @@ pub struct Sum {
 
 #[derive(Debug, Clone)]
 pub struct Delta0 {
+    pub input: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct Inspect {
     pub input: NodeId,
 }
