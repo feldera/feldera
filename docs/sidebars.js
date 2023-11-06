@@ -23,7 +23,8 @@ const sidebars = {
       link: { type: 'doc', id: 'cloud/index' },
       items: [
         'cloud/assets',
-        'cloud/deployment'
+        'cloud/deployment',
+        'cloud/secret-management'
       ]
     },
     {
