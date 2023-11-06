@@ -112,7 +112,8 @@ We will now connect the MySQL database with Kafka Connect.
    For more information, see the notes in the 
    [official Debezium tutorial](https://debezium.io/documentation/reference/tutorial.html)
    as well as [KIP-297](https://cwiki.apache.org/confluence/display/KAFKA/KIP-297%3A+Externalizing+Secrets+for+Connect+Configurations)
-   to which they refer.**
+   to which they refer. There is an [experimental secret management](../../cloud/secret-management)
+   to externalize secrets via Kubernetes.**
 
    ```
    curl -i -X \
