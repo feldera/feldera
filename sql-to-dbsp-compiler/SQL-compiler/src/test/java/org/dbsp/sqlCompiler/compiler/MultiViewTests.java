@@ -34,7 +34,7 @@ import org.junit.Test;
 /**
  * Tests where multiple views are defined in the same circuit.
  */
-public class MultiViewTests extends EndToEndTests {
+public class MultiViewTests extends BaseSQLTests {
     /**
      * Two output views.
      */
@@ -44,13 +44,13 @@ public class MultiViewTests extends EndToEndTests {
         String query2 = "CREATE VIEW V2 as SELECT T.COL2 FROM T";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement(E2E_TABLE);
+        compiler.compileStatement(EndToEndTests.E2E_TABLE);
         compiler.compileStatement(query1);
         compiler.compileStatement(query2);
 
         DBSPCircuit circuit = getCircuit(compiler);
         InputOutputPair stream = new InputOutputPair(
-                new DBSPZSetLiteral.Contents[] { this.createInput() },
+                new DBSPZSetLiteral.Contents[] { EndToEndTests.createInput() },
                 new DBSPZSetLiteral.Contents[] {
                         new DBSPZSetLiteral.Contents(
                                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
@@ -72,13 +72,13 @@ public class MultiViewTests extends EndToEndTests {
         String query2 = "CREATE VIEW V2 as SELECT * FROM V1";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement(E2E_TABLE);
+        compiler.compileStatement(EndToEndTests.E2E_TABLE);
         compiler.compileStatement(query1);
         compiler.compileStatement(query2);
 
         DBSPCircuit circuit = getCircuit(compiler);
         InputOutputPair stream = new InputOutputPair(
-                new DBSPZSetLiteral.Contents[] { this.createInput() },
+                new DBSPZSetLiteral.Contents[] { EndToEndTests.createInput() },
                 new DBSPZSetLiteral.Contents[] {
                         new DBSPZSetLiteral.Contents(
                                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
@@ -100,13 +100,13 @@ public class MultiViewTests extends EndToEndTests {
         String query2 = "CREATE VIEW V2 as SELECT DISTINCT COL1 FROM (SELECT * FROM V1 JOIN T ON V1.COL3 = T.COL3)";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.compileStatement(E2E_TABLE);
+        compiler.compileStatement(EndToEndTests.E2E_TABLE);
         compiler.compileStatement(query1);
         compiler.compileStatement(query2);
 
         DBSPCircuit circuit = getCircuit(compiler);
         InputOutputPair stream = new InputOutputPair(
-                new DBSPZSetLiteral.Contents[] { this.createInput() },
+                new DBSPZSetLiteral.Contents[] { EndToEndTests.createInput() },
                 new DBSPZSetLiteral.Contents[] {
                         new DBSPZSetLiteral.Contents(
                                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),

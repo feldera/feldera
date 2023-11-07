@@ -133,8 +133,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 }
             } else if (type.is(DBSPTypeDouble.class))
                 return new DBSPDoubleLiteral(Objects.requireNonNull(literal.getValueAs(Double.class)));
-            else if (type.is(DBSPTypeFloat.class))
-                return new DBSPFloatLiteral(Objects.requireNonNull(literal.getValueAs(Float.class)));
+            else if (type.is(DBSPTypeReal.class))
+                return new DBSPRealLiteral(Objects.requireNonNull(literal.getValueAs(Float.class)));
             else if (type.is(DBSPTypeString.class)) {
                 String str = literal.getValueAs(String.class);
                 RelDataType litType = literal.getType();

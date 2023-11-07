@@ -118,7 +118,7 @@ public class ToCsvVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPFloatLiteral literal) {
+    public VisitDecision preorder(DBSPRealLiteral literal) {
         if (literal.value != null)
             this.appendable.append(literal.value);
         else

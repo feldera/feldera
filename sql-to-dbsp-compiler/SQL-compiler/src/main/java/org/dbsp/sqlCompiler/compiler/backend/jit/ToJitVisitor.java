@@ -200,7 +200,7 @@ public class ToJitVisitor extends CircuitVisitor implements IWritesLogs {
                 return JITU32Type.INSTANCE;
             case DOUBLE:
                 return JITF64Type.INSTANCE;
-            case FLOAT:
+            case REAL:
                 return JITF32Type.INSTANCE;
             case STRING:
                 return JITStringType.INSTANCE;

@@ -14,7 +14,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
@@ -148,7 +148,7 @@ public class ToRustJitLiteral extends InnerRewriteVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPFloatLiteral node) {
+    public VisitDecision preorder(DBSPRealLiteral node) {
         this.constant(node.getType().code, node.raw());
         return VisitDecision.STOP;
     }

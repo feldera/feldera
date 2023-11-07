@@ -515,6 +515,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
             String path = subdir.getPath() + "/project.sql";
             CompilerMessages messages = CompilerMain.execute(
                     "-i", "--alltables", "-o", BaseSQLTests.testFilePath, path);
+            System.out.println(messages);
             Assert.assertEquals(0, messages.errorCount());
             if (!subdir.getName().contains("demo02"))
                 // TODO: Waiting for https://issues.apache.org/jira/browse/CALCITE-5861
@@ -868,6 +869,16 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertEquals(t0, "T_0");
         String t1 = gen.freshName("T");
         Assert.assertEquals(t1, "T_1");
+    }
+
+    @Test
+    public void testRejectFloatType() {
+        String statement = "CREATE TABLE T(c1 FLOAT)";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.compileStatement(statement);
+        Assert.assertTrue(compiler.hasErrors());
+        Assert.assertTrue(compiler.messages.toString().contains("Do not use"));
     }
 
     @Test

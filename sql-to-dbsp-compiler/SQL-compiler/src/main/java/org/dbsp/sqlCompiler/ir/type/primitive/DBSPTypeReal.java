@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.ir.type.primitive;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -33,21 +33,21 @@ import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 
 import java.util.Objects;
 
-public class DBSPTypeFloat extends DBSPTypeFP implements IsNumericType {
-    public DBSPTypeFloat(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.FLOAT, mayBeNull); }
+public class DBSPTypeReal extends DBSPTypeFP implements IsNumericType {
+    public DBSPTypeReal(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.REAL, mayBeNull); }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
-        return new DBSPTypeFloat(this.getNode(), mayBeNull);
+        return new DBSPTypeReal(this.getNode(), mayBeNull);
     }
 
     @Override
     public boolean sameType(DBSPType type) {
         if (!super.sameNullability(type))
             return false;
-        return type.is(DBSPTypeFloat.class);
+        return type.is(DBSPTypeReal.class);
     }
 
     @Override
@@ -62,22 +62,22 @@ public class DBSPTypeFloat extends DBSPTypeFP implements IsNumericType {
 
     @Override
     public DBSPLiteral getZero() {
-        return new DBSPFloatLiteral(0F, this.mayBeNull);
+        return new DBSPRealLiteral(0F, this.mayBeNull);
     }
 
     @Override
     public DBSPLiteral getOne() {
-        return new DBSPFloatLiteral(1F, this.mayBeNull);
+        return new DBSPRealLiteral(1F, this.mayBeNull);
     }
 
     @Override
     public DBSPLiteral getMaxValue() {
-        return new DBSPFloatLiteral(Float.MAX_VALUE, this.mayBeNull);
+        return new DBSPRealLiteral(Float.MAX_VALUE, this.mayBeNull);
     }
 
     @Override
     public DBSPLiteral getMinValue() {
-        return new DBSPFloatLiteral(Float.MIN_VALUE, this.mayBeNull);
+        return new DBSPRealLiteral(Float.MIN_VALUE, this.mayBeNull);
     }
 
     @Override

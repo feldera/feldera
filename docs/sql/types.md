@@ -17,7 +17,7 @@ The compiler supports the following SQL data types:
   digits) and a scale (number of decimal digits after period).  For example,
   23.456 has a precision of 5 and a scale of 3.  If scale is missing it is
   assumed to be 0.
-- `FLOAT`, or `FLOAT4`, or `FLOAT32`, or `REAL`, an IEEE 32-bit floating point number
+- `REAL`, or `FLOAT4`, or `FLOAT32`, an IEEE 32-bit floating point number
 - `DOUBLE`, or `FLOAT8`, or `FLOAT32`, an IEEE 64-bit floating point number
 - `VARCHAR(n)`, or `CHARACTER VARYING(n)`, a string value with maximum fixed width
   Trailing spaces are removed when converting a value to one of these types.
@@ -45,6 +45,11 @@ The compiler supports the following SQL data types:
 A suffix of `NULL` or `NOT NULL` can be appended to a type name to
 indicate the nullability.  A type with no suffix is not nullable by
 default.
+
+Note: the `FLOAT` type is not supported.  Please use `REAL` or
+`DOUBLE` instead.  Various SQL dialects do not agree on the size of
+the `FLOAT` type, so we have decided to prohibit its use to avoid
+subtle bugs.
 
 ## Computations on nullable types
 
@@ -86,7 +91,6 @@ sqlTypeName:
   |   BIGINT
   |   REAL
   |   double
-  |   FLOAT
 
 collectionsTypeName:
       ARRAY

@@ -118,9 +118,9 @@ public class TypeCompiler implements ICompilerComponent {
                     }
                     return new DBSPTypeDecimal(node, precision, scale, nullable);
                 }
-                case FLOAT:
                 case REAL:
-                    return new DBSPTypeFloat(CalciteObject.EMPTY, nullable);
+                    return new DBSPTypeReal(CalciteObject.EMPTY, nullable);
+                case FLOAT:
                 case DOUBLE:
                     return new DBSPTypeDouble(CalciteObject.EMPTY, nullable);
                 case CHAR:

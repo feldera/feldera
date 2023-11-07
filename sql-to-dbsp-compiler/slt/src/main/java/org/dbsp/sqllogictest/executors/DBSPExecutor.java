@@ -222,8 +222,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 field = new DBSPI32Literal(Integer.parseInt(s));
             else if (colType.is(DBSPTypeDouble.class))
                 field = new DBSPDoubleLiteral(Double.parseDouble(s));
-            else if (colType.is(DBSPTypeFloat.class))
-                field = new DBSPFloatLiteral(Float.parseFloat(s));
+            else if (colType.is(DBSPTypeReal.class))
+                field = new DBSPRealLiteral(Float.parseFloat(s));
             else if (colType.is(DBSPTypeString.class))
                 field = new DBSPStringLiteral(s);
             else if (colType.is(DBSPTypeDecimal.class))

@@ -18,7 +18,7 @@ create table PRICE (
     created timestamp,
     effective_since date,
     price decimal,
-    f float
+    f real
 );
 
 create view PRICE_OUT as select * from PRICE;
