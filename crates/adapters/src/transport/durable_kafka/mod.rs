@@ -33,6 +33,7 @@ use rdkafka::{
 };
 use std::{
     collections::BTreeMap,
+    error::Error as StdError,
     fmt::{Display, Formatter, Result as FmtResult},
     marker::PhantomData,
     ops::Range,
@@ -506,19 +507,30 @@ where
 
     /// Calls `f` until it returns success or a fatal error and returns the
     /// result.  For non-fatal errors, refines the error with `client` and
-    /// reports it and calls `f` again.
-    fn retry_errors<T, F>(&self, f: F, client: &KafkaClient<C>) -> AnyResult<T>
+    /// reports it and calls `f` again.  Periodically calls `check_exit` to see
+    /// if there's an exit request, and if so then passes it on.
+    fn retry_errors<T, F, CE, CEF, CET>(
+        &self,
+        f: F,
+        client: &KafkaClient<C>,
+        check_exit: CE,
+    ) -> AnyResult<T>
     where
         F: Fn() -> KafkaResult<T>,
+        CE: Fn() -> Result<CET, CEF>,
+        CEF: Into<AnyError> + Send + Sync + StdError + 'static,
     {
         loop {
             match f() {
                 Ok(result) => return Ok(result),
+                Err(error)
+                    if error.rdkafka_error_code() == Some(RDKafkaErrorCode::OperationTimedOut) => {}
                 Err(error) => match refine_kafka_error(client, error) {
                     (true, error) => return Err(error),
                     (false, error) => (self.error_cb)(error),
                 },
             }
+            check_exit().map_err(|e| AnyError::from(e))?;
         }
     }
 
@@ -529,10 +541,18 @@ where
     }
 
     /// Calls `consumer.poll`, as must be done periodically, and checks for
-    /// errors reported to consumer and producer contexts.
-    fn poll_consumer(&self, consumer: &BaseConsumer<C>) -> AnyResult<()>
+    /// errors reported to consumer and producer contexts.  Periodically calls
+    /// `check_exit` to see if there's an exit request, and if so then passes it
+    /// on.
+    fn poll_consumer<CE, CET, CEF>(
+        &self,
+        consumer: &BaseConsumer<C>,
+        check_exit: CE,
+    ) -> AnyResult<()>
     where
         C: ConsumerContext,
+        CE: Fn() -> Result<CET, CEF>,
+        CEF: Into<AnyError> + Send + Sync + StdError + 'static,
     {
         self.check_errors()?;
 
@@ -540,6 +560,7 @@ where
         match self.retry_errors(
             || consumer.poll(Duration::ZERO).transpose(),
             consumer.client(),
+            check_exit,
         )? {
             None => Ok(()),
             Some(_message) => Err(anyhow!(
@@ -549,20 +570,25 @@ where
     }
 
     /// Reads a message from `consumer`, blocking if necessary.  Returns a
-    /// message or fatal error.
-    fn read_partition_queue(
+    /// message or fatal error.  Periodically calls `check_exit` to see if
+    /// there's an exit request, and if so then passes it on.
+    fn read_partition_queue<CE, CET, CEF>(
         &self,
         consumer: &BaseConsumer<C>,
         partition: &'a PartitionQueue<C>,
+        check_exit: CE,
     ) -> AnyResult<BorrowedMessage<'a>>
     where
         C: ConsumerContext,
+        CE: Fn() -> Result<CET, CEF>,
+        CEF: Into<AnyError> + Send + Sync + StdError + 'static,
     {
         loop {
-            self.poll_consumer(consumer)?;
+            self.poll_consumer(consumer, &check_exit)?;
             if let Some(result) = self.retry_errors(
                 || partition.poll(POLL_TIMEOUT).transpose(),
                 consumer.client(),
+                &check_exit,
             )? {
                 return Ok(result);
             }
