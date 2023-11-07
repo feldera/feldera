@@ -5,7 +5,7 @@ use crate::{InputConsumer, InputEndpoint, InputTransport};
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use futures::executor::block_on;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use pipeline_types::transport::durable_kafka::KafkaDurableInputConfig;
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic};
 use rdkafka::config::{FromClientConfig, FromClientConfigAndContext};
@@ -333,7 +333,7 @@ impl WorkerThread {
                     if error.downcast_ref::<Exit>().is_some() {
                         // Normal termination because of a requested exit.
                     } else {
-                        info!("Durable Kafka input endpoint failed due to: {error:#}");
+                        error!("Durable Kafka input endpoint failed due to: {error:#}");
                         receiver.lock().unwrap().error(true, error);
                     }
                 }
