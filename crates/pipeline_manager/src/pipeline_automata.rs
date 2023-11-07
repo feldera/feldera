@@ -14,7 +14,7 @@ use crate::{
 use actix_web::http::{Method, StatusCode};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use log::{error, info};
+use log::{debug, error, info};
 use pipeline_types::config::PipelineConfig;
 use pipeline_types::error::ErrorResponse;
 use serde::Deserialize;
@@ -421,6 +421,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 State::Unchanged
             }
         };
+        debug!(
+            "Pipeline {} is transitioning from {:?} to {:?}",
+            self.pipeline_id, pipeline.current_status, pipeline.desired_status
+        );
         if let State::Transition(new_status, error) = transition {
             pipeline.set_current_status(new_status, error);
             self.update_pipeline_runtime_state(&pipeline).await?;
@@ -447,11 +451,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
             Ok((status, body)) => {
                 if !status.is_success() {
-                    // Pipeline responds with an error, meaning that the pipeline
-                    // HTTP server is still running, but the pipeline itself failed --
-                    // save it out of its misery.
-                    let error = Self::error_response_from_json(self.pipeline_id, status, &body);
-                    Ok(State::Transition(PipelineStatus::Failed, Some(error)))
+                    if pipeline.current_status != PipelineStatus::Failed {
+                        // Pipeline responds with an error, meaning that the pipeline
+                        // HTTP server is still running, but the pipeline itself failed.
+                        let error = Self::error_response_from_json(self.pipeline_id, status, &body);
+                        Ok(State::Transition(PipelineStatus::Failed, Some(error)))
+                    } else {
+                        Ok(State::Unchanged)
+                    }
                 } else {
                     let global_metrics = if let Some(metrics) = body.get("global_metrics") {
                         metrics
