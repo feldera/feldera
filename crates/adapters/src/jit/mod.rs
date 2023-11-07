@@ -180,21 +180,21 @@ pub fn start_circuit(
                 let default_json = unsafe {
                     circuit.json_input_zset(node_id, default_json_input_demands[&node_id].row)
                 }
-                .ok_or_else(|| {
-                    ControllerError::jit_error(&format!(
-                        "JsonSetHandle[Default] not found (table name: '{}', node id: {})",
-                        table_schema.name, node_id,
-                    ))
+                .map_err(|err| ControllerError::JitError {
+                    error: format!(
+                        "JsonSetHandle[Default] not found (table name: '{}', node id: {node_id})\nerror: {err}",
+                        table_schema.name,
+                    ),
                 })?;
                 let debezium_mysql_json = unsafe {
                     circuit
                         .json_input_zset(node_id, debezium_mysql_json_input_demands[&node_id].row)
                 }
-                .ok_or_else(|| {
-                    ControllerError::jit_error(&format!(
-                        "JsonSetHandle[DebeziumMySQL] not found (table name: '{}', node id: {})",
-                        table_schema.name, node_id,
-                    ))
+                .map_err(|err| ControllerError::JitError {
+                    error: format!(
+                        "JsonSetHandle[DebeziumMySQL] not found (table name: '{}', node id: {node_id})\nerror: {err}",
+                        table_schema.name,
+                    ),
                 })?;
 
                 catalog.register_input_collection_handle(
@@ -212,11 +212,11 @@ pub fn start_circuit(
                         default_json_input_demands[&node_id].row,
                     )
                 }
-                .ok_or_else(|| {
-                    ControllerError::jit_error(&format!(
-                        "JsonMapHandle[Default] not found (table name: '{}', node id: {})",
-                        table_schema.name, node_id,
-                    ))
+                .map_err(|err| ControllerError::JitError {
+                    error: format!(
+                        "JsonMapHandle[Default] not found (table name: '{}', node id: {node_id})\nerror: {err}",
+                        table_schema.name,
+                    ),
                 })?;
                 let debezium_mysql_json = unsafe {
                     circuit.json_input_map(
@@ -227,11 +227,11 @@ pub fn start_circuit(
                         debezium_mysql_json_input_demands[&node_id].row,
                     )
                 }
-                .ok_or_else(|| {
-                    ControllerError::jit_error(&format!(
-                        "JsonMapHandle[DebeziumMySQL] not found (table name: '{}', node id: {})",
-                        table_schema.name, node_id,
-                    ))
+                .map_err(|err| ControllerError::JitError {
+                    error: format!(
+                        "JsonMapHandle[DebeziumMySQL] not found (table name: '{}', node id: {node_id})\nerror: {err}",
+                        table_schema.name,
+                    ),
                 })?;
 
                 catalog.register_input_collection_handle(
