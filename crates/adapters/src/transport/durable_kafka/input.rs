@@ -322,7 +322,12 @@ impl WorkerThread {
             receiver: receiver.clone(),
         };
         Builder::new()
-            .name("worker(durable_Kafka)".into())
+            .name(format!(
+                // Use a very short prefix because Linux truncates thread names
+                // after 15 bytes.
+                "dkw-{}",
+                config.data_topics.get(0).unwrap_or(&"".into())
+            ))
             .spawn(move || {
                 if let Err(error) = worker_thread.run() {
                     if error.downcast_ref::<Exit>().is_some() {
