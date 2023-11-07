@@ -290,8 +290,12 @@ pub trait InputConsumer: Send {
     ///
     /// The chunk is expected to contain complete records only.
     ///
-    /// A durable input transport might shuffle the order of chunks for a given
-    /// step from one read to the next.
+    /// Some data in a durable input transport might not have an inherently
+    /// defined order within a step.  The input endpoint may shuffle unordered
+    /// chunks within a step from one read to the next.  For example, the
+    /// durable Kafka reader will provide chunks from a given partition in the
+    /// same order on each read, but it might interleave chunks from different
+    /// partitions differently each time.
     fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError>;
 
     /// Steps numbered less than `step` been durably recorded.  (If recording a
