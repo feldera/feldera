@@ -421,11 +421,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 State::Unchanged
             }
         };
-        debug!(
-            "Pipeline {} is transitioning from {:?} to {:?}",
-            self.pipeline_id, pipeline.current_status, pipeline.desired_status
-        );
         if let State::Transition(new_status, error) = transition {
+            debug!(
+                "Pipeline {} current state is changing from {:?} to {:?} (desired: {:?})",
+                self.pipeline_id, pipeline.current_status, new_status, pipeline.desired_status
+            );
             pipeline.set_current_status(new_status, error);
             self.update_pipeline_runtime_state(&pipeline).await?;
         }
