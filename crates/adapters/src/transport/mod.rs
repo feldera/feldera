@@ -68,6 +68,9 @@ pub mod durable_kafka;
 /// A "durable" data transport divides input into steps numbered sequentially.
 /// The first step is numbered zero.  Each step has durable content; that is, if
 /// it is read again, it will be the same as the first time.
+///
+/// The step number increases by 1 each time the circuit runs; that is, it
+/// tracks the global clock for the outermost circuit.
 pub type Step = u64;
 
 /// Atomic version of [`Step`].
