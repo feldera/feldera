@@ -197,7 +197,14 @@ impl InputReader for Reader {
 impl Drop for Reader {
     fn drop(&mut self) {
         self.set_action(Err(Exit));
-        let _ = self.join_handle.take().unwrap().join();
+        if let Some(join_handle) = self.join_handle.take() {
+            // As a corner case, `Reader` might get dropped from a callback
+            // executed from the worker thread.  We must not join ourselves
+            // because that can cause a panic.
+            if join_handle.thread().id() != thread::current().id() {
+                let _ = join_handle.join();
+            }
+        }
     }
 }
 
