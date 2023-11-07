@@ -24,7 +24,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
-use std::thread::sleep;
+use std::thread::{self, sleep};
 use std::time::Duration;
 use std::{
     borrow::Cow,
@@ -336,10 +336,15 @@ impl WorkerThread {
             .unwrap()
     }
 
+    /// Reads and returns the currently requested `Action`.
+    fn action(&self) -> Action {
+        *self.action.lock().unwrap()
+    }
+
     /// Wait for `reader.start()` to be called.
     fn wait_for_pipeline_start(&self, step: Step) -> AnyResult<()> {
         loop {
-            if let OkAction::Run(up_to_step) = (*self.action.lock().unwrap())? {
+            if let OkAction::Run(up_to_step) = self.action()? {
                 if step <= up_to_step {
                     return Ok(());
                 }
@@ -442,7 +447,6 @@ impl WorkerThread {
             IndexProducerContext::new(&self.receiver, &expected_deliveries),
         )
         .context("creating Kafka producer for index topics failed")?;
-        let producer_eh = ErrorHandler::new(&error_cb, producer.client());
 
         // Fetch the watermarks for the topic we're going to produce to, and
         // then throw away the information because we don't care.  librdkafka
@@ -452,8 +456,12 @@ impl WorkerThread {
         for (_data_topic, index_topic, positions, _index_partitions) in topics.iter() {
             for partition in 0..positions.len() {
                 let producer_ctp = Ctp::new(&producer, index_topic, partition as i32);
-                producer_eh
-                    .retry_errors(|| producer_ctp.fetch_watermarks(None), producer.client())
+                ErrorHandler::new(&error_cb, producer.client())
+                    .retry_errors(
+                        || producer_ctp.fetch_watermarks(POLL_TIMEOUT),
+                        producer.client(),
+                        || self.action(),
+                    )
                     .with_context(|| format!("Fetching watermark for {producer_ctp} failed"))?;
             }
         }
@@ -478,7 +486,7 @@ impl WorkerThread {
 
                 // Read the `IndexEntry` that tells us where to get the step's data.
                 let index_message = consumer_eh
-                    .read_partition_queue(&consumer, &p.index_queue)
+                    .read_partition_queue(&consumer, &p.index_queue, || self.action())
                     .with_context(|| format!("Failed to read {} partition queue", p.index_ctp))?;
                 let payload = index_message.payload().unwrap_or(&[]);
                 let index_entry: IndexEntry =
@@ -508,7 +516,9 @@ impl WorkerThread {
                 // Read the step's data.
                 while p.next_offset < index_entry.data_offsets.end {
                     let data_message = consumer_eh
-                        .read_partition_queue(&consumer, &data_queues[p.index as usize])
+                        .read_partition_queue(&consumer, &data_queues[p.index as usize], || {
+                            self.action()
+                        })
                         .with_context(|| {
                             format!("Failed to read {} partition queue.", p.data_ctp)
                         })?;
