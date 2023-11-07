@@ -485,12 +485,12 @@ impl Controller {
                             .map(|start| start.elapsed() >= max_buffering_delay)
                             .unwrap_or(false)
                     {
-                        // Request all of the inputs to commit this step, and
-                        // then wait for the commits to complete.
+                        // Request all of the inputs to complete this step, and
+                        // then wait for the completions.
                         for endpoint in controller.inputs.lock().unwrap().values() {
-                            endpoint.reader.commit(step);
+                            endpoint.reader.complete(step);
                         }
-                        while !controller.status.step_is_committed(step) {
+                        while !controller.status.is_step_complete(step) {
                             parker.park();
                         }
 
@@ -815,14 +815,14 @@ struct ControllerInner {
     error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
     step: AtomicStep,
 
-    /// The lowest-numbered input step not known to have settled yet.
+    /// The lowest-numbered input step not known to have committed yet.
     ///
-    /// This is updated lazily, only when we need to wait for a step to settle
-    /// in `wait_to_settle`.
-    unsettled_step: Mutex<Step>,
+    /// This is updated lazily, only when we need to wait for a step to commit
+    /// in `wait_to_commit`.
+    uncommitted_step: Mutex<Step>,
 
-    /// Condition that fires when `unsettled_step` increases.
-    step_settled: Condvar,
+    /// Condition that fires when `uncommitted_step` increases.
+    step_committed: Condvar,
 }
 
 impl ControllerInner {
@@ -846,8 +846,8 @@ impl ControllerInner {
             backpressure_thread_unparker,
             error_cb,
             step: AtomicStep::new(0),
-            unsettled_step: Mutex::new(0),
-            step_settled: Condvar::new(),
+            uncommitted_step: Mutex::new(0),
+            step_committed: Condvar::new(),
         }
     }
 
@@ -1153,7 +1153,7 @@ impl ControllerInner {
                 encoder
                     .encode(data.as_slice())
                     .unwrap_or_else(|e| controller.encode_error(endpoint_id, &endpoint_name, e));
-                controller.wait_to_settle(step);
+                controller.wait_to_commit(step);
                 encoder.consumer().batch_end();
 
                 // `num_records` output records have been transmitted --
@@ -1173,24 +1173,24 @@ impl ControllerInner {
         }
     }
 
-    /// Waits for input `step` to settle.
+    /// Waits for input `step` to commit.
     ///
-    /// An input step must settle before we can commit any of the output.
+    /// An input step must commit before we can commit any of the output.
     /// Otherwise, if there is a crash, we might have output for which we don't
     /// know the corresponding input, which would break fault tolerance.
-    fn wait_to_settle(self: &Arc<Self>, step: Step) {
-        if !self.status.step_is_settled(step) {
-            let mut guard = self.unsettled_step.lock().unwrap();
+    fn wait_to_commit(self: &Arc<Self>, step: Step) {
+        if !self.status.is_step_committed(step) {
+            let mut guard = self.uncommitted_step.lock().unwrap();
             loop {
-                let unsettled_step = self.status.unsettled_step().unwrap();
-                if unsettled_step > *guard {
-                    *guard = unsettled_step;
-                    self.step_settled.notify_all();
+                let uncommitted_step = self.status.uncommitted_step().unwrap();
+                if uncommitted_step > *guard {
+                    *guard = uncommitted_step;
+                    self.step_committed.notify_all();
                 }
-                if unsettled_step < step {
+                if uncommitted_step < step {
                     return;
                 }
-                guard = self.step_settled.wait(guard).unwrap();
+                guard = self.step_committed.wait(guard).unwrap();
             }
         }
     }
@@ -1388,8 +1388,8 @@ impl InputConsumer for InputProbe {
         self.circuit_thread_unparker.unpark();
     }
 
-    fn settled(&mut self, step: Step) {
-        self.controller.status.settled(self.endpoint_id, step);
+    fn committed(&mut self, step: Step) {
+        self.controller.status.committed(self.endpoint_id, step);
         self.circuit_thread_unparker.unpark();
     }
 }

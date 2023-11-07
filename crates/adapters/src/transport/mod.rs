@@ -214,7 +214,7 @@ pub trait InputReader: Send {
     /// consumer passed to [`InputEndpoint::open`].
     ///
     /// A durable endpoint must not push data for a step greater than `step`.
-    /// If `step` commits, then it must still report it by calling
+    /// If `step` completes, then it must still report it by calling
     /// `InputConsumer::start_step(step + 1)`, but it must not subsequently call
     /// [`InputConsumer::input_fragment`] or [`InputConsumer::input_chunk`]
     /// before the client calls [`InputReader::start(step + 1)`].
@@ -229,13 +229,13 @@ pub trait InputReader: Send {
     /// data buffers may be pushed downstream before the endpoint goes quiet.
     fn pause(&self) -> AnyResult<()>;
 
-    /// Requests that the endpoint commits steps up to `_step`.  This is
+    /// Requests that the endpoint completes steps up to `_step`.  This is
     /// meaningful only for durable endpoints.
     ///
-    /// An endpoint may commit steps even without a call to this function.  It
-    /// might, for example, limit the size of a single step and therefore commit
-    /// once a step fills up to the maximum size.
-    fn commit(&self, _step: Step) {}
+    /// An endpoint may complete steps even without a call to this function.  It
+    /// might, for example, limit the size of a single step and therefore
+    /// complete once a step fills up to the maximum size.
+    fn complete(&self, _step: Step) {}
 
     /// Disconnect the endpoint.
     ///
@@ -255,22 +255,22 @@ pub trait InputReader: Send {
 /// For a durable endpoint, where the data is divided into steps, there is some
 /// special terminology:
 ///
-///   * "Committed" steps.  A step is "committed" when the endpoint has added
+///   * "Completed" steps.  A step is "completed" when the endpoint has added
 ///     all of the data to it that it is going to.  The reader indicates that a
-///     step `step`, and all prior steps, are committed by calling
-///     `InputConsumer::start_step(step + 1)`.
+///     step `step`, and all prior steps, are completed by starting the next
+///     step with a call to `InputConsumer::start_step(step + 1)`.
 ///
-///     A committed step may not yet be durable.  Committing indicates that the
-///     endpoint writing it to stable storage, but that might not be complete
+///     A completed step may not yet be durable.  Completion indicates that the
+///     endpoint is writing it to stable storage, but that might not be done
 ///     yet.  The controller can start processing the input step but it should
 ///     not yet yield any side effects that can't be retracted.
 ///
-///   * "Settled" steps.  This is the term for a committed step that has been
-///     written to stable storage.  The reader indicates that a step `step`, and
-///     all prior steps, have settled by calling `InputConsumer::settled(step)`.
+///   * "Committed" steps.  This is the term for a completed step that has been
+///     written to stable storage.  The reader indicates that `step`, and all
+///     prior steps, have committed by calling `InputConsumer::committed(step)`.
 ///
-///     Settled is really a synonym for "durable", but that term is already used
-///     too much in this API.
+///     Committed is a synonym for "durable", but that term is already used too
+///     much in this API.
 pub trait InputConsumer: Send {
     /// Indicates that upcoming calls are for `step`.
     fn start_step(&mut self, step: Step);
@@ -300,10 +300,7 @@ pub trait InputConsumer: Send {
 
     /// Steps numbered less than `step` been durably recorded.  (If recording a
     /// step fails, then [`InputConsumer::error`] is called instead.)
-    ///
-    /// The endpoint calls this method even if it passed `true` for
-    /// `already_durable` in its previous call to [`Self::start_step`].
-    fn settled(&mut self, step: Step);
+    fn committed(&mut self, step: Step);
 
     /// Endpoint failed.
     ///

@@ -152,7 +152,7 @@ impl Error for Exit {}
 /// Code outside this module accesses this as `dyn InputReader`.
 struct Reader {
     action: Arc<Mutex<Action>>,
-    commit_step: Arc<Mutex<Option<Step>>>,
+    complete_step: Arc<Mutex<Option<Step>>>,
     unparker: Unparker,
     join_handle: Option<JoinHandle<()>>,
 }
@@ -178,12 +178,12 @@ impl InputReader for Reader {
         Ok(())
     }
 
-    fn commit(&self, new_step: Step) {
-        let mut commit_step = self.commit_step.lock().unwrap();
-        match *commit_step {
+    fn complete(&self, new_step: Step) {
+        let mut complete_step = self.complete_step.lock().unwrap();
+        match *complete_step {
             Some(step) if new_step <= step => (),
             _ => {
-                *commit_step = Some(new_step);
+                *complete_step = Some(new_step);
                 self.unparker.unpark();
             }
         }
@@ -213,10 +213,10 @@ impl Reader {
         let parker = Parker::new();
         let unparker = parker.unparker().clone();
         let action = Arc::new(Mutex::new(Ok(OkAction::Pause)));
-        let commit_step = Arc::new(Mutex::new(None));
+        let complete_step = Arc::new(Mutex::new(None));
         let join_handle = Some(WorkerThread::spawn(
             &action,
-            &commit_step,
+            &complete_step,
             start_step,
             parker,
             config,
@@ -224,7 +224,7 @@ impl Reader {
         ));
         Reader {
             action,
-            commit_step,
+            complete_step,
             unparker,
             join_handle,
         }
@@ -296,7 +296,7 @@ impl Drop for PollerThread {
 
 struct WorkerThread {
     action: Arc<Mutex<Action>>,
-    commit_step: Arc<Mutex<Option<Step>>>,
+    complete_step: Arc<Mutex<Option<Step>>>,
     start_step: Step,
     parker: Parker,
     config: Arc<Config>,
@@ -306,7 +306,7 @@ struct WorkerThread {
 impl WorkerThread {
     fn spawn(
         action: &Arc<Mutex<Action>>,
-        commit_step: &Arc<Mutex<Option<Step>>>,
+        complete_step: &Arc<Mutex<Option<Step>>>,
         start_step: Step,
         parker: Parker,
         config: &Arc<Config>,
@@ -315,7 +315,7 @@ impl WorkerThread {
         let receiver = Arc::new(Mutex::new(receiver));
         let worker_thread = Self {
             action: action.clone(),
-            commit_step: commit_step.clone(),
+            complete_step: complete_step.clone(),
             start_step,
             parker,
             config: config.clone(),
@@ -358,9 +358,9 @@ impl WorkerThread {
         }
     }
 
-    fn is_commit_requested(&self, step: Step) -> bool {
-        match *self.commit_step.lock().unwrap() {
-            Some(commit_step) => step <= commit_step,
+    fn is_completion_requested(&self, step: Step) -> bool {
+        match *self.complete_step.lock().unwrap() {
+            Some(complete_step) => step <= complete_step,
             None => false,
         }
     }
@@ -543,7 +543,7 @@ impl WorkerThread {
 
                 let mut n_messages = 0;
                 let mut n_bytes = 0;
-                'assemble: while !self.is_commit_requested(step)
+                'assemble: while !self.is_completion_requested(step)
                     && n_messages < self.config.max_step_messages
                     && n_bytes < self.config.max_step_bytes
                 {
@@ -611,7 +611,7 @@ impl WorkerThread {
                         //
                         //   - A message to arrive in one of the data partitions.
                         //
-                        //   - A commit request for this step.
+                        //   - A completion request for this step.
                         //
                         //   - A request to exit.
                         self.parker.park();
@@ -629,10 +629,10 @@ impl WorkerThread {
                 // complicate the loop above and there's little value in it.
             }
 
-            // Commit the step.
+            // Complete the step.
             if n_prewritten < n_partitions {
                 // Prepare to count deliveries so we can later report that the
-                // step has settled.
+                // step has committed.
                 expected_deliveries
                     .lock()
                     .unwrap()
@@ -656,8 +656,8 @@ impl WorkerThread {
                     }
                 }
             } else {
-                // This is a fully pre-existing step that has already settled.
-                self.receiver.lock().unwrap().settled(step);
+                // This is a fully pre-existing step that has already committed.
+                self.receiver.lock().unwrap().committed(step);
             }
         }
         unreachable!()
@@ -717,7 +717,7 @@ struct IndexProducerContext {
     consumer: Arc<Mutex<Box<dyn InputConsumer>>>,
 
     /// Maps from a step number to the number of messages that remain to be
-    /// delivered before that step is considered settled.
+    /// delivered before that step is considered committed.
     expected_deliveries: Arc<Mutex<HashMap<Step, usize>>>,
 }
 
@@ -771,11 +771,11 @@ impl ProducerContext for IndexProducerContext {
 
                 // We do this after the above to avoid holding the lock on
                 // `expected_deliveries`.
-                self.consumer.lock().unwrap().settled(*step);
+                self.consumer.lock().unwrap().committed(*step);
             }
             Err(_) => {
                 // If there's an error, we don't want to ever report that the
-                // step settled, and we don't want to leak an entry in
+                // step committed, and we don't want to leak an entry in
                 // `expected_deliveries` either.  This has both effects.
                 self.expected_deliveries.lock().unwrap().remove(&*step);
             }
