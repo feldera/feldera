@@ -28,42 +28,42 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFloat;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPFloatLiteral extends DBSPFPLiteral {
+public class DBSPRealLiteral extends DBSPFPLiteral {
     @Nullable
     public final Float value;
 
-    public DBSPFloatLiteral(CalciteObject node, DBSPType type, @Nullable Float value, boolean raw) {
+    public DBSPRealLiteral(CalciteObject node, DBSPType type, @Nullable Float value, boolean raw) {
         super(node, type, value, raw);
         this.value = value;
     }
 
     @SuppressWarnings("unused")
-    public DBSPFloatLiteral() {
+    public DBSPRealLiteral() {
         this(null, true);
     }
 
-    public DBSPFloatLiteral(float value) {
+    public DBSPRealLiteral(float value) {
         this(value, false);
     }
 
-    public DBSPFloatLiteral(@Nullable Float f, boolean nullable) {
+    public DBSPRealLiteral(@Nullable Float f, boolean nullable) {
         this(f, nullable, false);
     }
 
-    protected DBSPFloatLiteral(@Nullable Float f, boolean nullable, boolean raw) {
-        this(CalciteObject.EMPTY, new DBSPTypeFloat(CalciteObject.EMPTY, nullable), f, raw);
+    protected DBSPRealLiteral(@Nullable Float f, boolean nullable, boolean raw) {
+        this(CalciteObject.EMPTY, new DBSPTypeReal(CalciteObject.EMPTY, nullable), f, raw);
         if (f == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
 
-    public DBSPFloatLiteral raw() {
-        return new DBSPFloatLiteral(this.value, this.getType().mayBeNull, true);
+    public DBSPRealLiteral raw() {
+        return new DBSPRealLiteral(this.value, this.getType().mayBeNull, true);
     }
 
     @Override
@@ -76,14 +76,14 @@ public class DBSPFloatLiteral extends DBSPFPLiteral {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPFloatLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull, this.raw);
+        return new DBSPRealLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull, this.raw);
     }
 
     @Override
     public boolean sameValue(@Nullable DBSPLiteral o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPFloatLiteral that = (DBSPFloatLiteral) o;
+        DBSPRealLiteral that = (DBSPRealLiteral) o;
         return Objects.equals(value, that.value);
     }
 
@@ -104,6 +104,6 @@ public class DBSPFloatLiteral extends DBSPFPLiteral {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPFloatLiteral(this.getNode(), this.type, this.value, this.raw);
+        return new DBSPRealLiteral(this.getNode(), this.type, this.value, this.raw);
     }
 }

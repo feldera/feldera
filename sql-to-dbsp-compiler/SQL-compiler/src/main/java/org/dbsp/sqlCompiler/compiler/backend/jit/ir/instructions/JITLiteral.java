@@ -41,7 +41,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -96,8 +96,8 @@ public class JITLiteral extends JITValue {
             return isNull ? BooleanNode.valueOf(false) : BooleanNode.valueOf(this.literal.to(DBSPBoolLiteral.class).value);
         } else if (this.literal.is(DBSPDoubleLiteral.class)) {
             return isNull ? new DoubleNode(0.0) : new DoubleNode(this.literal.to(DBSPDoubleLiteral.class).value);
-        } else if (this.literal.is(DBSPFloatLiteral.class)) {
-            return isNull ? new FloatNode(0.0F) : new FloatNode(this.literal.to(DBSPFloatLiteral.class).value);
+        } else if (this.literal.is(DBSPRealLiteral.class)) {
+            return isNull ? new FloatNode(0.0F) : new FloatNode(this.literal.to(DBSPRealLiteral.class).value);
         } else if (this.literal.is(DBSPDecimalLiteral.class)) {
             return isNull ? DecimalNode.ZERO : new DecimalNode(this.literal.to(DBSPDecimalLiteral.class).value);
         } else if (this.literal.is(DBSPTimestampLiteral.class)) {

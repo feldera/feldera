@@ -13,7 +13,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
@@ -37,7 +37,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFloat;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
@@ -301,9 +301,9 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         } else if (fieldType.is(DBSPTypeDouble.class)) {
             double value = Double.parseDouble(trimmed);
             result = new DBSPDoubleLiteral(value, fieldType.mayBeNull);
-        } else if (fieldType.is(DBSPTypeFloat.class)) {
+        } else if (fieldType.is(DBSPTypeReal.class)) {
             float value = Float.parseFloat(trimmed);
-            result = new DBSPFloatLiteral(value, fieldType.mayBeNull);
+            result = new DBSPRealLiteral(value, fieldType.mayBeNull);
         } else if (fieldType.is(DBSPTypeDecimal.class)) {
             BigDecimal value = new BigDecimal(trimmed);
             result = new DBSPDecimalLiteral(fieldType, value);

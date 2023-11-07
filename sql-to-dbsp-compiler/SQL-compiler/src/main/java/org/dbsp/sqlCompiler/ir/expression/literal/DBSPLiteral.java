@@ -37,7 +37,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFloat;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
@@ -92,8 +92,8 @@ public abstract class DBSPLiteral extends DBSPExpression {
             return new DBSPDecimalLiteral(type.getNode(), type, null);
         } else if (type.is(DBSPTypeDouble.class)) {
             return new DBSPDoubleLiteral();
-        } else if (type.is(DBSPTypeFloat.class)) {
-            return new DBSPFloatLiteral();
+        } else if (type.is(DBSPTypeReal.class)) {
+            return new DBSPRealLiteral();
         } else if (type.is(DBSPTypeGeoPoint.class)) {
             return new DBSPGeoPointLiteral();
         } else if (type.is(DBSPTypeMillisInterval.class)) {

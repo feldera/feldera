@@ -17,7 +17,7 @@ import org.junit.Test;
 import javax.sql.DataSource;
 import java.sql.*;
 
-public class Tests {
+public class DBTests {
     @SuppressWarnings("SqlDialectInspection")
     @Test
     public void HSQLDBTest() throws SQLException, ClassNotFoundException {

@@ -16,7 +16,7 @@ public class PostgresFloat4Tests extends PostgresBaseTest {
                 "INSERT INTO FLOAT4_TBL(f1) VALUES ('1.2345678901234e-20');");
     }
 
-    @Test
+    @Test @Ignore("Waiting for https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6094")
     public void testOverflow() {
         this.q("SELECT 10e70 :: FLOAT4;\n" +
                 "result\n" +

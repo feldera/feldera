@@ -165,8 +165,8 @@ public class JitTestBatch extends TestBatch {
                         case DOUBLE:
                             integer = Objects.requireNonNull(value.to(DBSPDoubleLiteral.class).value).longValue();
                             break;
-                        case FLOAT:
-                            integer = Objects.requireNonNull(value.to(DBSPFloatLiteral.class).value).longValue();
+                        case REAL:
+                            integer = Objects.requireNonNull(value.to(DBSPRealLiteral.class).value).longValue();
                             break;
                         case INT32:
                             integer = Objects.requireNonNull(value.to(DBSPI32Literal.class).value);
@@ -200,8 +200,8 @@ public class JitTestBatch extends TestBatch {
                         case DOUBLE:
                             d = Objects.requireNonNull(value.to(DBSPDoubleLiteral.class).value);
                             break;
-                        case FLOAT:
-                            d = Objects.requireNonNull(value.to(DBSPFloatLiteral.class).value);
+                        case REAL:
+                            d = Objects.requireNonNull(value.to(DBSPRealLiteral.class).value);
                             break;
                         case INT32:
                             d = Objects.requireNonNull(value.to(DBSPI32Literal.class).value);
@@ -235,8 +235,8 @@ public class JitTestBatch extends TestBatch {
                         case DOUBLE:
                             s = Objects.requireNonNull(value.to(DBSPDoubleLiteral.class).value).toString();
                             break;
-                        case FLOAT:
-                            s = Objects.requireNonNull(value.to(DBSPFloatLiteral.class).value).toString();
+                        case REAL:
+                            s = Objects.requireNonNull(value.to(DBSPRealLiteral.class).value).toString();
                             break;
                         case INT32:
                             s = Objects.requireNonNull(value.to(DBSPI32Literal.class).value).toString();

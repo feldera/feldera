@@ -304,7 +304,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPFloatLiteral literal) {
+    public VisitDecision preorder(DBSPRealLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);
         float value = Objects.requireNonNull(literal.value);

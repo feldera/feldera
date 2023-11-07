@@ -8,7 +8,7 @@ public enum DBSPTypeCode {
     DATE_TZ("", "", ""),
     DECIMAL("decimal", "Decimal", "Decimal"),
     DOUBLE("d", "F64", "F64"),
-    FLOAT("f", "F32", "F32"),
+    REAL("f", "F32", "F32"),
     GEOPOINT("geopoint", "GeoPoint", ""),
     INT8("i8", "i8", ""),
     INT16("i16", "i16", "I16"),

@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
@@ -58,7 +58,7 @@ public class ToSqlVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPFloatLiteral literal) {
+    public VisitDecision preorder(DBSPRealLiteral literal) {
         if (literal.value != null)
             this.appendable.append(literal.value);
         else

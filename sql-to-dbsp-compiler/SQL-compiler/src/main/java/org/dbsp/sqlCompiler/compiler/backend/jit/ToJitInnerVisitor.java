@@ -556,16 +556,16 @@ public class ToJitInnerVisitor extends InnerVisitor implements IWritesLogs {
         
         put("abs_decimal", new OpCall(JITUnaryInstruction.Operation.ABS, DBSPTypeDecimal.getDefault()));
         put("abs_d", new OpCall(JITUnaryInstruction.Operation.ABS, new DBSPTypeDouble(CalciteObject.EMPTY, false)));
-        put("abs_f", new OpCall(JITUnaryInstruction.Operation.ABS, new DBSPTypeFloat(CalciteObject.EMPTY, false)));
+        put("abs_f", new OpCall(JITUnaryInstruction.Operation.ABS, new DBSPTypeReal(CalciteObject.EMPTY, false)));
         put("floor_decimal", new OpCall(JITUnaryInstruction.Operation.FLOOR, DBSPTypeDecimal.getDefault()));
         put("floor_d", new OpCall(JITUnaryInstruction.Operation.FLOOR, new DBSPTypeDouble(CalciteObject.EMPTY, false)));
-        put("floor_f", new OpCall(JITUnaryInstruction.Operation.FLOOR, new DBSPTypeFloat(CalciteObject.EMPTY, false)));
+        put("floor_f", new OpCall(JITUnaryInstruction.Operation.FLOOR, new DBSPTypeReal(CalciteObject.EMPTY, false)));
         put("ceil_decimal", new OpCall(JITUnaryInstruction.Operation.CEIL, DBSPTypeDecimal.getDefault()));
         put("ceil_d", new OpCall(JITUnaryInstruction.Operation.CEIL, new DBSPTypeDouble(CalciteObject.EMPTY, false)));
-        put("ceil_f", new OpCall(JITUnaryInstruction.Operation.CEIL, new DBSPTypeFloat(CalciteObject.EMPTY, false)));
+        put("ceil_f", new OpCall(JITUnaryInstruction.Operation.CEIL, new DBSPTypeReal(CalciteObject.EMPTY, false)));
         put("sqrt_decimal", new OpCall(JITUnaryInstruction.Operation.SQRT, DBSPTypeDecimal.getDefault()));
         put("sqrt_d", new OpCall(JITUnaryInstruction.Operation.SQRT, new DBSPTypeDouble(CalciteObject.EMPTY, false)));
-        put("sqrt_f", new OpCall(JITUnaryInstruction.Operation.SQRT, new DBSPTypeFloat(CalciteObject.EMPTY, false)));
+        put("sqrt_f", new OpCall(JITUnaryInstruction.Operation.SQRT, new DBSPTypeReal(CalciteObject.EMPTY, false)));
     }};
 
     void generatePrint(DBSPExpression argument) {

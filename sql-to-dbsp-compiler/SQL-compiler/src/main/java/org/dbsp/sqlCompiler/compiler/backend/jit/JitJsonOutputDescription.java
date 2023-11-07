@@ -16,7 +16,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
@@ -174,8 +174,8 @@ public class JitJsonOutputDescription extends JitIODescription {
                     return new DBSPDecimalLiteral(type, field.decimalValue());
                 case DOUBLE:
                     return new DBSPDoubleLiteral(field.doubleValue(), type.mayBeNull);
-                case FLOAT:
-                    return new DBSPFloatLiteral(field.floatValue(), type.mayBeNull);
+                case REAL:
+                    return new DBSPRealLiteral(field.floatValue(), type.mayBeNull);
                 case INT8:
                     // TODO: check overflow?
                     return new DBSPI8Literal((byte) field.intValue(), type.mayBeNull);

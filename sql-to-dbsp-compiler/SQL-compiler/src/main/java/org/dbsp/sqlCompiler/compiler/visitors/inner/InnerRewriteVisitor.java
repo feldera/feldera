@@ -13,7 +13,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPFloatLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -58,7 +58,6 @@ import org.dbsp.util.Logger;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -336,11 +335,11 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPFloatLiteral expression) {
+    public VisitDecision preorder(DBSPRealLiteral expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
-        DBSPExpression result = new DBSPFloatLiteral(
+        DBSPExpression result = new DBSPRealLiteral(
                 expression.getNode(), type, expression.value, expression.raw);
         this.map(expression, result);
         return VisitDecision.STOP;

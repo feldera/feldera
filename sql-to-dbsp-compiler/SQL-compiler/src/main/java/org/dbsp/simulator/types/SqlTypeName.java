@@ -9,7 +9,7 @@ public enum SqlTypeName {
     CHAR("CHAR"),
     VARCHAR("VARCHAR"),
     DECIMAL("DECIMAL"),
-    FLOAT("FLOAT"),
+    REAL("REAL"),
     DOUBLE("DOUBLE"),
     DATE("DATE"),
     DATE_TZ("DATE WITH TIMEZONE"),

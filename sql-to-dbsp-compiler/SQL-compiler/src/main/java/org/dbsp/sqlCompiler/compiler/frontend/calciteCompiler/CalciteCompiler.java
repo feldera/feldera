@@ -160,7 +160,7 @@ public class CalciteCompiler implements IWritesLogs {
                 // otherwise it's not.
                 boolean nullable = true;
                 for (RelDataType type: opTypes) {
-                    if (type.getSqlTypeName() == SqlTypeName.FLOAT) {
+                    if (SqlTypeName.APPROX_TYPES.contains(type.getSqlTypeName())) {
                         nullable = false;
                         break;
                     }
@@ -211,7 +211,6 @@ public class CalciteCompiler implements IWritesLogs {
             return false;
         }
     }
-
 
     static class RlikeFunction extends SqlFunction {
         public RlikeFunction() {
@@ -276,6 +275,10 @@ public class CalciteCompiler implements IWritesLogs {
                         this.reporter.reportError(position, false,
                                 "Illegal type", "DECIMAL type must have scale <= precision");
                     }
+                } else if (relDataType.getSqlTypeName() == SqlTypeName.FLOAT) {
+                    SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
+                    this.reporter.reportError(position, false,
+                            "Illegal type", "Do not use the FLOAT type, please use REAL or DOUBLE");
                 }
             }
             return super.visit(type);
@@ -318,8 +321,8 @@ public class CalciteCompiler implements IWritesLogs {
         rootSchema.add("SIGNED", factory -> factory.createSqlType(SqlTypeName.INTEGER));
         rootSchema.add("INT64", factory -> factory.createSqlType(SqlTypeName.BIGINT));
         rootSchema.add("FLOAT64", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
-        rootSchema.add("FLOAT32", factory -> factory.createSqlType(SqlTypeName.FLOAT));
-        rootSchema.add("FLOAT4", factory -> factory.createSqlType(SqlTypeName.FLOAT));
+        rootSchema.add("FLOAT32", factory -> factory.createSqlType(SqlTypeName.REAL));
+        rootSchema.add("FLOAT4", factory -> factory.createSqlType(SqlTypeName.REAL));
         rootSchema.add("FLOAT8", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
         rootSchema.add("STRING", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
         rootSchema.add("NUMBER", factory -> factory.createSqlType(SqlTypeName.DECIMAL));

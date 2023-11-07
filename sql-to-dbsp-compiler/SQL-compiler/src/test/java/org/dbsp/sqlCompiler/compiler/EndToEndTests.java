@@ -79,7 +79,7 @@ public class EndToEndTests extends BaseSQLTests {
      * INSERT INTO T VALUES (10, 12, true, 'Hi', NULL, NULL);
      * INSERT INTO T VALUES (10, 1.0, false, 'Hi', 1, 0.0);
      */
-    DBSPZSetLiteral.Contents createInput() {
+    static DBSPZSetLiteral.Contents createInput() {
         return new DBSPZSetLiteral.Contents(e0, e1);
     }
 
@@ -576,13 +576,13 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void whereExplicitImplicitCastTest() {
-        String query = "SELECT * FROM T WHERE COL2 < CAST(COL1 AS FLOAT)";
+        String query = "SELECT * FROM T WHERE COL2 < CAST(COL1 AS REAL)";
         this.testQuery(query, z1);
     }
 
     @Test
     public void whereExplicitImplicitCastTestNull() {
-        String query = "SELECT * FROM T WHERE COL2 < CAST(COL5 AS FLOAT)";
+        String query = "SELECT * FROM T WHERE COL2 < CAST(COL5 AS REAL)";
         this.testQuery(query, empty);
     }
 

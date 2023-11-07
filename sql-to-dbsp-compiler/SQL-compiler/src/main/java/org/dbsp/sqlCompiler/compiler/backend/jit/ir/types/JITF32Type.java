@@ -29,6 +29,6 @@ public class JITF32Type extends JITScalarType {
     public static final JITF32Type INSTANCE = new JITF32Type();
 
     protected JITF32Type() {
-        super(DBSPTypeCode.FLOAT);
+        super(DBSPTypeCode.REAL);
     }
 }

@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Removed support for `FLOAT` SQL data type, since it is ambiguous.
+  `REAL` is recommended instead.
+  ([#980](https://github.com/feldera/feldera/pull/980))
+
 ### Added
+
 - Support various forms of TopK computations in SQL
   ([#968](https://github.com/feldera/feldera/pull/968))
 - Support for ORDER BY with LIMIT
