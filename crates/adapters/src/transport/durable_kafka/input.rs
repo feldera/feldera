@@ -132,20 +132,20 @@ enum OkAction {
 ///
 /// - `Ok(action)`: Run or pause.
 ///
-/// - `Err(Exit)`: All done, please exit.
+/// - `Err(ExitRequest)`: All done, please exit.
 ///
 /// Representing an exit request as `Err` allows it to be implemented via `?`.
-type Action = Result<OkAction, Exit>;
+type Action = Result<OkAction, ExitRequest>;
 
 /// Error type to represent that the worker thread should exit.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-struct Exit;
-impl Display for Exit {
+struct ExitRequest;
+impl Display for ExitRequest {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "Exit")
+        write!(f, "ExitRequest")
     }
 }
-impl Error for Exit {}
+impl Error for ExitRequest {}
 
 /// A reader for durable Kafka input.
 ///
@@ -190,13 +190,13 @@ impl InputReader for Reader {
     }
 
     fn disconnect(&self) {
-        self.set_action(Err(Exit));
+        self.set_action(Err(ExitRequest));
     }
 }
 
 impl Drop for Reader {
     fn drop(&mut self) {
-        self.set_action(Err(Exit));
+        self.set_action(Err(ExitRequest));
         if let Some(join_handle) = self.join_handle.take() {
             // As a corner case, `Reader` might get dropped from a callback
             // executed from the worker thread.  We must not join ourselves
@@ -330,7 +330,7 @@ impl WorkerThread {
             ))
             .spawn(move || {
                 if let Err(error) = worker_thread.run() {
-                    if error.downcast_ref::<Exit>().is_some() {
+                    if error.downcast_ref::<ExitRequest>().is_some() {
                         // Normal termination because of a requested exit.
                     } else {
                         error!("Durable Kafka input endpoint failed due to: {error:#}");
@@ -374,7 +374,7 @@ impl WorkerThread {
         let mut assignment = TopicPartitionList::new();
         for data_topic in &self.config.data_topics {
             let index_topic = format!("{data_topic}{index_suffix}");
-            let index = Index::new(data_topic, &self.config, |error| {
+            let index = IndexReader::new(data_topic, &self.config, |error| {
                 self.receiver.lock().unwrap().error(false, error)
             })
             .with_context(|| format!("Failed to read index topic {index_topic}"))?;
@@ -608,11 +608,8 @@ impl WorkerThread {
 
                     if lack_of_progress >= n_partitions {
                         // Wait for at least one of these to happen:
-                        //
                         //   - A message to arrive in one of the data partitions.
-                        //
                         //   - A completion request for this step.
-                        //
                         //   - A request to exit.
                         self.parker.park();
                         lack_of_progress = 0;
@@ -684,7 +681,7 @@ impl InputEndpoint for Endpoint {
             let Range {
                 start: new_start,
                 end: new_end,
-            } = Index::new(data_topic, &self.0, |error| warn!("{error:#}"))
+            } = IndexReader::new(data_topic, &self.0, |error| warn!("{error:#}"))
                 .with_context(|| format!("Failed to read index for {data_topic}"))?
                 .steps();
             steps = Some(steps.map_or(
@@ -863,8 +860,8 @@ fn test_index_entry() {
 /// consists of [`IndexEntry`] events, each of which maps a range of Kafka
 /// events in the data topic to a step number.
 ///
-/// `Index` provides an interface for reading the index topic.
-struct Index<E>
+/// `IndexReader` provides an interface for reading the index topic.
+struct IndexReader<E>
 where
     E: Fn(AnyError) + Send + Sync + Clone,
 {
@@ -886,7 +883,7 @@ struct IndexPartition {
     next_step_start: i64,
 }
 
-impl<E> Index<E>
+impl<E> IndexReader<E>
 where
     E: Fn(AnyError) + Send + Sync + Clone,
 {

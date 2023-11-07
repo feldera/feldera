@@ -125,6 +125,8 @@ impl DeferredLogging {
 
     /// Logs the message in the usual way, or captures it for later logging if
     /// we're running inside `Self::with_deferred_logging`.
+    ///
+    /// This is meant to be used to implement `ClientContext::log()`.
     pub fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
         if let Some(ref mut deferred_logging) = self.0.lock().unwrap().as_mut() {
             deferred_logging.push((level, fac.into(), log_message.into()))
