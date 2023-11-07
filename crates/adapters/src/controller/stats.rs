@@ -433,14 +433,14 @@ impl ControllerStatus {
         };
     }
 
-    pub fn settled(&self, endpoint_id: EndpointId, step: Step) {
+    pub fn committed(&self, endpoint_id: EndpointId, step: Step) {
         let inputs = self.inputs.read().unwrap();
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-            endpoint_stats.settled(step);
+            endpoint_stats.committed(step);
         };
     }
 
-    pub fn step_is_committed(&self, step: Step) -> bool {
+    pub fn is_step_complete(&self, step: Step) -> bool {
         self.inputs
             .read()
             .unwrap()
@@ -448,18 +448,18 @@ impl ControllerStatus {
             .all(|status| !status.is_durable || status.metrics.step.load(Ordering::Acquire) > step)
     }
 
-    pub fn step_is_settled(&self, step: Step) -> bool {
-        self.unsettled_step()
-            .map_or(true, |unsettled_step| step < unsettled_step)
+    pub fn is_step_committed(&self, step: Step) -> bool {
+        self.uncommitted_step()
+            .map_or(true, |uncommitted_step| step < uncommitted_step)
     }
 
-    pub fn unsettled_step(&self) -> Option<Step> {
+    pub fn uncommitted_step(&self) -> Option<Step> {
         let mut step = None;
         for status in self.inputs.read().unwrap().values() {
             if !status.is_durable {
                 return None;
             }
-            let new = status.metrics.unsettled.load(Ordering::Acquire);
+            let new = status.metrics.uncommitted.load(Ordering::Acquire);
             step = Some(step.map_or(new, |old| min(old, new)));
         }
         step
@@ -610,8 +610,8 @@ pub struct InputEndpointMetrics {
     /// The step to which arriving input belongs.
     pub step: AtomicU64,
 
-    /// The first step known not to have settled yet.
-    pub unsettled: AtomicU64,
+    /// The first step known not to have committed yet.
+    pub uncommitted: AtomicU64,
 }
 
 /// Input endpoint status information.
@@ -702,8 +702,8 @@ impl InputEndpointStatus {
         self.metrics.step.store(step, Ordering::Release);
     }
 
-    fn settled(&self, step: Step) {
-        self.metrics.unsettled.store(step + 1, Ordering::Release);
+    fn committed(&self, step: Step) {
+        self.metrics.uncommitted.store(step + 1, Ordering::Release);
     }
 }
 

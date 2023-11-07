@@ -252,27 +252,27 @@ log_level: debug
     reader.start(Step::MAX).unwrap();
     receiver.expect(vec![ConsumerCall::StartStep(0)]);
 
-    // Five times, try to commit
+    // Five times, try to complete
     for step in 0..=4 {
-        info!("committing and reading step {step}",);
-        reader.commit(step);
-        receiver.wait_to_settle(step);
+        info!("completing and reading step {step}",);
+        reader.complete(step);
+        receiver.wait_to_complete(step);
         receiver.expect(vec![ConsumerCall::StartStep(step + 1)]);
-        receiver.wait_to_settle(step);
+        receiver.wait_to_complete(step);
         assert_eq!(endpoint.steps().unwrap(), 0..(step + 1));
     }
 
     // Try to read multiple steps beyond the last available.
     let mut step = 4;
     for n in 2..10 {
-        let commits = (step + 1)..=(step + n);
-        step = *commits.end();
-        info!("committing up to step {step}");
-        reader.commit(step);
-        for step in commits {
+        let completions = (step + 1)..=(step + n);
+        step = *completions.end();
+        info!("completing up to step {step}");
+        reader.complete(step);
+        for step in completions {
             receiver.expect(vec![ConsumerCall::StartStep(step + 1)])
         }
-        receiver.wait_to_settle(step);
+        receiver.wait_to_complete(step);
         assert_eq!(endpoint.steps().unwrap(), 0..(step + 1));
     }
     receiver.expect_eof();
@@ -285,7 +285,7 @@ log_level: debug
     for step in 0..=step {
         receiver2.expect(vec![ConsumerCall::StartStep(step)])
     }
-    receiver2.wait_to_settle(step);
+    receiver2.wait_to_complete(step);
     receiver2.expect(vec![ConsumerCall::StartStep(step + 1)]);
     receiver2.expect_eof();
 }
@@ -338,10 +338,10 @@ max_step_messages: 5
     info!("now we should get that data in step 0");
     receiver.expect(vec![ConsumerCall::InputChunk("0,false,,\n".into())]);
 
-    info!("commit step 0");
-    reader.commit(0);
+    info!("complete step 0");
+    reader.complete(0);
     receiver.expect(vec![ConsumerCall::StartStep(1)]);
-    receiver.wait_to_settle(0);
+    receiver.wait_to_complete(0);
     assert_eq!(endpoint.steps().unwrap(), 0..1);
 
     info!("we shouldn't get more data yet because we didn't ask for step 1 yet");
@@ -355,10 +355,10 @@ max_step_messages: 5
         "1,false,,\n2,false,,\n".into(),
     )]);
 
-    info!("commit step 1");
-    reader.commit(1);
+    info!("complete step 1");
+    reader.complete(1);
     receiver.expect(vec![ConsumerCall::StartStep(2)]);
-    receiver.wait_to_settle(1);
+    receiver.wait_to_complete(1);
     assert_eq!(endpoint.steps().unwrap(), 0..2);
 
     info!("writing 4 messages (with max_step_messages=5) should not force a step");
@@ -372,7 +372,7 @@ max_step_messages: 5
     producer.send_to_topic(&[vec![test(7)]], topic);
     receiver.expect(vec![ConsumerCall::InputChunk("7,false,,\n".into())]);
     receiver.expect(vec![ConsumerCall::StartStep(3)]);
-    receiver.wait_to_settle(2);
+    receiver.wait_to_complete(2);
     assert_eq!(endpoint.steps().unwrap(), 0..3);
 
     receiver.expect_eof();
@@ -395,7 +395,7 @@ struct DummyInputReceiver {
 struct DummyInputReceiverInner {
     unparker: Unparker,
     calls: Mutex<Vec<ConsumerCall>>,
-    settled: Mutex<Option<Step>>,
+    committed: Mutex<Option<Step>>,
 }
 
 impl DummyInputReceiver {
@@ -406,13 +406,13 @@ impl DummyInputReceiver {
             inner: Arc::new(DummyInputReceiverInner {
                 unparker,
                 calls: Mutex::new(Vec::new()),
-                settled: Mutex::new(None),
+                committed: Mutex::new(None),
             }),
             parker,
         }
     }
 
-    /// Wait some time for the input consumer to report that `settled` was
+    /// Wait some time for the input consumer to report that `committed` was
     /// called.  However, we don't expect it to have been called, so we panic
     /// with an error if it has.
     ///
@@ -458,12 +458,12 @@ impl DummyInputReceiver {
         }
     }
 
-    pub fn wait_to_settle(&self, step: Step) {
+    pub fn wait_to_complete(&self, step: Step) {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             assert!(Instant::now() < deadline);
-            if let Some(settled) = *self.inner.settled.lock().unwrap() {
-                if settled >= step {
+            if let Some(committed) = *self.inner.committed.lock().unwrap() {
+                if committed >= step {
                     return;
                 }
             }
@@ -513,13 +513,13 @@ impl InputConsumer for DummyInputConsumer {
     fn fork(&self) -> Box<dyn InputConsumer> {
         unreachable!()
     }
-    fn settled(&mut self, step: Step) {
-        info!("step {step} settled");
-        let mut settled = self.0.settled.lock().unwrap();
-        if let Some(settled) = *settled {
-            assert_eq!(settled + 1, step);
+    fn committed(&mut self, step: Step) {
+        info!("step {step} committed");
+        let mut completed = self.0.committed.lock().unwrap();
+        if let Some(committed) = *completed {
+            assert_eq!(committed + 1, step);
         }
-        *settled = Some(step);
+        *completed = Some(step);
         self.0.unparker.unpark();
     }
 }
