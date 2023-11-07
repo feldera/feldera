@@ -31,7 +31,10 @@
 //! pending.
 
 use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
-use crate::{transport::Step, PipelineState};
+use crate::{
+    transport::{AtomicStep, Step},
+    PipelineState,
+};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use log::error;
@@ -608,10 +611,10 @@ pub struct InputEndpointMetrics {
     pub end_of_input: AtomicBool,
 
     /// The step to which arriving input belongs.
-    pub step: AtomicU64,
+    pub step: AtomicStep,
 
     /// The first step known not to have committed yet.
-    pub uncommitted: AtomicU64,
+    pub uncommitted: AtomicStep,
 }
 
 /// Input endpoint status information.
