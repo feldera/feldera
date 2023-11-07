@@ -1347,4 +1347,13 @@ async fn pipeline_restart() {
     config
         .wait_for_pipeline_status(&id, PipelineStatus::Running, config.start_timeout)
         .await;
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
 }
