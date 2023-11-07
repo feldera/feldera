@@ -155,5 +155,5 @@ impl InputConsumer for MockInputConsumer {
 
     fn start_step(&mut self, _step: Step) {}
 
-    fn settled(&mut self, _step: Step) {}
+    fn committed(&mut self, _step: Step) {}
 }
