@@ -428,8 +428,9 @@ impl DummyInputReceiver {
 
     /// Wait until the input consumer receives `expected`. Panics if it receives
     /// something else or if it doesn't receive it within a reasonable amount of
-    /// time.  It is not an error for the consumer receives more following
-    /// `expected`; any calls afterward is left for later calls to check.
+    /// time.  It is not an error for the consumer to receive more following
+    /// `expected`; any data received afterward is left for later calls to
+    /// check.
     #[track_caller]
     pub fn expect(&self, expected: Vec<ConsumerCall>) {
         let mut last_change = Instant::now();
