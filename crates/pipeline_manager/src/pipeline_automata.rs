@@ -412,6 +412,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             (PipelineStatus::Running, _)
             | (PipelineStatus::Paused, _)
             | (PipelineStatus::Failed, _) => self.probe(&mut pipeline).await?,
+            (PipelineStatus::Shutdown, PipelineStatus::Shutdown) => State::Unchanged,
             _ => {
                 error!(
                     "Unexpected current/desired pipeline status combination {:?}/{:?}",
