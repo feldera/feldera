@@ -75,12 +75,12 @@ public class DBSPTypeDate extends DBSPTypeBaseType implements IsNumericType, IsD
 
     @Override
     public DBSPLiteral getMaxValue() {
-        throw new UnsupportedException(this.getNode());
+        return new DBSPDateLiteral(this.getNode(), this, new DateString("9999-12-12"));
     }
 
     @Override
     public DBSPLiteral getMinValue() {
-        throw new UnsupportedException(this.getNode());
+        return new DBSPDateLiteral(this.getNode(), this, new DateString("0000-01-01"));
     }
 
     @Override

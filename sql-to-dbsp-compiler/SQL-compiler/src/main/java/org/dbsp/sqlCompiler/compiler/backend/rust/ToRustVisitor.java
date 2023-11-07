@@ -366,6 +366,21 @@ public class ToRustVisitor extends CircuitVisitor {
         // Generate a CmpFunc impl for the new struct.
         this.generateCmpFunc(operator.getFunction(), structName);
 
+        String streamOperation = "topk_custom_order";
+        if (operator.outputProducer != null) {
+            switch (operator.numbering) {
+                case ROW_NUMBER:
+                    streamOperation = "topk_row_number_custom_order";
+                    break;
+                case RANK:
+                    streamOperation = "topk_rank_custom_order";
+                    break;
+                case DENSE_RANK:
+                    streamOperation = "topk_dense_rank_custom_order";
+                    break;
+            }
+        }
+
         DBSPType streamType = new DBSPTypeStream(operator.outputType);
         this.writeComments(operator)
                 .append("let ")
@@ -375,20 +390,25 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(" = ")
                 .append(operator.input().getName())
                 .append(".")
-                .append(operator.operation)
+                .append(streamOperation)
                 .append("::<")
                 .append(structName);
-                if (operator.outputProducer != null)
-                    this.builder.append(", _, _, _");
+                if (operator.outputProducer != null) {
+                    this.builder.append(", _, _");
+                    if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER)
+                        this.builder.append(", _");
+                }
                 this.builder.append(">(");
         DBSPExpression cast = operator.limit.cast(
                 new DBSPTypeUSize(CalciteObject.EMPTY, operator.limit.getType().mayBeNull));
         cast.accept(this.innerVisitor);
         if (operator.outputProducer != null) {
-            this.builder.append(", ");
-            DBSPExpression equalityComparison = this.generateEqualityComparison(
-                    operator.getFunction());
-            equalityComparison.accept(this.innerVisitor);
+            if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER) {
+                this.builder.append(", ");
+                DBSPExpression equalityComparison = this.generateEqualityComparison(
+                        operator.getFunction());
+                equalityComparison.accept(this.innerVisitor);
+            }
             this.builder.append(", ");
             operator.outputProducer.accept(this.innerVisitor);
         }
