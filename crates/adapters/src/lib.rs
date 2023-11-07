@@ -135,19 +135,21 @@
 //!
 //! Fault tolerance requires:
 //!
-//! * Input to be divided into numbered steps that can be retrieved repeatedly
-//!   with the same content, despite crashes.  We call this "durable" input.
-//!   [`InputEndpoint::is_durable`] reports whether an input endpoint is
+//! * Input to be divided into numbered [`Step`]s that can be retrieved
+//!   repeatedly with the same content, despite crashes.  We call this "durable"
+//!   input.  [`InputEndpoint::is_durable`] reports whether an input endpoint is
 //!   durable.
 //!
-//! * Output to be divided into numbered steps such that, if a step with a given
-//!   number is output more than once, the output endpoint discards the
+//! * Output to be divided into numbered [`Step`]s such that, if a step with a
+//!   given number is output more than once, the output endpoint discards the
 //!   duplicate.  We call this "durable" output.  Only some output endpoints are
 //!   durable.
 //!
 //! Fault tolerance works only with deterministic circuits, that is, ones that,
 //! given a sequence of inputs, will always produce the same sequence of
 //! outputs.  Most circuits used to analyze data are deterministic.
+//!
+//! [`Step`]: crate::transport::Step
 
 use num_derive::FromPrimitive;
 use serde::Serialize;
