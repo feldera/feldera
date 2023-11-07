@@ -270,7 +270,6 @@ impl KafkaInputReader {
 
             // Invalid broker address and other global errors are reported here.
             if let Some((_error, reason)) = inner.pop_error() {
-                // let (_fatal, e) = endpoint.refine_error(error);
                 bail!("error subscribing to topics {topics:?}: {reason}");
             }
 
