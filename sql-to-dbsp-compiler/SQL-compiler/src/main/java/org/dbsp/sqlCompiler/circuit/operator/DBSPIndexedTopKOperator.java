@@ -20,8 +20,18 @@ import java.util.Objects;
  */
 public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     /**
-     * Limit K used by TopK.  Expected to be a constant.
+     * These values correspond to the SQL keywords
+     * ROW, RANK, and DENSE RANK.  See e.g.:
+     * https://learn.microsoft.com/en-us/sql/t-sql/functions/ranking-functions-transact-sql
      */
+    public enum TopKNumbering {
+        ROW_NUMBER,
+        RANK,
+        DENSE_RANK
+    }
+
+    public final TopKNumbering numbering;
+    /** Limit K used by TopK.  Expected to be a constant */
     public final DBSPExpression limit;
     /**
      * Optional closure which produces the output tuple.  The signature is
@@ -30,12 +40,6 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
      */
     @Nullable
     public final DBSPClosureExpression outputProducer;
-
-    static String operatorName(@Nullable DBSPClosureExpression outputProducer) {
-        if (outputProducer == null)
-            return "topk_custom_order";
-        return "topk_rank_custom_order";
-    }
 
     static DBSPType outputType(DBSPType sourceType, @Nullable DBSPClosureExpression outputProducer) {
         if (outputProducer == null)
@@ -48,16 +52,19 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
      * Create an IndexedTopK operator.  This operator is incremental only.
      * For a non-incremental version it should be sandwiched between a D-I.
      * @param node            CalciteObject which produced this operator.
+     * @param numbering       How items in each group are numbered.
      * @param function        A ComparatorExpression used to sort items in each group.
      * @param limit           Max number of records output in each group.
      * @param outputProducer  Optional function with signature (rank, tuple) which produces the output.
      * @param source          Input operator.
      */
-    public DBSPIndexedTopKOperator(CalciteObject node, DBSPExpression function, DBSPExpression limit,
+    public DBSPIndexedTopKOperator(CalciteObject node, TopKNumbering numbering,
+                                   DBSPExpression function, DBSPExpression limit,
                                    @Nullable DBSPClosureExpression outputProducer, DBSPOperator source) {
-        super(node, operatorName(outputProducer), function,
+        super(node, "topK", function,
                 outputType(source.outputType, outputProducer), source.isMultiset, source);
         this.limit = limit;
+        this.numbering = numbering;
         this.outputProducer = outputProducer;
         if (!this.outputType.is(DBSPTypeIndexedZSet.class))
             throw new InternalCompilerError("Expected the input to be an IndexedZSet type", source.outputType);
@@ -68,14 +75,15 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPIndexedTopKOperator(this.getNode(), this.getFunction(),
+            return new DBSPIndexedTopKOperator(this.getNode(), this.numbering, this.getFunction(),
                     this.limit, this.outputProducer, newInputs.get(0));
         return this;
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPIndexedTopKOperator(this.getNode(), Objects.requireNonNull(expression), this.limit,
+        return new DBSPIndexedTopKOperator(this.getNode(), this.numbering,
+                Objects.requireNonNull(expression), this.limit,
                 this.outputProducer, this.input());
     }
 

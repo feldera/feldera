@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class TopKTests extends PostgresBaseTest {
@@ -10,7 +11,7 @@ public class TopKTests extends PostgresBaseTest {
                 "    ID int,\n" +
                 "    DocumentId int,\n" +
                 "    Status VARCHAR,\n" +
-                "    DateCreated DATE\n" +
+                "    DateCreated DATE NOT NULL\n" +
                 ");\n" +
                 "INSERT INTO DocumentStatusLog VALUES(2, 1, 'S1', '2011-07-29')\n;" +
                 "INSERT INTO DocumentStatusLog VALUES(3, 1, 'S2', '2011-07-30')\n;" +
@@ -24,10 +25,10 @@ public class TopKTests extends PostgresBaseTest {
 
     @Test
     public void testTopK() {
-        this.qs("WITH cte AS\n" +
+        String paramQuery = "WITH cte AS\n" +
                 "(\n" +
                 "   SELECT *,\n" +
-                "         RANK() OVER (PARTITION BY DocumentID ORDER BY DateCreated DESC) AS rn\n" +
+                "         ?() OVER (PARTITION BY DocumentID ORDER BY DateCreated DESC) AS rn\n" +
                 "   FROM DocumentStatusLog\n" +
                 ")\n" +
                 "SELECT DocumentId, Status, DateCreated\n" +
@@ -43,7 +44,7 @@ public class TopKTests extends PostgresBaseTest {
                 "WITH cte AS\n" +
                 "(\n" +
                 "   SELECT *,\n" +
-                "         RANK() OVER (PARTITION BY DocumentID ORDER BY DateCreated) AS rn\n" +
+                "         ?() OVER (PARTITION BY DocumentID ORDER BY DateCreated) AS rn\n" +  // ? is a parameter
                 "   FROM DocumentStatusLog\n" +
                 ")\n" +
                 "SELECT DocumentId, Status, DateCreated\n" +
@@ -54,6 +55,28 @@ public class TopKTests extends PostgresBaseTest {
                 " 1          | S1| 2011-07-29  \n" +
                 " 2          | S1| 2011-07-28  \n" +
                 " 3          | S1| 2011-08-02  \n" +
+                "(3 rows)";
+        for (String function : new String[]{"RANK", "DENSE_RANK", "ROW_NUMBER"}) {
+            String q = paramQuery.replace("?", function);
+            // Same result for all 3 functions
+            this.qs(q, false);
+        }
+    }
+
+    @Test @Ignore("RANK aggregate not implemented without TopK")
+    public void testRank() {
+        this.qs("WITH cte AS\n" +
+                "(\n" +"SELECT *,\n" +
+                "         RANK() OVER (PARTITION BY DocumentID ORDER BY DateCreated) AS rn\n" +
+                "   FROM DocumentStatusLog\n" +
+                ")\n" +
+                "SELECT DocumentId, Status, DateCreated, rn\n" +
+                "FROM cte;\n" +
+                " DocumentID | Status | DateCreated | rn\n" +
+                "---------------------------------------\n" +
+                " 1          | S1| 2011-09-02       | 1 \n" +
+                " 2          | S3| 2011-08-01       | 2 \n" +
+                " 3          | S1| 2011-08-02       | 3 \n" +
                 "(3 rows)", false);
     }
 }

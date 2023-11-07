@@ -64,6 +64,7 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator.TopKNumbering.*;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.*;
 
 /**
@@ -875,7 +876,23 @@ public class CalciteToDBSPCompiler extends RelVisitor
      */
     @Nullable DBSPOperator filterImplementation = null;
 
-    public void generateNestedTopK(LogicalWindow window, Window.Group group, int limit) {
+    public void generateNestedTopK(LogicalWindow window, Window.Group group, int limit, SqlKind kind) {
+        DBSPIndexedTopKOperator.TopKNumbering numbering;
+        switch (kind) {
+            case RANK:
+                numbering = RANK;
+                break;
+            case DENSE_RANK:
+                numbering = DENSE_RANK;
+                break;
+            case ROW_NUMBER:
+                numbering = ROW_NUMBER;
+                break;
+            default:
+                throw new UnimplementedException("Ranking function " + kind + " not yet implemented",
+                        new CalciteObject(window));
+        }
+
         // This code duplicates code from the SortNode.
         CalciteObject node = new CalciteObject(window);
         RelNode input = window.getInput();
@@ -934,7 +951,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPDifferentialOperator diff = new DBSPDifferentialOperator(node, index);
         this.circuit.addOperator(diff);
         DBSPI32Literal limitValue = new DBSPI32Literal(limit);
-        DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(node, comparator, limitValue, outputProducer, diff);
+        DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(
+                node, numbering, comparator, limitValue, outputProducer, diff);
         this.circuit.addOperator(topK);
         DBSPIntegralOperator integral = new DBSPIntegralOperator(node, topK);
         this.circuit.addOperator(integral);
@@ -1020,12 +1038,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // LogicalWindow(window#0=[window(partition ... order by ... aggs [RANK()])])
         // This is compiled into a TopK over each group.
         // There is no way this can be expressed otherwise in SQL or using RelNode.
+        // This works for RANK, DENSE_RANK, and ROW_NUMBER.
         if (window.groups.size() == 1) {
             Window.Group group = window.groups.get(0);
             if (group.aggCalls.size() == 1) {
                 Window.RexWinAggCall agg = group.aggCalls.get(0);
                 SqlOperator operator = agg.getOperator();
                 if (operator instanceof SqlRankFunction) {
+                    SqlRankFunction rank = (SqlRankFunction) operator;
                     // Aggregate functions seem always to be at th end.
                     // The window always seems to collect all fields.
                     int rankIndex = inputRowType.size();
@@ -1036,7 +1056,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         if (condition instanceof RexCall) {
                             int limit = this.isLimit((RexCall) condition, rankIndex);
                             if (limit >= 0) {
-                                this.generateNestedTopK(window, group, limit);
+                                this.generateNestedTopK(window, group, limit, rank.kind);
                                 return;
                             }
                         }
@@ -1207,7 +1227,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Since TopK is always incremental we have to wrap it into a D-I pair
             DBSPDifferentialOperator diff = new DBSPDifferentialOperator(node, index);
             this.circuit.addOperator(diff);
-            DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(node, comparator, limit, null, diff);
+            DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(
+                    node, DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER,
+                    comparator, limit, null, diff);
             this.circuit.addOperator(topK);
             DBSPIntegralOperator integral = new DBSPIntegralOperator(node, topK);
             this.circuit.addOperator(integral);
