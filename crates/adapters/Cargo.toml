@@ -88,3 +88,9 @@ rust_decimal_macros = "1.32"
 name = "pipeline"
 path = "src/jit/pipeline.rs"
 required-features = ["with-kafka", "with-jit"]
+
+[[test]]
+name = "jit_integration_test"
+path = "tests/jit_integration_test.rs"
+# These tests run the `pipeline` binary built above, which requires these features:
+required-features = ["with-kafka", "with-jit"]
