@@ -33,9 +33,6 @@
 //! of transmitted bytes and records and updating respective performance
 //! counters in the controller.
 
-use crate::transport::AtomicStep;
-use crate::transport::InputReader;
-use crate::transport::Step;
 use crate::DbspCircuitHandle;
 use crate::{
     catalog::SerBatch, Catalog, CircuitCatalog, Encoder, InputConsumer, InputEndpoint, InputFormat,
@@ -50,10 +47,8 @@ use crossbeam::{
 };
 use log::{debug, error, info};
 use pipeline_types::query::OutputQuery;
-use std::collections::HashMap;
-use std::sync::Condvar;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
@@ -160,7 +155,7 @@ impl Controller {
             let inner = inner.clone();
 
             // A channel to communicate circuit initialization status.
-            // The `circuit_factory` closure must be invoked in the context of
+            // The `citcuit_factory` closure must be invoked in the context of
             // the circuit thread, because the circuit handle it returns doesn't
             // implement `Send`.  So we need this channel to communicate circuit
             // initialization status back to this thread.
@@ -279,26 +274,6 @@ impl Controller {
     ) -> Result<EndpointId, ControllerError> {
         self.inner
             .add_output_endpoint(endpoint_name, endpoint_config, endpoint)
-    }
-
-    /// Reports whether the circuit is fault tolerant.  A circuit is fault
-    /// tolerant if it computes a deterministic function and all of its inputs
-    /// and outputs are durable.  This function assumes that the circuit is
-    /// deterministic.
-    pub fn is_fault_tolerant(&self) -> bool {
-        self.inner
-            .status
-            .input_status()
-            .values()
-            .all(|status| status.is_durable)
-            && self
-                .inner
-                .outputs
-                .read()
-                .unwrap()
-                .by_id
-                .values()
-                .all(|descr| descr.is_durable)
     }
 
     /// Increment the nubmber of active API connections.
@@ -441,8 +416,6 @@ impl Controller {
             Duration::from_micros(controller.status.global_config.max_buffering_delay_usecs);
         let min_batch_size_records = controller.status.global_config.min_batch_size_records;
 
-        let mut step = 0;
-
         loop {
             let dump_profile = controller
                 .dump_profile_request
@@ -485,15 +458,6 @@ impl Controller {
                             .map(|start| start.elapsed() >= max_buffering_delay)
                             .unwrap_or(false)
                     {
-                        // Request all of the inputs to complete this step, and
-                        // then wait for the completions.
-                        for endpoint in controller.inputs.lock().unwrap().values() {
-                            endpoint.reader.complete(step);
-                        }
-                        while !controller.status.is_step_complete(step) {
-                            parker.park();
-                        }
-
                         start = None;
                         // Reset all counters of buffered records and bytes to 0.
                         controller.status.consume_buffered_inputs();
@@ -570,7 +534,7 @@ impl Controller {
                                         // been sent to the output endpoint, the endpoint will get
                                         // labeled with this
                                         // frontier.
-                                        endpoint.queue.push((step, batch, processed_records));
+                                        endpoint.queue.push((batch, processed_records));
                                         endpoint.snapshot_sent.store(true, Ordering::Release);
                                     }
                                 } else if delta_batch.is_some() {
@@ -584,7 +548,7 @@ impl Controller {
                                         delta_batch.as_ref().unwrap().clone()
                                     };
 
-                                    endpoint.queue.push((step, batch, processed_records));
+                                    endpoint.queue.push((batch, processed_records));
                                 }
 
                                 // Wake up the output thread.  We're not trying to be smart here and
@@ -593,10 +557,6 @@ impl Controller {
                                 endpoint.unparker.unpark();
                             }
                         }
-
-                        step += 1;
-                        controller.step.store(step, Ordering::Release);
-                        controller.unpark_backpressure();
                     } else if buffered_records > 0 {
                         // We have some buffered data, but less than `min_batch_size_records` --
                         // wait up to `max_buffering_delay` for more data to
@@ -621,41 +581,76 @@ impl Controller {
 
     /// Backpressure thread function.
     fn backpressure_thread(controller: Arc<ControllerInner>, parker: Parker) {
-        #[derive(Copy, Clone, PartialEq, Eq)]
-        enum EndpointState {
-            Pause,
-            Run(Step),
-        }
+        // `global_pause` flag is `true` when the entire controller is paused
+        // (the controller starts in a paused state and switches between
+        // paused and running states in responsed to `Controller::start()` and
+        // `Controller::pause()` methods).
+        let mut global_pause = true;
 
-        let mut endpoint_states = HashMap::new();
+        // Endpoints paused due to backpressure.
+        let mut paused_endpoints = HashSet::new();
 
         loop {
-            let global_pause = match controller.state() {
-                PipelineState::Paused => true,
-                PipelineState::Running => false,
-                PipelineState::Terminated => return,
-            };
-            let step = controller.step.load(Ordering::Acquire);
-            info!("stepping to {step}");
+            let inputs = controller.inputs.lock().unwrap();
 
-            for (epid, ep) in controller.inputs.lock().unwrap().iter() {
-                let current_state = endpoint_states.entry(*epid).or_insert(EndpointState::Pause);
-                let desired_state = if global_pause || controller.status.input_endpoint_full(epid) {
-                    EndpointState::Pause
-                } else {
-                    EndpointState::Run(step)
-                };
-                if *current_state != desired_state {
-                    let result = match desired_state {
-                        EndpointState::Pause => ep.reader.pause(),
-                        EndpointState::Run(step) => ep.reader.start(step),
-                    };
-                    if let Err(error) = result {
-                        controller.input_transport_error(*epid, &ep.endpoint_name, true, error);
-                    };
-                    *current_state = desired_state;
+            match controller.state() {
+                PipelineState::Paused => {
+                    // Pause circuit if not yet paused.
+                    if !global_pause {
+                        for (epid, ep) in inputs.iter() {
+                            // Pause the endpoint unless it's already paused due to backpressure.
+                            if !paused_endpoints.contains(epid) {
+                                ep.endpoint.pause().unwrap_or_else(|e| {
+                                    controller.input_transport_error(
+                                        *epid,
+                                        &ep.endpoint_name,
+                                        true,
+                                        e,
+                                    )
+                                });
+                            }
+                        }
+                    }
+                    global_pause = true;
                 }
+                PipelineState::Running => {
+                    // Resume endpoints that have buffer space, pause endpoints with full buffers.
+                    for (epid, ep) in inputs.iter() {
+                        if controller.status.input_endpoint_full(epid) {
+                            // The endpoint is full and is not yet in the paused state -- pause it
+                            // now.
+                            if !global_pause && !paused_endpoints.contains(epid) {
+                                ep.endpoint.pause().unwrap_or_else(|e| {
+                                    controller.input_transport_error(
+                                        *epid,
+                                        &ep.endpoint_name,
+                                        true,
+                                        e,
+                                    )
+                                });
+                            }
+                            paused_endpoints.insert(*epid);
+                        } else {
+                            // The endpoint is paused when it should be running -- unpause it.
+                            if global_pause || paused_endpoints.contains(epid) {
+                                ep.endpoint.start().unwrap_or_else(|e| {
+                                    controller.input_transport_error(
+                                        *epid,
+                                        &ep.endpoint_name,
+                                        true,
+                                        e,
+                                    )
+                                });
+                            }
+                            paused_endpoints.remove(epid);
+                        }
+                    }
+                    global_pause = false;
+                }
+                PipelineState::Terminated => return,
             }
+
+            drop(inputs);
 
             parker.park();
         }
@@ -665,14 +660,14 @@ impl Controller {
 /// State tracked by the controller for each input endpoint.
 struct InputEndpointDescr {
     endpoint_name: String,
-    reader: Box<dyn InputReader>,
+    endpoint: Box<dyn InputEndpoint>,
 }
 
 impl InputEndpointDescr {
-    pub fn new(endpoint_name: &str, reader: Box<dyn InputReader>) -> Self {
+    pub fn new(endpoint_name: &str, endpoint: Box<dyn InputEndpoint>) -> Self {
         Self {
             endpoint_name: endpoint_name.to_owned(),
-            reader,
+            endpoint,
         }
     }
 }
@@ -682,7 +677,7 @@ impl InputEndpointDescr {
 /// that is equal to the number of input records fully processed by
 /// DBSP before emitting this batch of outputs.  The label increases
 /// monotonically over time.
-type BatchQueue = SegQueue<(Step, Vec<Arc<dyn SerBatch>>, u64)>;
+type BatchQueue = SegQueue<(Vec<Arc<dyn SerBatch>>, u64)>;
 
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
@@ -708,9 +703,6 @@ struct OutputEndpointDescr {
 
     /// Unparker for the endpoint thread.
     unparker: Unparker,
-
-    /// Whether the output endpoint can discard duplicate output.
-    is_durable: bool,
 }
 
 impl OutputEndpointDescr {
@@ -719,7 +711,6 @@ impl OutputEndpointDescr {
         stream_name: &str,
         query: OutputQuery,
         unparker: Unparker,
-        is_durable: bool,
     ) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
@@ -729,7 +720,6 @@ impl OutputEndpointDescr {
             snapshot_sent: AtomicBool::new(false),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
             unparker,
-            is_durable,
         }
     }
 }
@@ -813,16 +803,6 @@ struct ControllerInner {
     circuit_thread_unparker: Unparker,
     backpressure_thread_unparker: Unparker,
     error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
-    step: AtomicStep,
-
-    /// The lowest-numbered input step not known to have committed yet.
-    ///
-    /// This is updated lazily, only when we need to wait for a step to commit
-    /// in `wait_to_commit`.
-    uncommitted_step: Mutex<Step>,
-
-    /// Condition that fires when `uncommitted_step` increases.
-    step_committed: Condvar,
 }
 
 impl ControllerInner {
@@ -845,9 +825,6 @@ impl ControllerInner {
             circuit_thread_unparker,
             backpressure_thread_unparker,
             error_cb,
-            step: AtomicStep::new(0),
-            uncommitted_step: Mutex::new(0),
-            step_committed: Condvar::new(),
         }
     }
 
@@ -877,7 +854,7 @@ impl ControllerInner {
         let mut inputs = self.inputs.lock().unwrap();
 
         if let Some(ep) = inputs.remove(endpoint_id) {
-            ep.reader.disconnect();
+            ep.endpoint.disconnect();
             self.status.remove_input(endpoint_id);
             self.unpark_circuit();
             self.unpark_backpressure();
@@ -888,7 +865,7 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
-        endpoint: Box<dyn InputEndpoint>,
+        mut endpoint: Box<dyn InputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
         let mut inputs = self.inputs.lock().unwrap();
 
@@ -937,23 +914,22 @@ impl ControllerInner {
         ));
 
         // Initialize endpoint stats.
-        self.status.add_input(
-            &endpoint_id,
-            endpoint_name,
-            endpoint_config,
-            endpoint.is_durable(),
-        );
+        self.status
+            .add_input(&endpoint_id, endpoint_name, endpoint_config);
 
-        let reader = endpoint
-            .open(probe, 0)
+        endpoint
+            .connect(probe)
             .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
         if self.state() == PipelineState::Running {
-            reader
-                .start(0)
+            endpoint
+                .start()
                 .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
         }
 
-        inputs.insert(endpoint_id, InputEndpointDescr::new(endpoint_name, reader));
+        inputs.insert(
+            endpoint_id,
+            InputEndpointDescr::new(endpoint_name, endpoint),
+        );
 
         drop(inputs);
 
@@ -1030,7 +1006,7 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
-        mut endpoint: Box<dyn OutputEndpoint>,
+        endpoint: Box<dyn OutputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
         let mut outputs = self.outputs.write().unwrap();
 
@@ -1066,7 +1042,6 @@ impl ControllerInner {
                 }
             }))
             .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
-        let is_durable = endpoint.is_durable();
 
         // Create probe.
         let probe = Box::new(OutputProbe::new(
@@ -1096,7 +1071,6 @@ impl ControllerInner {
             &endpoint_config.stream,
             endpoint_config.query,
             parker.unparker().clone(),
-            is_durable,
         );
         let queue = endpoint_descr.queue.clone();
         let disconnect_flag = endpoint_descr.disconnect_flag.clone();
@@ -1146,14 +1120,13 @@ impl ControllerInner {
             }
 
             // Dequeue the next output batch and push it to the encoder.
-            if let Some((step, data, processed_records)) = queue.pop() {
+            if let Some((data, processed_records)) = queue.pop() {
                 let num_records = data.iter().map(|b| b.len()).sum();
 
-                encoder.consumer().batch_start(step);
+                encoder.consumer().batch_start();
                 encoder
                     .encode(data.as_slice())
                     .unwrap_or_else(|e| controller.encode_error(endpoint_id, &endpoint_name, e));
-                controller.wait_to_commit(step);
                 encoder.consumer().batch_end();
 
                 // `num_records` output records have been transmitted --
@@ -1169,28 +1142,6 @@ impl ControllerInner {
                 // Queue is empty -- wait for the circuit thread to wake us up when
                 // more data is available.
                 parker.park();
-            }
-        }
-    }
-
-    /// Waits for input `step` to commit.
-    ///
-    /// An input step must commit before we can commit any of the output.
-    /// Otherwise, if there is a crash, we might have output for which we don't
-    /// know the corresponding input, which would break fault tolerance.
-    fn wait_to_commit(self: &Arc<Self>, step: Step) {
-        if !self.status.is_step_committed(step) {
-            let mut guard = self.uncommitted_step.lock().unwrap();
-            loop {
-                let uncommitted_step = self.status.uncommitted_step().unwrap();
-                if uncommitted_step > *guard {
-                    *guard = uncommitted_step;
-                    self.step_committed.notify_all();
-                }
-                if uncommitted_step < step {
-                    return;
-                }
-                guard = self.step_committed.wait(guard).unwrap();
             }
         }
     }
@@ -1213,7 +1164,7 @@ impl ControllerInner {
         let mut inputs = self.inputs.lock().unwrap();
 
         for ep in inputs.values() {
-            ep.reader.disconnect();
+            ep.endpoint.disconnect();
         }
         inputs.clear();
 
@@ -1382,16 +1333,6 @@ impl InputConsumer for InputProbe {
             self.backpressure_thread_unparker.clone(),
         ))
     }
-
-    fn start_step(&mut self, step: Step) {
-        self.controller.status.start_step(self.endpoint_id, step);
-        self.circuit_thread_unparker.unpark();
-    }
-
-    fn committed(&mut self, step: Step) {
-        self.controller.status.committed(self.endpoint_id, step);
-        self.circuit_thread_unparker.unpark();
-    }
 }
 
 /// An output probe inserted between the encoder and the output transport
@@ -1424,8 +1365,8 @@ impl OutputConsumer for OutputProbe {
         self.endpoint.max_buffer_size_bytes()
     }
 
-    fn batch_start(&mut self, step: Step) {
-        self.endpoint.batch_start(step).unwrap_or_else(|e| {
+    fn batch_start(&mut self) {
+        self.endpoint.batch_start().unwrap_or_else(|e| {
             self.controller
                 .output_transport_error(self.endpoint_id, &self.endpoint_name, false, e);
         })

@@ -1,14 +1,15 @@
-use super::{refine_kafka_error, DeferredLogging};
+use super::refine_kafka_error;
+use crate::transport::secret_resolver::MaybeSecret;
 use crate::{
-    transport::{kafka::rdkafka_loglevel_from, secret_resolver::MaybeSecret, InputReader, Step},
-    InputConsumer, InputEndpoint, InputTransport, PipelineState,
+    transport::kafka::rdkafka_loglevel_from, InputConsumer, InputEndpoint, InputTransport,
+    PipelineState,
 };
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
 use log::debug;
 use num_traits::FromPrimitive;
-use pipeline_types::{secret_ref::MaybeSecretRef, transport::kafka::KafkaInputConfig};
-use rdkafka::config::RDKafkaLogLevel;
+use pipeline_types::secret_ref::MaybeSecretRef;
+use pipeline_types::transport::kafka::KafkaInputConfig;
 use rdkafka::{
     config::FromClientConfigAndContext,
     consumer::{BaseConsumer, Consumer, ConsumerContext, Rebalance, RebalanceProtocol},
@@ -53,24 +54,18 @@ impl InputTransport for KafkaInputTransport {
     /// See [`InputTransport::new_endpoint()`] for more information.
     fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
         let config = KafkaInputConfig::deserialize(config)?;
-        Ok(Box::new(KafkaInputEndpoint::new(config)?))
+        let ep = KafkaInputEndpoint::new(config)?;
+        Ok(Box::new(ep))
     }
 }
 
-struct KafkaInputEndpoint {
-    config: Arc<KafkaInputConfig>,
-}
+struct KafkaInputEndpoint(Arc<KafkaInputEndpointInner>);
 
 impl KafkaInputEndpoint {
-    fn new(mut config: KafkaInputConfig) -> AnyResult<KafkaInputEndpoint> {
-        config.validate()?;
-        Ok(KafkaInputEndpoint {
-            config: Arc::new(config),
-        })
+    fn new(config: KafkaInputConfig) -> AnyResult<Self> {
+        Ok(Self(KafkaInputEndpointInner::new(config)?))
     }
 }
-
-struct KafkaInputReader(Arc<KafkaInputReaderInner>);
 
 /// Client context used to intercept rebalancing events.
 ///
@@ -85,16 +80,13 @@ struct KafkaInputReader(Arc<KafkaInputReaderInner>);
 struct KafkaInputContext {
     // We keep a weak reference to the endpoint to avoid a reference cycle:
     // endpoint->BaseConsumer->context->endpoint.
-    endpoint: Mutex<Weak<KafkaInputReaderInner>>,
-
-    deferred_logging: DeferredLogging,
+    endpoint: Mutex<Weak<KafkaInputEndpointInner>>,
 }
 
 impl KafkaInputContext {
     fn new() -> Self {
         Self {
             endpoint: Mutex::new(Weak::new()),
-            deferred_logging: DeferredLogging::new(),
         }
     }
 }
@@ -107,9 +99,13 @@ impl ClientContext for KafkaInputContext {
         }
     }
 
-    fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
-        self.deferred_logging.log(level, fac, log_message);
+    /*fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
+        println!("log: {} {}", fac, log_message);
     }
+
+    fn stats(&self, statistics: rdkafka::Statistics) {
+        println!("stats: {:?}", statistics)
+    }*/
 }
 
 impl ConsumerContext for KafkaInputContext {
@@ -129,14 +125,56 @@ impl ConsumerContext for KafkaInputContext {
     }
 }
 
-struct KafkaInputReaderInner {
-    config: Arc<KafkaInputConfig>,
+struct KafkaInputEndpointInner {
+    config: KafkaInputConfig,
     state: AtomicU32,
     kafka_consumer: BaseConsumer<KafkaInputContext>,
     errors: ArrayQueue<(KafkaError, String)>,
 }
 
-impl KafkaInputReaderInner {
+impl KafkaInputEndpointInner {
+    fn new(mut config: KafkaInputConfig) -> AnyResult<Arc<Self>> {
+        // Create Kafka consumer configuration.
+        config.validate()?;
+        debug!("Starting Kafka input endpoint: {config:?}");
+
+        let mut client_config = ClientConfig::new();
+
+        for (key, value) in config.kafka_options.iter() {
+            // If it is a secret reference, resolve it to the actual secret string
+            match MaybeSecret::new_using_default_directory(
+                MaybeSecretRef::new_using_pattern_match(value.clone()),
+            )? {
+                MaybeSecret::String(simple_string) => {
+                    client_config.set(key, simple_string);
+                }
+                MaybeSecret::Secret(secret_string) => {
+                    client_config.set(key, secret_string);
+                }
+            }
+        }
+
+        if let Some(log_level) = config.log_level {
+            client_config.set_log_level(rdkafka_loglevel_from(log_level));
+        }
+
+        // Context object to intercept rebalancing events and errors.
+        let context = KafkaInputContext::new();
+
+        debug!("Creating Kafka consumer");
+        // Create Kafka consumer.
+        let kafka_consumer = BaseConsumer::from_config_and_context(&client_config, context)?;
+
+        let endpoint = Arc::new(Self {
+            config,
+            state: AtomicU32::new(PipelineState::Paused as u32),
+            kafka_consumer,
+            errors: ArrayQueue::new(ERROR_BUFFER_SIZE),
+        });
+
+        Ok(endpoint)
+    }
+
     fn push_error(&self, error: KafkaError, reason: &str) {
         // `force_push` makes the queue operate as a circular buffer.
         self.errors.force_push((error, reason.to_string()));
@@ -189,115 +227,8 @@ impl KafkaInputReaderInner {
     }
 }
 
-impl KafkaInputReader {
-    fn new(
-        config: &Arc<KafkaInputConfig>,
-        mut consumer: Box<dyn InputConsumer>,
-    ) -> AnyResult<Self> {
-        // Create Kafka consumer configuration.
-        debug!("Starting Kafka input endpoint: {:?}", config);
-
-        let mut client_config = ClientConfig::new();
-
-        for (key, value) in config.kafka_options.iter() {
-            // If it is a secret reference, resolve it to the actual secret string
-            match MaybeSecret::new_using_default_directory(
-                MaybeSecretRef::new_using_pattern_match(value.clone()),
-            )? {
-                MaybeSecret::String(simple_string) => {
-                    client_config.set(key, simple_string);
-                }
-                MaybeSecret::Secret(secret_string) => {
-                    client_config.set(key, secret_string);
-                }
-            }
-        }
-
-        if let Some(log_level) = config.log_level {
-            client_config.set_log_level(rdkafka_loglevel_from(log_level));
-        }
-
-        // Context object to intercept rebalancing events and errors.
-        let context = KafkaInputContext::new();
-
-        debug!("Creating Kafka consumer");
-        let inner = Arc::new(KafkaInputReaderInner {
-            config: config.clone(),
-            state: AtomicU32::new(PipelineState::Paused as u32),
-            kafka_consumer: BaseConsumer::from_config_and_context(&client_config, context)?,
-            errors: ArrayQueue::new(ERROR_BUFFER_SIZE),
-        });
-
-        *inner.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&inner);
-
-        let topics = config.topics.iter().map(String::as_str).collect::<Vec<_>>();
-
-        // Subscribe consumer to `topics`.
-        inner.kafka_consumer.subscribe(&topics)?;
-
-        let start = Instant::now();
-
-        // Wait for the consumer to join the group by waiting for the group
-        // rebalance protocol to be set.
-        loop {
-            // We must poll in order to receive connection failures; otherwise
-            // we'd have to rely on timeouts only.
-            match inner
-                .kafka_consumer
-                .context()
-                .deferred_logging
-                .with_deferred_logging(|| inner.kafka_consumer.poll(POLL_TIMEOUT))
-            {
-                Some(Err(e)) => {
-                    // Topic-does-not-exist error will be reported here.
-                    bail!(
-                        "failed to subscribe to topics '{topics:?}' (consumer group id '{}'): {e}",
-                        inner.config.kafka_options.get("group.id").unwrap(),
-                    );
-                }
-                Some(Ok(message)) => {
-                    // `KafkaInputContext` should instantly pause the topic upon connecting to it.
-                    // Hopefully, this guarantees that we won't see any messages from it, but if
-                    // that's not the case, there shouldn't be any harm in sending them downstream.
-                    if let Some(payload) = message.payload() {
-                        // Leave it to the controller to handle errors.  There is noone we can
-                        // forward the error to upstream.
-                        let _ = consumer.input_chunk(payload);
-                    }
-                }
-                _ => (),
-            }
-
-            // Invalid broker address and other global errors are reported here.
-            if let Some((_error, reason)) = inner.pop_error() {
-                bail!("error subscribing to topics {topics:?}: {reason}");
-            }
-
-            if matches!(
-                inner.kafka_consumer.rebalance_protocol(),
-                RebalanceProtocol::None
-            ) {
-                if start.elapsed()
-                    >= Duration::from_secs(inner.config.group_join_timeout_secs as u64)
-                {
-                    bail!(
-                        "failed to subscribe to topics '{topics:?}' (consumer group id '{}'), giving up after {}s",
-                        inner.config.kafka_options.get("group.id").unwrap(),
-                        inner.config.group_join_timeout_secs
-                    );
-                }
-                // println!("waiting to join the group");
-            } else {
-                break;
-            }
-        }
-
-        let endpoint_clone = inner.clone();
-        spawn(move || KafkaInputReader::worker_thread(endpoint_clone, consumer));
-        Ok(KafkaInputReader(inner))
-    }
-
-    fn worker_thread(endpoint: Arc<KafkaInputReaderInner>, mut consumer: Box<dyn InputConsumer>) {
+impl KafkaInputEndpoint {
+    fn worker_thread(endpoint: Arc<KafkaInputEndpointInner>, mut consumer: Box<dyn InputConsumer>) {
         let mut actual_state = PipelineState::Paused;
         loop {
             // endpoint.debug_consumer();
@@ -366,20 +297,78 @@ impl KafkaInputReader {
 }
 
 impl InputEndpoint for KafkaInputEndpoint {
-    fn open(
-        &self,
-        consumer: Box<dyn InputConsumer>,
-        _start_step: Step,
-    ) -> AnyResult<Box<dyn InputReader>> {
-        Ok(Box::new(KafkaInputReader::new(&self.config, consumer)?))
+    fn connect(&mut self, mut consumer: Box<dyn InputConsumer>) -> AnyResult<()> {
+        *self.0.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&self.0);
+
+        let topics = self
+            .0
+            .config
+            .topics
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+
+        // Subscibe consumer to `topics`.
+        self.0.kafka_consumer.subscribe(&topics)?;
+
+        let start = Instant::now();
+
+        // Wait for the consumer to join the group by waiting for the group
+        // rebalance protocol to be set.
+        loop {
+            // We must poll in order to receive connection failures; otherwise
+            // we'd have to rely on timeouts only.
+            match self.0.kafka_consumer.poll(POLL_TIMEOUT) {
+                Some(Err(e)) => {
+                    // Topic-does-not-exist error will be reported here.
+                    bail!(
+                        "failed to subscribe to topics '{topics:?}' (consumer group id '{}'): {e}",
+                        self.0.config.kafka_options.get("group.id").unwrap(),
+                    );
+                }
+                Some(Ok(message)) => {
+                    // `KafkaInputContext` should instantly pause the topic upon connecting to it.
+                    // Hopefully, this guarantees that we won't see any messages from it, but if
+                    // that's not the case, there shouldn't be any harm in sending them downstream.
+                    if let Some(payload) = message.payload() {
+                        // Leave it to the controller to handle errors.  There is noone we can
+                        // forward the error to upstream.
+                        let _ = consumer.input_chunk(payload);
+                    }
+                }
+                _ => (),
+            }
+
+            // Invalid broker address and other global errors are reported here.
+            if let Some((_error, reason)) = self.0.pop_error() {
+                // let (_fatal, e) = self.0.refine_error(error);
+                bail!("error subscribing to topics {topics:?}: {reason}");
+            }
+
+            if matches!(
+                self.0.kafka_consumer.rebalance_protocol(),
+                RebalanceProtocol::None
+            ) {
+                if start.elapsed()
+                    >= Duration::from_secs(self.0.config.group_join_timeout_secs as u64)
+                {
+                    bail!(
+                        "failed to subscribe to topics '{topics:?}' (consumer group id '{}'), giving up after {}s",
+                        self.0.config.kafka_options.get("group.id").unwrap(),
+                        self.0.config.group_join_timeout_secs
+                    );
+                }
+                // println!("waiting to join the group");
+            } else {
+                break;
+            }
+        }
+
+        let endpoint_clone = self.0.clone();
+        spawn(move || Self::worker_thread(endpoint_clone, consumer));
+        Ok(())
     }
 
-    fn is_durable(&self) -> bool {
-        false
-    }
-}
-
-impl InputReader for KafkaInputReader {
     fn pause(&self) -> AnyResult<()> {
         // Notify worker thread via the state flag.  The worker may
         // send another buffer downstream before the flag takes effect.
@@ -387,7 +376,7 @@ impl InputReader for KafkaInputReader {
         Ok(())
     }
 
-    fn start(&self, _step: Step) -> AnyResult<()> {
+    fn start(&self) -> AnyResult<()> {
         self.0.set_state(PipelineState::Running);
         Ok(())
     }
@@ -397,7 +386,7 @@ impl InputReader for KafkaInputReader {
     }
 }
 
-impl Drop for KafkaInputReader {
+impl Drop for KafkaInputEndpoint {
     fn drop(&mut self) {
         self.disconnect();
     }

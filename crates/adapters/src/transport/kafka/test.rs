@@ -64,7 +64,6 @@ fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStru
 
 fn init_test_logger() {
     let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
-        .is_test(true)
         .format(move |buf, record| {
             let t = chrono::Utc::now();
             let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
@@ -283,7 +282,7 @@ format:
     let (endpoint, _consumer, zset) =
         mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
 
-    endpoint.start(0).unwrap();
+    endpoint.start().unwrap();
 
     let producer = TestProducer::new();
 
@@ -320,7 +319,7 @@ format:
     assert_eq!(zset.state().flushed.len(), 0);
 
     // Receive everything after unpause.
-    endpoint.start(0).unwrap();
+    endpoint.start().unwrap();
     wait_for_output_unordered(&zset, &data);
 
     zset.reset();

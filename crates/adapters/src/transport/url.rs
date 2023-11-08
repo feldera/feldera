@@ -1,4 +1,4 @@
-use super::{InputConsumer, InputEndpoint, InputReader, InputTransport, Step};
+use super::{InputConsumer, InputEndpoint, InputTransport};
 use crate::PipelineState;
 use actix::System;
 use actix_web::http::header::{ByteRangeSpec, ContentRangeSpec, Range, CONTENT_RANGE};
@@ -32,56 +32,30 @@ impl InputTransport for UrlInputTransport {
     ///
     /// See [`InputTransport::new_endpoint()`] for more information.
     fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
-        let ep = UrlInputEndpoint {
-            config: Arc::new(UrlInputConfig::deserialize(config)?),
-        };
+        let config = UrlInputConfig::deserialize(config)?;
+        let ep = UrlInputEndpoint::new(config);
         Ok(Box::new(ep))
     }
 }
 
 struct UrlInputEndpoint {
-    config: Arc<UrlInputConfig>,
-}
-
-impl InputEndpoint for UrlInputEndpoint {
-    fn open(
-        &self,
-        consumer: Box<dyn InputConsumer>,
-        _start_step: Step,
-    ) -> AnyResult<Box<dyn InputReader>> {
-        Ok(Box::new(UrlInputReader::new(&self.config, consumer)?))
-    }
-
-    fn is_durable(&self) -> bool {
-        false
-    }
-}
-
-struct UrlInputReader {
+    config: UrlInputConfig,
     sender: Sender<PipelineState>,
+    receiver: Receiver<PipelineState>,
 }
 
-impl UrlInputReader {
-    fn new(config: &Arc<UrlInputConfig>, mut consumer: Box<dyn InputConsumer>) -> AnyResult<Self> {
+impl UrlInputEndpoint {
+    fn new(config: UrlInputConfig) -> Self {
         let (sender, receiver) = channel(PipelineState::Paused);
-        let config = config.clone();
-        let receiver_clone = receiver.clone();
-        let _worker = spawn(move || {
-            System::new().block_on(async move {
-                if let Err(error) = Self::worker_thread(config, &mut consumer, receiver_clone).await
-                {
-                    consumer.error(true, error);
-                } else {
-                    let _ = consumer.eoi();
-                };
-            });
-        });
-
-        Ok(Self { sender })
+        Self {
+            config,
+            sender,
+            receiver,
+        }
     }
 
     async fn worker_thread(
-        config: Arc<UrlInputConfig>,
+        config: UrlInputConfig,
         consumer: &mut Box<dyn InputConsumer>,
         mut receiver: Receiver<PipelineState>,
     ) -> AnyResult<()> {
@@ -210,12 +184,27 @@ impl UrlInputReader {
     }
 }
 
-impl InputReader for UrlInputReader {
+impl InputEndpoint for UrlInputEndpoint {
+    fn connect(&mut self, mut consumer: Box<dyn InputConsumer>) -> AnyResult<()> {
+        let config = self.config.clone();
+        let receiver = self.receiver.clone();
+        let _worker = spawn(move || {
+            System::new().block_on(async move {
+                if let Err(error) = Self::worker_thread(config, &mut consumer, receiver).await {
+                    consumer.error(true, error);
+                } else {
+                    let _ = consumer.eoi();
+                };
+            });
+        });
+        Ok(())
+    }
+
     fn pause(&self) -> AnyResult<()> {
         Ok(self.sender.send(PipelineState::Paused)?)
     }
 
-    fn start(&self, _step: Step) -> AnyResult<()> {
+    fn start(&self) -> AnyResult<()> {
         Ok(self.sender.send(PipelineState::Running)?)
     }
 
@@ -224,7 +213,7 @@ impl InputReader for UrlInputReader {
     }
 }
 
-impl Drop for UrlInputReader {
+impl Drop for UrlInputEndpoint {
     fn drop(&mut self) {
         self.disconnect();
     }
@@ -259,7 +248,7 @@ mod test {
     use crate::{
         deserialize_without_context,
         test::{mock_input_pipeline, wait, MockDeZSet, MockInputConsumer, DEFAULT_TIMEOUT_MS},
-        transport::InputReader,
+        InputEndpoint,
     };
     use actix::System;
     use actix_web::{
@@ -300,7 +289,7 @@ mod test {
         response: F,
         path: &str,
     ) -> (
-        Box<dyn InputReader>,
+        Box<dyn InputEndpoint>,
         MockInputConsumer,
         MockDeZSet<TestStruct>,
     )
@@ -371,8 +360,8 @@ bar,false,-10
         assert!(!consumer.state().eoi);
 
         // Unpause the endpoint, wait for the data to appear at the output.
-        endpoint.start(0).unwrap();
-        wait(|| n_recs(&zset) == test_data.len(), DEFAULT_TIMEOUT_MS);
+        endpoint.start().unwrap();
+        wait(|| n_recs(&zset) == test_data.len(), DEFAULT_TIMEOUT_MS).unwrap();
         for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
             assert!(polarity);
             assert_eq!(val, &test_data[i]);
@@ -396,11 +385,12 @@ bar,false,-10
         assert!(!consumer.state().eoi);
 
         // Unpause the endpoint, wait for the error.
-        endpoint.start(0).unwrap();
+        endpoint.start().unwrap();
         wait(
             || consumer.state().endpoint_error.is_some(),
             DEFAULT_TIMEOUT_MS,
-        );
+        )
+        .unwrap();
         Ok(())
     }
 
@@ -440,7 +430,7 @@ bar,false,-10
 
         // Unpause the endpoint.  Outputs should start arriving, one record
         // every 10 ms.
-        endpoint.start(0).unwrap();
+        endpoint.start().unwrap();
 
         // The first 10 records should take about 100 ms to arrive.  In practice
         // on busy CI systems it often seems to take longer, so be generous.
@@ -496,7 +486,7 @@ bar,false,-10
         // to the previous position.  That means that if we wait up to 500 ms,
         // there should be no new data.  Since real life is full of races, let's
         // only wait 400 ms.
-        endpoint.start(0).unwrap();
+        endpoint.start().unwrap();
         println!("restarting...");
         for _ in 0..4 {
             sleep(Duration::from_millis(100));

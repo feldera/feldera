@@ -7,6 +7,22 @@ controller that controls the execution of a DBSP circuit along with
 its input and output adapters, and a DBSP server that exposes the
 controller API over HTTP and through a web interface.
 
+## Test notes
+
+The unit tests write `librdkafka` log messages to `stdout` regardless
+of `--nocapture`.  This is because the Cargo test harness only
+captures output from the thread started by the harness itself, and
+`librdkafka` runs in a separate thread.
+
+The tests will output several log messages like the following.  These
+do not indicate an error, and you should not run a server on
+port 11111.  These messages indicate that a negative test that
+specifies an invalid Kafka server address was successful.
+
+```
+ERROR - librdkafka: FAIL [thrd:localhost:11111/bootstrap]: localhost:11111/bootstrap: Connect to ipv6#[::1]:11111 failed: Connection refused (after 0ms in state CONNECT)
+```
+
 ## Dependencies
 
 The test code has the following dependencies:
