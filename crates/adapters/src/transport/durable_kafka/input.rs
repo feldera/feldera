@@ -24,7 +24,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
-use std::thread::{self, sleep};
+use std::thread::{self};
 use std::time::Duration;
 use std::{
     borrow::Cow,
@@ -887,6 +887,8 @@ impl<E> IndexReader<E>
 where
     E: Fn(AnyError) + Send + Sync + Clone,
 {
+    /// Creates `topic` with `n_partitions` partitions using the admin client
+    /// from `config`, and then blocks until the topic creation is complete.
     fn create_topic(topic: &str, n_partitions: i32, config: &Config) -> AnyResult<()> {
         let admin_client = AdminClient::from_config(&config.common.admin_config)?;
         let new_topic = NewTopic::new(
@@ -895,6 +897,7 @@ where
             rdkafka::admin::TopicReplication::Fixed(-1),
         );
         block_on(admin_client.create_topics(&[new_topic], &AdminOptions::new()))?;
+
         Ok(())
     }
 
@@ -904,25 +907,18 @@ where
         topic: &str,
         n_partitions: i32,
     ) -> AnyResult<usize> {
-        let mut creating = false;
-        loop {
-            match count_partitions_in_topic(consumer, topic) {
-                Ok(n) => return Ok(n),
-                Err(error) => {
-                    if let Some(kafka_error) = error.downcast_ref::<KafkaError>() {
-                        let code = kafka_error.rdkafka_error_code();
-                        if code == Some(RDKafkaErrorCode::UnknownTopicOrPartition)
-                            || (creating && code == Some(RDKafkaErrorCode::NotLeaderForPartition))
-                        {
-                            info!("Index topic {topic} does not yet exist, creating with {n_partitions} partitions");
-                            Self::create_topic(topic, n_partitions, config)?;
-                            creating = true;
-                            sleep(Duration::from_millis(100));
-                            continue;
-                        }
+        match count_partitions_in_topic(consumer, topic) {
+            Ok(n) => Ok(n),
+            Err(error) => {
+                if let Some(kafka_error) = error.downcast_ref::<KafkaError>() {
+                    let code = kafka_error.rdkafka_error_code();
+                    if code == Some(RDKafkaErrorCode::UnknownTopicOrPartition) {
+                        info!("Index topic {topic} does not yet exist, creating with {n_partitions} partitions");
+                        Self::create_topic(topic, n_partitions, config)?;
+                        return Ok(n_partitions as usize);
                     }
-                    return Err(error);
                 }
+                Err(error)
             }
         }
     }
@@ -955,7 +951,7 @@ where
             let ctp = Ctp::new(&consumer, &index_topic, partition);
 
             let watermarks = ctp
-                .fetch_watermarks(None)
+                .fetch_watermarks_patiently()
                 .with_context(|| format!("Failed to fetch watermarks for {ctp}"))?;
 
             let (steps, next_step_start) = if !watermarks.is_empty() {
