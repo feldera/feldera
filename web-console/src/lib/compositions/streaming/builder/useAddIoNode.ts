@@ -10,7 +10,7 @@ import { useRedoLayout } from './useAutoLayout'
 
 const HEIGHT_OFFSET = 120
 
-// Checks if the connector can connect to a give schema
+// Checks if the connector can connect to a given schema
 export function connectorConnects(schema: ProgramSchema | null | undefined, ac: AttachedConnector): boolean {
   if (!schema) {
     return false

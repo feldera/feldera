@@ -1,7 +1,7 @@
 // OutputNodes are displayed on the right and connected with views of the
 // program.
 
-import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
+import { useDeleteNode } from '$lib/compositions/streaming/builder/useDeleteNode'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { connectorDescrToType, connectorTypeToIcon } from '$lib/functions/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
@@ -16,7 +16,7 @@ import { Handle, Node } from '../NodeTypes'
 
 const OutputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
   const { getNode } = useReactFlow()
-  const onDelete = useNodeDelete(id)
+  const onDelete = useDeleteNode(() => {})(id)
 
   // Only allow the connection if we're coming from a view
   const isValidConnection = (connection: Connection) => {

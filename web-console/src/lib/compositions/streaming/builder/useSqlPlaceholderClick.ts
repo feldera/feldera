@@ -16,7 +16,6 @@ export function useReplacePlaceholder() {
 
   const replacePlaceholder = useCallback(
     (program: ProgramDescr) => {
-      console.log(program)
       const parentNode = getNode('sql')
       if (!parentNode) {
         return

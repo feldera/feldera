@@ -11,8 +11,7 @@ import { connectorConnects, useAddConnector } from '$lib/compositions/streaming/
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
 import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
 import { useHashPart } from '$lib/compositions/useHashPart'
-import { partition } from '$lib/functions/common/array'
-import { removePrefix } from '$lib/functions/common/string'
+import { partition, replaceElement } from '$lib/functions/common/array'
 import { setQueryData } from '$lib/functions/common/tanstack'
 import { showOnHashPart } from '$lib/functions/urlHash'
 import {
@@ -26,10 +25,12 @@ import {
   UpdatePipelineResponse
 } from '$lib/services/manager'
 import { invalidatePipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { IONodeData, ProgramNodeData } from '$lib/types/connectors'
 import assert from 'assert'
 import { useSearchParams } from 'next/navigation'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
+import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 import { useDebouncedCallback } from 'use-debounce'
 
@@ -39,26 +40,26 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 const stateToSaveLabel = (state: SaveIndicatorState): string =>
   match(state)
-    .with('isModified' as const, () => {
+    .with('isModified', () => {
       return 'Saving ...'
     })
-    .with('isDebouncing' as const, () => {
+    .with('isDebouncing', () => {
       return 'Saving ...'
     })
-    .with('isSaving' as const, () => {
+    .with('isSaving', () => {
       return 'Saving ...'
     })
-    .with('isUpToDate' as const, () => {
+    .with('isUpToDate', () => {
       return 'Saved'
     })
-    .with('isNew' as const, () => {
+    .with('isNew', () => {
       return 'New Pipeline'
     })
     .exhaustive()
 
 const detachConnector = (c: AttachedConnector) => ({ ...c, relation_name: '' }) as AttachedConnector
 
-const PipelineWithProvider = (props: {
+const PipelineBuilderPage = (props: {
   pipelineId: PipelineId | undefined
   setPipelineId: Dispatch<SetStateAction<PipelineId | undefined>>
 }) => {
@@ -83,7 +84,7 @@ const PipelineWithProvider = (props: {
   const project = useBuilderState(state => state.project)
   const setProject = useBuilderState(state => state.setProject)
 
-  const { getNode, getEdges } = useReactFlow()
+  const { getNode, getEdges, setNodes } = useReactFlow<IONodeData | ProgramNodeData>()
 
   const { mutate: newPipelineMutate } = useMutation<NewPipelineResponse, ApiError, NewPipelineRequest>(
     PipelinesService.newPipeline
@@ -99,7 +100,10 @@ const PipelineWithProvider = (props: {
   const addConnector = useAddConnector()
 
   const { pushMessage } = useStatusNotification()
-  const projects = useQuery(PipelineManagerQuery.program())
+  const projectsQuery = useQuery({
+    ...PipelineManagerQuery.program(),
+    refetchInterval: 2000
+  })
   const connectorQuery = useQuery(PipelineManagerQuery.connector())
   const pipelineQuery = useQuery({
     ...PipelineManagerQuery.pipelineStatus(pipelineId!),
@@ -113,8 +117,8 @@ const PipelineWithProvider = (props: {
     const isReady = !(
       pipelineQuery.isLoading ||
       pipelineQuery.isError ||
-      projects.isLoading ||
-      projects.isError ||
+      projectsQuery.isLoading ||
+      projectsQuery.isError ||
       connectorQuery.isLoading ||
       connectorQuery.isError
     )
@@ -143,18 +147,30 @@ const PipelineWithProvider = (props: {
     // the saveState every time the backend returns some result. Because it
     // could cancel potentially in-progress saves (started by client action).
 
-    const project = (id => (id ? projects.data.find(p => p.program_id === id) : undefined))(descriptor.program_id)
+    const project = projectsQuery.data.find(p => p.program_id === descriptor.program_id)
     const validConnections = !project
       ? attachedConnectors
       : (() => {
           setMissingSchemaDialog(!project.schema)
 
+          setProject(project)
+          replacePlaceholder(project)
+          // Update handles of SQL Program node when program is recompiled, hide stale connection edges
+          setNodes(nodes =>
+            replaceElement(nodes, node => {
+              if (node.type !== 'sqlProgram') {
+                return null
+              }
+              return {
+                ...node,
+                data: { label: project.name, program: project }
+              }
+            })
+          )
+
           const [validConnections, invalidConnections] = partition(attachedConnectors, connector =>
             connectorConnects(project.schema, connector)
           )
-
-          setProject(project)
-          replacePlaceholder(project)
 
           if (invalidConnections.length > 0) {
             pushMessage({
@@ -187,9 +203,9 @@ const PipelineWithProvider = (props: {
     pipelineQuery.isLoading,
     pipelineQuery.isError,
     pipelineQuery.data,
-    projects.isLoading,
-    projects.isError,
-    projects.data,
+    projectsQuery.isLoading,
+    projectsQuery.isError,
+    projectsQuery.data,
     setPipelineId,
     setName,
     setDescription,
@@ -203,15 +219,16 @@ const PipelineWithProvider = (props: {
     saveState
   ])
 
-  const debouncedSave = useDebouncedCallback(() => {
+  const setModifiedWhenDebouncing = useDebouncedCallback(() => {
     if (saveState === 'isDebouncing') {
       setSaveState('isModified')
     }
   }, 2000)
 
+  // Send requests to update pipeline according to builder UI
   useEffect(() => {
     if (saveState === 'isDebouncing') {
-      debouncedSave()
+      setModifiedWhenDebouncing()
     }
 
     if (saveState !== 'isModified') {
@@ -245,20 +262,19 @@ const PipelineWithProvider = (props: {
     }
 
     // Update an existing pipeline
-    const connectors: Array<AttachedConnector> = getEdges().map(edge => {
+    const connectors = getEdges().map(edge => {
       const source = getNode(edge.source)
       const target = getNode(edge.target)
-      const connector = source?.id === 'sql' ? target : source
+      const connectsInput = 'sql' !== source?.id
+      const connector = connectsInput ? source : target
+      invariant(connector, "Couldn't extract attached connector from edge")
+      invariant('ac' in connector.data, 'Wrong connector node data')
+      const ac = connector.data.ac
 
-      const ac: AttachedConnector | undefined = connector?.data.ac
-      //console.log('edge.sourceHandle', edge.sourceHandle, 'edge', edge)
-      if (ac == undefined) {
-        throw new Error('data.ac in an edge was undefined')
-      }
-      const tableOrView = ac.is_input
-        ? removePrefix(edge.targetHandle || '', 'table-')
-        : removePrefix(edge.sourceHandle || '', 'view-')
-      ac.relation_name = tableOrView
+      ac.relation_name = (handle => {
+        invariant(handle, 'Node handle string should be defined')
+        return handle.replace(/^table-|^view-/, '')
+      })(connectsInput ? edge.targetHandle : edge.sourceHandle)
 
       return ac
     })
@@ -308,7 +324,7 @@ const PipelineWithProvider = (props: {
     )
   }, [
     saveState,
-    debouncedSave,
+    setModifiedWhenDebouncing,
     setSaveState,
     setPipelineId,
     updatePipelineMutate,
@@ -374,7 +390,7 @@ export default () => {
 
   return (
     <ReactFlowProvider>
-      <PipelineWithProvider pipelineId={pipelineId} setPipelineId={setPipelineId} />
+      <PipelineBuilderPage pipelineId={pipelineId} setPipelineId={setPipelineId} />
     </ReactFlowProvider>
   )
 }

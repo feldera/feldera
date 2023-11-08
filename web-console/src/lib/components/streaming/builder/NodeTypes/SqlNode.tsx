@@ -1,10 +1,11 @@
 // SqlNode is a (compiled) program with tables and view as handles to connect
 // to.
 
-import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
+import { Handle, Node } from '$lib/components/streaming/builder/NodeTypes'
+import { useDeleteNode, useDeleteNodeProgram } from '$lib/compositions/streaming/builder/useDeleteNode'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { zipDefault } from '$lib/functions/common/tuple'
-import { memo } from 'react'
+import { ProgramDescr, Relation } from '$lib/services/manager'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
 import { TextIcon } from 'src/lib/components/common/TextIcon'
 import IconX from '~icons/bx/x'
@@ -15,8 +16,6 @@ import { Box, CardContent, CardHeader, Stack } from '@mui/material'
 import Avatar from '@mui/material/Avatar'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
-
-import { Handle, Node } from '../NodeTypes'
 
 function SqlTableNode(props: { name: string }) {
   const { getNode, getEdges } = useReactFlow()
@@ -98,8 +97,8 @@ function SqlViewNode(props: { name: string }) {
   )
 }
 
-function SqlNode({ id, data }: NodeProps) {
-  const onDelete = useNodeDelete(id)
+export function SqlNode({ id, data }: NodeProps<{ label: string; program: ProgramDescr }>) {
+  const onDelete = useDeleteNode(useDeleteNodeProgram())(id)
 
   const inputs = data.program.schema?.inputs || []
   const outputs = data.program.schema?.outputs || []
@@ -133,20 +132,17 @@ function SqlNode({ id, data }: NodeProps) {
       />
 
       <CardContent sx={{ textAlign: 'center', '& svg': { mb: 2 } }}>
-        {zipDefault<any, any>(undefined, undefined)(inputs, outputs).map((e, idx) => {
-          const input = e[0]
-          const output = e[1]
-
-          return (
-            <Stack direction='row' spacing={2} key={idx} sx={{ width: '100%' }}>
-              <Box sx={{ textAlign: 'left' }}>{input && <SqlTableNode name={input.name} />}</Box>
-              <Box sx={{ textAlign: 'right', width: '100%' }}> {output && <SqlViewNode name={output.name} />}</Box>
-            </Stack>
-          )
-        })}
+        {zipDefault<Relation | undefined, Relation | undefined>(undefined, undefined)(inputs, outputs).map(
+          ([input, output], idx) => {
+            return (
+              <Stack direction='row' spacing={2} key={idx} sx={{ width: '100%' }}>
+                <Box sx={{ textAlign: 'left' }}>{input && <SqlTableNode name={input.name} />}</Box>
+                <Box sx={{ textAlign: 'right', width: '100%' }}> {output && <SqlViewNode name={output.name} />}</Box>
+              </Stack>
+            )
+          }
+        )}
       </CardContent>
     </Node>
   )
 }
-
-export default memo(SqlNode)

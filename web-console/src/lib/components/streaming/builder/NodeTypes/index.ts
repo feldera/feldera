@@ -9,7 +9,7 @@ import Card from '@mui/material/Card'
 import InputNode from './InputNode'
 import IOPlaceholderNode from './IOPlaceholderNode'
 import OutputNode from './OutputNode'
-import SqlNode from './SqlNode'
+import { SqlNode } from './SqlNode'
 import SqlPlaceholderNode from './SqlPlaceholderNode'
 
 export const Handle = styled(RawHandle)`

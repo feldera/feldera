@@ -61,6 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduce Docker logging noise from Kafka connect and Redpanda.
 - Regression in pipeline shutdown logic
   ([#961](https://github.com/feldera/feldera/pull/961))
+- Fix unable to delete orphaned output connectors,
+  SQL views in Pipeline Builder do not get removed when removed from the program
+  ([#854](https://github.com/feldera/feldera/issues/854))
 
 ## [0.2.0] - 2023-10-24
 
