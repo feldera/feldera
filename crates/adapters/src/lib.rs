@@ -76,22 +76,13 @@
 //!
 //! ## Adapter API
 //!
-//! The transport adapter API consists of the following traits:
+//! The transport adapter API consists of four traits:
 //!
 //! * [`InputTransport`] is a factory trait that creates [`InputEndpoint`]
-//!   instances from configurations.
+//!   instances.
 //!
-//! * [`InputEndpoint`] represents a configured data connection, e.g., a file,
-//!   an S3 bucket or a Kafka topic.  By providing an [`InputConsumer`], a
-//!   client may open an endpoint and thereby obtain an [`InputReader`].
-//!
-//! * [`InputReader`] allows a client to request reading an endpoint's data, and
-//!   pause and resume reading.  A reader operates asynchronously in a
-//!   background thread and passes updates to the [`InputConsumer`].
-//!
-//! * [`InputConsumer`] is provided by the client, not the API.  An
-//!   [`InputReader`] with new data or status information provides it by calling
-//!   the consumer's methods.
+//! * [`InputEndpoint`] represents an individual data connection, e.g., a file,
+//!   an S3 bucket or a Kafka topic.
 //!
 //! * [`OutputTransport`] is a factory trait that creates [`OutputEndpoint`]
 //!   instances.
@@ -99,7 +90,7 @@
 //! * [`OutputEndpoint`] represents an individual outgoing data connection,
 //!   e.g., a file, an S3 bucket or a Kafka topic.
 //!
-//! The format adapter API consists of:
+//! Similarly, the format adapter API consists of:
 //!
 //! * [`InputFormat`] - a factory trait that creates [`Parser`] instances
 //!
@@ -120,36 +111,6 @@
 //!
 //! * a [`Catalog`] object, which stores dictionaries of input and output
 //!   streams of the circuit.
-//!
-//! # Fault tolerance
-//!
-//! This crate implements support for "fault tolerant" circuits, that is,
-//! circuits whose operation can resume gracefully after a crash.  A crash will
-//! not cause a fault tolerant circuit to drop input or process it more than
-//! once, or to drop output or produce duplicate output, or to corrupt its
-//! internal state.
-//!
-//! The form of fault tolerance implemented in this crate can recover from
-//! crashes that kill processes or disrupt networking, but not crashes that lose
-//! storage or corrupt computations.
-//!
-//! Fault tolerance requires:
-//!
-//! * Input to be divided into numbered [`Step`]s that can be retrieved
-//!   repeatedly with the same content, despite crashes.  We call this "durable"
-//!   input.  [`InputEndpoint::is_durable`] reports whether an input endpoint is
-//!   durable.
-//!
-//! * Output to be divided into numbered [`Step`]s such that, if a step with a
-//!   given number is output more than once, the output endpoint discards the
-//!   duplicate.  We call this "durable" output.  Only some output endpoints are
-//!   durable.
-//!
-//! Fault tolerance works only with deterministic circuits, that is, ones that,
-//! given a sequence of inputs, will always produce the same sequence of
-//! outputs.  Most circuits used to analyze data are deterministic.
-//!
-//! [`Step`]: crate::transport::Step
 
 use num_derive::FromPrimitive;
 use serde::Serialize;
@@ -198,8 +159,8 @@ pub use controller::{
     InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig, TransportConfig,
 };
 pub use transport::{
-    AsyncErrorCallback, FileInputTransport, InputConsumer, InputEndpoint, InputReader,
-    InputTransport, OutputEndpoint, OutputTransport,
+    AsyncErrorCallback, FileInputTransport, InputConsumer, InputEndpoint, InputTransport,
+    OutputEndpoint, OutputTransport,
 };
 
 pub use static_compile::{

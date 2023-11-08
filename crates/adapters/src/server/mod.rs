@@ -159,6 +159,9 @@ where
     let args = ServerArgs::try_parse().map_err(|e| ControllerError::cli_args_error(&e))?;
 
     run_server(args, circuit_factory).map_err(|e| {
+        // Write to stderror in case the error happened before logging
+        // has been enabled.
+        eprintln!("{e}");
         error!("{e}");
         e
     })

@@ -31,10 +31,7 @@
 //! pending.
 
 use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
-use crate::{
-    transport::{AtomicStep, Step},
-    PipelineState,
-};
+use crate::PipelineState;
 use anyhow::Error as AnyError;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use log::error;
@@ -43,7 +40,6 @@ use num_traits::FromPrimitive;
 use psutil::process::{Process, ProcessError};
 use serde::{Serialize, Serializer};
 use std::{
-    cmp::min,
     collections::BTreeMap,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -226,11 +222,10 @@ impl ControllerStatus {
         endpoint_id: &EndpointId,
         endpoint_name: &str,
         config: InputEndpointConfig,
-        is_durable: bool,
     ) {
         self.inputs.write().unwrap().insert(
             *endpoint_id,
-            InputEndpointStatus::new(endpoint_name, config, is_durable),
+            InputEndpointStatus::new(endpoint_name, config),
         );
     }
 
@@ -429,45 +424,6 @@ impl ControllerStatus {
         };
     }
 
-    pub fn start_step(&self, endpoint_id: EndpointId, step: Step) {
-        let inputs = self.inputs.read().unwrap();
-        if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-            endpoint_stats.start_step(step);
-        };
-    }
-
-    pub fn committed(&self, endpoint_id: EndpointId, step: Step) {
-        let inputs = self.inputs.read().unwrap();
-        if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-            endpoint_stats.committed(step);
-        };
-    }
-
-    pub fn is_step_complete(&self, step: Step) -> bool {
-        self.inputs
-            .read()
-            .unwrap()
-            .values()
-            .all(|status| !status.is_durable || status.metrics.step.load(Ordering::Acquire) > step)
-    }
-
-    pub fn is_step_committed(&self, step: Step) -> bool {
-        self.uncommitted_step()
-            .map_or(true, |uncommitted_step| step < uncommitted_step)
-    }
-
-    pub fn uncommitted_step(&self) -> Option<Step> {
-        let mut step = None;
-        for status in self.inputs.read().unwrap().values() {
-            if !status.is_durable {
-                return None;
-            }
-            let new = status.metrics.uncommitted.load(Ordering::Acquire);
-            step = Some(step.map_or(new, |old| min(old, new)));
-        }
-        step
-    }
-
     pub fn enqueue_batch(&self, endpoint_id: EndpointId, num_records: usize) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             endpoint_stats.enqueue_batch(num_records);
@@ -609,12 +565,6 @@ pub struct InputEndpointMetrics {
     pub num_parse_errors: AtomicU64,
 
     pub end_of_input: AtomicBool,
-
-    /// The step to which arriving input belongs.
-    pub step: AtomicStep,
-
-    /// The first step known not to have committed yet.
-    pub uncommitted: AtomicStep,
 }
 
 /// Input endpoint status information.
@@ -630,19 +580,15 @@ pub struct InputEndpointStatus {
 
     /// The first fatal error that occurred at the endpoint.
     pub fatal_error: Mutex<Option<String>>,
-
-    /// Whether this input endpoint's data is durable.
-    pub is_durable: bool,
 }
 
 impl InputEndpointStatus {
-    fn new(endpoint_name: &str, config: InputEndpointConfig, is_durable: bool) -> Self {
+    fn new(endpoint_name: &str, config: InputEndpointConfig) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
             metrics: Default::default(),
             fatal_error: Mutex::new(None),
-            is_durable,
         }
     }
 
@@ -699,14 +645,6 @@ impl InputEndpointStatus {
                 *fatal_error = Some(error.to_string());
             }
         }
-    }
-
-    fn start_step(&self, step: Step) {
-        self.metrics.step.store(step, Ordering::Release);
-    }
-
-    fn committed(&self, step: Step) {
-        self.metrics.uncommitted.store(step + 1, Ordering::Release);
     }
 }
 

@@ -1,6 +1,4 @@
-use crate::{
-    catalog::SerBatch, transport::Step, ControllerError, DeCollectionHandle, FieldParseError,
-};
+use crate::{catalog::SerBatch, ControllerError, DeCollectionHandle, FieldParseError};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use erased_serde::Serialize as ErasedSerialize;
@@ -470,7 +468,7 @@ pub trait OutputConsumer: Send {
     /// The encoder should not generate buffers exceeding this size.
     fn max_buffer_size_bytes(&self) -> usize;
 
-    fn batch_start(&mut self, step: Step);
+    fn batch_start(&mut self);
     fn push_buffer(&mut self, buffer: &[u8]);
     fn batch_end(&mut self);
 }

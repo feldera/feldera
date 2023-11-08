@@ -1,6 +1,5 @@
 use crate::{
-    controller::FormatConfig, transport::Step, DeCollectionHandle, InputConsumer, InputFormat,
-    ParseError, Parser,
+    controller::FormatConfig, DeCollectionHandle, InputConsumer, InputFormat, ParseError, Parser,
 };
 use anyhow::{anyhow, Error as AnyError};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -152,8 +151,4 @@ impl InputConsumer for MockInputConsumer {
     fn fork(&self) -> Box<dyn InputConsumer> {
         Box::new(self.clone())
     }
-
-    fn start_step(&mut self, _step: Step) {}
-
-    fn committed(&mut self, _step: Step) {}
 }

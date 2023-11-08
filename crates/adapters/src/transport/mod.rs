@@ -5,8 +5,9 @@
 //! interpreting it (data interpretation is the job of **data format** adapters
 //! found in [dbsp_adapters::format](crate::format)).
 //!
-//! Both input and output data transport adapters exist.  Some transports
-//! have both input and output variants, and others only have one.
+//! Both input and output data transport adapters exist.  Every current form of
+//! transport has both an input and an output adapter, but transports added in
+//! the future might only be suitable for input or for output.
 //!
 //! Data transports are created and configured through Yaml, with a string name
 //! that designates a transport and a transport-specific Yaml object to
@@ -24,23 +25,18 @@
 //!     [`KafkaInputTransport`] or output to Kafka via [`KafkaOutputTransport`],
 //!     if the `with-kafka` feature is enabled.
 //!
-//!   * `durable_kafka`, for durable input and output using Kafka.
-//!
-//! To obtain a transport, create an endpoint with it, and then start reading it
-//! from the beginning:
+//! To obtain a transport and create an endpoint with it:
 //!
 //! ```ignore
 //! let transport = <dyn InputTransport>::get_transport(transport_name).unwrap();
-//! let endpoint = transport.new_endpoint(endpoint_name, &config);
-//! let reader = endpoint.open(consumer, 0);
+//! let endpoint = transport.new_endpoint(endpoint_name, &config, consumer);
 //! ```
 use crate::{format::ParseError, OutputEndpointConfig};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use once_cell::sync::Lazy;
 use serde_yaml::Value as YamlValue;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::sync::atomic::AtomicU64;
-use std::{borrow::Cow, ops::Range};
 
 mod file;
 pub mod http;
@@ -57,24 +53,6 @@ pub use url::UrlInputTransport;
 
 #[cfg(feature = "with-kafka")]
 pub use kafka::{KafkaInputTransport, KafkaOutputConfig, KafkaOutputTransport};
-
-#[cfg(feature = "with-kafka")]
-use durable_kafka::{KafkaDurableInputTransport, KafkaDurableOutputTransport};
-
-pub mod durable_kafka;
-
-/// Step number for durable input and output.
-///
-/// A "durable" data transport divides input into steps numbered sequentially.
-/// The first step is numbered zero.  Each step has durable content; that is, if
-/// it is read again, it will be the same as the first time.
-///
-/// The step number increases by 1 each time the circuit runs; that is, it
-/// tracks the global clock for the outermost circuit.
-pub type Step = u64;
-
-/// Atomic version of [`Step`].
-pub type AtomicStep = AtomicU64;
 
 /// Static map of supported input transports.
 // TODO: support for registering new transports at runtime in order to allow
@@ -94,11 +72,6 @@ static INPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn InputTransport>>> = 
             "kafka",
             Box::new(KafkaInputTransport) as Box<dyn InputTransport>,
         ),
-        #[cfg(feature = "with-kafka")]
-        (
-            "durable_kafka",
-            Box::new(KafkaDurableInputTransport) as Box<dyn InputTransport>,
-        ),
     ])
 });
 
@@ -113,11 +86,6 @@ static OUTPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn OutputTransport>>> 
         (
             "kafka",
             Box::new(KafkaOutputTransport) as Box<dyn OutputTransport>,
-        ),
-        #[cfg(feature = "with-kafka")]
-        (
-            "durable_kafka",
-            Box::new(KafkaDurableOutputTransport) as Box<dyn OutputTransport>,
         ),
     ])
 });
@@ -158,72 +126,10 @@ impl dyn InputTransport {
     }
 }
 
-/// A configured input transport endpoint.
-///
-/// Input endpoints come in two flavors:
-///
-/// * A "durable" endpoint divides its input into numbered steps.  A given step
-///   always contains the same data if it is read more than once.
-///
-/// * A non-durable endpoint does not have a concept of steps and need not yield
-///   the same data each time it is read.
+/// Input transport endpoint receives a stream of bytes via the underlying
+/// data transport protocol and pushes it to the associated [`InputConsumer`].
 pub trait InputEndpoint: Send {
-    /// Whether this endpoint is durable.
-    ///
-    /// A given [`InputTransport`] might support durability in some
-    /// configurations and not others.
-    fn is_durable(&self) -> bool;
-
-    /// Returns an [`InputReader`] for reading the endpoint's data.  For a
-    /// durable endpoint, `step` indicates the first step to be read; for a
-    /// non-durable endpoint, it is ignored.
-    ///
-    /// Data and status will be passed to `consumer`.
-    ///
-    /// The reader is initially paused.  The caller may call
-    /// [`InputReader::start`] to start reading.
-    fn open(
-        &self,
-        consumer: Box<dyn InputConsumer>,
-        start_step: Step,
-    ) -> AnyResult<Box<dyn InputReader>>;
-
-    /// For a durable endpoint, notifies the endpoint that steps less than
-    /// `step` aren't needed anymore.  It may optionally discard them.
-    ///
-    /// This is a no-op for non-durable endpoints.
-    fn expire(&self, _step: Step) {}
-
-    /// For a durable endpoint, determines and returns the range of steps that a
-    /// reader for this endpoint can read without adding new ones.
-    ///
-    /// Panics for non-durable endpoints.
-    fn steps(&self) -> AnyResult<Range<Step>> {
-        debug_assert!(!self.is_durable());
-        unreachable!()
-    }
-}
-
-/// Reads data from an endpoint.
-///
-/// Use [`InputEndpoint::open`] to obtain an [`InputReader`].
-///
-/// A new reader is initially paused.  Call [`InputReader::start`] to start
-/// reading.
-pub trait InputReader: Send {
-    /// Start or resume the endpoint.
-    ///
-    /// The endpoint must start receiving data and pushing it downstream to the
-    /// consumer passed to [`InputEndpoint::open`].
-    ///
-    /// A durable endpoint must not push data for a step greater than `step`.
-    /// If `step` completes, then it must still report it by calling
-    /// `InputConsumer::start_step(step + 1)`, but it must not subsequently call
-    /// [`InputConsumer::input_fragment`] or [`InputConsumer::input_chunk`]
-    /// before the client calls [`InputReader::start(step + 1)`].
-    ///
-    /// A non-durable endpoint may ignore `step`.
-    fn start(&self, step: Step) -> AnyResult<()>;
+    fn connect(&mut self, consumer: Box<dyn InputConsumer>) -> AnyResult<()>;
 
     /// Pause the endpoint.
     ///
@@ -232,13 +138,10 @@ pub trait InputReader: Send {
     /// data buffers may be pushed downstream before the endpoint goes quiet.
     fn pause(&self) -> AnyResult<()>;
 
-    /// Requests that the endpoint completes steps up to `_step`.  This is
-    /// meaningful only for durable endpoints.
+    /// Start or restart the endpoint.
     ///
-    /// An endpoint may complete steps even without a call to this function.  It
-    /// might, for example, limit the size of a single step and therefore
-    /// complete once a step fills up to the maximum size.
-    fn complete(&self, _step: Step) {}
+    /// The endpoint must start receiving data and pushing it downstream.
+    fn start(&self) -> AnyResult<()>;
 
     /// Disconnect the endpoint.
     ///
@@ -254,56 +157,20 @@ pub trait InputReader: Send {
 ///
 /// A transport endpoint pushes binary data downstream via an instance of this
 /// trait.
-///
-/// For a durable endpoint, where the data is divided into steps, there is some
-/// special terminology:
-///
-///   * "Completed" steps.  A step is "completed" when the endpoint has added
-///     all of the data to it that it is going to.  The reader indicates that a
-///     step `step`, and all prior steps, are completed by starting the next
-///     step with a call to `InputConsumer::start_step(step + 1)`.
-///
-///     A completed step may not yet be durable.  Completion indicates that the
-///     endpoint is writing it to stable storage, but that might not be done
-///     yet.  The controller can start processing the input step but it should
-///     not yet yield any side effects that can't be retracted.
-///
-///   * "Committed" steps.  This is the term for a completed step that has been
-///     written to stable storage.  The reader indicates that `step`, and all
-///     prior steps, have committed by calling `InputConsumer::committed(step)`.
-///
-///     Committed is a synonym for "durable", but that term is already used too
-///     much in this API.
+// TODO: `input_owned`.
 pub trait InputConsumer: Send {
-    /// Indicates that upcoming calls are for `step`.
-    fn start_step(&mut self, step: Step);
-
     /// Push a fragment of the input stream to the consumer.
     ///
     /// `data` is not guaranteed to start or end on a record boundary.
     /// The parser is responsible for identifying record boundaries and
     /// buffering incomplete records to get prepended to the next
     /// input fragment.
-    ///
-    /// A durable input transport keeps the order of fragments the same for a
-    /// given step from one read to the next.
     fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError>;
 
     /// Push a chunk of data to the consumer.
     ///
     /// The chunk is expected to contain complete records only.
-    ///
-    /// Some data in a durable input transport might not have an inherently
-    /// defined order within a step.  The input endpoint may shuffle unordered
-    /// chunks within a step from one read to the next.  For example, the
-    /// durable Kafka reader will provide chunks from a given partition in the
-    /// same order on each read, but it might interleave chunks from different
-    /// partitions differently each time.
     fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError>;
-
-    /// Steps numbered less than `step` been durably recorded.  (If recording a
-    /// step fails, then [`InputConsumer::error`] is called instead.)
-    fn committed(&mut self, step: Step);
 
     /// Endpoint failed.
     ///
@@ -324,23 +191,36 @@ pub trait InputConsumer: Send {
 
 /// Trait that represents a specific data transport.
 ///
-/// This is a factory trait that creates output transport endpoint instances.
+/// This is a factory trait that creates outgoing transport endpoint instances.
 pub trait OutputTransport: Send + Sync {
     /// Unique name of the data transport.
     fn name(&self) -> Cow<'static, str>;
 
     /// Create a new transport endpoint.
     ///
-    /// Create and initializes a transport endpoint.
+    /// Create and initializes a transport endpoint.  The endpoint will push
+    /// received data to the provided input consumer.  The endpoint is created
+    /// in a paused state.
     ///
     /// # Arguments
     ///
     /// * `config` - Transport-specific configuration.
     ///
+    /// * `async_error_callback` - the endpoint must invoke this callback to
+    ///   notify the client about asynchronous errors, i.e., errors that happen
+    ///   outside the context of the [`OutputEndpoint::push_buffer`] method. For
+    ///   instance, a reliable message bus like Kafka may notify the endpoint
+    ///   about a failure to deliver a previously sent message via an async
+    ///   callback. If the endpoint is unable to handle this error, it must
+    ///   forward it to the client via the `async_error_callback`.  The first
+    ///   argument of the callback is a flag that indicates a fatal error that
+    ///   the endpoint cannot recover from.
+    ///
     /// # Errors
     ///
     /// Fails if the specified configuration is invalid or the endpoint failed
-    /// to initialize.
+    /// to initialize (e.g., the endpoint was not able to establish a network
+    /// connection).
     fn new_endpoint(&self, config: &OutputEndpointConfig) -> AnyResult<Box<dyn OutputEndpoint>>;
 }
 
@@ -353,66 +233,20 @@ impl dyn OutputTransport {
 
 pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError) + Send + Sync>;
 
-/// A configured output transport endpoint.
-///
-/// Output endpoints come in two flavors:
-///
-/// * A "durable" endpoint accepts output that has been divided into numbered
-///   steps.  If it is given output associated with a step number that has
-///   already been output, then it discards the duplicate.  It must also keep
-///   data written to the output transport from becoming visible to downstream
-///   readers until `batch_end` is called.  (This works for output to Kafka,
-///   which supports transactional output.  If it is difficult for some future
-///   durable output endpoint, then the API could be adjusted to support writing
-///   output only after it can become immediately visible.)
-///
-/// * A non-durable endpoint does not have a concept of steps and ignores them.
 pub trait OutputEndpoint: Send {
-    /// Finishes establishing the connection to the output endpoint.
-    ///
-    /// If the endpoint encounters any errors during output, now or later, it
-    /// invokes `async_error_callback` notify the client about asynchronous
-    /// errors, i.e., errors that happen outside the context of the
-    /// [`OutputEndpoint::push_buffer`] method. For instance, a reliable message
-    /// bus like Kafka may notify the endpoint about a failure to deliver a
-    /// previously sent message via an async callback. If the endpoint is unable
-    /// to handle this error, it must forward it to the client via the
-    /// `async_error_callback`.  The first argument of the callback is a flag
-    /// that indicates a fatal error that the endpoint cannot recover from.
-    fn connect(&mut self, async_error_callback: AsyncErrorCallback) -> AnyResult<()>;
+    fn connect(&self, async_error_callback: AsyncErrorCallback) -> AnyResult<()>;
 
     /// Maximum buffer size that this transport can transmit.
     /// The encoder should not generate buffers exceeding this size.
     fn max_buffer_size_bytes(&self) -> usize;
 
-    /// Notifies the output endpoint that data subsequently written by
-    /// `push_buffer` belong to the given `step`.
-    ///
-    /// A durable endpoint has additional requirements:
-    ///
-    /// 1. If data for the given step has been written before, the endpoint
-    ///    should discard it.
-    ///
-    /// 2. The output batch must not be made visible to downstream readers
-    ///    before the next call to `batch_end`.
-    fn batch_start(&mut self, _step: Step) -> AnyResult<()> {
+    fn batch_start(&mut self) -> AnyResult<()> {
         Ok(())
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()>;
 
-    /// Notifies the output endpoint that output for the current step is
-    /// complete.
-    ///
-    /// A durable output endpoint may now make the output batch visible to
-    /// readers.
     fn batch_end(&mut self) -> AnyResult<()> {
         Ok(())
     }
-
-    /// Whether this endpoint is durable.
-    ///
-    /// A given [`OutputTransport`] might support durability in some
-    /// configurations and not others.
-    fn is_durable(&self) -> bool;
 }
