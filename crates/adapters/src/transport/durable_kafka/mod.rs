@@ -265,6 +265,25 @@ where
             })
     }
 
+    /// Fetches the watermarks for this client, topic, and particular, and
+    /// returns them as a `Range`.
+    ///
+    /// This method will retry forever for errors that typically indicate that a
+    /// topic was just created and not yet available for use.
+    fn fetch_watermarks_patiently(&self) -> KafkaResult<Range<i64>> {
+        loop {
+            match self.fetch_watermarks(None) {
+                Ok(watermarks) => return Ok(watermarks),
+                Err(error)
+                    if error.rdkafka_error_code()
+                        == Some(RDKafkaErrorCode::NotLeaderForPartition) => {}
+                Err(error)
+                    if error.rdkafka_error_code() == Some(RDKafkaErrorCode::UnknownPartition) => {}
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
     /// Returns a `TopicPartitionList` for this `Ctp`, with no offset.
     fn as_topic_partition_list(&self) -> TopicPartitionList {
         make_topic_partition_list([(self.topic, self.partition, Offset::Invalid)]).unwrap()
