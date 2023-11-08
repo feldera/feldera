@@ -1,4 +1,4 @@
-import { Public_Sans } from 'next/font/google'
+import localFont from 'next/font/local'
 import { Settings } from 'src/@core/context/settingsTypes'
 
 import { ThemeOptions } from '@mui/material'
@@ -9,10 +9,9 @@ import palette from './palette'
 import shadows from './shadows'
 import spacing from './spacing'
 
-const publicSans = Public_Sans({
-  weight: ['300', '400', '500', '600', '700'],
-  style: ['normal'],
-  subsets: ['latin']
+const publicSans = localFont({
+  src: '../../../public/fonts/PublicSans-VariableFont_wght.ttf',
+  display: 'swap'
 })
 
 const themeOptions = (settings: Settings): ThemeOptions => {
