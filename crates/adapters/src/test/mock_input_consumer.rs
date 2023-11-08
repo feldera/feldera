@@ -5,7 +5,7 @@ use crate::{
 use anyhow::{anyhow, Error as AnyError};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-pub type ErrorCallback = Box<dyn FnMut(&AnyError) + Send>;
+pub type ErrorCallback = Box<dyn FnMut(bool, &AnyError) + Send>;
 
 /// Inner state of `MockInputConsumer` shared by all clones of the consumer.
 pub struct MockInputConsumerState {
@@ -103,7 +103,7 @@ impl MockInputConsumer {
         for error in errors.iter() {
             // println!("parser returned '{:?}'", state.parser_result);
             if let Some(error_cb) = &mut state.error_cb {
-                error_cb(&anyhow!(error.clone()));
+                error_cb(false, &anyhow!(error.clone()));
             } else {
                 panic!("mock_input_consumer: parse error '{error}'");
             }
@@ -123,13 +123,16 @@ impl InputConsumer for MockInputConsumer {
         self.input(data, false)
     }
 
-    fn error(&mut self, _fatal: bool, error: AnyError) {
+    fn error(&mut self, fatal: bool, error: AnyError) {
         let mut state = self.state();
 
         if let Some(error_cb) = &mut state.error_cb {
-            error_cb(&error);
+            error_cb(fatal, &error);
         } else {
-            panic!("mock_input_consumer: transport error '{error}'");
+            panic!(
+                "mock_input_consumer: {} transport error '{error}'",
+                if fatal { "fatal" } else { "non-fatal" }
+            );
         }
         state.endpoint_error = Some(error);
     }
@@ -141,7 +144,7 @@ impl InputConsumer for MockInputConsumer {
         let (_num_records, errors) = state.parser.eoi();
         for error in errors.iter() {
             if let Some(error_cb) = &mut state.error_cb {
-                error_cb(&anyhow!(error.clone()));
+                error_cb(false, &anyhow!(error.clone()));
             } else {
                 panic!("mock_input_consumer: parse error '{error}'");
             }
