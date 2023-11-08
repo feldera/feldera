@@ -63,7 +63,7 @@ const saslOauthOidcForm = (
 const SaslOauthForm = () => {
   const auth = useFormContext<KafkaAuthSchema>().watch()
   invariant(
-    (auth['security_protocol'] === 'sasl_plaintext' || auth['security_protocol'] === 'sasl_ssl') &&
+    (auth['security_protocol'] === 'SASL_PLAINTEXT' || auth['security_protocol'] === 'SASL_SSL') &&
       auth['sasl_mechanism'] === 'OAUTHBEARER'
   )
   return (
@@ -121,7 +121,7 @@ const saslPassForm = (
 
 const SaslForm = () => {
   const auth = useFormContext<KafkaAuthSchema>().watch()
-  invariant(auth['security_protocol'] === 'sasl_plaintext' || auth['security_protocol'] === 'sasl_ssl')
+  invariant(auth['security_protocol'] === 'SASL_PLAINTEXT' || auth['security_protocol'] === 'SASL_SSL')
 
   return (
     <Grid container spacing={4}>
@@ -221,10 +221,10 @@ const sslForm = (
 
 const securityProtocolDesc = (p: KafkaAuthSchema['security_protocol']) =>
   match(p)
-    .with('plaintext', undefined, () => 'Un-authenticated, non-encrypted channel')
-    .with('sasl_plaintext', () => 'SASL authenticated, non-encrypted channel')
-    .with('sasl_ssl', () => 'SASL authenticated, SSL channel')
-    .with('ssl', () => 'SSL channel')
+    .with('PLAINTEXT', undefined, () => 'Un-authenticated, non-encrypted channel')
+    .with('SASL_PLAINTEXT', () => 'SASL authenticated, non-encrypted channel')
+    .with('SASL_SSL', () => 'SASL authenticated, SSL channel')
+    .with('SSL', () => 'SSL channel')
     .exhaustive()
 
 export const TabKafkaAuth = () => {
@@ -240,28 +240,28 @@ export const TabKafkaAuth = () => {
           helperText={securityProtocolDesc(auth['security_protocol'])}
           options={[
             {
-              id: 'plaintext',
-              label: 'plaintext'
+              id: 'PLAINTEXT',
+              label: 'PLAINTEXT'
             },
             {
-              id: 'ssl',
-              label: 'ssl'
+              id: 'SSL',
+              label: 'SSL'
             },
             {
-              id: 'sasl_plaintext',
-              label: 'sasl_plaintext'
+              id: 'SASL_PLAINTEXT',
+              label: 'SASL_PLAINTEXT'
             },
             {
-              id: 'sasl_ssl',
-              label: 'sasl_ssl'
+              id: 'SASL_SSL',
+              label: 'SASL_SSL'
             }
           ]}
         ></SelectElement>
         {match(auth['security_protocol'])
-          .with('plaintext', undefined, () => <></>)
-          .with('ssl', () => sslForm)
-          .with('sasl_plaintext', () => <SaslForm />)
-          .with('sasl_ssl', () => (
+          .with('PLAINTEXT', undefined, () => <></>)
+          .with('SSL', () => sslForm)
+          .with('SASL_PLAINTEXT', () => <SaslForm />)
+          .with('SASL_SSL', () => (
             <>
               {sslForm}
               <SaslForm />
