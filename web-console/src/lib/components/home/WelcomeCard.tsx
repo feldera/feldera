@@ -53,7 +53,7 @@ export const WelcomeTile = () => {
           <iframe
             width='100%'
             height='100%'
-            src='https://www.youtube.com/embed/iT4k5DCnvPU'
+            src='https://www.youtube.com/embed/tMLg9NyM3xk'
             style={{ borderStyle: 'none' }}
             title='YouTube video player'
             allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
