@@ -1,6 +1,6 @@
 import { ApiError } from '$lib/services/manager'
 
-import { QueryClient, QueryFilters, Updater, UseQueryOptions } from '@tanstack/react-query'
+import { InvalidateQueryFilters, QueryClient, QueryFilters, Updater, UseQueryOptions } from '@tanstack/react-query'
 
 type FunctionType = (...args: any) => any
 type Arguments<F extends FunctionType> = F extends (...args: infer A) => any ? A : never
@@ -8,7 +8,7 @@ type Arguments<F extends FunctionType> = F extends (...args: infer A) => any ? A
 type QueryType<U extends Record<string, FunctionType>, P extends keyof U> = {
   queryKey: readonly unknown[]
   queryFn: () => ReturnType<U[P]>
-} & Pick<UseQueryOptions<ReturnType<U[P]>, ApiError, Awaited<ReturnType<U[P]>>, readonly unknown[]>, 'onError'>
+} & UseQueryOptions<Awaited<ReturnType<U[P]>>, ApiError, Awaited<ReturnType<U[P]>>, readonly unknown[]> // Pick<UseQueryOptions<ReturnType<U[P]>, ApiError, Awaited<ReturnType<U[P]>>, readonly unknown[]>, 'onError'>
 
 export const mkQuery = <U extends Record<string, FunctionType>>(
   source: U
@@ -27,8 +27,8 @@ export const mkQuery = <U extends Record<string, FunctionType>>(
     })
   ) as any
 
-export const invalidateQuery = (queryClient: QueryClient, query: { queryKey: readonly unknown[] }) =>
-  queryClient.invalidateQueries(query.queryKey)
+export const invalidateQuery = (queryClient: QueryClient, query: InvalidateQueryFilters) =>
+  queryClient.invalidateQueries(query)
 
 export type QueryData<Query extends { queryFn: (...args: any) => any }> = Awaited<ReturnType<Query['queryFn']>>
 

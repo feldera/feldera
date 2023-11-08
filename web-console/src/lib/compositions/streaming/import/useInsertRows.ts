@@ -24,7 +24,7 @@ export function rowToCsvLine(relation: Relation, obj: Row): any[] {
 function useInsertRows() {
   const { pushMessage } = useStatusNotification()
 
-  const { mutate: pipelineInsert, isLoading: pipelineInsertLoading } = useMutation<string, ApiError, Args>({
+  const { mutate: pipelineInsert, isPending: pipelineInsertLoading } = useMutation<string, ApiError, Args>({
     mutationFn: ([pipelineId, relation, force, csvData]) => {
       return PipelinesService.httpInput(pipelineId, relation, force, 'csv', csvData)
     }

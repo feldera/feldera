@@ -13,7 +13,6 @@ import { useQuery } from '@tanstack/react-query'
 export const AuthenticationProvider = (props: { children: ReactNode }) => {
   const { data: auth } = useQuery(PipelineManagerQuery.getAuthConfig())
   const { auth: authState, setAuth } = useAuthStore()
-
   if (typeof authState === 'object') {
     OpenAPI.TOKEN = authState.bearer
   }

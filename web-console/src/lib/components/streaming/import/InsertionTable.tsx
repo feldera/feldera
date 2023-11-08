@@ -35,7 +35,7 @@ const useInsertionTable = (props: {
 }) => {
   const [pipelineRevision, setPipelineRevision] = useState<PipelineRevision | undefined>(undefined)
   const [relation, setRelation] = useState<Relation | undefined>(undefined)
-  const [isLoading, setLoading] = useState<boolean>(false)
+  const [isPending, setLoading] = useState<boolean>(false)
   const apiRef = useGridApiRef()
 
   const pipelineRevisionQuery = useQuery(
@@ -45,7 +45,7 @@ const useInsertionTable = (props: {
   // If a revision is loaded, find the requested relation that we want to insert
   // data into. We use it to display the table headers etc.
   useEffect(() => {
-    if (pipelineRevisionQuery.isLoading || pipelineRevisionQuery.isError || !pipelineRevisionQuery.data) {
+    if (pipelineRevisionQuery.isPending || pipelineRevisionQuery.isError || !pipelineRevisionQuery.data) {
       return
     }
     const newPipelineRevision = pipelineRevisionQuery.data
@@ -63,7 +63,7 @@ const useInsertionTable = (props: {
     setPipelineRevision(newPipelineRevision)
     setRelation(relation)
   }, [
-    pipelineRevisionQuery.isLoading,
+    pipelineRevisionQuery.isPending,
     pipelineRevisionQuery.isError,
     pipelineRevisionQuery.data,
     props.name,
@@ -75,7 +75,7 @@ const useInsertionTable = (props: {
     relation,
     pipelineRevision,
     apiRef,
-    isLoading,
+    isPending,
     setLoading,
     insert: props.insert
   }
@@ -99,7 +99,7 @@ const InsertionTableImpl = ({
   relation,
   pipelineRevision,
   apiRef,
-  isLoading,
+  isPending,
   setLoading,
   insert
 }: ReturnType<typeof useInsertionTable>) => {
@@ -118,7 +118,7 @@ const InsertionTableImpl = ({
         autoHeight
         editMode='cell'
         density='compact'
-        loading={isLoading}
+        loading={isPending}
         rows={insert.rows}
         disableColumnFilter
         initialState={{

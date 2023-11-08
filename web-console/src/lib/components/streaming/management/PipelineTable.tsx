@@ -128,12 +128,12 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
 
   const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(descriptor.pipeline_id))
   useEffect(() => {
-    if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
+    if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
       setInputs(getConnectorData(pipelineRevisionQuery.data, 'input'))
       setOutputs(getConnectorData(pipelineRevisionQuery.data, 'output'))
     }
   }, [
-    pipelineRevisionQuery.isLoading,
+    pipelineRevisionQuery.isPending,
     pipelineRevisionQuery.isError,
     pipelineRevisionQuery.data,
     setInputs,
@@ -258,7 +258,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
     key: LS_PREFIX + 'settings/streaming/management/details/grid'
   })
 
-  return !pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError ? (
+  return !pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError ? (
     <Box display='flex' sx={{ m: 2 }} justifyContent='center'>
       <Grid container spacing={3} sx={{ height: 1, width: '95%' }} alignItems='stretch'>
         <Grid item xs={4}>
@@ -353,10 +353,10 @@ function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value
 
   const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(props.row.descriptor.pipeline_id))
   useEffect(() => {
-    if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
+    if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
       setHasRevision(true)
     }
-  }, [pipelineRevisionQuery.isLoading, pipelineRevisionQuery.isError, pipelineRevisionQuery.data])
+  }, [pipelineRevisionQuery.isPending, pipelineRevisionQuery.isError, pipelineRevisionQuery.data])
 
   return (isExpanded ||
     row.state.current_status === PipelineStatus.RUNNING ||
@@ -391,15 +391,15 @@ export default function PipelineTable() {
     ...PipelineManagerQuery.pipelines(),
     refetchInterval: 2000
   })
-  const { isLoading, isError, data, error } = pipelineQuery
+  const { isPending, isError, data, error } = pipelineQuery
   useEffect(() => {
-    if (!isLoading && !isError) {
+    if (!isPending && !isError) {
       setRows(data)
     }
     if (isError) {
       throw error
     }
-  }, [isLoading, isError, data, setRows, error])
+  }, [isPending, isError, data, setRows, error])
   const getDetailPanelContent = useCallback<NonNullable<DataGridProProps['getDetailPanelContent']>>(
     ({ row }) => <DetailPanelContent row={row} />,
     []
@@ -461,8 +461,8 @@ export default function PipelineTable() {
     UpdatePipelineResponse,
     ApiError,
     { pipeline_id: PipelineId; request: UpdatePipelineRequest }
-  >(args => {
-    return PipelinesService.updatePipeline(args.pipeline_id, args.request)
+  >({
+    mutationFn: args => PipelinesService.updatePipeline(args.pipeline_id, args.request)
   })
   const onUpdateRow = (newRow: Pipeline, oldRow: Pipeline) => {
     mutation.mutate(
@@ -549,7 +549,7 @@ export default function PipelineTable() {
         paginationModel={paginationModel}
         onPaginationModelChange={setPaginationModel}
         processRowUpdate={onUpdateRow}
-        loading={isLoading}
+        loading={isPending}
         slotProps={{
           baseButton: {
             variant: 'outlined'
@@ -589,7 +589,7 @@ const usePipelineStatus = (params: { row: Pipeline }) => {
   const programStatus =
     pipeline.program_id === null
       ? ('NoProgram' as const)
-      : curProgramQuery.isLoading || curProgramQuery.isError
+      : curProgramQuery.isPending || curProgramQuery.isError
       ? ('NotReady' as const)
       : (programData => {
           invariant(programData, 'Program data should be available')

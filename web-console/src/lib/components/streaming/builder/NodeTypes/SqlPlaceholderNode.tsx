@@ -21,12 +21,12 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
     }
   }
 
-  const { isLoading, isError, data } = useQuery(PipelineManagerQuery.programs())
+  const { isPending, isError, data } = useQuery(PipelineManagerQuery.programs())
   useEffect(() => {
-    if (!isLoading && !isError) {
+    if (!isPending && !isError) {
       setPrograms(data)
     }
-  }, [isLoading, isError, data])
+  }, [isPending, isError, data])
 
   return (
     <PlaceholderNode>

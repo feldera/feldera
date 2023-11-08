@@ -72,8 +72,8 @@ export const useCustomForm = <TFieldValues extends FieldValues = FieldValues, TC
 
   const form = useForm({
     ...props,
-    // TODO: if `any` is unnacceptable - fix this
-    resolver: schema ? yupResolver<TFieldValues>(schema as any) : undefined
+    // TODO: if `any` is unnacceptable - fix the types
+    resolver: schema ? (yupResolver<TFieldValues>(schema as any) as any) : undefined
   })
 
   return {

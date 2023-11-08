@@ -16,7 +16,7 @@ export type DataGridProDeclarativeProps<Model extends GridValidRowModel = any> =
 }
 
 const deriveColumnViewModel = <Model extends GridValidRowModel>(
-  cols: GridColDef<Model>[],
+  cols: readonly GridColDef<Model>[],
   viewModel: DataGridColumnViewModel
 ) =>
   viewModel.length === cols.length // check if columnViewModel is applicable to the columns in the table

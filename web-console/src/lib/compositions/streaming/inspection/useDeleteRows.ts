@@ -15,7 +15,7 @@ type Args = [
 export function useInsertDeleteRows() {
   const { pushMessage } = useStatusNotification()
 
-  const { mutate: pipelineDelete, isLoading } = useMutation<string, ApiError, Args>({
+  const { mutate: pipelineDelete, isPending } = useMutation<string, ApiError, Args>({
     mutationFn: ([pipelineId, relation, force, rows, isArray]) => {
       return isArray
         ? PipelinesService.httpInput(pipelineId, relation, force, 'json', JSON.stringify(rows), true)
@@ -26,7 +26,7 @@ export function useInsertDeleteRows() {
   return useCallback(
     (...[pipelineId, relation, force, rows, isArray = false]: Args) => {
       const rowsLen = Object.keys(rows).length
-      if (!isLoading) {
+      if (!isPending) {
         pipelineDelete([pipelineId, relation, force, rows, isArray], {
           onSuccess: () => {
             pushMessage({
@@ -41,6 +41,6 @@ export function useInsertDeleteRows() {
         })
       }
     },
-    [pipelineDelete, isLoading, pushMessage]
+    [pipelineDelete, isPending, pushMessage]
   )
 }

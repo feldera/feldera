@@ -11,7 +11,7 @@ const DataGridSearch = <TData extends GridValidRowModel>(props: {
   fetchRows: UseQueryResult<TData[], unknown>
   setFilteredData: Dispatch<SetStateAction<TData[]>>
 }) => {
-  const { isLoading, isError, data } = props.fetchRows
+  const { isPending, isError, data } = props.fetchRows
 
   const [searchText, setSearchText] = useState<string>('')
 
@@ -23,7 +23,7 @@ const DataGridSearch = <TData extends GridValidRowModel>(props: {
     }
 
     const searchRegex = new RegExp(escapeRegExp(searchValue), 'i')
-    if (!isLoading && !isError) {
+    if (!isPending && !isError) {
       const filteredRows = data.filter((row: any) => {
         return Object.keys(row).some(field => {
           // @ts-ignore

@@ -65,10 +65,10 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
 
   const [filteredData, setFilteredData] = useState<TData[]>([])
 
-  const { isLoading, isError, data, error } = fetchRows
+  const { isPending, isError, data, error } = fetchRows
 
   if (addActions && tableProps.columns.at(-1)?.field !== 'actions') {
-    tableProps.columns.push({
+    tableProps.columns = tableProps.columns.concat({
       flex: 0.1,
       minWidth: 90,
       sortable: false,
@@ -102,13 +102,13 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
   }
 
   useEffect(() => {
-    if (!isLoading && !isError) {
+    if (!isPending && !isError) {
       setRows(data)
     }
     if (isError) {
       throw error
     }
-  }, [isLoading, isError, data, setRows, error])
+  }, [isPending, isError, data, setRows, error])
 
   return (
     <Card>
@@ -125,7 +125,7 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
         paginationModel={paginationModel}
         onPaginationModelChange={setPaginationModel}
         processRowUpdate={onUpdateRow}
-        loading={isLoading}
+        loading={isPending}
         slotProps={{
           baseButton: {
             variant: 'outlined'
