@@ -33,8 +33,11 @@ export interface ValidationError {
 // type to displayable strings.
 export function getValueFormatter(columntype: ColumnType): (value: any, params?: GridCellParams) => string {
   return match(columntype)
+    .with({ type: 'BIGINT' }, { type: 'DECIMAL' }, () => {
+      return (value: BigNumber) => value.toFixed()
+    })
     .with({ type: 'TIME' }, () => {
-      return (value: any) => {
+      return (value: Dayjs | string) => {
         if (dayjs.isDayjs(value)) {
           return value.format('HH:mm:ss')
         } else {

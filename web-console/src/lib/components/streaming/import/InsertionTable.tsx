@@ -7,6 +7,7 @@ import { DataGridPro } from '$lib/components/common/table/DataGridProDeclarative
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { SQLTypeHeader } from '$lib/components/streaming/inspection/SQLTypeHeader'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
+import { getDefaultValue } from '$lib/compositions/streaming/import/useDefaultRows'
 import { getValueFormatter, Row } from '$lib/functions/ddl'
 import { ColumnType, Field, PipelineRevision, Relation } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
@@ -105,7 +106,7 @@ const EditSQLCell =
     const onChange = (event: React.ChangeEvent<HTMLInputElement>) => {
       props.api.setEditCellValue({ id, field, value: event.target.value })
     }
-    return <SQLValueInput columnType={ct} value={value} onChange={onChange} sx={{ width: '100%' }} />
+    return <SQLValueInput columnType={ct} value={value} onChange={onChange} sx={{ width: '100%' }} autoFocus={true} />
   }
 
 const InsertionTableImpl = ({
@@ -172,7 +173,7 @@ const InsertionTableImpl = ({
               },
               valueSetter: (params: GridValueSetterParams) => {
                 const row = params.row
-                row.record[col.name] = params.value
+                row.record[col.name] = params.value !== undefined ? params.value : getDefaultValue(col.columntype)
                 return row
               },
               renderHeader: () => <SQLTypeHeader col={col}></SQLTypeHeader>,

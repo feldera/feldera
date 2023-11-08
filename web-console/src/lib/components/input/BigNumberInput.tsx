@@ -82,7 +82,7 @@ export const BigNumberInput = ({
       {...props}
       onWheel={onWheel}
       type='number'
-      value={props.value?.toFixed()}
+      value={props.value?.toFixed() ?? ''}
       defaultValue={props.defaultValue?.toFixed()}
       onChange={e => {
         onChange?.(e)
