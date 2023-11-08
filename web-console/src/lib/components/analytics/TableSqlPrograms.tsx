@@ -25,38 +25,38 @@ import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
 
-import { Button } from '@mui/material'
+import { Button, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
 import { GridColDef, GridRenderCellParams, GridToolbarFilterButton, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-const getStatusObj = (status: ProgramStatus) =>
+const getStatusChip = (status: ProgramStatus) =>
   match(status)
     .with({ SqlError: P._ }, () => {
-      return { title: 'SQL Error', color: 'error' as const }
+      return { title: 'SQL Error', color: 'error' as const, tooltip: undefined }
     })
     .with({ RustError: P._ }, () => {
-      return { title: 'Rust Error', color: 'error' as const }
+      return { title: 'Rust Error', color: 'error' as const, tooltip: undefined }
     })
     .with({ SystemError: P._ }, () => {
-      return { title: 'System Error', color: 'error' as const }
+      return { title: 'System Error', color: 'error' as const, tooltip: undefined }
     })
     .with('Pending', () => {
-      return { title: 'Compiling', color: 'primary' as const }
+      return { title: 'In queue', color: 'primary' as const, tooltip: 'In queue to be compiled after another program' }
     })
     .with('CompilingSql', () => {
-      return { title: 'Compiling sql', color: 'primary' as const }
+      return { title: 'Compiling sql', color: 'primary' as const, tooltip: undefined }
     })
     .with('CompilingRust', () => {
-      return { title: 'Compiling binary', color: 'primary' as const }
+      return { title: 'Compiling binary', color: 'primary' as const, tooltip: undefined }
     })
     .with('Success', () => {
-      return { title: 'Ready', color: 'success' as const }
+      return { title: 'Ready', color: 'success' as const, tooltip: undefined }
     })
     .with('None', () => {
-      return { title: 'Unused', color: 'primary' as const }
+      return { title: 'Unused', color: 'primary' as const, tooltip: undefined }
     })
     .exhaustive()
 
@@ -114,9 +114,12 @@ const TableSqlPrograms = () => {
       field: 'status',
       headerName: 'Status',
       renderCell: (params: GridRenderCellParams) => {
-        const status = getStatusObj(params.row.status)
-
-        return <CustomChip rounded size='small' skin='light' color={status.color} label={status.title} />
+        const status = getStatusChip(params.row.status)
+        return (
+          <Tooltip title={status.tooltip}>
+            <CustomChip rounded size='small' skin='light' color={status.color} label={status.title} />
+          </Tooltip>
+        )
       }
     }
   ]
