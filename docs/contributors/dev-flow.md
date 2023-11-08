@@ -17,6 +17,12 @@ Build the SQL Compiler:
 mvn -f ./sql-to-dbsp-compiler/SQL-compiler -DskipTests package
 ```
 
+Build the JIT compiler:
+
+```bash
+cargo build --package dataflow-jit
+```
+
 Build and start the Pipeline Manager (that also serves the Feldera Web Console):
 
 ```bash
