@@ -46,6 +46,9 @@ public enum DBSPOpcode {
     RUST_INDEX("[]", false),
 
     // Aggregate operations
+    AGG_AND("agg_and", true),
+    AGG_OR("agg_or", true),
+    AGG_XOR("agg_xor", true),
     AGG_MAX("agg_max", true),
     AGG_MIN("agg_min", true),
     AGG_ADD("agg_plus", true);

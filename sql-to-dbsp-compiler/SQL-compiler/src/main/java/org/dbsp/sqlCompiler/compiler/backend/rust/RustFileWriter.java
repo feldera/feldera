@@ -149,6 +149,7 @@ public class RustFileWriter implements ICompilerComponent {
             "    interval::*,\n" +
             "    string::*,\n" +
             "    operators::*,\n" +
+            "    aggregates::*,\n" +
             "};\n" +
             "#[cfg(test)]\n" +
             "use sqlvalue::*;\n" +

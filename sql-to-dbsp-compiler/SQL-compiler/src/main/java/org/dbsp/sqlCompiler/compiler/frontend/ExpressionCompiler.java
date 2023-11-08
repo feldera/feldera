@@ -642,6 +642,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "chr":
                     case "lower":
                     case "upper":
+                    case "to_hex":
                     case "initcap": {
                         return this.compileFunction(call, node, type, ops, 1);
                     }

@@ -1,4 +1,5 @@
 use dbsp::algebra::{F32, F64};
+use num::PrimInt;
 
 use crate::{
     for_all_compare, for_all_int_compare, for_all_int_operator, for_all_numeric_compare,
@@ -6,7 +7,6 @@ use crate::{
 };
 
 use core::ops::{Add, Mul, Sub};
-use num::PrimInt;
 use rust_decimal::Decimal;
 
 #[inline(always)]

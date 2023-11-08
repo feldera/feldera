@@ -33,19 +33,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import javax.annotation.Nullable;
@@ -112,6 +100,8 @@ public abstract class DBSPLiteral extends DBSPExpression {
             return new DBSPNullLiteral();
         } else if (type.is(DBSPTypeTimestamp.class)) {
             return new DBSPTimestampLiteral();
+        } else if (type.is(DBSPTypeBinary.class)) {
+            return new DBSPBinaryLiteral(type.getNode(), type, null);
         }
         throw new UnimplementedException(type);
     }

@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler;
 
+import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.junit.runner.Result;
 import org.junit.runner.notification.RunListener;
 
