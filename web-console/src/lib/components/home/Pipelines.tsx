@@ -9,7 +9,7 @@ import { ApexOptions } from 'apexcharts'
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
 import IconChevronDown from '~icons/bx/chevron-down'
 
-import { Accordion, AccordionDetails, AccordionSummary, ListItem } from '@mui/material'
+import { Accordion, AccordionDetails, AccordionSummary, Stack } from '@mui/material'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import CardHeader from '@mui/material/CardHeader'
@@ -26,25 +26,27 @@ const Pipelines = () => {
     refetchInterval: 2000
   })
   const [active, inactive] = partition(fetchQuery.data ?? [], p => p.state.current_status === PipelineStatus.RUNNING)
-  const thumbs = active.map(p => (
-    <PipelineThumb {...p} apexOptions={apexOptions} key={p.descriptor.pipeline_id}></PipelineThumb>
-  ))
 
   return (
     <Card>
-      <CardHeader title={thumbs.length ? 'Active Pipelines' : 'No Active Pipelines'} />
+      <CardHeader title={active.length ? 'Active Pipelines' : 'No Active Pipelines'} />
       <CardContent>
-        {thumbs}
-        <ListItem></ListItem>
+        <Stack spacing={2}>
+          {active.map(p => (
+            <PipelineThumb {...p} apexOptions={apexOptions} key={p.descriptor.pipeline_id}></PipelineThumb>
+          ))}
+        </Stack>
       </CardContent>
       <Accordion disableGutters>
         <AccordionSummary expandIcon={<IconChevronDown fontSize={32} />}>
           <Typography color='text.secondary'>and {inactive.length} inactive</Typography>
         </AccordionSummary>
         <AccordionDetails>
-          {inactive.map(p => (
-            <PipelineThumb {...p} apexOptions={apexOptions} key={p.descriptor.pipeline_id}></PipelineThumb>
-          ))}
+          <Stack spacing={2}>
+            {inactive.map(p => (
+              <PipelineThumb {...p} apexOptions={apexOptions} key={p.descriptor.pipeline_id}></PipelineThumb>
+            ))}
+          </Stack>
         </AccordionDetails>
       </Accordion>
     </Card>
