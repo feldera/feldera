@@ -207,11 +207,6 @@
             <version>${calcite.version}</version>
         </dependency>
         <dependency>
-            <groupId>net.hydromatic</groupId>
-            <artifactId>sql-logic-test</artifactId>
-            <version>0.3</version>
-        </dependency>
-        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>4.13.2</version>
