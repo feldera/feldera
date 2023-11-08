@@ -18,6 +18,7 @@ import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePi
 import { usePipelineMutation } from '$lib/compositions/streaming/management/usePipelineMutation'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { useHashPart } from '$lib/compositions/useHashPart'
+import { inUnion } from '$lib/functions/common/array'
 import { humanSize } from '$lib/functions/common/string'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { tuple } from '$lib/functions/common/tuple'
@@ -61,7 +62,7 @@ import Icon270RingWithBg from '~icons/svg-spinners/270-ring-with-bg'
 
 import { useLocalStorage } from '@mantine/hooks'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { Button, Typography } from '@mui/material'
+import { alpha, Button, Typography, useTheme } from '@mui/material'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -120,6 +121,7 @@ function getConnectorData(revision: PipelineRevision, direction: InputOrOutput):
 }
 
 const DetailPanelContent = (props: { row: Pipeline }) => {
+  const theme = useTheme()
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
   const { descriptor, state } = props.row
@@ -149,7 +151,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
       {
         field: 'name',
         headerName: direction === 'input' ? 'Input' : 'Output',
-        flex: 0.5,
+        flex: 0.4,
         renderCell: params => {
           if (params.row.connections.length > 0) {
             return params.row.connections.map(c => c[1].name).join(', ')
@@ -162,19 +164,19 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
         field: 'config',
         valueGetter: params => params.row.relation.name,
         headerName: direction === 'input' ? 'Table' : 'View',
-        flex: 0.8
+        flex: 0.6
       },
       {
         field: 'records',
         headerName: 'Records',
-        flex: 0.15,
+        flex: 0.3,
         renderCell: params => {
           if (params.row.connections.length > 0) {
             const records =
               direction === 'input'
                 ? metrics.input.get(params.row.relation.name)?.total_records
                 : metrics.output.get(params.row.relation.name)?.transmitted_records
-            return format(',')(records || 0)
+            return format('.3s')(records || 0)
           } else {
             // TODO: we need to count records also when relation doesn't have
             // connections in the backend.
@@ -192,6 +194,34 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               ? metrics.input.get(params.row.relation.name)?.total_bytes
               : metrics.output.get(params.row.relation.name)?.transmitted_bytes
           return humanSize(bytes || 0)
+        }
+      },
+      {
+        field: 'errors',
+        headerName: 'Errors',
+        flex: 0.15,
+        renderCell: params => {
+          const errors =
+            direction === 'input'
+              ? (m => (m ? m.num_parse_errors + m.num_transport_errors : 0))(
+                  metrics.input.get(params.row.relation.name)
+                )
+              : (m => (m ? m.num_encode_errors + m.num_transport_errors : 0))(
+                  metrics.output.get(params.row.relation.name)
+                )
+          return (
+            <Box
+              sx={{
+                height: '200%',
+                display: 'flex',
+                px: 2,
+                alignItems: 'center',
+                backgroundColor: errors > 0 ? alpha(theme.palette.warning.main, 0.5) : undefined
+              }}
+            >
+              {format(',')(errors)}
+            </Box>
+          )
         }
       },
       {
@@ -223,6 +253,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
       }
     ]
   }
+
+  const gridPersistence = useDataGridPresentationLocalStorage({
+    key: LS_PREFIX + 'settings/streaming/management/details/grid'
+  })
 
   return !pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError ? (
     <Box display='flex' sx={{ m: 2 }} justifyContent='center'>
@@ -286,6 +320,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               rows={inputs}
               sx={{ flex: 1 }}
               hideFooter
+              {...gridPersistence}
             />
           </Paper>
         </Grid>
@@ -300,6 +335,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               rows={outputs}
               sx={{ flex: 1 }}
               hideFooter
+              {...gridPersistence}
             />
           </Paper>
         </Grid>
@@ -542,8 +578,9 @@ export default function PipelineTable() {
 const usePipelineStatus = (params: { row: Pipeline }) => {
   const pipeline = params.row.descriptor
   const curProgramQuery = useQuery({
-    ...PipelineManagerQuery.programCode(pipeline.program_id!),
-    enabled: pipeline.program_id !== null
+    ...PipelineManagerQuery.programs(),
+    enabled: pipeline.program_id !== null,
+    refetchInterval: 2000
   })
   const { data: pipelines } = useQuery({
     ...PipelineManagerQuery.pipelines()
@@ -552,12 +589,16 @@ const usePipelineStatus = (params: { row: Pipeline }) => {
   const programStatus =
     pipeline.program_id === null
       ? ('NoProgram' as const)
-      : !curProgramQuery.isLoading && !curProgramQuery.isError
-      ? match(curProgramQuery.data.status)
-          .with('Success', () => 'Ready' as const)
-          .with('CompilingRust', () => 'CompilingRust' as const)
-          .otherwise(() => 'NotReady' as const)
-      : ('NotReady' as const)
+      : curProgramQuery.isLoading || curProgramQuery.isError
+      ? ('NotReady' as const)
+      : (programData => {
+          invariant(programData, 'Program data should be available')
+          return match(programData.status)
+            .with('Success', () => 'Ready' as const)
+            .with('CompilingRust', () => 'CompilingRust' as const)
+            .with('None', 'Pending', 'CompilingSql', () => 'NotReady' as const)
+            .otherwise(() => 'Error' as const)
+        })(curProgramQuery.data.find(p => p.program_id === pipeline.program_id))
 
   const currentStatus =
     pipelines?.find(p => p.descriptor.pipeline_id === pipeline.pipeline_id)?.state.current_status ??
@@ -577,6 +618,9 @@ const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) =>
     ))
     .with([PipelineStatus.SHUTDOWN, 'CompilingRust'], () => (
       <CustomChip rounded size='small' skin='light' color='info' label='Compiling binary' />
+    ))
+    .with([PipelineStatus.SHUTDOWN, 'Error'], () => (
+      <CustomChip rounded size='small' skin='light' color='error' label='Program error' />
     ))
     .with([PipelineStatus.SHUTDOWN, P._], () => <CustomChip rounded size='small' skin='light' label={status} />)
     .with([PipelineStatus.INITIALIZING, P._], () => (
@@ -605,6 +649,9 @@ const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) =>
     ))
     .with([PipelineStatus.PAUSED, 'CompilingRust'], () => (
       <CustomChip rounded size='small' skin='light' color='info' label='Compiling binary' />
+    ))
+    .with([PipelineStatus.PAUSED, 'Error'], () => (
+      <CustomChip rounded size='small' skin='light' color='error' label='Program error' />
     ))
     .with([PipelineStatus.PAUSED, P._], () => (
       <CustomChip rounded size='small' skin='light' color='info' label={status} />
