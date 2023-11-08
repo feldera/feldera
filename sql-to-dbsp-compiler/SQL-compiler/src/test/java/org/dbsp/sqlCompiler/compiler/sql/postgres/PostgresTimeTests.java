@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
-// https://github.com/postgres/postgres/blob/03734a7fed7d924679770adb78a7db8a37d14188/src/test/regress/expected/time.out
+// https://github.com/postgres/postgres/blob/master/src/test/regress/expected/time.out
 // This test seems complete (convering all test cases from Postgres).
 public class PostgresTimeTests extends SqlIoTest {
     @Override

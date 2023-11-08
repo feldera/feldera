@@ -119,7 +119,7 @@ public class EndToEndTests extends BaseSQLTests {
     static final DBSPZSetLiteral.Contents empty = DBSPZSetLiteral.Contents.emptyWithElementType(z0.getElementType());
 
     public void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
-        DBSPZSetLiteral.Contents input = this.createInput();
+        DBSPZSetLiteral.Contents input = createInput();
         this.testQueryBase(query, new InputOutputPair(input, expectedOutput));
     }
 
@@ -428,7 +428,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void intersectTest() {
         String query = "SELECT * FROM T INTERSECT (SELECT * FROM T)";
-        this.testQuery(query, this.createInput());
+        this.testQuery(query, createInput());
     }
 
     @Test
@@ -461,19 +461,19 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void idTest() {
         String query = "SELECT * FROM T";
-        this.testQuery(query, this.createInput());
+        this.testQuery(query, createInput());
     }
 
     @Test
     public void unionTest() {
         String query = "(SELECT * FROM T) UNION (SELECT * FROM T)";
-        this.testQuery(query, this.createInput());
+        this.testQuery(query, createInput());
     }
 
     @Test
     public void unionAllTest() {
         String query = "(SELECT * FROM T) UNION ALL (SELECT * FROM T)";
-        DBSPZSetLiteral.Contents output = this.createInput();
+        DBSPZSetLiteral.Contents output = createInput();
         output.add(output);
         this.testQuery(query, output);
     }

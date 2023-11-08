@@ -472,7 +472,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             emptySetResults[i] = implementation.emptySetResult;
         }
 
-        DBSPTypeRawTuple accumulatorType = new DBSPTypeRawTuple(accumulatorTypes);
+        DBSPTypeTuple accumulatorType = new DBSPTypeTuple(accumulatorTypes);
         DBSPVariablePath accumulator = accumulatorType.ref(true).var("a");
         DBSPVariablePath postAccumulator = accumulatorType.var("a");
 
@@ -488,13 +488,13 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             posts[i] = Objects.requireNonNull(reducer.apply(expr)).to(DBSPExpression.class);
         }
         DBSPAssignmentExpression accumulatorBody = new DBSPAssignmentExpression(
-                accumulator.deref(), new DBSPRawTupleExpression(increments));
+                accumulator.deref(), new DBSPTupleExpression(increments));
         DBSPClosureExpression accumFunction = accumulatorBody.closure(
                 accumulator.asParameter(), this.rowVar.asParameter(),
                 weightVar.asParameter());
         DBSPClosureExpression postClosure = new DBSPTupleExpression(posts).closure(postAccumulator.asParameter());
         DBSPType semigroup = new DBSPTypeSemigroup(semigroups, accumulatorTypes);
-        return new Implementation(this.getNode(), new DBSPRawTupleExpression(zeros),
-                accumFunction, postClosure, new DBSPRawTupleExpression(emptySetResults), semigroup, null);
+        return new Implementation(this.getNode(), new DBSPTupleExpression(zeros),
+                accumFunction, postClosure, new DBSPTupleExpression(emptySetResults), semigroup, null);
     }
 }

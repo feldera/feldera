@@ -183,7 +183,6 @@ public class FoodmartBaseTests extends SqlIoTest {
 
     @Test @Ignore("LIMIT not yet implemented")
     public void limitTests() {
-        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 4);
         this.qs("select deptno, (select sum(empno) from emp where deptno = dept.deptno limit 1) as x from dept;\n" +
                 "+--------+----------------------+\n" +
                 "| DEPTNO |          X           |\n" +

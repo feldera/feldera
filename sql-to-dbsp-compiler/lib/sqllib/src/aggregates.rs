@@ -1,134 +1,182 @@
-use core::ops::{Add};
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
+
+use std::cmp::Ord;
+use std::marker::Copy;
+use core::ops::Add;
 use num::PrimInt;
+use crate::binary::ByteArray;
+use dbsp::algebra::{F32, F64};
+use rust_decimal::Decimal;
 
 // Macro to create variants of an aggregation function
-// There must exist a function f__(left: T, right: T) -> S.
-// This creates 3 more functions
-// f_N_(left: Option<T>, right: T) -> Option<S>
+// There must exist a function g(left: &T, right: &T) -> T ($base_name = g)
+// This creates 4 more functions ($func_name = f)
+// f_t_t(left: &T, right: &T) -> T
+// f_tN_t(left: &Option<T>, right: &T) -> Option<T>
 // etc.
 // And 4 more functions:
-// f_conditional__(left: T, right: T, predicate: bool) -> S
+// f_t_t_conditional(left: &T, right: &T, predicate: bool) -> T
 #[macro_export]
-macro_rules! some_agg_function {
-    ($func_name:ident, $bounds: ty) => {
+macro_rules! some_aggregate {
+    ($base_name: ident, $func_name:ident, $short_name: ident, $arg_type: ty) => {
         ::paste::paste! {
-            pub fn [<$func_name _N_>]<T>( left: Option<T>, right: T ) -> Option<T>
-                where T: $bounds
-            {
-                let left = left?;
-                Some([<$func_name __>](left, right))
+            pub fn [<$func_name _ $short_name _ $short_name>]( left: &$arg_type, right: &$arg_type ) -> $arg_type {
+                $base_name(left, right)
             }
 
-            pub fn [<$func_name __N>]<T>( left: T, right: Option<T> ) -> Option<T>
-                where T: $bounds
-            {
-                let right = right?;
-                Some([<$func_name __>](left, right))
+            pub fn [<$func_name _ $short_name N _ $short_name>]( left: &Option<$arg_type>, right: &$arg_type ) -> Option<$arg_type> {
+                match left {
+                    None => Some(right.clone()),
+                    Some(left) => Some($base_name(&left, right)),
+                }
             }
 
-            pub fn [<$func_name _N_N>]<T>( left: Option<T>, right: Option<T> ) -> Option<T>
-                where T: $bounds
-            {
-                let left = left?;
-                let right = right?;
-                Some([<$func_name __>](left, right))
+            pub fn [<$func_name _ $short_name _ $short_name N>]( left: &$arg_type, right: &Option<$arg_type> ) -> Option<$arg_type> {
+                match right {
+                    None => Some(left.clone()),
+                    Some(right) => Some($base_name(left, &right)),
+                }
             }
 
-            pub fn [<$func_name _conditional__>]<T>( left: T, right: T, predicate: bool ) -> T
-                where T: $bounds
-            {
+            pub fn [<$func_name _ $short_name N _ $short_name N>]( left: &Option<$arg_type>, right: &Option<$arg_type> ) -> Option<$arg_type> {
+                match (left, right) {
+                    (None, _) => right.clone(),
+                    (_, None) => left.clone(),
+                    (Some(left), Some(right)) => Some($base_name(&left, &right)),
+                }
+            }
+
+            pub fn [<$func_name _ $short_name _ $short_name _conditional>]( left: &$arg_type, right: &$arg_type, predicate: bool ) -> $arg_type {
                 if predicate {
-                    [<$func_name __>](left, right)
+                    $base_name(left, right)
                 } else {
-                    left
+                    left.clone()
                 }
             }
 
-            pub fn [<$func_name _conditional_N_>]<T>( left: Option<T>, right: T, predicate: bool ) -> Option<T>
-                where T: $bounds
-            {
+            pub fn [<$func_name _ $short_name N _ $short_name _conditional>]( left: &Option<$arg_type>, right: &$arg_type, predicate: bool ) -> Option<$arg_type> {
                 match (left, right, predicate) {
-                    (_, _, false) => left,
-                    (None, _, _) => Some(right),
-                    (Some(x), _, _) => Some([<$func_name __>](x, right)),
+                    (_, _, false) => left.clone(),
+                    (None, _, _) => Some(right.clone()),
+                    (Some(x), _, _) => Some($base_name(x, right)),
                 }
             }
 
-            pub fn [<$func_name _conditional__N>]<T>( left: T, right: Option<T>, predicate: bool ) -> Option<T>
-                where T: $bounds
-            {
+            pub fn [<$func_name _ $short_name _ $short_name N _conditional>]( left: &$arg_type, right: &Option<$arg_type>, predicate: bool ) -> Option<$arg_type> {
                 match (left, right, predicate) {
-                    (_, _, false) => Some(left),
-                    (_, None, _) => Some(left),
-                    (_, Some(y), _) => Some([<$func_name __>](left, y)),
+                    (_, _, false) => Some(left.clone()),
+                    (_, None, _) => Some(left.clone()),
+                    (_, Some(y), _) => Some($base_name(left, y)),
                 }
             }
 
-            pub fn [<$func_name _conditional_N_N>]<T>( left: Option<T>, right: Option<T>, predicate: bool ) -> Option<T>
-                where T: $bounds
-            {
+            pub fn [<$func_name _ $short_name N _ $short_name N _conditional>]( left: &Option<$arg_type>, right: &Option<$arg_type>, predicate: bool ) -> Option<$arg_type> {
                 match (left, right, predicate) {
-                    (_, _, false) => left,
-                    (None, _, _) => right,
-                    (Some(_), None, _) => left,
-                    (Some(x), Some(y), _) => Some([<$func_name __>](x, y)),
+                    (_, _, false) => left.clone(),
+                    (None, _, _) => right.clone(),
+                    (_, None, _) => left.clone(),
+                    (Some(x), Some(y), _) => Some($base_name(x, y)),
                 }
             }
         }
     };
 }
 
-pub fn agg_max__<T>(left: T, right: T) -> T
+#[macro_export]
+macro_rules! for_all_int_aggregate {
+    ($base_name: ident, $func_name: ident) => {
+        some_aggregate!($base_name, $func_name, i8, i8);
+        some_aggregate!($base_name, $func_name, i16, i16);
+        some_aggregate!($base_name, $func_name, i32, i32);
+        some_aggregate!($base_name, $func_name, i64, i64);
+    };
+}
+
+#[macro_export]
+macro_rules! for_all_numeric_aggregate {
+    ($base_name: ident, $func_name: ident) => {
+        for_all_int_aggregate!($base_name, $func_name);
+        some_aggregate!($base_name, $func_name, f, F32);
+        some_aggregate!($base_name, $func_name, d, F64);
+        some_aggregate!($base_name, $func_name, decimal, Decimal);
+    };
+}
+
+
+pub fn agg_max<T>(left: &T, right: &T) -> T
 where
     T: Ord + Copy,
 {
-    left.max(right)
+    *left.max(right)
 }
 
-pub fn agg_min__<T>(left: T, right: T) -> T
+for_all_numeric_aggregate!(agg_max, agg_max);
+some_aggregate!(agg_max, agg_max, b, bool);
+
+pub fn agg_min<T>(left: &T, right: &T) -> T
 where
     T: Ord + Copy,
 {
-    left.min(right)
+    *left.min(right)
 }
 
-some_agg_function!(agg_max, Ord + Copy);
-some_agg_function!(agg_min, Ord + Copy);
+for_all_numeric_aggregate!(agg_min, agg_min);
+some_aggregate!(agg_min, agg_min, b, bool);
 
-pub fn agg_plus__<T>(left: T, right: T) -> T
+pub fn agg_plus<T>(left: &T, right: &T) -> T
 where
     T: Add<T, Output = T> + Copy,
 {
-    agg_plus_conditional__(left, right, true)
+    *left + *right
 }
 
-some_agg_function!(agg_plus, Add<T, Output = T> + Copy);
+for_all_numeric_aggregate!(agg_plus, agg_plus);
 
 #[inline(always)]
-fn agg_and__<T>(left: T, right: T) -> T
+fn agg_and<T>(left: &T, right: &T) -> T
 where
     T: PrimInt
 {
-    left & right
+    *left & *right
 }
 
+for_all_int_aggregate!(agg_and, agg_and);
+
 #[inline(always)]
-fn agg_or__<T>(left: T, right: T) -> T
+fn agg_or<T>(left: &T, right: &T) -> T
 where
     T: PrimInt
 {
-    left | right
+    *left | *right
 }
 
+for_all_int_aggregate!(agg_or,  agg_or);
+
 #[inline(always)]
-fn agg_xor__<T>(left: T, right: T) -> T
+fn agg_xor<T>(left: &T, right: &T) -> T
 where
     T: PrimInt
 {
-    left ^ right
+    *left ^ *right
 }
 
-some_agg_function!(agg_and, PrimInt);
-some_agg_function!(agg_or, PrimInt);
-some_agg_function!(agg_xor, PrimInt);
+for_all_int_aggregate!(agg_xor, agg_xor);
 
+pub fn agg_and_bytes(left: &ByteArray, right: &ByteArray) -> ByteArray {
+    left.and(right)
+}
+
+some_aggregate!(agg_and_bytes, agg_and, bytes, ByteArray);
+
+pub fn agg_or_bytes(left: &ByteArray, right: &ByteArray) -> ByteArray {
+    left.or(right)
+}
+
+some_aggregate!(agg_or_bytes, agg_or, bytes, ByteArray);
+
+pub fn agg_xor_bytes(left: &ByteArray, right: &ByteArray) -> ByteArray {
+    left.xor(right)
+}
+
+some_aggregate!(agg_xor_bytes, agg_xor, bytes, ByteArray);

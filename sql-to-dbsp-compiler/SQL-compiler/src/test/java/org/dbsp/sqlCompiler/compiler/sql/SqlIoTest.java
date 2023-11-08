@@ -470,6 +470,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
                 if (line.contains("\t")) {
                     separator = "\t";
                     inHeader = false;
+                    continue;
                 }
             }
             if (line.contains("---")) {

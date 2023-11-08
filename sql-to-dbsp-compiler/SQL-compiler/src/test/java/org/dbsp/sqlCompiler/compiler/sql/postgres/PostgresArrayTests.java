@@ -7,13 +7,9 @@ import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
-// https://github.com/postgres/postgres/blob/03734a7fed7d924679770adb78a7db8a37d14188/src/test/regress/expected/arrays.out
+// https://github.com/postgres/postgres/blob/master/src/test/regress/expected/arrays.out
 public class PostgresArrayTests extends SqlIoTest {
-    @Override
-    public void prepareData(DBSPCompiler compiler) {
-    }
-
-    @Test 
+    @Test
     public void testSplit() {
         // Renamed 'string_to_array' to 'split'
         this.qs("select split('1|2|3', '|');\n" +

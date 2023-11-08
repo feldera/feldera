@@ -290,7 +290,7 @@ macro_rules! some_existing_operator {
             pub fn [<$func_name _ $short_name N _ $short_name N>]( arg0: Option<$arg_type>, arg1: Option<$arg_type> ) -> Option<$ret_type> {
                 let arg0 = arg0?;
                 let arg1 = arg1?;
-                Some([<$func_name _$short_name _ $short_name>](arg0, arg1))
+                Some([<$func_name _ $short_name _ $short_name>](arg0, arg1))
             }
 
             #[inline(always)]

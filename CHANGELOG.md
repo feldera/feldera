@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [SQL] Fix bugs in parsing of KEY and FOREIGN KEY constraints
 - Use better defaults for running the pipeline-manager (#994)
+  ([#1011](https://github.com/feldera/feldera/pull/1011))
+
+### Added
+
+- [SQL] New aggregation functions: `BIT_AND`, `BIT_OR`, `BIT_XOR`.
+  Concatenation for `BINARY values`.  `TO_HEX` function.
+  ([#996](https://github.com/feldera/feldera/pull/996))
 
 ## [0.3.2] - 2023-11-10
 

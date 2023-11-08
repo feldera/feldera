@@ -217,13 +217,13 @@ public class RustFileWriter implements ICompilerComponent {
         #[derive(Clone)]
         pub struct Semigroup2<T0, T1, TS0, TS1>(PhantomData<(T0, T1, TS0, TS1)>);
 
-        impl<T0, T1, TS0, TS1> Semigroup<(T0, T1)> for Semigroup2<T0, T1, TS0, TS1>
+        impl<T0, T1, TS0, TS1> Semigroup<Tuple2<T0, T1>> for Semigroup2<T0, T1, TS0, TS1>
         where
             TS0: Semigroup<T0>,
             TS1: Semigroup<T1>,
         {
-            fn combine(left: &(T0, T1), right: &(T0, T1)) -> (T0, T1) {
-                (
+            fn combine(left: &Tuple2<T0, T1>, right: &Tuple2<T0, T1>) -> Tuple2<T0, T1> {
+                Tuple2::new(
                     TS0::combine(&left.0, &right.0),
                     TS1::combine(&left.1, &right.1),
                 )
@@ -253,9 +253,11 @@ public class RustFileWriter implements ICompilerComponent {
                     .intercalate(", ", ts)
                     .join(", ", tts)
                     .append("> Semigroup")
-                    .append("<(")
+                    .append("<Tuple")
+                    .append(i)
+                    .append("<")
                     .intercalate(", ", indexes, ix -> "T" + ix)
-                    .append(")> for Semigroup")
+                    .append(">> for Semigroup")
                     .append(i)
                     .append("<")
                     .intercalate(", ", ts)
@@ -266,14 +268,22 @@ public class RustFileWriter implements ICompilerComponent {
                     .join(",\n", indexes, ix -> "TS" + ix + ": Semigroup<T" + ix + ">")
                     .newline().decrease()
                     .append("{").increase()
-                    .append("fn combine(left: &(")
+                    .append("fn combine(left: &Tuple")
+                    .append(i)
+                    .append("<")
                     .intercalate(", ", ts)
-                    .append("), right:&(")
+                    .append(">, right:&Tuple")
+                    .append(i)
+                    .append("<")
                     .intercalate(", ", ts)
-                    .append(")) -> (")
+                    .append(">) -> Tuple")
+                    .append(i)
+                    .append("<")
                     .intercalate(", ", ts)
-                    .append(") {").increase()
-                    .append("(").increase()
+                    .append("> {").increase()
+                    .append("Tuple")
+                    .append(i)
+                    .append("::new(").increase()
                     .join("\n", indexes, ix -> "TS" + ix + "::combine(&left." + ix + ", &right." + ix + "),")
                     .newline().decrease()
                     .append(")").newline()

@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.sql.postgres;
+package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;

@@ -208,7 +208,6 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSinkOperator operator) {
-        this.writeComments(operator.query);
         this.writeComments(operator)
                 .append(operator.input().getName())
                 .append(".")

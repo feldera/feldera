@@ -81,14 +81,6 @@ public class VarbinaryTests extends SqlIoTest {
                 "14\tCEC6C7CA\t6272706A\t189C9C1A\n" +
                 "14\tCEC6C7C9\t6272706C\t189C9C1B\n" +
                 "\n" +
-                "SELECT HEX(BIT_AND(b)), HEX(BIT_OR(b)), HEX(BIT_XOR(b)) FROM t1 GROUP BY a;\n" +
-                "HEX(BIT_AND(b))\tHEX(BIT_OR(b))\tHEX(BIT_XOR(b))\n" +
-                "31393831\t31393831\t31393831\n" +
-                "31393832\t31393832\t31393832\n" +
-                "31393830\t31393837\t00000007\n" +
-                "31393835\t31393835\t31393835\n" +
-                "31393836\t31393836\t31393836\n" +
-                "\n" +
                 "SELECT HEX(BIT_AND(b)), HEX(BIT_OR(b)), HEX(BIT_XOR(b)) FROM t1;\n" +
                 "HEX(BIT_AND(b))\tHEX(BIT_OR(b))\tHEX(BIT_XOR(b))\n" +
                 "31393830\t31393837\t00000007");
@@ -96,6 +88,7 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testBitAndAgg() {
+        // Changed HEX to TO_HEX
         this.q("SELECT TO_HEX(BIT_AND(b)), TO_HEX(BIT_OR(b)), TO_HEX(BIT_XOR(b)) FROM t1 GROUP BY a;\n" +
                 " HEX(BIT_AND(b))\t HEX(BIT_OR(b))\t HEX(BIT_XOR(b))\n" +
                 " 31393831\t 31393831\t 31393831\n" +

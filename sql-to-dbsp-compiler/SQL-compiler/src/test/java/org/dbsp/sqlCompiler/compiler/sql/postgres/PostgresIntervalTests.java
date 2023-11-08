@@ -4,7 +4,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Test;
 
-// https://github.com/postgres/postgres/blob/03734a7fed7d924679770adb78a7db8a37d14188/src/test/regress/expected/interval.out
+// https://github.com/postgres/postgres/blob/master/src/test/regress/expected/interval.out
 public class PostgresIntervalTests extends SqlIoTest {
     @Override
     public void prepareData(DBSPCompiler compiler) {

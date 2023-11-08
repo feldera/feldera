@@ -162,8 +162,8 @@ public class AggregateCompiler implements ICompilerComponent {
         // TODO: some of these are linear
         increment = this.aggregateOperation(node, opcode,
                 this.nullableResultType, accumulator, aggregatedValue, this.filterArgument());
-        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, USER, "DefaultOptSemigroup",
-                false, accumulator.getType().setMayBeNull(false));
+        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, USER, "UnimplementedSemigroup",
+                false, accumulator.getType());
         this.setFoldingFunction(new DBSPAggregate.Implementation(
                 node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, null));
     }
