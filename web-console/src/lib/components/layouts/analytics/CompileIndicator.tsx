@@ -18,8 +18,9 @@ export interface CompileIndicatorProps {
 }
 
 export const CompileIndicator = (props: CompileIndicatorProps) => {
-  const successLabel = 'Success'
-  const compilingLabel = 'Compiling ...'
+  const labelSuccess = 'Success'
+  const labelCompiling = 'Compiling ...'
+  const labelPending = 'In queue'
 
   const loadingIcon = <CircularProgress color='inherit' size='1rem' />
   const doneIcon = <DoneIcon />
@@ -50,30 +51,30 @@ export const CompileIndicator = (props: CompileIndicatorProps) => {
       visible: true,
       color: 'success' as const,
       isCompiling: false,
-      label: successLabel
+      label: labelSuccess
     }))
     .with({ SystemError: P._ }, () => ({
       visible: true,
       color: 'success' as const,
       isCompiling: false,
-      label: successLabel
+      label: labelSuccess
     }))
-    .with('None', () => ({ visible: false, color: 'warning' as const, isCompiling: false, label: compilingLabel }))
-    .with('Pending', () => ({ visible: true, color: 'warning' as const, isCompiling: true, label: compilingLabel }))
+    .with('None', () => ({ visible: false, color: 'warning' as const, isCompiling: false, label: labelCompiling }))
+    .with('Pending', () => ({ visible: true, color: 'warning' as const, isCompiling: true, label: labelPending }))
     .with('CompilingSql', () => ({
       visible: true,
       color: 'warning' as const,
       isCompiling: true,
-      label: compilingLabel
+      label: labelCompiling
     }))
     .with('CompilingRust', () => ({
       visible: true,
       color: 'success' as const,
       isCompiling: false,
-      label: successLabel
+      label: labelSuccess
     }))
     // If you change the 'Success' string, adjust the webui-tester too
-    .with('Success', () => ({ visible: true, color: 'success' as const, isCompiling: false, label: successLabel }))
+    .with('Success', () => ({ visible: true, color: 'success' as const, isCompiling: false, label: labelSuccess }))
     .exhaustive()
 
   if (buttonState.visible) {
