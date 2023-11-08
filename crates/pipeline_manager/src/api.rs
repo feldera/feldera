@@ -324,8 +324,11 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
 Web UI URL: {}
 API server URL: {}
 Documentation: https://www.feldera.com/docs/
+Version: {}
         ",
-        url, url
+        url,
+        url,
+        env!("CARGO_PKG_VERSION")
     );
     server.await?;
     Ok(())
