@@ -52,6 +52,9 @@ const ImportToolbar = (props: {
       return JSON.stringify(Array.from(value.entries()))
     },
     deserialize: localStorageValue => {
+      if (!localStorageValue) {
+        return new Map()
+      }
       const parsed: [string, StoredFieldSettings][] = JSON.parse(localStorageValue)
       parsed.map(v => {
         v[1].config.time = dayjs(new Date(v[1].config.time))

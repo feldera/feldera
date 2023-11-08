@@ -14,25 +14,12 @@ import {
   ProgramStatus,
   UpdateProgramRequest
 } from '$lib/services/manager'
-import { Pipeline, PipelineStatus, PipelineWithStatus } from '$lib/types/pipeline'
+import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { leftJoin } from 'array-join'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 
-import { Query, QueryClient, UseMutationOptions, UseQueryOptions } from '@tanstack/react-query'
-
-const updatePipelineStatus =
-  <Field extends string, NewStatus, State extends PipelineWithStatus<Field, any>>(
-    field: Field,
-    f: NewStatus | ((s: State['state'][Field]) => NewStatus)
-  ) =>
-  ({ state, ...p }: State) => ({
-    ...p,
-    state: {
-      ...state,
-      [field]: f instanceof Function ? f(state[field]) : f
-    }
-  })
+import { Query, QueryClient, UseMutationOptions } from '@tanstack/react-query'
 
 const toClientPipelineStatus = (status: RawPipelineStatus) => {
   return match(status)
@@ -62,43 +49,45 @@ const consolidatePipelineStatus = (newPipeline: Pipeline, oldPipeline: Pipeline 
     )
       ? oldPipeline.state.current_status
       : newPipeline.state.current_status
-  return updatePipelineStatus('current_status', current_status)(newPipeline)
+  return { ...newPipeline, state: { ...newPipeline.state, current_status } }
 }
 
 export const PipelineManagerQuery = (({ pipelines, pipelineStatus, ...queries }) => ({
   ...queries,
-  pipelines: () =>
-    ({
-      ...pipelines(),
-      // Avoid displaying PROVISIONING status when local status is more detailed
-      structuralSharing(oldData, newData) {
-        return leftJoin(
-          newData,
-          oldData ?? [],
-          p => p.descriptor.pipeline_id,
-          p => p.descriptor.pipeline_id,
-          consolidatePipelineStatus
-        )
-      }
-    }) satisfies UseQueryOptions<Pipeline[], ApiError>,
-  pipelineStatus: (pipelineId: PipelineId) =>
-    ({
-      ...pipelineStatus(pipelineId),
-      structuralSharing(oldData, newData) {
-        return consolidatePipelineStatus(newData, oldData)
-      }
-    }) satisfies UseQueryOptions<Pipeline, ApiError>
+  pipelines: () => ({
+    ...pipelines(),
+    // Avoid displaying PROVISIONING status when local status is more detailed
+    structuralSharing<T>(oldData: T | undefined, newData: T) {
+      invariant(((data: any): data is Pipeline[] | undefined => true)(oldData))
+      invariant(((data: any): data is Pipeline[] => true)(newData))
+      return leftJoin(
+        newData,
+        oldData ?? [],
+        p => p.descriptor.pipeline_id,
+        p => p.descriptor.pipeline_id,
+        consolidatePipelineStatus
+      ) as T
+    }
+  }),
+  pipelineStatus: (pipelineId: PipelineId) => ({
+    ...pipelineStatus(pipelineId),
+    structuralSharing<T>(oldData: T | undefined, newData: T) {
+      invariant(((data: any): data is Pipeline | undefined => true)(oldData))
+      invariant(((data: any): data is Pipeline => true)(newData))
+      return consolidatePipelineStatus(newData, oldData) as T
+    }
+  })
 }))(
   mkQuery({
     programs: () => ProgramsService.getPrograms(),
     programCode: (programId: string) => ProgramsService.getProgram(programId, true),
-    programStatus: (programId: string) => ProgramsService.getProgram(programId, false),
+    programStatus: (programId: string) => ProgramsService.getProgram(programId, false).then(v => v),
     pipelines: () =>
       PipelinesService.listPipelines().then(ps =>
-        ps.map(updatePipelineStatus('current_status', toClientPipelineStatus))
+        ps.map(p => ({ ...p, state: { ...p.state, current_status: toClientPipelineStatus(p.state.current_status) } }))
       ),
     pipelineStatus: compose(PipelinesService.getPipeline, p =>
-      p.then(updatePipelineStatus('current_status', toClientPipelineStatus))
+      p.then(p => ({ ...p, state: { ...p.state, current_status: toClientPipelineStatus(p.state.current_status) } }))
     ),
     pipelineConfig: PipelinesService.getPipelineConfig,
     pipelineStats: PipelinesService.pipelineStats,
@@ -288,13 +277,13 @@ const pipelineStatusQueryCacheUpdate = (
       return oldData
     }
     return replaceElement(oldData, p =>
-      p.descriptor.pipeline_id !== pipelineId ? null : updatePipelineStatus(field, status)(p)
+      p.descriptor.pipeline_id !== pipelineId ? null : { ...p, state: { ...p.state, [field]: status } }
     )
   })
   setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId), oldData => {
     if (!oldData) {
       return oldData
     }
-    return updatePipelineStatus(field, status)(oldData)
+    return { ...oldData, state: { ...oldData.state, [field]: status } }
   })
 }

@@ -58,7 +58,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   const [quantiles, setQuantiles] = useState<any[][] | undefined>(undefined)
   const [quantile, setQuantile] = useState<number>(0)
   const [rows, setRows] = useState<Row[]>([])
-  const [isLoading, setLoading] = useState<boolean>(true)
+  const [isPending, setLoading] = useState<boolean>(true)
 
   const { pushMessage } = useStatusNotification()
   const { updateTable, pause, resume } = useTableUpdater()
@@ -69,7 +69,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   // If a revision is loaded, find the requested relation that we want to
   // monitor. We use it to display the table headers etc.
   useEffect(() => {
-    if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
+    if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
       setNeighborhood(DEFAULT_NEIGHBORHOOD)
       setPaginationModel(INITIAL_PAGINATION_MODEL)
       setQuantiles(undefined)
@@ -87,7 +87,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
       }
       setRelation(relation)
     }
-  }, [pipelineRevisionQuery.isLoading, pipelineRevisionQuery.isError, pipelineRevisionQuery.data, name])
+  }, [pipelineRevisionQuery.isPending, pipelineRevisionQuery.isError, pipelineRevisionQuery.data, name])
 
   // Request to monitor the changes for the current rows in the table. This is
   // done by opening a stream request to the backend which then sends us the
@@ -243,7 +243,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
     setQuantile,
     quantiles,
     pipeline,
-    isLoading,
+    isPending,
     handlePaginationModelChange,
     paginationModel,
     pipelineRevisionQuery,
@@ -275,7 +275,7 @@ const InspectionTableImpl = ({
   setQuantile,
   quantiles,
   pipeline,
-  isLoading,
+  isPending,
   handlePaginationModelChange,
   paginationModel,
   pipelineRevisionQuery,
@@ -384,7 +384,7 @@ const InspectionTableImpl = ({
             ]
           }
         }}
-        loading={isLoading}
+        loading={isPending}
         // rows will usually be bigger than PAGE_SIZE and have negative row
         // indices, so we can detect that we're at the beginning/end of the
         // table. But we always only display from 0..PAGE_SIZE-1.

@@ -100,9 +100,9 @@ const SideBarAddIo = () => {
       : undefined)(/(add_input|add_output)(\/?\w+)?/.exec(hash)?.[0].split('/'))
 
   const [sourceCounts, setSourceCounts] = useState<{ [key in ConnectorType]?: number }>({})
-  const { data, isLoading, isError } = useQuery(PipelineManagerQuery.connector())
+  const { data, isPending, isError } = useQuery(PipelineManagerQuery.connector())
   useEffect(() => {
-    if (isLoading || isError) {
+    if (isPending || isError) {
       return
     }
     const counts = data
@@ -113,7 +113,7 @@ const SideBarAddIo = () => {
       }, {})
 
     setSourceCounts(counts)
-  }, [data, isLoading, isError])
+  }, [data, isPending, isError])
 
   const openSelectTable = (ioTable: ConnectorType | undefined) => {
     setHash(`${drawer!.nodeType}/${ioTable ?? ''}`)

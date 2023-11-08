@@ -127,7 +127,9 @@ const useCreateProjectIfNew = (
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate } = useMutation<NewProgramResponse, ApiError, NewProgramRequest>(ProgramsService.newProgram)
+  const { mutate } = useMutation<NewProgramResponse, ApiError, NewProgramRequest>({
+    mutationFn: ProgramsService.newProgram
+  })
   useEffect(() => {
     if (project.program_id == '') {
       if (state === 'isModified') {
@@ -199,7 +201,7 @@ const useFetchExistingProject = (
     enabled: programId != null && !loaded
   })
   useEffect(() => {
-    if (!loaded && codeQuery.data && !codeQuery.isLoading && !codeQuery.isError) {
+    if (!loaded && codeQuery.data && !codeQuery.isPending && !codeQuery.isError) {
       if (codeQuery.data.version > lastCompiledVersion && codeQuery.data.status !== 'None') {
         setLastCompiledVersion(codeQuery.data.version)
       }
@@ -215,7 +217,7 @@ const useFetchExistingProject = (
       setLoaded(true)
     }
   }, [
-    codeQuery.isLoading,
+    codeQuery.isPending,
     codeQuery.isError,
     codeQuery.data,
     lastCompiledVersion,
@@ -238,7 +240,7 @@ const useUpdateProjectIfChanged = (
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate, isLoading } = useMutation<
+  const { mutate, isPending } = useMutation<
     UpdateProgramResponse,
     ApiError,
     { program_id: ProgramId; update_request: UpdateProgramRequest }
@@ -248,7 +250,7 @@ const useUpdateProjectIfChanged = (
     }
   })
   useEffect(() => {
-    if (project.program_id !== '' && state === 'isModified' && !isLoading) {
+    if (project.program_id !== '' && state === 'isModified' && !isPending) {
       const updateRequest = {
         name: project.name,
         description: project.description,
@@ -291,7 +293,7 @@ const useUpdateProjectIfChanged = (
     project.name,
     project.code,
     setState,
-    isLoading,
+    isPending,
     queryClient,
     pushMessage,
     setFormError,
@@ -310,7 +312,7 @@ const useCompileProjectIfChanged = (
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate, isLoading, isError } = useMutation<
+  const { mutate, isPending, isError } = useMutation<
     CompileProgramRequest,
     ApiError,
     { program_id: ProgramId; request: CompileProgramRequest }
@@ -321,7 +323,7 @@ const useCompileProjectIfChanged = (
   })
   useEffect(() => {
     if (
-      !isLoading &&
+      !isPending &&
       state == 'isUpToDate' &&
       project.program_id !== '' &&
       project.version > lastCompiledVersion &&
@@ -345,7 +347,7 @@ const useCompileProjectIfChanged = (
     }
   }, [
     mutate,
-    isLoading,
+    isPending,
     isError,
     state,
     project.program_id,
@@ -367,7 +369,7 @@ const usePollCompilationStatus = (
   const queryClient = useQueryClient()
   const compilationStatus = useQuery({
     ...PipelineManagerQuery.programStatus(project.program_id),
-    refetchInterval: data =>
+    refetchInterval: ({ state: { data } }) =>
       data === undefined || data.status === 'None' || data.status === 'Pending' || data.status === 'CompilingSql'
         ? 1000
         : false,
@@ -377,7 +379,7 @@ const usePollCompilationStatus = (
   })
 
   useEffect(() => {
-    if (compilationStatus.data && !compilationStatus.isLoading && !compilationStatus.isError) {
+    if (compilationStatus.data && !compilationStatus.isPending && !compilationStatus.isError) {
       match(compilationStatus.data.status)
         .with({ SqlError: P.select() }, () => {
           setLastCompiledVersion(project.version)
@@ -413,7 +415,7 @@ const usePollCompilationStatus = (
   }, [
     compilationStatus,
     compilationStatus.data,
-    compilationStatus.isLoading,
+    compilationStatus.isPending,
     compilationStatus.isError,
     project.status,
     project.version,

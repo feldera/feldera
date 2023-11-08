@@ -141,10 +141,10 @@ const IntrospectInputOutput = () => {
     enabled: pipelineId !== undefined
   })
   useEffect(() => {
-    if (!configQuery.isLoading && !configQuery.isError) {
+    if (!configQuery.isPending && !configQuery.isError) {
       setPipeline(configQuery.data)
     }
-  }, [configQuery.isLoading, configQuery.isError, configQuery.data, setPipeline])
+  }, [configQuery.isPending, configQuery.isError, configQuery.data, setPipeline])
 
   // Load the last revision of the pipeline
   const pipelineRevisionQuery = useQuery({
@@ -152,13 +152,13 @@ const IntrospectInputOutput = () => {
     enabled: pipelineId !== undefined
   })
   useEffect(() => {
-    if (!pipelineRevisionQuery.isLoading && !pipelineRevisionQuery.isError) {
+    if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError) {
       const pipelineRevision = pipelineRevisionQuery.data
       const program = pipelineRevision?.program
       setTables(program?.schema?.inputs.map(v => v.name) || [])
       setViews(program?.schema?.outputs.map(v => v.name) || [])
     }
-  }, [pipelineRevisionQuery.isLoading, pipelineRevisionQuery.isError, pipelineRevisionQuery.data])
+  }, [pipelineRevisionQuery.isPending, pipelineRevisionQuery.isError, pipelineRevisionQuery.data])
 
   // If we request to be on the insert tab for a view, we force-switch to the
   // browse tab.
@@ -172,9 +172,9 @@ const IntrospectInputOutput = () => {
     pipeline && relation && tables && views && (tables.includes(relation) || views.includes(relation))
 
   return pipelineId !== undefined &&
-    !configQuery.isLoading &&
+    !configQuery.isPending &&
     !configQuery.isError &&
-    !pipelineRevisionQuery.isLoading &&
+    !pipelineRevisionQuery.isPending &&
     !pipelineRevisionQuery.isError &&
     relationValid ? (
     <>

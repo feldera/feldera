@@ -29,7 +29,7 @@ export function usePipelineMetrics(props: {
   })
 
   useEffect(() => {
-    if (!pipelineStatsQuery.isLoading && !pipelineStatsQuery.isError) {
+    if (!pipelineStatsQuery.isPending && !pipelineStatsQuery.isError) {
       const metrics = pipelineStatsQuery.data['global_metrics']
 
       const newInputMetrics = new Map<string, InputConnectorMetrics>()
@@ -61,7 +61,7 @@ export function usePipelineMetrics(props: {
       })
     }
   }, [
-    pipelineStatsQuery.isLoading,
+    pipelineStatsQuery.isPending,
     pipelineStatsQuery.isError,
     pipelineStatsQuery.data,
     props.status,

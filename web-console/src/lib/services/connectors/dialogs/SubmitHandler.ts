@@ -31,12 +31,12 @@ export const useNewConnectorRequest = <TData extends FieldValues>(
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate: newConnector, isLoading } = useMutation<NewConnectorResponse, ApiError, NewConnectorRequest>(
-    ConnectorsService.newConnector
-  )
+  const { mutate: newConnector, isPending } = useMutation<NewConnectorResponse, ApiError, NewConnectorRequest>({
+    mutationFn: ConnectorsService.newConnector
+  })
 
   return (data: TData) => {
-    if (isLoading) {
+    if (isPending) {
       return
     }
     const sourceDesc = getRequestData(data)
@@ -73,16 +73,16 @@ export const useUpdateConnectorRequest = <
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate: updateConnector, isLoading } = useMutation<
+  const { mutate: updateConnector, isPending } = useMutation<
     UpdateConnectorResponse,
     ApiError,
     { connector_id: ConnectorId; request: UpdateConnectorRequest }
-  >(args => {
-    return ConnectorsService.updateConnector(args.connector_id, args.request)
+  >({
+    mutationFn: args => ConnectorsService.updateConnector(args.connector_id, args.request)
   })
 
   return (data: TData) => {
-    if (isLoading) {
+    if (isPending) {
       return
     }
     const [connector_id, request] = getRequestData(data)

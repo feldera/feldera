@@ -8,8 +8,12 @@ import { ReactNode, Suspense } from 'react'
 
 export const metadata = {
   description: `${themeConfig.templateName} – Web Console.`,
-  keywords: 'Feldera Continuous Analytics Platform',
-  viewport: 'initial-scale=1, width=device-width'
+  keywords: 'Feldera Continuous Analytics Platform'
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1
 }
 
 export default (props: { children: ReactNode }) => {

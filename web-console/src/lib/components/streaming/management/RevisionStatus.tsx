@@ -241,7 +241,7 @@ export const PipelineRevisionStatusChip = (props: Props) => {
     retry: false
   })
   useEffect(() => {
-    if (!pipelineValidateQuery.isLoading && pipelineValidateQuery.isError) {
+    if (!pipelineValidateQuery.isPending && pipelineValidateQuery.isError) {
       setValidationError(pipelineValidateQuery.error.body as ErrorResponse)
       setColor('warning')
     }
@@ -255,10 +255,10 @@ export const PipelineRevisionStatusChip = (props: Props) => {
   const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.pipeline_id))
   useEffect(() => {
     if (
-      !pipelineRevisionQuery.isLoading &&
+      !pipelineRevisionQuery.isPending &&
       !pipelineRevisionQuery.isError &&
       pipelineRevisionQuery.data &&
-      !curPipelineConfigQuery.isLoading &&
+      !curPipelineConfigQuery.isPending &&
       !curPipelineConfigQuery.isError
     ) {
       const configDiffResult = diffLines(
@@ -268,7 +268,7 @@ export const PipelineRevisionStatusChip = (props: Props) => {
 
       // Distinguish the case where the program is not set in the pipeline
       const programDiffResult =
-        !curProgramQuery.isLoading && !curProgramQuery.isError && curProgramQuery.data
+        !curProgramQuery.isPending && !curProgramQuery.isError && curProgramQuery.data
           ? diffLines(pipelineRevisionQuery.data.program.code || '', curProgramQuery.data.code || '').filter(
               line => line.added || line.removed
             )
@@ -280,13 +280,13 @@ export const PipelineRevisionStatusChip = (props: Props) => {
       }
     }
   }, [
-    pipelineRevisionQuery.isLoading,
+    pipelineRevisionQuery.isPending,
     pipelineRevisionQuery.isError,
     pipelineRevisionQuery.data,
-    curPipelineConfigQuery.isLoading,
+    curPipelineConfigQuery.isPending,
     curPipelineConfigQuery.isError,
     curPipelineConfigQuery.data,
-    curProgramQuery.isLoading,
+    curProgramQuery.isPending,
     curProgramQuery.isError,
     curProgramQuery.data,
     setDiffCount,

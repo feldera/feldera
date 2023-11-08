@@ -129,8 +129,8 @@ const TableSqlPrograms = () => {
     UpdateProgramResponse,
     ApiError,
     { program_id: ProgramId; request: UpdateProgramRequest }
-  >(args => {
-    return ProgramsService.updateProgram(args.program_id, args.request)
+  >({
+    mutationFn: args => ProgramsService.updateProgram(args.program_id, args.request)
   })
   const processRowUpdate = (newRow: ProgramDescr, oldRow: ProgramDescr) => {
     mutation.mutate(
@@ -153,7 +153,7 @@ const TableSqlPrograms = () => {
 
   const { showDeleteDialog } = useDeleteDialog()
   // Deleting a row
-  const deleteMutation = useMutation<void, ApiError, string>(ProgramsService.deleteProgram)
+  const deleteMutation = useMutation<void, ApiError, string>({ mutationFn: ProgramsService.deleteProgram })
   const deleteProject = useCallback(
     (curRow: ProgramDescr) => {
       setTimeout(() => {

@@ -86,9 +86,9 @@ const PipelineBuilderPage = (props: {
 
   const { getNode, getEdges, setNodes } = useReactFlow<IONodeData | ProgramNodeData>()
 
-  const { mutate: newPipelineMutate } = useMutation<NewPipelineResponse, ApiError, NewPipelineRequest>(
-    PipelinesService.newPipeline
-  )
+  const { mutate: newPipelineMutate } = useMutation<NewPipelineResponse, ApiError, NewPipelineRequest>({
+    mutationFn: PipelinesService.newPipeline
+  })
   const { mutate: updatePipelineMutate } = useMutation<
     UpdatePipelineResponse,
     ApiError,
@@ -115,11 +115,11 @@ const PipelineBuilderPage = (props: {
       return
     }
     const isReady = !(
-      pipelineQuery.isLoading ||
+      pipelineQuery.isPending ||
       pipelineQuery.isError ||
-      projectsQuery.isLoading ||
+      projectsQuery.isPending ||
       projectsQuery.isError ||
-      connectorQuery.isLoading ||
+      connectorQuery.isPending ||
       connectorQuery.isError
     )
     if (!isReady && pipelineId === undefined) {
@@ -197,13 +197,13 @@ const PipelineBuilderPage = (props: {
       }
     })
   }, [
-    connectorQuery.isLoading,
+    connectorQuery.isPending,
     connectorQuery.isError,
     connectorQuery.data,
-    pipelineQuery.isLoading,
+    pipelineQuery.isPending,
     pipelineQuery.isError,
     pipelineQuery.data,
-    projectsQuery.isLoading,
+    projectsQuery.isPending,
     projectsQuery.isError,
     projectsQuery.data,
     setPipelineId,
@@ -216,7 +216,8 @@ const PipelineBuilderPage = (props: {
     addConnector,
     pipelineId,
     pushMessage,
-    saveState
+    saveState,
+    setNodes
   ])
 
   const setModifiedWhenDebouncing = useDebouncedCallback(() => {
