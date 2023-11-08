@@ -490,7 +490,7 @@ mod test {
             };
 
             let (mut consumer, outputs) = mock_parser_pipeline(&format_config).unwrap();
-            consumer.on_error(Some(Box::new(|_| {})));
+            consumer.on_error(Some(Box::new(|_, _| {})));
             for (json, expected_result) in test.input_batches {
                 let res = if test.chunks {
                     consumer.input_chunk(json.as_bytes())

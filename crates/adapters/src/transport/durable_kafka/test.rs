@@ -641,7 +641,7 @@ format:
 
     let (reader, consumer, _input_handle) =
         mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
-    consumer.on_error(Some(Box::new(|_| {})));
+    consumer.on_error(Some(Box::new(|_, _| {})));
     reader.start(0).unwrap();
     wait(|| consumer.state().endpoint_error.is_some(), 60000).unwrap();
     info!(
@@ -664,7 +664,7 @@ format:
 
     let (reader, consumer, _input_handle) =
         mock_input_pipeline::<TestStruct>(serde_yaml::from_str(config_str).unwrap()).unwrap();
-    consumer.on_error(Some(Box::new(|_| {})));
+    consumer.on_error(Some(Box::new(|_, _| {})));
     reader.start(0).unwrap();
     wait(|| consumer.state().endpoint_error.is_some(), 60000).unwrap();
     info!(
@@ -689,6 +689,14 @@ format:
 
     let (endpoint, _consumer, zset) =
         mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
+    consumer.on_error(Some(Box::new(|fatal, error| {
+        // It's normal for Kafka to emit errors, but not fatal ones.
+        if fatal {
+            panic!();
+        } else {
+            info!("{error}")
+        }
+    })));
 
     endpoint.start(0).unwrap();
 

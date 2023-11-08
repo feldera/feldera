@@ -362,7 +362,7 @@ bar,false,-10
         )
         .await;
 
-        consumer.on_error(Some(Box::new(|_| ())));
+        consumer.on_error(Some(Box::new(|_, _| ())));
 
         sleep(Duration::from_millis(10));
 
@@ -386,7 +386,7 @@ bar,false,-10
         let (endpoint, consumer, _zset) = setup_test(|| async { "" }, "nonexistent").await;
 
         // Disable panic on error so we can detect it gracefully below.
-        consumer.on_error(Some(Box::new(|_| ())));
+        consumer.on_error(Some(Box::new(|_, _| ())));
 
         sleep(Duration::from_millis(10));
 
@@ -430,7 +430,7 @@ bar,false,-10
         )
         .await;
 
-        consumer.on_error(Some(Box::new(|_| ())));
+        consumer.on_error(Some(Box::new(|_, _| ())));
 
         sleep(Duration::from_millis(10));
 
