@@ -11,7 +11,6 @@ export function convertEnum<
   typeofTo extends Record<string | number | symbol, string | number | symbol>
 >(From: typeofFrom, To: typeofTo) {
   return (from: typeofFrom[keyof typeofFrom]) => {
-    console.log('convertEnum', From, To, from, To[From[from] as keyof typeof To])
     return To[From[from] as keyof typeof To]
   }
 }

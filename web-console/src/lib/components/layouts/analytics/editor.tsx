@@ -139,7 +139,7 @@ const useCreateProjectIfNew = (
           },
           {
             onSettled: () => {
-              invalidateQuery(queryClient, PipelineManagerQuery.program())
+              invalidateQuery(queryClient, PipelineManagerQuery.programs())
               invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.program_id))
             },
             onSuccess: (data: NewProgramResponse) => {
@@ -258,7 +258,7 @@ const useUpdateProjectIfChanged = (
         { program_id: project.program_id, update_request: updateRequest },
         {
           onSettled: () => {
-            invalidateQuery(queryClient, PipelineManagerQuery.program())
+            invalidateQuery(queryClient, PipelineManagerQuery.programs())
             invalidateQuery(queryClient, PipelineManagerQuery.programCode(project.program_id))
             invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.program_id))
           },
@@ -328,13 +328,12 @@ const useCompileProjectIfChanged = (
       project.status !== 'Pending' &&
       project.status !== 'CompilingSql'
     ) {
-      //console.log('compileProject ' + project.version)
       setProject((prevState: ProgramDescr) => ({ ...prevState, status: 'Pending' }))
       mutate(
         { program_id: project.program_id, request: { version: project.version } },
         {
           onSettled: () => {
-            invalidateQuery(queryClient, PipelineManagerQuery.program())
+            invalidateQuery(queryClient, PipelineManagerQuery.programs())
             invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.program_id))
           },
           onError: (error: ApiError) => {

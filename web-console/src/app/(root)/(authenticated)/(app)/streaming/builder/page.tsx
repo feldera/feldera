@@ -101,7 +101,7 @@ const PipelineBuilderPage = (props: {
 
   const { pushMessage } = useStatusNotification()
   const projectsQuery = useQuery({
-    ...PipelineManagerQuery.program(),
+    ...PipelineManagerQuery.programs(),
     refetchInterval: 2000
   })
   const connectorQuery = useQuery(PipelineManagerQuery.connector())

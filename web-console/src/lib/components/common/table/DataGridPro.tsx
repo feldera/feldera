@@ -51,7 +51,6 @@ function DataGridProMax<Model extends GridValidRowModel>({
       onColumnWidthChange={change =>
         setColumnViewModel(
           replaceElement(columnViewModel, e => {
-            console.log('onColumnWidthChange', change.colDef)
             return e.field !== change.colDef.field ? null : { ...e, width: change.width, flex: 0 }
           })
         )
