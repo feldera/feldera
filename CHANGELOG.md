@@ -9,7 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
 - [SQL] Fix bugs in parsing of KEY and FOREIGN KEY constraints
+- Use better defaults for running the pipeline-manager (#994)
 
 ## [0.3.2] - 2023-11-10
 

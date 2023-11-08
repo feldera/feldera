@@ -101,7 +101,6 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
     let workdir = tmp_dir.path().to_str().unwrap();
     let database_config = DatabaseConfig {
         db_connection_string: "postgresql://postgres:postgres@localhost:6666".to_owned(),
-        initial_sql: None,
     };
     let api_config = ApiServerConfig {
         port: TEST_DBSP_DEFAULT_PORT,
@@ -117,7 +116,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
     let compiler_config = CompilerConfig {
         compiler_working_directory: workdir.to_owned(),
         sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
-        dbsp_override_path: Some("../../".to_owned()),
+        dbsp_override_path: "../../".to_owned(),
         debug: false,
         precompile: true,
         binary_ref_host: "127.0.0.1".to_string(),

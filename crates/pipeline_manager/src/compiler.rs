@@ -413,11 +413,10 @@ impl Compiler {
                 "[lib]\npath = \"src/lib.rs\"",
                 &format!("\n\n[[bin]]\n{program_name}\npath = \"src/main.rs\""),
             );
-        if let Some(p) = &config.dbsp_override_path {
-            project_toml_code = project_toml_code
-                .replace("../../crates", &format!("{p}/crates"))
-                .replace("../lib", &format!("{}", config.sql_lib_path().display()));
-        };
+        let p = &config.dbsp_override_path;
+        project_toml_code = project_toml_code
+            .replace("../../crates", &format!("{p}/crates"))
+            .replace("../lib", &format!("{}", config.sql_lib_path().display()));
         debug!("TOML:\n{project_toml_code}");
 
         let toml_path = config.project_toml_path(program_id);
@@ -1128,7 +1127,7 @@ mod test {
         let workdir = tmp_dir.path().to_str().unwrap();
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
-            dbsp_override_path: Some("../../".to_owned()),
+            dbsp_override_path: "../../".to_owned(),
             debug: false,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
@@ -1193,7 +1192,7 @@ mod test {
         let workdir = tmp_dir.path().to_str().unwrap();
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
-            dbsp_override_path: Some("../../".to_owned()),
+            dbsp_override_path: "../../".to_owned(),
             debug: false,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
@@ -1239,7 +1238,7 @@ mod test {
         let workdir = tmp_dir.path().to_str().unwrap();
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
-            dbsp_override_path: Some("../../".to_owned()),
+            dbsp_override_path: "../../".to_owned(),
             debug: false,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
