@@ -1,7 +1,7 @@
 // InputNodes are on the left and connect to tables of the program.
 
 import { Handle, Node } from '$lib/components/streaming/builder/NodeTypes'
-import useNodeDelete from '$lib/compositions/streaming/builder/useNodeDelete'
+import { useDeleteNode } from '$lib/compositions/streaming/builder/useDeleteNode'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { connectorDescrToType, connectorTypeToIcon } from '$lib/functions/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
@@ -15,7 +15,7 @@ import IconButton from '@mui/material/IconButton'
 
 const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
   const { getNode, getEdges, deleteElements } = useReactFlow()
-  const onDelete = useNodeDelete(id)
+  const onDelete = useDeleteNode(() => {})(id)
 
   const isValidConnection = (connection: Connection) => {
     // We drop the other edge if there already is one (no more than one outgoing
