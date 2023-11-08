@@ -90,7 +90,7 @@ export const PipelineManagerQuery = (({ pipelines, pipelineStatus, ...queries })
     }) satisfies UseQueryOptions<Pipeline, ApiError>
 }))(
   mkQuery({
-    program: () => ProgramsService.getPrograms(),
+    programs: () => ProgramsService.getPrograms(),
     programCode: (programId: string) => ProgramsService.getProgram(programId, true),
     programStatus: (programId: string) => ProgramsService.getProgram(programId, false),
     pipelines: () =>
@@ -219,7 +219,7 @@ export const programStatusUpdate = (queryClient: QueryClient, programId: Program
       status: newStatus
     }
   })
-  setQueryData(queryClient, PipelineManagerQuery.program(), oldData => {
+  setQueryData(queryClient, PipelineManagerQuery.programs(), oldData => {
     return oldData?.map(item => {
       if (item.program_id !== programId) {
         return item
@@ -262,7 +262,7 @@ export const programQueryCacheUpdate = (
 
   setQueryData(
     queryClient,
-    PipelineManagerQuery.program(),
+    PipelineManagerQuery.programs(),
     oldData =>
       oldData?.map(project => {
         if (project.program_id !== programId) {

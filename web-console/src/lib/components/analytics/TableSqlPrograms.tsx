@@ -62,7 +62,7 @@ const getStatusObj = (status: ProgramStatus) =>
 
 const TableSqlPrograms = () => {
   const [rows, setRows] = useState<ProgramDescr[]>([])
-  const fetchQuery = useQuery(PipelineManagerQuery.program())
+  const fetchQuery = useQuery(PipelineManagerQuery.programs())
   const { pushMessage } = useStatusNotification()
 
   const apiRef = useGridApiRef()
@@ -137,7 +137,7 @@ const TableSqlPrograms = () => {
       },
       {
         onError: (error: ApiError) => {
-          invalidateQuery(queryClient, PipelineManagerQuery.program())
+          invalidateQuery(queryClient, PipelineManagerQuery.programs())
           invalidateQuery(queryClient, PipelineManagerQuery.programStatus(newRow.program_id))
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
@@ -162,7 +162,7 @@ const TableSqlPrograms = () => {
             },
             onError: error => {
               pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-              invalidateQuery(queryClient, PipelineManagerQuery.program())
+              invalidateQuery(queryClient, PipelineManagerQuery.programs())
             }
           })
         }

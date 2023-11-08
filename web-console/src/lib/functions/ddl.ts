@@ -181,7 +181,6 @@ export function csvLineToRow(relation: Relation, row: any[]): Row {
 // API.
 export function rowToAnchor(relation: Relation, obj: Row): any[] {
   const tuple: any[] = []
-  console.log(obj, relation)
   relation.fields.map((col: Field, i: number) => {
     tuple[i] = obj.record[col.name]
   })
