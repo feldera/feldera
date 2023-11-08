@@ -40,23 +40,23 @@ const saslPlaintextSchema = va.union([saslPassSchema, saslOauthSchema])
 
 export const authParamsSchema = va.union([
   va.object({
-    security_protocol: va.optional(va.literal('plaintext'), 'plaintext')
+    security_protocol: va.optional(va.literal('PLAINTEXT'), 'PLAINTEXT')
   }),
   va.merge([
     va.object({
-      security_protocol: va.literal('ssl')
+      security_protocol: va.literal('SSL')
     }),
     sslSchema
   ]),
   intersection([
     va.object({
-      security_protocol: va.literal('sasl_plaintext')
+      security_protocol: va.literal('SASL_PLAINTEXT')
     }),
     saslPlaintextSchema
   ]),
   intersection([
     va.object({
-      security_protocol: va.literal('sasl_ssl')
+      security_protocol: va.literal('SASL_SSL')
     }),
     sslSchema,
     saslPlaintextSchema
@@ -84,9 +84,9 @@ export const authFields = [
 
 export type KafkaAuthSchema = va.Input<typeof authParamsSchema>
 
-type SaslSchema<T extends KafkaAuthSchema = KafkaAuthSchema> = T extends { security_protocol: 'sasl_plaintext' }
+type SaslSchema<T extends KafkaAuthSchema = KafkaAuthSchema> = T extends { security_protocol: 'SASL_PLAINTEXT' }
   ? T
-  : T extends { security_protocol: 'sasl_ssl' }
+  : T extends { security_protocol: 'SASL_SSL' }
   ? T
   : never
 
@@ -124,9 +124,9 @@ const prepareSaslData = (data: SaslSchema) => ({
     .exhaustive()
 })
 
-type SslSchema<T extends KafkaAuthSchema = KafkaAuthSchema> = T extends { security_protocol: 'ssl' }
+type SslSchema<T extends KafkaAuthSchema = KafkaAuthSchema> = T extends { security_protocol: 'SSL' }
   ? T
-  : T extends { security_protocol: 'sasl_ssl' }
+  : T extends { security_protocol: 'SASL_SSL' }
   ? T
   : never
 
@@ -142,15 +142,15 @@ const prepareSslData = (data: SslSchema) => ({
 export const prepareAuthData = (data: KafkaAuthSchema) => ({
   'security.protocol': data.security_protocol,
   ...match(data)
-    .with({ security_protocol: 'plaintext' }, { security_protocol: undefined }, () => ({}))
-    .with({ security_protocol: 'ssl' }, prepareSslData)
-    .with({ security_protocol: 'sasl_plaintext' }, prepareSaslData)
-    .with({ security_protocol: 'sasl_ssl' }, data => ({ ...prepareSslData(data), ...prepareSaslData(data) }))
+    .with({ security_protocol: 'PLAINTEXT' }, { security_protocol: undefined }, () => ({}))
+    .with({ security_protocol: 'SSL' }, prepareSslData)
+    .with({ security_protocol: 'SASL_PLAINTEXT' }, prepareSaslData)
+    .with({ security_protocol: 'SASL_SSL' }, data => ({ ...prepareSslData(data), ...prepareSaslData(data) }))
     .exhaustive()
 })
 
 export const defaultUiAuthParams = {
-  security_protocol: 'plaintext',
+  security_protocol: 'PLAINTEXT',
   enable_ssl_certificate_verification: true,
   sasl_mechanism: 'PLAIN',
   sasl_oauthbearer_method: 'default'
