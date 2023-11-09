@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "feldera-api-client"
-version = "0.3.0"
+version = "0.3.1"
 description = "A client library for accessing Feldera API"
 
 authors = []
