@@ -412,8 +412,7 @@ impl WorkerThread {
             .context("Failed to create consumer")?,
         );
 
-        let error_cb = |error| self.receiver.lock().unwrap().error(false, error);
-        let consumer_eh = ErrorHandler::new(&error_cb, consumer.client());
+        let consumer_eh = ErrorHandler::new(consumer.client());
 
         consumer
             .assign(&assignment)
@@ -461,7 +460,7 @@ impl WorkerThread {
         for (_data_topic, index_topic, positions, _index_partitions) in topics.iter() {
             for partition in 0..positions.len() {
                 let producer_ctp = Ctp::new(&producer, index_topic, partition as i32);
-                ErrorHandler::new(&error_cb, producer.client())
+                ErrorHandler::new(producer.client())
                     .retry_errors(
                         || producer_ctp.fetch_watermarks(POLL_TIMEOUT),
                         producer.client(),
