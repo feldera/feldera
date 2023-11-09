@@ -29,15 +29,33 @@ const updateRowsIntegral = (oldRows: Map<number, Row>, deltaRows: Row[]) => {
   return oldRows
 }
 
-const computeAndSet = (prev: Map<number, Row>) => (setRows: Dispatch<SetStateAction<Row[]>>, parsedRows: Row[]) => {
-  updateRowsIntegral(prev, parsedRows)
-  setRows(Array.from(prev.values()).sort((a, b) => a.genId - b.genId))
-  return prev
+const computeAndSet = (integral: Map<number, Row>) => (setRows: Dispatch<SetStateAction<Row[]>>, parsedRows: Row[]) => {
+  setRows(old => {
+    const relationChanged = !old.length
+    if (relationChanged) {
+      integral.clear()
+    }
+    updateRowsIntegral(integral, parsedRows)
+    return Array.from(integral.values()).sort((a, b) => a.genId - b.genId)
+  })
+  return integral
 }
 
-const computeInBackground = (prev: Map<number, Row>) => (_: Dispatch<SetStateAction<Row[]>>, parsedRows: Row[]) => {
-  return updateRowsIntegral(prev, parsedRows)
-}
+const computeInBackground =
+  (integral: Map<number, Row>) => (setRows: Dispatch<SetStateAction<Row[]>>, parsedRows: Row[]) => {
+    setRows(old => {
+      const relationChanged = !old.length
+      if (relationChanged) {
+        integral.clear()
+      }
+      updateRowsIntegral(integral, parsedRows)
+      if (!relationChanged) {
+        return old
+      }
+      return Array.from(integral.values()).sort((a, b) => a.genId - b.genId)
+    })
+    return integral
+  }
 
 type StateType = {
   rowsCallback: (setRows: Dispatch<SetStateAction<Row[]>>, parsedRows: Row[]) => Map<number, Row>
