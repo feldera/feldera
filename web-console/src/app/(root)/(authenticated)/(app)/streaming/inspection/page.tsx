@@ -1,7 +1,6 @@
 // Browse tables and views & insert data into tables.
 'use client'
 
-import { BreadcrumbSelect } from '$lib/components/common/BreadcrumbSelect'
 import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
@@ -16,7 +15,7 @@ import { ErrorBoundary } from 'react-error-boundary'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
-import { Alert, AlertTitle, Link, ListSubheader, MenuItem } from '@mui/material'
+import { Alert, AlertTitle, Autocomplete, Box, FormControl, Link, MenuItem, TextField } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
@@ -24,34 +23,33 @@ import { useQuery } from '@tanstack/react-query'
 import type { Row } from '$lib/components/streaming/import/InsertionTable'
 const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
   return (
-    <BreadcrumbSelect label='Relation' value={props.relation}>
-      <ListSubheader>Tables</ListSubheader>
-      {props.tables.map(item => (
-        <MenuItem
-          key={item}
-          value={item}
-          {...{
-            component: Link,
-            href: `?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item}`
-          }}
-        >
-          {item}
-        </MenuItem>
-      ))}
-      <ListSubheader>Views</ListSubheader>
-      {props.views.map(item => (
-        <MenuItem
-          key={item}
-          value={item}
-          {...{
-            component: Link,
-            href: `?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item}`
-          }}
-        >
-          {item}
-        </MenuItem>
-      ))}
-    </BreadcrumbSelect>
+    <Box sx={{ mb: '-1rem' }}>
+      <FormControl sx={{ mt: '-1rem' }}>
+        <Autocomplete
+          size='small'
+          options={props.tables
+            .map(name => ({ type: 'Tables', name }))
+            .concat(props.views.map(name => ({ type: 'Views', name })))}
+          groupBy={option => option.type}
+          getOptionLabel={o => o.name}
+          sx={{ width: 400 }}
+          renderInput={params => <TextField {...params} value={props.relation} label='Tables and Views' />}
+          value={{ name: props.relation, type: '' }}
+          renderOption={(_props, item) => (
+            <MenuItem
+              key={item.name}
+              value={item.name}
+              {...{
+                component: Link,
+                href: `?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item.name}`
+              }}
+            >
+              {item.name}
+            </MenuItem>
+          )}
+        />
+      </FormControl>
+    </Box>
   )
 }
 
