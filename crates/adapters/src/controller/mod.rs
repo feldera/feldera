@@ -48,6 +48,7 @@ use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
 };
+use log::trace;
 use log::{debug, error, info};
 use pipeline_types::query::OutputQuery;
 use std::collections::HashMap;
@@ -636,7 +637,7 @@ impl Controller {
                 PipelineState::Terminated => return,
             };
             let step = controller.step.load(Ordering::Acquire);
-            info!("stepping to {step}");
+            trace!("stepping to {step}");
 
             for (epid, ep) in controller.inputs.lock().unwrap().iter() {
                 let current_state = endpoint_states.entry(*epid).or_insert(EndpointState::Pause);
