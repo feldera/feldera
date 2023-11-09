@@ -16,7 +16,7 @@ mod output;
 
 use crate::transport::kafka::refine_kafka_error;
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use pipeline_types::transport::{
     durable_kafka::CommonConfigSchema, kafka::default_redpanda_server,
 };
@@ -506,22 +506,19 @@ fn check_fatal_errors<C: ClientContext>(client: &KafkaClient<C>) -> AnyResult<()
     }
 }
 
-struct ErrorHandler<'a, E, C>
+struct ErrorHandler<'a, C>
 where
-    E: Fn(AnyError),
     C: ClientContext,
 {
-    error_cb: &'a E,
     client: &'a KafkaClient<C>,
 }
 
-impl<'a, E, C> ErrorHandler<'a, E, C>
+impl<'a, C> ErrorHandler<'a, C>
 where
-    E: Fn(AnyError),
     C: ClientContext,
 {
-    fn new(error_cb: &'a E, client: &'a KafkaClient<C>) -> Self {
-        Self { error_cb, client }
+    fn new(client: &'a KafkaClient<C>) -> Self {
+        Self { client }
     }
 
     /// Calls `f` until it returns success or a fatal error and returns the
@@ -546,7 +543,7 @@ where
                     if error.rdkafka_error_code() == Some(RDKafkaErrorCode::OperationTimedOut) => {}
                 Err(error) => match refine_kafka_error(client, error) {
                     (true, error) => return Err(error),
-                    (false, error) => (self.error_cb)(error),
+                    (false, error) => info!("Kafka non-fatal error: {error}"),
                 },
             }
             check_exit().map_err(|e| AnyError::from(e))?;
