@@ -9,8 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2023-11-09
+
 ### Fixed
-- pipeline-manager: display package version below banner
+- Display package version below pipeline manager banner ([#988](https://github.com/feldera/feldera/pull/988))
+- Fix Data Browser regression where data rows become invalid after switching between relations
+  ([#993](https://github.com/feldera/feldera/issues/993))
+  ([#999](https://github.com/feldera/feldera/issues/999))
 
 ## [0.3.0] - 2023-11-07
 
