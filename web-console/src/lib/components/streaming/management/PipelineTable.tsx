@@ -539,35 +539,46 @@ export default function PipelineTable() {
   )
 }
 
-const usePipelineState = (params: { row: Pipeline }) => {
+const usePipelineStatus = (params: { row: Pipeline }) => {
   const pipeline = params.row.descriptor
   const curProgramQuery = useQuery({
     ...PipelineManagerQuery.programCode(pipeline.program_id!),
-    enabled: pipeline.program_id != null
+    enabled: pipeline.program_id !== null
   })
   const { data: pipelines } = useQuery({
     ...PipelineManagerQuery.pipelines()
   })
 
-  const programReady =
-    !curProgramQuery.isLoading && !curProgramQuery.isError && curProgramQuery.data.status === 'Success'
+  const programStatus =
+    pipeline.program_id === null
+      ? ('NoProgram' as const)
+      : !curProgramQuery.isLoading && !curProgramQuery.isError
+      ? match(curProgramQuery.data.status)
+          .with('Success', () => 'Ready' as const)
+          .with('CompilingRust', () => 'CompilingRust' as const)
+          .otherwise(() => 'NotReady' as const)
+      : ('NotReady' as const)
+
   const currentStatus =
     pipelines?.find(p => p.descriptor.pipeline_id === pipeline.pipeline_id)?.state.current_status ??
     PipelineStatus.UNKNOWN
-  return tuple(currentStatus, programReady)
+  return tuple(currentStatus, programStatus)
 }
 
 const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) => {
-  const [status, isReady] = usePipelineState(params)
+  const [status, programStatus] = usePipelineStatus(params)
 
   const shutdownPipelineClick = usePipelineMutation(mutationShutdownPipeline)
 
-  const chip = match([status, isReady])
+  const chip = match([status, programStatus])
     .with([PipelineStatus.UNKNOWN, P._], () => <CustomChip rounded size='small' skin='light' label={status} />)
-    .with([PipelineStatus.SHUTDOWN, true], () => <CustomChip rounded size='small' skin='light' label={status} />)
-    .with([PipelineStatus.SHUTDOWN, false], () => (
+    .with([PipelineStatus.SHUTDOWN, 'NotReady'], () => (
       <CustomChip rounded size='small' skin='light' color='info' label='Compiling' />
     ))
+    .with([PipelineStatus.SHUTDOWN, 'CompilingRust'], () => (
+      <CustomChip rounded size='small' skin='light' color='info' label='Compiling binary' />
+    ))
+    .with([PipelineStatus.SHUTDOWN, P._], () => <CustomChip rounded size='small' skin='light' label={status} />)
     .with([PipelineStatus.INITIALIZING, P._], () => (
       <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
     ))
@@ -589,11 +600,14 @@ const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) =>
     .with([PipelineStatus.PAUSING, P._], () => (
       <CustomChip rounded size='small' skin='light' color='info' label={status} />
     ))
-    .with([PipelineStatus.PAUSED, true], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label={status} />
-    ))
-    .with([PipelineStatus.PAUSED, false], () => (
+    .with([PipelineStatus.PAUSED, 'NotReady'], () => (
       <CustomChip rounded size='small' skin='light' color='info' label='Compiling' />
+    ))
+    .with([PipelineStatus.PAUSED, 'CompilingRust'], () => (
+      <CustomChip rounded size='small' skin='light' color='info' label='Compiling binary' />
+    ))
+    .with([PipelineStatus.PAUSED, P._], () => (
+      <CustomChip rounded size='small' skin='light' color='info' label={status} />
     ))
     .with([PipelineStatus.FAILED, P._], () => (
       <Tooltip title={params.row.state.error?.message || 'Unknown Error'} disableInteractive>
@@ -624,7 +638,7 @@ const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) =>
 const PipelineActions = (params: { row: Pipeline }) => {
   const pipeline = params.row.descriptor
 
-  const [status, isReady] = usePipelineState(params)
+  const [status, programStatus] = usePipelineStatus(params)
 
   const startPipelineClick = usePipelineMutation(mutationStartPipeline)
   const pausePipelineClick = usePipelineMutation(mutationPausePipeline)
@@ -702,19 +716,19 @@ const PipelineActions = (params: { row: Pipeline }) => {
     )
   }
 
-  const enabled = match([status, isReady])
+  const enabled = match([status, programStatus])
     .returnType<(keyof typeof actions)[]>()
-    .with([PipelineStatus.SHUTDOWN, true], () => ['start', 'edit', 'delete'])
-    .with([PipelineStatus.SHUTDOWN, false], () => ['spacer', 'edit', 'delete'])
+    .with([PipelineStatus.SHUTDOWN, 'Ready'], () => ['start', 'edit', 'delete'])
+    .with([PipelineStatus.SHUTDOWN, P._], () => ['spacer', 'edit', 'delete'])
     .with([PipelineStatus.PROVISIONING, P._], () => ['spinner', 'edit'])
     .with([PipelineStatus.INITIALIZING, P._], () => ['spinner', 'edit'])
     .with([PipelineStatus.STARTING, P._], () => ['spinner', 'edit'])
     .with([PipelineStatus.RUNNING, P._], () => ['pause', 'edit', 'shutdown'])
     .with([PipelineStatus.PAUSING, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.PAUSED, true], () => ['start', 'edit', 'shutdown'])
+    .with([PipelineStatus.PAUSED, 'Ready'], () => ['start', 'edit', 'shutdown'])
     .with([PipelineStatus.SHUTTING_DOWN, P._], () => ['spinner', 'edit'])
     .with([PipelineStatus.FAILED, P._], () => ['spacer', 'edit', 'shutdown'])
-    .otherwise(() => ['edit'])
+    .otherwise(() => ['spacer', 'edit'])
 
   return (
     <>
