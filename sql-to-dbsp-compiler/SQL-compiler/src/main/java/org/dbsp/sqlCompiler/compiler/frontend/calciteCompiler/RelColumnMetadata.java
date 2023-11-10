@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexNode;
-import org.dbsp.sqlCompiler.circuit.ForeignKeyReference;
 
 import javax.annotation.Nullable;
 
@@ -26,23 +25,16 @@ public class RelColumnMetadata {
     @Nullable
     public final RexNode lateness;
     /**
-     * If non-empty this is a foreign key reference to a different column.
-     */
-    @Nullable
-    public final ForeignKeyReference foreignKeyReference;
-    /**
      * True if the column name was quoted.
      */
     public final boolean nameIsQuoted;
 
     public RelColumnMetadata(RelDataTypeField field, boolean isPrimaryKey, boolean nameIsQuoted,
-                             @Nullable RexNode lateness,
-                             @Nullable ForeignKeyReference foreignKeyReference) {
+                             @Nullable RexNode lateness) {
         this.isPrimaryKey = isPrimaryKey;
         this.nameIsQuoted = nameIsQuoted;
         this.field = field;
         this.lateness = lateness;
-        this.foreignKeyReference = foreignKeyReference;
     }
 
     public String getName() {

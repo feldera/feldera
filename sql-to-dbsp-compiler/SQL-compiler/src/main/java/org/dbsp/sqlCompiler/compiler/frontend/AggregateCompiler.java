@@ -94,13 +94,13 @@ public class AggregateCompiler implements ICompilerComponent {
         this.generator = new NameGen("a");
         this.filterArgument = call.filterArg;
         List<Integer> argList = call.getArgList();
-        if (argList.size() == 0) {
+        if (argList.isEmpty()) {
             this.aggArgument = null;
         } else if (argList.size() == 1) {
             int fieldNumber = call.getArgList().get(0);
             this.aggArgument = this.v.field(fieldNumber);
         } else {
-            throw new UnimplementedException(new CalciteObject(call.getAggregation()));
+            throw new UnimplementedException(CalciteObject.create(call.getAggregation()));
         }
     }
 
@@ -139,7 +139,7 @@ public class AggregateCompiler implements ICompilerComponent {
 
     void processCount(SqlCountAggFunction function) {
         // The result of 'count' can never be null.
-        CalciteObject node = new CalciteObject(function);
+        CalciteObject node = CalciteObject.create(function);
         DBSPExpression increment;
         DBSPExpression argument;
         DBSPExpression zero = this.resultType.to(IsNumericType.class).getZero();
@@ -211,7 +211,7 @@ public class AggregateCompiler implements ICompilerComponent {
 
     void processMinMax(SqlMinMaxAggFunction function) {
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
-        CalciteObject node = new CalciteObject(function);
+        CalciteObject node = CalciteObject.create(function);
         DBSPOpcode call;
         String semigroupName;
         switch (function.getKind()) {
@@ -236,7 +236,7 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processSum(SqlSumAggFunction function) {
-        CalciteObject node = new CalciteObject(function);
+        CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
         DBSPExpression increment;
         DBSPExpression aggregatedValue = this.getAggregatedValue();
@@ -261,7 +261,7 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processSumZero(SqlSumEmptyIsZeroAggFunction function) {
-        CalciteObject node = new CalciteObject(function);
+        CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = this.resultType.to(IsNumericType.class).getZero();
         DBSPExpression increment;
         DBSPExpression aggregatedValue = this.getAggregatedValue();
@@ -295,7 +295,7 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processSingle(SqlSingleValueAggFunction function) {
-        CalciteObject node = new CalciteObject(function);
+        CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         if (this.filterArgument >= 0) {
@@ -316,7 +316,7 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processAvg(SqlAvgAggFunction function) {
-        CalciteObject node = new CalciteObject(function);
+        CalciteObject node = CalciteObject.create(function);
         DBSPType aggregatedValueType = this.getAggregatedValueType();
         DBSPType i64 = new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,true);
         DBSPExpression zero = new DBSPRawTupleExpression(
@@ -382,7 +382,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 this.process(this.aggFunction, SqlAvgAggFunction.class, this::processAvg) ||
                 this.process(this.aggFunction, SqlSingleValueAggFunction.class, this::processSingle);
         if (!success || this.foldingFunction == null)
-            throw new UnimplementedException(new CalciteObject(this.aggFunction));
+            throw new UnimplementedException(CalciteObject.create(this.aggFunction));
         return this.foldingFunction;
     }
 

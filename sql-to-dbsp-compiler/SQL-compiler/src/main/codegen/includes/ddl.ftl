@@ -36,32 +36,21 @@ void ExtendedTableElement(List<SqlNode> list) :
     final SqlNodeList columnList;
     final Span s = Span.of();
     final ColumnStrategy strategy;
-    boolean primaryKey = false;
-    SqlIdentifier foreignKeyTable = null;
-    SqlIdentifier foreignKeyColumn = null;
-    SqlNode lateness = null;
+    SqlExtendedColumnDeclaration column = null;
 }
 {
     LOOKAHEAD(2) id = SimpleIdentifier()
     (
         type = DataType()
         nullable = NullableOptDefaultTrue()
-        (
-            <PRIMARY> <KEY> { primaryKey = true; }
-        |
-            <FOREIGN> <KEY> <REFERENCES> foreignKeyTable = SimpleIdentifier()
-            <LPAREN> foreignKeyColumn = SimpleIdentifier() <RPAREN>
-        |
-            <LATENESS> lateness = Expression(ExprContext.ACCEPT_NON_QUERY)
-        |
-            /* empty */ {}
-        )
         {
             strategy = nullable ? ColumnStrategy.NULLABLE : ColumnStrategy.NOT_NULLABLE;
-            list.add(
-                new SqlExtendedColumnDeclaration(s.add(id).end(this), id,
-                    type.withNullable(nullable), null, strategy, foreignKeyTable, foreignKeyColumn,
-                    primaryKey, lateness));
+            column = new SqlExtendedColumnDeclaration(s.add(id).end(this), id,
+                            type.withNullable(nullable), null, strategy, null, null, false, null);
+        }
+        ( column = ColumnAttribute(column) )*
+        {
+            list.add(column);
         }
     |
         { list.add(id); }
@@ -76,11 +65,33 @@ void ExtendedTableElement(List<SqlNode> list) :
         columnList = ParenthesizedSimpleIdentifierList() {
             list.add(SqlDdlNodes.primary(s.end(columnList), name, columnList));
         }
-    |   <FOREIGN> ParenthesizedSimpleIdentifierList() <KEY> <REFERENCES>
-                  SimpleIdentifier() <LPAREN> ParenthesizedSimpleIdentifierList() <RPAREN> {
-            // Ignored, but parsed
+    |   <FOREIGN> <KEY> ParenthesizedSimpleIdentifierList() <REFERENCES>
+                 SimpleIdentifier() ParenthesizedSimpleIdentifierList() {
+            // TODO: this is currently completely ignored
         }
     )
+}
+
+SqlExtendedColumnDeclaration ColumnAttribute(SqlExtendedColumnDeclaration column) :
+{
+    SqlIdentifier foreignKeyTable = null;
+    SqlIdentifier foreignKeyColumn = null;
+    SqlNode latenes = null;
+    Span s;
+}
+{
+        (
+            <PRIMARY> { s = span(); } <KEY> { return column.setPrimaryKey(s.end(this)); }
+        |
+            <FOREIGN> <KEY> <REFERENCES> foreignKeyTable = SimpleIdentifier()
+            <LPAREN> foreignKeyColumn = SimpleIdentifier() <RPAREN> {
+               return column.setForeignKey(foreignKeyTable, foreignKeyColumn);
+            }
+        |
+            <LATENESS> latenes = Expression(ExprContext.ACCEPT_NON_QUERY) {
+               return column.setLatenes(latenes);
+            }
+        )
 }
 
 SqlNodeList AttributeDefList() :

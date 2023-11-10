@@ -35,8 +35,10 @@ import org.junit.rules.TestName;
 import org.junit.rules.TestWatcher;
 import org.junit.runner.Description;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -77,6 +79,15 @@ public class BaseSQLTests {
     @BeforeClass
     public static void prepareTests() {
         testsToRun.clear();
+    }
+
+    static File createInputScript(String... contents) throws IOException {
+        File result = File.createTempFile("script", ".sql", new File(rustDirectory));
+        result.deleteOnExit();
+        PrintWriter script = new PrintWriter(result, "UTF-8");
+        script.println(String.join(";\n", contents));
+        script.close();
+        return result;
     }
 
     DBSPCompiler noThrowCompiler() {

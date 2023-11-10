@@ -557,7 +557,7 @@ data: {
       "FLOAT"
       "FLOOR"
       "FOR"
-      "FOREIGN"
+#     "FOREIGN"
 #     "FOREVER" # not a keyword in Calcite
       "FOUND"
       "FRAME_ROW"

@@ -83,7 +83,7 @@ public class JitJsonOutputDescription extends JitIODescription {
                 case ARRAY:
                 case NULL:
                 case ROW:
-                    throw new UnimplementedException(new CalciteObject(this.type));
+                    throw new UnimplementedException(CalciteObject.create(this.type));
                 case INTERVAL_YEAR:
                 case INTERVAL_YEAR_MONTH:
                 case INTERVAL_MONTH:
@@ -97,7 +97,7 @@ public class JitJsonOutputDescription extends JitIODescription {
                 case INTERVAL_MINUTE:
                 case INTERVAL_MINUTE_SECOND:
                 case INTERVAL_SECOND:
-                    throw new UnimplementedException(new CalciteObject(this.type));
+                    throw new UnimplementedException(CalciteObject.create(this.type));
                 case TIMESTAMP:
                     spec = jsonFactory().createObjectNode();
                     ObjectNode timestamp = spec.putObject("TimestampFromStr");
@@ -117,7 +117,7 @@ public class JitJsonOutputDescription extends JitIODescription {
                 case GEOMETRY:
                 case MEASURE:
                 case SARG:
-                    throw new UnsupportedException(new CalciteObject(this.type));
+                    throw new UnsupportedException(CalciteObject.create(this.type));
             }
             result.put("key", this.name);
             if (spec != null)

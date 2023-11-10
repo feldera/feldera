@@ -49,7 +49,7 @@ public abstract class FrontEndStatement implements ICastable {
     }
 
     public CalciteObject getCalciteObject() {
-        return new CalciteObject(this.node);
+        return CalciteObject.create(this.node);
     }
 
     @Override

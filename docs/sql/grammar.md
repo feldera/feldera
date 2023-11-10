@@ -137,8 +137,8 @@ exprOrList
   |   '(' expr [, expr ]* ')'
 ```
 
-Note: `PRIMARY KEY` and `FOREIGN KEY` information is parsed, but
-ignored.
+Note `FOREIGN KEY` information is parsed, but it is not validated, and
+is currently ignored.
 
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.
