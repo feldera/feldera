@@ -20,7 +20,7 @@ createViewStatement
       AS query
 
 tableElement
-  :   columnName type [NOT [NULL]] [ columnConstraint ]
+  :   columnName type [NOT [NULL]] ( columnConstraint )*
   |   columnName
   |   tableConstraint
 
@@ -28,7 +28,6 @@ columnConstraint
   :   PRIMARY KEY
   |   FOREIGN KEY REFERENCES identifier '(' identifier ')'
   |   LATENESS expression
-  |   /* empty */
 
 parensColumnList
   :   '(' columnName [, columnName ]* ')'

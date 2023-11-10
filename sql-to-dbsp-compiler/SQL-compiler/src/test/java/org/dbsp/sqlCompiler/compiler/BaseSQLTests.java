@@ -85,7 +85,7 @@ public class BaseSQLTests {
         File result = File.createTempFile("script", ".sql", new File(rustDirectory));
         result.deleteOnExit();
         PrintWriter script = new PrintWriter(result, "UTF-8");
-        script.println(String.join(";\n", contents));
+        script.println(String.join(";" + System.lineSeparator(), contents));
         script.close();
         return result;
     }
