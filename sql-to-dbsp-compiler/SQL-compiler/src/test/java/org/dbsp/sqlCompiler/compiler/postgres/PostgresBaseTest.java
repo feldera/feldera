@@ -362,10 +362,17 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
             if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
                 throw new UnimplementedException("Expected array constant to be bracketed: " + trimmed);
             trimmed = trimmed.substring(1, trimmed.length() - 1);
-            String[] parts = trimmed.split(",");
-            DBSPExpression[] fields = Linq.map(
-                    parts, p -> this.parseValue(vec.getElementType(), p), DBSPExpression.class);
-            result = new DBSPVecLiteral(fields);
+            if (!trimmed.isEmpty()) {
+                // an empty string split still returns an empty string
+                String[] parts = trimmed.split(",");
+                DBSPExpression[] fields;
+                fields = Linq.map(
+                        parts, p -> this.parseValue(vec.getElementType(), p), DBSPExpression.class);
+                result = new DBSPVecLiteral(fields);
+            } else {
+                // empty vector
+                result = new DBSPVecLiteral(vec.getElementType());
+            }
         } else if (fieldType.is(DBSPTypeBinary.class)) {
             if (!data.startsWith(" ")) {
                 if (data.equals("NULL"))

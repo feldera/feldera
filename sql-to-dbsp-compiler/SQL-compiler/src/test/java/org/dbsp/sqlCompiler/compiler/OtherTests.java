@@ -446,9 +446,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                     "-i", "--alltables", "-o", BaseSQLTests.testFilePath, path);
             System.out.println(messages);
             Assert.assertEquals(0, messages.errorCount());
-            if (!subdir.getName().contains("demo02"))
-                // TODO: Waiting for https://issues.apache.org/jira/browse/CALCITE-5861
-                Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+            Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
         }
     }
 

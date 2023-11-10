@@ -437,6 +437,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     @Override
     public DBSPExpression visitCall(RexCall call) {
         CalciteObject node = CalciteObject.create(call);
+        DBSPType type = this.typeCompiler.convertType(call.getType(), false);
+        // If type is NULL we can skip the call altogether...
+        if (type.is(DBSPTypeNull.class))
+            return new DBSPNullLiteral();
+
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(call.toString())
                 .append(" ")
@@ -447,7 +452,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             call = (RexCall)RexUtil.expandSearch(this.rexBuilder, null, call);
         }
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));
-        DBSPType type = this.typeCompiler.convertType(call.getType(), false);
         switch (call.op.kind) {
             case TIMES:
                 return makeBinaryExpression(node, type, DBSPOpcode.MUL, ops);
@@ -621,6 +625,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                                 ops, 2);
                     }
                     case "split":
+                        // If any argument is NULL, cast it to a string.
+                        // Calcite should be doing this, but it doesn't.
+                        for (int i = 0; i < ops.size(); i++) {
+                            DBSPExpression arg = ops.get(i);
+                            if (arg.getType().is(DBSPTypeNull.class))
+                                ops.set(i, arg.cast(new DBSPTypeString(
+                                        node, DBSPTypeString.UNLIMITED_PRECISION, false, true)));
+                        }
                         return this.compileFunction(call, node, type, ops, 1, 2);
                     case "overlay":
                     // case "regexp_replace":

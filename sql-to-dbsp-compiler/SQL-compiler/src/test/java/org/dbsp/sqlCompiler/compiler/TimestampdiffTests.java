@@ -273,7 +273,8 @@ public class TimestampdiffTests extends PostgresBaseTest {
                 "(1 row)\n" +
                 "\n" +
                 // TODO: enable this test when https://issues.apache.org/jira/browse/CALCITE-5981
-                // is fixed.
+                // is fixed.  The bug is closed, but the fix is in Avatica, and Avatica
+                // hasn't released a new version.
                 //"select timestampdiff(month, DATE '2004-02-29', DATE '2005-02-28');\n" +
                 //"timestampdiff(month, DATE '2004-02-29', DATE '2005-02-28')\n" +
                 //"-----\n" +

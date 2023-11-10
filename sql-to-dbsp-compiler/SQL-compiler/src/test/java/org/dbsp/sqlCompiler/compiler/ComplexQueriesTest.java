@@ -44,7 +44,7 @@ import java.io.IOException;
 
 @SuppressWarnings("SpellCheckingInspection")
 public class ComplexQueriesTest extends BaseSQLTests {
-    @Test @Ignore("Waiting for https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-5861")
+    @Test @Ignore("OVER requires only integers")
     public void testDateDiff() {
         String sql = "create table PART_ORDER (\n" +
                 "    id bigint,\n" +

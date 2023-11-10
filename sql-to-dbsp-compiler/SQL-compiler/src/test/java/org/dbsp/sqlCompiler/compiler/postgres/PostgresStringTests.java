@@ -776,7 +776,7 @@ public class PostgresStringTests extends PostgresBaseTest {
                 "     1");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5813")
+    @Test
     public void testReplace() {
         this.q("SELECT REPLACE('abcdef', 'de', '45') AS \"abc45f\";\n" +
                 " abc45f \n" +
@@ -830,7 +830,7 @@ public class PostgresStringTests extends PostgresBaseTest {
                 " \0");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5813")
+    @Test
     public void testRepeat() {
         this.q("SELECT repeat('Pg', 4);\n" +
                 "  repeat  \n" +
