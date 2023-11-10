@@ -55,13 +55,6 @@ public abstract class DBSPTypeBaseType extends DBSPType {
      */
     public abstract DBSPLiteral defaultValue();
 
-    /**
-     * The null value with this type.
-     */
-    public DBSPExpression nullValue() {
-        return DBSPLiteral.none(this);
-    }
-
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.shortName())

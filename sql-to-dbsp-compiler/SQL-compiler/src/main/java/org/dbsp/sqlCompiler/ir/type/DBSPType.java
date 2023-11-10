@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.*;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.IndentStream;
@@ -139,6 +140,13 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         if (this.is(DBSPTypeAny.class))
             return this;
         return this.to(DBSPTypeRef.class).type;
+    }
+
+    /**
+     * The null value with this type.
+     */
+    public DBSPExpression nullValue() {
+        return DBSPLiteral.none(this);
     }
 
     /**

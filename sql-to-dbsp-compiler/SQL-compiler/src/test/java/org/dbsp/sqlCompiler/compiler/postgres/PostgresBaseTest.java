@@ -31,7 +31,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
@@ -297,7 +296,7 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
                         trimmed.equalsIgnoreCase("null"))) {
             if (!fieldType.mayBeNull)
                 throw new RuntimeException("Null value in non-nullable column " + fieldType);
-            result = fieldType.to(DBSPTypeBaseType.class).nullValue();
+            result = fieldType.nullValue();
         } else if (fieldType.is(DBSPTypeDouble.class)) {
             double value = Double.parseDouble(trimmed);
             result = new DBSPDoubleLiteral(value, fieldType.mayBeNull);
@@ -359,19 +358,23 @@ public abstract class PostgresBaseTest extends BaseSQLTests {
         } else if (fieldType.is(DBSPTypeVec.class)) {
             DBSPTypeVec vec = fieldType.to(DBSPTypeVec.class);
             // TODO: this does not handle nested arrays
-            if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
-                throw new UnimplementedException("Expected array constant to be bracketed: " + trimmed);
-            trimmed = trimmed.substring(1, trimmed.length() - 1);
-            if (!trimmed.isEmpty()) {
-                // an empty string split still returns an empty string
-                String[] parts = trimmed.split(",");
-                DBSPExpression[] fields;
-                fields = Linq.map(
-                        parts, p -> this.parseValue(vec.getElementType(), p), DBSPExpression.class);
-                result = new DBSPVecLiteral(fields);
+            if (trimmed.equals("NULL")) {
+                result = new DBSPVecLiteral(fieldType, true);
             } else {
-                // empty vector
-                result = new DBSPVecLiteral(vec.getElementType());
+                if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
+                    throw new UnimplementedException("Expected array constant to be bracketed: " + trimmed);
+                trimmed = trimmed.substring(1, trimmed.length() - 1);
+                if (!trimmed.isEmpty()) {
+                    // an empty string split still returns an empty string
+                    String[] parts = trimmed.split(",");
+                    DBSPExpression[] fields;
+                    fields = Linq.map(
+                            parts, p -> this.parseValue(vec.getElementType(), p), DBSPExpression.class);
+                    result = new DBSPVecLiteral(fieldType.mayBeNull, fields);
+                } else {
+                    // empty vector
+                    result = new DBSPVecLiteral(vec.getElementType());
+                }
             }
         } else if (fieldType.is(DBSPTypeBinary.class)) {
             if (!data.startsWith(" ")) {

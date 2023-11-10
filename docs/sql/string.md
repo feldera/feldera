@@ -130,7 +130,7 @@ addition to the normal way of `''`.
   </tr>
   <tr>
     <td><code>LEFT ( string, count )</code></td>
-    <td>Returns first <code>count</code> characters in the string.</td>
+    <td>Returns first <code>count</code> characters in the string.  If any argument is <code>NULL</code>, return <code>NULL</code>.</td>
     <td><code>left('abcde', 2)</code> => <code>ab</code></td>
   </tr>
   <tr>
@@ -162,6 +162,14 @@ addition to the normal way of `''`.
     <td><code>RLIKE(string, pattern)</code></td>
     <td>A function equivalent to the <code>RLIKE</code> operator above.</td>
     <td><code>RLIKE('string', 's..i.*')</code> => <code>TRUE</code></td>
+  </tr>
+  <tr>
+    <td><code>SPLIT(string [, delimiter])</code></td>
+    <td>Produce an array of strings, by splitting the first argument at each delimiter occurrence.
+        If the delimiter is empty, return an array with the original string.  If the original
+        string is empty, return an empty array.  If either argument is `NULL`, return `NULL`.
+        If delimiter is absent assume it is the string <code>','</code>.</td>
+    <td><code>SPLIT('a|b|c|', '|')</code> => { 'a', 'b', 'c', '' }</td>
   </tr>
   <tr>
     <td><code>SUBSTRING (</code> string <code>[ FROM</code> start <code>] [ FOR</code> count<code> ] )</code></td>

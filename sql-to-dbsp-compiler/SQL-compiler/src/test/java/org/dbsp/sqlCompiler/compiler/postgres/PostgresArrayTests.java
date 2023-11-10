@@ -1,7 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.postgres;
 
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.junit.Ignore;
 import org.junit.Test;
 
 // https://github.com/postgres/postgres/blob/03734a7fed7d924679770adb78a7db8a37d14188/src/test/regress/expected/arrays.out
@@ -39,10 +37,11 @@ public class PostgresArrayTests extends PostgresBaseTest {
                 " {}\n" +
                 "(1 row)\n" +
                 "\n" +
+                // Semantics different from Postgres
                 "select split('1|2|3', NULL);\n" +
                 " split \n" +
                 "-----------------\n" +
-                " { 1, |, 2, |, 3}\n" +
+                " NULL\n" +
                 "(1 row)\n" +
                 "\n" +
                 "select split(NULL, '|') IS NULL;\n" +
@@ -109,14 +108,5 @@ public class PostgresArrayTests extends PostgresBaseTest {
                 "-----------------\n" +
                 " 1|2|3\n" +
                 "(1 row)\n");
-    }
-
-    @Test
-    public void testArrayToStringNoNull() {
-        // semantics is different from Postgres
-        this.q("select array_to_string(array['1','2','3','4',NULL,'6'], ',', NULL);\n" +
-                " array_to_string \n" +
-                "-----------------\n" +
-                "NULL");
     }
 }
