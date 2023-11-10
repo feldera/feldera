@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2023-11-10
+
 ### Fixed
-- Fix a bug in Pipeline Management table where sometimes pipeline action buttons do not send requests
+- Fix a bug in Pipeline Management table where sometimes pipeline action buttons do not send requests ([#1008](https://github.com/feldera/feldera/pull/1008))
 
 ## [0.3.1] - 2023-11-09
 
