@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fix a bug in Pipeline Management table where sometimes pipeline action buttons do not send requests
+
 ## [0.3.1] - 2023-11-09
 
 ### Fixed

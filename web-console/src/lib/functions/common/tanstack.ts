@@ -1,6 +1,6 @@
 import { ApiError } from '$lib/services/manager'
 
-import { QueryClient, Updater, UseQueryOptions } from '@tanstack/react-query'
+import { QueryClient, QueryFilters, Updater, UseQueryOptions } from '@tanstack/react-query'
 
 type FunctionType = (...args: any) => any
 type Arguments<F extends FunctionType> = F extends (...args: infer A) => any ? A : never
@@ -40,5 +40,6 @@ export const setQueryData = <R>(
 
 export const getQueryData = <R>(
   queryClient: QueryClient,
-  query: { queryKey: readonly unknown[]; queryFn: () => Promise<R> }
-) => queryClient.getQueryData<R>(query.queryKey)
+  query: { queryKey: readonly unknown[]; queryFn: () => Promise<R> },
+  filters?: QueryFilters
+) => queryClient.getQueryData<R>(query.queryKey, filters)
