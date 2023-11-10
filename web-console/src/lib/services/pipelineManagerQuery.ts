@@ -19,7 +19,7 @@ import { leftJoin } from 'array-join'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 
-import { QueryClient, UseMutationOptions, UseQueryOptions } from '@tanstack/react-query'
+import { Query, QueryClient, UseMutationOptions, UseQueryOptions } from '@tanstack/react-query'
 
 const updatePipelineStatus =
   <Field extends string, NewStatus, State extends PipelineWithStatus<Field, any>>(
@@ -46,7 +46,26 @@ const toClientPipelineStatus = (status: RawPipelineStatus) => {
     .exhaustive()
 }
 
-export const PipelineManagerQuery = (({ pipelines, ...queries }) => ({
+/**
+ * Consolidate local STARTING | PAUSING | SHUTTING_DOWN status with remote PROVISIONING status
+ * @param newPipeline
+ * @param oldPipeline
+ * @returns
+ */
+const consolidatePipelineStatus = (newPipeline: Pipeline, oldPipeline: Pipeline | undefined) => {
+  const current_status =
+    newPipeline.state.current_status !== toClientPipelineStatus(newPipeline.state.desired_status) &&
+    newPipeline.state.current_status !== PipelineStatus.FAILED &&
+    oldPipeline?.state.current_status &&
+    [PipelineStatus.STARTING, PipelineStatus.PAUSING, PipelineStatus.SHUTTING_DOWN].includes(
+      oldPipeline.state.current_status
+    )
+      ? oldPipeline.state.current_status
+      : newPipeline.state.current_status
+  return updatePipelineStatus('current_status', current_status)(newPipeline)
+}
+
+export const PipelineManagerQuery = (({ pipelines, pipelineStatus, ...queries }) => ({
   ...queries,
   pipelines: () =>
     ({
@@ -58,21 +77,17 @@ export const PipelineManagerQuery = (({ pipelines, ...queries }) => ({
           oldData ?? [],
           p => p.descriptor.pipeline_id,
           p => p.descriptor.pipeline_id,
-          (newPipeline, oldPipeline) => {
-            const current_status =
-              newPipeline.state.current_status !== toClientPipelineStatus(newPipeline.state.desired_status) &&
-              newPipeline.state.current_status !== PipelineStatus.FAILED &&
-              oldPipeline?.state.current_status &&
-              [PipelineStatus.STARTING, PipelineStatus.PAUSING, PipelineStatus.SHUTTING_DOWN].includes(
-                oldPipeline.state.current_status
-              )
-                ? oldPipeline.state.current_status
-                : newPipeline.state.current_status
-            return updatePipelineStatus('current_status', current_status)(newPipeline)
-          }
+          consolidatePipelineStatus
         )
       }
-    }) satisfies UseQueryOptions<Pipeline[], ApiError>
+    }) satisfies UseQueryOptions<Pipeline[], ApiError>,
+  pipelineStatus: (pipelineId: PipelineId) =>
+    ({
+      ...pipelineStatus(pipelineId),
+      structuralSharing(oldData, newData) {
+        return consolidatePipelineStatus(newData, oldData)
+      }
+    }) satisfies UseQueryOptions<Pipeline, ApiError>
 }))(
   mkQuery({
     program: () => ProgramsService.getPrograms(),
@@ -95,10 +110,18 @@ export const PipelineManagerQuery = (({ pipelines, ...queries }) => ({
   })
 )
 
+/**
+ * Cache is considered valid if it was not invalidated and was set less than 10 seconds ago
+ * @param query
+ * @returns
+ */
+const cacheValid = (query: Query) => !query.isStaleByTime(10000)
+
 const getPipelineCache = (queryClient: QueryClient, pipelineId: PipelineId) => {
   const data =
-    getQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId)) ??
-    getQueryData(queryClient, PipelineManagerQuery.pipelines())?.find(p => p.descriptor.pipeline_id === pipelineId)
+    getQueryData(queryClient, PipelineManagerQuery.pipelines(), { predicate: cacheValid })?.find(
+      p => p.descriptor.pipeline_id === pipelineId
+    ) ?? getQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId), { predicate: cacheValid })
   invariant(data)
   return data
 }
