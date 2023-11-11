@@ -12,7 +12,7 @@ services:
 
   pipeline-manager:
     tty: true
-    image: ghcr.io/feldera/pipeline-manager:${FELDERA_VERSION:-0.2.0}
+    image: ghcr.io/feldera/pipeline-manager:${FELDERA_VERSION:-0.3.2}
     ports:
       - "8080:8080"
     depends_on:
@@ -86,7 +86,7 @@ services:
   # TODO: add a healthcheck to this container.
   connect:
     profiles: [ "debezium", "snowflake" ]
-    image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.2.0}
+    image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.3.2}
     depends_on:
       redpanda:
         condition: service_healthy
@@ -107,7 +107,7 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
-    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.2.0}
+    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.3.2}
     environment:
       - RUST_BACKTRACE=1
       - REDPANDA_BROKERS=redpanda:9092
@@ -129,7 +129,7 @@ services:
         condition: service_healthy
       connect:
         condition: service_started
-    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.2.0}
+    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.3.2}
     environment:
       - RUST_BACKTRACE=1
       - REDPANDA_BROKERS=redpanda:9092

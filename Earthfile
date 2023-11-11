@@ -576,11 +576,11 @@ test-docker-compose:
 test-docker-compose-stable:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    ENV FELDERA_VERSION=0.2.0
+    ENV FELDERA_VERSION=0.3.2
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
-                --pull ghcr.io/feldera/pipeline-manager:0.2.0 \
-                --pull ghcr.io/feldera/demo-container:0.2.0
+                --pull ghcr.io/feldera/pipeline-manager:0.3.2 \
+                --pull ghcr.io/feldera/demo-container:0.3.2
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
