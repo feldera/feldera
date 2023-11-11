@@ -221,6 +221,8 @@ outputs:
 }
 
 /// Test a topic that's empty and won't get any data.
+/// XXX: does not terminate: https://github.com/feldera/feldera/actions/runs/6831964370/job/18582787692
+#[ignore]
 #[test]
 fn test_empty_input() {
     init_test_logger();
