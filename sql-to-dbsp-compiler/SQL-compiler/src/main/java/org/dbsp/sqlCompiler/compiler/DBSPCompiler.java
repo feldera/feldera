@@ -237,7 +237,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 this.midend.compile(fe);
             }
         } catch (SqlParseException e) {
-            this.messages.reportError(e);
+            if (e.getCause() instanceof BaseCompilerException) {
+                // Exceptions we throw in parser validation code are caught
+                // by the Calcite parser and wrapped in SqlParseException.
+                // Unwrap them to retrieve source position...
+                this.messages.reportError((BaseCompilerException) e.getCause());
+            } else {
+                this.messages.reportError(e);
+            }
             if (this.options.languageOptions.throwOnError) {
                 System.err.println(this.messages);
                 throw new RuntimeException(e);

@@ -2,17 +2,13 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import com.google.common.collect.ImmutableList;
 import org.apache.calcite.schema.ColumnStrategy;
-import org.apache.calcite.sql.SqlCall;
-import org.apache.calcite.sql.SqlDataTypeSpec;
-import org.apache.calcite.sql.SqlIdentifier;
-import org.apache.calcite.sql.SqlKind;
-import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.SqlSpecialOperator;
-import org.apache.calcite.sql.SqlWriter;
+import org.apache.calcite.sql.*;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -28,10 +24,13 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
     public final SqlDataTypeSpec dataType;
     public final @Nullable SqlNode expression;
     public final ColumnStrategy strategy;
-    public final @Nullable SqlNode lateness;
-    public final @Nullable SqlIdentifier foreignKeyTable;
-    public final @Nullable SqlIdentifier foreignKeyColumn;
-    public final boolean primaryKey;
+    // The next two lists must have the same length.
+    // There can be multiple foreign key columns for one column
+    public final List<SqlIdentifier> foreignKeyTables;
+    public final List<SqlIdentifier> foreignKeyColumns;
+    // These can be mutated
+    public boolean primaryKey;
+    public @Nullable SqlNode lateness;
 
     public SqlExtendedColumnDeclaration(
             SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType,
@@ -43,10 +42,38 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
         this.dataType = dataType;
         this.expression = expression;
         this.strategy = strategy;
-        this.foreignKeyTable = foreignKeyTable;
-        this.foreignKeyColumn = foreignKeyColumn;
+        this.foreignKeyTables = new ArrayList<>();
+        this.foreignKeyColumns = new ArrayList<>();
+        if (foreignKeyTable != null)
+            this.foreignKeyTables.add(foreignKeyTable);
+        if (foreignKeyColumn != null)
+            this.foreignKeyColumns.add(foreignKeyColumn);
         this.primaryKey = primaryKey;
         this.lateness = lateness;
+    }
+
+    public SqlExtendedColumnDeclaration setPrimaryKey(SqlParserPos pos) {
+        if (this.primaryKey) {
+            throw new CompilationError("Column " + this.name +
+                    " already declared a primary key", CalciteObject.create(pos));
+        }
+        this.primaryKey = true;
+        return this;
+    }
+
+    public SqlExtendedColumnDeclaration setForeignKey(SqlIdentifier table, SqlIdentifier column) {
+        this.foreignKeyTables.add(table);
+        this.foreignKeyColumns.add(column);
+        return this;
+    }
+
+    public SqlExtendedColumnDeclaration setLatenes(SqlNode lateness) {
+        if (this.lateness != null) {
+            throw new CompilationError("Column " + this.name +
+                    " already declared a foreign key", CalciteObject.create(lateness));
+        }
+        this.lateness = lateness;
+        return this;
     }
 
     @Override public SqlOperator getOperator() {
@@ -84,13 +111,15 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
             writer.keyword("PRIMARY");
             writer.keyword("KEY");
         }
-        if (this.foreignKeyTable != null && this.foreignKeyColumn != null) {
+        for (int i = 0; i < this.foreignKeyTables.size(); i++) {
+            SqlIdentifier table = this.foreignKeyTables.get(i);
+            SqlIdentifier column = this.foreignKeyColumns.get(i);
             writer.keyword("FOREIGN");
             writer.keyword("KEY");
             writer.keyword("REFERENCES");
-            this.foreignKeyTable.unparse(writer, 0, 0);
+            table.unparse(writer, 0, 0);
             SqlWriter.Frame frame = writer.startList("(", ")");
-            this.foreignKeyColumn.unparse(writer, 0, 0);
+            column.unparse(writer, 0, 0);
             writer.endList(frame);
         }
         if (this.lateness != null) {

@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.circuit.ForeignKeyReference;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
@@ -27,20 +26,13 @@ public class InputColumnMetadata {
      */
     @Nullable
     public final DBSPExpression lateness;
-    /**
-     * If non-empty this is a foreign key reference to a different column.
-     */
-    @Nullable
-    public final ForeignKeyReference foreignKeyReference;
 
     public InputColumnMetadata(String name, DBSPType type, boolean isPrimaryKey,
-                               @Nullable DBSPExpression lateness,
-                               @Nullable ForeignKeyReference foreignKeyReference) {
+                               @Nullable DBSPExpression lateness) {
         this.name = name;
         this.type = type;
         this.isPrimaryKey = isPrimaryKey;
         this.lateness = lateness;
-        this.foreignKeyReference = foreignKeyReference;
     }
 
     public String getName() {

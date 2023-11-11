@@ -186,7 +186,7 @@ public class CalciteCompilerTests {
     @Test
     public void foreignKeyTest() throws SqlParseException {
         // MYSQL syntax for FOREIGN KEY
-        String query = "-- Commit inside a Git repo.\n" +
+        String query =
                 "create table git_commit (\n" +
                 "    git_commit_id bigint not null,\n" +
                 "    repository_id bigint not null,\n" +
@@ -198,6 +198,37 @@ public class CalciteCompilerTests {
                 "    git_commit_id bigint not null foreign key references git_commit(git_commit_id),\n" +
                 "    pipeline_id bigint not null\n" +
                 ")";
+        CalciteCompiler calcite = this.getCompiler();
+        SqlNode node = calcite.parseStatements(query);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
+    public void  keyAndSeparateForeignKeyTest() throws SqlParseException {
+        String query = "CREATE TABLE productvariant_t (\n" +
+                "    id BIGINT NOT NULL PRIMARY KEY,\n" +
+                "    FOREIGN KEY (id) REFERENCES inventoryitem_t (id)\n" +
+                ");";
+        CalciteCompiler calcite = this.getCompiler();
+        SqlNode node = calcite.parseStatements(query);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
+    public void keyAndForeignKeyTest() throws SqlParseException {
+        String query = "CREATE TABLE productvariant_t (\n" +
+                "    id BIGINT NOT NULL PRIMARY KEY FOREIGN KEY REFERENCES inventoryitem_t (id)\n" +
+                ");";
+        CalciteCompiler calcite = this.getCompiler();
+        SqlNode node = calcite.parseStatements(query);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
+    public void duplicatedForeignKey() throws SqlParseException {
+        // A column can participate in multiple foreign key constraints
+        String query = "create table git_commit (\n" +
+                "    git_commit_id bigint not null FOREIGN KEY REFERENCES other(other) FOREIGN KEY REFERENCES other2(other2))";
         CalciteCompiler calcite = this.getCompiler();
         SqlNode node = calcite.parseStatements(query);
         Assert.assertNotNull(node);

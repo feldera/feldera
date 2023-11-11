@@ -94,7 +94,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
      */
     @Override
     public DBSPExpression visitInputRef(RexInputRef inputRef) {
-        CalciteObject node = new CalciteObject(inputRef);
+        CalciteObject node = CalciteObject.create(inputRef);
         if (this.inputRow == null)
             throw new InternalCompilerError("Row referenced without a row context", node);
         // Unfortunately it looks like we can't trust the type coming from Calcite.
@@ -112,7 +112,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
     @Override
     public DBSPExpression visitLiteral(RexLiteral literal) {
-        CalciteObject node = new CalciteObject(literal);
+        CalciteObject node = CalciteObject.create(literal);
         try {
             DBSPType type = this.typeCompiler.convertType(literal.getType(), true);
             if (literal.isNull())
@@ -436,7 +436,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
     @Override
     public DBSPExpression visitCall(RexCall call) {
-        CalciteObject node = new CalciteObject(call.getOperator());
+        CalciteObject node = CalciteObject.create(call);
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(call.toString())
                 .append(" ")
@@ -748,7 +748,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 .newline();
         DBSPExpression result = expression.accept(this);
         if (result == null)
-            throw new UnimplementedException(new CalciteObject(expression));
+            throw new UnimplementedException(CalciteObject.create(expression));
         return result;
     }
 

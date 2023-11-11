@@ -70,7 +70,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         @Override
         public Enumerable<Object[]> scan(DataContext root) {
             // We don't plan to use this method, but the optimizer requires this API
-            throw new UnsupportedException(new CalciteObject(node));
+            throw new UnsupportedException(CalciteObject.create(node));
         }
 
         @Override
@@ -98,7 +98,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
             if (this.columns.get(i).getName().equals(id.toString()))
                 return i;
         }
-        throw new InternalCompilerError("Column not found", new CalciteObject(id));
+        throw new InternalCompilerError("Column not found", CalciteObject.create(id));
     }
 
     public DBSPTypeTuple getRowTypeAsTuple(TypeCompiler compiler) {

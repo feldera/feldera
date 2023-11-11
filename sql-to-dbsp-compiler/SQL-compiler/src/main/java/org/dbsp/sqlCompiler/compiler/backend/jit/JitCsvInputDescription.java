@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.type.RelDataType;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.json.simple.JSONObject;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -82,7 +81,7 @@ public class JitCsvInputDescription extends JitIODescription {
                 case MEASURE:
                 case SARG:
                 default:
-                    throw new UnsupportedException(new CalciteObject(type));
+                    throw new UnsupportedException(CalciteObject.create(type));
             }
         }
 

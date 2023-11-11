@@ -134,7 +134,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     private DBSPOperator getInputAs(RelNode input, boolean asMultiset) {
         DBSPOperator op = this.getOperator(input);
         if (op.isMultiset && !asMultiset) {
-            op = new DBSPDistinctOperator(new CalciteObject(input), op);
+            op = new DBSPDistinctOperator(CalciteObject.create(input), op);
             this.circuit.addOperator(op);
         }
         return op;
@@ -188,7 +188,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             implementations[aggIndex] =  implementation;
             aggIndex++;
         }
-        return new DBSPAggregate(new CalciteObject(node), rowVar, implementations, false);
+        return new DBSPAggregate(CalciteObject.create(node), rowVar, implementations, false);
     }
 
     /**
@@ -202,7 +202,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 return index;
             index++;
         }
-        throw new InternalCompilerError("Type " + type + " has no field named " + field, new CalciteObject(type));
+        throw new InternalCompilerError("Type " + type + " has no field named " + field, CalciteObject.create(type));
     }
 
     public void visitCorrelate(LogicalCorrelate correlate) {
@@ -227,7 +227,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         //        }
         //     })
         //  });
-        CalciteObject node = new CalciteObject(correlate);
+        CalciteObject node = CalciteObject.create(correlate);
         DBSPTypeTuple type = this.convertType(correlate.getRowType(), false).to(DBSPTypeTuple.class);
         if (correlate.getJoinType().isOuterJoin())
             throw new UnimplementedException(node);
@@ -239,7 +239,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (!(correlateRight instanceof Uncollect))
             throw new UnimplementedException(node);
         Uncollect uncollect = (Uncollect) correlateRight;
-        CalciteObject uncollectNode = new CalciteObject(uncollect);
+        CalciteObject uncollectNode = CalciteObject.create(uncollect);
         RelNode uncollectInput = uncollect.getInput();
         if (!(uncollectInput instanceof LogicalProject))
             throw new UnimplementedException(node);
@@ -273,7 +273,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     public void visitUncollect(Uncollect uncollect) {
         // This represents an unnest.
         // flat_map(move |x| { x.0.into_iter().map(move |e| Tuple1::new(e)) })
-        CalciteObject node = new CalciteObject(uncollect);
+        CalciteObject node = CalciteObject.create(uncollect);
         DBSPType type = this.convertType(uncollect.getRowType(), false);
         RelNode input = uncollect.getInput();
         DBSPTypeTuple inputRowType = this.convertType(input.getRowType(), false).to(DBSPTypeTuple.class);
@@ -295,7 +295,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     public void visitAggregate(LogicalAggregate aggregate) {
-        CalciteObject node = new CalciteObject(aggregate);
+        CalciteObject node = CalciteObject.create(aggregate);
         DBSPType type = this.convertType(aggregate.getRowType(), false);
         DBSPTypeTuple tuple = type.to(DBSPTypeTuple.class);
         RelNode input = aggregate.getInput();
@@ -392,7 +392,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     public void visitScan(LogicalTableScan scan) {
-        CalciteObject node = new CalciteObject(scan);
+        CalciteObject node = CalciteObject.create(scan);
         List<String> name = scan.getTable().getQualifiedName();
         String tableName = name.get(name.size() - 1);
         @Nullable
@@ -423,7 +423,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     public void visitProject(LogicalProject project) {
-        CalciteObject node = new CalciteObject(project);
+        CalciteObject node = CalciteObject.create(project);
         // LogicalProject is not really SQL project, it is rather map.
         RelNode input = project.getInput();
         DBSPOperator opInput = this.getInputAs(input, true);
@@ -438,7 +438,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         for (RexNode column : project.getProjects()) {
             if (column instanceof RexOver) {
                 throw new UnsupportedException("Optimizer should have removed OVER expressions",
-                        new CalciteObject(column));
+                        CalciteObject.create(column));
             } else {
                 DBSPExpression exp = expressionCompiler.compile(column);
                 DBSPType expectedType = tuple.getFieldType(index);
@@ -470,7 +470,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     private void visitUnion(LogicalUnion union) {
-        CalciteObject node = new CalciteObject(union);
+        CalciteObject node = CalciteObject.create(union);
         RelDataType rowType = union.getRowType();
         DBSPType outputType = this.convertType(rowType, false);
         List<DBSPOperator> inputs = Linq.map(union.getInputs(), this::getOperator);
@@ -487,7 +487,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     private void visitMinus(LogicalMinus minus) {
-        CalciteObject node = new CalciteObject(minus);
+        CalciteObject node = CalciteObject.create(minus);
         boolean first = true;
         RelDataType rowType = minus.getRowType();
         DBSPType outputType = this.convertType(rowType, false);
@@ -526,13 +526,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
             return;
         }
 
-        CalciteObject node = new CalciteObject(filter);
+        CalciteObject node = CalciteObject.create(filter);
         DBSPType type = this.convertType(filter.getRowType(), false);
         DBSPVariablePath t = type.ref().var("t");
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(t, this.compiler);
         DBSPExpression condition = expressionCompiler.compile(filter.getCondition());
         condition = ExpressionCompiler.wrapBoolIfNeeded(condition);
-        condition = new DBSPClosureExpression(new CalciteObject(filter.getCondition()), condition, t.asParameter());
+        condition = new DBSPClosureExpression(CalciteObject.create(filter.getCondition()), condition, t.asParameter());
         DBSPOperator input = this.getOperator(filter.getInput());
         DBSPFilterOperator fop = new DBSPFilterOperator(node, condition, input);
         this.assignOperator(filter, fop);
@@ -540,7 +540,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     private DBSPOperator filterNonNullKeys(LogicalJoin join,
             List<Integer> keyFields, DBSPOperator input) {
-        CalciteObject node = new CalciteObject(join);
+        CalciteObject node = CalciteObject.create(join);
         DBSPTypeTuple rowType = input.getType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
         boolean shouldFilter = Linq.any(keyFields, i -> rowType.tupFields[i].mayBeNull);
         if (!shouldFilter) return input;
@@ -570,7 +570,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     private void visitJoin(LogicalJoin join) {
-        CalciteObject node = new CalciteObject(join);
+        CalciteObject node = CalciteObject.create(join);
         JoinRelType joinType = join.getJoinType();
         if (joinType == JoinRelType.ANTI || joinType == JoinRelType.SEMI)
             throw new UnimplementedException(node);
@@ -623,7 +623,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (condition.getType().mayBeNull)
                 condition = ExpressionCompiler.wrapBoolIfNeeded(condition);
             originalCondition = condition;
-            condition = new DBSPClosureExpression(new CalciteObject(join.getCondition()), condition, t.asParameter());
+            condition = new DBSPClosureExpression(CalciteObject.create(join.getCondition()), condition, t.asParameter());
         }
         DBSPVariablePath k = leftKey.getType().var("k");
 
@@ -756,7 +756,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * This can be invoked by a DDM statement, or by a SQL query that computes a constant result.
      */
     public void visitLogicalValues(LogicalValues values) {
-        CalciteObject node = new CalciteObject(values);
+        CalciteObject node = CalciteObject.create(values);
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(null, this.compiler);
         DBSPTypeTuple sourceType = this.convertType(values.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPTypeTuple resultType;
@@ -807,7 +807,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     public void visitIntersect(LogicalIntersect intersect) {
-        CalciteObject node = new CalciteObject(intersect);
+        CalciteObject node = CalciteObject.create(intersect);
         // Intersect is a special case of join.
         List<RelNode> inputs = intersect.getInputs();
         RelNode input = intersect.getInput(0);
@@ -890,11 +890,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 break;
             default:
                 throw new UnimplementedException("Ranking function " + kind + " not yet implemented",
-                        new CalciteObject(window));
+                        CalciteObject.create(window));
         }
 
         // This code duplicates code from the SortNode.
-        CalciteObject node = new CalciteObject(window);
+        CalciteObject node = CalciteObject.create(window);
         RelNode input = window.getInput();
         DBSPOperator opInput = this.getOperator(input);
 
@@ -1019,7 +1019,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     public void visitWindow(LogicalWindow window) {
-        CalciteObject node = new CalciteObject(window);
+        CalciteObject node = CalciteObject.create(window);
 
         DBSPTypeTuple windowResultType = this.convertType(window.getRowType(), false).to(DBSPTypeTuple.class);
         RelNode inputNode = window.getInput();
@@ -1171,7 +1171,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     public void visitSort(LogicalSort sort) {
-        CalciteObject node = new CalciteObject(sort);
+        CalciteObject node = CalciteObject.create(sort);
         RelNode input = sort.getInput();
         DBSPOperator opInput = this.getOperator(input);
         if (this.options.languageOptions.ignoreOrderBy && sort.fetch == null) {
@@ -1316,7 +1316,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.visitIfMatches(node, LogicalSort.class, this::visitSort) ||
                 this.visitIfMatches(node, Uncollect.class, this::visitUncollect);
         if (!success)
-            throw new UnimplementedException(new CalciteObject(node));
+            throw new UnimplementedException(CalciteObject.create(node));
     }
 
     InputColumnMetadata convertMetadata(RelColumnMetadata metadata) {
@@ -1326,7 +1326,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (metadata.lateness != null)
             lateness = expressionCompiler.compile(metadata.lateness);
         return new InputColumnMetadata(metadata.getName(), type,
-                metadata.isPrimaryKey, lateness, metadata.foreignKeyReference);
+                metadata.isPrimaryKey, lateness);
     }
 
     @SuppressWarnings("UnusedReturnValue")
@@ -1371,7 +1371,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 CalciteObject identifier = CalciteObject.EMPTY;
                 if (create.node instanceof SqlCreateTable) {
                     SqlCreateTable sct = (SqlCreateTable)create.node;
-                    identifier = new CalciteObject(sct.name);
+                    identifier = CalciteObject.create(sct.name);
                 }
                 List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
                 DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(

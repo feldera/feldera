@@ -57,7 +57,7 @@ public class TypeCompiler implements ICompilerComponent {
      *                   convert it to a DBSPTypeTuple.
      */
     public DBSPType convertType(RelDataType dt, boolean asStruct) {
-        CalciteObject node = new CalciteObject(dt);
+        CalciteObject node = CalciteObject.create(dt);
         boolean nullable = dt.isNullable();
         if (dt.isStruct()) {
             if (asStruct) {
@@ -71,7 +71,7 @@ public class TypeCompiler implements ICompilerComponent {
                         // we will get an exception below where we create the struct.
                         fieldName = fieldNameGen.freshName(fieldName);
                     fields.add(new DBSPTypeStruct.Field(
-                            new CalciteObject(dt), fieldName, fieldName, type, false));
+                            CalciteObject.create(dt), fieldName, fieldName, type, false));
                 }
                 String name = structNameGen.nextName();
                 return new DBSPTypeStruct(node, name, name, fields);

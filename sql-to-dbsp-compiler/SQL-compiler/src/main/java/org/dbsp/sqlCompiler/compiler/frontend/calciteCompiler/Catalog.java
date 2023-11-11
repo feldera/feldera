@@ -46,7 +46,7 @@ public class Catalog extends AbstractSchema {
 
     public static String identifierToString(SqlIdentifier identifier) {
         if (!identifier.isSimple())
-            throw new UnsupportedException("Not a simple identifier", new CalciteObject(identifier));
+            throw new UnsupportedException("Not a simple identifier", CalciteObject.create(identifier));
         return identifier.getSimple();
     }
 

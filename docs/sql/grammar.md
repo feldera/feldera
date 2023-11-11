@@ -20,7 +20,7 @@ createViewStatement
       AS query
 
 tableElement
-  :   columnName type [NOT [NULL]] [ columnConstraint ]
+  :   columnName type [NOT [NULL]] ( columnConstraint )*
   |   columnName
   |   tableConstraint
 
@@ -28,7 +28,6 @@ columnConstraint
   :   PRIMARY KEY
   |   FOREIGN KEY REFERENCES identifier '(' identifier ')'
   |   LATENESS expression
-  |   /* empty */
 
 parensColumnList
   :   '(' columnName [, columnName ]* ')'
@@ -137,8 +136,8 @@ exprOrList
   |   '(' expr [, expr ]* ')'
 ```
 
-Note: `PRIMARY KEY` and `FOREIGN KEY` information is parsed, but
-ignored.
+Note `FOREIGN KEY` information is parsed, but it is not validated, and
+is currently ignored.
 
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.
