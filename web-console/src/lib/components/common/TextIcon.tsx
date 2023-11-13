@@ -1,7 +1,19 @@
-import { Typography } from '@mui/material'
+import { Typography, TypographyProps } from '@mui/material'
 
-export const TextIcon = (props: { text: string }) => (
-  <Typography variant='caption' sx={{ border: 1, borderRadius: 1, px: 0.5, m: 1 }}>
-    {props.text}
+export const TextIcon = ({ text, ...props }: { text: string; size: number } & TypographyProps) => (
+  <Typography
+    sx={{
+      border: 1,
+      borderRadius: 1,
+      px: 0.5,
+      height: props.size,
+      width: props.size,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}
+    {...props}
+  >
+    {text}
   </Typography>
 )
