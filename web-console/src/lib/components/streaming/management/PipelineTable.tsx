@@ -172,10 +172,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
         renderCell: params => {
           if (params.row.connections.length > 0) {
             const records =
-              direction === 'input'
+              (direction === 'input'
                 ? metrics.input.get(params.row.relation.name)?.total_records
-                : metrics.output.get(params.row.relation.name)?.transmitted_records
-            return format('.3s')(records || 0)
+                : metrics.output.get(params.row.relation.name)?.transmitted_records) || 0
+            return format(records > 1000 ? '.3s' : '~s')(records)
           } else {
             // TODO: we need to count records also when relation doesn't have
             // connections in the backend.
@@ -265,7 +265,9 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           <Card>
             <List subheader={<ListSubheader>Configuration</ListSubheader>} dense>
               <ListItem>
-                <TextIcon text='SQL' />
+                <ListItemIcon>
+                  <TextIcon size={24} fontSize={10} text='SQL' />
+                </ListItemIcon>
                 <ListItemText
                   primary={pipelineRevisionQuery.data?.program.name || 'not set'}
                   secondary={

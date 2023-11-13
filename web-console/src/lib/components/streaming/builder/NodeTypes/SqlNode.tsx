@@ -111,7 +111,7 @@ export function SqlNode({ id, data }: NodeProps<{ label: string; program: Progra
         title={data.label}
         sx={{ py: 5, alignItems: 'flex-start' }}
         titleTypographyProps={{ variant: 'h4' }}
-        avatar={<TextIcon text='SQL' />}
+        avatar={<TextIcon text='SQL' fontSize={14} size={32} />}
         action={
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <IconButton
