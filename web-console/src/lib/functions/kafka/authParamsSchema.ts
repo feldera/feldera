@@ -87,8 +87,8 @@ export type KafkaAuthSchema = va.Input<typeof authParamsSchema>
 type SaslSchema<T extends KafkaAuthSchema = KafkaAuthSchema> = T extends { security_protocol: 'SASL_PLAINTEXT' }
   ? T
   : T extends { security_protocol: 'SASL_SSL' }
-  ? T
-  : never
+    ? T
+    : never
 
 const prepareSaslData = (data: SaslSchema) => ({
   'sasl.mechanism': data.sasl_mechanism,
@@ -127,8 +127,8 @@ const prepareSaslData = (data: SaslSchema) => ({
 type SslSchema<T extends KafkaAuthSchema = KafkaAuthSchema> = T extends { security_protocol: 'SSL' }
   ? T
   : T extends { security_protocol: 'SASL_SSL' }
-  ? T
-  : never
+    ? T
+    : never
 
 const prepareSslData = (data: SslSchema) => ({
   'ssl.key.pem': data.ssl_key_pem,
