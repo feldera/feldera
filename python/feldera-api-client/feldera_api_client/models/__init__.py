@@ -25,10 +25,8 @@ from .json_flavor import JsonFlavor
 from .json_parser_config import JsonParserConfig
 from .json_update_format import JsonUpdateFormat
 from .kafka_input_config import KafkaInputConfig
-from .kafka_input_config_log_level import KafkaInputConfigLogLevel
 from .kafka_log_level import KafkaLogLevel
 from .kafka_output_config import KafkaOutputConfig
-from .kafka_output_config_log_level import KafkaOutputConfigLogLevel
 from .neighborhood_query import NeighborhoodQuery
 from .neighborhood_query_anchor import NeighborhoodQueryAnchor
 from .new_connector_request import NewConnectorRequest
@@ -101,10 +99,8 @@ __all__ = (
     "JsonParserConfig",
     "JsonUpdateFormat",
     "KafkaInputConfig",
-    "KafkaInputConfigLogLevel",
     "KafkaLogLevel",
     "KafkaOutputConfig",
-    "KafkaOutputConfigLogLevel",
     "NeighborhoodQuery",
     "NeighborhoodQueryAnchor",
     "NewConnectorRequest",
