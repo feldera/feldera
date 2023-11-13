@@ -18,7 +18,6 @@ import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePi
 import { usePipelineMutation } from '$lib/compositions/streaming/management/usePipelineMutation'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { useHashPart } from '$lib/compositions/useHashPart'
-import { inUnion } from '$lib/functions/common/array'
 import { humanSize } from '$lib/functions/common/string'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { tuple } from '$lib/functions/common/tuple'
@@ -590,15 +589,15 @@ const usePipelineStatus = (params: { row: Pipeline }) => {
     pipeline.program_id === null
       ? ('NoProgram' as const)
       : curProgramQuery.isPending || curProgramQuery.isError
-      ? ('NotReady' as const)
-      : (programData => {
-          invariant(programData, 'Program data should be available')
-          return match(programData.status)
-            .with('Success', () => 'Ready' as const)
-            .with('CompilingRust', () => 'CompilingRust' as const)
-            .with('None', 'Pending', 'CompilingSql', () => 'NotReady' as const)
-            .otherwise(() => 'Error' as const)
-        })(curProgramQuery.data.find(p => p.program_id === pipeline.program_id))
+        ? ('NotReady' as const)
+        : (programData => {
+            invariant(programData, 'Program data should be available')
+            return match(programData.status)
+              .with('Success', () => 'Ready' as const)
+              .with('CompilingRust', () => 'CompilingRust' as const)
+              .with('None', 'Pending', 'CompilingSql', () => 'NotReady' as const)
+              .otherwise(() => 'Error' as const)
+          })(curProgramQuery.data.find(p => p.program_id === pipeline.program_id))
 
   const currentStatus =
     pipelines?.find(p => p.descriptor.pipeline_id === pipeline.pipeline_id)?.state.current_status ??

@@ -17,8 +17,8 @@ type IntersectionInput<TIntersectionOptions extends IntersectionOptions> = TInte
   ? TRest extends IntersectionOptions
     ? TInput & IntersectionInput<TRest>
     : TRest extends [BaseSchema<infer TInput2, any>]
-    ? TInput & TInput2
-    : never
+      ? TInput & TInput2
+      : never
   : never
 
 type IntersectionOutput<TIntersectionOptions extends IntersectionOptions> = TIntersectionOptions extends [
@@ -28,8 +28,8 @@ type IntersectionOutput<TIntersectionOptions extends IntersectionOptions> = TInt
   ? TRest extends IntersectionOptions
     ? TOutput & IntersectionOutput<TRest>
     : TRest extends [BaseSchema<any, infer TOutput2>]
-    ? TOutput & TOutput2
-    : never
+      ? TOutput & TOutput2
+      : never
   : never
 
 /**
@@ -119,8 +119,8 @@ export function intersection<TIntersectionOptions extends IntersectionOptions>(
             }) as IntersectionOutput<TIntersectionOptions>
           }
         : issues?.length
-        ? { issues }
-        : getSchemaIssues(info, 'type', 'union', error || 'Invalid type', input, issues)
+          ? { issues }
+          : getSchemaIssues(info, 'type', 'union', error || 'Invalid type', input, issues)
     }
   }
 }
