@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Type, TypeVar, Union
 
 from attrs import define, field
 
-from ..models.kafka_output_config_log_level import KafkaOutputConfigLogLevel
+from ..models.kafka_log_level import KafkaLogLevel
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="KafkaOutputConfig")
@@ -10,10 +10,16 @@ T = TypeVar("T", bound="KafkaOutputConfig")
 
 @define
 class KafkaOutputConfig:
-    """
+    """Configuration for writing data to a Kafka topic with `OutputTransport`.
+
     Attributes:
-        topic (str):
-        log_level (Union[Unset, KafkaOutputConfigLogLevel]): Kafka logging levels.
+        topic (str): Topic to write to.
+        initialization_timeout_secs (Union[Unset, int]): Maximum timeout in seconds to wait for the endpoint to connect
+            to
+            a Kafka broker.
+
+            Defaults to 10.
+        log_level (Union[Unset, None, KafkaLogLevel]): Kafka logging levels.
         max_inflight_messages (Union[Unset, int]): Maximum number of unacknowledged messages buffered by the Kafka
             producer.
 
@@ -27,15 +33,17 @@ class KafkaOutputConfig:
     """
 
     topic: str
-    log_level: Union[Unset, KafkaOutputConfigLogLevel] = UNSET
+    initialization_timeout_secs: Union[Unset, int] = UNSET
+    log_level: Union[Unset, None, KafkaLogLevel] = UNSET
     max_inflight_messages: Union[Unset, int] = UNSET
     additional_properties: Dict[str, str] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         topic = self.topic
-        log_level: Union[Unset, str] = UNSET
+        initialization_timeout_secs = self.initialization_timeout_secs
+        log_level: Union[Unset, None, str] = UNSET
         if not isinstance(self.log_level, Unset):
-            log_level = self.log_level.value
+            log_level = self.log_level.value if self.log_level else None
 
         max_inflight_messages = self.max_inflight_messages
 
@@ -46,6 +54,8 @@ class KafkaOutputConfig:
                 "topic": topic,
             }
         )
+        if initialization_timeout_secs is not UNSET:
+            field_dict["initialization_timeout_secs"] = initialization_timeout_secs
         if log_level is not UNSET:
             field_dict["log_level"] = log_level
         if max_inflight_messages is not UNSET:
@@ -58,17 +68,22 @@ class KafkaOutputConfig:
         d = src_dict.copy()
         topic = d.pop("topic")
 
+        initialization_timeout_secs = d.pop("initialization_timeout_secs", UNSET)
+
         _log_level = d.pop("log_level", UNSET)
-        log_level: Union[Unset, KafkaOutputConfigLogLevel]
-        if isinstance(_log_level, Unset):
+        log_level: Union[Unset, None, KafkaLogLevel]
+        if _log_level is None:
+            log_level = None
+        elif isinstance(_log_level, Unset):
             log_level = UNSET
         else:
-            log_level = KafkaOutputConfigLogLevel(_log_level)
+            log_level = KafkaLogLevel(_log_level)
 
         max_inflight_messages = d.pop("max_inflight_messages", UNSET)
 
         kafka_output_config = cls(
             topic=topic,
+            initialization_timeout_secs=initialization_timeout_secs,
             log_level=log_level,
             max_inflight_messages=max_inflight_messages,
         )

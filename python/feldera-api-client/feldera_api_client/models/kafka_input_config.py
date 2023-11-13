@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Type, TypeVar, Union, cast
 
 from attrs import define, field
 
-from ..models.kafka_input_config_log_level import KafkaInputConfigLogLevel
+from ..models.kafka_log_level import KafkaLogLevel
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="KafkaInputConfig")
@@ -10,26 +10,28 @@ T = TypeVar("T", bound="KafkaInputConfig")
 
 @define
 class KafkaInputConfig:
-    """
+    """Configuration for reading data from Kafka topics with `InputTransport`.
+
     Attributes:
-        topics (List[str]):
+        topics (List[str]): List of topics to subscribe to.
         group_join_timeout_secs (Union[Unset, int]): Maximum timeout in seconds to wait for the endpoint to join the
-            Kafka consumer group during initialization.
-        log_level (Union[Unset, KafkaInputConfigLogLevel]): Kafka logging levels.
+            Kafka
+            consumer group during initialization.
+        log_level (Union[Unset, None, KafkaLogLevel]): Kafka logging levels.
     """
 
     topics: List[str]
     group_join_timeout_secs: Union[Unset, int] = UNSET
-    log_level: Union[Unset, KafkaInputConfigLogLevel] = UNSET
+    log_level: Union[Unset, None, KafkaLogLevel] = UNSET
     additional_properties: Dict[str, str] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         topics = self.topics
 
         group_join_timeout_secs = self.group_join_timeout_secs
-        log_level: Union[Unset, str] = UNSET
+        log_level: Union[Unset, None, str] = UNSET
         if not isinstance(self.log_level, Unset):
-            log_level = self.log_level.value
+            log_level = self.log_level.value if self.log_level else None
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -53,11 +55,13 @@ class KafkaInputConfig:
         group_join_timeout_secs = d.pop("group_join_timeout_secs", UNSET)
 
         _log_level = d.pop("log_level", UNSET)
-        log_level: Union[Unset, KafkaInputConfigLogLevel]
-        if isinstance(_log_level, Unset):
+        log_level: Union[Unset, None, KafkaLogLevel]
+        if _log_level is None:
+            log_level = None
+        elif isinstance(_log_level, Unset):
             log_level = UNSET
         else:
-            log_level = KafkaInputConfigLogLevel(_log_level)
+            log_level = KafkaLogLevel(_log_level)
 
         kafka_input_config = cls(
             topics=topics,

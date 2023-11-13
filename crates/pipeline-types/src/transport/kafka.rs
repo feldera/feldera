@@ -7,13 +7,10 @@ use std::{
 
 use anyhow::{Error as AnyError, Result as AnyResult};
 use serde::Deserialize;
-use utoipa::{
-    openapi::{ArrayBuilder, KnownFormat, ObjectBuilder, RefOr, Schema, SchemaFormat, SchemaType},
-    ToSchema,
-};
+use utoipa::ToSchema;
 
 /// Configuration for reading data from Kafka topics with `InputTransport`.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ToSchema)]
 pub struct KafkaInputConfig {
     /// Options passed directly to `rdkafka`.
     ///
@@ -135,45 +132,6 @@ pub fn default_redpanda_server() -> String {
     env::var("REDPANDA_BROKERS").unwrap_or_else(|_| "localhost".to_string())
 }
 
-// The auto-derived implementation gets confused by the flattened
-// `kafka_options` field. FIXME: I didn't figure out how to attach a
-// `description` to the `topics` property.
-impl<'s> ToSchema<'s> for KafkaInputConfig {
-    fn schema() -> (&'s str, RefOr<Schema>) {
-        (
-            "KafkaInputConfig",
-            ObjectBuilder::new()
-                .property(
-                    "topics",
-                    ArrayBuilder::new().items(
-                        ObjectBuilder::new()
-                            .schema_type(SchemaType::String)
-                    )
-                )
-                .required("topics")
-                .property(
-                    "log_level",
-                    KafkaLogLevel::schema().1
-                )
-                .property(
-                    "group_join_timeout_secs",
-                    ObjectBuilder::new()
-                        .schema_type(SchemaType::Integer)
-                        .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int32)))
-                        .description(Some("Maximum timeout in seconds to wait for the endpoint to join the Kafka consumer group during initialization.")),
-                )
-                .additional_properties(Some(
-                        ObjectBuilder::new()
-                        .schema_type(SchemaType::String)
-                        .description(Some(r#"Options passed directly to `rdkafka`.
-
-See [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
-used to configure the Kafka producer."#))))
-                .into(),
-        )
-    }
-}
-
 const fn default_max_inflight_messages() -> u32 {
     1000
 }
@@ -183,7 +141,7 @@ const fn default_initialization_timeout_secs() -> u32 {
 }
 
 /// Configuration for writing data to a Kafka topic with `OutputTransport`.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ToSchema)]
 pub struct KafkaOutputConfig {
     /// Options passed directly to `rdkafka`.
     ///
@@ -237,50 +195,6 @@ impl KafkaOutputConfig {
     pub fn validate(&mut self) -> AnyResult<()> {
         self.set_option_if_missing("bootstrap.servers", &default_redpanda_server());
         Ok(())
-    }
-}
-
-// The auto-derived implementation gets confused by the flattened
-// `kafka_options` field.
-impl<'s> ToSchema<'s> for KafkaOutputConfig {
-    fn schema() -> (&'s str, RefOr<Schema>) {
-        (
-            "KafkaOutputConfig",
-            ObjectBuilder::new()
-                .property(
-                    "topic",
-                    ObjectBuilder::new()
-                        .schema_type(SchemaType::String)
-                )
-                .required("topic")
-                .property(
-                    "log_level",
-                    KafkaLogLevel::schema().1
-                )
-                .property(
-                    "max_inflight_messages",
-                    ObjectBuilder::new()
-                        .schema_type(SchemaType::Integer)
-                        .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int32)))
-                        .description(Some(r#"Maximum number of unacknowledged messages buffered by the Kafka producer.
-
-Kafka producer buffers outgoing messages until it receives an
-acknowledgement from the broker.  This configuration parameter
-bounds the number of unacknowledged messages.  When the number of
-unacknowledged messages reaches this limit, sending of a new message
-blocks until additional acknowledgements arrive from the broker.
-
-Defaults to 1000."#)),
-                )
-                .additional_properties(Some(
-                        ObjectBuilder::new()
-                        .schema_type(SchemaType::String)
-                        .description(Some(r#"Options passed directly to `rdkafka`.
-
-See [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
-used to configure the Kafka producer."#))))
-                .into(),
-        )
     }
 }
 
