@@ -34,7 +34,12 @@ export interface ValidationError {
 export function getValueFormatter(columntype: ColumnType): (value: any, params?: GridCellParams) => string {
   return match(columntype)
     .with({ type: 'BIGINT' }, { type: 'DECIMAL' }, () => {
-      return (value: BigNumber) => value.toFixed()
+      return (value: BigNumber) => {
+        if (!BigNumber.isBigNumber(value)) {
+          return value
+        }
+        return value.toFixed()
+      }
     })
     .with({ type: 'TIME' }, () => {
       return (value: Dayjs | string) => {

@@ -18,6 +18,7 @@ const validValue = (value: BigNumber | undefined, props: { precision?: number | 
   if (!nonNull(value)) {
     return true
   }
+  console.log('validValue', value, typeof value)
   // Ensure value and defaultValue fit within precision and scale
   return (
     (!nonNull(props.scale) || value.decimalPlaces(props.scale).eq(value)) &&
@@ -38,9 +39,12 @@ export const BigNumberInput = ({
     min: BigNumber.Value
     max: BigNumber.Value
   }>) => {
+  // In a sane world we could expect value to be BigNumber
+  const value = props.value ? BigNumber(props.value) : undefined
+
   invariant(
-    validValue(props.value, props),
-    `BigNumber input value ${props.value} doesn't fit precision ${props.precision} scale ${props.scale}`
+    validValue(value, props),
+    `BigNumber input value ${value} doesn't fit precision ${props.precision} scale ${props.scale}`
   )
   invariant(
     validValue(props.defaultValue, props),
@@ -58,6 +62,7 @@ export const BigNumberInput = ({
 
     const newValue = new BigNumber(value)
 
+    console.log('handleChange')
     const isInvalidValue =
       (props.min && newValue.lt(props.min)) || (props.max && newValue.gt(props.max)) || !validValue(newValue, props)
     if (isInvalidValue) {
@@ -74,7 +79,7 @@ export const BigNumberInput = ({
     ? undefined
     : event => handleChange(event, (event.target as any).value, props.onInput)
   const onWheel: TextFieldProps['onWheel'] = event => {
-    handleChange(event, (props.value ?? new BigNumber(0)).plus(event.deltaY < 0 ? 1 : -1).toFixed(), props.onChange)
+    handleChange(event, (value ?? new BigNumber(0)).plus(event.deltaY < 0 ? 1 : -1).toFixed(), props.onChange)
   }
 
   return (
@@ -82,7 +87,7 @@ export const BigNumberInput = ({
       {...props}
       onWheel={onWheel}
       type='number'
-      value={props.value?.toFixed() ?? ''}
+      value={value?.toFixed() ?? ''}
       defaultValue={props.defaultValue?.toFixed()}
       onChange={e => {
         onChange?.(e)
