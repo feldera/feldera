@@ -234,7 +234,7 @@ impl KafkaOutputConfig {
     #[allow(dead_code)]
     /// Validate configuration, set default option values required by this
     /// adapter.
-    fn validate(&mut self) -> AnyResult<()> {
+    pub fn validate(&mut self) -> AnyResult<()> {
         self.set_option_if_missing("bootstrap.servers", &default_redpanda_server());
         Ok(())
     }

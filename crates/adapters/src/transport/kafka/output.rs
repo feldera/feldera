@@ -1,4 +1,4 @@
-use super::{DeferredLogging, KafkaLogLevel};
+use super::DeferredLogging;
 use crate::transport::kafka::rdkafka_loglevel_from;
 use crate::transport::secret_resolver::MaybeSecret;
 use crate::{AsyncErrorCallback, OutputEndpoint, OutputEndpointConfig, OutputTransport};
@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use log::debug;
 use pipeline_types::secret_ref::MaybeSecretRef;
-use pipeline_types::transport::kafka::default_redpanda_server;
+use pipeline_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::{
     config::FromClientConfigAndContext,
     error::KafkaError,
@@ -15,14 +15,7 @@ use rdkafka::{
     ClientConfig, ClientContext,
 };
 use serde::Deserialize;
-use std::{borrow::Cow, collections::BTreeMap, sync::RwLock, time::Duration};
-use utoipa::{
-    openapi::{
-        schema::{KnownFormat, Schema},
-        ObjectBuilder, RefOr, SchemaFormat, SchemaType,
-    },
-    ToSchema,
-};
+use std::{borrow::Cow, sync::RwLock, time::Duration};
 
 const OUTPUT_POLLING_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -55,114 +48,6 @@ impl OutputTransport for KafkaOutputTransport {
         let ep = KafkaOutputEndpoint::new(config)?;
 
         Ok(Box::new(ep))
-    }
-}
-
-const fn default_max_inflight_messages() -> u32 {
-    1000
-}
-
-const fn default_initialization_timeout_secs() -> u32 {
-    10
-}
-
-/// Configuration for writing data to a Kafka topic with [`OutputTransport`].
-#[derive(Deserialize, Debug)]
-pub struct KafkaOutputConfig {
-    /// Options passed directly to `rdkafka`.
-    ///
-    /// See [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
-    /// used to configure the Kafka producer.
-    #[serde(flatten)]
-    pub kafka_options: BTreeMap<String, String>,
-
-    /// Topic to write to.
-    pub topic: String,
-
-    /// The log level of the client.
-    ///
-    /// If not specified, the log level will be calculated based on the global
-    /// log level of the `log` crate.
-    pub log_level: Option<KafkaLogLevel>,
-
-    /// Maximum number of unacknowledged messages buffered by the Kafka
-    /// producer.
-    ///
-    /// Kafka producer buffers outgoing messages until it receives an
-    /// acknowledgement from the broker.  This configuration parameter
-    /// bounds the number of unacknowledged messages.  When the number of
-    /// unacknowledged messages reaches this limit, sending of a new message
-    /// blocks until additional acknowledgements arrive from the broker.
-    ///
-    /// Defaults to 1000.
-    #[serde(default = "default_max_inflight_messages")]
-    pub max_inflight_messages: u32,
-
-    /// Maximum timeout in seconds to wait for the endpoint to connect to
-    /// a Kafka broker.
-    ///
-    /// Defaults to 10.
-    #[serde(default = "default_initialization_timeout_secs")]
-    pub initialization_timeout_secs: u32,
-}
-
-impl KafkaOutputConfig {
-    /// Set `option` to `val`, if missing.
-    fn set_option_if_missing(&mut self, option: &str, val: &str) {
-        self.kafka_options
-            .entry(option.to_string())
-            .or_insert_with(|| val.to_string());
-    }
-
-    /// Validate configuration, set default option values required by this
-    /// adapter.
-    fn validate(&mut self) -> AnyResult<()> {
-        self.set_option_if_missing("bootstrap.servers", &default_redpanda_server());
-        Ok(())
-    }
-}
-
-// The auto-derived implementation gets confused by the flattened
-// `kafka_options` field.
-impl<'s> ToSchema<'s> for KafkaOutputConfig {
-    fn schema() -> (&'s str, RefOr<Schema>) {
-        (
-            "KafkaOutputConfig",
-            ObjectBuilder::new()
-                .property(
-                    "topic",
-                    ObjectBuilder::new()
-                        .schema_type(SchemaType::String)
-                )
-                .required("topic")
-                .property(
-                    "log_level",
-                    KafkaLogLevel::schema().1
-                )
-                .property(
-                    "max_inflight_messages",
-                    ObjectBuilder::new()
-                        .schema_type(SchemaType::Integer)
-                        .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int32)))
-                        .description(Some(r#"Maximum number of unacknowledged messages buffered by the Kafka producer.
-
-Kafka producer buffers outgoing messages until it receives an
-acknowledgement from the broker.  This configuration parameter
-bounds the number of unacknowledged messages.  When the number of
-unacknowledged messages reaches this limit, sending of a new message
-blocks until additional acknowledgements arrive from the broker.
-
-Defaults to 1000."#)),
-                )
-                .additional_properties(Some(
-                        ObjectBuilder::new()
-                        .schema_type(SchemaType::String)
-                        .description(Some(r#"Options passed directly to `rdkafka`.
-
-See [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)
-used to configure the Kafka producer."#))))
-                .into(),
-        )
     }
 }
 
