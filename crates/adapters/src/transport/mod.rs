@@ -56,7 +56,7 @@ pub use file::{FileInputTransport, FileOutputTransport};
 pub use url::UrlInputTransport;
 
 #[cfg(feature = "with-kafka")]
-pub use kafka::{KafkaInputTransport, KafkaOutputConfig, KafkaOutputTransport};
+pub use kafka::{KafkaInputTransport, KafkaOutputTransport};
 
 #[cfg(feature = "with-kafka")]
 use durable_kafka::{KafkaDurableInputTransport, KafkaDurableOutputTransport};

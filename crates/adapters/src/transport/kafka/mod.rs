@@ -16,7 +16,7 @@ mod output;
 pub mod test;
 
 pub use input::KafkaInputTransport;
-pub use output::{KafkaOutputConfig, KafkaOutputTransport};
+pub use output::KafkaOutputTransport;
 
 // fn kafka_loglevel_from(level: RDKafkaLogLevel) -> KafkaLogLevel {
 //     match level {
