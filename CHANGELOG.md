@@ -9,11 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+### Added
+
+- WebConsole: Support big numeric SQL types in Data Browser, Data Import and Data Generator
+  ([#851](https://github.com/feldera/feldera/issues/851))
+- WebConsole: Display SQL types in Data inspect and insert tables
+
 ## [0.4.0] - 2023-11-21
 
 
 ### Fixed
-
 - [SQL] Fix bugs in parsing of KEY and FOREIGN KEY constraints
 - Use better defaults for running the pipeline-manager (#994)
   ([#1011](https://github.com/feldera/feldera/pull/1011))
@@ -96,10 +103,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduce Docker logging noise from Kafka connect and Redpanda.
 - Regression in pipeline shutdown logic
   ([#961](https://github.com/feldera/feldera/pull/961))
-
-### Added
-- WebConsole: Support of big numeric SQL types in Data Browser, Data Import and Data Generator
-  ([#851](https://github.com/feldera/feldera/issues/851))
 
 ## [0.2.0] - 2023-10-24
 

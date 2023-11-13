@@ -353,9 +353,17 @@ const INTEGER_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
     title: 'Uniform',
     category: Categories.DISTRIBUTION,
     generator: (ct, props) => {
+      const convenientMin = 0
+      const convenientMax = 100000
       const { min: typeMin, max: typeMax } = numericRange(ct)
-      const min = ((props?.min as BigNumber | undefined) ?? typeMin).decimalPlaces(0, BigNumber.ROUND_CEIL)
-      const max = ((props?.max as BigNumber | undefined) ?? typeMax).decimalPlaces(0, BigNumber.ROUND_FLOOR)
+      const min = ((props?.min as BigNumber | undefined) ?? BigNumber.max(convenientMin, typeMin)).decimalPlaces(
+        0,
+        BigNumber.ROUND_CEIL
+      )
+      const max = ((props?.max as BigNumber | undefined) ?? BigNumber.min(convenientMax, typeMax)).decimalPlaces(
+        0,
+        BigNumber.ROUND_FLOOR
+      )
       return randomIntBigNumber(min, max)()
     },
     form_fields: ({ columntype: ct }) => [
@@ -398,18 +406,22 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
     title: 'Uniform',
     category: Categories.DISTRIBUTION,
     generator: (ct, props?: { min?: BigNumber; max?: BigNumber }) => {
-      return props?.min && props.max
-        ? // We use d3.randomUniform for generating floating point numbers as long
-          // as the user set a range for the values.
-          // TODO: refactor from casting to actual BigNumber implementation of randomUniform
-          new BigNumber(d3.randomUniform(props.min.toNumber(), props.max.toNumber())())
-        : // Because it's surprisingly difficult to generate floating point
-          // numbers with a max range of -Inf..Inf, we just default to 0..1 for
-          // this one.
-          //
-          // See also:
-          // https://stackoverflow.com/questions/28461796/randomint-function-that-can-uniformly-handle-the-full-range-of-min-and-max-safe
-          new BigNumber(d3.randomUniform()())
+      const convenientMin = 0
+      const convenientMax = 100
+      const { min, max } = (({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(
+        props?.min && props.max
+          ? { min: props.min, max: props.max }
+          : (({ min, max }) => ({ min: BigNumber.max(convenientMin, min), max: BigNumber.min(convenientMax, max) }))(
+              numericRange(ct)
+            )
+      )
+      // We use d3.randomUniform for generating floating point numbers as long
+      // as the user set a range for the values.
+      // TODO: refactor from casting to actual BigNumber implementation of randomUniform
+      //
+      // See also:
+      // https://stackoverflow.com/questions/28461796/randomint-function-that-can-uniformly-handle-the-full-range-of-min-and-max-safe
+      return new BigNumber(d3.randomUniform(min, max)())
     },
     form_fields: () => [
       {

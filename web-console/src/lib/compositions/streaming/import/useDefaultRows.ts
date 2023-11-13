@@ -2,6 +2,7 @@
 
 import { Row } from '$lib/functions/ddl'
 import { ColumnType, Field, Relation } from '$lib/services/manager'
+import { BigNumber } from 'bignumber.js'
 import dayjs from 'dayjs'
 import { Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
 import { match } from 'ts-pattern'
@@ -11,8 +12,15 @@ import { GridApi } from '@mui/x-data-grid-pro'
 export const getDefaultValue = (columntype: ColumnType) =>
   match(columntype)
     .with({ type: 'BOOLEAN' }, () => false)
-    .with({ type: 'TINYINT' }, { type: 'SMALLINT' }, { type: 'INTEGER' }, { type: 'BIGINT' }, () => 0)
-    .with({ type: 'DECIMAL' }, { type: 'FLOAT' }, { type: 'DOUBLE' }, () => 0.0)
+    .with(
+      { type: 'TINYINT' },
+      { type: 'SMALLINT' },
+      { type: 'INTEGER' },
+      { type: 'FLOAT' },
+      { type: 'DOUBLE' },
+      () => 0
+    )
+    .with({ type: 'BIGINT' }, { type: 'DECIMAL' }, () => new BigNumber(0))
     .with({ type: 'VARCHAR' }, { type: 'CHAR' }, () => '')
     .with({ type: 'TIME' }, () => dayjs(new Date()))
     .with({ type: 'TIMESTAMP' }, () => dayjs(new Date()))
