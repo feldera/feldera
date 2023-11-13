@@ -44,7 +44,7 @@ const getStatusChip = (status: ProgramStatus) =>
       return { title: 'System Error', color: 'error' as const, tooltip: undefined }
     })
     .with('Pending', () => {
-      return { title: 'In queue', color: 'primary' as const, tooltip: 'In queue to be compiled after another program' }
+      return { title: 'Queued', color: 'primary' as const, tooltip: 'Waiting on another program to finish compilation' }
     })
     .with('CompilingSql', () => {
       return { title: 'Compiling sql', color: 'primary' as const, tooltip: undefined }

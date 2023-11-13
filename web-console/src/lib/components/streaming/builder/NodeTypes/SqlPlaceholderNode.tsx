@@ -45,9 +45,7 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
           disableCloseOnSelect
           options={programs.map(p => p.name)}
           getOptionLabel={option => option}
-          renderInput={params => (
-            <TextField {...params} className='nodrag' label='Program' placeholder='Select SQL...' />
-          )}
+          renderInput={params => <TextField {...params} className='nodrag' label='Program' placeholder='Select SQL…' />}
         />
       </CardContent>
     </PlaceholderNode>

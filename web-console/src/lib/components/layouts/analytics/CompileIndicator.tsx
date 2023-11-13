@@ -19,7 +19,7 @@ export interface CompileIndicatorProps {
 
 export const CompileIndicator = (props: CompileIndicatorProps) => {
   const labelSuccess = 'Success'
-  const labelCompiling = 'Compiling ...'
+  const labelCompiling = 'Compiling …'
   const labelPending = 'In queue'
 
   const loadingIcon = <CircularProgress color='inherit' size='1rem' />
