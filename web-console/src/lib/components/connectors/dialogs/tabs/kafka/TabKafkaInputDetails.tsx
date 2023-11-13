@@ -77,7 +77,7 @@ const TabKafkaInputDetails = () => {
                   }
                 }}
                 renderInput={params => (
-                  <TextField {...params} inputRef={ref} label='topics' placeholder='Add topic, press Enter to add...' />
+                  <TextField {...params} inputRef={ref} label='topics' placeholder='Add topic, press Enter to add…' />
                 )}
               />
             )}

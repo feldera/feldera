@@ -211,6 +211,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           return (
             <Box
               sx={{
+                width: '100%',
                 height: '200%',
                 display: 'flex',
                 px: 2,
@@ -300,14 +301,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           </Card>
         </Grid>
         <Grid item xs={5}>
-          <Paper>
-            <AnalyticsPipelineTput metrics={metrics.global} />
-          </Paper>
+          <AnalyticsPipelineTput metrics={metrics.global} />
         </Grid>
         <Grid item xs={3}>
-          <Paper>
-            <PipelineMemoryGraph metrics={metrics.global} />
-          </Paper>
+          <PipelineMemoryGraph metrics={metrics.global} />
         </Grid>
         <Grid item xs={12}>
           {/* className referenced by webui-tester */}

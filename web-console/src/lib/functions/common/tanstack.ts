@@ -1,3 +1,8 @@
+/**
+ * This file contains utility functions that simplify usage of Tanstack Query
+ * in a type-safe way
+ */
+
 import { ApiError } from '$lib/services/manager'
 
 import { InvalidateQueryFilters, QueryClient, QueryFilters, Updater, UseQueryOptions } from '@tanstack/react-query'
@@ -8,8 +13,17 @@ type Arguments<F extends FunctionType> = F extends (...args: infer A) => any ? A
 type QueryType<U extends Record<string, FunctionType>, P extends keyof U> = {
   queryKey: readonly unknown[]
   queryFn: () => ReturnType<U[P]>
-} & UseQueryOptions<Awaited<ReturnType<U[P]>>, ApiError, Awaited<ReturnType<U[P]>>, readonly unknown[]> // Pick<UseQueryOptions<ReturnType<U[P]>, ApiError, Awaited<ReturnType<U[P]>>, readonly unknown[]>, 'onError'>
+} & UseQueryOptions<Awaited<ReturnType<U[P]>>, ApiError, Awaited<ReturnType<U[P]>>, readonly unknown[]>
 
+/**
+ * Construct a set of query objects with queryKey and queryFn,
+ * bound to the same names as the fields of an argument object
+ *
+ * Fields of source object become a prefix for a corresponding queryKey
+ * Functions' arguments are prepended as-is in a list to the queryKey
+ * @param source
+ * @returns
+ */
 export const mkQuery = <U extends Record<string, FunctionType>>(
   source: U
 ): { [P in keyof U]: (...args: Arguments<U[P]>) => QueryType<U, P> } =>
@@ -19,7 +33,7 @@ export const mkQuery = <U extends Record<string, FunctionType>>(
         key,
         (...args: unknown[]) => {
           return {
-            queryKey: [key, ...args], // key + '/' + args.map(String).join('/'),
+            queryKey: [key, ...args],
             queryFn: () => value(...args)
           }
         }

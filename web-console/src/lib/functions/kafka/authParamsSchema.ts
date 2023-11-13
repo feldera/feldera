@@ -156,15 +156,20 @@ export const defaultUiAuthParams = {
   sasl_oauthbearer_method: 'default'
 } as KafkaAuthSchema
 
-export const parseAuthParams = (config: Record<string, unknown>) => ({
-  ...defaultUiAuthParams,
-  ...va.parse(
-    authParamsSchema,
-    Object.fromEntries(
-      Object.entries(config).map(([k, v]) => [
-        k.replace('.', '_'),
-        ['true', 'false'].includes(v as string) ? Boolean(v) : v
-      ])
+export const parseAuthParams = (config: Record<string, unknown>) => {
+  if (typeof config['security.protocol'] === 'string') {
+    config['security.protocol'] = config['security.protocol'].toUpperCase()
+  }
+  return {
+    ...defaultUiAuthParams,
+    ...va.parse(
+      authParamsSchema,
+      Object.fromEntries(
+        Object.entries(config).map(([k, v]) => [
+          k.replace('.', '_'),
+          ['true', 'false'].includes(v as string) ? Boolean(v) : v
+        ])
+      )
     )
-  )
-})
+  }
+}

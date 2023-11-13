@@ -41,13 +41,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 const stateToSaveLabel = (state: SaveIndicatorState): string =>
   match(state)
     .with('isModified', () => {
-      return 'Saving ...'
+      return 'Saving …'
     })
     .with('isDebouncing', () => {
-      return 'Saving ...'
+      return 'Saving …'
     })
     .with('isSaving', () => {
-      return 'Saving ...'
+      return 'Saving …'
     })
     .with('isUpToDate', () => {
       return 'Saved'
@@ -155,6 +155,7 @@ const PipelineBuilderPage = (props: {
 
           setProject(project)
           replacePlaceholder(project)
+
           // Update handles of SQL Program node when program is recompiled, hide stale connection edges
           setNodes(nodes =>
             replaceElement(nodes, node => {
@@ -266,7 +267,7 @@ const PipelineBuilderPage = (props: {
     const connectors = getEdges().map(edge => {
       const source = getNode(edge.source)
       const target = getNode(edge.target)
-      const connectsInput = 'sql' !== source?.id
+      const connectsInput = source?.id !== 'sql'
       const connector = connectsInput ? source : target
       invariant(connector, "Couldn't extract attached connector from edge")
       invariant('ac' in connector.data, 'Wrong connector node data')

@@ -17,7 +17,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
     pipelineId: props.descriptor.pipeline_id,
     status: props.state.current_status,
     refetchMs: 3000,
-    keepMs: 10000
+    keepMs: 30000
   })
 
   const totalProcessed = discreteDerivative(metrics.global, m => m.total_processed_records).filter(x => x != 0)
@@ -51,33 +51,37 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
   const theme = useTheme()
 
   return (
-    <Box>
-      <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center' }}>
+    <Box sx={item.active ? { border: 1, borderColor: alpha(theme.palette.grey[500], 0.5), borderRadius: 1.5 } : {}}>
+      <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', pr: 2, pt: 1 }}>
+        {item.active && (
+          <Box sx={{ display: 'flex', position: 'relative', alignItems: 'center' }}>
+            <ReactApexcharts type='line' width={80} height={40} options={props.apexOptions} series={series} />
+          </Box>
+        )}
         <Box
           sx={{
             mr: 5,
             flexGrow: 1,
             display: 'flex',
             flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between'
+            alignItems: 'center'
           }}
         >
           <Box sx={{ mr: 2, display: 'flex', flexDirection: 'column' }}>
             <Typography sx={{ mb: 0.5, fontWeight: 500 }}>
               <Link href={'/streaming/management/#' + props.descriptor.pipeline_id}>{item.name}</Link>
             </Typography>
-            <Typography variant='body2' sx={{ color: 'text.disabled' }}>
+            <Typography variant='body2' sx={{ wordBreak: 'break-word', color: 'text.disabled' }}>
               {item.description}
             </Typography>
           </Box>
-          {item.active && (
-            <Box sx={{ display: 'flex', position: 'relative', alignItems: 'center' }}>
-              <ReactApexcharts type='line' width={80} height={40} options={props.apexOptions} series={series} />
-            </Box>
-          )}
         </Box>
-
+        <Box
+          sx={{
+            flexGrow: 1,
+            display: 'flex'
+          }}
+        ></Box>
         {item.active ? (
           <>
             <Button
@@ -117,10 +121,10 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
               backgroundColor: alpha(theme.palette.warning.main, 0.5)
             }}
           >
-            <Typography variant='subtitle2' component='span'>
+            <Typography color={'gray'} component={'span'}>
               connector errors:{' '}
             </Typography>
-            {format(errorsNumber, '0,0')}
+            <Typography component={'span'}>{format(errorsNumber, '0,0')}</Typography>
           </Box>
         ) : (
           <Box

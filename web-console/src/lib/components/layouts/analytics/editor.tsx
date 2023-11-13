@@ -101,13 +101,13 @@ const stateToEditorLabel = (state: SaveIndicatorState): string =>
       return 'New Project'
     })
     .with('isDebouncing' as const, () => {
-      return 'Saving ...'
+      return 'Saving …'
     })
     .with('isModified' as const, () => {
-      return 'Saving ...'
+      return 'Saving …'
     })
     .with('isSaving' as const, () => {
-      return 'Saving ...'
+      return 'Saving …'
     })
     .with('isUpToDate' as const, () => {
       // If you change this string, adjust the webui-tester too
