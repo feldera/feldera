@@ -14,6 +14,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [SQL] Fix bugs in parsing of KEY and FOREIGN KEY constraints
 - Use better defaults for running the pipeline-manager (#994)
   ([#1011](https://github.com/feldera/feldera/pull/1011))
+- WebConsole: Fix unable to delete orphaned output connectors,
+  SQL views in Pipeline Builder do not get removed when removed from the program
+  ([#854](https://github.com/feldera/feldera/issues/854))
+- WebConsole: Replace youtube link on Webconsole UI home page
+  ([#935](https://github.com/feldera/feldera/issues/935))
+- WebConsole: Kafka authentication protocol security.protocol field
+  ([#963](https://github.com/feldera/feldera/issues/963))
+- WebConsole: Differentiate compiling and pending in web-console editor
+  ([#695](https://github.com/feldera/feldera/issues/695))
+- WebConsole: Report number of parsing errors per connector
+  ([#776](https://github.com/feldera/feldera/issues/776))
+- WebConsole: Table browser doesn't always correctly apply updates - no longer reproduces
+  ([#635](https://github.com/feldera/feldera/issues/635))
+- WebConsole: MUI DataGridPro fails to load data on Next.js > 13.4.8-canary.9 - no longer reproduces
+  ([#494](https://github.com/feldera/feldera/issues/494))
+- WebConsole: Spacing for SQL icon is off in pipeline view
+  ([#932](https://github.com/feldera/feldera/issues/932))
+- WebConsole: Pipeline failure state in Pipeline Management isn't cleared immediately - no longer reproduces
+  ([#1012](https://github.com/feldera/feldera/issues/1012))
 
 ### Added
 
@@ -68,9 +87,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduce Docker logging noise from Kafka connect and Redpanda.
 - Regression in pipeline shutdown logic
   ([#961](https://github.com/feldera/feldera/pull/961))
-- Fix unable to delete orphaned output connectors,
-  SQL views in Pipeline Builder do not get removed when removed from the program
-  ([#854](https://github.com/feldera/feldera/issues/854))
 
 ## [0.2.0] - 2023-10-24
 
