@@ -23,5 +23,26 @@ a literal must have an even number of characters, and all characters
 must be legal hexadecimal digits.  A multi-part literal can be
 specified as the concatenation of multiple literals, e.g.: `x'AB' 'CD'`.
 
-## Binary string operations
+## Binary value operations
 
+Binary values support bitwise operations, although there is no syntax
+yet to express these operations.  They can be aggregated using the
+aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
+
+<table>
+  <tr>
+    <th>Operation</th>
+    <th>Description</th>
+    <th>Examples</th>
+  </tr>
+  <tr>
+    <td><code>||</code></td>
+    <td>Concatenation of binary values</td>
+    <td><code>x'ab' || x'cd'</code> => <code>x'ABCD'</code></td>
+  </tr>
+  <tr>
+    <td><code>TO_HEX</code>(binary)</td>
+    <td>Generate a `VARCHAR` string describing the value in hexadecimal</td>
+    <td><code>TO_HEX(x'0abc')</code> => <code>'0ABC'</code></td>
+  </tr>
+</table>

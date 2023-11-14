@@ -44,6 +44,7 @@ public class RustSqlRuntimeLibrary {
     private final LinkedHashMap<String, DBSPOpcode> dateFunctions = new LinkedHashMap<>();
     private final LinkedHashMap<String, DBSPOpcode> stringFunctions = new LinkedHashMap<>();
     private final LinkedHashMap<String, DBSPOpcode> booleanFunctions = new LinkedHashMap<>();
+    private final LinkedHashMap<String, DBSPOpcode> otherFunctions = new LinkedHashMap<>();
 
     public static final RustSqlRuntimeLibrary INSTANCE = new RustSqlRuntimeLibrary();
 
@@ -69,6 +70,12 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
         this.arithmeticFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
         this.arithmeticFunctions.put("mul_by_ref", DBSPOpcode.MUL_WEIGHT);
+        this.arithmeticFunctions.put("agg_plus", DBSPOpcode.AGG_ADD);
+        this.arithmeticFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
+        this.arithmeticFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
+        this.arithmeticFunctions.put("agg_and", DBSPOpcode.AGG_AND);
+        this.arithmeticFunctions.put("agg_or", DBSPOpcode.AGG_OR);
+        this.arithmeticFunctions.put("agg_xor", DBSPOpcode.AGG_XOR);
 
         this.dateFunctions.put("plus", DBSPOpcode.ADD);
         this.dateFunctions.put("minus", DBSPOpcode.SUB);
@@ -106,6 +113,12 @@ public class RustSqlRuntimeLibrary {
         this.booleanFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
         this.booleanFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
         this.booleanFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
+
+        // These are defined for VARBIT types
+        this.otherFunctions.put("agg_and", DBSPOpcode.AGG_AND);
+        this.otherFunctions.put("agg_or", DBSPOpcode.AGG_OR);
+        this.otherFunctions.put("agg_xor", DBSPOpcode.AGG_XOR);
+        this.otherFunctions.put("concat", DBSPOpcode.CONCAT);
     }
 
     public static class FunctionDescription {
@@ -129,7 +142,6 @@ public class RustSqlRuntimeLibrary {
     public FunctionDescription getImplementation(
             DBSPOpcode opcode, @Nullable DBSPType expectedReturnType,
             DBSPType ltype, @Nullable DBSPType rtype) {
-        boolean isAggregate = opcode.isAggregate;
         if (ltype.is(DBSPTypeAny.class) || (rtype != null && rtype.is(DBSPTypeAny.class)))
             throw new InternalCompilerError("Unexpected type _ for operand of " + opcode, ltype);
         HashMap<String, DBSPOpcode> map = null;
@@ -152,6 +164,8 @@ public class RustSqlRuntimeLibrary {
             map = this.arithmeticFunctions;
         } else if (ltype.is(DBSPTypeString.class)) {
             map = this.stringFunctions;
+        } else {
+            map = this.otherFunctions;
         }
         if (rtype != null && rtype.is(IsDateType.class)) {
             if (opcode.equals(DBSPOpcode.MUL)) {
@@ -166,18 +180,17 @@ public class RustSqlRuntimeLibrary {
         if (opcode.equals(DBSPOpcode.DIV))
             // Always, for division by 0
             returnType = returnType.setMayBeNull(true);
-        if (opcode.equals(DBSPOpcode.IS_TRUE) || opcode.equals(DBSPOpcode.IS_NOT_TRUE) ||
-                opcode.equals(DBSPOpcode.IS_FALSE) || opcode.equals(DBSPOpcode.IS_NOT_FALSE) ||
-                opcode.equals(DBSPOpcode.IS_DISTINCT) || opcode.equals(DBSPOpcode.IS_NOT_DISTINCT))
+        if (opcode == DBSPOpcode.IS_TRUE || opcode == DBSPOpcode.IS_NOT_TRUE ||
+                opcode == DBSPOpcode.IS_FALSE || opcode == DBSPOpcode.IS_NOT_FALSE ||
+                opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT)
             returnType = new DBSPTypeBool(CalciteObject.EMPTY, false);
+        if (opcode == DBSPOpcode.CONCAT)
+            returnType = expectedReturnType;
         String suffixl = ltype.nullableSuffix();
         String suffixr = rtype == null ? "" : rtype.nullableSuffix();
         String tsuffixl;
         String tsuffixr;
-        if (isAggregate) {
-            tsuffixl = "";
-            tsuffixr = "";
-        } else if (opcode.equals(DBSPOpcode.IS_DISTINCT) || opcode.equals(DBSPOpcode.IS_NOT_DISTINCT)) {
+        if (opcode.equals(DBSPOpcode.IS_DISTINCT) || opcode.equals(DBSPOpcode.IS_NOT_DISTINCT)) {
             tsuffixl = "";
             tsuffixr = "";
             suffixl = "";

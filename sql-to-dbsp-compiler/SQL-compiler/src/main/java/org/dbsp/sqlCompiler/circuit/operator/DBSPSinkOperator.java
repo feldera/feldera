@@ -27,7 +27,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.util.IIndentStream;
 
@@ -73,8 +72,7 @@ public class DBSPSinkOperator extends DBSPOperator {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        this.writeComments(builder, this.query);
-        return this.writeComments(builder)
+        return this.writeComments(builder, this.query)
                 .append("let ")
                 .append(this.getName())
                 .append(": ")

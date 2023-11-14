@@ -25,6 +25,7 @@ rust_decimal = { version = "1.29" }
 serde_json = { version = "1.0.89" }
 chrono = { version = "0.4.31" }
 rkyv = "0.7.42"
+num = "0.4.1"
 
 [dev-dependencies]
 hashing = { path = "../lib/hashing" }

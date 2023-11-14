@@ -37,7 +37,7 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
-import static org.dbsp.sqlCompiler.compiler.BaseSQLTests.testFilePath;
+import static org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests.testFilePath;
 
 /**
  * Tests that invoke the CalciteToDBSPCompiler.

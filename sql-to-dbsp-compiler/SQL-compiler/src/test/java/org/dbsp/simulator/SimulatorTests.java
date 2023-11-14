@@ -4,7 +4,6 @@ import org.dbsp.simulator.types.IntegerWeight;
 import org.dbsp.simulator.types.StringSqlType;
 import org.dbsp.simulator.values.IntegerSqlValue;
 import org.dbsp.simulator.values.SqlTuple;
-import org.dbsp.simulator.ZSet;
 import org.dbsp.simulator.values.StringSqlValue;
 import org.junit.Assert;
 import org.junit.Test;

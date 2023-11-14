@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+pub mod aggregates;
 pub mod binary;
 pub mod casts;
 pub mod geopoint;
@@ -15,7 +16,7 @@ use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::ops::{Add, Index};
+use std::ops::Index;
 
 #[derive(Clone)]
 pub struct DefaultOptSemigroup<T>(PhantomData<T>);
@@ -289,7 +290,7 @@ macro_rules! some_existing_operator {
             pub fn [<$func_name _ $short_name N _ $short_name N>]( arg0: Option<$arg_type>, arg1: Option<$arg_type> ) -> Option<$ret_type> {
                 let arg0 = arg0?;
                 let arg1 = arg1?;
-                Some([<$func_name _$short_name _ $short_name>](arg0, arg1))
+                Some([<$func_name _ $short_name _ $short_name>](arg0, arg1))
             }
 
             #[inline(always)]
@@ -497,212 +498,7 @@ pub fn indicator<T>(value: Option<T>) -> i64 {
     }
 }
 
-pub fn agg_max_N_N<T>(left: Option<T>, right: Option<T>) -> Option<T>
-where
-    T: Ord + Copy,
-{
-    match (left, right) {
-        (None, _) => right,
-        (_, None) => left,
-        (Some(x), Some(y)) => Some(x.max(y)),
-    }
-}
-
-pub fn agg_min_N_N<T>(left: Option<T>, right: Option<T>) -> Option<T>
-where
-    T: Ord + Copy,
-{
-    match (left, right) {
-        (None, _) => right,
-        (_, None) => left,
-        (Some(x), Some(y)) => Some(x.min(y)),
-    }
-}
-
-pub fn agg_max_N_<T>(left: Option<T>, right: T) -> Option<T>
-where
-    T: Ord + Copy,
-{
-    match (left, right) {
-        (None, _) => Some(right),
-        (Some(x), y) => Some(x.max(y)),
-    }
-}
-
-pub fn agg_min_N_<T>(left: Option<T>, right: T) -> Option<T>
-where
-    T: Ord + Copy,
-{
-    match (left, right) {
-        (None, _) => Some(right),
-        (Some(x), y) => Some(x.min(y)),
-    }
-}
-
-pub fn agg_max__<T>(left: T, right: T) -> T
-where
-    T: Ord + Copy,
-{
-    left.max(right)
-}
-
-pub fn agg_min__<T>(left: T, right: T) -> T
-where
-    T: Ord + Copy,
-{
-    left.min(right)
-}
-
-pub fn agg_plus_N_N<T>(left: Option<T>, right: Option<T>) -> Option<T>
-where
-    T: Add<T, Output = T> + Copy,
-{
-    match (left, right) {
-        (None, _) => right,
-        (_, None) => left,
-        (Some(x), Some(y)) => Some(x + y),
-    }
-}
-
-pub fn agg_plus_N_<T>(left: Option<T>, right: T) -> Option<T>
-where
-    T: Add<T, Output = T> + Copy,
-{
-    match (left, right) {
-        (None, _) => Some(right),
-        (Some(x), y) => Some(x + y),
-    }
-}
-
-pub fn agg_plus__N<T>(left: T, right: Option<T>) -> Option<T>
-where
-    T: Add<T, Output = T> + Copy,
-{
-    match (left, right) {
-        (_, None) => Some(left),
-        (x, Some(y)) => Some(x + y),
-    }
-}
-
-pub fn agg_plus__<T>(left: T, right: T) -> T
-where
-    T: Add<T, Output = T> + Copy,
-{
-    left + right
-}
-
-pub fn agg_max_conditional_N_N<T>(left: Option<T>, right: Option<T>, predicate: bool) -> Option<T>
-where
-    T: Ord + Copy,
-{
-    match (left, right, predicate) {
-        (_, _, false) => left,
-        (None, _, _) => right,
-        (_, None, _) => left,
-        (Some(x), Some(y), _) => Some(x.max(y)),
-    }
-}
-
-pub fn agg_min_conditional_N_N<T>(left: Option<T>, right: Option<T>, predicate: bool) -> Option<T>
-where
-    T: Ord + Copy,
-{
-    match (left, right, predicate) {
-        (_, _, false) => left,
-        (None, _, _) => right,
-        (_, None, _) => left,
-        (Some(x), Some(y), _) => Some(x.min(y)),
-    }
-}
-
-pub fn agg_max_conditional_N_<T>(left: Option<T>, right: T, predicate: bool) -> Option<T>
-where
-    T: Ord + Copy,
-{
-    match (left, right, predicate) {
-        (_, _, false) => left,
-        (None, _, _) => Some(right),
-        (Some(x), y, _) => Some(x.max(y)),
-    }
-}
-
-pub fn agg_min_conditional_N_<T>(left: Option<T>, right: T, predicate: bool) -> Option<T>
-where
-    T: Ord + Copy,
-{
-    match (left, right, predicate) {
-        (_, _, false) => left,
-        (None, _, _) => Some(right),
-        (Some(x), y, _) => Some(x.min(y)),
-    }
-}
-
-pub fn agg_max_conditional__<T>(left: T, right: T, predicate: bool) -> T
-where
-    T: Ord + Copy,
-{
-    if predicate {
-        left.max(right)
-    } else {
-        left
-    }
-}
-
-pub fn agg_min_conditional__<T>(left: T, right: T, predicate: bool) -> T
-where
-    T: Ord + Copy,
-{
-    if predicate {
-        left.min(right)
-    } else {
-        left
-    }
-}
-
-pub fn agg_plus_conditional_N_N<T>(left: Option<T>, right: Option<T>, predicate: bool) -> Option<T>
-where
-    T: Add<T, Output = T> + Copy,
-{
-    match (left, right, predicate) {
-        (_, _, false) => left,
-        (None, _, _) => right,
-        (_, None, _) => left,
-        (Some(x), Some(y), _) => Some(x + y),
-    }
-}
-
-pub fn agg_plus_conditional_N_<T>(left: Option<T>, right: T, predicate: bool) -> Option<T>
-where
-    T: Add<T, Output = T> + Copy,
-{
-    match (left, right, predicate) {
-        (_, _, false) => left,
-        (None, _, _) => Some(right),
-        (Some(x), y, _) => Some(x + y),
-    }
-}
-
-pub fn agg_plus_conditional__N<T>(left: T, right: Option<T>, predicate: bool) -> Option<T>
-where
-    T: Add<T, Output = T> + Copy,
-{
-    match (left, right, predicate) {
-        (_, _, false) => Some(left),
-        (_, None, _) => Some(left),
-        (x, Some(y), _) => Some(x + y),
-    }
-}
-
-pub fn agg_plus_conditional__<T>(left: T, right: T, predicate: bool) -> T
-where
-    T: Add<T, Output = T> + Copy,
-{
-    if predicate {
-        left + right
-    } else {
-        left
-    }
-}
+//////////////////////////////////////////
 
 #[inline(always)]
 pub fn abs_i8(left: i8) -> i8 {

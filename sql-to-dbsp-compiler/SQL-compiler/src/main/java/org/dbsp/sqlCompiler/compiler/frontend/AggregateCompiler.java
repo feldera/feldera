@@ -137,6 +137,38 @@ public class AggregateCompiler implements ICompilerComponent {
         return this.v.field(this.filterArgument);
     }
 
+    void processBitOp(SqlBitOpAggFunction function) {
+        CalciteObject node = CalciteObject.create(function);
+        DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
+        DBSPExpression increment;
+        DBSPExpression aggregatedValue = this.getAggregatedValue();
+        DBSPVariablePath accumulator = this.nullableResultType.var(this.genAccumulatorName());
+
+        DBSPOpcode opcode;
+        switch (function.getKind()) {
+            case BIT_OR:
+
+                opcode = DBSPOpcode.AGG_OR;
+                break;
+            case BIT_AND:
+                opcode = DBSPOpcode.AGG_AND;
+                break;
+            case BIT_XOR:
+                opcode = DBSPOpcode.AGG_XOR;
+                break;
+            default:
+                throw new UnimplementedException(node);
+        }
+
+        // TODO: some of these are linear
+        increment = this.aggregateOperation(node, opcode,
+                this.nullableResultType, accumulator, aggregatedValue, this.filterArgument());
+        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, USER, "UnimplementedSemigroup",
+                false, accumulator.getType());
+        this.setFoldingFunction(new DBSPAggregate.Implementation(
+                node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, null));
+    }
+
     void processCount(SqlCountAggFunction function) {
         // The result of 'count' can never be null.
         CalciteObject node = CalciteObject.create(function);
@@ -380,6 +412,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 this.process(this.aggFunction, SqlSumAggFunction.class, this::processSum) ||
                 this.process(this.aggFunction, SqlSumEmptyIsZeroAggFunction.class, this::processSumZero) ||
                 this.process(this.aggFunction, SqlAvgAggFunction.class, this::processAvg) ||
+                this.process(this.aggFunction, SqlBitOpAggFunction.class, this::processBitOp) ||
                 this.process(this.aggFunction, SqlSingleValueAggFunction.class, this::processSingle);
         if (!success || this.foldingFunction == null)
             throw new UnimplementedException(CalciteObject.create(this.aggFunction));
