@@ -18,7 +18,6 @@ const validValue = (value: BigNumber | undefined, props: { precision?: number | 
   if (!nonNull(value)) {
     return true
   }
-  console.log('validValue', value, typeof value)
   // Ensure value and defaultValue fit within precision and scale
   return (
     (!nonNull(props.scale) || value.decimalPlaces(props.scale).eq(value)) &&
@@ -62,7 +61,6 @@ export const BigNumberInput = ({
 
     const newValue = new BigNumber(value)
 
-    console.log('handleChange')
     const isInvalidValue =
       (props.min && newValue.lt(props.min)) || (props.max && newValue.gt(props.max)) || !validValue(newValue, props)
     if (isInvalidValue) {

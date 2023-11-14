@@ -8,7 +8,7 @@
 import { nonNull } from '$lib/functions/common/function'
 import assert from 'assert'
 import { BigNumber } from 'bignumber.js'
-import dayjs, { Dayjs } from 'dayjs'
+import dayjs, { Dayjs, isDayjs } from 'dayjs'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 
@@ -43,7 +43,7 @@ export function getValueFormatter(columntype: ColumnType): (value: any, params?:
     })
     .with({ type: 'TIME' }, () => {
       return (value: Dayjs | string) => {
-        if (dayjs.isDayjs(value)) {
+        if (isDayjs(value)) {
           return value.format('HH:mm:ss')
         } else {
           return value
@@ -51,12 +51,12 @@ export function getValueFormatter(columntype: ColumnType): (value: any, params?:
       }
     })
     .with({ type: 'DATE' }, () => {
-      return (value: any) => {
+      return (value: Dayjs | string) => {
         return dayjs(value).format('YYYY-MM-DD')
       }
     })
     .with({ type: 'TIMESTAMP' }, () => {
-      return (value: any) => {
+      return (value: Dayjs | string) => {
         return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
       }
     })
@@ -125,19 +125,15 @@ export function clampToSQL(columntype: ColumnType) {
       // fit the column decimal type.
       return new BigNumber(value).decimalPlaces(columntype.scale, BigNumber.ROUND_HALF_UP)
     })
-    .with({ type: 'TIME' }, () => (value: string) => {
-      invariant(typeof value === 'string', `clampToSQL TIME: ${typeof value} ${value}`)
+    .with({ type: 'TIME' }, () => (value: string | Dayjs) => {
+      invariant(typeof value === 'string' || isDayjs(value), `clampToSQL TIME: ${typeof value} ${value}`)
       // We represent TIME as string for now because the data-grid doesn't
       // have native support for times yet.
       // See also
       return dayjs(value).format('HH:mm:ss')
     })
-    .with({ type: 'DATE' }, { type: 'TIMESTAMP' }, () => (value: string) => {
-      invariant(typeof value === 'string', `clampToSQL DATE,TIMESTAMP: ${typeof value} ${value}`)
-      return dayjs(value)
-    })
-    .with({ type: 'TIMESTAMP' }, () => (value: string) => {
-      invariant(typeof value === 'string', `clampToSQL TIMESTAMP: ${typeof value} ${value}`)
+    .with({ type: 'DATE' }, { type: 'TIMESTAMP' }, () => (value: string | Dayjs) => {
+      invariant(typeof value === 'string' || isDayjs(value), `clampToSQL DATE,TIMESTAMP: ${typeof value} ${value}`)
       return dayjs(value)
     })
     .with({ type: 'ARRAY' }, () => (value: ColumnTypeJS[]): ColumnTypeJS[] => {
