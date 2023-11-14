@@ -1,9 +1,13 @@
-from typing import Any, Dict, List, Type, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar, Union
 
 from attrs import define, field
 
 from ..models.kafka_log_level import KafkaLogLevel
 from ..types import UNSET, Unset
+
+if TYPE_CHECKING:
+    from ..models.kafka_output_ft_config import KafkaOutputFtConfig
+
 
 T = TypeVar("T", bound="KafkaOutputConfig")
 
@@ -14,6 +18,8 @@ class KafkaOutputConfig:
 
     Attributes:
         topic (str): Topic to write to.
+        fault_tolerance (Union[Unset, None, KafkaOutputFtConfig]): Fault tolerance configuration for Kafka output
+            connector.
         initialization_timeout_secs (Union[Unset, int]): Maximum timeout in seconds to wait for the endpoint to connect
             to
             a Kafka broker.
@@ -33,6 +39,7 @@ class KafkaOutputConfig:
     """
 
     topic: str
+    fault_tolerance: Union[Unset, None, "KafkaOutputFtConfig"] = UNSET
     initialization_timeout_secs: Union[Unset, int] = UNSET
     log_level: Union[Unset, None, KafkaLogLevel] = UNSET
     max_inflight_messages: Union[Unset, int] = UNSET
@@ -40,6 +47,10 @@ class KafkaOutputConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         topic = self.topic
+        fault_tolerance: Union[Unset, None, Dict[str, Any]] = UNSET
+        if not isinstance(self.fault_tolerance, Unset):
+            fault_tolerance = self.fault_tolerance.to_dict() if self.fault_tolerance else None
+
         initialization_timeout_secs = self.initialization_timeout_secs
         log_level: Union[Unset, None, str] = UNSET
         if not isinstance(self.log_level, Unset):
@@ -54,6 +65,8 @@ class KafkaOutputConfig:
                 "topic": topic,
             }
         )
+        if fault_tolerance is not UNSET:
+            field_dict["fault_tolerance"] = fault_tolerance
         if initialization_timeout_secs is not UNSET:
             field_dict["initialization_timeout_secs"] = initialization_timeout_secs
         if log_level is not UNSET:
@@ -65,8 +78,19 @@ class KafkaOutputConfig:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
+        from ..models.kafka_output_ft_config import KafkaOutputFtConfig
+
         d = src_dict.copy()
         topic = d.pop("topic")
+
+        _fault_tolerance = d.pop("fault_tolerance", UNSET)
+        fault_tolerance: Union[Unset, None, KafkaOutputFtConfig]
+        if _fault_tolerance is None:
+            fault_tolerance = None
+        elif isinstance(_fault_tolerance, Unset):
+            fault_tolerance = UNSET
+        else:
+            fault_tolerance = KafkaOutputFtConfig.from_dict(_fault_tolerance)
 
         initialization_timeout_secs = d.pop("initialization_timeout_secs", UNSET)
 
@@ -83,6 +107,7 @@ class KafkaOutputConfig:
 
         kafka_output_config = cls(
             topic=topic,
+            fault_tolerance=fault_tolerance,
             initialization_timeout_secs=initialization_timeout_secs,
             log_level=log_level,
             max_inflight_messages=max_inflight_messages,

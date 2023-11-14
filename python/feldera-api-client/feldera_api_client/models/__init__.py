@@ -25,8 +25,14 @@ from .json_flavor import JsonFlavor
 from .json_parser_config import JsonParserConfig
 from .json_update_format import JsonUpdateFormat
 from .kafka_input_config import KafkaInputConfig
+from .kafka_input_ft_config import KafkaInputFtConfig
+from .kafka_input_ft_config_consumer_options import KafkaInputFtConfigConsumerOptions
+from .kafka_input_ft_config_producer_options import KafkaInputFtConfigProducerOptions
 from .kafka_log_level import KafkaLogLevel
 from .kafka_output_config import KafkaOutputConfig
+from .kafka_output_ft_config import KafkaOutputFtConfig
+from .kafka_output_ft_config_consumer_options import KafkaOutputFtConfigConsumerOptions
+from .kafka_output_ft_config_producer_options import KafkaOutputFtConfigProducerOptions
 from .neighborhood_query import NeighborhoodQuery
 from .neighborhood_query_anchor import NeighborhoodQueryAnchor
 from .new_connector_request import NewConnectorRequest
@@ -99,8 +105,14 @@ __all__ = (
     "JsonParserConfig",
     "JsonUpdateFormat",
     "KafkaInputConfig",
+    "KafkaInputFtConfig",
+    "KafkaInputFtConfigConsumerOptions",
+    "KafkaInputFtConfigProducerOptions",
     "KafkaLogLevel",
     "KafkaOutputConfig",
+    "KafkaOutputFtConfig",
+    "KafkaOutputFtConfigConsumerOptions",
+    "KafkaOutputFtConfigProducerOptions",
     "NeighborhoodQuery",
     "NeighborhoodQueryAnchor",
     "NewConnectorRequest",

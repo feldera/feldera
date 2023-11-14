@@ -1,10 +1,10 @@
 use crate::{
     transport::{kafka::DeferredLogging, Step},
-    AsyncErrorCallback, OutputEndpoint, OutputEndpointConfig, OutputTransport,
+    AsyncErrorCallback, OutputEndpoint,
 };
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use log::{debug, info, warn};
-use pipeline_types::transport::durable_kafka::KafkaDurableOutputConfig;
+use pipeline_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::{
     config::FromClientConfigAndContext,
     consumer::BaseConsumer,
@@ -15,7 +15,6 @@ use rdkafka::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    borrow::Cow,
     cmp::max,
     sync::{Condvar, Mutex, RwLock},
     time::Duration,
@@ -29,33 +28,6 @@ const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
 /// plus this overhead must not exceed `message.max.bytes`.
 // This value was established empirically.
 const MAX_MESSAGE_OVERHEAD: usize = 64;
-
-/// [`OutputTransport`] implementation that durably writes data to a Kafka
-/// topic.
-///
-/// This output transport is only available if the crate is configured with
-/// `with-kafka` feature.
-///
-/// The output transport factory gives this transport the name `durable_kafka`.
-pub struct KafkaDurableOutputTransport;
-
-impl OutputTransport for KafkaDurableOutputTransport {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("durable_kafka")
-    }
-
-    /// Creates a new [`OutputEndpoint`] fpor writing to a Kafka topic,
-    /// interpreting `config` as a [`KafkaDurableOutputConfig`].
-    ///
-    /// See [`OutputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(&self, config: &OutputEndpointConfig) -> AnyResult<Box<dyn OutputEndpoint>> {
-        let config =
-            KafkaDurableOutputConfig::deserialize(&config.connector_config.transport.config)?;
-        let ep = KafkaOutputEndpoint::new(config)?;
-
-        Ok(Box::new(ep))
-    }
-}
 
 /// State of the `KafkaOutputEndpoint`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -102,7 +74,7 @@ impl OutputPosition {
     }
 }
 
-struct KafkaOutputEndpoint {
+pub struct KafkaOutputEndpoint {
     kafka_producer: ThreadedProducer<DataProducerContext>,
     topic: String,
     next_partition: usize,
@@ -113,8 +85,14 @@ struct KafkaOutputEndpoint {
 }
 
 impl KafkaOutputEndpoint {
-    fn new(config: KafkaDurableOutputConfig) -> AnyResult<Self> {
-        let mut common: CommonConfig = (&config.common).try_into()?;
+    pub fn new(config: KafkaOutputConfig) -> AnyResult<Self> {
+        let ft = config.fault_tolerance.as_ref().unwrap();
+        let mut common = CommonConfig::new(
+            &config.kafka_options,
+            &ft.consumer_options,
+            &ft.producer_options,
+            config.log_level,
+        )?;
         common
             .producer_config
             .set("transactional.id", &config.topic);
@@ -148,8 +126,9 @@ impl KafkaOutputEndpoint {
             .context()
             .deferred_logging
             .with_deferred_logging(|| {
-                kafka_producer
-                    .init_transactions(Duration::from_secs(config.initialization_timeout_secs))
+                kafka_producer.init_transactions(Duration::from_secs(
+                    config.initialization_timeout_secs.into(),
+                ))
             })?;
 
         // Read the number of partitions and the next step number.  We do this

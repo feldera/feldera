@@ -58,11 +58,6 @@ pub use url::UrlInputTransport;
 #[cfg(feature = "with-kafka")]
 pub use kafka::{KafkaInputTransport, KafkaOutputTransport};
 
-#[cfg(feature = "with-kafka")]
-use durable_kafka::{KafkaDurableInputTransport, KafkaDurableOutputTransport};
-
-pub mod durable_kafka;
-
 /// Step number for durable input and output.
 ///
 /// A "durable" data transport divides input into steps numbered sequentially.
@@ -94,11 +89,6 @@ static INPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn InputTransport>>> = 
             "kafka",
             Box::new(KafkaInputTransport) as Box<dyn InputTransport>,
         ),
-        #[cfg(feature = "with-kafka")]
-        (
-            "durable_kafka",
-            Box::new(KafkaDurableInputTransport) as Box<dyn InputTransport>,
-        ),
     ])
 });
 
@@ -113,11 +103,6 @@ static OUTPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn OutputTransport>>> 
         (
             "kafka",
             Box::new(KafkaOutputTransport) as Box<dyn OutputTransport>,
-        ),
-        #[cfg(feature = "with-kafka")]
-        (
-            "durable_kafka",
-            Box::new(KafkaDurableOutputTransport) as Box<dyn OutputTransport>,
         ),
     ])
 });
