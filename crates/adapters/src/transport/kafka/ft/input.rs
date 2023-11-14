@@ -1,12 +1,12 @@
 use super::{count_partitions_in_topic, Ctp, DataConsumerContext, ErrorHandler, POLL_TIMEOUT};
-use crate::transport::durable_kafka::check_fatal_errors;
+use crate::transport::kafka::ft::check_fatal_errors;
 use crate::transport::{InputReader, Step};
-use crate::{InputConsumer, InputEndpoint, InputTransport};
+use crate::{InputConsumer, InputEndpoint};
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use futures::executor::block_on;
 use log::{debug, error, info, warn};
-use pipeline_types::transport::durable_kafka::KafkaDurableInputConfig;
+use pipeline_types::transport::kafka::KafkaInputConfig;
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic};
 use rdkafka::config::{FromClientConfig, FromClientConfigAndContext};
 use rdkafka::consumer::base_consumer::PartitionQueue;
@@ -18,7 +18,6 @@ use rdkafka::{consumer::Consumer, producer::Producer, Message, Offset};
 use rdkafka::{ClientContext, TopicPartitionList};
 use serde::ser::SerializeTuple;
 use serde::{Deserialize, Serialize, Serializer};
-use serde_yaml::Value as YamlValue;
 use std::cmp::{max, Ordering};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -27,7 +26,6 @@ use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::thread::{self};
 use std::time::Duration;
 use std::{
-    borrow::Cow,
     error::Error,
     fmt::Result as FmtResult,
     ops::Range,
@@ -36,31 +34,6 @@ use std::{
 };
 
 use super::CommonConfig;
-
-/// [`InputTransport`] implementation that durably reads data from one or more
-/// Kafka topics.
-///
-/// This input transport is only available if the crate is configured with
-/// `with-kafka` feature.
-///
-/// The input transport factory gives this transport the name `durable_kafka`.
-pub struct KafkaDurableInputTransport;
-
-impl InputTransport for KafkaDurableInputTransport {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("durable_kafka")
-    }
-
-    /// Creates a new [`InputEndpoint`] for reading from Kafka topics,
-    /// interpreting `config` as a [`KafkaDurableInputConfig`].
-    ///
-    /// See [`InputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
-        let config = KafkaDurableInputConfig::deserialize(config)?;
-        let ep = Endpoint::new(config)?;
-        Ok(Box::new(ep))
-    }
-}
 
 /// Validated version of [`KafkaDurableInputConfig`], converted into a
 /// convenient form for internal use.
@@ -85,15 +58,21 @@ struct Config {
     max_step_messages: i64,
 }
 
-impl TryFrom<KafkaDurableInputConfig> for Config {
+impl TryFrom<KafkaInputConfig> for Config {
     type Error = AnyError;
 
-    fn try_from(source: KafkaDurableInputConfig) -> Result<Self, Self::Error> {
-        let max_step_bytes = source.max_step_bytes.unwrap_or(u64::MAX).max(1);
-        let max_step_messages = source.max_step_messages.unwrap_or(u64::MAX).max(1);
+    fn try_from(source: KafkaInputConfig) -> Result<Self, Self::Error> {
+        let ft = source.fault_tolerance.as_ref().unwrap();
+        let max_step_bytes = ft.max_step_bytes.unwrap_or(u64::MAX).max(1);
+        let max_step_messages = ft.max_step_messages.unwrap_or(u64::MAX).max(1);
 
-        let common = CommonConfig::try_from(&source.common)?;
-        let index_suffix = match source.index_suffix {
+        let common = CommonConfig::new(
+            &source.kafka_options,
+            &ft.consumer_options,
+            &ft.producer_options,
+            source.log_level,
+        )?;
+        let index_suffix = match ft.index_suffix {
             Some(ref s) => s.clone(),
             None => "_input-index".into(),
         };
@@ -106,7 +85,7 @@ impl TryFrom<KafkaDurableInputConfig> for Config {
             common,
             data_topics: source.topics.clone(),
             index_suffix,
-            create_missing_index: source.create_missing_index.unwrap_or(true),
+            create_missing_index: ft.create_missing_index.unwrap_or(true),
             max_step_bytes: max_step_bytes.try_into().unwrap_or(usize::MAX),
             max_step_messages: max_step_messages.try_into().unwrap_or(i64::MAX),
         })
@@ -114,10 +93,10 @@ impl TryFrom<KafkaDurableInputConfig> for Config {
 }
 
 /// Durable Kafka input endpoint.
-struct Endpoint(Arc<Config>);
+pub struct Endpoint(Arc<Config>);
 
 impl Endpoint {
-    fn new(config: KafkaDurableInputConfig) -> AnyResult<Self> {
+    pub fn new(config: KafkaInputConfig) -> AnyResult<Self> {
         Ok(Self(Arc::new(config.try_into()?)))
     }
 }

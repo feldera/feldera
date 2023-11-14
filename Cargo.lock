@@ -6328,6 +6328,7 @@ dependencies = [
  "dbsp_adapters",
  "geo",
  "geo-types",
+ "hex",
  "lazy_static",
  "like",
  "num",

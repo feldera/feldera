@@ -1,7 +1,6 @@
-use super::DeferredLogging;
-use crate::transport::kafka::rdkafka_loglevel_from;
+use crate::transport::kafka::{rdkafka_loglevel_from, DeferredLogging};
 use crate::transport::secret_resolver::MaybeSecret;
-use crate::{AsyncErrorCallback, OutputEndpoint, OutputEndpointConfig, OutputTransport};
+use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use log::debug;
@@ -14,8 +13,7 @@ use rdkafka::{
     types::RDKafkaErrorCode,
     ClientConfig, ClientContext,
 };
-use serde::Deserialize;
-use std::{borrow::Cow, sync::RwLock, time::Duration};
+use std::{sync::RwLock, time::Duration};
 
 const OUTPUT_POLLING_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -25,31 +23,6 @@ const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
 /// plus this overhead must not exceed `message.max.bytes`.
 // This value was established empirically.
 const MAX_MESSAGE_OVERHEAD: usize = 64;
-
-/// [`OutputTransport`] implementation that writes data to a Kafka topic.
-///
-/// This output transport is only available if the crate is configured with
-/// `with-kafka` feature.
-///
-/// The output transport factory gives this transport the name `kafka`.
-pub struct KafkaOutputTransport;
-
-impl OutputTransport for KafkaOutputTransport {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("kafka")
-    }
-
-    /// Creates a new [`OutputEndpoint`] fpor writing to a Kafka topic,
-    /// interpreting `config` as a [`KafkaOutputConfig`].
-    ///
-    /// See [`OutputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(&self, config: &OutputEndpointConfig) -> AnyResult<Box<dyn OutputEndpoint>> {
-        let config = KafkaOutputConfig::deserialize(&config.connector_config.transport.config)?;
-        let ep = KafkaOutputEndpoint::new(config)?;
-
-        Ok(Box::new(ep))
-    }
-}
 
 /// Producer context object used to handle async delivery notifications from
 /// Kafka.
@@ -113,7 +86,7 @@ impl ProducerContext for KafkaOutputContext {
     }
 }
 
-struct KafkaOutputEndpoint {
+pub struct KafkaOutputEndpoint {
     kafka_producer: ThreadedProducer<KafkaOutputContext>,
     config: KafkaOutputConfig,
     parker: Parker,
@@ -121,7 +94,7 @@ struct KafkaOutputEndpoint {
 }
 
 impl KafkaOutputEndpoint {
-    fn new(mut config: KafkaOutputConfig) -> AnyResult<Self> {
+    pub fn new(mut config: KafkaOutputConfig) -> AnyResult<Self> {
         // Create Kafka producer configuration.
         config.validate()?;
         debug!("Starting Kafka output endpoint: {config:?}");

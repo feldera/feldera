@@ -17,9 +17,7 @@ mod output;
 use crate::transport::kafka::refine_kafka_error;
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use log::{debug, error, info, warn};
-use pipeline_types::transport::{
-    durable_kafka::CommonConfigSchema, kafka::default_redpanda_server,
-};
+use pipeline_types::transport::kafka::{default_redpanda_server, KafkaLogLevel};
 use rdkafka::{
     client::Client as KafkaClient,
     config::RDKafkaLogLevel,
@@ -42,10 +40,10 @@ use std::{
 };
 use uuid::Uuid;
 
-pub use input::KafkaDurableInputTransport;
-pub use output::KafkaDurableOutputTransport;
+pub use input::Endpoint as KafkaFtInputEndpoint;
+pub use output::KafkaOutputEndpoint as KafkaFtOutputEndpoint;
 
-use super::kafka::{rdkafka_loglevel_from, DeferredLogging};
+use super::{rdkafka_loglevel_from, DeferredLogging};
 
 #[cfg(test)]
 pub mod test;
@@ -85,14 +83,14 @@ fn set_option_if_missing<'a>(
 ///
 /// `config_name` is used only in the returned error message, if any.
 fn kafka_config(
-    common: &CommonConfigSchema,
+    kafka_options: &BTreeMap<String, String>,
     type_specific_options: &BTreeMap<String, String>,
+    log_level: Option<KafkaLogLevel>,
     overrides: &[(&str, &str)],
     add_group_id: bool,
     config_name: &str,
 ) -> AnyResult<ClientConfig> {
-    let mut settings: BTreeMap<&str, &str> = common
-        .kafka_options
+    let mut settings: BTreeMap<&str, &str> = kafka_options
         .iter()
         .chain(type_specific_options.iter())
         .map(|(o, v)| (o.as_str(), v.as_str()))
@@ -120,7 +118,7 @@ fn kafka_config(
         .iter()
         .map(|(&o, &v)| (String::from(o), String::from(v)))
         .collect();
-    if let Some(log_level) = common.log_level {
+    if let Some(log_level) = log_level {
         config.set_log_level(rdkafka_loglevel_from(log_level));
     }
 
@@ -144,10 +142,13 @@ struct CommonConfig {
     admin_config: ClientConfig,
 }
 
-impl TryFrom<&CommonConfigSchema> for CommonConfig {
-    type Error = AnyError;
-
-    fn try_from(source: &CommonConfigSchema) -> Result<Self, Self::Error> {
+impl CommonConfig {
+    fn new(
+        kafka_options: &BTreeMap<String, String>,
+        consumer_options: &BTreeMap<String, String>,
+        producer_options: &BTreeMap<String, String>,
+        log_level: Option<KafkaLogLevel>,
+    ) -> AnyResult<Self> {
         const CONSUMER_SETTINGS: &[(&str, &str)] = &[
             ("enable.auto.commit", "false"),
             ("enable.auto.offset.store", "false"),
@@ -157,8 +158,9 @@ impl TryFrom<&CommonConfigSchema> for CommonConfig {
             ("fetch.min.bytes", "1"),
         ];
         let mut seekable_consumer_config = kafka_config(
-            source,
-            &source.consumer_options,
+            kafka_options,
+            consumer_options,
+            log_level,
             CONSUMER_SETTINGS,
             true,
             "consumer",
@@ -177,15 +179,23 @@ impl TryFrom<&CommonConfigSchema> for CommonConfig {
             ("linger.ms", "0"),
         ];
         let mut producer_config = kafka_config(
-            source,
-            &source.producer_options,
+            kafka_options,
+            producer_options,
+            log_level,
             PRODUCER_SETTINGS,
             true,
             "producer",
         )?;
         producer_config.remove("group.id");
 
-        let admin_config = kafka_config(source, &BTreeMap::new(), &[], false, "admin")?;
+        let admin_config = kafka_config(
+            kafka_options,
+            &BTreeMap::new(),
+            log_level,
+            &[],
+            false,
+            "admin",
+        )?;
 
         Ok(Self {
             seekable_consumer_config,

@@ -1,7 +1,10 @@
-use super::{refine_kafka_error, DeferredLogging};
 use crate::{
-    transport::{kafka::rdkafka_loglevel_from, secret_resolver::MaybeSecret, InputReader, Step},
-    InputConsumer, InputEndpoint, InputTransport, PipelineState,
+    transport::{
+        kafka::{rdkafka_loglevel_from, refine_kafka_error, DeferredLogging},
+        secret_resolver::MaybeSecret,
+        InputReader, Step,
+    },
+    InputConsumer, InputEndpoint, PipelineState,
 };
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
@@ -15,10 +18,7 @@ use rdkafka::{
     error::{KafkaError, KafkaResult},
     ClientConfig, ClientContext, Message,
 };
-use serde::Deserialize;
-use serde_yaml::Value as YamlValue;
 use std::{
-    borrow::Cow,
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex, Weak,
@@ -33,36 +33,12 @@ const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 // to the worker thread.
 const ERROR_BUFFER_SIZE: usize = 1000;
 
-/// [`InputTransport`] implementation that reads data from one or more
-/// Kafka topics.
-///
-/// This input transport is only available if the crate is configured with
-/// `with-kafka` feature.
-///
-/// The input transport factory gives this transport the name `kafka`.
-pub struct KafkaInputTransport;
-
-impl InputTransport for KafkaInputTransport {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("kafka")
-    }
-
-    /// Creates a new [`InputEndpoint`] for reading from Kafka topics,
-    /// interpreting `config` as a [`KafkaInputConfig`].
-    ///
-    /// See [`InputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
-        let config = KafkaInputConfig::deserialize(config)?;
-        Ok(Box::new(KafkaInputEndpoint::new(config)?))
-    }
-}
-
-struct KafkaInputEndpoint {
+pub struct KafkaInputEndpoint {
     config: Arc<KafkaInputConfig>,
 }
 
 impl KafkaInputEndpoint {
-    fn new(mut config: KafkaInputConfig) -> AnyResult<KafkaInputEndpoint> {
+    pub fn new(mut config: KafkaInputConfig) -> AnyResult<KafkaInputEndpoint> {
         config.validate()?;
         Ok(KafkaInputEndpoint {
             config: Arc::new(config),

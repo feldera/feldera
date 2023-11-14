@@ -96,12 +96,12 @@ outputs:
     test_output:
         stream: test_output1
         transport:
-            name: durable_kafka
+            name: kafka
             config:
-                kafka_options:
-                    bootstrap.servers: localhost:11111
+                bootstrap.servers: localhost:11111
                 topic: durable_end_to_end_test_output_topic
                 max_inflight_messages: 0
+                fault_tolerance: {}
         format:
             name: csv
 "#;
@@ -151,21 +151,23 @@ inputs:
     test_input1:
         stream: test_input1
         transport:
-            name: durable_kafka
+            name: kafka
             config:
                 topics: ["{input_topic}"]
                 log_level: debug
+                fault_tolerance: {{}}
         format:
             name: csv
 outputs:
     test_output2:
         stream: test_output1
         transport:
-            name: durable_kafka
+            name: kafka
             config:
                 topic: {output_topic}
                 max_inflight_messages: 0
                 message.max.bytes: "{message_max_bytes}"
+                fault_tolerance: {{}}
         format:
             name: {format}
             config:
@@ -230,11 +232,12 @@ fn test_empty_input() {
     let mut _kafka_resources =
         KafkaResources::create_topics(&[("empty", 1), ("empty_input-index", 0)]);
 
-    let transport = <dyn InputTransport>::get_transport("durable_kafka").unwrap();
+    let transport = <dyn InputTransport>::get_transport("kafka").unwrap();
 
     let config_str = r#"
 topics: [empty]
 log_level: debug
+fault_tolerance: {{}}
 "#
     .to_string();
 
@@ -304,11 +307,12 @@ fn test_input() {
         r#"
 topics: [{topic}]
 log_level: debug
-max_step_messages: 5
+fault_tolerance:
+    max_step_messages: 5
 "#
     );
 
-    let transport = <dyn InputTransport>::get_transport("durable_kafka").unwrap();
+    let transport = <dyn InputTransport>::get_transport("kafka").unwrap();
 
     let endpoint = transport
         .new_endpoint(&serde_yaml::from_str(&config_str).unwrap())
@@ -551,15 +555,16 @@ fn kafka_output_test(
     // Create topics.
     let _kafka_resources = KafkaResources::create_topics(&[(&output_topic, 1)]);
 
-    let transport = <dyn OutputTransport>::get_transport("durable_kafka").unwrap();
+    let transport = <dyn OutputTransport>::get_transport("kafka").unwrap();
 
     let config_str = format!(
         r#"
 stream: test_output1
 transport:
-    name: durable_kafka
+    name: kafka
     config:
         topic: {output_topic}
+        fault_tolerance: {{}}
 format:
     name: csv
 "#
@@ -582,14 +587,15 @@ format:
 }
 
 fn _test() {
-    let transport = <dyn OutputTransport>::get_transport("durable_kafka").unwrap();
+    let transport = <dyn OutputTransport>::get_transport("kafka").unwrap();
 
     let config_str = r#"
 stream: my_test_stream
 transport:
-    name: durable_kafka
+    name: kafka
     config:
         topic: my_topic
+        fault_tolerance: {{}}
 format:
     name: csv
 "#;
@@ -630,12 +636,12 @@ fn test_durable_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &s
         r#"
 stream: test_input
 transport:
-    name: durable_kafka
+    name: kafka
     config:
-        kafka_options:
-            bootstrap.servers: localhost:11111
+        bootstrap.servers: localhost:11111
         topics: ["{topic1}", "{topic2}"]
         log_level: debug
+        fault_tolerance: {{}}
 format:
     name: csv
 "#
@@ -656,10 +662,11 @@ format:
     let config_str = r#"
 stream: test_input
 transport:
-    name: durable_kafka
+    name: kafka
     config:
         topics: ["this_topic_does_not_exist"]
         log_level: debug
+        fault_tolerance: {}
 format:
     name: csv
 "#;
@@ -678,10 +685,11 @@ format:
         r#"
 stream: test_input
 transport:
-    name: durable_kafka
+    name: kafka
     config:
         topics: [{topic1}, {topic2}]
         log_level: debug
+        fault_tolerance: {{}}
 format:
     name: csv
 "#
