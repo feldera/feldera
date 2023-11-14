@@ -97,4 +97,12 @@ public class VarbinaryTests extends SqlIoTest {
                 " 31393835\t 31393835\t 31393835\n" +
                 " 31393836\t 31393836\t 31393836");
     }
+
+    @Test
+    public void testConcatBinary() {
+        this.q("SELECT x'0a' || x'bc';\n" +
+                "result\n" +
+                "------\n" +
+                " 0abc");
+    }
 }

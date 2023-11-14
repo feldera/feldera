@@ -1,13 +1,13 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 
+use crate::binary::ByteArray;
+use core::ops::Add;
+use dbsp::algebra::{F32, F64};
+use num::PrimInt;
+use rust_decimal::Decimal;
 use std::cmp::Ord;
 use std::marker::Copy;
-use core::ops::Add;
-use num::PrimInt;
-use crate::binary::ByteArray;
-use dbsp::algebra::{F32, F64};
-use rust_decimal::Decimal;
 
 // Macro to create variants of an aggregation function
 // There must exist a function g(left: &T, right: &T) -> T ($base_name = g)
@@ -103,7 +103,6 @@ macro_rules! for_all_numeric_aggregate {
     };
 }
 
-
 pub fn agg_max<T>(left: &T, right: &T) -> T
 where
     T: Ord + Copy,
@@ -136,7 +135,7 @@ for_all_numeric_aggregate!(agg_plus, agg_plus);
 #[inline(always)]
 fn agg_and<T>(left: &T, right: &T) -> T
 where
-    T: PrimInt
+    T: PrimInt,
 {
     *left & *right
 }
@@ -146,17 +145,17 @@ for_all_int_aggregate!(agg_and, agg_and);
 #[inline(always)]
 fn agg_or<T>(left: &T, right: &T) -> T
 where
-    T: PrimInt
+    T: PrimInt,
 {
     *left | *right
 }
 
-for_all_int_aggregate!(agg_or,  agg_or);
+for_all_int_aggregate!(agg_or, agg_or);
 
 #[inline(always)]
 fn agg_xor<T>(left: &T, right: &T) -> T
 where
-    T: PrimInt
+    T: PrimInt,
 {
     *left ^ *right
 }

@@ -138,7 +138,7 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processBitOp(SqlBitOpAggFunction function) {
-        CalciteObject node = new CalciteObject(function);
+        CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
         DBSPExpression increment;
         DBSPExpression aggregatedValue = this.getAggregatedValue();
@@ -147,6 +147,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPOpcode opcode;
         switch (function.getKind()) {
             case BIT_OR:
+
                 opcode = DBSPOpcode.AGG_OR;
                 break;
             case BIT_AND:

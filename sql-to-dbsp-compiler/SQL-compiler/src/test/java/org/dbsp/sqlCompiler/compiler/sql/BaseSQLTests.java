@@ -84,7 +84,7 @@ public class BaseSQLTests {
         testsToRun.clear();
     }
 
-    static File createInputScript(String... contents) throws IOException {
+    public static File createInputScript(String... contents) throws IOException {
         File result = File.createTempFile("script", ".sql", new File(rustDirectory));
         result.deleteOnExit();
         PrintWriter script = new PrintWriter(result, "UTF-8");

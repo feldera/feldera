@@ -245,7 +245,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     }
 
     @SuppressWarnings("unused")
-    public static boolean needCommonType(DBSPType result, DBSPType left, DBSPType right) {
+    public static boolean needCommonType(DBSPOpcode opcode, DBSPType result, DBSPType left, DBSPType right) {
         // Dates can be mixed with other types in a binary operation
         if (left.is(IsDateType.class)) return false;
         if (right.is(IsDateType.class)) return false;
@@ -265,10 +265,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
 
-        if (needCommonType(type, leftType, rightType)) {
+        if (needCommonType(opcode, type, leftType, rightType)) {
             DBSPType commonBase = reduceType(leftType, rightType);
             if (commonBase.is(DBSPTypeNull.class)) {
-                // Result is always NULL.  Perhaps we should give a warning?
+                // Result is always NULL.
                 return DBSPLiteral.none(type);
             }
             if (leftType.code == NULL || !leftType.setMayBeNull(false).sameType(commonBase))

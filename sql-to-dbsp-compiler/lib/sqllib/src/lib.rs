@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+pub mod aggregates;
 pub mod binary;
 pub mod casts;
 pub mod geopoint;
@@ -7,7 +8,6 @@ pub mod interval;
 pub mod operators;
 pub mod string;
 pub mod timestamp;
-pub mod aggregates;
 
 use crate::interval::ShortInterval;
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};

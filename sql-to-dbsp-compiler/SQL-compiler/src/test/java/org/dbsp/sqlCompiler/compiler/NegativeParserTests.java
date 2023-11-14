@@ -2,13 +2,14 @@ package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.junit.Assert;
 import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
 
-public class NegativeParserTests extends BaseSQLTests  {
+public class NegativeParserTests extends BaseSQLTests {
     @Test
     public void validateKey() {
         String ddl =    "create table git_commit (\n" +

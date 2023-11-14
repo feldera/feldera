@@ -72,7 +72,7 @@ public class DBSPSinkOperator extends DBSPOperator {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return this.writeComments(builder)
+        return this.writeComments(builder, this.query)
                 .append("let ")
                 .append(this.getName())
                 .append(": ")

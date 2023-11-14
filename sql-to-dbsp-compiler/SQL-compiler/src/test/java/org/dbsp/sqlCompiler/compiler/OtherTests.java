@@ -228,7 +228,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    let T = T();\n" +
                 "    // DBSPMapOperator 74\n" +
                 "    let stream0: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2))));\n" +
-                "    // DBSPSinkOperator 80\n" +
+                "    // CREATE VIEW `V` AS\n" +
+                "    // SELECT `T`.`COL3`\n" +
+                "    // FROM `T`\n" +
                 "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream0;\n" +
                 "}\n";
         Assert.assertEquals(expected, str);

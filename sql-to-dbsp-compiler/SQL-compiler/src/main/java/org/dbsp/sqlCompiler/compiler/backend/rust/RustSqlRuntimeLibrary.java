@@ -118,6 +118,7 @@ public class RustSqlRuntimeLibrary {
         this.otherFunctions.put("agg_and", DBSPOpcode.AGG_AND);
         this.otherFunctions.put("agg_or", DBSPOpcode.AGG_OR);
         this.otherFunctions.put("agg_xor", DBSPOpcode.AGG_XOR);
+        this.otherFunctions.put("concat", DBSPOpcode.CONCAT);
     }
 
     public static class FunctionDescription {
@@ -179,10 +180,12 @@ public class RustSqlRuntimeLibrary {
         if (opcode.equals(DBSPOpcode.DIV))
             // Always, for division by 0
             returnType = returnType.setMayBeNull(true);
-        if (opcode.equals(DBSPOpcode.IS_TRUE) || opcode.equals(DBSPOpcode.IS_NOT_TRUE) ||
-                opcode.equals(DBSPOpcode.IS_FALSE) || opcode.equals(DBSPOpcode.IS_NOT_FALSE) ||
-                opcode.equals(DBSPOpcode.IS_DISTINCT) || opcode.equals(DBSPOpcode.IS_NOT_DISTINCT))
+        if (opcode == DBSPOpcode.IS_TRUE || opcode == DBSPOpcode.IS_NOT_TRUE ||
+                opcode == DBSPOpcode.IS_FALSE || opcode == DBSPOpcode.IS_NOT_FALSE ||
+                opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT)
             returnType = new DBSPTypeBool(CalciteObject.EMPTY, false);
+        if (opcode == DBSPOpcode.CONCAT)
+            returnType = expectedReturnType;
         String suffixl = ltype.nullableSuffix();
         String suffixr = rtype == null ? "" : rtype.nullableSuffix();
         String tsuffixl;
