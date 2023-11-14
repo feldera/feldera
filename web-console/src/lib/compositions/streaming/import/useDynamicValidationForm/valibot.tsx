@@ -29,13 +29,13 @@ import { valibotResolver } from '@hookform/resolvers/valibot'
  * })
  */
 export const useDynamicValidationForm = <TContext = any,>(
-  props?: Omit<UseFormProps<va.ObjectShape, TContext>, 'resolver'> & {
-    schema?: va.ObjectSchema<va.ObjectShape>
+  props?: Omit<UseFormProps<va.ObjectEntries, TContext>, 'resolver'> & {
+    schema?: va.ObjectSchema<va.ObjectEntries>
   }
 ) => {
-  const [schema, setSchema] = useState<va.ObjectSchema<va.ObjectShape> | null>(props?.schema ?? null)
+  const [schema, setSchema] = useState<va.ObjectSchema<va.ObjectEntries> | null>(props?.schema ?? null)
 
-  const updateSchema = useCallback((newSchema: va.ObjectSchema<va.ObjectShape>) => {
+  const updateSchema = useCallback((newSchema: va.ObjectSchema<va.ObjectEntries>) => {
     setSchema(oldSchema => {
       if (oldSchema) {
         return va.merge([oldSchema, newSchema])
