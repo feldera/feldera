@@ -72,16 +72,20 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
         }
     }
 
-    public DBSPVecLiteral(DBSPExpression... data) {
-        super(CalciteObject.EMPTY, new DBSPTypeVec(data[0].getType(), false), false);
+    public DBSPVecLiteral(boolean mayBeNull, DBSPExpression... data) {
+        super(CalciteObject.EMPTY, new DBSPTypeVec(data[0].getType(), mayBeNull), false);
         this.vecType = this.getType().to(DBSPTypeVec.class);
         this.data = new ArrayList<>();
         for (DBSPExpression e: data) {
             if (!e.getType().sameType(data[0].getType()))
                 throw new InternalCompilerError("Not all values of set have the same type:" +
-                    e.getType() + " vs " + data[0].getType(), this);
+                        e.getType() + " vs " + data[0].getType(), this);
             this.add(e);
         }
+    }
+
+    public DBSPVecLiteral(DBSPExpression... data) {
+       this(false, data);
     }
 
     public DBSPType getElementType() {

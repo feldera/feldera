@@ -843,15 +843,13 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "       NaN |       NaN |                     NaN ");
     }
 
-    @Test @Ignore("Calcite bug https://issues.apache.org/jira/browse/CALCITE-5877")
+    @Test
     public void testCastOutOfRange() {
-        this.q("SELECT CAST(1 AS NUMERIC(10, 20)) % 2\n;\n" +
-                "result\n" +
-                "------\n" +
-                "1");
+        this.shouldFail("SELECT CAST(1 AS NUMERIC(10, 20)) % 2",
+                "Illegal type: DECIMAL type must have scale <= precision");
     }
 
-    @Test @Ignore("Calcite bug https://issues.apache.org/jira/browse/CALCITE-5877")
+    @Test @Ignore("Precision too high for Calcite")
     public void testSpecialValues2Numeric() {
         // Removed unsupported numeric values inf, nan, etc.
         // No div function known, so I removed this one
@@ -878,7 +876,7 @@ public class PostgresNumericTests extends PostgresBaseTest {
                 "         0 |       4.2 |  0.00000000000000000000 |  0.0\n" +
                 "         1 |       4.2 |  0.23809523809523809524 |  1.0\n" +
                 "        -1 |       4.2 | -0.23809523809523809524 | -1.0\n" +
-                "       4.2 |       4.2 |  1.00000000000000000000 |  0.0\n");
+                "       4.2 |       4.2 |  1.00000000000000000000 |  0.0");
     }
 
     // We don't support 'Infinity' for Decimal

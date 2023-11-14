@@ -226,6 +226,12 @@ pub fn left__(source: String, size: i32) -> String {
 some_function2!(left, String, i32, String);
 
 pub fn split2__(source: String, separators: String) -> Vec<String> {
+    if separators.is_empty() {
+        return vec![source];
+    }
+    if source.is_empty() {
+        return vec![];
+    }
     source.split(&separators).map(String::from).collect()
 }
 

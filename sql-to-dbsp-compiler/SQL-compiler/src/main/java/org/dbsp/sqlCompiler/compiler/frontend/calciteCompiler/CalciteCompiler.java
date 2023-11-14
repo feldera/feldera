@@ -63,7 +63,6 @@ import org.apache.calcite.sql2rel.RelDecorrelator;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.sql2rel.StandardConvertletTable;
 import org.apache.calcite.tools.RelBuilder;
-import org.apache.calcite.util.Pair;
 import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -731,8 +730,8 @@ public class CalciteCompiler implements IWritesLogs {
         int index = 0;
         Map<String, RelDataTypeField> colByName = new HashMap<>();
         List<RelDataTypeField> fieldList = rowType.getFieldList();
-        for (Pair<Integer, String> fieldPairs : relRoot.fields) {
-            String specifiedName = fieldPairs.right;
+        for (Map.Entry<Integer, String> fieldPairs : relRoot.fields) {
+            String specifiedName = fieldPairs.getValue();
             RelDataTypeField field = fieldList.get(index);
             Objects.requireNonNull(field);
             boolean nameIsQuoted = false;

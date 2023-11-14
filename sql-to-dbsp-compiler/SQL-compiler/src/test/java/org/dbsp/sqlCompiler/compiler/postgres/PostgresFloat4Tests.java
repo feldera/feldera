@@ -231,19 +231,17 @@ public class PostgresFloat4Tests extends PostgresBaseTest {
                 "(5 rows)");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5843")
+    @Test
     public void testCasts() {
         this.q("-- test edge-case coercions to integer\n" +
-                "SELECT CAST(CAST('32767.4' AS FLOAT) AS SMALLINT);\n" +
+                "SELECT CAST(CAST('32767.4' AS REAL) AS SMALLINT);\n" +
                 " int2  \n" +
                 "-------\n" +
                 " 32767");
-        /*
         this.q("-- test edge-case coercions to integer\n" +
                 "SELECT '32767.4'::float4::int2;\n" +
                 " int2  \n" +
                 "-------\n" +
                 " 32767");
-         */
     }
 }

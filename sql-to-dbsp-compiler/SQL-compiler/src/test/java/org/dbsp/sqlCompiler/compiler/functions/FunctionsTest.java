@@ -25,7 +25,7 @@ public class FunctionsTest extends PostgresBaseTest {
                 " ");
     }
 
-    @Test @Ignore("Bug in Calcite https://issues.apache.org/jira/browse/CALCITE-5859")
+    @Test
     public void testLeftNull() {
         this.q("SELECT LEFT(NULL, 100);\n" +
                 "result\n" +
