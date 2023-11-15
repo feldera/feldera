@@ -57,6 +57,8 @@ async fn main() -> anyhow::Result<()> {
     let api_config = api_config.canonicalize()?;
     let compiler_config = compiler_config.canonicalize()?;
     let local_runner_config = local_runner_config.canonicalize()?;
+    let mut registry = pipeline_manager::metrics::init();
+    pipeline_manager::compiler::register_metrics(&mut registry);
     if compiler_config.precompile {
         Compiler::precompile_dependencies(&compiler_config).await?;
         return Ok(());
@@ -85,6 +87,7 @@ async fn main() -> anyhow::Result<()> {
     let _local_runner = tokio::spawn(async move {
         local_runner::run(db_clone, &local_runner_config, &compiler_config).await;
     });
+    pipeline_manager::metrics::create_endpoint(registry).await;
     // The api-server blocks forever
     pipeline_manager::api::run(db, api_config).await.unwrap();
     Ok(())

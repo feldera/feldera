@@ -9,8 +9,15 @@ use actix_web::{get, web, HttpRequest, HttpServer, Responder};
 use futures_util::join;
 use log::warn;
 use log::{debug, error, info, trace};
+use once_cell::sync::Lazy;
+use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
+use prometheus_client::metrics::counter::Counter;
+use prometheus_client::metrics::family::Family;
+use prometheus_client::metrics::histogram::Histogram;
+use prometheus_client::registry::{Registry, Unit};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::time::Instant;
 use std::{
     process::{ExitStatus, Stdio},
     sync::Arc,
@@ -114,6 +121,68 @@ impl ProgramStatus {
     pub(crate) fn is_compiling(&self) -> bool {
         *self == ProgramStatus::CompilingRust || *self == ProgramStatus::CompilingSql
     }
+}
+
+static METRICS: Lazy<CompilerMetrics> = Lazy::new(init_metrics);
+
+/// Compiler metrics to track the number of invocations and the latency, broken
+/// down by label, which is a pair of phase (SQL vs Rust) and status
+/// (success/error).
+pub struct CompilerMetrics {
+    invocations: Family<MetricLabel, Counter>,
+    latency: Family<MetricLabel, Histogram>,
+}
+
+/// We break down metrics in this file by the compiler phase and exit status
+/// These types need to implement EncodeLabelSet to allow the registry to render
+/// them for metrics scrape endpoints
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct MetricLabel {
+    stage: StageType,
+    status: Status,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelValue)]
+enum StageType {
+    Sql,
+    Rust,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelValue)]
+enum Status {
+    Success,
+    Error,
+}
+
+fn init_metrics() -> CompilerMetrics {
+    CompilerMetrics {
+        invocations: Family::<MetricLabel, Counter>::default(),
+        latency: Family::<MetricLabel, Histogram>::new_with_constructor(|| {
+            // These are latency buckets for measuring SQL and rust compilation times.
+            let buckets = [1.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 400.0];
+            Histogram::new(buckets.into_iter())
+        }),
+    }
+}
+
+pub fn register_metrics(registry: &mut Registry) {
+    registry.register(
+        "stage_invocations",
+        "Number of compiler invocations by stage (SQL vs Rust) and status (success vs error)",
+        METRICS.invocations.clone(),
+    );
+    registry.register_with_unit(
+        "latency",
+        "Compilation latency by stage (SQL vs Rust) and status (success vs error)",
+        Unit::Seconds,
+        METRICS.latency.clone(),
+    );
+}
+
+fn record(stage: StageType, status: Status, elapsed: f64) {
+    let label = MetricLabel { stage, status };
+    METRICS.invocations.get_or_create(&label).inc();
+    METRICS.latency.get_or_create(&label).observe(elapsed);
 }
 
 pub struct Compiler {}
@@ -691,10 +760,12 @@ impl Compiler {
                     let tenant_id = job.as_ref().unwrap().tenant_id;
                     let program_id = job.as_ref().unwrap().program_id;
                     let version = job.as_ref().unwrap().version;
+                    let elapsed = job.as_ref().unwrap().stage_start_time.elapsed().as_secs_f64();
                     let db = db.lock().await;
 
                     match exit_status {
                         Ok(status) if status.success() && job.as_ref().unwrap().is_sql() => {
+                            record(StageType::Sql, Status::Success, elapsed);
                             // SQL compiler succeeded -- start the Rust job.
                             db.set_program_status_guarded(
                                 tenant_id,
@@ -738,6 +809,7 @@ impl Compiler {
                             db.set_program_status_guarded(tenant_id, program_id, version, ProgramStatus::Success).await?;
                             info!("Successfully invoked rust compiler for program {program_id} version {version} (tenant {tenant_id}).");
                             debug!("Set ProgramStatus::Success '{program_id}', version '{version}'");
+                            record(StageType::Rust, Status::Success, elapsed);
                             job = None;
                         }
                         Ok(status) => {
@@ -747,21 +819,25 @@ impl Compiler {
                             let status = if job.as_ref().unwrap().is_rust() {
                                 ProgramStatus::RustError(format!("{output}\nexit code: {status}"))
                             } else if let Ok(messages) = serde_json::from_str(&output) {
-                                    // If we can parse the SqlCompilerMessages
-                                    // as JSON, we assume the compiler worked:
-                                    ProgramStatus::SqlError(messages)
+                                // If we can parse the SqlCompilerMessages
+                                // as JSON, we assume the compiler worked:
+                                record(StageType::Sql, Status::Error, elapsed);
+                                ProgramStatus::SqlError(messages)
                             } else {
-                                    // Otherwise something unexpected happened
-                                    // and we return a system error:
-                                    ProgramStatus::SystemError(format!("{output}\nexit code: {status}"))
+                                // Otherwise something unexpected happened
+                                // and we return a system error:
+                                record(StageType::Sql, Status::Error, elapsed);
+                                ProgramStatus::SystemError(format!("{output}\nexit code: {status}"))
                             };
                             db.set_program_status_guarded(tenant_id, program_id, version, status).await?;
                             job = None;
                         }
                         Err(e) => {
                             let status = if job.unwrap().is_rust() {
+                                record(StageType::Rust, Status::Error, elapsed);
                                 ProgramStatus::SystemError(format!("I/O error with rustc: {e}"))
                             } else {
+                                record(StageType::Sql, Status::Error, elapsed);
                                 ProgramStatus::SystemError(format!("I/O error with sql-to-dbsp: {e}"))
                             };
                             db.set_program_status_guarded(tenant_id, program_id, version, status).await?;
@@ -835,6 +911,7 @@ struct CompilationJob {
     program_id: ProgramId,
     version: Version,
     compiler_process: Child,
+    stage_start_time: Instant,
 }
 
 impl CompilationJob {
@@ -929,6 +1006,7 @@ impl CompilationJob {
             program_id,
             version,
             compiler_process,
+            stage_start_time: Instant::now(),
         })
     }
 
@@ -994,6 +1072,7 @@ impl CompilationJob {
             program_id,
             version,
             compiler_process,
+            stage_start_time: Instant::now(),
         })
     }
 
@@ -1035,6 +1114,7 @@ impl CompilationJob {
             program_id,
             version,
             compiler_process,
+            stage_start_time: Instant::now(),
         })
     }
 
