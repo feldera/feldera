@@ -226,11 +226,11 @@ impl ControllerStatus {
         endpoint_id: &EndpointId,
         endpoint_name: &str,
         config: InputEndpointConfig,
-        is_durable: bool,
+        is_fault_tolerant: bool,
     ) {
         self.inputs.write().unwrap().insert(
             *endpoint_id,
-            InputEndpointStatus::new(endpoint_name, config, is_durable),
+            InputEndpointStatus::new(endpoint_name, config, is_fault_tolerant),
         );
     }
 
@@ -444,11 +444,9 @@ impl ControllerStatus {
     }
 
     pub fn is_step_complete(&self, step: Step) -> bool {
-        self.inputs
-            .read()
-            .unwrap()
-            .values()
-            .all(|status| !status.is_durable || status.metrics.step.load(Ordering::Acquire) > step)
+        self.inputs.read().unwrap().values().all(|status| {
+            !status.is_fault_tolerant || status.metrics.step.load(Ordering::Acquire) > step
+        })
     }
 
     pub fn is_step_committed(&self, step: Step) -> bool {
@@ -459,7 +457,7 @@ impl ControllerStatus {
     pub fn uncommitted_step(&self) -> Option<Step> {
         let mut step = None;
         for status in self.inputs.read().unwrap().values() {
-            if !status.is_durable {
+            if !status.is_fault_tolerant {
                 return None;
             }
             let new = status.metrics.uncommitted.load(Ordering::Acquire);
@@ -631,18 +629,18 @@ pub struct InputEndpointStatus {
     /// The first fatal error that occurred at the endpoint.
     pub fatal_error: Mutex<Option<String>>,
 
-    /// Whether this input endpoint's data is durable.
-    pub is_durable: bool,
+    /// Whether this input endpoint is [fault tolerant](crate#fault-tolerance).
+    pub is_fault_tolerant: bool,
 }
 
 impl InputEndpointStatus {
-    fn new(endpoint_name: &str, config: InputEndpointConfig, is_durable: bool) -> Self {
+    fn new(endpoint_name: &str, config: InputEndpointConfig, is_fault_tolerant: bool) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
             metrics: Default::default(),
             fatal_error: Mutex::new(None),
-            is_durable,
+            is_fault_tolerant,
         }
     }
 

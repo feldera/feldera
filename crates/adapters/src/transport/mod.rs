@@ -24,8 +24,6 @@
 //!     [`KafkaInputTransport`] or output to Kafka via [`KafkaOutputTransport`],
 //!     if the `with-kafka` feature is enabled.
 //!
-//!   * `durable_kafka`, for durable input and output using Kafka.
-//!
 //! To obtain a transport, create an endpoint with it, and then start reading it
 //! from the beginning:
 //!
@@ -58,11 +56,12 @@ pub use url::UrlInputTransport;
 #[cfg(feature = "with-kafka")]
 pub use kafka::{KafkaInputTransport, KafkaOutputTransport};
 
-/// Step number for durable input and output.
+/// Step number for fault-tolerant input and output.
 ///
-/// A "durable" data transport divides input into steps numbered sequentially.
-/// The first step is numbered zero.  Each step has durable content; that is, if
-/// it is read again, it will be the same as the first time.
+/// A [fault-tolerant](crate#fault-tolerance) data transport divides input into
+/// steps numbered sequentially.  The first step is numbered zero.  If a given
+/// step is read multiple times, it will have the same content as the first
+/// time.
 ///
 /// The step number increases by 1 each time the circuit runs; that is, it
 /// tracks the global clock for the outermost circuit.
@@ -147,21 +146,22 @@ impl dyn InputTransport {
 ///
 /// Input endpoints come in two flavors:
 ///
-/// * A "durable" endpoint divides its input into numbered steps.  A given step
-///   always contains the same data if it is read more than once.
+/// * A [fault-tolerant](crate#fault-tolerance) endpoint divides its input into
+///   numbered steps.  A given step always contains the same data if it is read
+///   more than once.
 ///
-/// * A non-durable endpoint does not have a concept of steps and need not yield
-///   the same data each time it is read.
+/// * A non-fault-tolerant endpoint does not have a concept of steps and need
+///   not yield the same data each time it is read.
 pub trait InputEndpoint: Send {
-    /// Whether this endpoint is durable.
+    /// Whether this endpoint is [fault tolerant](crate#fault-tolerance).
     ///
-    /// A given [`InputTransport`] might support durability in some
+    /// A given [`InputTransport`] might support fault tolerance in some
     /// configurations and not others.
-    fn is_durable(&self) -> bool;
+    fn is_fault_tolerant(&self) -> bool;
 
     /// Returns an [`InputReader`] for reading the endpoint's data.  For a
-    /// durable endpoint, `step` indicates the first step to be read; for a
-    /// non-durable endpoint, it is ignored.
+    /// fault-tolerant endpoint, `step` indicates the first step to be read; for
+    /// a non-fault-tolerant endpoint, it is ignored.
     ///
     /// Data and status will be passed to `consumer`.
     ///
@@ -173,18 +173,18 @@ pub trait InputEndpoint: Send {
         start_step: Step,
     ) -> AnyResult<Box<dyn InputReader>>;
 
-    /// For a durable endpoint, notifies the endpoint that steps less than
-    /// `step` aren't needed anymore.  It may optionally discard them.
+    /// For a fault-tolerant endpoint, notifies the endpoint that steps less
+    /// than `step` aren't needed anymore.  It may optionally discard them.
     ///
-    /// This is a no-op for non-durable endpoints.
+    /// This is a no-op for non-fault-tolerant endpoints.
     fn expire(&self, _step: Step) {}
 
-    /// For a durable endpoint, determines and returns the range of steps that a
-    /// reader for this endpoint can read without adding new ones.
+    /// For a fault-tolerant endpoint, determines and returns the range of steps
+    /// that a reader for this endpoint can read without adding new ones.
     ///
-    /// Panics for non-durable endpoints.
+    /// Panics for non-fault-tolerant endpoints.
     fn steps(&self) -> AnyResult<Range<Step>> {
-        debug_assert!(!self.is_durable());
+        debug_assert!(!self.is_fault_tolerant());
         unreachable!()
     }
 }
@@ -201,13 +201,13 @@ pub trait InputReader: Send {
     /// The endpoint must start receiving data and pushing it downstream to the
     /// consumer passed to [`InputEndpoint::open`].
     ///
-    /// A durable endpoint must not push data for a step greater than `step`.
-    /// If `step` completes, then it must still report it by calling
+    /// A fault-tolerant endpoint must not push data for a step greater than
+    /// `step`.  If `step` completes, then it must still report it by calling
     /// `InputConsumer::start_step(step + 1)`, but it must not subsequently call
     /// [`InputConsumer::input_fragment`] or [`InputConsumer::input_chunk`]
     /// before the client calls [`InputReader::start(step + 1)`].
     ///
-    /// A non-durable endpoint may ignore `step`.
+    /// A non-fault-tolerant endpoint may ignore `step`.
     fn start(&self, step: Step) -> AnyResult<()>;
 
     /// Pause the endpoint.
@@ -218,7 +218,7 @@ pub trait InputReader: Send {
     fn pause(&self) -> AnyResult<()>;
 
     /// Requests that the endpoint completes steps up to `_step`.  This is
-    /// meaningful only for durable endpoints.
+    /// meaningful only for fault-tolerant endpoints.
     ///
     /// An endpoint may complete steps even without a call to this function.  It
     /// might, for example, limit the size of a single step and therefore
@@ -240,8 +240,8 @@ pub trait InputReader: Send {
 /// A transport endpoint pushes binary data downstream via an instance of this
 /// trait.
 ///
-/// For a durable endpoint, where the data is divided into steps, there is some
-/// special terminology:
+/// For a fault-tolerant endpoint, where the data is divided into steps, there
+/// is some special terminology:
 ///
 ///   * "Completed" steps.  A step is "completed" when the endpoint has added
 ///     all of the data to it that it is going to.  The reader indicates that a
@@ -253,12 +253,10 @@ pub trait InputReader: Send {
 ///     yet.  The controller can start processing the input step but it should
 ///     not yet yield any side effects that can't be retracted.
 ///
-///   * "Committed" steps.  This is the term for a completed step that has been
-///     written to stable storage.  The reader indicates that `step`, and all
-///     prior steps, have committed by calling `InputConsumer::committed(step)`.
-///
-///     Committed is a synonym for "durable", but that term is already used too
-///     much in this API.
+///   * "Committed" steps, that is, durable ones.  This is the term for a
+///     completed step that has been written to stable storage.  The reader
+///     indicates that `step`, and all prior steps, have committed by calling
+///     `InputConsumer::committed(step)`.
 pub trait InputConsumer: Send {
     /// Indicates that upcoming calls are for `step`.
     fn start_step(&mut self, step: Step);
@@ -270,20 +268,20 @@ pub trait InputConsumer: Send {
     /// buffering incomplete records to get prepended to the next
     /// input fragment.
     ///
-    /// A durable input transport keeps the order of fragments the same for a
-    /// given step from one read to the next.
+    /// A fault-tolerant input transport keeps the order of fragments the same
+    /// for a given step from one read to the next.
     fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError>;
 
     /// Push a chunk of data to the consumer.
     ///
     /// The chunk is expected to contain complete records only.
     ///
-    /// Some data in a durable input transport might not have an inherently
-    /// defined order within a step.  The input endpoint may shuffle unordered
-    /// chunks within a step from one read to the next.  For example, the
-    /// durable Kafka reader will provide chunks from a given partition in the
-    /// same order on each read, but it might interleave chunks from different
-    /// partitions differently each time.
+    /// Some data in a fault-tolerant input transport might not have an
+    /// inherently defined order within a step.  The input endpoint may shuffle
+    /// unordered chunks within a step from one read to the next.  For example,
+    /// the fault-tolerant Kafka reader will provide chunks from a given Kafka
+    /// partition in the same order on each read, but it might interleave chunks
+    /// from different partitions differently each time.
     fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError>;
 
     /// Steps numbered less than `step` been durably recorded.  (If recording a
@@ -342,16 +340,18 @@ pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError) + Send + Sync>;
 ///
 /// Output endpoints come in two flavors:
 ///
-/// * A "durable" endpoint accepts output that has been divided into numbered
-///   steps.  If it is given output associated with a step number that has
-///   already been output, then it discards the duplicate.  It must also keep
-///   data written to the output transport from becoming visible to downstream
-///   readers until `batch_end` is called.  (This works for output to Kafka,
-///   which supports transactional output.  If it is difficult for some future
-///   durable output endpoint, then the API could be adjusted to support writing
-///   output only after it can become immediately visible.)
+/// * A [fault-tolerant](crate#fault-tolerance) endpoint accepts output that has
+///   been divided into numbered steps.  If it is given output associated with a
+///   step number that has already been output, then it discards the duplicate.
+///   It must also keep data written to the output transport from becoming
+///   visible to downstream readers until `batch_end` is called.  (This works
+///   for output to Kafka, which supports transactional output.  If it is
+///   difficult for some future fault-tolerant output endpoint, then the API
+///   could be adjusted to support writing output only after it can become
+///   immediately visible.)
 ///
-/// * A non-durable endpoint does not have a concept of steps and ignores them.
+/// * A non-fault-tolerant endpoint does not have a concept of steps and ignores
+///   them.
 pub trait OutputEndpoint: Send {
     /// Finishes establishing the connection to the output endpoint.
     ///
@@ -373,7 +373,8 @@ pub trait OutputEndpoint: Send {
     /// Notifies the output endpoint that data subsequently written by
     /// `push_buffer` belong to the given `step`.
     ///
-    /// A durable endpoint has additional requirements:
+    /// A [fault-tolerant](crate#fault-tolerance) endpoint has additional
+    /// requirements:
     ///
     /// 1. If data for the given step has been written before, the endpoint
     ///    should discard it.
@@ -389,15 +390,15 @@ pub trait OutputEndpoint: Send {
     /// Notifies the output endpoint that output for the current step is
     /// complete.
     ///
-    /// A durable output endpoint may now make the output batch visible to
-    /// readers.
+    /// A fault-tolerant output endpoint may now make the output batch visible
+    /// to readers.
     fn batch_end(&mut self) -> AnyResult<()> {
         Ok(())
     }
 
-    /// Whether this endpoint is durable.
+    /// Whether this endpoint is [fault tolerant](crate#fault-tolerance).
     ///
-    /// A given [`OutputTransport`] might support durability in some
+    /// A given [`OutputTransport`] might support fault tolerance in some
     /// configurations and not others.
-    fn is_durable(&self) -> bool;
+    fn is_fault_tolerant(&self) -> bool;
 }

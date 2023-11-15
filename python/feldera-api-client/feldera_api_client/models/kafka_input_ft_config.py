@@ -34,8 +34,8 @@ class KafkaInputFtConfig:
             An index topic must have the same number of partitions as its
             corresponding data topic.
 
-            If two or more durable Kafka endpoints read from overlapping sets of
-            topics, they must specify different `index_suffix` values.
+            If two or more fault-tolerant Kafka endpoints read from overlapping sets
+            of topics, they must specify different `index_suffix` values.
         max_step_bytes (Union[Unset, None, int]): Maximum number of bytes in a step.  Any individual message bigger than
             this will be given a step of its own.
         max_step_messages (Union[Unset, None, int]): Maximum number of messages in a step.

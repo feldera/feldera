@@ -199,7 +199,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         Ok(())
     }
 
-    fn is_durable(&self) -> bool {
+    fn is_fault_tolerant(&self) -> bool {
         false
     }
 }

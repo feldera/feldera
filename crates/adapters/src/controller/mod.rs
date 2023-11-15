@@ -284,14 +284,14 @@ impl Controller {
 
     /// Reports whether the circuit is fault tolerant.  A circuit is fault
     /// tolerant if it computes a deterministic function and all of its inputs
-    /// and outputs are durable.  This function assumes that the circuit is
-    /// deterministic.
+    /// and outputs are fault tolerant.  This function assumes that the circuit
+    /// is deterministic.
     pub fn is_fault_tolerant(&self) -> bool {
         self.inner
             .status
             .input_status()
             .values()
-            .all(|status| status.is_durable)
+            .all(|status| status.is_fault_tolerant)
             && self
                 .inner
                 .outputs
@@ -299,7 +299,7 @@ impl Controller {
                 .unwrap()
                 .by_id
                 .values()
-                .all(|descr| descr.is_durable)
+                .all(|descr| descr.is_fault_tolerant)
     }
 
     /// Increment the nubmber of active API connections.
@@ -711,7 +711,7 @@ struct OutputEndpointDescr {
     unparker: Unparker,
 
     /// Whether the output endpoint can discard duplicate output.
-    is_durable: bool,
+    is_fault_tolerant: bool,
 }
 
 impl OutputEndpointDescr {
@@ -720,7 +720,7 @@ impl OutputEndpointDescr {
         stream_name: &str,
         query: OutputQuery,
         unparker: Unparker,
-        is_durable: bool,
+        is_fault_tolerant: bool,
     ) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
@@ -730,7 +730,7 @@ impl OutputEndpointDescr {
             snapshot_sent: AtomicBool::new(false),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
             unparker,
-            is_durable,
+            is_fault_tolerant,
         }
     }
 }
@@ -942,7 +942,7 @@ impl ControllerInner {
             &endpoint_id,
             endpoint_name,
             endpoint_config,
-            endpoint.is_durable(),
+            endpoint.is_fault_tolerant(),
         );
 
         let reader = endpoint
@@ -1067,7 +1067,7 @@ impl ControllerInner {
                 }
             }))
             .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
-        let is_durable = endpoint.is_durable();
+        let is_fault_tolerant = endpoint.is_fault_tolerant();
 
         // Create probe.
         let probe = Box::new(OutputProbe::new(
@@ -1097,7 +1097,7 @@ impl ControllerInner {
             &endpoint_config.stream,
             endpoint_config.query,
             parker.unparker().clone(),
-            is_durable,
+            is_fault_tolerant,
         );
         let queue = endpoint_descr.queue.clone();
         let disconnect_flag = endpoint_descr.disconnect_flag.clone();

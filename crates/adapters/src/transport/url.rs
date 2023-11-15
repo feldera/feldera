@@ -52,7 +52,7 @@ impl InputEndpoint for UrlInputEndpoint {
         Ok(Box::new(UrlInputReader::new(&self.config, consumer)?))
     }
 
-    fn is_durable(&self) -> bool {
+    fn is_fault_tolerant(&self) -> bool {
         false
     }
 }

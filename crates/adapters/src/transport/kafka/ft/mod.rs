@@ -1,10 +1,10 @@
-//! Durable Kafka input and output transport.
+//! Fault-tolerant Kafka input and output transports.
 //!
 //! For input from Kafka to be repeatable, we need to ensure that a given worker
 //! reads the same messages from the same partitions in a given step.  To do
 //! that, we store the mapping from steps to Kafka offsets in a separate Kafka
-//! topic, called the "index topic", which the durable input transport maintains
-//! automatically.
+//! topic, called the "index topic", which the fault-tolerant input transport
+//! maintains automatically.
 //!
 //! For output to Kafka, we need to be able to discard duplicate output.  We do
 //! that by recording the step number as the key in each output message.  On
@@ -125,8 +125,8 @@ fn kafka_config(
     Ok(config)
 }
 
-/// Validated version of [`KafkaDurableInputConfig`], converted into a
-/// convenient form for internal use.
+/// A collection of Kafka client configurations for use by the input and output
+/// endpoints.
 #[derive(Clone)]
 struct CommonConfig {
     /// Kafka client configuration for reading `data_topic`.
