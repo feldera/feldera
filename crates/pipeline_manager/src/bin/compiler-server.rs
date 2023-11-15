@@ -28,6 +28,9 @@ async fn main() -> anyhow::Result<()> {
         .unwrap();
     let compiler_config = compiler_config.canonicalize().unwrap();
 
+    let mut registry = pipeline_manager::metrics::init();
+    pipeline_manager::compiler::register_metrics(&mut registry);
+    pipeline_manager::metrics::create_endpoint(registry).await;
     if compiler_config.precompile {
         Compiler::precompile_dependencies(&compiler_config).await?;
         return Ok(());
