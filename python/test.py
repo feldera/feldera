@@ -148,11 +148,11 @@ def main():
             suffix='.csv', prefix='output', text=True)
         os.close(outfd)
         pipeline.add_file_input(stream='DEMOGRAPHICS',
-                            filepath=dempath, format=CsvInputFormatConfig())
+                            filepath=dempath, format=CsvInputFormatConfig(), name="demographics")
         pipeline.add_file_input(stream='TRANSACTIONS',
-                            filepath=transpath, format=CsvInputFormatConfig())
+                            filepath=transpath, format=CsvInputFormatConfig(), name="transactions")
         pipeline.add_file_output(stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
-                            filepath=outpath, format=CsvOutputFormatConfig())
+                            filepath=outpath, format=CsvOutputFormatConfig(), name="transactions_with_demographics")
 
     program.compile()
     print("Project compiled")
