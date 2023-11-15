@@ -172,7 +172,6 @@ RUN apt update && apt install pkg-config \
   # Install snowsql
   && curl -O https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.28-linux_x86_64.bash \
   && SNOWSQL_DEST=/bin SNOWSQL_LOGIN_SHELL=~/.profile bash snowsql-1.2.28-linux_x86_64.bash \
-  && snowsql -v \
   # Install DBSP python library and dependencies
   && ./pipeline-manager --dump-openapi \
   && rm pipeline-manager \
