@@ -99,7 +99,7 @@ outputs:
             name: kafka
             config:
                 bootstrap.servers: localhost:11111
-                topic: durable_end_to_end_test_output_topic
+                topic: ft_end_to_end_test_output_topic
                 max_inflight_messages: 0
                 fault_tolerance: {}
         format:
@@ -121,7 +121,7 @@ outputs:
     }
 }
 
-fn durable_kafka_end_to_end_test(
+fn ft_kafka_end_to_end_test(
     test_name: &str,
     format: &str,
     format_config: &str,
@@ -244,7 +244,7 @@ fault_tolerance: {{}}
     let endpoint = transport
         .new_endpoint(&serde_yaml::from_str(&config_str).unwrap())
         .unwrap();
-    assert!(endpoint.is_durable());
+    assert!(endpoint.is_fault_tolerant());
 
     info!("checking initial steps");
     assert_eq!(endpoint.steps().unwrap(), 0..0);
@@ -317,7 +317,7 @@ fault_tolerance:
     let endpoint = transport
         .new_endpoint(&serde_yaml::from_str(&config_str).unwrap())
         .unwrap();
-    assert!(endpoint.is_durable());
+    assert!(endpoint.is_fault_tolerant());
 
     info!("checking initial steps");
     assert_eq!(endpoint.steps().unwrap(), 0..0);
@@ -534,7 +534,7 @@ impl InputConsumer for DummyInputConsumer {
 #[test]
 fn output_test() {
     kafka_output_test(
-        "durable_kafka_end_to_end_csv_large",
+        "ft_kafka_end_to_end_csv_large",
         "csv",
         "",
         1000000,
@@ -550,7 +550,7 @@ fn kafka_output_test(
     _data: Vec<Vec<TestStruct>>,
 ) {
     init_test_logger();
-    let output_topic = format!("durable_{test_name}_output_topic");
+    let output_topic = format!("ft_{test_name}_output_topic");
 
     // Create topics.
     let _kafka_resources = KafkaResources::create_topics(&[(&output_topic, 1)]);
@@ -573,7 +573,7 @@ format:
     let mut endpoint = transport
         .new_endpoint(&serde_yaml::from_str(&config_str).unwrap())
         .unwrap();
-    assert!(endpoint.is_durable());
+    assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))
         .unwrap();
@@ -603,7 +603,7 @@ format:
     let mut endpoint = transport
         .new_endpoint(&serde_yaml::from_str(config_str).unwrap())
         .unwrap();
-    assert!(endpoint.is_durable());
+    assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))
         .unwrap();
@@ -616,12 +616,12 @@ format:
     }
 }
 
-fn test_durable_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
+fn test_ft_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
     init_test_logger();
 
-    let topic1 = &format!("durable_{topic1}");
+    let topic1 = &format!("ft_{topic1}");
     let index_topic1 = &format!("{topic1}_input-index");
-    let topic2 = &format!("durable_{topic2}");
+    let topic2 = &format!("ft_{topic2}");
     let index_topic2 = &format!("{topic2}_input-index");
     let mut _kafka_resources = KafkaResources::create_topics(&[
         (topic1, 1),
@@ -763,7 +763,7 @@ format:
 /// thousand records as part of the failure.
 #[test]
 fn kafka_input_trivial() {
-    test_durable_kafka_input(Vec::new(), "trivial_test_topic1", "trivial_test_topic2");
+    test_ft_kafka_input(Vec::new(), "trivial_test_topic1", "trivial_test_topic2");
 }
 
 proptest! {
@@ -771,26 +771,26 @@ proptest! {
 
     #[test]
     fn proptest_kafka_input(data in generate_test_batches(0, 100, 1000)) {
-        test_durable_kafka_input(data, "input_test_topic1", "input_test_topic2");
+        test_ft_kafka_input(data, "input_test_topic1", "input_test_topic2");
     }
 
     #[test]
     fn proptest_kafka_end_to_end_csv_large(data in generate_test_batches(0, 30, 1000)) {
-        durable_kafka_end_to_end_test("proptest_kafka_end_to_end_csv_large", "csv", "", 1000000, data);
+        ft_kafka_end_to_end_test("proptest_kafka_end_to_end_csv_large", "csv", "", 1000000, data);
     }
 
     #[test]
     fn proptest_kafka_end_to_end_csv_small(data in generate_test_batches(0, 30, 1000)) {
-        durable_kafka_end_to_end_test("proptest_kafka_end_to_end_csv_small", "csv", "", 1500, data);
+        ft_kafka_end_to_end_test("proptest_kafka_end_to_end_csv_small", "csv", "", 1500, data);
     }
 
     #[test]
     fn proptest_kafka_end_to_end_json_small(data in generate_test_batches(0, 30, 1000)) {
-        durable_kafka_end_to_end_test("proptest_kafka_end_to_end_json_small", "json", "", 2048, data);
+        ft_kafka_end_to_end_test("proptest_kafka_end_to_end_json_small", "json", "", 2048, data);
     }
 
     #[test]
     fn proptest_kafka_end_to_end_json_array_small(data in generate_test_batches(0, 30, 1000)) {
-        durable_kafka_end_to_end_test("proptest_kafka_end_to_end_json_array_small", "json", "array: true", 5000, data);
+        ft_kafka_end_to_end_test("proptest_kafka_end_to_end_json_array_small", "json", "array: true", 5000, data);
     }
 }

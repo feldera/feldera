@@ -285,7 +285,7 @@ impl OutputEndpoint for HttpOutputEndpoint {
         Ok(())
     }
 
-    fn is_durable(&self) -> bool {
+    fn is_fault_tolerant(&self) -> bool {
         false
     }
 }

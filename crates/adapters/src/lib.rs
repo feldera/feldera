@@ -133,17 +133,17 @@
 //! crashes that kill processes or disrupt networking, but not crashes that lose
 //! storage or corrupt computations.
 //!
-//! Fault tolerance requires:
+//! A fault-tolerant circuit requires all of its input and output endpoints to
+//! be fault-tolerant:
 //!
-//! * Input to be divided into numbered [`Step`]s that can be retrieved
-//!   repeatedly with the same content, despite crashes.  We call this "durable"
-//!   input.  [`InputEndpoint::is_durable`] reports whether an input endpoint is
-//!   durable.
+//! * A fault-tolerant input endpoint divides input into numbered [`Step`]s that
+//!   can be retrieved repeatedly with the same content, despite crashes.
+//!   [`InputEndpoint::is_fault_tolerant`] reports whether an input endpoint is
+//!   fault tolerant.
 //!
-//! * Output to be divided into numbered [`Step`]s such that, if a step with a
-//!   given number is output more than once, the output endpoint discards the
-//!   duplicate.  We call this "durable" output.  Only some output endpoints are
-//!   durable.
+//! * A fault-tolerant output endpoint divides its output into numbered
+//!   [`Step`]s such that, if a step with a given number is output more than
+//!   once, the output endpoint discards the duplicate.
 //!
 //! Fault tolerance works only with deterministic circuits, that is, ones that,
 //! given a sequence of inputs, will always produce the same sequence of

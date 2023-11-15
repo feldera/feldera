@@ -67,8 +67,8 @@ pub struct KafkaInputFtConfig {
     /// An index topic must have the same number of partitions as its
     /// corresponding data topic.
     ///
-    /// If two or more durable Kafka endpoints read from overlapping sets of
-    /// topics, they must specify different `index_suffix` values.
+    /// If two or more fault-tolerant Kafka endpoints read from overlapping sets
+    /// of topics, they must specify different `index_suffix` values.
     pub index_suffix: Option<String>,
 
     /// If this is true or unset, then the connector will create missing index

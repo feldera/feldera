@@ -35,8 +35,8 @@ use std::{
 
 use super::CommonConfig;
 
-/// Validated version of [`KafkaDurableInputConfig`], converted into a
-/// convenient form for internal use.
+/// Validated version of [`KafkaInputConfig`], converted into a convenient form
+/// for internal use.
 #[derive(Clone)]
 struct Config {
     /// Common with output configuration.
@@ -92,7 +92,7 @@ impl TryFrom<KafkaInputConfig> for Config {
     }
 }
 
-/// Durable Kafka input endpoint.
+/// Fault-tolerant Kafka input endpoint.
 pub struct Endpoint(Arc<Config>);
 
 impl Endpoint {
@@ -126,7 +126,7 @@ impl Display for ExitRequest {
 }
 impl Error for ExitRequest {}
 
-/// A reader for durable Kafka input.
+/// A reader for fault-tolerant Kafka input.
 ///
 /// Code outside this module accesses this as `dyn InputReader`.
 struct Reader {
@@ -223,7 +223,7 @@ impl PollerThread {
         let exit_request = Arc::new(AtomicBool::new(false));
         let join_handle = Some(
             Builder::new()
-                .name("poller(durable_kafka)".into())
+                .name("poller(kafka-ft)".into())
                 .spawn({
                     let consumer = consumer.clone();
                     let receiver = receiver.clone();
@@ -312,7 +312,7 @@ impl WorkerThread {
                     if error.downcast_ref::<ExitRequest>().is_some() {
                         // Normal termination because of a requested exit.
                     } else {
-                        error!("Durable Kafka input endpoint failed due to: {error:#}");
+                        error!("Fault-tolerant Kafka input endpoint failed due to: {error:#}");
                         receiver.lock().unwrap().error(true, error);
                     }
                 }
@@ -681,7 +681,7 @@ impl InputEndpoint for Endpoint {
         Ok(Box::new(Reader::new(&self.0, start_step, consumer)))
     }
 
-    fn is_durable(&self) -> bool {
+    fn is_fault_tolerant(&self) -> bool {
         true
     }
 
@@ -830,7 +830,7 @@ fn test_index_entry() {
     );
 }
 
-/// Index reader for durable Kafka input and output.
+/// Index reader for fault-tolerant Kafka input and output.
 ///
 /// The key to repeatability for Kafka input and output is to ensure that events
 /// in the data topic are always divided into steps in the same way.  We do this

@@ -216,7 +216,7 @@ impl InputEndpoint for HttpInputEndpoint {
         Ok(Box::new(self.clone()))
     }
 
-    fn is_durable(&self) -> bool {
+    fn is_fault_tolerant(&self) -> bool {
         false
     }
 }

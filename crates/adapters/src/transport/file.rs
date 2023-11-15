@@ -58,7 +58,7 @@ impl InputEndpoint for FileInputEndpoint {
         Ok(Box::new(FileInputReader::new(&self.config, consumer)?))
     }
 
-    fn is_durable(&self) -> bool {
+    fn is_fault_tolerant(&self) -> bool {
         false
     }
 }
@@ -226,7 +226,7 @@ impl OutputEndpoint for FileOutputEndpoint {
         Ok(())
     }
 
-    fn is_durable(&self) -> bool {
+    fn is_fault_tolerant(&self) -> bool {
         false
     }
 }
