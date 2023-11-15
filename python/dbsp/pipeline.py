@@ -176,13 +176,14 @@ class DBSPPipelineConfig:
             )
         )
 
-    def add_file_input(self, stream: str, filepath: str, format: FormatConfig):
+    def add_file_input(self, stream: str, filepath: str, format: FormatConfig, name: str):
         """Add an input connector that reads data from a file to the pipeline configuration.
 
         Args:
             stream (str): Input table the connector is connected to.
             filepath (str): File to read data from.
             format (FormatConfig): Data format specification, e.g., CsvInputFormatConfig().
+            name (str): Attached connector name
         """
         self.add_input(
             stream,
@@ -198,13 +199,14 @@ class DBSPPipelineConfig:
             name
         )
 
-    def add_file_output(self, stream: str, filepath: str, format: FormatConfig):
+    def add_file_output(self, stream: str, filepath: str, format: FormatConfig, name: str):
         """Add an output connector that reads data from a file to the pipeline configuration.
 
         Args:
             stream (str): What view the connector is connected to.
             filepath (str): File to write to.
             format (FormatConfig): Data format specification, e.g., CsvOutputFormatConfig().
+            name (str): Attached connector name
         """
         self.add_output(
             stream,
