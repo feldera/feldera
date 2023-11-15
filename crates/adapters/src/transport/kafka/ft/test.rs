@@ -237,7 +237,7 @@ fn test_empty_input() {
     let config_str = r#"
 topics: [empty]
 log_level: debug
-fault_tolerance: {{}}
+fault_tolerance: {}
 "#
     .to_string();
 
