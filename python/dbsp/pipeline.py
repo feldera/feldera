@@ -59,7 +59,7 @@ class DBSPPipelineConfig:
         self.name = name
         self.description = description
 
-    def add_input(self, stream: str, connector: DBSPConnector, name: str = None):
+    def add_input(self, stream: str, connector: DBSPConnector, name: str):
         """Add an input endpoint to the pipeline configuration.
 
         Args:
@@ -72,7 +72,7 @@ class DBSPPipelineConfig:
             AttachedConnector(
                 connector_id=connector.connector_id,
                 is_input=True,
-                name=uuid.uuid4().hex if name is None else name,
+                name=name,
                 relation_name=stream,
             )
         )
@@ -96,6 +96,7 @@ class DBSPPipelineConfig:
                 TransportConfig(name="url", config=config),
                 format=format,
             ),
+            name
         )
 
     def add_kafka_input(
@@ -117,6 +118,7 @@ class DBSPPipelineConfig:
                 TransportConfig(name="kafka", config=config),
                 format=format,
             ),
+            name
         )
 
     def add_http_input(self, stream: str, name: str, format: FormatConfig):
@@ -153,9 +155,10 @@ class DBSPPipelineConfig:
                 TransportConfig(name="kafka", config=config),
                 format=format,
             ),
+            name
         )
 
-    def add_output(self, stream: str, connector: DBSPConnector, name: str = None):
+    def add_output(self, stream: str, connector: DBSPConnector, name: str):
         """Add an output connector to the pipeline configuration.
 
         Args:
@@ -168,7 +171,7 @@ class DBSPPipelineConfig:
             AttachedConnector(
                 connector_id=connector.connector_id,
                 is_input=False,
-                name=uuid.uuid4().hex if name is None else name,
+                name=name,
                 relation_name=stream,
             )
         )
@@ -192,6 +195,7 @@ class DBSPPipelineConfig:
                 ),
                 format=format,
             ),
+            name
         )
 
     def add_file_output(self, stream: str, filepath: str, format: FormatConfig):
@@ -213,6 +217,7 @@ class DBSPPipelineConfig:
                 ),
                 format=format,
             ),
+            name
         )
 
     def add_http_output(self, stream: str, name: str, format: FormatConfig):
