@@ -901,6 +901,16 @@ where
         }
     }
 
+    /// Creates a new `IndexReader` for the index topic corresponding to
+    /// `data_topic` using configuration `config`.  Reports transient errors via
+    /// `error_cb`.
+    ///
+    /// This creates a "seekable consumer" that consumes 100% CPU in a separate
+    /// `librdkafka`-owned thread.  This means that it's important to drop the
+    /// `IndexReader` when it's no longer in active use.  (It would make sense
+    /// for `IndexReader` to pause this consumer, eliminating the CPU drain,
+    /// when we're not using it, but in some cases resuming the consumer causes
+    /// a multi-second delay.)
     fn new(data_topic: &str, config: &Config, error_cb: E) -> AnyResult<Self> {
         let index_topic = format!("{data_topic}{}", config.index_suffix);
         let context = DataConsumerContext::new(error_cb.clone());
@@ -994,7 +1004,6 @@ where
                     let entry = IndexEntry::read(&ctp, offset)?;
                     events = match step.cmp(&entry.step) {
                         Ordering::Equal => {
-                            ctp.pause()?;
                             steps.push(StepPosition {
                                 index_offset: offset,
                                 data_offset: entry.data_offsets.start,

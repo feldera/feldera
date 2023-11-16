@@ -293,11 +293,6 @@ where
             }
         }
     }
-
-    /// Returns a `TopicPartitionList` for this `Ctp`, with no offset.
-    fn as_topic_partition_list(&self) -> TopicPartitionList {
-        make_topic_partition_list([(self.topic, self.partition, Offset::Invalid)]).unwrap()
-    }
 }
 
 /// Consumer, topic, and partition.
@@ -313,27 +308,6 @@ impl<'a, T: Consumer<C> + AsKafkaClient<C>, C: ClientContext + ConsumerContext> 
         let assignment =
             make_topic_partition_list([(self.topic, self.partition, Offset::Offset(offset))])?;
         self.client.assign(&assignment)
-    }
-
-    /// Pauses consuming this partition.
-    fn pause(&self) -> KafkaResult<()> {
-        self.client.pause(&self.as_topic_partition_list())
-    }
-
-    /// Resumes consuming this partition,
-    fn resume(&self) -> KafkaResult<()> {
-        self.client.resume(&self.as_topic_partition_list())
-    }
-
-    /// Resumes, evaluates `f`, pauses, and returns what `f`'s returned.  If any
-    /// of the operations fails, returns the error.
-    fn while_resumed<R>(&self, f: impl Fn() -> AnyResult<R>) -> AnyResult<R> {
-        self.resume()?;
-        match (f(), self.pause()) {
-            (Err(error), _) => Err(error),
-            (_, Err(error)) => Err(error.into()),
-            (result, _) => result,
-        }
     }
 }
 
@@ -390,12 +364,10 @@ impl<'a, C: ClientContext + ConsumerContext> Ctp<'a, BaseConsumer<C>, C> {
     }
     fn read_at_offset(&self, offset: i64) -> AnyResult<BorrowedMessage<'a>> {
         self.assign(offset)?;
-        self.while_resumed(|| {
-            self.client
-                .poll(None)
-                .expect("poll(None) should always return a message or an error")
-                .map_err(|err| err.into())
-        })
+        self.client
+            .poll(None)
+            .expect("poll(None) should always return a message or an error")
+            .map_err(|err| err.into())
     }
 
     // Read the last message in the partition, which has the given `watermarks`.
@@ -418,18 +390,14 @@ impl<'a, C: ClientContext + ConsumerContext> Ctp<'a, BaseConsumer<C>, C> {
 
             // Read messages until we get an error.  Retain the last message we
             // read.
-            let last_message = self.while_resumed(|| {
-                let mut last_message = None;
-                loop {
-                    match self.read_toward_end(offset) {
-                        Ok(message) => last_message = Some(message),
-                        Err(KafkaError::PartitionEOF(p)) if p == self.partition => {
-                            break Ok(last_message)
-                        }
-                        Err(error) => break Err(error.into()),
-                    }
+            let mut last_message = None;
+            loop {
+                match self.read_toward_end(offset) {
+                    Ok(message) => last_message = Some(message),
+                    Err(KafkaError::PartitionEOF(p)) if p == self.partition => break,
+                    Err(error) => return Err(error.into()),
                 }
-            })?;
+            }
 
             // Return the message if we got one.
             if let Some(message) = last_message {
