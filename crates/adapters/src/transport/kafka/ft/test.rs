@@ -12,6 +12,7 @@ use crossbeam::sync::{Parker, Unparker};
 use env_logger::Env;
 use log::info;
 use proptest::prelude::*;
+use rdkafka::mocking::MockCluster;
 use std::{
     io::Write,
     sync::{
@@ -223,23 +224,27 @@ outputs:
 }
 
 /// Test a topic that's empty and won't get any data.
-/// XXX: does not terminate: https://github.com/feldera/feldera/actions/runs/6831964370/job/18582787692
-#[ignore]
 #[test]
 fn test_empty_input() {
     init_test_logger();
 
-    let mut _kafka_resources =
-        KafkaResources::create_topics(&[("empty", 1), ("empty_input-index", 0)]);
+    let mock_cluster = MockCluster::new(1).unwrap();
+    let bootstrap_servers = mock_cluster.bootstrap_servers();
+    mock_cluster.create_topic("empty", 1, 1).unwrap();
+    mock_cluster
+        .create_topic("empty_input-index", 1, 1)
+        .unwrap();
 
     let transport = <dyn InputTransport>::get_transport("kafka").unwrap();
 
-    let config_str = r#"
+    let config_str = format!(
+        r#"
+bootstrap.servers: "{bootstrap_servers}"
 topics: [empty]
 log_level: debug
-fault_tolerance: {}
+fault_tolerance: {{}}
 "#
-    .to_string();
+    );
 
     let endpoint = transport
         .new_endpoint(&serde_yaml::from_str(&config_str).unwrap())
