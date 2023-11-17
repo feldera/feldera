@@ -19,7 +19,8 @@ class UpdatePipelineRequest:
     Attributes:
         description (str): New pipeline description.
         name (str): New pipeline name.
-        config (Union[Unset, None, RuntimeConfig]): Global pipeline configuration settings.
+        config (Union[Unset, None, RuntimeConfig]): Global pipeline configuration settings. This is the publicly
+            exposed type for users to configure pipelines.
         connectors (Union[Unset, None, List['AttachedConnector']]): Attached connectors.
 
             - If absent, existing connectors will be kept unmodified.

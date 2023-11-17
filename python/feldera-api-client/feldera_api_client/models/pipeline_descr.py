@@ -18,7 +18,8 @@ class PipelineDescr:
 
     Attributes:
         attached_connectors (List['AttachedConnector']):
-        config (RuntimeConfig): Global pipeline configuration settings.
+        config (RuntimeConfig): Global pipeline configuration settings. This is the publicly
+            exposed type for users to configure pipelines.
         description (str):
         name (str):
         pipeline_id (str): Unique pipeline id.
