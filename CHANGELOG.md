@@ -11,10 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- WebConsole: Add "Queued" status for pipelines whose programs are enqueued to be compiled (#1032)
+- WebConsole: Random input generator doesn't work for a decimal column (#1006)
+
 ### Added
 
-- WebConsole: Support big numeric SQL types in Data Browser, Data Import and Data Generator
-  ([#851](https://github.com/feldera/feldera/issues/851))
+- WebConsole: Support big numeric SQL types in Data Browser, Data Import and Data Generator (#851)
 - WebConsole: Display SQL types in Data inspect and insert tables
 
 ## [0.4.0] - 2023-11-21
@@ -43,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#932](https://github.com/feldera/feldera/issues/932))
 - WebConsole: Pipeline failure state in Pipeline Management isn't cleared immediately - no longer reproduces
   ([#1012](https://github.com/feldera/feldera/issues/1012))
+- Refactor list of tables and views in breadcrumbs to an autocomplete combobox
+  ([997](https://github.com/feldera/feldera/issues/997))
 - REST API: Fold ResourceConfig into RuntimeConfig to allow users to configure resources
   ([#1035](https://github.com/feldera/feldera/pull/1035))
 
@@ -67,8 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix Data Browser regression where data rows become invalid after switching between relations
   ([#993](https://github.com/feldera/feldera/issues/993))
   ([#999](https://github.com/feldera/feldera/issues/999))
-- Refactor list of tables and views in breadcrumbs to an autocomplete combobox
-  ([997](https://github.com/feldera/feldera/issues/997))
 
 ## [0.3.0] - 2023-11-07
 
