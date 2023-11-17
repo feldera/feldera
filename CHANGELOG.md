@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
 ### Fixed
 
 - [SQL] Fix bugs in parsing of KEY and FOREIGN KEY constraints
@@ -33,12 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#932](https://github.com/feldera/feldera/issues/932))
 - WebConsole: Pipeline failure state in Pipeline Management isn't cleared immediately - no longer reproduces
   ([#1012](https://github.com/feldera/feldera/issues/1012))
+- REST API: Fold ResourceConfig into RuntimeConfig to allow users to configure resources
+  ([#1035](https://github.com/feldera/feldera/pull/1035))
 
 ### Added
 
 - [SQL] New aggregation functions: `BIT_AND`, `BIT_OR`, `BIT_XOR`.
   Concatenation for `BINARY values`.  `TO_HEX` function.
   ([#996](https://github.com/feldera/feldera/pull/996))
+- pipeline-manager now exposes a scrape endpoint for metrics, starting with the compiler service
+  ([#1031](https://github.com/feldera/feldera/pull/1031))
 
 ## [0.3.2] - 2023-11-10
 
