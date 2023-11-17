@@ -26,6 +26,9 @@ const fn default_workers() -> u16 {
 
 /// Pipeline configuration specified by the user when creating
 /// a new pipeline instance.
+///
+/// This is the shape of the overall pipeline configuration, but is not
+/// the publicly exposed type with which users configure pipelines.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PipelineConfig {
     /// Global controller configuration.
@@ -42,14 +45,10 @@ pub struct PipelineConfig {
     /// Output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
-
-    /// Resource reservations and limits. This is enforced
-    /// only in Feldera Cloud.
-    #[serde(default)]
-    pub resources: ResourceConfig,
 }
 
-/// Global pipeline configuration settings.
+/// Global pipeline configuration settings. This is the publicly
+/// exposed type for users to configure pipelines.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
@@ -74,6 +73,11 @@ pub struct RuntimeConfig {
     /// get buffered by the controller, defaults to 0.
     #[serde(default)]
     pub max_buffering_delay_usecs: u64,
+
+    /// Resource reservations and limits. This is enforced
+    /// only in Feldera Cloud.
+    #[serde(default)]
+    pub resources: ResourceConfig,
 }
 
 impl RuntimeConfig {

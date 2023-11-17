@@ -299,6 +299,17 @@ impl TestConfig {
             .unwrap()
     }
 
+    async fn patch<S: AsRef<str>>(
+        &self,
+        endpoint: S,
+        json: &Value,
+    ) -> ClientResponse<Decoder<Payload>> {
+        self.maybe_attach_bearer_token(self.client.patch(self.endpoint_url(endpoint)))
+            .send_json(&json)
+            .await
+            .unwrap()
+    }
+
     async fn quantiles_csv(&self, id: &str, table: &str) -> String {
         let mut resp = self
             .post_no_body(format!(
@@ -1355,4 +1366,66 @@ async fn pipeline_restart() {
     config
         .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
+}
+
+#[actix_web::test]
+#[serial]
+async fn pipeline_runtime_configuration() {
+    let config = setup().await;
+    let pipeline_request = json!({
+        "name":  "pipeline_runtime_configuration",
+        "description": "desc",
+        "program_id": null,
+        "config": {
+            "workers": 100,
+            "resources": {
+                "cpu_cores_min": 5,
+                "storage_mb_max": 2000
+            }
+        },
+        "connectors": null
+    });
+    // Create the pipeline
+    let mut resp = config.post("/v0/pipelines", &pipeline_request).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp: Value = resp.json().await.unwrap();
+    let id = resp["pipeline_id"].as_str().unwrap();
+
+    // Get config
+    let mut resp = config.get(format!("/v0/pipelines/{id}/config")).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp: Value = resp.json().await.unwrap();
+    let workers = resp["workers"].as_i64().unwrap();
+    let resources = &resp["resources"];
+    assert_eq!(100, workers);
+    assert_eq!(
+        json!({ "cpu_cores_min": 5, "cpu_cores_max": null, "memory_mb_min": null, "memory_mb_max": null, "storage_mb_max": 2000 }),
+        *resources
+    );
+
+    // Update config
+    let patch = json!({
+        "name": "pipeline_runtime_configuration",
+        "description": "desc",
+        "config": {
+            "workers": 5,
+            "resources": {
+                "memory_mb_max": 100
+            }
+        },
+    });
+    let resp = config.patch(format!("/v0/pipelines/{id}"), &patch).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Get config
+    let mut resp = config.get(format!("/v0/pipelines/{id}/config")).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp: Value = resp.json().await.unwrap();
+    let workers = resp["workers"].as_i64().unwrap();
+    let resources = &resp["resources"];
+    assert_eq!(5, workers);
+    assert_eq!(
+        json!({ "cpu_cores_min": null, "cpu_cores_max": null, "memory_mb_min": null, "memory_mb_max": 100, "storage_mb_max": null }),
+        *resources
+    );
 }

@@ -9,7 +9,7 @@ use crate::db::Relation;
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use openssl::sha::{self};
-use pipeline_types::config::{ConnectorConfig, RuntimeConfig};
+use pipeline_types::config::{ConnectorConfig, ResourceConfig, RuntimeConfig};
 use pretty_assertions::assert_eq;
 use proptest::test_runner::{Config, TestRunner};
 use proptest::{bool, prelude::*};
@@ -858,6 +858,7 @@ async fn versioning() {
         cpu_profiler: true,
         min_batch_size_records: 0,
         max_buffering_delay_usecs: 0,
+        resources: ResourceConfig::default(),
     };
     handle
         .db
@@ -1035,6 +1036,66 @@ pub(crate) fn limited_option_connector() -> impl Strategy<Value = Option<Connect
     })
 }
 
+/// Generate different resource configurations
+pub(crate) fn runtime_config() -> impl Strategy<Value = RuntimeConfig> {
+    any::<(
+        u16,
+        bool,
+        u64,
+        u64,
+        Option<u64>,
+        Option<u64>,
+        Option<u64>,
+        Option<u64>,
+        Option<u64>,
+    )>()
+    .prop_map(|config| RuntimeConfig {
+        workers: config.0,
+        cpu_profiler: config.1,
+        min_batch_size_records: config.2,
+        max_buffering_delay_usecs: config.3,
+        resources: ResourceConfig {
+            cpu_cores_min: config.4,
+            cpu_cores_max: config.5,
+            memory_mb_min: config.6,
+            memory_mb_max: config.7,
+            storage_mb_max: config.8,
+        },
+    })
+}
+
+/// Generate different resource configurations
+pub(crate) fn option_runtime_config() -> impl Strategy<Value = Option<RuntimeConfig>> {
+    any::<
+        Option<(
+            u16,
+            bool,
+            u64,
+            u64,
+            Option<u64>,
+            Option<u64>,
+            Option<u64>,
+            Option<u64>,
+            Option<u64>,
+        )>,
+    >()
+    .prop_map(|c| {
+        c.map(|config| RuntimeConfig {
+            workers: config.0,
+            cpu_profiler: config.1,
+            min_batch_size_records: config.2,
+            max_buffering_delay_usecs: config.3,
+            resources: ResourceConfig {
+                cpu_cores_min: config.4,
+                cpu_cores_max: config.5,
+                memory_mb_min: config.6,
+                memory_mb_max: config.7,
+                storage_mb_max: config.8,
+            },
+        })
+    })
+}
+
 /// Actions we can do on the Storage trait.
 #[derive(Debug, Clone, Arbitrary)]
 enum StorageAction {
@@ -1064,8 +1125,8 @@ enum StorageAction {
         String,
         // TODO: Somehow, deriving Arbitrary for GlobalPipelineConfig isn't visible
         // to the Arbitrary trait implementation here.
-        // We'll prepare the struct ourselves from its constintuent parts
-        (u16, bool, u64, u64),
+        // We'll prepare the struct ourselves from its constituent parts
+        #[proptest(strategy = "runtime_config()")] RuntimeConfig,
         Option<Vec<AttachedConnector>>,
     ),
     UpdatePipeline(
@@ -1074,8 +1135,7 @@ enum StorageAction {
         Option<ProgramId>,
         String,
         String,
-        // TODO: Should be RuntimeConfig.
-        Option<(u16, bool, u64, u64)>,
+        #[proptest(strategy = "option_runtime_config()")] Option<RuntimeConfig>,
         Option<Vec<AttachedConnector>>,
     ),
     UpdatePipelineRuntimeState(TenantId, PipelineId, PipelineRuntimeState),
@@ -1420,12 +1480,6 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::NewPipeline(tenant_id, id, program_id, name, description, config, connectors) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let config = RuntimeConfig {
-                                    workers: config.0,
-                                    cpu_profiler: config.1,
-                                    min_batch_size_records: config.2,
-                                    max_buffering_delay_usecs: config.3,
-                                };
                                 let model_response =
                                     model.new_pipeline(tenant_id, id, program_id, &name, &description, &config, &connectors.clone()).await;
                                 let impl_response =
@@ -1434,12 +1488,6 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::UpdatePipeline(tenant_id,pipeline_id, program_id, name, description, config, connectors) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let config = config.map(|config| RuntimeConfig {
-                                    workers: config.0,
-                                    cpu_profiler: config.1,
-                                    min_batch_size_records: config.2,
-                                    max_buffering_delay_usecs: config.3,
-                                });
                                 let model_response = model
                                     .update_pipeline(tenant_id, pipeline_id, program_id, &name, &description, &config, &connectors.clone())
                                     .await;

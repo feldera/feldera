@@ -20,6 +20,9 @@ class PipelineRevision:
         Attributes:
             config (PipelineConfig): Pipeline configuration specified by the user when creating
                 a new pipeline instance.
+
+                This is the shape of the overall pipeline configuration, but is not
+                the publicly exposed type with which users configure pipelines.
             connectors (List['ConnectorDescr']): The versioned connectors.
             pipeline (PipelineDescr): Pipeline descriptor.
             program (ProgramDescr): Program descriptor.

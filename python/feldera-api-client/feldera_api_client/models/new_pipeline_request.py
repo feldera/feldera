@@ -17,7 +17,8 @@ class NewPipelineRequest:
     """Request to create a new pipeline.
 
     Attributes:
-        config (RuntimeConfig): Global pipeline configuration settings.
+        config (RuntimeConfig): Global pipeline configuration settings. This is the publicly
+            exposed type for users to configure pipelines.
         description (str): Config description.
         name (str): Config name.
         connectors (Union[Unset, None, List['AttachedConnector']]): Attached connectors.
