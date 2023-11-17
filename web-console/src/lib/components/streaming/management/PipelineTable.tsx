@@ -594,7 +594,8 @@ const usePipelineStatus = (params: { row: Pipeline }) => {
             return match(programData.status)
               .with('Success', () => 'Ready' as const)
               .with('CompilingRust', () => 'CompilingRust' as const)
-              .with('None', 'Pending', 'CompilingSql', () => 'NotReady' as const)
+              .with('None', 'CompilingSql', () => 'NotReady' as const)
+              .with('Pending', () => 'Pending' as const)
               .otherwise(() => 'Error' as const)
           })(curProgramQuery.data.find(p => p.program_id === pipeline.program_id))
 
@@ -612,10 +613,13 @@ const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) =>
   const chip = match([status, programStatus])
     .with([PipelineStatus.UNKNOWN, P._], () => <CustomChip rounded size='small' skin='light' label={status} />)
     .with([PipelineStatus.SHUTDOWN, 'NotReady'], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label='Compiling' />
+      <CustomChip rounded size='small' skin='light' color='primary' label='Compiling' />
+    ))
+    .with([PipelineStatus.SHUTDOWN, 'Pending'], () => (
+      <CustomChip rounded size='small' skin='light' color='info' label='Queued' />
     ))
     .with([PipelineStatus.SHUTDOWN, 'CompilingRust'], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label='Compiling binary' />
+      <CustomChip rounded size='small' skin='light' color='primary' label='Compiling binary' />
     ))
     .with([PipelineStatus.SHUTDOWN, 'Error'], () => (
       <CustomChip rounded size='small' skin='light' color='error' label='Program error' />
@@ -643,10 +647,13 @@ const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) =>
       <CustomChip rounded size='small' skin='light' color='info' label={status} />
     ))
     .with([PipelineStatus.PAUSED, 'NotReady'], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label='Compiling' />
+      <CustomChip rounded size='small' skin='light' color='primary' label='Compiling' />
+    ))
+    .with([PipelineStatus.PAUSED, 'Pending'], () => (
+      <CustomChip rounded size='small' skin='light' color='info' label='Queued' />
     ))
     .with([PipelineStatus.PAUSED, 'CompilingRust'], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label='Compiling binary' />
+      <CustomChip rounded size='small' skin='light' color='primary' label='Compiling binary' />
     ))
     .with([PipelineStatus.PAUSED, 'Error'], () => (
       <CustomChip rounded size='small' skin='light' color='error' label='Program error' />
