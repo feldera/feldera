@@ -16,6 +16,10 @@ export type NewProgramRequest = {
    */
   description: string
   /**
+   * Compile the program in JIT mode.
+   */
+  jit_mode?: boolean
+  /**
    * Program name.
    */
   name: string

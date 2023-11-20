@@ -3,8 +3,11 @@
 /* tslint:disable */
 /* eslint-disable */
 
+import type { ResourceConfig } from './ResourceConfig'
+
 /**
- * Global pipeline configuration settings.
+ * Global pipeline configuration settings. This is the publicly
+ * exposed type for users to configure pipelines.
  */
 export type RuntimeConfig = {
   /**
@@ -26,6 +29,7 @@ export type RuntimeConfig = {
    * Defaults to 0.
    */
   min_batch_size_records?: number
+  resources?: ResourceConfig
   /**
    * Number of DBSP worker threads.
    */

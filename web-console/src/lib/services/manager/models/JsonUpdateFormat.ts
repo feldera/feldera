@@ -14,5 +14,6 @@ export enum JsonUpdateFormat {
   INSERT_DELETE = 'insert_delete',
   WEIGHTED = 'weighted',
   DEBEZIUM = 'debezium',
+  SNOWFLAKE = 'snowflake',
   RAW = 'raw'
 }

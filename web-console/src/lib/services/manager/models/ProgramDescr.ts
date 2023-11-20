@@ -19,7 +19,11 @@ export type ProgramDescr = {
   /**
    * Program description.
    */
-  description: string
+  description?: string
+  /**
+   * Run the program in JIT-compiled mode.
+   */
+  jit_mode?: boolean
   /**
    * Program name (doesn't have to be unique).
    */
