@@ -1,3 +1,4 @@
+import { useParsedValue } from '$lib/functions/directives/useParsedValue'
 import { valibotRange } from '$lib/functions/valibot'
 import { PipelineId } from '$lib/services/manager'
 import { mutationUpdatePipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
@@ -110,6 +111,7 @@ export const PipelineResourcesDialog = (props: {
                 placeholder='none'
                 inputProps={workersRange}
                 disabled={disabled}
+                {...useParsedValue(v => (v === '' ? null : v))}
               ></TextFieldElement>
               <SliderElement
                 valueLabelDisplay='off'
@@ -135,6 +137,7 @@ export const PipelineResourcesDialog = (props: {
                     shrink: true
                   }}
                   disabled={disabled}
+                  {...useParsedValue(v => (v === '' ? null : v))}
                 ></TextFieldElement>
                 <TextFieldElement
                   name='resources.cpu_cores_max'
@@ -147,6 +150,7 @@ export const PipelineResourcesDialog = (props: {
                     shrink: true
                   }}
                   disabled={disabled}
+                  {...useParsedValue(v => (v === '' ? null : v))}
                 ></TextFieldElement>
               </Box>
               <Box sx={{}}>
@@ -176,6 +180,7 @@ export const PipelineResourcesDialog = (props: {
                     shrink: true
                   }}
                   disabled={disabled}
+                  {...useParsedValue(v => (v === '' ? null : v))}
                 ></TextFieldElement>
                 <TextFieldElement
                   name='resources.memory_mb_max'
@@ -188,6 +193,7 @@ export const PipelineResourcesDialog = (props: {
                     shrink: true
                   }}
                   disabled={disabled}
+                  {...useParsedValue(v => (v === '' ? null : v))}
                 ></TextFieldElement>
               </Box>
               <Box sx={{ display: 'flex' }}>
@@ -217,6 +223,7 @@ export const PipelineResourcesDialog = (props: {
                     shrink: true
                   }}
                   disabled={disabled}
+                  {...useParsedValue(v => (v === '' ? null : v))}
                 ></TextFieldElement>
               </Box>
               <Box sx={{}}>
