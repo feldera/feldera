@@ -29,7 +29,6 @@ import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.IndexedInputs;
@@ -754,7 +753,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
         query = "CREATE VIEW V AS (" + query + ")";
         compiler.compileStatement(ddl);
         compiler.compileStatement(query);
-        this.addRustTestCase("ComplexQueriesTest.taxiTest", compiler, getCircuit(compiler));
+        DBSPCircuit circuit = getCircuit(compiler);
+        this.addRustTestCase("ComplexQueriesTest.taxiTest", compiler, circuit);
     }
 
     @Test

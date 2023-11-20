@@ -1175,7 +1175,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         RelNode input = sort.getInput();
         DBSPOperator opInput = this.getOperator(input);
         if (this.options.languageOptions.ignoreOrderBy && sort.fetch == null) {
-            this.assignOperator(sort, opInput);
+            Utilities.putNew(this.nodeOperator, sort, opInput);
             return;
         }
         if (sort.offset != null)

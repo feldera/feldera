@@ -642,7 +642,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testCompilerToPng() throws IOException {
+    public void testCompilerToPng() {
         try {
             String[] statements = new String[]{
                     "CREATE TABLE T (\n" +
