@@ -212,15 +212,22 @@ impl UrlInputReader {
 
 impl InputReader for UrlInputReader {
     fn pause(&self) -> AnyResult<()> {
-        Ok(self.sender.send(PipelineState::Paused)?)
+        // Use `send_replace`, instead of `send`, to make it a no-op if the
+        // worker thread has died.  We want that behavior because pausing a
+        // download that is already complete should be a no-op.
+        //
+        // Same for `start` and `disconnect`, below.
+        self.sender.send_replace(PipelineState::Paused);
+        Ok(())
     }
 
     fn start(&self, _step: Step) -> AnyResult<()> {
-        Ok(self.sender.send(PipelineState::Running)?)
+        self.sender.send_replace(PipelineState::Running);
+        Ok(())
     }
 
     fn disconnect(&self) {
-        let _ = self.sender.send(PipelineState::Terminated);
+        self.sender.send_replace(PipelineState::Terminated);
     }
 }
 
