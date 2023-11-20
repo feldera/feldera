@@ -46,9 +46,11 @@ import dayjs from 'dayjs'
 import Link from 'next/link'
 import React, { useCallback, useEffect, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
+import { showOnHashPart } from 'src/lib/functions/urlHash'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 import IconCalendar from '~icons/bx/calendar'
+import IconCog from '~icons/bx/cog'
 import IconLogInCircle from '~icons/bx/log-in-circle'
 import IconPauseCircle from '~icons/bx/pause-circle'
 import IconPencil from '~icons/bx/pencil'
@@ -85,6 +87,8 @@ import {
   useGridApiRef
 } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+
+import { PipelineResourcesDialog } from './PipelineResourcesDialog'
 
 interface ConnectorData {
   relation: Relation
@@ -432,7 +436,7 @@ export default function PipelineTable() {
     {
       field: 'modification',
       headerName: 'Changes',
-      flex: 1,
+      width: 125,
       renderCell: (params: GridRenderCellParams) => {
         return <PipelineRevisionStatusChip pipeline={params.row} />
       }
@@ -440,13 +444,13 @@ export default function PipelineTable() {
     {
       field: 'status',
       headerName: 'Status',
-      flex: 1,
+      width: 152,
       renderCell: PipelineStatusCell
     },
     {
       field: 'actions',
       headerName: 'Actions',
-      flex: 1.0,
+      width: 160,
       renderCell: PipelineActions
     }
   ]
@@ -527,6 +531,7 @@ export default function PipelineTable() {
   const gridPersistence = useDataGridPresentationLocalStorage({
     key: LS_PREFIX + 'settings/streaming/management/grid'
   })
+  const showOnHash = showOnHashPart([hash, setHash])
 
   return (
     <Card>
@@ -569,6 +574,7 @@ export default function PipelineTable() {
         onDetailPanelExpandedRowIdsChange={updateExpandedRows}
         {...gridPersistence}
       />
+      <PipelineResourcesDialog {...showOnHash('configure')} pipelineId={hash.split('/')[1]} />
     </Card>
   )
 }
@@ -695,14 +701,14 @@ const PipelineActions = (params: { row: Pipeline }) => {
   const actions = {
     pause: () => (
       <Tooltip title='Pause Pipeline' key='pause'>
-        <IconButton className='pauseButton' size='small' onClick={() => pausePipelineClick(pipeline.pipeline_id)}>
+        <IconButton size='small' onClick={() => pausePipelineClick(pipeline.pipeline_id)}>
           <IconPauseCircle fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     start: () => (
       <Tooltip title='Start Pipeline' key='start'>
-        <IconButton className='startButton' size='small' onClick={() => startPipelineClick(pipeline.pipeline_id)}>
+        <IconButton size='small' onClick={() => startPipelineClick(pipeline.pipeline_id)}>
           <IconPlayCircle fontSize={20} />
         </IconButton>
       </Tooltip>
@@ -716,7 +722,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
     ),
     shutdown: () => (
       <Tooltip title='Shutdown Pipeline' key='shutdown'>
-        <IconButton className='shutdownButton' size='small' onClick={() => shutdownPipelineClick(pipeline.pipeline_id)}>
+        <IconButton size='small' onClick={() => shutdownPipelineClick(pipeline.pipeline_id)}>
           <IconStopCircle fontSize={20} />
         </IconButton>
       </Tooltip>
@@ -730,11 +736,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
     ),
     edit: () => (
       <Tooltip title='Edit Pipeline' key='edit'>
-        <IconButton
-          className='editButton'
-          size='small'
-          href={`/streaming/builder/?pipeline_id=${pipeline.pipeline_id}`}
-        >
+        <IconButton size='small' href={`/streaming/builder/?pipeline_id=${pipeline.pipeline_id}`}>
           <IconPencil fontSize={20} />
         </IconButton>
       </Tooltip>
@@ -742,7 +744,6 @@ const PipelineActions = (params: { row: Pipeline }) => {
     delete: () => (
       <Tooltip title='Delete Pipeline' key='delete'>
         <IconButton
-          className='deleteButton'
           size='small'
           onClick={showDeleteDialog(
             'Delete',
@@ -758,22 +759,29 @@ const PipelineActions = (params: { row: Pipeline }) => {
       <IconButton size='small' sx={{ opacity: 0 }} disabled key='spacer'>
         <IconStopCircle fontSize={20} />
       </IconButton>
+    ),
+    configure: () => (
+      <Tooltip title='Configure runtime resources' key='configure'>
+        <IconButton size='small' href={`#configure/${pipeline.pipeline_id}`} onClick={() => {}}>
+          <IconCog fontSize={20} />
+        </IconButton>
+      </Tooltip>
     )
   }
 
   const enabled = match([status, programStatus])
     .returnType<(keyof typeof actions)[]>()
-    .with([PipelineStatus.SHUTDOWN, 'Ready'], () => ['start', 'edit', 'delete'])
-    .with([PipelineStatus.SHUTDOWN, P._], () => ['spacer', 'edit', 'delete'])
-    .with([PipelineStatus.PROVISIONING, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.INITIALIZING, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.STARTING, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.RUNNING, P._], () => ['pause', 'edit', 'shutdown'])
-    .with([PipelineStatus.PAUSING, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.PAUSED, 'Ready'], () => ['start', 'edit', 'shutdown'])
-    .with([PipelineStatus.SHUTTING_DOWN, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.FAILED, P._], () => ['spacer', 'edit', 'shutdown'])
-    .otherwise(() => ['spacer', 'edit'])
+    .with([PipelineStatus.SHUTDOWN, 'Ready'], () => ['start', 'edit', 'configure', 'delete'])
+    .with([PipelineStatus.SHUTDOWN, P._], () => ['spacer', 'edit', 'configure', 'delete'])
+    .with([PipelineStatus.PROVISIONING, P._], () => ['spinner', 'edit', 'configure'])
+    .with([PipelineStatus.INITIALIZING, P._], () => ['spinner', 'edit', 'configure'])
+    .with([PipelineStatus.STARTING, P._], () => ['spinner', 'edit', 'configure'])
+    .with([PipelineStatus.RUNNING, P._], () => ['pause', 'edit', 'configure', 'shutdown'])
+    .with([PipelineStatus.PAUSING, P._], () => ['spinner', 'edit', 'configure'])
+    .with([PipelineStatus.PAUSED, 'Ready'], () => ['start', 'edit', 'configure', 'shutdown'])
+    .with([PipelineStatus.SHUTTING_DOWN, P._], () => ['spinner', 'edit', 'configure'])
+    .with([PipelineStatus.FAILED, P._], () => ['spacer', 'edit', 'configure', 'shutdown'])
+    .otherwise(() => ['spacer', 'edit', 'configure'])
 
   return (
     <>

@@ -12,6 +12,7 @@ import {
   ProgramId,
   ProgramsService,
   ProgramStatus,
+  UpdatePipelineRequest,
   UpdateProgramRequest
 } from '$lib/services/manager'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
@@ -188,6 +189,12 @@ export const mutationDeletePipeline = (queryClient: QueryClient) =>
     },
     onError: (_error, _pipelineId) => {}
   }) satisfies UseMutationOptions<string, ApiError, PipelineId>
+
+export const mutationUpdatePipeline = (_queryClient: QueryClient) => ({
+  mutationFn: (args: { pipelineId: PipelineId; request: UpdatePipelineRequest }) =>
+    PipelinesService.updatePipeline(args.pipelineId, args.request),
+  onError: (_error: ApiError, _variables: any) => {}
+})
 
 export const invalidatePipeline = (queryClient: QueryClient, pipelineId: PipelineId) => {
   invalidateQuery(queryClient, PipelineManagerQuery.pipelineLastRevision(pipelineId))
