@@ -400,6 +400,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#996](https://github.com/feldera/feldera/pull/996))
 - pipeline-manager now exposes a scrape endpoint for metrics, starting with the compiler service
   ([#1031](https://github.com/feldera/feldera/pull/1031))
+- WebConsole: Add a dialog to configure pipeline's runtime resources
+  ([#939](https://github.com/feldera/feldera/issues/939))
 
 ## [0.3.2] - 2023-11-10
 

@@ -39,6 +39,8 @@ import dayjs from 'dayjs'
 import Link from 'next/link'
 import React, { useCallback, useEffect, useState } from 'react'
 import { TwoSeventyRingWithBg } from 'react-svg-spinners'
+import CustomChip from 'src/@core/components/mui/chip'
+import { showOnHashPart } from 'src/lib/functions/urlHash'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 
@@ -70,6 +72,8 @@ import {
   useGridApiRef
 } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+
+import { PipelineResourcesDialog } from './PipelineResourcesDialog'
 
 interface ConnectorData {
   relation: Relation
@@ -600,6 +604,7 @@ export default function PipelineTable() {
   const gridPersistence = useDataGridPresentationLocalStorage({
     key: LS_PREFIX + 'settings/streaming/management/grid'
   })
+  const showOnHash = showOnHashPart([hash, setHash])
 
   return (
     <Card>
@@ -642,6 +647,7 @@ export default function PipelineTable() {
         onDetailPanelExpandedRowIdsChange={updateExpandedRows}
         {...gridPersistence}
       />
+      <PipelineResourcesDialog {...showOnHash('configure')} pipelineId={hash.split('/')[1]} />
     </Card>
   )
 }
@@ -890,7 +896,6 @@ const PipelineActionsCell = (params: { row: Pipeline }) => {
     delete: () => (
       <Tooltip title='Delete Pipeline' key='delete'>
         <IconButton
-          className='deleteButton'
           size='small'
           onClick={showDeleteDialog(
             'Delete',
@@ -907,22 +912,29 @@ const PipelineActionsCell = (params: { row: Pipeline }) => {
       <IconButton size='small' sx={{ opacity: 0 }} disabled key='spacer'>
         <i className={`bx bx-stop-circle`} style={{ fontSize: 24 }} />
       </IconButton>
+    ),
+    configure: () => (
+      <Tooltip title='Configure runtime resources' key='configure'>
+        <IconButton size='small' href={`#configure/${pipeline.pipeline_id}`} onClick={() => {}}>
+          <IconCog fontSize={20} />
+        </IconButton>
+      </Tooltip>
     )
   }
 
   const enabled = match([status, programStatus])
     .returnType<(keyof typeof actions)[]>()
-    .with([PipelineStatus.SHUTDOWN, 'Ready'], () => ['start', 'edit', 'delete'])
-    .with([PipelineStatus.SHUTDOWN, P._], () => ['spacer', 'edit', 'delete'])
-    .with([PipelineStatus.PROVISIONING, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.INITIALIZING, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.STARTING, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.RUNNING, P._], () => ['pause', 'edit', 'shutdown'])
-    .with([PipelineStatus.PAUSING, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.PAUSED, 'Ready'], () => ['start', 'edit', 'shutdown'])
-    .with([PipelineStatus.SHUTTING_DOWN, P._], () => ['spinner', 'edit'])
-    .with([PipelineStatus.FAILED, P._], () => ['spacer', 'edit', 'shutdown'])
-    .otherwise(() => ['spacer', 'edit'])
+    .with([PipelineStatus.SHUTDOWN, 'Ready'], () => ['start', 'edit', 'configure', 'delete'])
+    .with([PipelineStatus.SHUTDOWN, P._], () => ['spacer', 'edit', 'configure', 'delete'])
+    .with([PipelineStatus.PROVISIONING, P._], () => ['spinner', 'edit', 'configure'])
+    .with([PipelineStatus.INITIALIZING, P._], () => ['spinner', 'edit', 'configure'])
+    .with([PipelineStatus.STARTING, P._], () => ['spinner', 'edit', 'configure'])
+    .with([PipelineStatus.RUNNING, P._], () => ['pause', 'edit', 'configure', 'shutdown'])
+    .with([PipelineStatus.PAUSING, P._], () => ['spinner', 'edit', 'configure'])
+    .with([PipelineStatus.PAUSED, 'Ready'], () => ['start', 'edit', 'configure', 'shutdown'])
+    .with([PipelineStatus.SHUTTING_DOWN, P._], () => ['spinner', 'edit', 'configure'])
+    .with([PipelineStatus.FAILED, P._], () => ['spacer', 'edit', 'configure', 'shutdown'])
+    .otherwise(() => ['spacer', 'edit', 'configure'])
 
   return <Box data-testid={`box-pipeline-actions-${pipeline.name}`}>{enabled.map(e => actions[e]())}</Box>
 }

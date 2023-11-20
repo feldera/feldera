@@ -7,6 +7,8 @@ import { UnknownConnectorDialog } from '$lib/components/connectors/dialogs/Unkno
 import Metadata from '$lib/components/streaming/builder/Metadata'
 import MissingSchemaDialog from '$lib/components/streaming/builder/NoSchemaDialog'
 import { PipelineGraph } from '$lib/components/streaming/builder/PipelineBuilder'
+import { PipelineResourcesDialog } from '$lib/components/streaming/management/PipelineResourcesDialog'
+import { PipelineResourcesThumb } from '$lib/components/streaming/management/PipelineResourcesThumb'
 import { connectorConnects, useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
 import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
@@ -28,6 +30,7 @@ import {
 } from '$lib/services/manager'
 import {
   mutationCreatePipeline,
+  mutationUpdatePipeline,
   PipelineManagerQueryKey,
   updatePipelineConnectorName
 } from '$lib/services/pipelineManagerQuery'
@@ -273,6 +276,7 @@ const PipelineBuilderPage = ({
 
   useCreatePipelineEffect(pipeline, setSaveState, setFormError)
   useRenderPipelineEffect(pipeline, saveState, setMissingSchemaDialog)
+  const { mutate: updatePipelineMutate } = useMutation(mutationUpdatePipeline(queryClient))
 
   const onConnectorUpdateSuccess = (connector: ConnectorDescr, oldConnectorName: string) => {
     invalidateQuery(queryClient, PipelineManagerQueryKey.pipelineStatus(pipeline.name))
@@ -283,6 +287,8 @@ const PipelineBuilderPage = ({
     )
   }
 
+  const [show, setShow] = useState(false)
+
   return (
     <>
       <Grid container spacing={6} className='match-height' sx={{ pl: 6, pt: 6 }}>
@@ -291,10 +297,16 @@ const PipelineBuilderPage = ({
             <CardContent>
               <Metadata errors={formError} {...{ pipeline, updatePipeline }} disabled={saveState === 'isLoading'} />
             </CardContent>
-            <CardContent>
-              <Grid item xs={12}>
-                <EntitySyncIndicator getLabel={stateToSaveLabel} state={saveState} />
-              </Grid>
+            <CardContent sx={{ display: 'flex', alignItems: 'center' }}>
+              <EntitySyncIndicator getLabel={stateToSaveLabel} state={saveState} />
+              {pipelineId && (
+                <Box sx={{ ml: 'auto' }}>
+                  <PipelineResourcesThumb pipelineId={pipelineId}></PipelineResourcesThumb>
+                </Box>
+              )}
+              <Button sx={{ flex: 'none' }} onClick={() => setShow(true)}>
+                Configure resources
+              </Button>
             </CardContent>
           </Card>
         </Grid>
@@ -339,6 +351,7 @@ const PipelineBuilderPage = ({
             disabled={true}
           />
         ))(/view\/connector\/([\w-]+)/.exec(hash)?.[1])}
+      {pipelineId && <PipelineResourcesDialog {...{ show, setShow }} pipelineId={pipelineId}></PipelineResourcesDialog>}
     </>
   )
 }
