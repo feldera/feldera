@@ -129,7 +129,6 @@ prepare-cache:
     RUN mkdir -p sql-to-dbsp-compiler/temp
     #RUN mkdir -p crates/webui-tester
 
-    COPY --keep-ts .cargo/config .cargo/config
     COPY --keep-ts Cargo.toml .
     COPY --keep-ts Cargo.lock .
     COPY --keep-ts crates/dataflow-jit/Cargo.toml crates/dataflow-jit/
