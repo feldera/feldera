@@ -23,7 +23,7 @@ sophisticated SQL written for popular SQL databases to run with only
 minimal changes.
 
 In addition to an "Add SQL Program" button for creating a new program,
-This tab displays a list of each existing program's name and
+this tab displays a list of each existing program's name and
 description, which one may double-click to edit. Each program also
 has a status that indicates whether it is fully compiled, and two
 icons for actions: a pencil <icon icon="bx:pencil" /> to view or edit the
