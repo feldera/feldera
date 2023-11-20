@@ -221,7 +221,7 @@ pub trait Cursor<'s> {
     fn keys(&self) -> usize;
 
     /// Reveals the current item.
-    fn item(&self) -> Self::Item<'s>;
+    fn item(&self) -> Self::Item<'_>;
 
     /// Returns cursor over values associted with the current key.
     fn values(&self) -> <Self::ValueStorage as Trie>::Cursor<'s>;
@@ -401,7 +401,7 @@ impl<'s> Cursor<'s> for () {
     fn keys(&self) -> usize {
         0
     }
-    fn item(&self) -> Self::Item<'s> {
+    fn item(&self) -> Self::Item<'_> {
         &()
     }
     fn values(&self) {}
