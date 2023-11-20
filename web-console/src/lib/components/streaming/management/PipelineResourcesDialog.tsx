@@ -1,4 +1,3 @@
-import { useLogarithmicSlider } from '$lib/functions/directives/useLogarithmicSlider'
 import { valibotRange } from '$lib/functions/valibot'
 import { PipelineId } from '$lib/services/manager'
 import { mutationUpdatePipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
@@ -28,7 +27,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 const workersRange = { min: 1, max: 256 }
 const cpuCoresRange = { min: 1, max: 256 }
 const memoryMbRange = { min: 100, max: 10000 }
-const storageMbRange = { min: 0, max: 100000000 }
+const storageMbRange = { min: 100, max: 10000000 }
 
 /** @see '$lib/services/manager/models/ResourceConfig' */
 const pipelineConfigSchema = va.object({
@@ -113,23 +112,13 @@ export const PipelineResourcesDialog = (props: {
                 disabled={disabled}
               ></TextFieldElement>
               <SliderElement
-                sx={{}}
-                step={null}
                 valueLabelDisplay='off'
                 name={'workers'}
-                {...useLogarithmicSlider({
-                  marks: new Array(2).fill(undefined).flatMap((_, i) =>
-                    new Array(16)
-                      .fill(undefined)
-                      .map((_, i) => i + 1)
-                      .map(value => ({
-                        value: value * Math.pow(16, i),
-                        label: Number.isInteger(Math.log2(value) / 2) ? value * Math.pow(16, i) : ''
-                      }))
-                  ),
-                  max: 100,
-                  maxLog: workersRange.max
-                })}
+                {...workersRange}
+                marks={[workersRange.min, 128, workersRange.max].map(value => ({
+                  value,
+                  label: value
+                }))}
               />
             </Box>
             <Box>
@@ -162,22 +151,13 @@ export const PipelineResourcesDialog = (props: {
               </Box>
               <Box sx={{}}>
                 <SliderElement
-                  sx={{}}
-                  step={null}
                   valueLabelDisplay='off'
                   name={['resources.cpu_cores_min', 'resources.cpu_cores_max']}
-                  {...useLogarithmicSlider({
-                    marks: new Array(2).fill(undefined).flatMap((_, i) =>
-                      new Array(16)
-                        .fill(undefined)
-                        .map((_, i) => i + 1)
-                        .map(value => ({
-                          value: value * Math.pow(16, i),
-                          label: Number.isInteger(Math.log2(value) / 2) ? value * Math.pow(16, i) : ''
-                        }))
-                    ),
-                    maxLog: 256
-                  })}
+                  {...cpuCoresRange}
+                  marks={[cpuCoresRange.min, 128, cpuCoresRange.max].map(value => ({
+                    value,
+                    label: value
+                  }))}
                 />
               </Box>
               <Box sx={{ display: 'flex', width: '100%', gap: 2, pt: 2 }}></Box>
@@ -212,27 +192,13 @@ export const PipelineResourcesDialog = (props: {
               </Box>
               <Box sx={{ display: 'flex' }}>
                 <SliderElement
-                  step={null}
                   valueLabelDisplay='off'
                   name={['resources.memory_mb_min', 'resources.memory_mb_max']}
-                  {...useLogarithmicSlider({
-                    fromValue: v => v / 100,
-                    toValue: v => v * 100,
-                    marks: new Array(2).fill(undefined).flatMap((_, i) =>
-                      new Array(10)
-                        .fill(undefined)
-                        .map((_, i) => 100 * (i + 1))
-                        .map(value => ({
-                          value: value * Math.pow(10, i),
-                          label: Number.isInteger(Math.log10(value * Math.pow(10, i)))
-                            ? (value => format(value * 1000000, '0.00bd'))(value * Math.pow(10, i))
-                            : ''
-                        }))
-                        .concat({ value: 1500 * Math.pow(10, i), label: '' })
-                    ),
-                    max: 100,
-                    maxLog: 100
-                  })}
+                  {...memoryMbRange}
+                  marks={[memoryMbRange.min, 5000, memoryMbRange.max].map(value => ({
+                    value,
+                    label: format(value * 1000000, '0.00bd')
+                  }))}
                 />
               </Box>
             </Box>
@@ -255,27 +221,13 @@ export const PipelineResourcesDialog = (props: {
               </Box>
               <Box sx={{}}>
                 <SliderElement
-                  sx={{}}
-                  step={null}
                   valueLabelDisplay='off'
                   name={'resources.storage_mb_max'}
-                  {...useLogarithmicSlider({
-                    fromValue: v => v / 100,
-                    toValue: v => v * 100,
-                    marks: new Array(5).fill(undefined).flatMap((_, i) =>
-                      new Array(10)
-                        .fill(undefined)
-                        .map((_, i) => 100 * (i + 1))
-                        .map(value => ({
-                          value: value * Math.pow(10, i),
-                          label: Number.isInteger(Math.log10(value * Math.pow(10, i)) / 2)
-                            ? (value => format(value * 1000000, '0.00bd'))(value * Math.pow(10, i))
-                            : ''
-                        }))
-                    ),
-                    max: 100,
-                    maxLog: 100000
-                  })}
+                  {...storageMbRange}
+                  marks={[storageMbRange.min, 5000000, storageMbRange.max].map(value => ({
+                    value,
+                    label: format(value * 1000000, '0.00bd')
+                  }))}
                 />
               </Box>
             </Box>
