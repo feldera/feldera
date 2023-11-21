@@ -95,9 +95,10 @@ public abstract class DBSPNode
     }
 
     public static void startLog() {
-        DEBUG_DETERMINISM = true;
-        log = new ArrayList<>();
-        previousLog = readLog();
+        if (DEBUG_DETERMINISM) {
+            log = new ArrayList<>();
+            previousLog = readLog();
+        }
     }
 
     public static void done() {

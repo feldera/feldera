@@ -20,6 +20,7 @@ paste = { version = "1.0.12" }
 regex = { version = "1.9.1" }
 rkyv = "0.7.42"
 hex = "0.4.3"
+num-traits = "0.2"
 
 [dev-dependencies]
 lazy_static = "1.4.0"
