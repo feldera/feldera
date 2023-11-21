@@ -150,7 +150,7 @@ or aggregate functions, or a combination of constants and aggregate
 functions. Aggregate and grouping functions may only appear in an
 aggregate query, and only in a `SELECT`, `HAVING` or `ORDER BY`
 clause.  Aggregate functions are described in [this
-section](aggregates.md).
+section](aggregates.md#standard-aggregate-operations).
 
 A scalar sub-query is a sub-query used as an expression. If the
 sub-query returns no rows, the value is `NULL`; if it returns more
@@ -202,4 +202,4 @@ windowRange
 ```
 
 Where `agg` is a window aggregate function as described in the [section
-on aggregation](aggregates.md).
+on aggregation](aggregates.md#window-aggregate-functions).
