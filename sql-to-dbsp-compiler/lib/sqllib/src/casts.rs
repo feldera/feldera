@@ -8,8 +8,8 @@ use crate::{geopoint::*, interval::*, timestamp::*};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
-use rust_decimal::Decimal;
 use num_traits::cast::NumCast;
+use rust_decimal::Decimal;
 
 /////////// cast to b
 
