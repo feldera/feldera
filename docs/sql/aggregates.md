@@ -143,28 +143,6 @@ The following window aggregate functions are supported:
     <td><code>ROW_NUMBER()</code></td>
     <td>Returns the number of the current row within its partition, counting from 1</td>
   </tr>
-  <!--
-  <tr>
-    <td><code>FIRST_VALUE</code>(value)</td>
-    <td>Returns value evaluated at the row that is the first row of the window frame</td>
-  </tr>
-  <tr>
-    <td><code>LAST_VALUE</code>(value)</td>
-    <td>Returns value evaluated at the row that is the last row of the window frame</td>
-  </tr>
-  <tr>
-    <td><code>LEAD</code>(value, offset, default)</td>
-    <td>Returns value evaluated at the row that is offset rows after the current row within the partition; if there is no such row, instead returns default. Both offset and default are evaluated with respect to the current row. If omitted, offset defaults to 1 and default to <code>NULL</code></td>
-  </tr>
-  <tr>
-    <td><code>LAG</code>(value, offset, default)</td>
-    <td>Returns value evaluated at the row that is offset rows before the current row within the partition; if there is no such row, instead returns default. Both offset and default are evaluated with respect to the current row. If omitted, offset defaults to 1 and default to <code>NULL</code></td>
-  </tr>
-  <tr>
-    <td><code>NTH_VALUE</code>(value, nth)</td>
-    <td>Returns value evaluated at the row that is the nth row of the window frame</td>
-  </tr>
-  -->
 </table>
 
 ## Pivots
