@@ -69,6 +69,18 @@ aggregate function.
      <td><code>LOGICAL_AND</code> or <code>BOOL_AND</code></td>
      <td>Same as <code>EVERY</code></td>
   </tr>
+  <tr>
+     <td><code>BIT_AND( [ ALL | DISTINCT ] value)</code></td>
+     <td>Returns the bitwise AND of all non-null input values, or null if none; integer and binary types are supported</td>
+  </tr>
+  <tr>
+     <td><code>BIT_OR( [ ALL | DISTINCT ] value)</code></td>
+     <td>Returns the bitwise OR of all non-null input values, or null if none; integer and binary types are supported</td>
+  </tr>
+  <tr>
+     <td><code>BIT_XOR( [ ALL | DISTINCT ] value)</code></td>
+     <td>Returns the bitwise XOR of all non-null input values, or null if none; integer and binary types are supported</td>
+  </tr>
 </table>
 
 If `FILTER` is specified, then only the input rows for which the
