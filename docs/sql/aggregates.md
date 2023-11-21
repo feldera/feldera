@@ -96,7 +96,7 @@ where `agg` is one of the operators in the following table.
     <td>Returns the number of rows in window for which value is not null</td>
   </tr>
   <tr>
-    <td><CODE>COUNT(*)</code></td>
+    <td><code>COUNT(*)</code></td>
     <td>Returns the number of rows in window</td>
   </tr>
   <tr>
