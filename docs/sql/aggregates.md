@@ -1,8 +1,10 @@
 # Aggregate operations
 
-## Standard aggregate functions
+## Standard aggregate operations
 
-Aggregate functions are specified using the following grammar:
+A `SELECT` expression in the [SQL grammar](grammar.md) can contain one
+or more aggregation functions.  Aggregate functions are specified
+using the following grammar:
 
 ```
 aggregateCall:
@@ -96,7 +98,9 @@ FROM TABLE
 
 ## Window aggregate functions
 
-where `agg` is one of the operators in the following table.
+A `SELECT` expression in the [SQL grammar](grammar.md) can also
+contain a [window aggregate function](grammar.md#window-aggregates).
+The following window aggregate functions are supported:
 
 <table>
   <tr>
@@ -139,6 +143,7 @@ where `agg` is one of the operators in the following table.
     <td><code>ROW_NUMBER()</code></td>
     <td>Returns the number of the current row within its partition, counting from 1</td>
   </tr>
+  <!--
   <tr>
     <td><code>FIRST_VALUE</code>(value)</td>
     <td>Returns value evaluated at the row that is the first row of the window frame</td>
@@ -159,6 +164,7 @@ where `agg` is one of the operators in the following table.
     <td><code>NTH_VALUE</code>(value, nth)</td>
     <td>Returns value evaluated at the row that is the nth row of the window frame</td>
   </tr>
+  -->
 </table>
 
 ## Pivots
