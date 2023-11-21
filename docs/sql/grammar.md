@@ -65,7 +65,6 @@ select
       [ WHERE booleanExpression ]
       [ GROUP BY [ ALL | DISTINCT ] { groupItem [, groupItem ]* } ]
       [ HAVING booleanExpression ]
-      [ WINDOW windowName AS windowSpec [, windowName AS windowSpec ]* ]
 
 tablePrimary
   :   [ [ catalogName . ] schemaName . ] tableName
@@ -150,7 +149,8 @@ grouping constants as defined by the `GROUP BY` clause, or constants),
 or aggregate functions, or a combination of constants and aggregate
 functions. Aggregate and grouping functions may only appear in an
 aggregate query, and only in a `SELECT`, `HAVING` or `ORDER BY`
-clause.
+clause.  Aggregate functions are described in [this
+section](aggregates.md).
 
 A scalar sub-query is a sub-query used as an expression. If the
 sub-query returns no rows, the value is `NULL`; if it returns more
@@ -201,5 +201,5 @@ windowRange
   |   ( UNBOUNDED | expression ) ( PRECEDING | FOLLOWING )
 ```
 
-Where `agg` is a window aggregate function as described in the section
-on aggregation.
+Where `agg` is a window aggregate function as described in the [section
+on aggregation](aggregates.md).
