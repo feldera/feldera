@@ -224,3 +224,70 @@ Here are some guidelines when contributing code that affects this database's sch
 * The migration files can be found in `crates/pipeline_manager/migrations`
 * Do not modify an existing migration file. If you want to evolve the schema, add a new SQL or rust file to the migrations folder following [refinery's versioning and naming scheme](https://docs.rs/refinery/latest/refinery/#usage). The migration script should update an existing schema as opposed to assuming a clean slate. For example, use `ALTER TABLE` to add a new column to an existing table and fill that column for existing rows with the appropriate defaults.
 * If you add a new migration script `V{i}`, add tests for migrations from `V{i-1}` to `V{i}`. For example, add tests that invoke the pipeline manager APIs before and after the migration.
+
+
+## Release process
+
+There are a few steps to put out a new Feldera release. At a high-level, there
+are two phases. First, we put out a release commit which involves updating the
+CHANGELOG and bumping package versions, which we then put out a Github release
+with. Second, if the previous phase is successful and we are happy with the
+released container images, we then put out a post-release commit that updates
+existing docker-compose manifests to make use of the newly released container
+images.
+
+### Phase 1: release commit
+
+First, make sure sure
+you have pulled the latest changes into your local main branch.
+
+```
+git pull origin main
+```
+
+Next, run the following script from the `scripts` folder:
+
+```
+cd scripts
+./bump-versions.sh <major / minor / patch>
+```
+
+If the `Unreleased` section of the CHANGELOG has new features (i.e., an `Added`
+section), we perform a minor release. If we only have bug fixes, we perform a
+patch release. We currently do not do `major` releases as we are not ready for
+1.0 yet.
+
+Running the above command should switch to a new branch called `release-vX.Y.Z`
+where `X.Y.Z` is the new release version. It should have created a commit that
+bumped the version and updated the CHANGELOG. You can check the changes by
+running:
+
+```
+git show
+```
+
+There will also be uncommitted changes you can view with `git diff`. We will
+merge these changes only after the commited changes are released in phase 2.
+
+Push the committed changes to Github and create a PR. Once the CI passes, merge
+it into main, and create a new release from Github. Create a new tag from
+within the `release` page on Github. Follow the versioning format of `vX.Y.Z`
+when creating the new tag. Add the CHANGELOG entry to the release description.
+
+### Phase 2: post-release commit
+
+Once the release is out, keep an eye on the CI on the main branch. It should
+eventually put out containers for the new release (an action called
+`containers.yml`). Test the containers locally once that action succeeds.
+
+Once the released containers look fine, it's time to switch the docker-compose
+files in the repository to point to the newly released containers. To do so,
+let's go back to the uncommitted changes in your local `release-vX.Y.Z` branch.
+Create a new branch, commit these changes and get a pull request merged for
+this new commit:
+
+```
+git checkout -b post-release-vX.Y.Z
+git commit -am "docker: point compose file to Feldera version X.Y.Z" -s
+git push origin post-release-vX.Y.Z
+```
