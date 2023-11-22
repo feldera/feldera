@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.functions;
 
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class FunctionsTest extends SqlIoTest {

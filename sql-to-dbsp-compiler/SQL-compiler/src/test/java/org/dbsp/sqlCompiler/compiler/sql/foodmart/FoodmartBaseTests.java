@@ -1,9 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.foodmart;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
-import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
