@@ -22,10 +22,15 @@
     "lint": "eslint --max-warnings 0 --fix \"src/**/*.{js,jsx,ts,tsx}\"",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
-    "generate-openapi": "cargo run --bin pipeline-manager -- --dump-openapi && openapi --input ./openapi.json --output ./src/lib/services/manager && rm ./openapi.json"
+    "generate-openapi": "cargo run --bin pipeline-manager -- --dump-openapi && openapi --input ./openapi.json --output ./src/lib/services/manager && rm ./openapi.json",
+    "test": "DISPLAY= yarn playwright test",
+    "test:ui": "DISPLAY= yarn playwright test --ui-port=0"
   },
   "//": [
-    "For @iconify/react: Wait for fix of https://github.com/iconify/iconify/issues/249 before upgrading to version >4.1.0"
+    "See `yarn playwright --help` for Playwright commands",
+    "When running Playwright tests via devcontainer, webkit engine doesn't work",
+    "   unless DISPLAY env var is cleared with `DISPLAY= ` ",
+    "   See https://github.com/microsoft/playwright/issues/18255 for details."
   ],
   "devDependencies": {
     "@emotion/cache": "^11.11.0",
@@ -47,6 +52,7 @@
     "@mui/system": "^5.14.4",
     "@mui/x-data-grid-pro": "^6.11.0",
     "@mui/x-date-pickers-pro": "^6.11.0",
+    "@playwright/test": "^1.40.0",
     "@popperjs/core": "^2.11.8",
     "@react-oauth/google": "^0.11.1",
     "@svgr/core": "^8.1.0",

@@ -19,7 +19,8 @@
 				"serayuzgur.crates",
 				"vadimcn.vscode-lldb",
 				"mike-co.import-sorter",
-				"lihui.vs-color-picker"
+				"lihui.vs-color-picker",
+				"ms-playwright.playwright"
 			],
 			"settings": {
 				"editor.formatOnSave": true,

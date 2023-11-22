@@ -56,7 +56,7 @@ RUN ARCH=`dpkg --print-architecture`; \
 
 RUN \
    pip3 install openapi-python-client==0.15.0 websockets \
-   && pip3 install gdown
+      gdown
 
 ## Switch to non-root user
 
