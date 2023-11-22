@@ -137,8 +137,7 @@ exprOrList
 ```
 
 Note: `FOREIGN KEY` information is parsed, but it is not validated,
-and is currently ignored.  Similarly, the `DEFAULT` column values are
-parsed, but not validated, and are currently ignored.
+and is currently ignored.
 
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.
