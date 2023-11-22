@@ -137,6 +137,10 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
             writer.keyword("LATENESS");
             this.lateness.unparse(writer, 0, 0);
         }
+        if (this.defaultValue != null) {
+            writer.keyword("DEFAULT");
+            this.defaultValue.unparse(writer, 0, 0);
+        }
     }
 
     static void exp(SqlWriter writer, SqlNode expression) {

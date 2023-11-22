@@ -393,7 +393,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "CREATE VIEW V AS SELECT COL1 FROM T"
         };
         File file = createInputScript(statements);
-        CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        System.err.println(messages);
+        Assert.assertEquals(0, messages.exitCode);
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
     }
 
@@ -408,7 +410,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "CREATE VIEW V AS SELECT COL1 FROM T"
         };
         File file = createInputScript(statements);
-        CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        System.err.println(messages);
+        Assert.assertEquals(0, messages.errorCount());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
     }
     

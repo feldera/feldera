@@ -24,9 +24,14 @@
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import org.apache.calcite.avatica.util.Casing;
-import org.apache.calcite.config.*;
+import org.apache.calcite.config.CalciteConnectionConfig;
+import org.apache.calcite.config.CalciteConnectionConfigImpl;
+import org.apache.calcite.config.CalciteConnectionProperty;
 import org.apache.calcite.jdbc.CalciteSchema;
-import org.apache.calcite.plan.*;
+import org.apache.calcite.plan.RelOptCluster;
+import org.apache.calcite.plan.RelOptPlanner;
+import org.apache.calcite.plan.RelOptRule;
+import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.hep.HepMatchOrder;
 import org.apache.calcite.plan.hep.HepPlanner;
 import org.apache.calcite.plan.hep.HepProgram;
@@ -37,17 +42,14 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.Join;
-import org.apache.calcite.rel.rules.*;
+import org.apache.calcite.rel.rules.CoreRules;
+import org.apache.calcite.rel.rules.PruneEmptyRules;
 import org.apache.calcite.rel.type.*;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.*;
-import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
-import org.apache.calcite.sql.ddl.SqlCreateTable;
-import org.apache.calcite.sql.ddl.SqlCreateView;
-import org.apache.calcite.sql.ddl.SqlDropTable;
-import org.apache.calcite.sql.ddl.SqlKeyConstraint;
+import org.apache.calcite.sql.ddl.*;
 import org.apache.calcite.sql.fun.SqlLibrary;
 import org.apache.calcite.sql.fun.SqlLibraryOperatorTableFactory;
 import org.apache.calcite.sql.parser.SqlParseException;
@@ -68,15 +70,14 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputTableDescription;
 import org.dbsp.sqlCompiler.compiler.OutputViewDescription;
-import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.errors.*;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.util.*;
+import org.dbsp.util.IWritesLogs;
+import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.*;
@@ -676,8 +677,18 @@ public class CalciteCompiler implements IWritesLogs {
                     primaryKeys.remove(name.getSimple());
                 if (cd.lateness != null)
                     lateness = this.converter.convertExpression(cd.lateness);
-                if (cd.defaultValue != null)
-                    defaultValue = this.converter.convertExpression(cd.defaultValue);
+                if (cd.defaultValue != null) {
+                    // workaround for https://issues.apache.org/jira/browse/CALCITE-6129
+                    if (cd.defaultValue instanceof SqlLiteral) {
+                        SqlLiteral literal = (SqlLiteral) cd.defaultValue;
+                        if (literal.getTypeName() == SqlTypeName.NULL) {
+                            RelDataType type = literal.createSqlType(this.converter.getCluster().getTypeFactory());
+                            defaultValue = this.converter.getRexBuilder().makeLiteral(null, type);
+                        }
+                    }
+                    if (defaultValue == null)
+                        defaultValue = this.converter.convertExpression(cd.defaultValue);
+                }
             } else if (col instanceof SqlKeyConstraint) {
                 continue;
             } else {
