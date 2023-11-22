@@ -1,7 +1,0 @@
-workers: 8
-cpu_profiler: false
-min_batch_size_records: 0
-max_buffering_delay_usecs: 0
-name: pipeline-018aba94-3b3a-7add-97b5-5764320d7e6a
-inputs:
-outputs:

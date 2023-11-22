@@ -1,10 +1,9 @@
-package org.dbsp.sqlCompiler.compiler.backend.jit.ir;
+package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
@@ -20,7 +19,7 @@ import java.util.Objects;
 
 /**
  * This visitor replaces function calls to "writelog(format, argument)" with
- * more primitive operations understood by the JIT.  The format has the form
+ * more primitive operations.  The format has the form
  * prefix%%suffix (with zero or more occurrences of %%).
  * E.g., it may generate the following block expression:
  * {
@@ -31,8 +30,8 @@ import java.util.Objects;
  *    argument
  * }
  */
-public class ExpandWritelog extends InnerRewriteVisitor {
-    public ExpandWritelog(IErrorReporter reporter) {
+public class ExpandWriteLog extends InnerRewriteVisitor {
+    public ExpandWriteLog(IErrorReporter reporter) {
         super(reporter);
     }
 

@@ -67,8 +67,6 @@ pub struct PipelineExecutionDesc {
     pub program_id: ProgramId,
     pub version: Version,
     pub config: PipelineConfig,
-    pub jit_mode: bool,
-    pub code: String,
     pub binary_ref: String,
 }
 
@@ -79,9 +77,6 @@ fn to_execution_desc(pr: PipelineRevision, binary_ref: String) -> PipelineExecut
         program_id: pr.program.program_id,
         version: pr.program.version,
         config: pr.config,
-        jit_mode: pr.program.jit_mode,
-        // PipelineRevision always contains program code.
-        code: pr.program.code.as_ref().unwrap().clone(),
         binary_ref,
     }
 }
@@ -176,23 +171,23 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 let revision = db
                     .get_last_committed_pipeline_revision(self.tenant_id, self.pipeline_id)
                     .await?;
-
+                db.update_pipeline_runtime_state(self.tenant_id, self.pipeline_id, &pipeline)
+                    .await?;
+                // txn.commit();
+                // Locate project executable.
+                let executable_ref = db
+                    .get_compiled_binary_ref(revision.program.program_id, revision.program.version)
+                    .await?;
                 let pipeline_id = self.pipeline_id;
-                let executable_ref = if !revision.program.jit_mode {
-                    db.get_compiled_binary_ref(
-                        revision.program.program_id,
-                        revision.program.version,
-                    )
-                    .await?
-                    .ok_or_else(|| RunnerError::BinaryFetchError {
+                if executable_ref.is_none() {
+                    return Err(RunnerError::BinaryFetchError {
                         pipeline_id,
                         error: format!("Did not receieve a compiled binary URL for {pipeline_id}"),
-                    })?
-                } else {
-                    String::new()
-                };
+                    }
+                    .into());
+                }
                 drop(db);
-                let execution_desc = to_execution_desc(revision, executable_ref);
+                let execution_desc = to_execution_desc(revision, executable_ref.unwrap());
 
                 poll_timeout = Self::PROVISIONING_POLL_PERIOD;
                 // This requires start() to be idempotent. If the process crashes after start
@@ -733,14 +728,7 @@ mod test {
         let (program_id, version) = conn
             .lock()
             .await
-            .new_program(
-                tenant_id,
-                program_id,
-                "test0",
-                "program desc",
-                "ignored",
-                true,
-            )
+            .new_program(tenant_id, program_id, "test0", "program desc", "ignored")
             .await
             .unwrap();
         let _ = conn
@@ -788,6 +776,12 @@ mod test {
             .lock()
             .await
             .create_pipeline_revision(Uuid::now_v7(), tenant_id, pipeline_id)
+            .await
+            .unwrap();
+        let _ = conn
+            .lock()
+            .await
+            .create_compiled_binary_ref(program_id, version, "ignored".to_string())
             .await
             .unwrap();
         let notifier = Arc::new(Notify::new());

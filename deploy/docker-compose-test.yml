@@ -1,13 +1,13 @@
 # Used from `Earthfile` to run a test alongside one or more
 # service containers.  `test:latest` will get replaced with
 # a container built by another target within the Earthfile.
+# See, e.g., `+test-adapters`.
+name: earthly-test
 services:
   test:
     depends_on:
-      pipeline-manager:
-        condition: service_healthy
-    #   redpanda:
-    #     condition: service_started
+      redpanda:
+        condition: service_started
     image: test:latest
     environment:
       - RUST_BACKTRACE=1

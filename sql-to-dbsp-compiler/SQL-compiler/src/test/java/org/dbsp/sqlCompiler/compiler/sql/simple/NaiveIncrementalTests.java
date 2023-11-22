@@ -32,7 +32,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 public class NaiveIncrementalTests extends EndToEndTests {
     @Override
     public DBSPCompiler testCompiler() {
-        CompilerOptions options = this.testOptions(true, false, false);
+        CompilerOptions options = this.testOptions(true, false);
         return new DBSPCompiler(options);
     }
 

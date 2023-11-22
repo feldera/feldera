@@ -27,15 +27,9 @@ package org.dbsp.sqllogictest;
 
 import net.hydromatic.sqllogictest.OptionsParser;
 import net.hydromatic.sqllogictest.TestStatistics;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerPasses;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqllogictest.executors.DBSPExecutor;
 import org.dbsp.sqllogictest.executors.DbspJdbcExecutor;
-import org.dbsp.sqllogictest.executors.JitDbspExecutor;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -102,7 +96,6 @@ public class Main {
         });
         DBSPExecutor.register(parser, skip);
         DbspJdbcExecutor.register(parser, skip);
-        JitDbspExecutor.register(parser, skip);
         TestStatistics results = net.hydromatic.sqllogictest.Main.execute(parser, args);
         results.printStatistics(System.out);
     }

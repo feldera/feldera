@@ -1,8 +1,6 @@
-from typing import Any, Dict, List, Type, TypeVar, Union
+from typing import Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
-
-from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="NewProgramRequest")
 
@@ -15,20 +13,17 @@ class NewProgramRequest:
         code (str): SQL code of the program. Example: CREATE TABLE Example(name varchar);.
         description (str): Program description. Example: Example description.
         name (str): Program name. Example: Example program.
-        jit_mode (Union[Unset, bool]): Compile the program in JIT mode.
     """
 
     code: str
     description: str
     name: str
-    jit_mode: Union[Unset, bool] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         code = self.code
         description = self.description
         name = self.name
-        jit_mode = self.jit_mode
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -39,8 +34,6 @@ class NewProgramRequest:
                 "name": name,
             }
         )
-        if jit_mode is not UNSET:
-            field_dict["jit_mode"] = jit_mode
 
         return field_dict
 
@@ -53,13 +46,10 @@ class NewProgramRequest:
 
         name = d.pop("name")
 
-        jit_mode = d.pop("jit_mode", UNSET)
-
         new_program_request = cls(
             code=code,
             description=description,
             name=name,
-            jit_mode=jit_mode,
         )
 
         new_program_request.additional_properties = d

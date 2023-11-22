@@ -169,11 +169,6 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             this.startTest();
             if (this.execute) {
                 String[] extraArgs = new String[0];
-                if (this.compilerOptions.ioOptions.jit) {
-                    extraArgs = new String[2];
-                    extraArgs[0] = "--features";
-                    extraArgs[1] = "jit";
-                }
                 Utilities.compileAndTestRust(Main.rustDirectory, true, extraArgs);
             }
             this.queriesToRun.clear();
@@ -546,10 +541,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         PrintStream stream = new PrintStream(testFilePath, "UTF-8");
         RustFileWriter rust = new RustFileWriter(compiler, stream);
 
-        if (!compiler.options.ioOptions.jit) {
-            for (DBSPFunction function : inputFunctions)
-                rust.add(function);
-        }
+        for (DBSPFunction function : inputFunctions)
+            rust.add(function);
         for (ProgramAndTester pt: functions)
             rust.add(pt);
         rust.writeAndClose();

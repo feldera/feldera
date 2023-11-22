@@ -272,13 +272,9 @@ pub(crate) struct ProgramDescr {
     /// Program name (doesn't have to be unique).
     pub name: String,
     /// Program description.
-    #[serde(default)]
     pub description: String,
     /// Program version, incremented every time program code is modified.
     pub version: Version,
-    /// Run the program in JIT-compiled mode.
-    #[serde(default)]
-    pub jit_mode: bool,
     /// Program compilation status.
     pub status: ProgramStatus,
     /// A JSON description of the SQL tables and view declarations including
@@ -858,7 +854,7 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                r#"SELECT id, name, description, version, jit_mode, status, error, schema,
+                r#"SELECT id, name, description, version, status, error, schema,
                 CASE WHEN $2 IS TRUE THEN code ELSE null END
                 FROM program WHERE tenant_id = $1"#,
             )
@@ -867,12 +863,11 @@ impl Storage for ProjectDB {
 
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
-            let jit_mode: bool = row.get(4);
-            let status: Option<String> = row.get(5);
-            let error: Option<String> = row.get(6);
+            let status: Option<String> = row.get(4);
+            let error: Option<String> = row.get(5);
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
             let schema: Option<ProgramSchema> = row
-                .get::<_, Option<String>>(7)
+                .get::<_, Option<String>>(6)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
@@ -883,9 +878,8 @@ impl Storage for ProjectDB {
                 description: row.get(2),
                 version: Version(row.get(3)),
                 schema,
-                jit_mode,
                 status,
-                code: row.get(8),
+                code: row.get(7),
             });
         }
 
@@ -899,14 +893,13 @@ impl Storage for ProjectDB {
         program_name: &str,
         program_description: &str,
         program_code: &str,
-        jit_mode: bool,
     ) -> Result<(ProgramId, Version), DBError> {
         debug!("new_program {program_name} {program_description} {program_code}");
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "INSERT INTO program (id, version, tenant_id, name, description, code, schema, jit_mode, status, error, status_since)
-                        VALUES($1, 1, $2, $3, $4, $5, NULL, $6, NULL, NULL, now());",
+                "INSERT INTO program (id, version, tenant_id, name, description, code, schema, status, error, status_since)
+                        VALUES($1, 1, $2, $3, $4, $5, NULL, NULL, NULL, now());",
             )
             .await?;
         manager
@@ -918,7 +911,6 @@ impl Storage for ProjectDB {
                     &program_name,
                     &program_description,
                     &program_code,
-                    &jit_mode,
                 ],
             )
             .await
@@ -939,7 +931,6 @@ impl Storage for ProjectDB {
         program_name: &str,
         program_description: &str,
         program_code: &Option<String>,
-        jit_mode: bool,
     ) -> Result<Version, DBError> {
         let row = match program_code {
             Some(code) => {
@@ -954,11 +945,10 @@ impl Storage for ProjectDB {
                             name = $1,
                             description = $2,
                             code = $3,
-                            jit_mode = $4,
-                            status = (CASE WHEN code = $3 AND jit_mode = $4 THEN status ELSE NULL END),
-                            error = (CASE WHEN code = $3 AND jit_mode = $4 THEN error ELSE NULL END),
+                            status = (CASE WHEN code = $3 THEN status ELSE NULL END),
+                            error = (CASE WHEN code = $3 THEN error ELSE NULL END),
                             schema = (CASE WHEN code = $3 THEN schema ELSE NULL END)
-                    WHERE id = $5 AND tenant_id = $6
+                    WHERE id = $4 AND tenant_id = $5
                     RETURNING version
                 ",
                     )
@@ -971,7 +961,6 @@ impl Storage for ProjectDB {
                             &program_name,
                             &program_description,
                             &code,
-                            &jit_mode,
                             &program_id.0,
                             &tenant_id.0,
                         ],
@@ -983,15 +972,7 @@ impl Storage for ProjectDB {
                 let manager = self.pool.get().await?;
                 let stmt = manager
                     .prepare_cached(
-                        "UPDATE program
-                        SET
-                            name = $1,
-                            description = $2,
-                            jit_mode = $3,
-                            status = (CASE WHEN jit_mode = $3 THEN status ELSE NULL END),
-                            error = (CASE WHEN jit_mode = $3 THEN error ELSE NULL END)
-                        WHERE id = $4 AND tenant_id = $5
-                        RETURNING version",
+                        "UPDATE program SET name = $1, description = $2 WHERE id = $3 AND tenant_id = $4 RETURNING version",
                     )
                     .await?;
                 manager
@@ -1000,7 +981,6 @@ impl Storage for ProjectDB {
                         &[
                             &program_name,
                             &program_description,
-                            &jit_mode,
                             &program_id.0,
                             &tenant_id.0,
                         ],
@@ -1029,7 +1009,7 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT name, description, version, jit_mode, status, error, schema,
+                "SELECT name, description, version, status, error, schema,
                 CASE WHEN $3 IS TRUE THEN code ELSE null END
                 FROM program WHERE id = $1 AND tenant_id = $2",
             )
@@ -1042,15 +1022,14 @@ impl Storage for ProjectDB {
             let name: String = row.get(0);
             let description: String = row.get(1);
             let version: Version = Version(row.get(2));
-            let jit_mode: bool = row.get(3);
-            let status: Option<String> = row.get(4);
-            let error: Option<String> = row.get(5);
+            let status: Option<String> = row.get(3);
+            let error: Option<String> = row.get(4);
             let schema: Option<ProgramSchema> = row
-                .get::<_, Option<String>>(6)
+                .get::<_, Option<String>>(5)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
-            let code: Option<String> = row.get(7);
+            let code: Option<String> = row.get(6);
 
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
             Ok(Some(ProgramDescr {
@@ -1058,7 +1037,6 @@ impl Storage for ProjectDB {
                 name,
                 description,
                 version,
-                jit_mode,
                 status,
                 schema,
                 code,
@@ -1078,7 +1056,7 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT id, description, version, jit_mode, status, error, schema, tenant_id,
+                "SELECT id, description, version, status, error, schema, tenant_id,
                  CASE WHEN $3 IS TRUE THEN code ELSE null END
                  FROM program WHERE name = $1 AND tenant_id = $2",
             )
@@ -1091,15 +1069,14 @@ impl Storage for ProjectDB {
             let program_id: ProgramId = ProgramId(row.get(0));
             let description: String = row.get(1);
             let version: Version = Version(row.get(2));
-            let jit_mode: bool = row.get(3);
-            let status: Option<String> = row.get(4);
-            let error: Option<String> = row.get(5);
+            let status: Option<String> = row.get(3);
+            let error: Option<String> = row.get(4);
             let schema: Option<ProgramSchema> = row
-                .get::<_, Option<String>>(6)
+                .get::<_, Option<String>>(5)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
-            let code: Option<String> = row.get(8);
+            let code: Option<String> = row.get(7);
 
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
             Ok(Some(ProgramDescr {
@@ -1107,7 +1084,6 @@ impl Storage for ProjectDB {
                 name: program_name.to_string(),
                 description,
                 version,
-                jit_mode,
                 status,
                 schema,
                 code,
@@ -1247,7 +1223,7 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                r#"SELECT id, name, description, version, jit_mode, status, error, schema, tenant_id
+                r#"SELECT id, name, description, version, status, error, schema, tenant_id
                    FROM program"#,
             )
             .await?;
@@ -1255,16 +1231,15 @@ impl Storage for ProjectDB {
 
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
-            let jit_mode: bool = row.get(4);
-            let status: Option<String> = row.get(5);
-            let error: Option<String> = row.get(6);
+            let status: Option<String> = row.get(4);
+            let error: Option<String> = row.get(5);
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
             let schema: Option<ProgramSchema> = row
-                .get::<_, Option<String>>(7)
+                .get::<_, Option<String>>(6)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
-            let tenant_id = TenantId(row.get(8));
+            let tenant_id = TenantId(row.get(7));
 
             result.push((
                 tenant_id,
@@ -1274,7 +1249,6 @@ impl Storage for ProjectDB {
                     description: row.get(2),
                     version: Version(row.get(3)),
                     schema,
-                    jit_mode,
                     status,
                     code: None,
                 },
@@ -1302,12 +1276,12 @@ impl Storage for ProjectDB {
         Ok(result)
     }
 
-    async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version, bool)>, DBError> {
+    async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version)>, DBError> {
         let manager = self.pool.get().await?;
         // Find the oldest pending project.
         let stmt = manager
             .prepare_cached(
-                "SELECT id, version, tenant_id, jit_mode FROM program WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM program WHERE status = 'pending')"
+                "SELECT id, version, tenant_id FROM program WHERE status = 'pending' AND status_since = (SELECT min(status_since) FROM program WHERE status = 'pending')"
             )
             .await?;
         let res = manager.query(&stmt, &[]).await?;
@@ -1316,8 +1290,7 @@ impl Storage for ProjectDB {
             let program_id: ProgramId = ProgramId(row.get(0));
             let version: Version = Version(row.get(1));
             let tenant_id: TenantId = TenantId(row.get(2));
-            let jit_mode: bool = row.get(3);
-            Ok(Some((tenant_id, program_id, version, jit_mode)))
+            Ok(Some((tenant_id, program_id, version)))
         } else {
             Ok(None)
         }
@@ -2519,7 +2492,7 @@ impl ProjectDB {
         let stmt = manager
             .prepare_cached(
                 "SELECT
-                name, description, version, jit_mode, status, error, schema, code
+                name, description, version, status, error, schema, code
                 FROM program_history WHERE id = $1 AND tenant_id = $2 AND revision = $3",
             )
             .await?;
@@ -2531,25 +2504,23 @@ impl ProjectDB {
             let name: String = row.get(0);
             let description: String = row.get(1);
             let version: Version = Version(row.get(2));
-            let jit_mode: bool = row.get(3);
-            let status: Option<String> = row.get(4);
-            let error: Option<String> = row.get(5);
+            let status: Option<String> = row.get(3);
+            let error: Option<String> = row.get(4);
             let schema: Option<ProgramSchema> = row
-                .get::<_, Option<String>>(6)
+                .get::<_, Option<String>>(5)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
-            let code = row.get(7);
+            let code = row.get(6);
             Ok(ProgramDescr {
                 program_id,
                 name,
                 description,
                 version,
-                jit_mode,
                 status,
                 schema,
-                code: Some(code),
+                code,
             })
         } else {
             Err(DBError::UnknownProgram { program_id })

@@ -179,9 +179,7 @@ pub trait SerCursor {
     /// Serialize the `(key, weight)` tuple.
     ///
     /// FIXME: This only exists to support the CSV serializer, which outputs
-    /// key and weight in the same CSV record.  This should be eliminated once
-    /// we have a better idea about the common denominator between JIT and
-    /// serde serializers.
+    /// key and weight in the same CSV record.
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
 
     /// Serialize current value. Panics if invalid.
@@ -357,9 +355,6 @@ pub trait CircuitCatalog: Send {
 }
 
 /// Circuit catalog implementation.
-// For now, we use a common `CircuitCatalog` implementation for JIT and
-// statically compiled circuits (with each module adding its own impls
-// to this type).
 pub struct Catalog {
     pub(crate) input_collection_handles: BTreeMap<String, Box<dyn DeCollectionHandle>>,
     pub(crate) output_batch_handles: BTreeMap<String, OutputCollectionHandles>,

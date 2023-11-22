@@ -10,7 +10,6 @@ import org.junit.runner.notification.RunListener;
 public class TestListener extends RunListener {
     @Override
     public void testRunFinished(Result result) {
-        System.out.println("Executed " + BaseSQLTests.testsExecuted + " Rust tests and "
-                + BaseSQLTests.jitTestsExecuted + " JIT tests");
+        System.out.println("Executed " + BaseSQLTests.testsExecuted + " Rust tests");
     }
 }

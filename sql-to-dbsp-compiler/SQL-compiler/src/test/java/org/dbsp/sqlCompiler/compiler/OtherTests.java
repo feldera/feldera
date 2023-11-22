@@ -27,11 +27,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.compiler.backend.jit.JitFileAndSerialization;
-import org.dbsp.sqlCompiler.compiler.backend.jit.JitIODescription;
-import org.dbsp.sqlCompiler.compiler.backend.jit.JitSerializationKind;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.CompilerMain;
@@ -43,7 +38,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.CollectIdentifiers;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -98,104 +92,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
     File fileFromName(String name) {
         return new File(Paths.get(rustDirectory, name).toUri());
-    }
-
-    void runJitServiceProgram(String[] statements, InputOutputPair data) throws IOException, InterruptedException {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.ioOptions.jit = true;
-        compiler.compileStatements(String.join(";\n", statements));
-        compiler.optimize();
-        DBSPCircuit circuit = getCircuit(compiler);
-        // Serialize circuit as JSON for the JIT executor
-        JITProgram program = ToJitVisitor.circuitToJIT(compiler, circuit);
-        String json = program.asJson().toPrettyString();
-        File programFile = this.fileFromName("program.json");
-        Utilities.writeFile(programFile.toPath(), json);
-
-        // Prepare input files for the JIT runtime
-        List<JitFileAndSerialization> inputFiles = new ArrayList<>();
-        int index = 0;
-        for (DBSPZSetLiteral.Contents inputData: data.inputs) {
-            File input = this.fileFromName("input" + index++ + ".csv");
-            input.deleteOnExit();
-            ToCsvVisitor.toCsv(compiler, input, new DBSPZSetLiteral(compiler.getWeightTypeImplementation(), inputData));
-            inputFiles.add(new JitFileAndSerialization(
-                    input.getAbsolutePath(),
-                    JitSerializationKind.Csv));
-        }
-        List<JitIODescription> inputDescriptions = compiler.getInputDescriptions(inputFiles);
-
-        // Allocate output files
-        index = 0;
-        List<JitFileAndSerialization> outputFiles = new ArrayList<>();
-        for (DBSPZSetLiteral.Contents ignored1 : data.outputs) {
-            File output = this.fileFromName("output" + index++ + ".json");
-            outputFiles.add(new JitFileAndSerialization(
-                    output.getAbsolutePath(),
-                    JitSerializationKind.Json));
-            boolean ignored = output.delete(); // The program will create this file, we just care about its name
-        }
-        List<JitIODescription> outputDescriptions = compiler.getOutputDescriptions(outputFiles);
-
-        // Invoke the JIT runtime with the program and the configuration file describing inputs and outputs
-        JsonNode jitInputDescription = compiler.createJitRuntimeConfig(inputDescriptions, outputDescriptions);
-        String s = jitInputDescription.toPrettyString();
-        File configFile = this.fileFromName("config.json");
-        Utilities.writeFile(configFile.toPath(), s);
-        Utilities.runJIT(BaseSQLTests.projectDirectory, programFile.getAbsolutePath(), configFile.getAbsolutePath());
-
-        // If we don't reach this point these files won't be deleted
-        programFile.deleteOnExit();
-        configFile.deleteOnExit();
-        // Validate outputs and delete them
-        for (int i = 0; i < data.outputs.length; i++) {
-            DBSPZSetLiteral.Contents expected = data.outputs[i];
-            JitIODescription outFile = outputDescriptions.get(i);
-            File file = new File(outFile.path);
-            DBSPZSetLiteral.Contents actual = outFile.parse(expected.getElementType());
-            DBSPZSetLiteral.Contents diff = expected.minus(actual);
-            Assert.assertTrue(diff.isEmpty());
-            file.deleteOnExit();
-        }
-    }
-
-    // Test using the JIT executor as a service.
-    @Test
-    public void runJitServiceTest() throws IOException, InterruptedException {
-        String[] statements = new String[]{
-                ddl,
-                "CREATE VIEW V AS SELECT T.COL2 FROM T"
-        };
-        // Input test data
-        InputOutputPair data = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(EndToEndTests.e0, EndToEndTests.e1),
-                new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(new DBSPDoubleLiteral(12)),
-                        new DBSPTupleExpression(new DBSPDoubleLiteral(1))));
-        this.runJitServiceProgram(statements, data);
-    }
-
-    // Test using the JIT executor as a service with a table with a primary key.
-    @Test 
-    public void runJitServiceTestKey() throws IOException, InterruptedException {
-        String[] statements = new String[]{
-                "CREATE TABLE T (\n" +
-                "COL1 INT NOT NULL PRIMARY KEY\n" +
-                ", COL2 DOUBLE NOT NULL PRIMARY KEY\n" +
-                ", COL3 BOOLEAN NOT NULL PRIMARY KEY\n" +
-                ", COL4 VARCHAR NOT NULL\n" +
-                ", COL5 INT\n" +
-                ", COL6 DOUBLE\n" +
-                ")",
-                "CREATE VIEW V AS SELECT T.COL2 FROM T"
-        };
-        // Input test data
-        InputOutputPair data = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(EndToEndTests.e0, EndToEndTests.e1),
-                new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(new DBSPDoubleLiteral(12)),
-                        new DBSPTupleExpression(new DBSPDoubleLiteral(1))));
-        this.runJitServiceProgram(statements, data);
     }
 
     @Test
@@ -620,25 +516,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertTrue(jsonContents.contains("COL1"));
         Assert.assertTrue(jsonContents.contains("yourtable"));
         Assert.assertTrue(jsonContents.contains("column1"));
-    }
-
-    @Test
-    public void testCompilerToJson() throws IOException {
-        String[] statements = new String[]{
-                "CREATE TABLE T (\n" +
-                        "COL1 INT NOT NULL" +
-                        ", COL2 DOUBLE NOT NULL" +
-                        ")",
-                "CREATE VIEW V AS SELECT COL1 FROM T WHERE COL1 > 5"
-        };
-        File file = createInputScript(statements);
-        File json = File.createTempFile("out", ".json", new File("."));
-        json.deleteOnExit();
-        CompilerMessages message = CompilerMain.execute("-j", "-o", json.getPath(), file.getPath());
-        Assert.assertEquals(message.exitCode, 0);
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode parsed = mapper.readTree(json);
-        Assert.assertNotNull(parsed);
     }
 
     @Test

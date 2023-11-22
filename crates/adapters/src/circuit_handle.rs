@@ -2,7 +2,7 @@ use crate::ControllerError;
 use dbsp::DBSPHandle;
 use std::path::PathBuf;
 
-/// Trait that captures common behavior of static and JIT-compiled circuits.
+/// Trait for DBSP circuit handle objects.
 pub trait DbspCircuitHandle {
     fn step(&mut self) -> Result<(), ControllerError>;
 

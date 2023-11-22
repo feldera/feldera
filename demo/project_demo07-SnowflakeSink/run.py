@@ -252,7 +252,6 @@ if __name__ == "__main__":
     run_demo(
         "Snowfake Demo",
         os.path.join(SCRIPT_DIR, "project.sql"),
-        False,
         make_config,
         prepare,
         verify,

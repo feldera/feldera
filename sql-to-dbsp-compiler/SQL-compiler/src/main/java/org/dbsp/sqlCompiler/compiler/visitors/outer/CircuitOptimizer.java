@@ -24,11 +24,11 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.ExpandWritelog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateFunctions;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 
 import java.util.ArrayList;
@@ -77,7 +77,7 @@ public class CircuitOptimizer implements ICompilerComponent {
         }
         // debugging aid
         passes.add(new EliminateFunctions(reporter).circuitRewriter());
-        passes.add(new ExpandWritelog(reporter).circuitRewriter());
+        passes.add(new ExpandWriteLog(reporter).circuitRewriter());
         return new Passes(reporter, passes);
     }
 
