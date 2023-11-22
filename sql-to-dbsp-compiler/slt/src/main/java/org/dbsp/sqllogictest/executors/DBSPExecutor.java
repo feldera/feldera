@@ -315,7 +315,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     public TestStatistics execute(SltTestFile file, OptionsParser.SuppliedOptions options)
             throws SQLException {
         this.startTest();
-        int batchSize = 1;
+        int batchSize = 500;
         String name = file.toString();
         if (name.contains("/"))
             name = name.substring(name.lastIndexOf('/') + 1);

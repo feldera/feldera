@@ -16,3 +16,15 @@ An explicit cast can be specified in three ways:
 The rules for implicit casts are complex; we [inherit these
 rules](https://calcite.apache.org/docs/reference.html#conversion-contexts-and-strategies)
 from Calcite.
+
+In general SQL casts may discard low order digits but never high order
+digits.  A cast form a wide to a narrow datatype which cannot
+represent the value in the target type will generate a runtime error.
+Note however that casts to floating point values never generate
+runtime errors, since they use "infinity" values to represent out of
+range values.
+
+Conversions from decimal and floating point types to integer types
+always truncate the decimal digits (round towards zero).  For example,
+`CAST(2.9 AS INTEGER)` returns 2, while `CAST(-2.9 AS INTEGER)`
+returns -2.
