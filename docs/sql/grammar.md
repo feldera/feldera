@@ -28,6 +28,7 @@ columnConstraint
   :   PRIMARY KEY
   |   FOREIGN KEY REFERENCES identifier '(' identifier ')'
   |   LATENESS expression
+  |   DEFAULT expression
 
 parensColumnList
   :   '(' columnName [, columnName ]* ')'
@@ -135,8 +136,9 @@ exprOrList
   |   '(' expr [, expr ]* ')'
 ```
 
-Note `FOREIGN KEY` information is parsed, but it is not validated, and
-is currently ignored.
+Note: `FOREIGN KEY` information is parsed, but it is not validated,
+and is currently ignored.  Similarly, the `DEFAULT` column values are
+parsed, but not validated, and are currently ignored.
 
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.

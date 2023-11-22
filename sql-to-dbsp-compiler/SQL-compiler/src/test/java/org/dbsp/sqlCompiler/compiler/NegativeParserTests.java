@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler;
 
+import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
@@ -9,6 +10,9 @@ import org.junit.Test;
 import java.io.File;
 import java.io.IOException;
 
+/**
+ * Parser tests that are expected to fail.
+ */
 public class NegativeParserTests extends BaseSQLTests {
     @Test
     public void validateKey() {
@@ -32,6 +36,17 @@ public class NegativeParserTests extends BaseSQLTests {
         compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "in table with another PRIMARY KEY constraint");
+    }
+
+    @Test
+    public void doubleDefaultTest() throws SqlParseException {
+        String ddl = "CREATE TABLE productvariant_t (\n" +
+                "    id BIGINT DEFAULT NULL DEFAULT 1\n" +
+                ");";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.compileStatement(ddl);
+        TestUtil.assertMessagesContain(compiler.messages, "Column ID already has a default value");
     }
 
     @Test

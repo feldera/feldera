@@ -31,7 +31,6 @@ void ExtendedTableElement(List<SqlNode> list) :
     final SqlIdentifier id;
     final SqlDataTypeSpec type;
     final boolean nullable;
-    final SqlNode e;
     SqlIdentifier name = null;
     final SqlNodeList columnList;
     final Span s = Span.of();
@@ -77,6 +76,7 @@ SqlExtendedColumnDeclaration ColumnAttribute(SqlExtendedColumnDeclaration column
     SqlIdentifier foreignKeyTable = null;
     SqlIdentifier foreignKeyColumn = null;
     SqlNode latenes = null;
+    SqlNode e;
     Span s;
 }
 {
@@ -90,6 +90,10 @@ SqlExtendedColumnDeclaration ColumnAttribute(SqlExtendedColumnDeclaration column
         |
             <LATENESS> latenes = Expression(ExprContext.ACCEPT_NON_QUERY) {
                return column.setLatenes(latenes);
+            }
+        |
+            <DEFAULT_> e = Expression(ExprContext.ACCEPT_SUB_QUERY) {
+                return column.setDefault(e);
             }
         )
 }
