@@ -77,7 +77,7 @@ even multiple data sources connected to the same table.
 ## Step 2. Write queries
 
 We would like to compute the lowest price for each part
-across all vendors.  Add the following statements to your SQL program
+across all vendors.  Add the following statements to your SQL program:
 
 ```sql
 -- Lowest available price for each part across all vendors.
