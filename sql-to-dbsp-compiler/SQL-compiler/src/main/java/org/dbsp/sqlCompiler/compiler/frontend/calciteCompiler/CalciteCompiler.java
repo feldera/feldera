@@ -653,6 +653,7 @@ public class CalciteCompiler implements IWritesLogs {
             SqlDataTypeSpec typeSpec;
             boolean isPrimaryKey = false;
             RexNode lateness = null;
+            RexNode defaultValue = null;
             if (col instanceof SqlColumnDeclaration) {
                 SqlColumnDeclaration cd = (SqlColumnDeclaration) col;
                 name = cd.name;
@@ -675,6 +676,8 @@ public class CalciteCompiler implements IWritesLogs {
                     primaryKeys.remove(name.getSimple());
                 if (cd.lateness != null)
                     lateness = this.converter.convertExpression(cd.lateness);
+                if (cd.defaultValue != null)
+                    defaultValue = this.converter.convertExpression(cd.defaultValue);
             } else if (col instanceof SqlKeyConstraint) {
                 continue;
             } else {
@@ -697,7 +700,7 @@ public class CalciteCompiler implements IWritesLogs {
             RelDataTypeField field = new RelDataTypeFieldImpl(
                     Catalog.identifierToString(name), index++, type);
             RelColumnMetadata meta = new RelColumnMetadata(field, isPrimaryKey, Utilities.identifierIsQuoted(name),
-                    lateness);
+                    lateness, defaultValue);
             result.add(meta);
         }
 
@@ -763,7 +766,7 @@ public class CalciteCompiler implements IWritesLogs {
                 colByName.put(specifiedName, field);
             }
             RelColumnMetadata meta = new RelColumnMetadata(
-                    field, false, nameIsQuoted, null);
+                    field, false, nameIsQuoted, null, null);
             columns.add(meta);
             index++;
         }

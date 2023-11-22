@@ -1325,8 +1325,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression lateness = null;
         if (metadata.lateness != null)
             lateness = expressionCompiler.compile(metadata.lateness);
+        DBSPExpression defaultValue = null;
+        if (metadata.defaultValue != null)
+            defaultValue = expressionCompiler.compile(metadata.defaultValue).cast(type);
         return new InputColumnMetadata(metadata.getName(), type,
-                metadata.isPrimaryKey, lateness);
+                metadata.isPrimaryKey, lateness, defaultValue);
     }
 
     @SuppressWarnings("UnusedReturnValue")

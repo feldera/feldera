@@ -11,30 +11,26 @@ import javax.annotation.Nullable;
  * of Calcite Rel objects.
  */
 public class RelColumnMetadata {
-    /**
-     * Column name and type.
-     */
+    /** Column name and type. */
     public final RelDataTypeField field;
-    /**
-     * True if the column is a primary key.
-     */
+    /** True if the column is a primary key. */
     public final boolean isPrimaryKey;
-    /**
-     * Lateness, if declared.
-     */
+    /** Lateness, if declared. */
     @Nullable
     public final RexNode lateness;
-    /**
-     * True if the column name was quoted.
-     */
+    /** Default value, if declared */
+    @Nullable
+    public final RexNode defaultValue;
+    /** True if the column name was quoted. */
     public final boolean nameIsQuoted;
 
     public RelColumnMetadata(RelDataTypeField field, boolean isPrimaryKey, boolean nameIsQuoted,
-                             @Nullable RexNode lateness) {
+                             @Nullable RexNode lateness, @Nullable RexNode defaultValue) {
         this.isPrimaryKey = isPrimaryKey;
         this.nameIsQuoted = nameIsQuoted;
         this.field = field;
         this.lateness = lateness;
+        this.defaultValue = defaultValue;
     }
 
     public String getName() {
