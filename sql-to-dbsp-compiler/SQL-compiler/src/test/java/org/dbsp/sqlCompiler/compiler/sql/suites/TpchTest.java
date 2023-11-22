@@ -15,7 +15,7 @@ public class TpchTest extends BaseSQLTests {
     @Test
     public void compileTpch() throws IOException, InterruptedException {
         String tpch = TestUtil.readStringFromResourceFile("tpch.sql");
-        CompilerOptions options = this.testOptions(true, true, false);
+        CompilerOptions options = this.testOptions(true, true);
         DBSPCompiler compiler = new DBSPCompiler(options);
         options.languageOptions.ignoreOrderBy = true;
         options.languageOptions.outputsAreSets = true;

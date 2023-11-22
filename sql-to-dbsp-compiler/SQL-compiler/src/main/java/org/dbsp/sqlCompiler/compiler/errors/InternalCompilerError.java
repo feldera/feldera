@@ -25,7 +25,6 @@
 
 package org.dbsp.sqlCompiler.compiler.errors;
 
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 
@@ -37,33 +36,24 @@ import javax.annotation.Nullable;
 public class InternalCompilerError extends BaseCompilerException {
     @Nullable
     public final IDBSPNode dbspNode;
-    @Nullable
-    public final JITNode jitNode;
 
     protected InternalCompilerError(String message, CalciteObject node,
-                                    @Nullable IDBSPNode dbspNode,
-                                    @Nullable JITNode jitNode) {
+                                    @Nullable IDBSPNode dbspNode) {
         super(message, node);
         this.dbspNode = dbspNode;
-        this.jitNode = jitNode;
     }
 
     public InternalCompilerError(String message, CalciteObject node) {
-        this(message, node, null, null);
+        this(message, node, null);
     }
 
     public InternalCompilerError(String message) {
-        this(message, CalciteObject.EMPTY, null, null);
+        this(message, CalciteObject.EMPTY, null);
     }
 
     public InternalCompilerError(String message, IDBSPNode node) {
-        this(message, CalciteObject.EMPTY, node, null);
+        this(message, CalciteObject.EMPTY, node);
     }
-
-    public InternalCompilerError(String message, JITNode node) {
-        this(message, CalciteObject.EMPTY, null, node);
-    }
-
 
     @Override
     public SourcePositionRange getPositionRange() {

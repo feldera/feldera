@@ -314,19 +314,15 @@ public class RustFileWriter implements ICompilerComponent {
     public String generatePreamble(StructuresUsed used) {
         IndentStream stream = new IndentStream(new StringBuilder());
         stream.append(commonPreamble);
-        if (this.compiler.options.ioOptions.jit) {
-            stream.append(jitPreamble);
-        } else {
-            stream.append(rustPreamble)
-                    .newline();
-            stream.append("type ")
-                    .append(new DBSPTypeWeight().getRustString())
-                    .append(" = ")
-                    .append(this.getCompiler().getWeightTypeImplementation().toString())
-                    .append(";")
-                    .newline();
-            this.generateStructures(used, stream);
-        }
+        stream.append(rustPreamble)
+                .newline();
+        stream.append("type ")
+                .append(new DBSPTypeWeight().getRustString())
+                .append(" = ")
+                .append(this.getCompiler().getWeightTypeImplementation().toString())
+                .append(";")
+                .newline();
+        this.generateStructures(used, stream);
         return stream.toString();
     }
 

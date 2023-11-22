@@ -73,9 +73,6 @@ Usage: sql-to-dbsp [options] Input file to compile
     -i
       Generate an incremental circuit
       Default: false
-    -j
-      Emit JSON instead of Rust
-      Default: false
     -je
       Emit error messages as a JSON array to stderr
       Default: false

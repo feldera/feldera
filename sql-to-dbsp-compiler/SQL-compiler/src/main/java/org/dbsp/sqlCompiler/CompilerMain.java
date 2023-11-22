@@ -29,16 +29,16 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ToJitVisitor;
-import org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITProgram;
+import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.backend.*;
 import org.dbsp.util.Logger;
 
 import javax.annotation.Nullable;
-import java.io.*;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Map;
@@ -152,16 +152,10 @@ public class CompilerMain {
         }
         try {
             PrintStream stream = this.getOutputStream();
-            if (this.options.ioOptions.jit) {
-                JITProgram program = ToJitVisitor.circuitToJIT(compiler, dbsp);
-                String output = program.asJson().toPrettyString();
-                stream.println(output);
-            } else {
-                RustFileWriter writer = new RustFileWriter(compiler, stream);
-                writer.emitCodeWithHandle(true);
-                writer.add(dbsp);
-                writer.write();
-            }
+            RustFileWriter writer = new RustFileWriter(compiler, stream);
+            writer.emitCodeWithHandle(true);
+            writer.add(dbsp);
+            writer.write();
             stream.close();
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,

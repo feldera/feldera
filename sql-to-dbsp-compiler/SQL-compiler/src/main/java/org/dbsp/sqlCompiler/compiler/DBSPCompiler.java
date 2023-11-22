@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -33,8 +32,6 @@ import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.backend.jit.JitFileAndSerialization;
-import org.dbsp.sqlCompiler.compiler.backend.jit.JitIODescription;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -61,8 +58,6 @@ import java.io.InputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
-
-import static org.dbsp.sqlCompiler.compiler.backend.jit.ir.JITNode.jsonFactory;
 
 /**
  * This class compiles SQL statements into DBSP circuits.
@@ -139,13 +134,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.typeCompiler = new TypeCompiler(this);
         this.inputTables = new ArrayList<>();
         this.outputViews = new ArrayList<>();
-
-        if (options.ioOptions.jit) {
-            // The JIT has hardwired I32 for the weight type.
-            this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false);
-        } else {
-            this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false);
-        }
+        this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false);
         this.weightVar = new DBSPTypeWeight().var("w");
     }
 
@@ -281,57 +270,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         ios.set("inputs", inputs);
         ios.set("outputs", outputs);
         return ios;
-    }
-
-    public List<JitIODescription> getInputDescriptions(List<JitFileAndSerialization> inputFiles) {
-        if (this.inputTables.size() != inputFiles.size())
-            throw new CompilationError("Number of input files " + inputFiles.size() +
-                    " does not match number of inputs: " + this.inputTables.size());
-        List<JitIODescription> result = new ArrayList<>();
-        for (int i = 0; i < inputFiles.size(); i++) {
-            JitFileAndSerialization file = inputFiles.get(i);
-            InputTableDescription input = this.inputTables.get(i);
-            JitIODescription description = input.getJitDescription(file);
-            result.add(description);
-        }
-        return result;
-    }
-
-    public List<JitIODescription> getOutputDescriptions(List<JitFileAndSerialization> outputFiles) {
-        List<JitIODescription> result = new ArrayList<>();
-        if (this.outputViews.size() != outputFiles.size())
-            throw new CompilationError("Number of output files " + outputFiles.size() +
-                    " does not match number of views: " + this.outputViews.size());
-        for (int i = 0; i < outputFiles.size(); i++) {
-            JitFileAndSerialization file = outputFiles.get(i);
-            OutputViewDescription output = this.outputViews.get(i);
-            JitIODescription description = output.getDescription(file);
-            result.add(description);
-        }
-        return result;
-    }
-
-    /**
-     * Given a list of files containing the inputs and outputs,
-     * generate a configuration for the JIT runtime.
-     * WARNING: this API is only used for testing the JIT execution engine.
-     * This API is not part of the public compiler API.
-     */
-    public JsonNode createJitRuntimeConfig(
-            List<JitIODescription> inputFiles,
-            List<JitIODescription> outputFiles) {
-        ObjectMapper objectMapper = jsonFactory();
-        ObjectNode result = objectMapper.createObjectNode();
-        result.put("workers", 1);
-        result.put("optimize", false);
-        result.put("release", false);
-        ObjectNode inputs = result.putObject("inputs");
-        for (JitIODescription description: inputFiles)
-            inputs.set(description.relation, description.asJson());
-        ObjectNode outputs = result.putObject("outputs");
-        for (JitIODescription description: outputFiles)
-            outputs.set(description.relation, description.asJson());
-        return result;
     }
 
     public void compileStatement(String statement, @Nullable String comment) {
